@@ -527,7 +527,7 @@ TEST_F(AudioCapturerReleaseTest, AsyncCapture_PacketsNotManuallyReleased) {
   ExpectInspectMetrics(capturer_, {
                                       .children =
                                           {
-                                              {"overflows", {.nonzero_uints = {"count"}}},
+                                              {kCaptureOverflows, {.nonzero_uints = {kCount}}},
                                           },
                                   });
   Unbind(capturer_);

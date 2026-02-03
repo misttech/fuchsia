@@ -16,6 +16,7 @@
 
 #include <test/thermal/cpp/fidl.h>
 
+#include "src/media/audio/audio_core/reporter.h"
 #include "src/media/audio/audio_core/testing/integration/capturer_shim.h"
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_realm.h"
 #include "src/media/audio/audio_core/testing/integration/inspect.h"
@@ -26,6 +27,22 @@
 #include "src/media/audio/lib/test/test_fixture.h"
 
 namespace media::audio::test {
+
+// Redefining these here in test code, so they can remain string_view in the product itself.
+static constexpr std::string kDeviceUnderflows = std::string(media::audio::kDeviceUnderflows);
+static constexpr std::string kPipelineUnderflows = std::string(media::audio::kPipelineUnderflows);
+static constexpr std::string kContinuityUnderflows =
+    std::string(media::audio::kContinuityUnderflows);
+static constexpr std::string kTimestampUnderflows = std::string(media::audio::kTimestampUnderflows);
+static constexpr std::string kCaptureOverflows = std::string(media::audio::kCaptureOverflows);
+static constexpr std::string kInputDevices = std::string(media::audio::kInputDevices);
+static constexpr std::string kOutputDevices = std::string(media::audio::kOutputDevices);
+static constexpr std::string kRenderers = std::string(media::audio::kRenderers);
+static constexpr std::string kCapturers = std::string(media::audio::kCapturers);
+static constexpr std::string kCount = std::string(media::audio::kCount);
+// Can't be constexpr (must be heap): this string's length exceeds the 22-character SSO limit.
+static inline const std::string kPacketQueueUnderflows =
+    std::string(media::audio::kPacketQueueUnderflows);
 
 // Restrictions on usage:
 //

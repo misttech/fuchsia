@@ -25,9 +25,9 @@ namespace media::audio {
 namespace {
 using AudioDriverInfo = Reporter::AudioDriverInfo;
 
-static std::mutex singleton_mutex;
-static Reporter* const singleton_nop = new Reporter();
-static Reporter* singleton_real;
+std::mutex singleton_mutex;
+Reporter* const singleton_nop = new Reporter();
+Reporter* singleton_real;
 
 class TokenBucket {
  public:
@@ -63,7 +63,7 @@ class TokenBucket {
 // To avoid overloading cobalt, throttle cobalt RPCs. See https://fxbug.dev/42146328.
 // In a typical worst case, we might expect about 1 RPC every 10ms, or 6000 RPCs per minute.
 // Throttle to 30 per minute.
-static TokenBucket* const cobalt_token_bucket = new TokenBucket(zx::min(1), 30);
+TokenBucket* const cobalt_token_bucket = new TokenBucket(zx::min(1), 30);
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -183,7 +183,7 @@ class Reporter::OverflowUnderflowTracker {
 
   struct Args {
     uint32_t component;
-    std::string event_name;
+    std::string_view event_name;
     inspect::Node& parent_node;
     Reporter::Impl& impl;
     bool is_underflow;
@@ -199,7 +199,7 @@ class Reporter::OverflowUnderflowTracker {
 
   std::mutex mutex_;
 
-  enum class State { Stopped, Started };
+  enum class State : uint8_t { Stopped, Started };
   State state_ FXL_GUARDED_BY(mutex_) = State::Stopped;
 
   // Ideally we'd record final cobalt metrics when the component exits, however we can't
@@ -318,28 +318,28 @@ class Reporter::ObjectTracker {
 
 class FormatInfo {
  public:
-  FormatInfo(inspect::Node& parent_node, const std::string& name)
+  FormatInfo(inspect::Node& parent_node, const std::string_view& name)
       : node_(parent_node.CreateChild(name)),
-        sample_format_(node_.CreateString("sample format", "unknown")),
-        channels_(node_.CreateUint("channels", 0)),
-        frames_per_second_(node_.CreateUint("frames per second", 0)) {}
+        sample_format_(node_.CreateString(kSampleFormat, kUnknown)),
+        channels_(node_.CreateUint(kChannels, 0)),
+        frames_per_second_(node_.CreateUint(kFramesPerSecond, 0)) {}
 
   void Set(const Format& f) {
     switch (f.sample_format()) {
       case fuchsia::media::AudioSampleFormat::UNSIGNED_8:
-        sample_format_.Set("UNSIGNED_8");
+        sample_format_.Set(kSampleFormatUint8);
         break;
       case fuchsia::media::AudioSampleFormat::SIGNED_16:
-        sample_format_.Set("SIGNED_16");
+        sample_format_.Set(kSampleFormatInt16);
         break;
       case fuchsia::media::AudioSampleFormat::SIGNED_24_IN_32:
-        sample_format_.Set("SIGNED_24_IN_32");
+        sample_format_.Set(kSampleFormatInt24In32);
         break;
       case fuchsia::media::AudioSampleFormat::FLOAT:
-        sample_format_.Set("FLOAT");
+        sample_format_.Set(kSampleFormatFloat32);
         break;
       default:
-        sample_format_.Set("unknown");
+        sample_format_.Set(kUnknown);
         FX_LOGS(ERROR) << "Unhandled sample stream_type type "
                        << fidl::ToUnderlying(f.sample_format());
         break;
@@ -358,21 +358,21 @@ class FormatInfo {
 class Reporter::DeviceDriverInfo {
  public:
   DeviceDriverInfo(inspect::Node& parent_node, ObjectTracker&& object_tracker)
-      : node_(parent_node.CreateChild("driver")),
-        name_(node_.CreateString("name", "unknown")),
-        initial_internal_delay_(node_.CreateUint("initial internal delay (ns)", 0)),
-        current_internal_delay_(node_.CreateUint("current internal delay (ns)", 0)),
+      : node_(parent_node.CreateChild(kDriver)),
+        name_(node_.CreateString(kName, kUnknown)),
+        initial_internal_delay_(node_.CreateUint(kInitialInternalDelayNsec, 0)),
+        current_internal_delay_(node_.CreateUint(kCurrentInternalDelayNsec, 0)),
         internal_delay_change_time_(zx::time(0)),
-        internal_delay_change_time_ns_(node_.CreateInt("time of latest internal delay change",
-                                                       internal_delay_change_time_.get())),
-        initial_external_delay_(node_.CreateUint("initial external delay (ns)", 0)),
-        current_external_delay_(node_.CreateUint("current external delay (ns)", 0)),
+        internal_delay_change_time_ns_(
+            node_.CreateInt(kInternalDelayChangedAt, internal_delay_change_time_.get())),
+        initial_external_delay_(node_.CreateUint(kInitialExternalDelayNsec, 0)),
+        current_external_delay_(node_.CreateUint(kCurrentExternalDelayNsec, 0)),
         external_delay_change_time_(zx::time(0)),
-        external_delay_change_time_ns_(node_.CreateInt("time of latest external delay change",
-                                                       external_delay_change_time_.get())),
-        driver_transfer_bytes_(node_.CreateUint("driver transfer (bytes)", 0)),
-        format_(parent_node, "format"),
-        object_tracker_(std::move(object_tracker)) {}
+        external_delay_change_time_ns_(
+            node_.CreateInt(kExternalDelayChangedAt, external_delay_change_time_.get())),
+        driver_transfer_bytes_(node_.CreateUint(kDriverTransferBytes, 0)),
+        format_(parent_node, kFormat),
+        object_tracker_(object_tracker) {}
 
   void Set(const AudioDriverInfo& d) {
     name_.Set(d.manufacturer_name + ' ' + d.product_name);
@@ -429,11 +429,11 @@ class Reporter::DeviceDriverInfo {
 class DeviceGainInfo {
  public:
   explicit DeviceGainInfo(inspect::Node& parent)
-      : node_(parent.CreateChild("device gain")),
-        gain_db_(node_.CreateDouble("gain db", 0.0)),
-        muted_(node_.CreateBool("muted", false)),
-        agc_supported_(node_.CreateBool("agc supported", false)),
-        agc_enabled_(node_.CreateBool("agc enabled", false)) {}
+      : node_(parent.CreateChild(kDeviceGain)),
+        gain_db_(node_.CreateDouble(kGainDb, 0.0)),
+        muted_(node_.CreateBool(kMuted, false)),
+        agc_supported_(node_.CreateBool(kAgcSupported, false)),
+        agc_enabled_(node_.CreateBool(kAgcEnabled, false)) {}
 
   void Set(const fuchsia::media::AudioGainInfo& gain_info,
            fuchsia::media::AudioGainValidFlags set_flags) {
@@ -467,17 +467,17 @@ class DeviceGainInfo {
 
 class Reporter::ThermalStateTransition {
  public:
-  ThermalStateTransition(inspect::Node& parent, std::string name, uint32_t state)
+  ThermalStateTransition(inspect::Node& parent, const std::string& name, uint32_t state)
       : node_(parent.CreateChild(name)),
-        state_(node_.CreateString("state", state ? std::to_string(state) : "normal")),
-        active_(node_.CreateBool("active", true)),
+        state_(node_.CreateString(kState, state ? std::to_string(state) : kNormal)),
+        active_(node_.CreateBool(kActive, true)),
         duration_(node_.CreateLazyValues(
-            "ThermalStateTransitionDuration",
+            kThermalStateTransitionDuration,
             [this] {
               std::lock_guard<std::mutex> lock(mutex_);
               inspect::Inspector i;
               i.GetRoot().CreateUint(
-                  "duration (ns)",
+                  kDurationNsec,
                   (alive_ ? zx::clock::get_monotonic() - start_time_ : past_duration_).get(), &i);
               return fpromise::make_ok_promise(std::move(i));
             })),
@@ -566,25 +566,25 @@ namespace {
 std::string UsageBehaviorToString(fuchsia::media::Behavior behavior) {
   switch (behavior) {
     case fuchsia::media::Behavior::NONE:
-      return "NONE";
+      return kNone;
     case fuchsia::media::Behavior::DUCK:
-      return "DUCK";
+      return kDuck;
     case fuchsia::media::Behavior::MUTE:
-      return "MUTE";
+      return kMute;
     default:
       FX_DCHECK(false) << "Invalid fuchsia::media::Behavior: " << static_cast<int>(behavior);
-      return "unknown";
+      return kUnknown;
   }
 }
 }  // namespace
 
 class Reporter::ActiveUsagePolicy {
  public:
-  ActiveUsagePolicy(inspect::Node& parent, std::string name,
+  ActiveUsagePolicy(inspect::Node& parent, const std::string& name,
                     const std::vector<fuchsia::media::Usage2>& active_usages,
                     const AudioAdmin::RendererPolicies& render_usage_behaviors,
                     const AudioAdmin::CapturerPolicies& capture_usage_behaviors)
-      : node_(parent.CreateChild(name)), active_(node_.CreateBool("active", true)) {
+      : node_(parent.CreateChild(name)), active_(node_.CreateBool(kActive, true)) {
     for (auto& active_usage : active_usages) {
       if (active_usage.is_render_usage()) {
         auto usage = StreamUsage::WithRenderUsage(active_usage.render_usage()).ToString();
@@ -613,10 +613,10 @@ class Reporter::ActiveUsagePolicy {
 class Reporter::ActiveUsagePolicyTracker {
  public:
   explicit ActiveUsagePolicyTracker(Reporter::Impl& impl)
-      : node_(impl.inspector->root().CreateChild("active usage policies")),
-        none_gain_(node_.CreateDouble("none gain db", 0.0)),
-        duck_gain_(node_.CreateDouble("duck gain db", 0.0)),
-        mute_gain_(node_.CreateDouble("mute gain db", 0.0)),
+      : node_(impl.inspector->root().CreateChild(kActiveUsagePolicies)),
+        none_gain_(node_.CreateDouble(kNoneGainDb, 0.0)),
+        duck_gain_(node_.CreateDouble(kDuckGainDb, 0.0)),
+        mute_gain_(node_.CreateDouble(kMuteGainDb, 0.0)),
         last_policy_(active_usage_policies_.New(new ActiveUsagePolicy(
             node_, std::to_string(++next_active_usage_policy_id_),
             std::vector<fuchsia::media::Usage2>(), AudioAdmin::RendererPolicies(),
@@ -653,11 +653,11 @@ class Reporter::ActiveUsagePolicyTracker {
 
 class Reporter::VolumeSetting {
  public:
-  explicit VolumeSetting(inspect::Node& parent, std::string name, float volume, bool mute)
+  explicit VolumeSetting(inspect::Node& parent, const std::string& name, float volume, bool muted)
       : node_(parent.CreateChild(name)),
-        active_(node_.CreateBool("active", true)),
-        volume_(node_.CreateDouble("volume", volume)),
-        mute_(node_.CreateBool("mute", mute)) {}
+        active_(node_.CreateBool(kActive, true)),
+        volume_(node_.CreateDouble(kVolume, volume)),
+        muted_(node_.CreateBool(kMuted, muted)) {}
 
   void Destroy() { active_.Set(false); }
 
@@ -665,16 +665,16 @@ class Reporter::VolumeSetting {
   inspect::Node node_;
   inspect::BoolProperty active_;
   inspect::DoubleProperty volume_;
-  inspect::BoolProperty mute_;
+  inspect::BoolProperty muted_;
 };
 
 class Reporter::VolumeControlImpl : public Reporter::VolumeControl {
  public:
   explicit VolumeControlImpl(Reporter::Impl& impl)
       : node_(impl.volume_controls_node.CreateChild(impl.NextVolumeControlIdStr())),
-        volume_settings_node_(node_.CreateChild("volume settings")),
-        name_(node_.CreateString("name", "unknown - no clients")),
-        client_count_(node_.CreateUint("client count", 0)),
+        volume_settings_node_(node_.CreateChild(kVolumeSettings)),
+        name_(node_.CreateString(kName, kUnknownNoClients)),
+        client_count_(node_.CreateUint(kClientCount, 0)),
         last_volume_setting_(volume_settings_.New(new VolumeSetting(
             volume_settings_node_, std::to_string(++next_volume_setting_id_), 0.0, false))) {}
 
@@ -710,14 +710,14 @@ class Reporter::OutputDeviceImpl : public Reporter::OutputDevice {
  public:
   OutputDeviceImpl(Reporter::Impl& impl, const std::string& name, const std::string& thread_name)
       : node_(impl.outputs_node.CreateChild(name)),
-        thread_name_(node_.CreateString("mixer thread name", thread_name)),
+        thread_name_(node_.CreateString(kMixerThreadName, thread_name)),
         driver_info_(node_,
                      ObjectTracker(
                          impl, AudioObjectsCreatedMigratedMetricDimensionObjectType::OutputDevice)),
         gain_info_(node_),
         device_underflows_(
             std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-                .event_name = "device underflows",
+                .event_name = kDeviceUnderflows,
                 .parent_node = node_,
                 .impl = impl,
                 .is_underflow = true,
@@ -726,17 +726,17 @@ class Reporter::OutputDeviceImpl : public Reporter::OutputDevice {
             })),
         pipeline_underflows_(
             std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-                .event_name = "pipeline underflows",
+                .event_name = kPipelineUnderflows,
                 .parent_node = node_,
                 .impl = impl,
                 .is_underflow = true,
                 .cobalt_component_id =
                     AudioSessionDurationMigratedMetricDimensionComponent::OutputPipeline,
             })) {
-    time_since_death_ = node_.CreateLazyValues("OutputDeviceTimeSinceDeath", [this] {
+    time_since_death_ = node_.CreateLazyValues(kOutputDeviceTimeSinceDeath, [this] {
       inspect::Inspector i;
       i.GetRoot().CreateUint(
-          "time since death (ns)",
+          kTimeSinceDeathNsec,
           time_of_death_ ? (zx::clock::get_monotonic() - time_of_death_.value()).get() : 0, &i);
       return fpromise::make_ok_promise(std::move(i));
     });
@@ -789,15 +789,15 @@ class Reporter::InputDeviceImpl : public Reporter::InputDevice {
  public:
   InputDeviceImpl(Reporter::Impl& impl, const std::string& name, const std::string& thread_name)
       : node_(impl.inputs_node.CreateChild(name)),
-        thread_name_(node_.CreateString("mixer thread name", thread_name)),
+        thread_name_(node_.CreateString(kMixerThreadName, thread_name)),
         driver_info_(
             node_,
             ObjectTracker(impl, AudioObjectsCreatedMigratedMetricDimensionObjectType::InputDevice)),
         gain_info_(node_) {
-    time_since_death_ = node_.CreateLazyValues("InputDeviceTimeSinceDeath", [this] {
+    time_since_death_ = node_.CreateLazyValues(kInputDeviceTimeSinceDeath, [this] {
       inspect::Inspector i;
       i.GetRoot().CreateUint(
-          "time since death (ns)",
+          kTimeSinceDeathNsec,
           time_of_death_ ? (zx::clock::get_monotonic() - time_of_death_.value()).get() : 0, &i);
       return fpromise::make_ok_promise(std::move(i));
     });
@@ -832,12 +832,12 @@ class Reporter::InputDeviceImpl : public Reporter::InputDevice {
 // This groups together stream-specific gain metrics, for all renderer and capturer instances.
 class ClientGainInfo {
  public:
-  ClientGainInfo(inspect::Node& parent_node, const std::string& name)
+  ClientGainInfo(inspect::Node& parent_node, const std::string_view& name)
       : node_(parent_node.CreateChild(name)),
-        gain_db_(node_.CreateDouble("gain db", 0.0)),
-        muted_(node_.CreateBool("muted", false)),
-        calls_to_set_gain_with_ramp_(node_.CreateUint("calls to SetGainWithRamp", 0)),
-        complete_gain_db_(node_.CreateDouble("complete stream gain (post-volume) dbfs", 0.0)) {}
+        gain_db_(node_.CreateDouble(kGainDb, 0.0)),
+        muted_(node_.CreateBool(kMuted, false)),
+        calls_to_set_gain_with_ramp_(node_.CreateUint(kCallsToSetGainWithRamp, 0)),
+        complete_gain_db_(node_.CreateDouble(kCompleteStreamGainDb, 0.0)) {}
 
   void SetGain(float gain_db) { gain_db_.Set(gain_db); }
   void SetMute(bool muted) { muted_.Set(muted); }
@@ -858,11 +858,11 @@ class ClientGainInfo {
 // This groups together metrics related to presentation timestamps on renderer packets.
 class ClientTimingInfo {
  public:
-  ClientTimingInfo(inspect::Node& parent_node, const std::string& name)
+  ClientTimingInfo(inspect::Node& parent_node, const std::string_view& name)
       : node_(parent_node.CreateChild(name)),
-        pts_continuity_threshold_seconds_(node_.CreateDouble("pts continuity threshold (s)", 0.0)),
-        pts_units_per_second_numerator_(node_.CreateUint("pts units numerator", 1'000'000'000)),
-        pts_units_per_second_denominator_(node_.CreateUint("pts units denominator", 1)) {}
+        pts_continuity_threshold_seconds_(node_.CreateDouble(kPtsContinuityThresholdSec, 0.0)),
+        pts_units_per_second_numerator_(node_.CreateUint(kPtsUnitsNumerator, 1'000'000'000)),
+        pts_units_per_second_denominator_(node_.CreateUint(kPtsUnitsDenominator, 1)) {}
 
   void SetPtsContinuityThreshold(float threshold_seconds) {
     pts_continuity_threshold_seconds_.Set(threshold_seconds);
@@ -886,13 +886,13 @@ class Reporter::ClientPort {
  public:
   ClientPort(inspect::Node& node, ObjectTracker&& object_tracker)
       : node_(node),
-        object_tracker_(std::move(object_tracker)),
-        format_(node_, "format"),
-        payload_buffers_node_(node_.CreateChild("payload buffers")),
-        gain_info_(node_, "gain") {}
+        object_tracker_(object_tracker),
+        format_(node_, kFormat),
+        payload_buffers_node_(node_.CreateChild(kPayloadBuffers)),
+        gain_info_(node_, kGain) {}
 
   // This is only relevant for renderers, so we defer construction until called by RendererImpl.
-  void SetupPtsInfo() { timing_info_ = ClientTimingInfo(node_, "presentation timestamps"); }
+  void SetupPtsInfo() { timing_info_ = ClientTimingInfo(node_, kPresentationTimestamps); }
 
   void SetFormat(const Format& format) {
     object_tracker_.SetFormat(format);
@@ -948,8 +948,8 @@ class Reporter::ClientPort {
   struct PayloadBuffer {
     PayloadBuffer(inspect::Node node, uint64_t size)
         : node_(std::move(node)),
-          size_(node_.CreateUint("size", size)),
-          packets_(node_.CreateUint("packets", 0)) {}
+          size_(node_.CreateUint(kSize, size)),
+          packets_(node_.CreateUint(kPackets, 0)) {}
 
     inspect::Node node_;
     inspect::UintProperty size_;
@@ -969,15 +969,15 @@ class Reporter::RendererImpl : public Reporter::Renderer {
         client_port_(
             node_,
             ObjectTracker(impl, AudioObjectsCreatedMigratedMetricDimensionObjectType::Renderer)),
-        initial_min_lead_time_ns_(node_.CreateUint("initial min lead time (ns)", 0)),
-        current_min_lead_time_ns_(node_.CreateUint("current min lead time (ns)", 0)),
+        initial_min_lead_time_ns_(node_.CreateUint(kInitialMinLeadTimeNsec, 0)),
+        current_min_lead_time_ns_(node_.CreateUint(kCurrentMinLeadTimeNsec, 0)),
         time_of_min_lead_time_change_(zx::time(0)),
-        time_of_min_lead_time_change_ns_(node_.CreateInt("time of latest min lead time change",
-                                                         time_of_min_lead_time_change_.get())),
-        usage_(node_.CreateString("usage", "default")),
+        time_of_min_lead_time_change_ns_(
+            node_.CreateInt(kMinLeadTimeChangedAt, time_of_min_lead_time_change_.get())),
+        usage_(node_.CreateString(kUsage, kDefault)),
         packet_queue_underflows_(
             std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-                .event_name = "packet queue underflows",
+                .event_name = kPacketQueueUnderflows,
                 .parent_node = node_,
                 .impl = impl,
                 .is_underflow = true,
@@ -986,7 +986,7 @@ class Reporter::RendererImpl : public Reporter::Renderer {
             })),
         continuity_underflows_(
             std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-                .event_name = "continuity underflows",
+                .event_name = kContinuityUnderflows,
                 .parent_node = node_,
                 .impl = impl,
                 .is_underflow = true,
@@ -995,7 +995,7 @@ class Reporter::RendererImpl : public Reporter::Renderer {
             })),
         timestamp_underflows_(
             std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-                .event_name = "timestamp underflows",
+                .event_name = kTimestampUnderflows,
                 .parent_node = node_,
                 .impl = impl,
                 .is_underflow = true,
@@ -1004,10 +1004,10 @@ class Reporter::RendererImpl : public Reporter::Renderer {
             })) {
     client_port_.SetupPtsInfo();
 
-    time_since_death_ = node_.CreateLazyValues("RendererTimeSinceDeath", [this] {
+    time_since_death_ = node_.CreateLazyValues(kRendererTimeSinceDeath, [this] {
       inspect::Inspector i;
       i.GetRoot().CreateUint(
-          "time since death (ns)",
+          kTimeSinceDeathNsec,
           time_of_death_ ? (zx::clock::get_monotonic() - time_of_death_.value()).get() : 0, &i);
       return fpromise::make_ok_promise(std::move(i));
     });
@@ -1107,24 +1107,23 @@ class Reporter::CapturerImpl : public Reporter::Capturer {
         client_port_(
             node_,
             ObjectTracker(impl, AudioObjectsCreatedMigratedMetricDimensionObjectType::Capturer)),
-        initial_presentation_delay_ns_(node_.CreateUint("initial presentation delay (ns)", 0)),
-        current_presentation_delay_ns_(node_.CreateUint("current presentation delay (ns)", 0)),
+        initial_presentation_delay_ns_(node_.CreateUint(kInitialPresentationDelayNsec, 0)),
+        current_presentation_delay_ns_(node_.CreateUint(kCurrentPresentationDelayNsec, 0)),
         time_of_presentation_delay_change_(zx::time(0)),
-        time_of_presentation_delay_change_ns_(
-            node_.CreateInt("time of latest presentation delay change", 0)),
-        usage_(node_.CreateString("usage", "default")),
-        thread_name_(node_.CreateString("mixer thread name", thread_name)),
+        time_of_presentation_delay_change_ns_(node_.CreateInt(kPresentationDelayChangedAt, 0)),
+        usage_(node_.CreateString(kUsage, kDefault)),
+        thread_name_(node_.CreateString(kMixerThreadName, thread_name)),
         overflows_(std::make_unique<OverflowUnderflowTracker>(OverflowUnderflowTracker::Args{
-            .event_name = "overflows",
+            .event_name = kCaptureOverflows,
             .parent_node = node_,
             .impl = impl,
             .is_underflow = false,
             .cobalt_component_id = AudioSessionDurationMigratedMetricDimensionComponent::Capturer,
         })) {
-    time_since_death_ = node_.CreateLazyValues("CapturerTimeSinceDeath", [this] {
+    time_since_death_ = node_.CreateLazyValues(kCapturerTimeSinceDeath, [this] {
       inspect::Inspector i;
       i.GetRoot().CreateUint(
-          "time since death (ns)",
+          kTimeSinceDeathNsec,
           time_of_death_ ? (zx::clock::get_monotonic() - time_of_death_.value()).get() : 0, &i);
       return fpromise::make_ok_promise(std::move(i));
     });
@@ -1233,29 +1232,27 @@ void Reporter::InitInspect() {
                                                                    inspect::PublishOptions{});
   inspect::Node& root_node = impl_->inspector->root();
 
-  impl_->failed_to_connect_to_device_count =
-      root_node.CreateUint("count of failures to connect to device", 0);
+  impl_->failed_to_connect_to_device_count = root_node.CreateUint(kConnectToDeviceFailureCount, 0);
   impl_->failed_to_obtain_stream_channel_count =
-      root_node.CreateUint("count of failures to obtain device stream channel", 0);
-  impl_->failed_to_start_device_count =
-      root_node.CreateUint("count of failures to start a device", 0);
+      root_node.CreateUint(kObtainDeviceStreamChannelFailureCount, 0);
+  impl_->failed_to_start_device_count = root_node.CreateUint(kStartDeviceFailureCount, 0);
 
   impl_->failed_to_apply_scheduler_profile_count =
-      root_node.CreateUint("count of failures to apply a Scheduler Profile", 0);
+      root_node.CreateUint(kApplySchedulerProfileFailureCount, 0);
   impl_->failed_to_apply_memory_profile_count =
-      root_node.CreateUint("count of failures to apply a Memory Profile", 0);
+      root_node.CreateUint(kApplyMemoryProfileFailureCount, 0);
 
   impl_->mixer_clock_skew_discontinuities =
-      root_node.CreateLinearIntHistogram("mixer clock skew discontinuities (error in ns)",
+      root_node.CreateLinearIntHistogram(kMixerClockSkewDiscontinuitiesNsec,
                                          ZX_MSEC(-100),  // floor
                                          ZX_MSEC(2),     // step size
                                          100);           // buckets range from -100ms to +100ms
 
-  impl_->outputs_node = root_node.CreateChild("output devices");
-  impl_->inputs_node = root_node.CreateChild("input devices");
-  impl_->renderers_node = root_node.CreateChild("renderers");
-  impl_->capturers_node = root_node.CreateChild("capturers");
-  impl_->volume_controls_node = root_node.CreateChild("volume controls");
+  impl_->outputs_node = root_node.CreateChild(kOutputDevices);
+  impl_->inputs_node = root_node.CreateChild(kInputDevices);
+  impl_->renderers_node = root_node.CreateChild(kRenderers);
+  impl_->capturers_node = root_node.CreateChild(kCapturers);
+  impl_->volume_controls_node = root_node.CreateChild(kVolumeControls);
 
   impl_->thermal_state_tracker = std::make_unique<ThermalStateTracker>(*impl_);
   impl_->active_usage_policy_tracker = std::make_unique<ActiveUsagePolicyTracker>(*impl_);
@@ -1388,8 +1385,9 @@ void Reporter::UpdateActiveUsagePolicy(const std::vector<fuchsia::media::Usage2>
                                                               capturer_policies);
 }
 
-Reporter::Impl::Impl(sys::ComponentContext& cc, async_dispatcher_t* fd, async_dispatcher_t* iod)
-    : component_context(cc), fidl_dispatcher(fd), io_dispatcher(iod) {}
+Reporter::Impl::Impl(sys::ComponentContext& cc, async_dispatcher_t* fidl_dispatcher,
+                     async_dispatcher_t* io_dispatcher)
+    : component_context(cc), fidl_dispatcher(fidl_dispatcher), io_dispatcher(io_dispatcher) {}
 
 Reporter::Impl::~Impl() {}
 
@@ -1410,8 +1408,7 @@ static_assert(
 }  // namespace
 
 Reporter::OverflowUnderflowTracker::OverflowUnderflowTracker(Args args)
-    : state_(State::Stopped),
-      impl_(args.impl),
+    : impl_(args.impl),
       cobalt_component_id_(args.cobalt_component_id),
       cobalt_event_duration_metric_id_(args.is_underflow ? kAudioUnderflowDurationMigratedMetricId
                                                          : kAudioOverflowDurationMigratedMetricId),
@@ -1419,12 +1416,12 @@ Reporter::OverflowUnderflowTracker::OverflowUnderflowTracker(Args args)
           args.is_underflow ? kAudioTimeSinceLastUnderflowOrSessionStartMigratedMetricId
                             : kAudioTimeSinceLastOverflowOrSessionStartMigratedMetricId) {
   node_ = args.parent_node.CreateChild(args.event_name);
-  event_count_ = node_.CreateUint("count", 0);
-  event_duration_ = node_.CreateUint("duration (ns)", 0);
-  session_count_ = node_.CreateUint("session count", 0);
-  total_duration_ = node_.CreateLazyValues("@wrapper", [this] {
+  event_count_ = node_.CreateUint(kCount, 0);
+  event_duration_ = node_.CreateUint(kDurationNsec, 0);
+  session_count_ = node_.CreateUint(kSessionCount, 0);
+  total_duration_ = node_.CreateLazyValues(kAllSessionsDuration, [this] {
     inspect::Inspector i;
-    i.GetRoot().CreateUint("total duration of all parent sessions (ns)",
+    i.GetRoot().CreateUint(kTotalDurationOfAllParentSessionsNsec,
                            ComputeDurationOfAllSessions().get(), &i);
     return fpromise::make_ok_promise(std::move(i));
   });
@@ -1559,9 +1556,9 @@ void Reporter::OverflowUnderflowTracker::LogCobaltDuration(uint32_t metric_id,
 
 Reporter::ThermalStateTracker::ThermalStateTracker(Reporter::Impl& impl)
     : impl_(impl),
-      root_(impl.inspector->root().CreateChild("thermal state")),
-      num_thermal_states_(root_.CreateUint("num thermal states", 1)),
-      transitions_node_(impl.inspector->root().CreateChild("thermal state transitions")),
+      root_(impl.inspector->root().CreateChild(kThermalState)),
+      num_thermal_states_(root_.CreateUint(kThermalStateCount, 1)),
+      transitions_node_(impl.inspector->root().CreateChild(kThermalStateTransitions)),
       active_state_(0),
       last_transition_(thermal_state_transitions_.New(new ThermalStateTransition(
           transitions_node_, std::to_string(++next_thermal_transition_id_), active_state_))) {
@@ -1569,7 +1566,7 @@ Reporter::ThermalStateTracker::ThermalStateTracker(Reporter::Impl& impl)
     FX_LOGS(ERROR) << "active_state_ is out of range: kCobaltStateTransitions must be updated.";
   }
   states_[active_state_] = State({
-      .node = root_.CreateChild("normal"),
+      .node = root_.CreateChild(kNormal),
   });
   states_[active_state_].Activate();
   LogCobaltStateTransition(states_[active_state_], kCobaltStateTransitions[active_state_]);
@@ -1590,9 +1587,9 @@ void Reporter::ThermalStateTracker::SetThermalState(uint32_t state) {
   }
   states_[active_state_].Deactivate();
 
-  if (states_.find(state) == states_.end()) {
+  if (!states_.contains(state)) {
     states_[state] = State({
-        .node = root_.CreateChild(state ? std::to_string(state) : "normal"),
+        .node = root_.CreateChild(state ? std::to_string(state) : kNormal),
     });
   }
   states_[state].Activate();
@@ -1610,9 +1607,9 @@ void Reporter::ThermalStateTracker::State::Activate() {
 
   // If state has never been activated, set duration LazyNode.
   if (!past_duration.get()) {
-    duration = node.CreateLazyValues("TotalThermalStateDuration", [this] {
+    duration = node.CreateLazyValues(kTotalThermalStateDuration, [this] {
       inspect::Inspector i;
-      i.GetRoot().CreateUint("total duration (ns)",
+      i.GetRoot().CreateUint(kTotalDurationNsec,
                              (current_activation_time ? past_duration + zx::clock::get_monotonic() -
                                                             current_activation_time.value()
                                                       : past_duration)

@@ -15,7 +15,6 @@
 #include <optional>
 #include <queue>
 #include <set>
-#include <unordered_map>
 
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/media/audio/audio_core/audio_admin.h"
@@ -24,6 +23,126 @@
 #include "src/media/audio/lib/format/format.h"
 
 namespace media::audio {
+
+////////////////////////////////////////////////////////////////////////////////
+// string_view keys
+
+// Top-level Inspect values (cannot be grouped with a specific device or client instance)
+constexpr std::string_view kConnectToDeviceFailureCount = "count of failures to connect to device";
+constexpr std::string_view kObtainDeviceStreamChannelFailureCount =
+    "count of failures to obtain device stream channel";
+constexpr std::string_view kStartDeviceFailureCount = "count of failures to start a device";
+constexpr std::string_view kApplySchedulerProfileFailureCount =
+    "count of failures to apply a Scheduler Profile";
+constexpr std::string_view kApplyMemoryProfileFailureCount =
+    "count of failures to apply a Memory Profile";
+
+// Top-level Inspect groups
+constexpr std::string_view kCapturers = "capturers";
+constexpr std::string_view kRenderers = "renderers";
+constexpr std::string_view kInputDevices = "input devices";
+constexpr std::string_view kOutputDevices = "output devices";
+constexpr std::string_view kVolumeControls = "volume controls";
+constexpr std::string_view kActiveUsagePolicies = "active usage policies";
+constexpr std::string_view kThermalState = "thermal state";
+
+// Device keys
+constexpr std::string_view kDriver = "driver";
+constexpr std::string_view kDeviceGain = "device gain";
+constexpr std::string_view kAgcEnabled = "agc enabled";
+constexpr std::string_view kAgcSupported = "agc supported";
+constexpr std::string_view kDriverTransferBytes = "driver transfer (bytes)";
+constexpr std::string_view kInitialInternalDelayNsec = "initial internal delay (ns)";
+constexpr std::string_view kInitialExternalDelayNsec = "initial external delay (ns)";
+constexpr std::string_view kCurrentInternalDelayNsec = "current internal delay (ns)";
+constexpr std::string_view kCurrentExternalDelayNsec = "current external delay (ns)";
+constexpr std::string_view kInternalDelayChangedAt = "time of latest internal delay change";
+constexpr std::string_view kExternalDelayChangedAt = "time of latest external delay change";
+
+// Client (renderer/capturer) keys
+constexpr std::string_view kUsage = "usage";
+constexpr std::string_view kPackets = "packets";
+constexpr std::string_view kPayloadBuffers = "payload buffers";
+constexpr std::string_view kInitialMinLeadTimeNsec = "initial min lead time (ns)";
+constexpr std::string_view kCurrentMinLeadTimeNsec = "current min lead time (ns)";
+constexpr std::string_view kMinLeadTimeChangedAt = "time of latest min lead time change";
+constexpr std::string_view kInitialPresentationDelayNsec = "initial presentation delay (ns)";
+constexpr std::string_view kCurrentPresentationDelayNsec = "current presentation delay (ns)";
+constexpr std::string_view kPresentationDelayChangedAt = "time of latest presentation delay change";
+constexpr std::string_view kPresentationTimestamps = "presentation timestamps";
+constexpr std::string_view kPtsUnitsNumerator = "pts units numerator";
+constexpr std::string_view kPtsUnitsDenominator = "pts units denominator";
+constexpr std::string_view kPtsContinuityThresholdSec = "pts continuity threshold (s)";
+
+// Volume/gain keys
+constexpr std::string_view kGain = "gain";
+constexpr std::string_view kVolume = "volume";
+constexpr std::string_view kGainDb = "gain db";
+constexpr std::string_view kClientCount = "client count";
+constexpr std::string_view kVolumeSettings = "volume settings";
+constexpr std::string_view kCallsToSetGainWithRamp = "calls to SetGainWithRamp";
+constexpr std::string_view kCompleteStreamGainDb = "complete stream gain (post-volume) dbfs";
+
+// Policy keys
+constexpr std::string_view kNoneGainDb = "none gain db";
+constexpr std::string_view kDuckGainDb = "duck gain db";
+constexpr std::string_view kMuteGainDb = "mute gain db";
+
+// Thermal keys
+constexpr std::string_view kThermalStateCount = "num thermal states";
+constexpr std::string_view kThermalStateTransitions = "thermal state transitions";
+
+// Discontinuity (underflow/overflow) keys
+constexpr std::string_view kMixerThreadName = "mixer thread name";
+constexpr std::string_view kMixerClockSkewDiscontinuitiesNsec =
+    "mixer clock skew discontinuities (error in ns)";
+constexpr std::string_view kDeviceUnderflows = "device underflows";
+constexpr std::string_view kPipelineUnderflows = "pipeline underflows";
+constexpr std::string_view kPacketQueueUnderflows = "packet queue underflows";
+constexpr std::string_view kContinuityUnderflows = "continuity underflows";
+constexpr std::string_view kTimestampUnderflows = "timestamp underflows";
+constexpr std::string_view kCaptureOverflows = "overflows";
+constexpr std::string_view kSessionCount = "session count";
+constexpr std::string_view kTotalDurationOfAllParentSessionsNsec =
+    "total duration of all parent sessions (ns)";
+
+// Shared keys
+constexpr std::string_view kSize = "size";
+constexpr std::string_view kName = "name";
+constexpr std::string_view kCount = "count";
+constexpr std::string_view kMuted = "muted";
+constexpr std::string_view kState = "state";
+constexpr std::string_view kActive = "active";
+constexpr std::string_view kFormat = "format";
+constexpr std::string_view kChannels = "channels";
+constexpr std::string_view kSampleFormat = "sample format";
+constexpr std::string_view kFramesPerSecond = "frames per second";
+constexpr std::string_view kDurationNsec = "duration (ns)";
+constexpr std::string_view kTotalDurationNsec = "total duration (ns)";
+constexpr std::string_view kTimeSinceDeathNsec = "time since death (ns)";
+
+// wrapper identifiers for closures - not visible in inspect UI
+constexpr std::string_view kThermalStateTransitionDuration = "ThermalStateTransitionDuration";
+constexpr std::string_view kTotalThermalStateDuration = "TotalThermalStateDuration";
+constexpr std::string_view kOutputDeviceTimeSinceDeath = "OutputDeviceTimeSinceDeath";
+constexpr std::string_view kInputDeviceTimeSinceDeath = "InputDeviceTimeSinceDeath";
+constexpr std::string_view kRendererTimeSinceDeath = "RendererTimeSinceDeath";
+constexpr std::string_view kCapturerTimeSinceDeath = "CapturerTimeSinceDeath";
+constexpr std::string_view kAllSessionsDuration = "@wrapper";
+
+// string values
+constexpr std::string kUnknown = "unknown";
+constexpr std::string kUnknownNoClients = "unknown - no clients";
+constexpr std::string kNormal = "normal";
+constexpr std::string kDefault = "default";
+constexpr std::string kSampleFormatUint8 = "UNSIGNED_8";
+constexpr std::string kSampleFormatInt16 = "SIGNED_16";
+constexpr std::string kSampleFormatInt24In32 = "SIGNED_24_IN_32";
+constexpr std::string kSampleFormatFloat32 = "FLOAT";
+
+constexpr std::string kNone = "NONE";
+constexpr std::string kDuck = "DUCK";
+constexpr std::string kMute = "MUTE";
 
 // A singleton instance of |Reporter| handles instrumentation concerns (e.g.
 // exposing information via inspect, cobalt, etc) for an audio_core instance.
@@ -228,7 +347,7 @@ class Reporter {
     std::queue<std::shared_ptr<T>> dead_ FXL_GUARDED_BY(mutex_);
   };
 
-  Reporter() {}
+  Reporter() = default;
   Reporter(sys::ComponentContext& component_context, async_dispatcher_t* fidl_dispatcher,
            async_dispatcher_t* io_dispatcher, bool enable_cobalt);
 

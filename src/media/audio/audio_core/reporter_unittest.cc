@@ -17,7 +17,6 @@
 namespace media::audio {
 namespace {
 
-using fuchsia::media::AudioCaptureUsage2;
 using fuchsia::media::AudioRenderUsage2;
 using ::inspect::testing::BoolIs;
 using ::inspect::testing::ChildrenMatch;
@@ -33,13 +32,13 @@ using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
 
 ::testing::Matcher<const ::inspect::Hierarchy&> NodeAlive(const std::string& name) {
-  return NodeMatches(
-      AllOf(NameMatches(name), PropertyList(Contains(UintIs("time since death (ns)", 0)))));
+  return NodeMatches(AllOf(NameMatches(name),
+                           PropertyList(Contains(UintIs(std::string(kTimeSinceDeathNsec), 0)))));
 }
 
 ::testing::Matcher<const ::inspect::Hierarchy&> NodeDead(const std::string& name) {
-  return NodeMatches(
-      AllOf(NameMatches(name), Not(PropertyList(Contains(UintIs("time since death (ns)", 0))))));
+  return NodeMatches(AllOf(
+      NameMatches(name), Not(PropertyList(Contains(UintIs(std::string(kTimeSinceDeathNsec), 0))))));
 }
 
 class ReporterTest : public gtest::TestLoopFixture {
@@ -85,52 +84,54 @@ TEST_F(ReporterTest, InitialState) {
   EXPECT_THAT(hierarchy,
               NodeMatches(AllOf(NameMatches("root"),
                                 PropertyList(IsSupersetOf({
-                                    UintIs("count of failures to connect to device", 0),
-                                    UintIs("count of failures to obtain device stream channel", 0),
-                                    UintIs("count of failures to start a device", 0),
-                                    UintIs("count of failures to apply a Scheduler Profile", 0),
-                                    UintIs("count of failures to apply a Memory Profile", 0),
+                                    UintIs(std::string(kConnectToDeviceFailureCount), 0),
+                                    UintIs(std::string(kObtainDeviceStreamChannelFailureCount), 0),
+                                    UintIs(std::string(kStartDeviceFailureCount), 0),
+                                    UintIs(std::string(kApplySchedulerProfileFailureCount), 0),
+                                    UintIs(std::string(kApplyMemoryProfileFailureCount), 0),
                                 })))));
 
   // Expect empty child nodes for devices and client ports.
   EXPECT_THAT(
       hierarchy,
       ChildrenMatch(UnorderedElementsAre(
-          AllOf(NodeMatches(AllOf(NameMatches("output devices"), PropertyList(IsEmpty()),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kOutputDevices)), PropertyList(IsEmpty()),
                                   PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("input devices"), PropertyList(IsEmpty()),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kInputDevices)), PropertyList(IsEmpty()),
                                   PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("renderers"), PropertyList(IsEmpty()),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kRenderers)), PropertyList(IsEmpty()),
                                   PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("capturers"), PropertyList(IsEmpty()),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kCapturers)), PropertyList(IsEmpty()),
                                   PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(
-                    AllOf(NameMatches("thermal state"),
-                          PropertyList(UnorderedElementsAre(UintIs("num thermal states", 1))))),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(
-                    AllOf(NameMatches("normal"),
-                          Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kThermalState)),
+                                  PropertyList(UnorderedElementsAre(
+                                      UintIs(std::string(kThermalStateCount), 1))))),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches(kNormal),
+                    Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kThermalStateTransitions))),
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("1"),
                           PropertyList(IsSupersetOf({
-                              BoolIs("active", true),
-                              StringIs("state", "normal"),
+                              BoolIs(std::string(kActive), true),
+                              StringIs(std::string(kState), kNormal),
                           })),
-                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
-          AllOf(NodeMatches(AllOf(NameMatches("volume controls"), PropertyList(IsEmpty()),
-                                  PropertyList(IsEmpty()))),
+                          Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0))))))))),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kVolumeControls)),
+                                  PropertyList(IsEmpty()), PropertyList(IsEmpty()))),
                 ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("active usage policies"),
-                                  PropertyList(UnorderedElementsAre(
-                                      DoubleIs("none gain db", 0.0), DoubleIs("duck gain db", 0.0),
-                                      DoubleIs("mute gain db", 0.0))))),
+          AllOf(NodeMatches(AllOf(
+                    NameMatches(std::string(kActiveUsagePolicies)),
+                    PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                      DoubleIs(std::string(kDuckGainDb), 0.0),
+                                                      DoubleIs(std::string(kMuteGainDb), 0.0))))),
                 ChildrenMatch(Contains(NodeMatches(
-                    AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", true)))))))))));
+                    AllOf(NameMatches("1"),
+                          PropertyList(Contains(BoolIs(std::string(kActive), true)))))))))));
 }
 
 // Test methods that update metrics in the root node.
@@ -150,11 +151,11 @@ TEST_F(ReporterTest, RootMetrics) {
   EXPECT_THAT(GetHierarchy(),
               NodeMatches(AllOf(NameMatches("root"),
                                 PropertyList(IsSupersetOf({
-                                    UintIs("count of failures to connect to device", 1),
-                                    UintIs("count of failures to obtain device stream channel", 2u),
-                                    UintIs("count of failures to start a device", 3u),
-                                    UintIs("count of failures to apply a Scheduler Profile", 2u),
-                                    UintIs("count of failures to apply a Memory Profile", 1u),
+                                    UintIs(std::string(kConnectToDeviceFailureCount), 1),
+                                    UintIs(std::string(kObtainDeviceStreamChannelFailureCount), 2u),
+                                    UintIs(std::string(kStartDeviceFailureCount), 3u),
+                                    UintIs(std::string(kApplySchedulerProfileFailureCount), 2u),
+                                    UintIs(std::string(kApplyMemoryProfileFailureCount), 1u),
                                 })))));
 }
 
@@ -162,10 +163,12 @@ TEST_F(ReporterTest, RootMetrics) {
 TEST_F(ReporterTest, AddRemoveDevices) {
   std::vector<Reporter::Container<Reporter::OutputDevice, Reporter::kObjectsToCache>::Ptr> outputs;
   std::vector<Reporter::Container<Reporter::InputDevice, Reporter::kObjectsToCache>::Ptr> inputs;
+  outputs.reserve(5);
   for (size_t k = 0; k < 5; k++) {
     outputs.push_back(under_test_.CreateOutputDevice(fxl::StringPrintf("output_device_%lu", k),
                                                      fxl::StringPrintf("output_thread_%lu", k)));
   }
+  inputs.reserve(5);
   for (size_t k = 0; k < 5; k++) {
     inputs.push_back(under_test_.CreateInputDevice(fxl::StringPrintf("input_device_%lu", k),
                                                    fxl::StringPrintf("input_thread_%lu", k)));
@@ -173,12 +176,12 @@ TEST_F(ReporterTest, AddRemoveDevices) {
 
   EXPECT_THAT(GetHierarchyLazyValues(),
               ChildrenMatch(IsSupersetOf({
-                  AllOf(NodeMatches(NameMatches("output devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeAlive("output_device_0"), NodeAlive("output_device_1"),
                             NodeAlive("output_device_2"), NodeAlive("output_device_3"),
                             NodeAlive("output_device_4")))),
-                  AllOf(NodeMatches(NameMatches("input devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeAlive("input_device_0"), NodeAlive("input_device_1"),
                             NodeAlive("input_device_2"), NodeAlive("input_device_3"),
@@ -196,12 +199,12 @@ TEST_F(ReporterTest, AddRemoveDevices) {
 
   EXPECT_THAT(GetHierarchyLazyValues(),
               ChildrenMatch(IsSupersetOf({
-                  AllOf(NodeMatches(NameMatches("output devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeDead("output_device_0"), NodeDead("output_device_1"),
                             NodeDead("output_device_2"), NodeDead("output_device_3"),
                             NodeAlive("output_device_4")))),
-                  AllOf(NodeMatches(NameMatches("input devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeDead("input_device_0"), NodeDead("input_device_1"),
                             NodeDead("input_device_2"), NodeDead("input_device_3"),
@@ -214,11 +217,11 @@ TEST_F(ReporterTest, AddRemoveDevices) {
   // Garbage collect [0].
   EXPECT_THAT(GetHierarchyLazyValues(),
               ChildrenMatch(IsSupersetOf({
-                  AllOf(NodeMatches(NameMatches("output devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeDead("output_device_1"), NodeDead("output_device_2"),
                             NodeDead("output_device_3"), NodeDead("output_device_4")))),
-                  AllOf(NodeMatches(NameMatches("input devices")),
+                  AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
                         ChildrenMatch(UnorderedElementsAre(
                             NodeDead("input_device_1"), NodeDead("input_device_2"),
                             NodeDead("input_device_3"), NodeDead("input_device_4")))),
@@ -227,96 +230,107 @@ TEST_F(ReporterTest, AddRemoveDevices) {
 
 // Test methods that change device metrics.
 TEST_F(ReporterTest, DeviceMetrics) {
-  auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
-  auto input_device = under_test_.CreateInputDevice("input_device", "input_thread");
+  constexpr std::string kTestOutputDevice = "output_device";
+  constexpr std::string kTestInputDevice = "input_device";
+  constexpr std::string kTestOutputThread = "output_thread";
+  constexpr std::string kTestInputThread = "input_thread";
+
+  auto output_device = under_test_.CreateOutputDevice(kTestOutputDevice, kTestOutputThread);
+  auto input_device = under_test_.CreateInputDevice(kTestInputDevice, kTestInputThread);
 
   // Note: GetHierachy uses ReadFromVmo, which cannot read lazy values.
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(UnorderedElementsAre(
-          AllOf(NodeMatches(NameMatches("output devices")),
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(AllOf(NameMatches("output_device"),
-                                      PropertyList(UnorderedElementsAre(
-                                          StringIs("mixer thread name", "output_thread"))))),
+                    NodeMatches(AllOf(NameMatches(kTestOutputDevice),
+                                      PropertyList(UnorderedElementsAre(StringIs(
+                                          std::string(kMixerThreadName), kTestOutputThread))))),
                     ChildrenMatch(UnorderedElementsAre(
-                        NodeMatches(AllOf(NameMatches("driver"),
+                        NodeMatches(AllOf(NameMatches(std::string(kDriver)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("initial internal delay (ns)", 0),
-                                              UintIs("current internal delay (ns)", 0),
-                                              IntIs("time of latest internal delay change", 0),
-                                              UintIs("initial external delay (ns)", 0),
-                                              UintIs("current external delay (ns)", 0),
-                                              IntIs("time of latest external delay change", 0),
-                                              UintIs("driver transfer (bytes)", 0),
-                                              StringIs("name", "unknown"))))),
-                        NodeMatches(AllOf(
-                            NameMatches("format"),
-                            PropertyList(UnorderedElementsAre(StringIs("sample format", "unknown"),
-                                                              UintIs("channels", 0),
-                                                              UintIs("frames per second", 0))))),
-                        NodeMatches(AllOf(
-                            NameMatches("device gain"),
-                            PropertyList(UnorderedElementsAre(
-                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                BoolIs("agc supported", false), BoolIs("agc enabled", false))))),
-                        NodeMatches(AllOf(NameMatches("device underflows"),
+                                              UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentInternalDelayNsec), 0),
+                                              IntIs(std::string(kInternalDelayChangedAt), 0),
+                                              UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentExternalDelayNsec), 0),
+                                              IntIs(std::string(kExternalDelayChangedAt), 0),
+                                              UintIs(std::string(kDriverTransferBytes), 0),
+                                              StringIs(std::string(kName), kUnknown))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kFormat)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("count", 0), UintIs("duration (ns)", 0),
-                                              UintIs("session count", 0))))),
-                        NodeMatches(AllOf(NameMatches("pipeline underflows"),
+                                              StringIs(std::string(kSampleFormat), kUnknown),
+                                              UintIs(std::string(kChannels), 0),
+                                              UintIs(std::string(kFramesPerSecond), 0))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kDeviceGain)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("count", 0), UintIs("duration (ns)", 0),
-                                              UintIs("session count", 0))))))))))),
-          AllOf(NodeMatches(NameMatches("input devices")),
+                                              DoubleIs(std::string(kGainDb), 0.0),
+                                              BoolIs(std::string(kMuted), false),
+                                              BoolIs(std::string(kAgcSupported), false),
+                                              BoolIs(std::string(kAgcEnabled), false))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kDeviceUnderflows)),
+                                          PropertyList(UnorderedElementsAre(
+                                              UintIs(std::string(kCount), 0),
+                                              UintIs(std::string(kDurationNsec), 0),
+                                              UintIs(std::string(kSessionCount), 0))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kPipelineUnderflows)),
+                                          PropertyList(UnorderedElementsAre(
+                                              UintIs(std::string(kCount), 0),
+                                              UintIs(std::string(kDurationNsec), 0),
+                                              UintIs(std::string(kSessionCount), 0))))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(AllOf(NameMatches("input_device"),
-                                      PropertyList(UnorderedElementsAre(
-                                          StringIs("mixer thread name", "input_thread"))))),
+                    NodeMatches(AllOf(NameMatches(kTestInputDevice),
+                                      PropertyList(UnorderedElementsAre(StringIs(
+                                          std::string(kMixerThreadName), kTestInputThread))))),
                     ChildrenMatch(UnorderedElementsAre(
-                        NodeMatches(AllOf(NameMatches("driver"),
+                        NodeMatches(AllOf(NameMatches(std::string(kDriver)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("initial internal delay (ns)", 0),
-                                              UintIs("current internal delay (ns)", 0),
-                                              IntIs("time of latest internal delay change", 0),
-                                              UintIs("initial external delay (ns)", 0),
-                                              UintIs("current external delay (ns)", 0),
-                                              IntIs("time of latest external delay change", 0),
-                                              UintIs("driver transfer (bytes)", 0),
-                                              StringIs("name", "unknown"))))),
-                        NodeMatches(AllOf(
-                            NameMatches("format"),
-                            PropertyList(UnorderedElementsAre(StringIs("sample format", "unknown"),
-                                                              UintIs("channels", 0),
-                                                              UintIs("frames per second", 0))))),
-                        NodeMatches(AllOf(NameMatches("device gain"),
+                                              UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentInternalDelayNsec), 0),
+                                              IntIs(std::string(kInternalDelayChangedAt), 0),
+                                              UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentExternalDelayNsec), 0),
+                                              IntIs(std::string(kExternalDelayChangedAt), 0),
+                                              UintIs(std::string(kDriverTransferBytes), 0),
+                                              StringIs(std::string(kName), kUnknown))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kFormat)),
                                           PropertyList(UnorderedElementsAre(
-                                              DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                              BoolIs("agc supported", false),
-                                              BoolIs("agc enabled", false))))))))))),
-          AllOf(NodeMatches(NameMatches("renderers")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(NameMatches("capturers")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(
-                    AllOf(NameMatches("thermal state"),
-                          PropertyList(UnorderedElementsAre(UintIs("num thermal states", 1))))),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(
-                    AllOf(NameMatches("normal"),
-                          Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+                                              StringIs(std::string(kSampleFormat), kUnknown),
+                                              UintIs(std::string(kChannels), 0),
+                                              UintIs(std::string(kFramesPerSecond), 0))))),
+                        NodeMatches(AllOf(NameMatches(std::string(kDeviceGain)),
+                                          PropertyList(UnorderedElementsAre(
+                                              DoubleIs(std::string(kGainDb), 0.0),
+                                              BoolIs(std::string(kMuted), false),
+                                              BoolIs(std::string(kAgcSupported), false),
+                                              BoolIs(std::string(kAgcEnabled), false))))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kRenderers))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(NameMatches(std::string(kCapturers))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kThermalState)),
+                                  PropertyList(UnorderedElementsAre(
+                                      UintIs(std::string(kThermalStateCount), 1))))),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches(kNormal),
+                    Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kThermalStateTransitions))),
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("1"),
                           PropertyList(IsSupersetOf({
-                              BoolIs("active", true),
-                              StringIs("state", "normal"),
+                              BoolIs(std::string(kActive), true),
+                              StringIs(std::string(kState), kNormal),
                           })),
-                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
-          AllOf(NodeMatches(NameMatches("volume controls")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("active usage policies"),
-                                  PropertyList(UnorderedElementsAre(
-                                      DoubleIs("none gain db", 0.0), DoubleIs("duck gain db", 0.0),
-                                      DoubleIs("mute gain db", 0.0))))),
+                          Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kVolumeControls))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(AllOf(
+                    NameMatches(std::string(kActiveUsagePolicies)),
+                    PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                      DoubleIs(std::string(kDuckGainDb), 0.0),
+                                                      DoubleIs(std::string(kMuteGainDb), 0.0))))),
                 ChildrenMatch(Contains(NodeMatches(
-                    AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", true)))))))))));
+                    AllOf(NameMatches("1"),
+                          PropertyList(Contains(BoolIs(std::string(kActive), true)))))))))));
 
   output_device->StartSession(zx::time(0));
   output_device->DeviceUnderflow(zx::time(10), zx::time(15));
@@ -327,64 +341,71 @@ TEST_F(ReporterTest, DeviceMetrics) {
   output_device->PipelineUnderflow(zx::time(93), zx::time(96));
   output_device->StopSession(zx::time(100));
 
-  EXPECT_THAT(
-      GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("output devices")),
-          ChildrenMatch(Contains(ChildrenMatch(IsSupersetOf({
-              NodeMatches(AllOf(
-                  NameMatches("device underflows"),
-                  PropertyList(UnorderedElementsAre(UintIs("count", 3), UintIs("duration (ns)", 11),
-                                                    UintIs("session count", 2))))),
-              NodeMatches(AllOf(
-                  NameMatches("pipeline underflows"),
-                  PropertyList(UnorderedElementsAre(UintIs("count", 1), UintIs("duration (ns)", 3),
-                                                    UintIs("session count", 2))))),
-          }))))))));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches(std::string(kOutputDevices))),
+                  ChildrenMatch(Contains(ChildrenMatch(IsSupersetOf({
+                      NodeMatches(AllOf(NameMatches(std::string(kDeviceUnderflows)),
+                                        PropertyList(UnorderedElementsAre(
+                                            UintIs(std::string(kCount), 3),
+                                            UintIs(std::string(kDurationNsec), 11),
+                                            UintIs(std::string(kSessionCount), 2))))),
+                      NodeMatches(AllOf(
+                          NameMatches(std::string(kPipelineUnderflows)),
+                          PropertyList(UnorderedElementsAre(
+                              UintIs(std::string(kCount), 1), UintIs(std::string(kDurationNsec), 3),
+                              UintIs(std::string(kSessionCount), 2))))),
+                  }))))))));
 }
 
 // Test method Device::SetGainInfo.
 TEST_F(ReporterTest, DeviceSetGainInfo) {
-  auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
+  constexpr std::string kTestOutputDevice = "output_device";
+  constexpr std::string kTestOutputThread = "output_thread";
+
+  auto output_device = under_test_.CreateOutputDevice(kTestOutputDevice, kTestOutputThread);
 
   // Expect initial device metric values.
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(UnorderedElementsAre(
-          AllOf(NodeMatches(NameMatches("output devices")),
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(AllOf(NameMatches("output_device"),
-                                      PropertyList(UnorderedElementsAre(
-                                          StringIs("mixer thread name", "output_thread"))))),
+                    NodeMatches(AllOf(NameMatches(kTestOutputDevice),
+                                      PropertyList(UnorderedElementsAre(StringIs(
+                                          std::string(kMixerThreadName), kTestOutputThread))))),
                     ChildrenMatch(Contains(NodeMatches(AllOf(
-                        NameMatches("device gain"),
+                        NameMatches(std::string(kDeviceGain)),
                         PropertyList(UnorderedElementsAre(
-                            DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                            BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))),
-          AllOf(NodeMatches(NameMatches("input devices")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(NameMatches("renderers")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(NameMatches("capturers")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(
-                    AllOf(NameMatches("thermal state"),
-                          PropertyList(UnorderedElementsAre(UintIs("num thermal states", 1))))),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(
-                    AllOf(NameMatches("normal"),
-                          Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))),
-          AllOf(NodeMatches(NameMatches("thermal state transitions")),
+                            DoubleIs(std::string(kGainDb), 0.0), BoolIs(std::string(kMuted), false),
+                            BoolIs(std::string(kAgcSupported), false),
+                            BoolIs(std::string(kAgcEnabled), false))))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kInputDevices))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(NameMatches(std::string(kRenderers))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(NameMatches(std::string(kCapturers))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(AllOf(NameMatches(std::string(kThermalState)),
+                                  PropertyList(UnorderedElementsAre(
+                                      UintIs(std::string(kThermalStateCount), 1))))),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches(kNormal),
+                    Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kThermalStateTransitions))),
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(
                     AllOf(NameMatches("1"),
                           PropertyList(IsSupersetOf({
-                              BoolIs("active", true),
-                              StringIs("state", "normal"),
+                              BoolIs(std::string(kActive), true),
+                              StringIs(std::string(kState), kNormal),
                           })),
-                          Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))),
-          AllOf(NodeMatches(NameMatches("volume controls")), ChildrenMatch(IsEmpty())),
-          AllOf(NodeMatches(AllOf(NameMatches("active usage policies"),
-                                  PropertyList(UnorderedElementsAre(
-                                      DoubleIs("none gain db", 0.0), DoubleIs("duck gain db", 0.0),
-                                      DoubleIs("mute gain db", 0.0))))),
+                          Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0))))))))),
+          AllOf(NodeMatches(NameMatches(std::string(kVolumeControls))), ChildrenMatch(IsEmpty())),
+          AllOf(NodeMatches(AllOf(
+                    NameMatches(std::string(kActiveUsagePolicies)),
+                    PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                      DoubleIs(std::string(kDuckGainDb), 0.0),
+                                                      DoubleIs(std::string(kMuteGainDb), 0.0))))),
                 ChildrenMatch(Contains(NodeMatches(
-                    AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", true)))))))))));
+                    AllOf(NameMatches("1"),
+                          PropertyList(Contains(BoolIs(std::string(kActive), true)))))))))));
 
   fuchsia::media::AudioGainInfo gain_info_a{
       .gain_db = -1.0f,
@@ -397,45 +418,49 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
   // Expect initial device metric values to remain, since no AudioGainValidFlags were set.
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("output devices")),
-          ChildrenMatch(UnorderedElementsAre(AllOf(
-              NodeMatches(NameMatches("output_device")),
-              ChildrenMatch(Contains(NodeMatches(AllOf(
-                  NameMatches("device gain"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(NameMatches(kTestOutputDevice)),
+                    ChildrenMatch(Contains(NodeMatches(AllOf(
+                        NameMatches(std::string(kDeviceGain)),
+                        PropertyList(UnorderedElementsAre(
+                            DoubleIs(std::string(kGainDb), 0.0), BoolIs(std::string(kMuted), false),
+                            BoolIs(std::string(kAgcSupported), false),
+                            BoolIs(std::string(kAgcEnabled), false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::GAIN_VALID);
 
   // Expect a gain change.
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("output devices")),
-          ChildrenMatch(UnorderedElementsAre(AllOf(
-              NodeMatches(NameMatches("output_device")),
-              ChildrenMatch(Contains(NodeMatches(AllOf(
-                  NameMatches("device gain"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", -1.0), BoolIs("muted", false),
-                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
+      ChildrenMatch(
+          Contains(AllOf(
+              NodeMatches(NameMatches(std::string(kOutputDevices))),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches(kTestOutputDevice)),
+                  ChildrenMatch(Contains(NodeMatches(AllOf(
+                      NameMatches(std::string(kDeviceGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), -1.0), BoolIs(std::string(kMuted), false),
+                          BoolIs(std::string(kAgcSupported), false),
+                          BoolIs(std::string(kAgcEnabled), false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::MUTE_VALID);
 
   // Expect a mute change.
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("output devices")),
-          ChildrenMatch(UnorderedElementsAre(AllOf(
-              NodeMatches(NameMatches("output_device")),
-              ChildrenMatch(Contains(NodeMatches(AllOf(
-                  NameMatches("device gain"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                      BoolIs("agc supported", false), BoolIs("agc enabled", false))))))))))))));
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
+                ChildrenMatch(UnorderedElementsAre(AllOf(
+                    NodeMatches(NameMatches(kTestOutputDevice)),
+                    ChildrenMatch(Contains(NodeMatches(AllOf(
+                        NameMatches(std::string(kDeviceGain)),
+                        PropertyList(UnorderedElementsAre(
+                            DoubleIs(std::string(kGainDb), -1.0), BoolIs(std::string(kMuted), true),
+                            BoolIs(std::string(kAgcSupported), false),
+                            BoolIs(std::string(kAgcEnabled), false))))))))))))));
 
   output_device->SetGainInfo(gain_info_a, fuchsia::media::AudioGainValidFlags::AGC_VALID);
 
@@ -443,14 +468,15 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(
-          AllOf(NodeMatches(NameMatches("output devices")),
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(NameMatches("output_device")),
+                    NodeMatches(NameMatches(kTestOutputDevice)),
                     ChildrenMatch(Contains(NodeMatches(AllOf(
-                        NameMatches("device gain"),
+                        NameMatches(std::string(kDeviceGain)),
                         PropertyList(UnorderedElementsAre(
-                            DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                            BoolIs("agc supported", true), BoolIs("agc enabled", true))))))))))))));
+                            DoubleIs(std::string(kGainDb), -1.0), BoolIs(std::string(kMuted), true),
+                            BoolIs(std::string(kAgcSupported), true),
+                            BoolIs(std::string(kAgcEnabled), true))))))))))))));
 
   fuchsia::media::AudioGainInfo gain_info_b{
       .gain_db = -2.0f, .flags = fuchsia::media::AudioGainInfoFlags::AGC_SUPPORTED};
@@ -461,54 +487,61 @@ TEST_F(ReporterTest, DeviceSetGainInfo) {
   // Expect all changes.
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("output devices")),
-          ChildrenMatch(UnorderedElementsAre(AllOf(
-              NodeMatches(NameMatches("output_device")),
-              ChildrenMatch(Contains(NodeMatches(AllOf(
-                  NameMatches("device gain"),
-                  PropertyList(UnorderedElementsAre(
-                      DoubleIs("gain db", -2.0), BoolIs("muted", false),
-                      BoolIs("agc supported", true), BoolIs("agc enabled", false))))))))))))));
+      ChildrenMatch(
+          Contains(AllOf(
+              NodeMatches(NameMatches(std::string(kOutputDevices))),
+              ChildrenMatch(UnorderedElementsAre(AllOf(
+                  NodeMatches(NameMatches(kTestOutputDevice)),
+                  ChildrenMatch(Contains(NodeMatches(AllOf(
+                      NameMatches(std::string(kDeviceGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), -2.0), BoolIs(std::string(kMuted), false),
+                          BoolIs(std::string(kAgcSupported), true),
+                          BoolIs(std::string(kAgcEnabled), false))))))))))))));
 }
 
 // Test the method that updates the delays reported by the device.
 TEST_F(ReporterTest, DeviceDelays) {
-  auto output_device = under_test_.CreateOutputDevice("output_device", "output_thread");
-  auto input_device = under_test_.CreateInputDevice("input_device", "input_thread");
+  constexpr std::string kTestOutputDevice = "output_device";
+  constexpr std::string kTestInputDevice = "input_device";
+  constexpr std::string kTestOutputThread = "output_thread";
+  constexpr std::string kTestInputThread = "input_thread";
+
+  auto output_device = under_test_.CreateOutputDevice(kTestOutputDevice, kTestOutputThread);
+  auto input_device = under_test_.CreateInputDevice(kTestInputDevice, kTestInputThread);
 
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(IsSupersetOf({
-          AllOf(NodeMatches(NameMatches("output devices")),
+          AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(NameMatches("output_device")),
+                    NodeMatches(NameMatches(kTestOutputDevice)),
                     ChildrenMatch(IsSupersetOf({
-                        NodeMatches(AllOf(NameMatches("driver"),
+                        NodeMatches(AllOf(NameMatches(std::string(kDriver)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("initial internal delay (ns)", 0),
-                                              UintIs("current internal delay (ns)", 0),
-                                              IntIs("time of latest internal delay change", 0),
-                                              UintIs("initial external delay (ns)", 0),
-                                              UintIs("current external delay (ns)", 0),
-                                              IntIs("time of latest external delay change", 0),
-                                              UintIs("driver transfer (bytes)", 0),
-                                              StringIs("name", "unknown"))))),
+                                              UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentInternalDelayNsec), 0),
+                                              IntIs(std::string(kInternalDelayChangedAt), 0),
+                                              UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentExternalDelayNsec), 0),
+                                              IntIs(std::string(kExternalDelayChangedAt), 0),
+                                              UintIs(std::string(kDriverTransferBytes), 0),
+                                              StringIs(std::string(kName), kUnknown))))),
                     })))))),
-          AllOf(NodeMatches(NameMatches("input devices")),
+          AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
                 ChildrenMatch(UnorderedElementsAre(AllOf(
-                    NodeMatches(NameMatches("input_device")),
+                    NodeMatches(NameMatches(kTestInputDevice)),
                     ChildrenMatch(IsSupersetOf({
-                        NodeMatches(AllOf(NameMatches("driver"),
+                        NodeMatches(AllOf(NameMatches(std::string(kDriver)),
                                           PropertyList(UnorderedElementsAre(
-                                              UintIs("initial internal delay (ns)", 0),
-                                              UintIs("current internal delay (ns)", 0),
-                                              IntIs("time of latest internal delay change", 0),
-                                              UintIs("initial external delay (ns)", 0),
-                                              UintIs("current external delay (ns)", 0),
-                                              IntIs("time of latest external delay change", 0),
-                                              UintIs("driver transfer (bytes)", 0),
-                                              StringIs("name", "unknown"))))),
+                                              UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentInternalDelayNsec), 0),
+                                              IntIs(std::string(kInternalDelayChangedAt), 0),
+                                              UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                              UintIs(std::string(kCurrentExternalDelayNsec), 0),
+                                              IntIs(std::string(kExternalDelayChangedAt), 0),
+                                              UintIs(std::string(kDriverTransferBytes), 0),
+                                              StringIs(std::string(kName), kUnknown))))),
                     })))))),
       })));
 
@@ -523,42 +556,41 @@ TEST_F(ReporterTest, DeviceDelays) {
   output_device->UpdateDelays(zx::time(kChangeTime1), zx::nsec(kIntDelay1), std::nullopt);
   input_device->UpdateDelays(zx::time(kChangeTime2), zx::nsec(kIntDelay2), zx::nsec(kExtDelay2));
 
-  EXPECT_THAT(
-      GetHierarchy(),
-      ChildrenMatch(IsSupersetOf({
-          AllOf(
-              NodeMatches(NameMatches("output devices")),
-              ChildrenMatch(UnorderedElementsAre(AllOf(
-                  NodeMatches(NameMatches("output_device")),
-                  ChildrenMatch(IsSupersetOf({
-                      NodeMatches(AllOf(
-                          NameMatches("driver"),
-                          PropertyList(UnorderedElementsAre(
-                              UintIs("initial internal delay (ns)", 0),
-                              UintIs("current internal delay (ns)", kIntDelay1),
-                              IntIs("time of latest internal delay change", kChangeTime1),
-                              UintIs("initial external delay (ns)", 0),
-                              UintIs("current external delay (ns)", 0),
-                              IntIs("time of latest external delay change", 0),
-                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
-                  })))))),
-          AllOf(
-              NodeMatches(NameMatches("input devices")),
-              ChildrenMatch(UnorderedElementsAre(AllOf(
-                  NodeMatches(NameMatches("input_device")),
-                  ChildrenMatch(IsSupersetOf({
-                      NodeMatches(AllOf(
-                          NameMatches("driver"),
-                          PropertyList(UnorderedElementsAre(
-                              UintIs("initial internal delay (ns)", 0),
-                              UintIs("current internal delay (ns)", kIntDelay2),
-                              IntIs("time of latest internal delay change", kChangeTime2),
-                              UintIs("initial external delay (ns)", 0),
-                              UintIs("current external delay (ns)", kExtDelay2),
-                              IntIs("time of latest external delay change", kChangeTime2),
-                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
-                  })))))),
-      })));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
+                        ChildrenMatch(UnorderedElementsAre(AllOf(
+                            NodeMatches(NameMatches(kTestOutputDevice)),
+                            ChildrenMatch(IsSupersetOf({
+                                NodeMatches(AllOf(
+                                    NameMatches(std::string(kDriver)),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentInternalDelayNsec), kIntDelay1),
+                                        IntIs(std::string(kInternalDelayChangedAt), kChangeTime1),
+                                        UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentExternalDelayNsec), 0),
+                                        IntIs(std::string(kExternalDelayChangedAt), 0),
+                                        UintIs(std::string(kDriverTransferBytes), 0),
+                                        StringIs(std::string(kName), kUnknown))))),
+                            })))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
+                        ChildrenMatch(UnorderedElementsAre(AllOf(
+                            NodeMatches(NameMatches(kTestInputDevice)),
+                            ChildrenMatch(IsSupersetOf({
+                                NodeMatches(AllOf(
+                                    NameMatches(std::string(kDriver)),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentInternalDelayNsec), kIntDelay2),
+                                        IntIs(std::string(kInternalDelayChangedAt), kChangeTime2),
+                                        UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentExternalDelayNsec), kExtDelay2),
+                                        IntIs(std::string(kExternalDelayChangedAt), kChangeTime2),
+                                        UintIs(std::string(kDriverTransferBytes), 0),
+                                        StringIs(std::string(kName), kUnknown))))),
+                            })))))),
+              })));
 
   // For output, update both delays at a time less than previous change. Internal delay should not
   // change, but external delay should (its most recent value is the initial value at time 0).
@@ -572,51 +604,52 @@ TEST_F(ReporterTest, DeviceDelays) {
   output_device->UpdateDelays(zx::time(kChangeTime3), zx::nsec(kIntDelay3), zx::nsec(kExtDelay3));
   input_device->UpdateDelays(zx::time(kChangeTime4), zx::nsec(kIntDelay4), std::nullopt);
 
-  EXPECT_THAT(
-      GetHierarchy(),
-      ChildrenMatch(IsSupersetOf({
-          AllOf(
-              NodeMatches(NameMatches("output devices")),
-              ChildrenMatch(UnorderedElementsAre(AllOf(
-                  NodeMatches(NameMatches("output_device")),
-                  ChildrenMatch(IsSupersetOf({
-                      NodeMatches(AllOf(
-                          NameMatches("driver"),
-                          PropertyList(UnorderedElementsAre(
-                              UintIs("initial internal delay (ns)", 0),
-                              UintIs("current internal delay (ns)", kIntDelay1),
-                              IntIs("time of latest internal delay change", kChangeTime1),
-                              UintIs("initial external delay (ns)", 0),
-                              UintIs("current external delay (ns)", kExtDelay3),
-                              IntIs("time of latest external delay change", kChangeTime3),
-                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
-                  })))))),
-          AllOf(
-              NodeMatches(NameMatches("input devices")),
-              ChildrenMatch(UnorderedElementsAre(AllOf(
-                  NodeMatches(NameMatches("input_device")),
-                  ChildrenMatch(IsSupersetOf({
-                      NodeMatches(AllOf(
-                          NameMatches("driver"),
-                          PropertyList(UnorderedElementsAre(
-                              UintIs("initial internal delay (ns)", 0),
-                              UintIs("current internal delay (ns)", kIntDelay4),
-                              IntIs("time of latest internal delay change", kChangeTime4),
-                              UintIs("initial external delay (ns)", 0),
-                              UintIs("current external delay (ns)", kExtDelay2),
-                              IntIs("time of latest external delay change", kChangeTime2),
-                              UintIs("driver transfer (bytes)", 0), StringIs("name", "unknown"))))),
-                  })))))),
-      })));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(IsSupersetOf({
+                  AllOf(NodeMatches(NameMatches(std::string(kOutputDevices))),
+                        ChildrenMatch(UnorderedElementsAre(AllOf(
+                            NodeMatches(NameMatches(kTestOutputDevice)),
+                            ChildrenMatch(IsSupersetOf({
+                                NodeMatches(AllOf(
+                                    NameMatches(std::string(kDriver)),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentInternalDelayNsec), kIntDelay1),
+                                        IntIs(std::string(kInternalDelayChangedAt), kChangeTime1),
+                                        UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentExternalDelayNsec), kExtDelay3),
+                                        IntIs(std::string(kExternalDelayChangedAt), kChangeTime3),
+                                        UintIs(std::string(kDriverTransferBytes), 0),
+                                        StringIs(std::string(kName), kUnknown))))),
+                            })))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kInputDevices))),
+                        ChildrenMatch(UnorderedElementsAre(AllOf(
+                            NodeMatches(NameMatches(kTestInputDevice)),
+                            ChildrenMatch(IsSupersetOf({
+                                NodeMatches(AllOf(
+                                    NameMatches(std::string(kDriver)),
+                                    PropertyList(UnorderedElementsAre(
+                                        UintIs(std::string(kInitialInternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentInternalDelayNsec), kIntDelay4),
+                                        IntIs(std::string(kInternalDelayChangedAt), kChangeTime4),
+                                        UintIs(std::string(kInitialExternalDelayNsec), 0),
+                                        UintIs(std::string(kCurrentExternalDelayNsec), kExtDelay2),
+                                        IntIs(std::string(kExternalDelayChangedAt), kChangeTime2),
+                                        UintIs(std::string(kDriverTransferBytes), 0),
+                                        StringIs(std::string(kName), kUnknown))))),
+                            })))))),
+              })));
 }
 
 // Test methods that add and remove client ports.
 TEST_F(ReporterTest, AddRemoveClientPorts) {
   std::vector<Reporter::Container<Reporter::Renderer, Reporter::kObjectsToCache>::Ptr> renderers;
   std::vector<Reporter::Container<Reporter::Capturer, Reporter::kObjectsToCache>::Ptr> capturers;
+  renderers.reserve(5);
   for (size_t k = 0; k < 5; k++) {
     renderers.push_back(under_test_.CreateRenderer());
   }
+  capturers.reserve(5);
   for (size_t k = 0; k < 5; k++) {
     capturers.push_back(under_test_.CreateCapturer(fxl::StringPrintf("capture_thread_%lu", k)));
   }
@@ -624,10 +657,10 @@ TEST_F(ReporterTest, AddRemoveClientPorts) {
   EXPECT_THAT(
       GetHierarchyLazyValues(),
       ChildrenMatch(IsSupersetOf({
-          AllOf(NodeMatches(NameMatches("renderers")),
+          AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
                 ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
                                                    NodeAlive("4"), NodeAlive("5")))),
-          AllOf(NodeMatches(NameMatches("capturers")),
+          AllOf(NodeMatches(NameMatches(std::string(kCapturers))),
                 ChildrenMatch(UnorderedElementsAre(NodeAlive("1"), NodeAlive("2"), NodeAlive("3"),
                                                    NodeAlive("4"), NodeAlive("5")))),
       })));
@@ -644,10 +677,10 @@ TEST_F(ReporterTest, AddRemoveClientPorts) {
   EXPECT_THAT(
       GetHierarchyLazyValues(),
       ChildrenMatch(IsSupersetOf({
-          AllOf(NodeMatches(NameMatches("renderers")),
+          AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
                 ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
                                                    NodeDead("4"), NodeAlive("5")))),
-          AllOf(NodeMatches(NameMatches("capturers")),
+          AllOf(NodeMatches(NameMatches(std::string(kCapturers))),
                 ChildrenMatch(UnorderedElementsAre(NodeDead("1"), NodeDead("2"), NodeDead("3"),
                                                    NodeDead("4"), NodeAlive("5")))),
       })));
@@ -658,10 +691,10 @@ TEST_F(ReporterTest, AddRemoveClientPorts) {
   // Garbage collect [0].
   EXPECT_THAT(GetHierarchyLazyValues(),
               ChildrenMatch(IsSupersetOf({
-                  AllOf(NodeMatches(NameMatches("renderers")),
+                  AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
                         ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
                                                            NodeDead("4"), NodeDead("5")))),
-                  AllOf(NodeMatches(NameMatches("capturers")),
+                  AllOf(NodeMatches(NameMatches(std::string(kCapturers))),
                         ChildrenMatch(UnorderedElementsAre(NodeDead("2"), NodeDead("3"),
                                                            NodeDead("4"), NodeDead("5")))),
               })));
@@ -674,43 +707,48 @@ TEST_F(ReporterTest, RendererMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("renderers")),
+          NodeMatches(NameMatches(std::string(kRenderers))),
           ChildrenMatch(UnorderedElementsAre(AllOf(
               NodeMatches(AllOf(NameMatches("1"),
                                 PropertyList(UnorderedElementsAre(
-                                    UintIs("initial min lead time (ns)", 0),
-                                    UintIs("current min lead time (ns)", 0),
-                                    IntIs("time of latest min lead time change", 0),
-                                    StringIs("usage", "default"))))),
+                                    UintIs(std::string(kInitialMinLeadTimeNsec), 0),
+                                    UintIs(std::string(kCurrentMinLeadTimeNsec), 0),
+                                    IntIs(std::string(kMinLeadTimeChangedAt), 0),
+                                    StringIs(std::string(kUsage), kDefault))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("format"),
+                  NodeMatches(AllOf(NameMatches(std::string(kFormat)),
                                     PropertyList(UnorderedElementsAre(
-                                        StringIs("sample format", "unknown"), UintIs("channels", 0),
-                                        UintIs("frames per second", 0))))),
-                  NodeMatches(
-                      AllOf(NameMatches("gain"),
-                            PropertyList(UnorderedElementsAre(
-                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                UintIs("calls to SetGainWithRamp", 0),
-                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
-                  NodeMatches(AllOf(NameMatches("presentation timestamps"),
+                                        StringIs(std::string(kSampleFormat), kUnknown),
+                                        UintIs(std::string(kChannels), 0),
+                                        UintIs(std::string(kFramesPerSecond), 0))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), 0.0), BoolIs(std::string(kMuted), false),
+                          UintIs(std::string(kCallsToSetGainWithRamp), 0),
+                          DoubleIs(std::string(kCompleteStreamGainDb), 0.0))))),
+                  NodeMatches(AllOf(NameMatches(std::string(kPresentationTimestamps)),
                                     PropertyList(UnorderedElementsAre(
-                                        DoubleIs("pts continuity threshold (s)", 0.0),
-                                        UintIs("pts units denominator", 1),
-                                        UintIs("pts units numerator", 1'000'000'000))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())),
-                  NodeMatches(AllOf(NameMatches("packet queue underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))),
-                  NodeMatches(AllOf(NameMatches("continuity underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))),
-                  NodeMatches(AllOf(NameMatches("timestamp underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))))))))))));
+                                        DoubleIs(std::string(kPtsContinuityThresholdSec), 0.0),
+                                        UintIs(std::string(kPtsUnitsDenominator), 1),
+                                        UintIs(std::string(kPtsUnitsNumerator), 1'000'000'000))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kPayloadBuffers))),
+                        ChildrenMatch(IsEmpty())),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kPacketQueueUnderflows)),
+                      PropertyList(UnorderedElementsAre(UintIs(std::string(kCount), 0),
+                                                        UintIs(std::string(kDurationNsec), 0),
+                                                        UintIs(std::string(kSessionCount), 0))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kContinuityUnderflows)),
+                      PropertyList(UnorderedElementsAre(UintIs(std::string(kCount), 0),
+                                                        UintIs(std::string(kDurationNsec), 0),
+                                                        UintIs(std::string(kSessionCount), 0))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kTimestampUnderflows)),
+                      PropertyList(UnorderedElementsAre(
+                          UintIs(std::string(kCount), 0), UintIs(std::string(kDurationNsec), 0),
+                          UintIs(std::string(kSessionCount), 0))))))))))))));
 
   renderer->SetUsage(RenderUsage::MEDIA);
   renderer->SetFormat(
@@ -752,51 +790,56 @@ TEST_F(ReporterTest, RendererMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("renderers")),
+          NodeMatches(NameMatches(std::string(kRenderers))),
           ChildrenMatch(UnorderedElementsAre(AllOf(
               NodeMatches(AllOf(NameMatches("1"),
                                 PropertyList(UnorderedElementsAre(
-                                    UintIs("initial min lead time (ns)", 0),
-                                    UintIs("current min lead time (ns)", 0),
-                                    IntIs("time of latest min lead time change", 0),
-                                    StringIs("usage", "RenderUsage::MEDIA"))))),
+                                    UintIs(std::string(kInitialMinLeadTimeNsec), 0),
+                                    UintIs(std::string(kCurrentMinLeadTimeNsec), 0),
+                                    IntIs(std::string(kMinLeadTimeChangedAt), 0),
+                                    StringIs(std::string(kUsage), "RenderUsage::MEDIA"))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(
-                      NameMatches("format"),
-                      PropertyList(UnorderedElementsAre(
-                          StringIs("sample format", "SIGNED_16"), UintIs("channels", 2),
-                          UintIs("frames per second", 48000))))),
-                  NodeMatches(AllOf(
-                      NameMatches("gain"),
-                      PropertyList(UnorderedElementsAre(
-                          DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                          UintIs("calls to SetGainWithRamp", 2),
-                          DoubleIs("complete stream gain (post-volume) dbfs", -6.0))))),
-                  NodeMatches(AllOf(NameMatches("presentation timestamps"),
+                  NodeMatches(AllOf(NameMatches(std::string(kFormat)),
                                     PropertyList(UnorderedElementsAre(
-                                        DoubleIs("pts continuity threshold (s)", 5.0),
-                                        UintIs("pts units denominator", 3),
-                                        UintIs("pts units numerator", 1234567))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")),
+                                        StringIs(std::string(kSampleFormat), kSampleFormatInt16),
+                                        UintIs(std::string(kChannels), 2),
+                                        UintIs(std::string(kFramesPerSecond), 48000))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), -1.0), BoolIs(std::string(kMuted), true),
+                          UintIs(std::string(kCallsToSetGainWithRamp), 2),
+                          DoubleIs(std::string(kCompleteStreamGainDb), -6.0))))),
+                  NodeMatches(AllOf(NameMatches(std::string(kPresentationTimestamps)),
+                                    PropertyList(UnorderedElementsAre(
+                                        DoubleIs(std::string(kPtsContinuityThresholdSec), 5.0),
+                                        UintIs(std::string(kPtsUnitsDenominator), 3),
+                                        UintIs(std::string(kPtsUnitsNumerator), 1234567))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kPayloadBuffers))),
                         ChildrenMatch(UnorderedElementsAre(
-                            NodeMatches(AllOf(NameMatches("0"),
-                                              PropertyList(UnorderedElementsAre(
-                                                  UintIs("size", 4096), UintIs("packets", 0))))),
+                            NodeMatches(
+                                AllOf(NameMatches("0"), PropertyList(UnorderedElementsAre(
+                                                            UintIs(std::string(kSize), 4096),
+                                                            UintIs(std::string(kPackets), 0))))),
                             NodeMatches(AllOf(NameMatches("10"),
                                               PropertyList(UnorderedElementsAre(
-                                                  UintIs("size", 8192), UintIs("packets", 1)))))))),
-                  NodeMatches(AllOf(NameMatches("packet queue underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 1), UintIs("duration (ns)", 5),
-                                        UintIs("session count", 1))))),
-                  NodeMatches(AllOf(NameMatches("continuity underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 2), UintIs("duration (ns)", 20),
-                                        UintIs("session count", 1))))),
-                  NodeMatches(AllOf(NameMatches("timestamp underflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 3), UintIs("duration (ns)", 45),
-                                        UintIs("session count", 1))))))))))))));
+                                                  UintIs(std::string(kSize), 8192),
+                                                  UintIs(std::string(kPackets), 1)))))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kPacketQueueUnderflows)),
+                      PropertyList(UnorderedElementsAre(UintIs(std::string(kCount), 1),
+                                                        UintIs(std::string(kDurationNsec), 5),
+                                                        UintIs(std::string(kSessionCount), 1))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kContinuityUnderflows)),
+                      PropertyList(UnorderedElementsAre(UintIs(std::string(kCount), 2),
+                                                        UintIs(std::string(kDurationNsec), 20),
+                                                        UintIs(std::string(kSessionCount), 1))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kTimestampUnderflows)),
+                      PropertyList(UnorderedElementsAre(
+                          UintIs(std::string(kCount), 3), UintIs(std::string(kDurationNsec), 45),
+                          UintIs(std::string(kSessionCount), 1))))))))))))));
 }
 
 // Tests methods that change renderer minimum lead time metrics.
@@ -804,42 +847,43 @@ TEST_F(ReporterTest, RendererMinLeadTime) {
   auto renderer = under_test_.CreateRenderer();
   EXPECT_THAT(GetHierarchy(),
               ChildrenMatch(Contains(
-                  AllOf(NodeMatches(NameMatches("renderers")),
+                  AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
                         ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
                             NameMatches("1"), PropertyList(IsSupersetOf({
-                                                  UintIs("initial min lead time (ns)", 0),
-                                                  UintIs("current min lead time (ns)", 0),
-                                                  IntIs("time of latest min lead time change", 0),
+                                                  UintIs(std::string(kInitialMinLeadTimeNsec), 0),
+                                                  UintIs(std::string(kCurrentMinLeadTimeNsec), 0),
+                                                  IntIs(std::string(kMinLeadTimeChangedAt), 0),
                                               }))))))))));
 
   // SetInitialMinLeadTime is optional; UpdateMinLeadTime can be called immediately.
   constexpr auto kCurrentMinLeadTime1 = 321ull;
   constexpr auto kTimeOfMinLeadTimeChange1 = 123ll;
   renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime1), zx::time(kTimeOfMinLeadTimeChange1));
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("renderers")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("1"),
-                      PropertyList(IsSupersetOf({
-                          UintIs("initial min lead time (ns)", 0),  // Retains value from ctor
-                          UintIs("current min lead time (ns)", kCurrentMinLeadTime1),
-                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange1),
-                      }))))))))));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
+                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                    NameMatches("1"),
+                    PropertyList(IsSupersetOf({
+                        UintIs(std::string(kInitialMinLeadTimeNsec), 0),  // Retains value from ctor
+                        UintIs(std::string(kCurrentMinLeadTimeNsec), kCurrentMinLeadTime1),
+                        IntIs(std::string(kMinLeadTimeChangedAt), kTimeOfMinLeadTimeChange1),
+                    }))))))))));
 
   // We expect the initial and current values to change, and the time-of-update to be reset.
   constexpr auto kInitialMinLeadTime2 = 1'000'000ull;
   renderer->SetInitialMinLeadTime(zx::nsec(kInitialMinLeadTime2));
-  EXPECT_THAT(
-      GetHierarchy(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("renderers")),
-          ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-              NameMatches("1"), PropertyList(IsSupersetOf({
-                                    UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
-                                    UintIs("current min lead time (ns)", kInitialMinLeadTime2),
-                                    IntIs("time of latest min lead time change", 0),  // Was reset
-                                }))))))))));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(
+                  AllOf(NodeMatches(NameMatches(std::string(kRenderers))),
+                        ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                            NameMatches("1"),
+                            PropertyList(IsSupersetOf({
+                                UintIs(std::string(kInitialMinLeadTimeNsec), kInitialMinLeadTime2),
+                                UintIs(std::string(kCurrentMinLeadTimeNsec), kInitialMinLeadTime2),
+                                IntIs(std::string(kMinLeadTimeChangedAt), 0),  // Was reset
+                            }))))))))));
 
   // We expect the current value and time-of-update value to change.
   constexpr auto kCurrentMinLeadTime3 = 12'345'678ull;
@@ -847,13 +891,13 @@ TEST_F(ReporterTest, RendererMinLeadTime) {
   renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime3), zx::time(kTimeOfMinLeadTimeChange3));
   EXPECT_THAT(GetHierarchy(),
               ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("renderers")),
+                  NodeMatches(NameMatches(std::string(kRenderers))),
                   ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
                       NameMatches("1"),
                       PropertyList(IsSupersetOf({
-                          UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
-                          UintIs("current min lead time (ns)", kCurrentMinLeadTime3),
-                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange3),
+                          UintIs(std::string(kInitialMinLeadTimeNsec), kInitialMinLeadTime2),
+                          UintIs(std::string(kCurrentMinLeadTimeNsec), kCurrentMinLeadTime3),
+                          IntIs(std::string(kMinLeadTimeChangedAt), kTimeOfMinLeadTimeChange3),
                       }))))))))));
 
   // The time-of-update is before the previous one, so we expect no change.
@@ -862,48 +906,53 @@ TEST_F(ReporterTest, RendererMinLeadTime) {
   renderer->UpdateMinLeadTime(zx::nsec(kCurrentMinLeadTime4), zx::time(kTimeOfMinLeadTimeChange4));
   EXPECT_THAT(GetHierarchy(),
               ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("renderers")),
+                  NodeMatches(NameMatches(std::string(kRenderers))),
                   ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
                       NameMatches("1"),
                       PropertyList(IsSupersetOf({
-                          UintIs("initial min lead time (ns)", kInitialMinLeadTime2),
-                          UintIs("current min lead time (ns)", kCurrentMinLeadTime3),
-                          IntIs("time of latest min lead time change", kTimeOfMinLeadTimeChange3),
+                          UintIs(std::string(kInitialMinLeadTimeNsec), kInitialMinLeadTime2),
+                          UintIs(std::string(kCurrentMinLeadTimeNsec), kCurrentMinLeadTime3),
+                          IntIs(std::string(kMinLeadTimeChangedAt), kTimeOfMinLeadTimeChange3),
                       }))))))))));
 }
 
 // Tests methods that change capturer metrics, that aren't tested in other cases.
 TEST_F(ReporterTest, CapturerMetrics) {
-  auto capturer = under_test_.CreateCapturer("thread");
+  constexpr std::string kTestInputThread = "input_thread";
+
+  auto capturer = under_test_.CreateCapturer(kTestInputThread);
 
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("capturers")),
+          NodeMatches(NameMatches(std::string(kCapturers))),
           ChildrenMatch(UnorderedElementsAre(AllOf(
-              NodeMatches(AllOf(
-                  NameMatches("1"),
-                  PropertyList(UnorderedElementsAre(
-                      UintIs("initial presentation delay (ns)", 0),
-                      UintIs("current presentation delay (ns)", 0),
-                      IntIs("time of latest presentation delay change", 0),
-                      StringIs("usage", "default"), StringIs("mixer thread name", "thread"))))),
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs(std::string(kInitialPresentationDelayNsec), 0),
+                                    UintIs(std::string(kCurrentPresentationDelayNsec), 0),
+                                    IntIs(std::string(kPresentationDelayChangedAt), 0),
+                                    StringIs(std::string(kUsage), kDefault),
+                                    StringIs(std::string(kMixerThreadName), kTestInputThread))))),
               ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(AllOf(NameMatches("format"),
+                  NodeMatches(AllOf(NameMatches(std::string(kFormat)),
                                     PropertyList(UnorderedElementsAre(
-                                        StringIs("sample format", "unknown"), UintIs("channels", 0),
-                                        UintIs("frames per second", 0))))),
-                  NodeMatches(
-                      AllOf(NameMatches("gain"),
-                            PropertyList(UnorderedElementsAre(
-                                DoubleIs("gain db", 0.0), BoolIs("muted", false),
-                                UintIs("calls to SetGainWithRamp", 0),
-                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")), ChildrenMatch(IsEmpty())),
-                  NodeMatches(AllOf(NameMatches("overflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 0), UintIs("duration (ns)", 0),
-                                        UintIs("session count", 0))))))))))))));
+                                        StringIs(std::string(kSampleFormat), kUnknown),
+                                        UintIs(std::string(kChannels), 0),
+                                        UintIs(std::string(kFramesPerSecond), 0))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), 0.0), BoolIs(std::string(kMuted), false),
+                          UintIs(std::string(kCallsToSetGainWithRamp), 0),
+                          DoubleIs(std::string(kCompleteStreamGainDb), 0.0))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kPayloadBuffers))),
+                        ChildrenMatch(IsEmpty())),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kCaptureOverflows)),
+                      PropertyList(UnorderedElementsAre(
+                          UintIs(std::string(kCount), 0), UintIs(std::string(kDurationNsec), 0),
+                          UintIs(std::string(kSessionCount), 0))))))))))))));
 
   capturer->SetUsage(CaptureUsage::FOREGROUND);
   capturer->SetFormat(
@@ -934,52 +983,57 @@ TEST_F(ReporterTest, CapturerMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("capturers")),
+          NodeMatches(NameMatches(std::string(kCapturers))),
           ChildrenMatch(UnorderedElementsAre(AllOf(
               NodeMatches(AllOf(NameMatches("1"),
                                 PropertyList(UnorderedElementsAre(
-                                    UintIs("initial presentation delay (ns)", 0),
-                                    UintIs("current presentation delay (ns)", 0),
-                                    IntIs("time of latest presentation delay change", 0),
-                                    StringIs("usage", "CaptureUsage::FOREGROUND"),
-                                    StringIs("mixer thread name", "thread"))))),
+                                    UintIs(std::string(kInitialPresentationDelayNsec), 0),
+                                    UintIs(std::string(kCurrentPresentationDelayNsec), 0),
+                                    IntIs(std::string(kPresentationDelayChangedAt), 0),
+                                    StringIs(std::string(kUsage), "CaptureUsage::FOREGROUND"),
+                                    StringIs(std::string(kMixerThreadName), kTestInputThread))))),
               ChildrenMatch(UnorderedElementsAre(
+                  NodeMatches(AllOf(NameMatches(std::string(kFormat)),
+                                    PropertyList(UnorderedElementsAre(
+                                        StringIs(std::string(kSampleFormat), kSampleFormatInt16),
+                                        UintIs(std::string(kChannels), 2),
+                                        UintIs(std::string(kFramesPerSecond), 48000))))),
                   NodeMatches(AllOf(
-                      NameMatches("format"),
-                      PropertyList(UnorderedElementsAre(StringIs("sample format", "SIGNED_16"),
-                                                        UintIs("channels", 2),
-                                                        UintIs("frames per second", 48000))))),
-                  NodeMatches(
-                      AllOf(NameMatches("gain"),
-                            PropertyList(UnorderedElementsAre(
-                                DoubleIs("gain db", -1.0), BoolIs("muted", true),
-                                UintIs("calls to SetGainWithRamp", 2),
-                                DoubleIs("complete stream gain (post-volume) dbfs", 0.0))))),
-                  AllOf(NodeMatches(NameMatches("payload buffers")),
+                      NameMatches(std::string(kGain)),
+                      PropertyList(UnorderedElementsAre(
+                          DoubleIs(std::string(kGainDb), -1.0), BoolIs(std::string(kMuted), true),
+                          UintIs(std::string(kCallsToSetGainWithRamp), 2),
+                          DoubleIs(std::string(kCompleteStreamGainDb), 0.0))))),
+                  AllOf(NodeMatches(NameMatches(std::string(kPayloadBuffers))),
                         ChildrenMatch(UnorderedElementsAre(
-                            NodeMatches(AllOf(NameMatches("0"),
-                                              PropertyList(UnorderedElementsAre(
-                                                  UintIs("size", 4096), UintIs("packets", 0))))),
+                            NodeMatches(
+                                AllOf(NameMatches("0"), PropertyList(UnorderedElementsAre(
+                                                            UintIs(std::string(kSize), 4096),
+                                                            UintIs(std::string(kPackets), 0))))),
                             NodeMatches(AllOf(NameMatches("10"),
                                               PropertyList(UnorderedElementsAre(
-                                                  UintIs("size", 8192), UintIs("packets", 1)))))))),
-                  NodeMatches(AllOf(NameMatches("overflows"),
-                                    PropertyList(UnorderedElementsAre(
-                                        UintIs("count", 1), UintIs("duration (ns)", 5),
-                                        UintIs("session count", 1))))))))))))));
+                                                  UintIs(std::string(kSize), 8192),
+                                                  UintIs(std::string(kPackets), 1)))))))),
+                  NodeMatches(AllOf(
+                      NameMatches(std::string(kCaptureOverflows)),
+                      PropertyList(UnorderedElementsAre(
+                          UintIs(std::string(kCount), 1), UintIs(std::string(kDurationNsec), 5),
+                          UintIs(std::string(kSessionCount), 1))))))))))))));
 }
 
 // Tests methods that change capturer presentation delay metrics.
 TEST_F(ReporterTest, CapturerPresentationDelay) {
-  auto capturer = under_test_.CreateCapturer("capture_thread");
+  constexpr std::string kTestInputThread = "input_thread";
+
+  auto capturer = under_test_.CreateCapturer(kTestInputThread);
   EXPECT_THAT(GetHierarchy(),
               ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("capturers")),
+                  NodeMatches(NameMatches(std::string(kCapturers))),
                   ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
                       NameMatches("1"), PropertyList(IsSupersetOf({
-                                            UintIs("initial presentation delay (ns)", 0),
-                                            UintIs("current presentation delay (ns)", 0),
-                                            IntIs("time of latest presentation delay change", 0),
+                                            UintIs(std::string(kInitialPresentationDelayNsec), 0),
+                                            UintIs(std::string(kCurrentPresentationDelayNsec), 0),
+                                            IntIs(std::string(kPresentationDelayChangedAt), 0),
                                         }))))))))));
 
   // SetInitialPresentationDelay is optional; UpdatePresentationDelay can be called immediately.
@@ -987,31 +1041,32 @@ TEST_F(ReporterTest, CapturerPresentationDelay) {
   constexpr auto kTimeOfPresDelayChange1 = 234ll;
   capturer->UpdatePresentationDelay(zx::nsec(kCurrentPresDelay1),
                                     zx::time(kTimeOfPresDelayChange1));
-  EXPECT_THAT(
-      GetHierarchy(),
-      ChildrenMatch(Contains(
-          AllOf(NodeMatches(NameMatches("capturers")),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                    NameMatches("1"),
-                    PropertyList(IsSupersetOf({
-                        UintIs("initial presentation delay (ns)", 0),  // Retains value from ctor.
-                        UintIs("current presentation delay (ns)", kCurrentPresDelay1),
-                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange1),
-                    }))))))))));
+  EXPECT_THAT(GetHierarchy(),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches(std::string(kCapturers))),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"),
+                      PropertyList(IsSupersetOf({
+                          UintIs(std::string(kInitialPresentationDelayNsec),
+                                 0),  // Retains value from ctor.
+                          UintIs(std::string(kCurrentPresentationDelayNsec), kCurrentPresDelay1),
+                          IntIs(std::string(kPresentationDelayChangedAt), kTimeOfPresDelayChange1),
+                      }))))))))));
 
   // We expect the initial and current values to change, and the time-of-update to be reset.
   constexpr auto kInitialPresentationDelay2 = 2'000'000ull;
   capturer->SetInitialPresentationDelay(zx::nsec(kInitialPresentationDelay2));
-  EXPECT_THAT(GetHierarchy(),
-              ChildrenMatch(Contains(AllOf(
-                  NodeMatches(NameMatches("capturers")),
-                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                      NameMatches("1"),
-                      PropertyList(IsSupersetOf({
-                          UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
-                          UintIs("current presentation delay (ns)", kInitialPresentationDelay2),
-                          IntIs("time of latest presentation delay change", 0),  // Was reset
-                      }))))))))));
+  EXPECT_THAT(
+      GetHierarchy(),
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches(std::string(kCapturers))),
+          ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+              NameMatches("1"),
+              PropertyList(IsSupersetOf({
+                  UintIs(std::string(kInitialPresentationDelayNsec), kInitialPresentationDelay2),
+                  UintIs(std::string(kCurrentPresentationDelayNsec), kInitialPresentationDelay2),
+                  IntIs(std::string(kPresentationDelayChangedAt), 0),  // Was reset
+              }))))))))));
 
   // We expect the current value and time-of-update value to change.
   constexpr auto kCurrentPresDelay3 = 23'456'789ull;
@@ -1020,15 +1075,15 @@ TEST_F(ReporterTest, CapturerPresentationDelay) {
                                     zx::time(kTimeOfPresDelayChange3));
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(
-          AllOf(NodeMatches(NameMatches("capturers")),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                    NameMatches("1"),
-                    PropertyList(IsSupersetOf({
-                        UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
-                        UintIs("current presentation delay (ns)", kCurrentPresDelay3),
-                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange3),
-                    }))))))))));
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches(std::string(kCapturers))),
+          ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+              NameMatches("1"),
+              PropertyList(IsSupersetOf({
+                  UintIs(std::string(kInitialPresentationDelayNsec), kInitialPresentationDelay2),
+                  UintIs(std::string(kCurrentPresentationDelayNsec), kCurrentPresDelay3),
+                  IntIs(std::string(kPresentationDelayChangedAt), kTimeOfPresDelayChange3),
+              }))))))))));
 
   // The time-of-update is before the previous one, so we expect no change.
   constexpr auto kCurrentPresDelay4 = 2'345'678ull;
@@ -1037,15 +1092,15 @@ TEST_F(ReporterTest, CapturerPresentationDelay) {
                                     zx::time(kTimeOfPresDelayChange4));
   EXPECT_THAT(
       GetHierarchy(),
-      ChildrenMatch(Contains(
-          AllOf(NodeMatches(NameMatches("capturers")),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                    NameMatches("1"),
-                    PropertyList(IsSupersetOf({
-                        UintIs("initial presentation delay (ns)", kInitialPresentationDelay2),
-                        UintIs("current presentation delay (ns)", kCurrentPresDelay3),
-                        IntIs("time of latest presentation delay change", kTimeOfPresDelayChange3),
-                    }))))))))));
+      ChildrenMatch(Contains(AllOf(
+          NodeMatches(NameMatches(std::string(kCapturers))),
+          ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+              NameMatches("1"),
+              PropertyList(IsSupersetOf({
+                  UintIs(std::string(kInitialPresentationDelayNsec), kInitialPresentationDelay2),
+                  UintIs(std::string(kCurrentPresentationDelayNsec), kCurrentPresDelay3),
+                  IntIs(std::string(kPresentationDelayChangedAt), kTimeOfPresDelayChange3),
+              }))))))))));
 }
 
 // Tests ThermalStateTracker methods.
@@ -1056,35 +1111,40 @@ TEST_F(ReporterTest, SetThermalStateMetrics) {
   EXPECT_THAT(
       GetHierarchyLazyValues(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("thermal state"),
-                            PropertyList(UnorderedElementsAre(UintIs("num thermal states", 3))))),
+          NodeMatches(AllOf(
+              NameMatches(std::string(kThermalState)),
+              PropertyList(UnorderedElementsAre(UintIs(std::string(kThermalStateCount), 3))))),
           ChildrenMatch(UnorderedElementsAre(NodeMatches(
-              AllOf(NameMatches("normal"),
-                    Not(PropertyList(Contains(UintIs("total duration (ns)", 0))))))))))));
+              AllOf(NameMatches(kNormal),
+                    Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))))));
   // Expect second thermal state metric values, with first thermal state metrics stored.
   under_test_.SetThermalState(2);
   EXPECT_THAT(
       GetHierarchyLazyValues(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("thermal state"),
-                            PropertyList(UnorderedElementsAre(UintIs("num thermal states", 3))))),
+          NodeMatches(AllOf(
+              NameMatches(std::string(kThermalState)),
+              PropertyList(UnorderedElementsAre(UintIs(std::string(kThermalStateCount), 3))))),
           ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(NameMatches("normal"),
-                                Not(PropertyList(Contains(UintIs("total duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("2"), Not(PropertyList(Contains(
-                                                      UintIs("total duration (ns)", 0))))))))))));
+              NodeMatches(AllOf(NameMatches(kNormal), Not(PropertyList(Contains(UintIs(
+                                                          std::string(kTotalDurationNsec), 0)))))),
+              NodeMatches(AllOf(
+                  NameMatches("2"),
+                  Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))))));
   // Expect values to be unchanged, since state 2 has already been triggered.
   under_test_.SetThermalState(2);
   EXPECT_THAT(
       GetHierarchyLazyValues(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("thermal state"),
-                            PropertyList(UnorderedElementsAre(UintIs("num thermal states", 3))))),
+          NodeMatches(AllOf(
+              NameMatches(std::string(kThermalState)),
+              PropertyList(UnorderedElementsAre(UintIs(std::string(kThermalStateCount), 3))))),
           ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(NameMatches("normal"),
-                                Not(PropertyList(Contains(UintIs("total duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("2"), Not(PropertyList(Contains(
-                                                      UintIs("total duration (ns)", 0))))))))))));
+              NodeMatches(AllOf(NameMatches(kNormal), Not(PropertyList(Contains(UintIs(
+                                                          std::string(kTotalDurationNsec), 0)))))),
+              NodeMatches(AllOf(
+                  NameMatches("2"),
+                  Not(PropertyList(Contains(UintIs(std::string(kTotalDurationNsec), 0))))))))))));
 }
 
 // Test caching of ThermalStates up to limit Reporter::kThermalStatesToCache == 8.
@@ -1104,63 +1164,72 @@ TEST_F(ReporterTest, CacheThermalStateTransitions) {
   // Expect most recent 8 thermal state metric values.
   EXPECT_THAT(
       GetHierarchyLazyValues(),
-      ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("thermal state transitions")),
-          ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(NameMatches("2"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "1"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("3"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "2"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("4"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "normal"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("5"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "1"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("6"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "2"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("7"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "1"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("8"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "2"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("9"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", false),
-                                    StringIs("state", "normal"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0)))))),
-              NodeMatches(AllOf(NameMatches("10"),
-                                PropertyList(IsSupersetOf({
-                                    BoolIs("active", true),
-                                    StringIs("state", "1"),
-                                })),
-                                Not(PropertyList(Contains(UintIs("duration (ns)", 0))))))))))));
+      ChildrenMatch(Contains(
+          AllOf(NodeMatches(NameMatches(std::string(kThermalStateTransitions))),
+                ChildrenMatch(UnorderedElementsAre(
+                    NodeMatches(
+                        AllOf(NameMatches("2"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "1"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("3"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "2"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("4"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), kNormal),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("5"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "1"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("6"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "2"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("7"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "1"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("8"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), "2"),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(
+                        AllOf(NameMatches("9"),
+                              PropertyList(IsSupersetOf({
+                                  BoolIs(std::string(kActive), false),
+                                  StringIs(std::string(kState), kNormal),
+                              })),
+                              Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0)))))),
+                    NodeMatches(AllOf(
+                        NameMatches("10"),
+                        PropertyList(IsSupersetOf({
+                            BoolIs(std::string(kActive), true),
+                            StringIs(std::string(kState), "1"),
+                        })),
+                        Not(PropertyList(Contains(UintIs(std::string(kDurationNsec), 0))))))))))));
 }
 
 // Test VolumeControl methods.
@@ -1171,17 +1240,19 @@ TEST_F(ReporterTest, VolumeControlMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("volume controls")),
+          NodeMatches(NameMatches(std::string(kVolumeControls))),
           ChildrenMatch(Contains(AllOf(
-              NodeMatches(AllOf(NameMatches("1"), PropertyList(UnorderedElementsAre(
-                                                      UintIs("client count", 0),
-                                                      StringIs("name", "unknown - no clients"))))),
-              ChildrenMatch(Contains(
-                  AllOf(NodeMatches(NameMatches("volume settings")),
-                        ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                            NameMatches("1"), PropertyList(UnorderedElementsAre(
-                                                  BoolIs("active", true), BoolIs("mute", false),
-                                                  DoubleIs("volume", 0.0)))))))))))))))));
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs(std::string(kClientCount), 0),
+                                    StringIs(std::string(kName), kUnknownNoClients))))),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches(std::string(kVolumeSettings))),
+                  ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
+                      NameMatches("1"), PropertyList(UnorderedElementsAre(
+                                            BoolIs(std::string(kActive), true),
+                                            BoolIs(std::string(kMuted), false),
+                                            DoubleIs(std::string(kVolume), 0.0)))))))))))))))));
 
   volume_control->SetVolumeMute(0.5, true);
   volume_control->AddBinding("RenderUsage::MEDIA");
@@ -1191,22 +1262,25 @@ TEST_F(ReporterTest, VolumeControlMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(NameMatches("volume controls")),
+          NodeMatches(NameMatches(std::string(kVolumeControls))),
           ChildrenMatch(Contains(AllOf(
-              NodeMatches(AllOf(NameMatches("1"), PropertyList(UnorderedElementsAre(
-                                                      UintIs("client count", 2),
-                                                      StringIs("name", "RenderUsage::MEDIA"))))),
-              ChildrenMatch(Contains(
-                  AllOf(NodeMatches(NameMatches("volume settings")),
-                        ChildrenMatch(UnorderedElementsAre(
-                            NodeMatches(AllOf(NameMatches("1"),
-                                              PropertyList(UnorderedElementsAre(
-                                                  BoolIs("active", false), BoolIs("mute", false),
-                                                  DoubleIs("volume", 0.0))))),
-                            NodeMatches(AllOf(NameMatches("2"),
-                                              PropertyList(UnorderedElementsAre(
-                                                  BoolIs("active", true), BoolIs("mute", true),
-                                                  DoubleIs("volume", 0.5)))))))))))))))));
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(UnorderedElementsAre(
+                                    UintIs(std::string(kClientCount), 2),
+                                    StringIs(std::string(kName), "RenderUsage::MEDIA"))))),
+              ChildrenMatch(Contains(AllOf(
+                  NodeMatches(NameMatches(std::string(kVolumeSettings))),
+                  ChildrenMatch(UnorderedElementsAre(
+                      NodeMatches(AllOf(
+                          NameMatches("1"),
+                          PropertyList(UnorderedElementsAre(BoolIs(std::string(kActive), false),
+                                                            BoolIs(std::string(kMuted), false),
+                                                            DoubleIs(std::string(kVolume), 0.0))))),
+                      NodeMatches(AllOf(
+                          NameMatches("2"),
+                          PropertyList(UnorderedElementsAre(
+                              BoolIs(std::string(kActive), true), BoolIs(std::string(kMuted), true),
+                              DoubleIs(std::string(kVolume), 0.5)))))))))))))))));
 }
 
 // Test methods that change audio policy metrics.
@@ -1217,12 +1291,13 @@ TEST_F(ReporterTest, AudioPolicyMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("active usage policies"),
-                            PropertyList(UnorderedElementsAre(DoubleIs("none gain db", 0.0),
-                                                              DoubleIs("duck gain db", -10.0),
-                                                              DoubleIs("mute gain db", -100.0))))),
-          ChildrenMatch(Contains(NodeMatches(
-              AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", true)))))))))));
+          NodeMatches(AllOf(
+              NameMatches(std::string(kActiveUsagePolicies)),
+              PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                DoubleIs(std::string(kDuckGainDb), -10.0),
+                                                DoubleIs(std::string(kMuteGainDb), -100.0))))),
+          ChildrenMatch(Contains(NodeMatches(AllOf(
+              NameMatches("1"), PropertyList(Contains(BoolIs(std::string(kActive), true)))))))))));
 
   // Structures to hold active usages and usage behaviors.
   std::vector<fuchsia::media::Usage2> active_usages;
@@ -1239,16 +1314,18 @@ TEST_F(ReporterTest, AudioPolicyMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("active usage policies"),
-                            PropertyList(UnorderedElementsAre(DoubleIs("none gain db", 0.0),
-                                                              DoubleIs("duck gain db", -10.0),
-                                                              DoubleIs("mute gain db", -100.0))))),
+          NodeMatches(AllOf(
+              NameMatches(std::string(kActiveUsagePolicies)),
+              PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                DoubleIs(std::string(kDuckGainDb), -10.0),
+                                                DoubleIs(std::string(kMuteGainDb), -100.0))))),
           ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", false))))),
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(Contains(BoolIs(std::string(kActive), false))))),
               NodeMatches(AllOf(
                   NameMatches("2"),
-                  PropertyList(UnorderedElementsAre(
-                      BoolIs("active", true), StringIs("RenderUsage::MEDIA", "NONE")))))))))));
+                  PropertyList(UnorderedElementsAre(BoolIs(std::string(kActive), true),
+                                                    StringIs("RenderUsage::MEDIA", kNone)))))))))));
 
   // Expect active RenderUsage::MEDIA and CaptureUsage::SYSTEM_AGENT to be logged, with DUCK applied
   // to MEDIA.
@@ -1260,19 +1337,22 @@ TEST_F(ReporterTest, AudioPolicyMetrics) {
   EXPECT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
-          NodeMatches(AllOf(NameMatches("active usage policies"),
-                            PropertyList(UnorderedElementsAre(DoubleIs("none gain db", 0.0),
-                                                              DoubleIs("duck gain db", -10.0),
-                                                              DoubleIs("mute gain db", -100.0))))),
+          NodeMatches(AllOf(
+              NameMatches(std::string(kActiveUsagePolicies)),
+              PropertyList(UnorderedElementsAre(DoubleIs(std::string(kNoneGainDb), 0.0),
+                                                DoubleIs(std::string(kDuckGainDb), -10.0),
+                                                DoubleIs(std::string(kMuteGainDb), -100.0))))),
           ChildrenMatch(UnorderedElementsAre(
-              NodeMatches(AllOf(NameMatches("1"), PropertyList(Contains(BoolIs("active", false))))),
+              NodeMatches(AllOf(NameMatches("1"),
+                                PropertyList(Contains(BoolIs(std::string(kActive), false))))),
               NodeMatches(AllOf(NameMatches("2"), PropertyList(UnorderedElementsAre(
-                                                      BoolIs("active", false),
-                                                      StringIs("RenderUsage::MEDIA", "NONE"))))),
+                                                      BoolIs(std::string(kActive), false),
+                                                      StringIs("RenderUsage::MEDIA", kNone))))),
               NodeMatches(AllOf(NameMatches("3"),
                                 PropertyList(UnorderedElementsAre(
-                                    BoolIs("active", true), StringIs("RenderUsage::MEDIA", "DUCK"),
-                                    StringIs("CaptureUsage::SYSTEM_AGENT", "NONE")))))))))));
+                                    BoolIs(std::string(kActive), true),
+                                    StringIs("RenderUsage::MEDIA", kDuck),
+                                    StringIs("CaptureUsage::SYSTEM_AGENT", kNone)))))))))));
 }
 }  // namespace
 }  // namespace media::audio

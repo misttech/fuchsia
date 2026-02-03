@@ -530,7 +530,7 @@ void HermeticAudioTest::ExpectNoOutputUnderflows() {
     if (!device.virtual_device->is_input()) {
       ExpectInspectMetrics(device.virtual_device.get(), unique_id,
                            {.children = {
-                                {"device underflows", {.uints = {{"count", 0}}}},
+                                {kDeviceUnderflows, {.uints = {{kCount, 0}}}},
                             }});
     }
   }
@@ -543,7 +543,7 @@ void HermeticAudioTest::ExpectNoPipelineUnderflows() {
     if (!device.virtual_device->is_input()) {
       ExpectInspectMetrics(device.virtual_device.get(), unique_id,
                            {.children = {
-                                {"pipeline underflows", {.uints = {{"count", 0}}}},
+                                {kPipelineUnderflows, {.uints = {{kCount, 0}}}},
                             }});
     }
   }
@@ -553,9 +553,9 @@ void HermeticAudioTest::ExpectNoPipelineUnderflows() {
 void HermeticAudioTest::ExpectNoRendererUnderflows() {
   for (auto& r : renderers_) {
     ExpectInspectMetrics(r.get(), {.children = {
-                                       {"continuity underflows", {.uints = {{"count", 0}}}},
-                                       {"packet queue underflows", {.uints = {{"count", 0}}}},
-                                       {"timestamp underflows", {.uints = {{"count", 0}}}},
+                                       {kContinuityUnderflows, {.uints = {{kCount, 0}}}},
+                                       {kPacketQueueUnderflows, {.uints = {{kCount, 0}}}},
+                                       {kTimestampUnderflows, {.uints = {{kCount, 0}}}},
                                    }});
   }
 }
@@ -564,7 +564,7 @@ void HermeticAudioTest::ExpectNoRendererUnderflows() {
 void HermeticAudioTest::ExpectNoCapturerOverflows() {
   for (auto& c : capturers_) {
     ExpectInspectMetrics(c.get(), {.children = {
-                                       {"overflows", {.uints = {{"count", 0}}}},
+                                       {kCaptureOverflows, {.uints = {{kCount, 0}}}},
                                    }});
   }
 }
@@ -573,20 +573,20 @@ void HermeticAudioTest::ExpectInspectMetrics(VirtualDevice* virtual_device,
                                              const std::string& unique_id,
                                              const ExpectedInspectProperties& props) {
   if (virtual_device->is_input()) {
-    ExpectInspectMetrics({"input devices", unique_id}, props);
+    ExpectInspectMetrics({kInputDevices, unique_id}, props);
   } else {
-    ExpectInspectMetrics({"output devices", unique_id}, props);
+    ExpectInspectMetrics({kOutputDevices, unique_id}, props);
   }
 }
 
 void HermeticAudioTest::ExpectInspectMetrics(RendererShimImpl* renderer,
                                              const ExpectedInspectProperties& props) {
-  ExpectInspectMetrics({"renderers", renderer->reporting_id_str()}, props);
+  ExpectInspectMetrics({kRenderers, renderer->reporting_id_str()}, props);
 }
 
 void HermeticAudioTest::ExpectInspectMetrics(CapturerShimImpl* capturer,
                                              const ExpectedInspectProperties& props) {
-  ExpectInspectMetrics({"capturers", capturer->reporting_id_str()}, props);
+  ExpectInspectMetrics({kCapturers, capturer->reporting_id_str()}, props);
 }
 
 inspect::Hierarchy HermeticAudioTest::GetInspectHierarchy() {
@@ -618,9 +618,9 @@ void HermeticAudioTest::ExpectInspectMetrics(const std::vector<std::string>& pat
 bool HermeticAudioTest::DeviceHasUnderflows(const std::string& unique_id) {
   auto root = GetInspectHierarchy();
 
-  for (const char* kind : {"device underflows", "pipeline underflows"}) {
+  for (const std::string& kind : {kDeviceUnderflows, kPipelineUnderflows}) {
     std::vector<std::string> path = {
-        "output devices",
+        kOutputDevices,
         unique_id,
         kind,
     };
@@ -630,7 +630,7 @@ bool HermeticAudioTest::DeviceHasUnderflows(const std::string& unique_id) {
       ADD_FAILURE() << "Missing inspect hierarchy for " << path_string;
       continue;
     }
-    auto p = h->node().template get_property<inspect::UintPropertyValue>("count");
+    auto p = h->node().template get_property<inspect::UintPropertyValue>(kCount);
     if (!p) {
       ADD_FAILURE() << "Missing property: " << path_string << "[count]";
       continue;

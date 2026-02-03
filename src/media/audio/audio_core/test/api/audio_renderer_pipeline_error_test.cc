@@ -27,7 +27,7 @@ TEST_F(AudioRendererPipelineUnderflowTest, HasUnderflow) {
                        {
                            .children =
                                {
-                                   {"pipeline underflows", {.nonzero_uints = {"count"}}},
+                                   {kPipelineUnderflows, {.nonzero_uints = {kCount}}},
                                },
                        });
   Unbind(renderer());
