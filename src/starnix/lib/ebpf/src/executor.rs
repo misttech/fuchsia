@@ -9,7 +9,6 @@ use crate::{
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use std::mem::MaybeUninit;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use zerocopy::IntoBytes;
 
@@ -24,9 +23,7 @@ pub fn execute<C: EbpfProgramContext>(
         code,
         helpers,
         registers: Default::default(),
-        stack: vec![MaybeUninit::uninit(); BPF_STACK_SIZE / std::mem::size_of::<BpfValue>()]
-            .into_boxed_slice()
-            .into(),
+        stack: [MaybeUninit::uninit(); BPF_STACK_SIZE / std::mem::size_of::<BpfValue>()],
         pc: 0,
         result: None,
     };
@@ -64,7 +61,7 @@ struct ComputationContext<'a, C: EbpfProgramContext> {
     /// Registers.
     registers: [BpfValue; GENERAL_REGISTER_COUNT as usize + 1],
     /// The state of the stack.
-    stack: Pin<Box<[MaybeUninit<BpfValue>]>>,
+    stack: [MaybeUninit<BpfValue>; BPF_STACK_SIZE / std::mem::size_of::<BpfValue>()],
     /// The program counter.
     pc: ProgramCounter,
     /// The result, set to Some(value) when the program terminates.
