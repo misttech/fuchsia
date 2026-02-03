@@ -36,6 +36,23 @@ type ScanData = table {
 
     /// The monotonic time when this scan data was received.
     7: timestamp zx.Time;
+
+    /// Identifies the peer as belonging to a Coordinated Set.
+    /// Resolution and generation of this parameter is defined in the
+    /// Coordinated Set Identification Service Specification.
+    @available(added=NEXT)
+    8: resolvable_set_identifier array<uint8, 6>;
+
+    /// The broadcast name string can be used by a user interface on a scanning
+    /// device that displays information on the available broadcast sources.
+    ///
+    /// Multiple devices with the same Broadcast Name may be transmitting the
+    /// same data, allowing devices to choose one.  At least 4 unicode characters
+    /// long and no more than 32 characters.
+    ///
+    /// Defined in the Public Broadcast Profile specification.
+    @available(added=NEXT)
+    9: broadcast_name string:MAX_BROADCAST_NAME_OCTETS;
 };
 
 /// Represents a Bluetooth Low Energy peer that may act in the broadcaster, peripheral, or central

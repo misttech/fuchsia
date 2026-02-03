@@ -2038,9 +2038,21 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ScanData.broadcast_name",
+        "ordinal": "9",
+        "type": "string:128"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.bluetooth.le/ScanData.manufacturer_data",
         "ordinal": "5",
         "type": "vector<fuchsia.bluetooth.le/ManufacturerData>"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ScanData.resolvable_set_identifier",
+        "ordinal": "8",
+        "type": "array<uint8,6>"
     },
     {
         "kind": "table/member",
