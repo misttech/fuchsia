@@ -7,7 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use std::num::NonZeroU64;
 
+use crate::Errno;
 use crate::client::InternalClient;
 use crate::logging::{log_debug, log_warn};
 use crate::messaging::Sender;
@@ -20,7 +22,8 @@ use futures::channel::oneshot;
 use net_types::ip::IpVersion;
 use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
 use netlink_packet_route::neighbour::{
-    NeighbourAttribute, NeighbourHeader, NeighbourMessage, NeighbourState,
+    NeighbourAddress, NeighbourAttribute, NeighbourFlags, NeighbourHeader, NeighbourMessage,
+    NeighbourState,
 };
 use netlink_packet_route::route::RouteType;
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
@@ -122,8 +125,135 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
 /// Arguments for an RTM_GETNEIGH [`Request`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GetNeighborArgs {
-    Dump { ip_version: Option<IpVersion>, interface: Option<u64> },
-    // TODO(https://fxbug.dev/285127384): Support single-neighbor RTM_GETNEIGH requests.
+    Dump { ip_version: Option<IpVersion>, interface: Option<NonZeroU64> },
+    Get { ip: fnet::IpAddress, interface: NonZeroU64 },
+}
+
+impl GetNeighborArgs {
+    // Attempts to convert a netlink_packet_route `NeighbourMessage` into
+    // `GetNeighborArgs`.
+    pub(crate) fn try_from_rtnl_neighbor(
+        message: &NeighbourMessage,
+        is_dump: bool,
+    ) -> Result<Self, RequestError> {
+        if is_dump {
+            Self::dump_request_from_rtnl_neighbor(message)
+        } else {
+            Self::get_request_from_rtnl_neighbor(message)
+        }
+    }
+
+    fn dump_request_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
+        let NeighbourHeader { family, flags, .. } = &message.header;
+        if flags.contains(NeighbourFlags::Proxy) {
+            // Netstack3 does not support ARP/NDP proxying.
+            log_warn!("unsupported flags in header for dump neighbor request: {flags:?}");
+            return Err(RequestError::UnsupportedRequest);
+        }
+        // TODO(https://fxbug.dev/456508664): Support strict validation of dump
+        // requests.
+        let ip_version = match family {
+            AddressFamily::Unspec => None,
+            AddressFamily::Inet => Some(IpVersion::V4),
+            AddressFamily::Inet6 => Some(IpVersion::V6),
+            family => {
+                log_warn!("invalid address family ({family:?}) in dump neighbors request");
+                return Err(RequestError::InvalidRequest);
+            }
+        };
+        // Note that the interface index is pulled from the attribute here,
+        // whereas it's pulled from the header for get requests. This is
+        // intentional, in order to maintain consistency with Linux's behavior.
+        let interface = message
+            .attributes
+            .iter()
+            .find_map(|attr| match attr {
+                NeighbourAttribute::IfIndex(ifindex) => Some(u64::from(*ifindex).try_into()),
+                _ => None,
+            })
+            .transpose()
+            // 0 is treated as a lack of filter.
+            .unwrap_or(None);
+        Ok(GetNeighborArgs::Dump { ip_version, interface })
+    }
+
+    fn get_request_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
+        let NeighbourHeader { ifindex, family, state, flags, kind } = &message.header;
+        if *state != NeighbourState::None {
+            log_warn!("invalid state in header for get neighbor request: {state:?}");
+            return Err(RequestError::InvalidRequest);
+        }
+        if *kind != RouteType::Unspec {
+            log_warn!("invalid kind in header for get neighbor request: {kind:?}");
+            return Err(RequestError::InvalidRequest);
+        }
+        if flags.intersects(!NeighbourFlags::Proxy) {
+            log_warn!("invalid flags in header for get neighbor request: {flags:?}");
+            return Err(RequestError::InvalidRequest);
+        }
+        if flags.contains(NeighbourFlags::Proxy) {
+            // Netstack3 does not support ARP/NDP proxying.
+            log_warn!("unsupported flags in header for get neighbor request: {flags:?}");
+            return Err(RequestError::UnsupportedRequest);
+        }
+
+        let (address, unsupported) = message.attributes.iter().fold(
+            (None, false),
+            |(address_acc, unsupported_acc), attr| {
+                match attr {
+                    NeighbourAttribute::Destination(addr) => {
+                        // Note: In the event the Destination attribute is
+                        // provided multiple times, keep the first.
+                        (address_acc.or(Some(addr)), unsupported_acc)
+                    }
+                    _ => {
+                        if !unsupported_acc {
+                            // Only log for the first invalid attribute to avoid spamming.
+                            log_warn!(
+                                "unsupported request attribute: {attr:?} in get neighbor\
+                                request; only `DST` is supported"
+                            );
+                        }
+                        (address_acc, true)
+                    }
+                }
+            },
+        );
+        if unsupported {
+            return Err(RequestError::InvalidRequest);
+        }
+        let ip = match address {
+            Some(NeighbourAddress::Inet(addr)) => fnet_ext::IpAddress(IpAddr::V4(*addr)).into(),
+            Some(NeighbourAddress::Inet6(addr)) => fnet_ext::IpAddress(IpAddr::V6(*addr)).into(),
+            Some(_) => {
+                log_warn!("invalid neighbor address: {address:?} in get neighbor request");
+                return Err(RequestError::InvalidRequest);
+            }
+            None => {
+                log_warn!("get neighbor request missing required `DST` attribute");
+                return Err(RequestError::InvalidRequest);
+            }
+        };
+        let expected_family = match ip {
+            fnet::IpAddress::Ipv4(_) => AddressFamily::Inet,
+            fnet::IpAddress::Ipv6(_) => AddressFamily::Inet6,
+        };
+        if *family != expected_family {
+            log_warn!(
+                "address family mismatch in get neighbor request;\
+                destination={ip:?} family={family:?}"
+            );
+            return Err(RequestError::InvalidRequest);
+        }
+        // Note that the interface index is pulled from the header here, whereas
+        // it's pulled from the attribute for dump requests. This is
+        // intentional, in order to maintain consistency with Linux's behavior.
+        let interface = u64::from(*ifindex).try_into().map_err(|_| {
+            log_warn!("get neighbor request header must specify interface");
+            RequestError::InvalidRequest
+        })?;
+        Ok(GetNeighborArgs::Get { ip, interface })
+    }
 }
 
 /// [`Request`] arguments associated with neighbors.
@@ -135,7 +265,24 @@ pub(crate) enum NeighborRequestArgs {
 
 /// An error encountered while handling a [`Request`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum RequestError {}
+pub(crate) enum RequestError {
+    /// Unsupported request.
+    UnsupportedRequest,
+    /// Invalid request.
+    InvalidRequest,
+    /// No such neighbor.
+    NotFound,
+}
+
+impl From<RequestError> for Errno {
+    fn from(value: RequestError) -> Self {
+        match value {
+            RequestError::UnsupportedRequest => Errno::ENOTSUP,
+            RequestError::InvalidRequest => Errno::EINVAL,
+            RequestError::NotFound => Errno::ENOENT,
+        }
+    }
+}
 
 /// A request associated with neighbors.
 #[derive(Derivative)]
@@ -279,12 +426,26 @@ impl NeighborsWorker {
                                 fnet::IpAddress::Ipv6(_) => ip_version == IpVersion::V6,
                             })
                         })
-                        .filter(|n| interface.map_or(true, |i| n.interface == i))
+                        .filter(|n| interface.map_or(true, |i| n.interface == i.get()))
                         .filter_map(|e| NetlinkNeighborMessage::optionally_from(e.clone()))
                         .for_each(|m| {
                             client.send_unicast(m.into_rtnl_new_neighbor(sequence_number, true));
                         });
                     Ok(())
+                }
+                GetNeighborArgs::Get { ip, interface } => {
+                    let neighbor = self
+                        .neighbor_table
+                        .get(&NeighborKey { interface: interface.get(), neighbor: ip })
+                        .map(|e| NetlinkNeighborMessage::optionally_from(e.clone()))
+                        .flatten();
+                    match neighbor {
+                        Some(msg) => {
+                            client.send_unicast(msg.into_rtnl_new_neighbor(sequence_number, false));
+                            Ok(())
+                        }
+                        None => Err(RequestError::NotFound),
+                    }
                 }
             },
         };
@@ -825,6 +986,53 @@ mod tests {
         }
     }
 
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_get_neighbor_not_found() {
+        let (mut sender_sink, client, _async_work_drain_task) =
+            new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, completer_rcv) = oneshot::channel();
+        let request = Request {
+            args: NeighborRequestArgs::Get(GetNeighborArgs::Get {
+                ip: fidl_ip!("192.168.0.1"),
+                interface: NonZeroU64::new(1).unwrap(),
+            }),
+            sequence_number: 1,
+            client,
+            completer,
+        };
+
+        let events: Vec<_> = [
+            fnet_neighbor_ext::Entry {
+                interface: 2,
+                neighbor: fidl_ip!("192.168.0.1"),
+                ..valid_neighbor_entry()
+            },
+            fnet_neighbor_ext::Entry {
+                interface: 1,
+                neighbor: fidl_ip!("fe80::2"),
+                ..valid_neighbor_entry()
+            },
+        ]
+        .into_iter()
+        .map(Into::into)
+        .map(fnet_neighbor::EntryIteratorItem::Existing)
+        .chain(std::iter::once(fnet_neighbor::EntryIteratorItem::Idle(fnet_neighbor::IdleEvent)))
+        .collect();
+
+        let batches = vec![events];
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
+
+        let worker_fut = NeighborsWorker::create(&view);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        worker.handle_request(request);
+
+        let result = completer_rcv.await.expect("completer channel should not be closed");
+        assert_matches!(result, Err(RequestError::NotFound));
+        assert_eq!(&sender_sink.take_messages()[..], &[]);
+    }
+
     #[test_case(
         GetNeighborArgs::Dump{ ip_version: None, interface: None },
         &[1, 2, 3, 4];
@@ -841,14 +1049,30 @@ mod tests {
         "dump ipv6 only"
     )]
     #[test_case(
-        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V6), interface: Some(4) },
+        GetNeighborArgs::Dump{
+            ip_version: Some(IpVersion::V6),
+            interface: Some(NonZeroU64::new(4).unwrap())
+        },
         &[4];
         "dump interface 4 ipv6"
     )]
     #[test_case(
-        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V4), interface: Some(4) },
+        GetNeighborArgs::Dump{
+            ip_version: Some(IpVersion::V4),
+            interface: Some(NonZeroU64::new(4).unwrap())
+        },
         &[];
         "dump interface 4 ipv4"
+    )]
+    #[test_case(
+        GetNeighborArgs::Get{ ip: fidl_ip!("192.168.0.1"), interface: NonZeroU64::new(1).unwrap() },
+        &[1];
+        "get ipv4"
+    )]
+    #[test_case(
+        GetNeighborArgs::Get{ ip: fidl_ip!("fe80::2"), interface: NonZeroU64::new(2).unwrap() },
+        &[2];
+        "get ipv6"
     )]
     #[fuchsia::test]
     async fn neighbors_worker_handle_get_request(
@@ -902,7 +1126,10 @@ mod tests {
 
         worker.handle_request(request);
 
-        completer_rcv.await.expect("request handling result should be OK");
+        completer_rcv
+            .await
+            .expect("completer channel should not be closed")
+            .expect("request handling result should be OK");
 
         let mut ifindexes_seen = Vec::new();
         for sent_message in sender_sink.take_messages() {
@@ -917,5 +1144,237 @@ mod tests {
         }
         ifindexes_seen.sort();
         assert_eq!(&ifindexes_seen[..], expected_ifindexes);
+    }
+
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Ok(GetNeighborArgs::Get {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "get ipv4 success"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet6,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v6!("fe80::1").into()),
+        ] => Ok(GetNeighborArgs::Get {
+            ip: fidl_ip!("fe80::1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "get ipv6 success"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            state: NeighbourState::Reachable,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidRequest);
+        "get invalid request state"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            kind: RouteType::Broadcast,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidRequest);
+        "get invalid request kind"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            flags: NeighbourFlags::Router,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidRequest);
+        "get invalid request flag"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            flags: NeighbourFlags::Proxy,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::UnsupportedRequest);
+        "get unsupported request flag"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet6,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidRequest);
+        "get address family mismatch"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidRequest);
+        "get interface unspecified"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[] => Err(RequestError::InvalidRequest);
+        "get destination unspecified"
+    )]
+    #[test_case(
+        false,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+            NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
+        ] => Err(RequestError::InvalidRequest);
+        "get invalid attribute"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader::default(),
+        &[] => Ok(GetNeighborArgs::Dump {
+            ip_version: None,
+            interface: None,
+        });
+        "dump all"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[] => Ok(GetNeighborArgs::Dump {
+            ip_version: Some(IpVersion::V4),
+            interface: None,
+        });
+        "dump ipv4 only"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader {
+            family: AddressFamily::Inet6,
+            ..Default::default()
+        },
+        &[] => Ok(GetNeighborArgs::Dump {
+            ip_version: Some(IpVersion::V6),
+            interface: None,
+        });
+        "dump ipv6 only"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader::default(),
+        &[
+            NeighbourAttribute::IfIndex(1),
+        ] => Ok(GetNeighborArgs::Dump {
+            ip_version: None,
+            interface: Some(NonZeroU64::new(1).unwrap()),
+        });
+        "dump interface 1"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader::default(),
+        &[
+            NeighbourAttribute::IfIndex(0),
+        ] => Ok(GetNeighborArgs::Dump {
+            ip_version: None,
+            interface: None,
+        });
+        "dump interface 0 treated as all interfaces"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader {
+            family: AddressFamily::Local,
+            ..Default::default()
+        },
+        &[] => Err(RequestError::InvalidRequest);
+        "dump invalid address family"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader::default(),
+        &[
+            NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
+        ] => Ok(GetNeighborArgs::Dump {
+            ip_version: None,
+            interface: None,
+        });
+        "dump unsupported attribute ignored (non-strict)"
+    )]
+    #[test_case(
+        true,
+        NeighbourHeader {
+            flags: NeighbourFlags::Proxy,
+            ..Default::default()
+        },
+        &[] => Err(RequestError::UnsupportedRequest);
+        "dump unsupported request flag"
+    )]
+    #[fuchsia::test]
+    fn get_neighbor_args_try_from_rtnl_neighbor(
+        is_dump: bool,
+        header: NeighbourHeader,
+        attrs: &[NeighbourAttribute],
+    ) -> Result<GetNeighborArgs, RequestError> {
+        let mut message = NeighbourMessage::default();
+        message.header = header;
+        message.attributes = attrs.to_vec();
+        GetNeighborArgs::try_from_rtnl_neighbor(&message, is_dump)
+    }
+
+    #[test_case(RequestError::UnsupportedRequest => Errno::ENOTSUP; "unsupported request")]
+    #[test_case(RequestError::InvalidRequest => Errno::EINVAL; "invalid request")]
+    #[test_case(RequestError::NotFound => Errno::ENOENT; "not found")]
+    #[fuchsia::test]
+    fn request_error_into_errno(error: RequestError) -> Errno {
+        error.into()
     }
 }
