@@ -85,16 +85,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.settings/Audio.Set",
-        "strictness": "strict",
-        "ordinal": "5708424519045767788",
-        "direction": "two_way",
-        "request": "fuchsia.settings/AudioSetRequest",
-        "response": "fuchsia.settings/Audio_Set_Response",
-        "error": "fuchsia.settings/Error"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.settings/Audio.Set2",
         "strictness": "flexible",
         "ordinal": "2234487585818734563",
@@ -102,14 +92,6 @@
         "request": "fuchsia.settings/AudioSet2Request",
         "response": "fuchsia.settings/Audio_Set2_Response",
         "error": "fuchsia.settings/Error"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.settings/Audio.Watch",
-        "strictness": "strict",
-        "ordinal": "2996529292823820293",
-        "direction": "two_way",
-        "response": "fuchsia.settings/AudioWatchResponse"
     },
     {
         "kind": "protocol/member",
@@ -134,26 +116,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.settings/AudioSet2Request"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.settings/AudioSetRequest.settings",
-        "ordinal": "1",
-        "type": "fuchsia.settings/AudioSettings"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.settings/AudioSetRequest"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.settings/AudioSettings.streams",
-        "ordinal": "1",
-        "type": "vector<fuchsia.settings/AudioStreamSettings>:5"
-    },
-    {
-        "kind": "table",
-        "name": "fuchsia.settings/AudioSettings"
     },
     {
         "kind": "table/member",
@@ -188,28 +150,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.settings/AudioStreamSettings.source",
-        "ordinal": "2",
-        "type": "fuchsia.settings/AudioStreamSettingSource"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.settings/AudioStreamSettings.stream",
-        "ordinal": "1",
-        "type": "fuchsia.media/AudioRenderUsage"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.settings/AudioStreamSettings.user_volume",
-        "ordinal": "3",
-        "type": "fuchsia.settings/Volume"
-    },
-    {
-        "kind": "table",
-        "name": "fuchsia.settings/AudioStreamSettings"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.settings/AudioStreamSettings2.source",
         "ordinal": "2",
         "type": "fuchsia.settings/AudioStreamSettingSource"
@@ -229,16 +169,6 @@
     {
         "kind": "table",
         "name": "fuchsia.settings/AudioStreamSettings2"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.settings/AudioWatchResponse.settings",
-        "ordinal": "1",
-        "type": "fuchsia.settings/AudioSettings"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.settings/AudioWatchResponse"
     },
     {
         "kind": "struct/member",
