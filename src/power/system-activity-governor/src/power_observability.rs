@@ -76,6 +76,7 @@ struct Inner {
     info_by_koid: HashMap<zx::Koid, Info>,
 }
 
+#[derive(Debug)]
 /// Wake source observability manager.
 pub struct WakeSourceObservability {
     // Interior-mutable state.

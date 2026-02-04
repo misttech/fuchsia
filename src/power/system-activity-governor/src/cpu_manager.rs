@@ -195,7 +195,7 @@ pub struct CpuManager {
     /// Logger for system-wide activity governor events.
     sag_event_logger: SagEventLogger,
     /// The power observability data collection.
-    observability: WakeSourceObservability,
+    observability: Rc<AsyncOnceCell<WakeSourceObservability>>,
 }
 
 impl CpuManager {
@@ -204,7 +204,7 @@ impl CpuManager {
         cpu: Rc<PowerElementContext>,
         suspender: Rc<AsyncOnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_event_logger: SagEventLogger,
-        observability: WakeSourceObservability,
+        observability: Rc<AsyncOnceCell<WakeSourceObservability>>,
     ) -> Self {
         Self {
             inner: Mutex::new(CpuManagerInner {
@@ -261,6 +261,10 @@ impl CpuManager {
     }
 
     async fn report_wake_reason(&self, reason: Option<&fhsuspend::WakeReason>) {
+        if !self.observability.is_initialized() {
+            log::warn!("power observability: observer server not yet available");
+        }
+
         if let Some(reason) = reason {
             let wake_vectors_type =
                 reason.wake_vectors_type.unwrap_or(fhsuspend::WakeVectorType::Koid);
@@ -275,7 +279,7 @@ impl CpuManager {
                 .into_iter()
                 .map(|v| WakeSourceReport::new(zx::Koid::from_raw(v)))
                 .collect();
-            self.observability.register_wake_source_reports(reports).await;
+            self.observability.wait().await.register_wake_source_reports(reports).await;
         }
     }
 

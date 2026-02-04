@@ -10,6 +10,7 @@ mod system_activity_governor;
 
 use crate::cpu_element_manager::{CpuElementManager, SystemActivityGovernorFactory};
 use crate::events::SagEventLogger;
+use crate::power_observability::WakeSourceObservability;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::{Context, Result};
 use async_lock::OnceCell;
@@ -199,17 +200,25 @@ async fn main() -> Result<()> {
         .boxed_local()
     };
 
-    let interrupt_attributor = connect_to_interrupt_attributor()
-        .await
-        .context("while connecting to interrupt_attributor")
-        .inspect_err(|err| {
-            log::warn!("no interrupt attributor, wake vectors will not be resolved: {err:?}")
-        })
-        .ok();
-    let observer = power_observability::WakeSourceObservability::new(
-        interrupt_attributor,
-        sag_event_logger_obs,
-    );
+    let interrupt_attr_cell: Rc<OnceCell<WakeSourceObservability>> = Rc::new(OnceCell::new());
+    let interrupt_attributor = interrupt_attr_cell.clone();
+    fasync::Task::local(async move {
+        let interrupt_attributor = connect_to_interrupt_attributor()
+            .await
+            .context("while connecting to interrupt_attributor")
+            .inspect_err(|err| {
+                log::warn!("no interrupt attributor, wake vectors will not be resolved: {err:?}")
+            })
+            .ok();
+        let observer = power_observability::WakeSourceObservability::new(
+            interrupt_attributor,
+            sag_event_logger_obs,
+        );
+        interrupt_attr_cell.set(observer).await.expect(
+            "Unexpected error setting attribution cell, something else seems to have set it.",
+        );
+    })
+    .detach();
 
     let cpu_service = if config.wait_for_suspending_token {
         CpuElementManager::new_wait_for_suspending_token(
@@ -218,7 +227,7 @@ async fn main() -> Result<()> {
             sag_event_logger,
             suspender,
             sag_factory_fn,
-            observer,
+            interrupt_attributor,
         )
         .await
     } else {
@@ -228,7 +237,7 @@ async fn main() -> Result<()> {
             sag_event_logger,
             suspender,
             sag_factory_fn,
-            observer,
+            interrupt_attributor,
         )
         .await
     };

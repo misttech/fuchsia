@@ -62,7 +62,7 @@ where
         sag_event_logger: SagEventLogger,
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
-        observability: crate::power_observability::WakeSourceObservability,
+        observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
     ) -> Rc<Self> {
         log::info!("Creating CPU power element");
         let (element_runner_client, element_runner) =
@@ -138,7 +138,7 @@ where
         sag_event_logger: SagEventLogger,
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
         sag_factory: F,
-        observability: crate::power_observability::WakeSourceObservability,
+        observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
     ) -> Rc<Self> {
         let manager = Self::new_wait_for_suspending_token(
             topology,

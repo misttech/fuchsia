@@ -62,7 +62,7 @@ pub enum SagEvent {
 
 /// A logger for SagEvent objects that inserts the event into a circular buffer
 /// in inspect.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SagEventLogger {
     event_log: Rc<RefCell<IRingBuffer>>,
     /// Vector of timestamps that mirror `event_log` contents.
