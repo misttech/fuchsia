@@ -236,7 +236,7 @@ def list_assignments_from(
 
 
 def targets_from_gn_file(
-    filepath: pathlib.Path, target_types: list[str]
+    filepath: pathlib.Path, target_types: list[str] | None
 ) -> list[dict]:
     """Parse a BUILD.gn file and extract information about targets in input target_types.
 
@@ -247,6 +247,13 @@ def targets_from_gn_file(
     It also accumulates context, which include variable assignments outside of
     target bodies. Context can be used to resolve shared variable references in
     target bodies.
+
+    Args:
+        filepath: Path to the BUILD.gn file.
+        target_types: List of target types to look for. None means all target types.
+
+    Returns:
+        List of targets found in the file.
     """
     content = filepath.read_text()
 
@@ -280,7 +287,7 @@ def targets_from_gn_file(
         target_type, target_name = match.group(1), match.group(2)
         # Skip targets that are not in the target_types we care about.
         # It's still necessary to do previous parsing to extract shared variables.
-        if target_type not in target_types:
+        if target_types and target_type not in target_types:
             continue
 
         target_body = content[start_pos : end_pos - 1]
@@ -333,7 +340,11 @@ class ComplexityCalculator:
             target_types: List of target types to extract.
         """
         for gn_file in gn_files:
-            targets = targets_from_gn_file(gn_file, target_types)
+            # Don't filter by target_types here because we need to extract all
+            # possible dependencies for each target defined in the GN file.
+            # For example, caller could be filtering with `rustc_binary` but the
+            # target could have `rustc_library` dependencies.
+            targets = targets_from_gn_file(gn_file, None)
             label_to_target = {
                 self._to_fully_qualified_label(
                     gn_file.parent, target["name"]
@@ -394,8 +405,8 @@ class ComplexityCalculator:
             label_path, target_name = label.split(":")
             target_path = dir_path / label_path
         else:
-            target_name = pathlib.Path(label).name
-            target_path = dir_path / label
+            target_name = label
+            target_path = dir_path
         return f"//{target_path}:{target_name}"
 
     def _parts_from_fully_qualified_label(
@@ -410,7 +421,12 @@ class ComplexityCalculator:
         return pathlib.Path(path_part), target_name
 
     def complexity_for_label(self, label: str) -> int:
-        """Calculate complexity for a target taking its dependencies and fields into account."""
+        """Calculate complexity for a target taking its dependencies and fields into account.
+
+        Actionable targets are those that are not already in Bazel and are not
+        third-party targets. Their complexity is at least 1. Non-actionable
+        targets have complexity 0.
+        """
         if not self._is_fully_qualified_label(label):
             raise ValueError(
                 f"Invalid label: {label}, only fully-qualified labels are supported."
@@ -452,7 +468,9 @@ class ComplexityCalculator:
             if f not in _STANDARD_FIELDS
         )
 
-        complexity = dep_complexity + field_complexity
+        # Add 1 as base complexity for the target itself. To be distinguished
+        # from targets with 0 complexity (e.g. bazel2gn targets).
+        complexity = 1 + dep_complexity + field_complexity
         self._complexity_cache[label] = complexity
         return complexity
 
@@ -581,21 +599,25 @@ def main() -> int:
         f"Searching for GN files in {args.directory}, excluding {args.exclude_dirs}"
     )
     gn_files = find_gn_files(args.directory, args.exclude_dirs, args.toolchain)
+    debug(f"Found {len(gn_files)} GN files matching the criteria")
+
+    debug("Calculating complexity for each file...")
 
     calculator = ComplexityCalculator(
         args.fuchsia_dir, gn_files, args.target_types
     )
 
-    file_results = []
-    for gn_file in gn_files:
-        file_result = calculator.complexity_for_file(gn_file, args.target_types)
-        # Only add files that have targets
-        if file_result["total_targets"] > 0:
-            file_results.append(file_result)
+    file_results = [
+        calculator.complexity_for_file(gn_file, args.target_types)
+        for gn_file in gn_files
+    ]
+    actionable_files = [f for f in file_results if f["total_complexity"] > 0]
 
-    # Sort by total complexity
-    file_results.sort(key=lambda x: (x["total_complexity"], x["total_targets"]))
-    print_results(file_results, args.top)
+    # Sort by total complexity and then by number of targets.
+    actionable_files.sort(
+        key=lambda x: (x["total_complexity"], x["total_targets"])
+    )
+    print_results(actionable_files, args.top)
 
     return 0
 

@@ -79,13 +79,13 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
         calc._target_cache["//a:a"] = {"name": "a", "deps": [], "fields": []}
         calc._target_cache["//b:b"] = {"name": "b", "deps": [], "fields": []}
 
-        # 2 deps * (1 + 0) + 1 field (sources=0, configs=2) -> 2 + 2 = 4
+        # 1 + (2 deps * (1 + 1)) + 2 fields (configs=2) -> 1 + 4 + 2 = 7
         with mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
             "_is_bazel_target",
             return_value=False,
         ):
-            self.assertEqual(calc.complexity_for_label("//root:t1"), 4)
+            self.assertEqual(calc.complexity_for_label("//root:t1"), 7)
 
         with mock.patch.object(
             discover_migration_candidates.ComplexityCalculator,
@@ -339,12 +339,31 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             calc = discover_migration_candidates.ComplexityCalculator(
                 root, [gn_file], ["executable"]
             )
-            expected_label = "//src/foo:foo"
+            expected_label = "//src:foo"
             self.assertIn(expected_label, calc._target_cache)
             self.assertEqual(calc._target_cache[expected_label]["name"], "foo")
             self.assertEqual(
                 calc._target_cache[expected_label]["type"], "executable"
             )
+
+    def test_to_fully_qualified_label(self):
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root"), [], []
+        )
+        self.assertEqual(
+            calc._to_fully_qualified_label(
+                pathlib.Path("src"), "//src/foo:bar"
+            ),
+            "//src/foo:bar",
+        )
+        self.assertEqual(
+            calc._to_fully_qualified_label(pathlib.Path("src"), "foo:bar"),
+            "//src/foo:bar",
+        )
+        self.assertEqual(
+            calc._to_fully_qualified_label(pathlib.Path("src"), "bar"),
+            "//src:bar",
+        )
 
 
 if __name__ == "__main__":
