@@ -61,6 +61,14 @@ the contents of `//out`.
     target, you should call `fx add-test` with the path to the target and then
     try `fx build` again.
 
+### Matching local style
+
+You are working in a large codebase. Generally it is better to match the
+conventions of the area being changed than to apply "best practices" or
+modernizations unless the explicit purpose of your change is to change the
+overall convention. Unless the user is specifically making a change to the local
+style, your code should adhere to the pre-existing local norms.
+
 ### C++ Development
 
 When working with C++ (`.cc`, `.h`, `.cpp`), you must use the language server
