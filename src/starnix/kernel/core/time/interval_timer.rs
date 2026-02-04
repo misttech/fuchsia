@@ -234,7 +234,7 @@ impl IntervalTimer {
 
     fn signal_info(self: &IntervalTimerHandle) -> Option<SignalInfo> {
         let signal_detail = SignalDetail::Timer { timer: self.clone() };
-        Some(SignalInfo::new(self.signal_event.signo?, SI_TIMER, signal_detail))
+        Some(SignalInfo::with_detail(self.signal_event.signo?, SI_TIMER, signal_detail))
     }
 
     async fn start_timer_loop(

@@ -763,7 +763,7 @@ mod test {
                         let signal = signals::SIGALRM;
                         thread_group
                             .write()
-                            .send_signal(crate::signals::SignalInfo::default(signal));
+                            .send_signal(crate::signals::SignalInfo::kernel(signal));
                     }
                 })
                 .unwrap();

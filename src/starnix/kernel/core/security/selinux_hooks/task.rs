@@ -1543,7 +1543,7 @@ mod tests {
                 child_task.write().set_signal_mask(SigSet(starnix_uapi::SIGTERM.into()));
 
                 assert_eq!(child_task.read().pending_signal_count(), 0);
-                child_task.thread_group().write().send_signal(SignalInfo::default(SIGTERM));
+                child_task.thread_group().write().send_signal(SignalInfo::kernel(SIGTERM));
                 assert_eq!(child_task.read().pending_signal_count(), 1);
 
                 // Simulate exec of the child task into a context with type `test_siginh_no_t`.

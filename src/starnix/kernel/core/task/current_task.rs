@@ -7,7 +7,7 @@ use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, TaskMemoryAccessor};
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
-use crate::signals::{RunState, SignalInfo, send_signal_first, send_standard_signal};
+use crate::signals::{RunState, SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
 use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
@@ -53,8 +53,8 @@ use starnix_uapi::{
     CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS, CLONE_SIGHAND,
     CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED, FUTEX_TID_MASK,
     ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
-    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SI_KERNEL, clone_args, errno,
-    error, from_status_like_fdio, pid_t, sock_filter, ucred,
+    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, clone_args, errno, error,
+    from_status_like_fdio, pid_t, sock_filter, ucred,
 };
 use std::cell::{Ref, RefCell};
 use std::collections::VecDeque;
@@ -537,7 +537,7 @@ impl CurrentTask {
             // A PTRACE_LISTEN is a state where we can get signals and notify a
             // ptracer, but otherwise remain blocked.
             if let Some(ptrace) = &mut task_state.ptrace {
-                ptrace.set_last_signal(Some(SignalInfo::default(SIGTRAP)));
+                ptrace.set_last_signal(Some(SignalInfo::kernel(SIGTRAP)));
                 ptrace.set_last_event(Some(PtraceEventData::new_from_event(PtraceEvent::Stop, 0)));
             }
             task_state.wait_on_ptracer(&waiter);
@@ -1121,11 +1121,7 @@ impl CurrentTask {
         if let Err(err) = self.finish_exec(locked, path, resolved_elf, maybe_set_id) {
             log_warn!("unrecoverable error in exec: {err:?}");
 
-            send_standard_signal(
-                locked,
-                self,
-                SignalInfo { code: SI_KERNEL as i32, force: true, ..SignalInfo::default(SIGSEGV) },
-            );
+            send_standard_signal(locked, self, SignalInfo::forced(SIGSEGV));
             return Err(err);
         }
 
@@ -1462,10 +1458,10 @@ impl CurrentTask {
     ) -> ExceptionResult {
         match report.ty {
             zx::ExceptionType::General => match get_signal_for_general_exception(&report.arch) {
-                Some(sig) => ExceptionResult::Signal(SignalInfo::default(sig)),
+                Some(sig) => ExceptionResult::Signal(SignalInfo::kernel(sig)),
                 None => {
                     log_error!("Unrecognized general exception: {:?}", report);
-                    ExceptionResult::Signal(SignalInfo::default(SIGILL))
+                    ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
                 }
             },
             zx::ExceptionType::FatalPageFault { status } => {
@@ -1480,13 +1476,13 @@ impl CurrentTask {
                 }
             }
             zx::ExceptionType::UndefinedInstruction => {
-                ExceptionResult::Signal(SignalInfo::default(SIGILL))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
             }
             zx::ExceptionType::UnalignedAccess => {
-                ExceptionResult::Signal(SignalInfo::default(SIGBUS))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGBUS))
             }
             zx::ExceptionType::SoftwareBreakpoint | zx::ExceptionType::HardwareBreakpoint => {
-                ExceptionResult::Signal(SignalInfo::default(SIGTRAP))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP))
             }
             zx::ExceptionType::ProcessNameChanged => {
                 log_error!("Received unexpected process name changed exception");
@@ -1496,19 +1492,19 @@ impl CurrentTask {
             | zx::ExceptionType::ThreadStarting
             | zx::ExceptionType::ThreadExiting => {
                 log_error!("Received unexpected task lifecycle exception");
-                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
             }
             zx::ExceptionType::PolicyError(policy_code) => {
                 log_error!(policy_code:?; "Received Zircon policy error exception");
-                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
             }
             zx::ExceptionType::UnknownUserGenerated { code, data } => {
                 log_error!(code:?, data:?; "Received unexpected unknown user generated exception");
-                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
             }
             zx::ExceptionType::Unknown { ty, code, data } => {
                 log_error!(ty:?, code:?, data:?; "Received unexpected exception");
-                ExceptionResult::Signal(SignalInfo::default(SIGSYS))
+                ExceptionResult::Signal(SignalInfo::kernel(SIGSYS))
             }
         }
     }
@@ -2002,14 +1998,17 @@ impl CurrentTask {
                         // turned on, then send a SIGTRAP.
                         if trace_kind == PtraceOptions::TRACEEXEC && !ptrace.is_seized() {
                             // Send a SIGTRAP so that the parent can gain control.
-                            send_signal_first(locked, self, state, SignalInfo::default(SIGTRAP));
+                            send_signal_first(locked, self, state, SignalInfo::kernel(SIGTRAP));
                         }
 
                         return;
                     }
-                    let mut siginfo = SignalInfo::default(starnix_uapi::signals::SIGTRAP);
-                    siginfo.code = (((PtraceEvent::from_option(&trace_kind) as u32) << 8)
-                        | linux_uapi::SIGTRAP) as i32;
+                    let ptrace_event = PtraceEvent::from_option(&trace_kind) as u32;
+                    let siginfo = SignalInfo::with_detail(
+                        SIGTRAP,
+                        ((ptrace_event << 8) | SIGTRAP.number()) as i32,
+                        SignalDetail::None,
+                    );
                     state.set_stopped(
                         StopState::PtraceEventStopping,
                         Some(siginfo),

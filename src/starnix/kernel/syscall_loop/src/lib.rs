@@ -31,12 +31,12 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
             Ok(ok) => ok,
             Err(error) => {
                 log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
-                ExitStatus::Kill(SignalInfo::default(SIGKILL))
+                ExitStatus::Kill(SignalInfo::kernel(SIGKILL))
             }
         },
         Err(error) => {
             log_error!("failed to map mode state vmo, {error:?}! treating as SIGKILL");
-            ExitStatus::Kill(SignalInfo::default(SIGKILL))
+            ExitStatus::Kill(SignalInfo::kernel(SIGKILL))
         }
     }
 }

@@ -245,7 +245,7 @@ impl Pipe {
         }
 
         if self.reader_count == 0 {
-            send_standard_signal(locked, current_task, SignalInfo::default(SIGPIPE));
+            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGPIPE));
             return error!(EPIPE);
         }
 
@@ -971,7 +971,7 @@ impl PipeFileObject {
             self.lock_pipe_for_writing(locked, current_task, self_file, non_blocking, available)?;
 
         if pipe.reader_count == 0 {
-            send_standard_signal(locked, current_task, SignalInfo::default(SIGPIPE));
+            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGPIPE));
             return error!(EPIPE);
         }
 

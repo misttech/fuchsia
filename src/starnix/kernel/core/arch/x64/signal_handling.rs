@@ -314,7 +314,7 @@ mod tests {
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
-            current_task.write().enqueue_signal(SignalInfo::new(
+            current_task.write().enqueue_signal(SignalInfo::with_detail(
                 SIGUSR1,
                 SI_USER as i32,
                 SignalDetail::None,
@@ -397,7 +397,7 @@ mod tests {
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
-            current_task.write().enqueue_signal(SignalInfo::new(
+            current_task.write().enqueue_signal(SignalInfo::with_detail(
                 SIGUSR1,
                 SI_USER as i32,
                 SignalDetail::None,
@@ -428,7 +428,7 @@ mod tests {
                 (SYSCALL2_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
-            current_task.write().enqueue_signal(SignalInfo::new(
+            current_task.write().enqueue_signal(SignalInfo::with_detail(
                 SIGUSR2,
                 SI_USER as i32,
                 SignalDetail::None,
@@ -524,7 +524,7 @@ mod tests {
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
-            current_task.write().enqueue_signal(SignalInfo::new(
+            current_task.write().enqueue_signal(SignalInfo::with_detail(
                 SIGUSR1,
                 SI_USER as i32,
                 SignalDetail::None,

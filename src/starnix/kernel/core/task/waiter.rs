@@ -1332,7 +1332,7 @@ mod tests {
         spawn_kernel_and_run(async |_locked, current_task| {
             {
                 let mut task_state = current_task.task.write();
-                let siginfo = SignalInfo::default(SIGUSR1);
+                let siginfo = SignalInfo::kernel(SIGUSR1);
                 task_state.enqueue_signal(siginfo);
                 task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
             }
@@ -1354,7 +1354,7 @@ mod tests {
         spawn_kernel_and_run(async |_locked, current_task| {
             {
                 let mut task_state = current_task.task.write();
-                let siginfo = SignalInfo::default(SIGKILL);
+                let siginfo = SignalInfo::kernel(SIGKILL);
                 task_state.enqueue_signal(siginfo);
                 task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
             }

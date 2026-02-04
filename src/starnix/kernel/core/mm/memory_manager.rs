@@ -3633,7 +3633,7 @@ impl MemoryManager {
                         // TODO(https://fxbug.dev/391599171): For now we only support this feature,
                         // so we assume it is set.
                         // Check for the SIGBUS feature when we start supporting running without it.
-                        return ExceptionResult::Signal(SignalInfo::new(
+                        return ExceptionResult::Signal(SignalInfo::with_detail(
                             SIGBUS,
                             BUS_ADRERR as i32,
                             SignalDetail::SigFault { addr: decoded.faulting_address },
@@ -3688,7 +3688,7 @@ impl MemoryManager {
             zx::Status::OUT_OF_RANGE => SIGBUS,
             _ => SIGSEGV,
         };
-        ExceptionResult::Signal(SignalInfo::new(
+        ExceptionResult::Signal(SignalInfo::with_detail(
             signo,
             SI_KERNEL as i32,
             SignalDetail::SigFault { addr: decoded.faulting_address },

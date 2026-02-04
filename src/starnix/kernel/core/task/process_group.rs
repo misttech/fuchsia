@@ -156,8 +156,8 @@ impl ProcessGroup {
         thread_groups: impl IntoIterator<Item = impl AsRef<ThreadGroup>>,
     ) {
         for thread_group in thread_groups.into_iter() {
-            for signal in signals.iter() {
-                thread_group.as_ref().write().send_signal(SignalInfo::default(*signal));
+            for &signal in signals.iter() {
+                thread_group.as_ref().write().send_signal(SignalInfo::kernel(signal));
             }
         }
     }

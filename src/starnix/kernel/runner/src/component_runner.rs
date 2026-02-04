@@ -355,7 +355,7 @@ async fn serve_component_controller(
                         signals::send_standard_signal(
                             task.kernel().kthreads.unlocked_for_async().deref_mut(),
                             task.as_ref(),
-                            signals::SignalInfo::default(SIGINT),
+                            signals::SignalInfo::kernel(SIGINT),
                         );
                         log_info!("Sent SIGINT to program {}", task.command());
                     }
@@ -365,7 +365,7 @@ async fn serve_component_controller(
                         signals::send_standard_signal(
                             task.kernel().kthreads.unlocked_for_async().deref_mut(),
                             &task,
-                            signals::SignalInfo::default(SIGKILL),
+                            signals::SignalInfo::kernel(SIGKILL),
                         );
                         log_info!("Sent SIGKILL to program {}", task.command());
                         controller_handle.shutdown_with_epitaph(zx::Status::from_raw(

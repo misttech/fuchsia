@@ -509,8 +509,13 @@ pub struct SignalInfo {
     pub errno: i32,
     pub code: i32,
     pub detail: SignalDetail,
+
+    /// Force delivery of the signal even if the target process has the signal blocked, and forces
+    /// the default action for the signal.
     pub force: bool,
-    pub source: SignalSource,
+
+    /// The source code location where this signal was generated.
+    source: SignalSource,
 }
 
 macro_rules! make_siginfo {
@@ -603,14 +608,25 @@ macro_rules! signal_info_as_siginfo_bytes {
 }
 
 impl SignalInfo {
+    /// Signal that originates from the Kernel.
     #[track_caller]
-    pub fn default(signal: Signal) -> Self {
-        Self::new(signal, SI_KERNEL as i32, SignalDetail::default())
+    pub fn kernel(signal: Signal) -> Self {
+        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, false)
     }
 
     #[track_caller]
-    pub fn new(signal: Signal, code: i32, detail: SignalDetail) -> Self {
-        Self { signal, errno: 0, code, detail, force: false, source: SignalSource::capture() }
+    pub fn forced(signal: Signal) -> Self {
+        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, true)
+    }
+
+    #[track_caller]
+    pub fn with_detail(signal: Signal, code: i32, detail: SignalDetail) -> Self {
+        Self::new(signal, 0, code, detail, false)
+    }
+
+    #[track_caller]
+    pub fn new(signal: Signal, errno: i32, code: i32, detail: SignalDetail, force: bool) -> Self {
+        Self { signal, errno, code, detail, force, source: SignalSource::capture() }
     }
 
     pub fn write<MA: MemoryAccessor>(
@@ -873,7 +889,7 @@ mod test {
             vec![17, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 123, 0, 0, 0, 200, 1, 0, 0, 2];
         sigchld_bytes.resize(std::mem::size_of::<uapi::siginfo_t>(), 0);
         assert_eq!(
-            &SignalInfo::new(
+            &SignalInfo::with_detail(
                 SIGCHLD,
                 CLD_EXITED as i32,
                 SignalDetail::SIGCHLD { pid: 123, uid: 456, status: 2 }

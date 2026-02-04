@@ -455,7 +455,7 @@ pub struct WaitResult {
 impl WaitResult {
     // According to wait(2) man page, SignalInfo.signal needs to always be set to SIGCHLD
     pub fn as_signal_info(&self) -> SignalInfo {
-        SignalInfo::new(
+        SignalInfo::with_detail(
             SIGCHLD,
             self.exit_info.status.signal_info_code(),
             SignalDetail::SIGCHLD {
@@ -712,7 +712,7 @@ impl ThreadGroup {
                     should_send_sigkill = ptrace.has_option(PtraceOptions::EXITKILL);
                 }
                 if should_send_sigkill {
-                    send_standard_signal(locked, task_ref.as_ref(), SignalInfo::default(SIGKILL));
+                    send_standard_signal(locked, task_ref.as_ref(), SignalInfo::kernel(SIGKILL));
                     continue;
                 }
 
@@ -723,7 +723,7 @@ impl ThreadGroup {
 
         for task in tasks {
             task.write().set_exit_status(exit_status.clone());
-            send_standard_signal(locked, &task, SignalInfo::default(SIGKILL));
+            send_standard_signal(locked, &task, SignalInfo::kernel(SIGKILL));
         }
     }
 
@@ -1613,14 +1613,14 @@ impl ThreadGroup {
         unchecked_signal: UncheckedSignal,
     ) -> Result<(), Errno> {
         if let Some(signal) = self.check_signal_access(current_task, unchecked_signal)? {
-            let signal_info = SignalInfo {
-                code: SI_USER as i32,
-                detail: SignalDetail::Kill {
+            let signal_info = SignalInfo::with_detail(
+                signal,
+                SI_USER as i32,
+                SignalDetail::Kill {
                     pid: current_task.thread_group().leader,
                     uid: current_task.current_creds().uid,
                 },
-                ..SignalInfo::default(signal)
-            };
+            );
 
             self.write().send_signal(signal_info);
         }
@@ -1638,14 +1638,14 @@ impl ThreadGroup {
         unchecked_signal: UncheckedSignal,
     ) -> Result<(), Errno> {
         let signal = Signal::try_from(unchecked_signal)?;
-        let signal_info = SignalInfo {
-            code: SI_USER as i32,
-            detail: SignalDetail::Kill {
+        let signal_info = SignalInfo::with_detail(
+            signal,
+            SI_USER as i32,
+            SignalDetail::Kill {
                 pid: current_task.thread_group().leader,
                 uid: current_task.current_creds().uid,
             },
-            ..SignalInfo::default(signal)
-        };
+        );
 
         self.write().send_signal(signal_info);
         Ok(())
@@ -1768,7 +1768,7 @@ impl ThreadGroup {
         };
 
         log_debug!(tg:% = tg_name; "shutting down thread group, sending SIGTERM");
-        this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::default(SIGTERM)));
+        this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGTERM)));
 
         // Give thread groups some time to handle SIGTERM, proceeding early if they exit
         let timeout = fuchsia_async::Timer::new(SHUTDOWN_SIGNAL_HANDLING_TIMEOUT);
@@ -1779,7 +1779,7 @@ impl ThreadGroup {
             _ = &mut on_exited => (),
             _ = timeout => {
                 log_debug!(tg:% = tg_name; "sending SIGKILL");
-                this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::default(SIGKILL)));
+                this.upgrade().map(|tg| tg.write().send_signal(SignalInfo::kernel(SIGKILL)));
             },
         };
 

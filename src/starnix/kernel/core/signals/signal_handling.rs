@@ -350,7 +350,7 @@ pub fn deliver_signal(
                     Err(err) => {
                         log_warn!("failed to deliver signal {:?}: {:?}", signal, err);
 
-                        siginfo = SignalInfo::default(SIGSEGV);
+                        siginfo = SignalInfo::kernel(SIGSEGV);
                         // The behavior that we want is:
                         //  1. If we failed to send a SIGSEGV, or SIGSEGV is masked, or SIGSEGV is
                         //  ignored, we reset the signal disposition and unmask SIGSEGV.

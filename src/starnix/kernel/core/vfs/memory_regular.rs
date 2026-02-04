@@ -292,7 +292,7 @@ impl MemoryRegularFile {
             if write_end > fsize_limit {
                 if offset >= fsize_limit {
                     // Write starts beyond the FSIZE limt.
-                    send_standard_signal(locked, current_task, SignalInfo::default(SIGXFSZ));
+                    send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
                     return error!(EFBIG);
                 }
 

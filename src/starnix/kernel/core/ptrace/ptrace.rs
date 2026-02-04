@@ -7,7 +7,9 @@ use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt};
 use crate::ptrace::StopState;
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
-use crate::signals::{SignalInfo, UncheckedSignalInfo, send_signal_first, send_standard_signal};
+use crate::signals::{
+    SignalDetail, SignalInfo, UncheckedSignalInfo, send_signal_first, send_standard_signal,
+};
 use crate::task::{
     CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
     WaitQueue, ZombieProcess,
@@ -677,7 +679,7 @@ where
     let new_state;
     let mut siginfo = if data != 0 {
         let signal = Signal::try_from(UncheckedSignal::new(data))?;
-        Some(SignalInfo::default(signal))
+        Some(SignalInfo::kernel(signal))
     } else {
         None
     };
@@ -750,7 +752,7 @@ fn ptrace_interrupt(tracee: &Task) -> Result<(), Errno> {
         } else {
             state.set_stopped(
                 StopState::PtraceEventStopping,
-                Some(SignalInfo::default(SIGTRAP)),
+                Some(SignalInfo::kernel(SIGTRAP)),
                 None,
                 event_data,
             );
@@ -824,8 +826,11 @@ where
     // check the stop state themselves.
     match request {
         PTRACE_KILL => {
-            let mut siginfo = SignalInfo::default(SIGKILL);
-            siginfo.code = (linux_uapi::SIGTRAP | PTRACE_KILL << 8) as i32;
+            let siginfo = SignalInfo::with_detail(
+                SIGKILL,
+                (SIGTRAP.number() | PTRACE_KILL << 8) as i32,
+                SignalDetail::None,
+            );
             send_standard_signal(locked, &tracee, siginfo);
             return Ok(starnix_syscalls::SUCCESS);
         }
@@ -1128,9 +1133,9 @@ where
         if let Some(ptrace) = &mut state.ptrace {
             ptrace.set_last_event(Some(PtraceEventData::new_from_event(PtraceEvent::Stop, 0)));
         }
-        SignalInfo::default(SIGTRAP)
+        SignalInfo::kernel(SIGTRAP)
     } else {
-        SignalInfo::default(SIGSTOP)
+        SignalInfo::kernel(SIGSTOP)
     };
     send_signal_first(locked, tracee_task, state, signal);
 
@@ -1182,7 +1187,7 @@ where
         send_standard_signal(
             locked.cast_locked::<MmDumpable>(),
             &tracee,
-            SignalInfo::default(SIGSTOP),
+            SignalInfo::kernel(SIGSTOP),
         );
     } else if attach_type == PtraceAttachType::Seize {
         // When seizing, |data| should be used as the options bitmask.
@@ -1304,8 +1309,11 @@ pub fn ptrace_syscall_enter(locked: &mut Locked<Unlocked>, current_task: &mut Cu
         let mut state = current_task.write();
         if state.ptrace.is_some() {
             current_task.trace_syscalls.store(false, Ordering::Relaxed);
-            let mut sig = SignalInfo::default(SIGTRAP);
-            sig.code = (linux_uapi::SIGTRAP | 0x80) as i32;
+            let mut sig = SignalInfo::with_detail(
+                SIGTRAP,
+                (linux_uapi::SIGTRAP | 0x80) as i32,
+                SignalDetail::None,
+            );
             if state
                 .ptrace
                 .as_ref()
@@ -1334,8 +1342,11 @@ pub fn ptrace_syscall_exit(
         let mut state = current_task.write();
         current_task.trace_syscalls.store(false, Ordering::Relaxed);
         if state.ptrace.is_some() {
-            let mut sig = SignalInfo::default(SIGTRAP);
-            sig.code = (linux_uapi::SIGTRAP | 0x80) as i32;
+            let mut sig = SignalInfo::with_detail(
+                SIGTRAP,
+                (linux_uapi::SIGTRAP | 0x80) as i32,
+                SignalDetail::None,
+            );
             if state
                 .ptrace
                 .as_ref()

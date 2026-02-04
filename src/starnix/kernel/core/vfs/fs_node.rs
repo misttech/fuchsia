@@ -1836,7 +1836,7 @@ impl FsNode {
         {
             let locked = locked.cast_locked::<M>().cast_locked::<FileOpsCore>();
             if length > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
-                send_standard_signal(locked, current_task, SignalInfo::default(SIGXFSZ));
+                send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
                 return error!(EFBIG);
             }
         }
@@ -1891,7 +1891,7 @@ impl FsNode {
         {
             let locked = locked.cast_locked::<M>().cast_locked::<FileOpsCore>();
             if allocate_size > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
-                send_standard_signal(locked, current_task, SignalInfo::default(SIGXFSZ));
+                send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
                 return error!(EFBIG);
             }
         }

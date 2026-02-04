@@ -519,7 +519,7 @@ impl CgroupState {
             let Some(thread_group) = thread_group.upgrade() else {
                 continue;
             };
-            thread_group.write().send_signal(SignalInfo::default(SIGKILL));
+            thread_group.write().send_signal(SignalInfo::kernel(SIGKILL));
         }
 
         // Recursively lock and kill children cgroups' processes.

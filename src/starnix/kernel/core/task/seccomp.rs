@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryAccessorExt;
-use crate::signals::{SignalDetail, SignalInfo, SignalSource, send_standard_signal};
+use crate::signals::{SignalDetail, SignalInfo, send_standard_signal};
 use crate::task::{
     CurrentTask, EventHandler, ExitStatus, Kernel, Task, TaskFlags, WaitCanceler, WaitQueue, Waiter,
 };
@@ -398,7 +398,7 @@ impl SeccompState {
             && syscall.decl.number as u32 != __NR_read
             && syscall.decl.number as u32 != __NR_write
         {
-            send_standard_signal(locked, task, SignalInfo::default(SIGKILL));
+            send_standard_signal(locked, task, SignalInfo::kernel(SIGKILL));
             return Some(Err(errno_from_code!(0)));
         }
         None
@@ -455,7 +455,7 @@ impl SeccompState {
             SeccompAction::Allow => None,
             SeccompAction::Errno(code) => Some(Err(errno_from_code!(code as i16))),
             SeccompAction::KillThread => {
-                let siginfo = SignalInfo::default(SIGSYS);
+                let siginfo = SignalInfo::kernel(SIGSYS);
 
                 let is_last_thread = current_task.thread_group().read().tasks_count() == 1;
                 let mut task_state = current_task.write();
@@ -470,7 +470,7 @@ impl SeccompState {
             }
             SeccompAction::KillProcess => {
                 current_task
-                    .thread_group_exit(locked, ExitStatus::CoreDump(SignalInfo::default(SIGSYS)));
+                    .thread_group_exit(locked, ExitStatus::CoreDump(SignalInfo::kernel(SIGSYS)));
                 Some(Err(errno_from_code!(0)))
             }
             SeccompAction::Log => {
@@ -490,11 +490,11 @@ impl SeccompState {
                 #[cfg(target_arch = "riscv64")]
                 let arch_val = AUDIT_ARCH_RISCV64;
 
-                let siginfo = SignalInfo {
-                    signal: SIGSYS,
-                    errno: errno as i32,
-                    code: SYS_SECCOMP as i32,
-                    detail: SignalDetail::SIGSYS {
+                let siginfo = SignalInfo::new(
+                    SIGSYS,
+                    errno as i32,
+                    SYS_SECCOMP as i32,
+                    SignalDetail::SIGSYS {
                         call_addr: current_task
                             .thread_state
                             .registers
@@ -503,9 +503,8 @@ impl SeccompState {
                         syscall: syscall.decl.number as i32,
                         arch: arch_val,
                     },
-                    force: true,
-                    source: SignalSource::capture(),
-                };
+                    true,
+                );
 
                 send_standard_signal(locked, current_task, siginfo);
                 Some(Err(errno_from_code!(-(syscall.decl.number as i16))))

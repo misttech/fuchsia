@@ -210,7 +210,7 @@ mod tests {
             // Stop the task.
             task.thread_group().set_stopped(
                 StopState::GroupStopping,
-                Some(SignalInfo::default(SIGSTOP)),
+                Some(SignalInfo::kernel(SIGSTOP)),
                 false,
             );
 
@@ -226,7 +226,7 @@ mod tests {
                     // Continue the task.
                     task.thread_group().set_stopped(
                         StopState::Waking,
-                        Some(SignalInfo::default(SIGCONT)),
+                        Some(SignalInfo::kernel(SIGCONT)),
                         false,
                     );
                 }
@@ -253,7 +253,7 @@ mod tests {
             // Stop the task.
             task.thread_group().set_stopped(
                 StopState::GroupStopping,
-                Some(SignalInfo::default(SIGSTOP)),
+                Some(SignalInfo::kernel(SIGSTOP)),
                 false,
             );
 

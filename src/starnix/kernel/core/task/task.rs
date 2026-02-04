@@ -546,7 +546,7 @@ impl TaskMutableState<Base = Task> {
 
         if let Some(ptrace) = &self.ptrace {
             if let Some(last_signal) = ptrace.get_last_signal_ref() {
-                let signal_info = SignalInfo::new(
+                let signal_info = SignalInfo::with_detail(
                     SIGCHLD,
                     CLD_TRAPPED as i32,
                     SignalDetail::SIGCHLD {

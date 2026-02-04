@@ -437,14 +437,14 @@ where
     send_signal(
         locked,
         target,
-        SignalInfo {
-            code: si_code,
-            detail: SignalDetail::Kill {
+        SignalInfo::with_detail(
+            signal,
+            si_code,
+            SignalDetail::Kill {
                 pid: current_task.thread_group().leader,
                 uid: current_task.current_creds().uid,
             },
-            ..SignalInfo::default(signal)
-        },
+        ),
     )
 }
 
@@ -1127,7 +1127,7 @@ mod tests {
         SIGUSR1,
     };
     use starnix_uapi::vfs::FdEvents;
-    use starnix_uapi::{SI_QUEUE, SI_USER, sigaction_t, uaddr, uid_t};
+    use starnix_uapi::{SI_QUEUE, sigaction_t, uaddr, uid_t};
     use std::collections::VecDeque;
     use std::sync::Arc;
     use zerocopy::IntoBytes;
@@ -2203,7 +2203,7 @@ mod tests {
 
             // Send a signal to the task. `wait_on_pid` should realize there is a signal pending when
             // entering a wait and return with `EINTR`.
-            send_standard_signal(locked, &task, SignalInfo::default(SIGUSR1));
+            send_standard_signal(locked, &task, SignalInfo::kernel(SIGUSR1));
 
             let errno = wait_on_pid(
                 locked,
@@ -2223,7 +2223,7 @@ mod tests {
             let mut child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
             // Send SIGKILL to the child. As kill is handled immediately, no need to dequeue signals.
-            send_standard_signal(locked, &child, SignalInfo::default(SIGKILL));
+            send_standard_signal(locked, &child, SignalInfo::kernel(SIGKILL));
             dequeue_signal_for_test(locked, &mut child);
             std::mem::drop(child);
 
@@ -2252,7 +2252,7 @@ mod tests {
             let mut child = current_task.clone_task_for_test(locked, 0, exit_signal);
 
             // Send the signal to the child.
-            send_standard_signal(locked, &child, SignalInfo::default(sig));
+            send_standard_signal(locked, &child, SignalInfo::kernel(sig));
             dequeue_signal_for_test(locked, &mut child);
             std::mem::drop(child);
 
@@ -2412,14 +2412,14 @@ mod tests {
             );
             assert_eq!(second_current.read().queued_signal_count(SIGIO), 1);
 
-            let signal = SignalInfo {
-                code: SI_USER as i32,
-                detail: SignalDetail::Kill {
+            let signal = SignalInfo::with_detail(
+                SIGIO,
+                SI_QUEUE,
+                SignalDetail::Kill {
                     pid: current_task.thread_group().leader,
                     uid: current_task.current_creds().uid,
                 },
-                ..SignalInfo::default(SIGIO)
-            };
+            );
             let queued_signal = second_current.write().take_specific_signal(signal);
             if let Some(sig) = queued_signal {
                 assert_eq!(sig.signal, SIGIO);
