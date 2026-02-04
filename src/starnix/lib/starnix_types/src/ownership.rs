@@ -384,6 +384,12 @@ impl<T> Clone for WeakRef<T> {
     }
 }
 
+impl<T> PartialEq for WeakRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        WeakRef::ptr_eq(self, other)
+    }
+}
+
 /// Wrapper around `WeakRef` allowing to use it in a Set or as a key of a Map.
 pub struct WeakRefKey<T>(pub WeakRef<T>);
 impl<T> PartialEq for WeakRefKey<T> {

@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
-use crate::task::{CurrentTask, ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
+use crate::task::{CurrentTask, Task, ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
 use crate::time::IntervalTimerHandle;
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
+use starnix_types::ownership::WeakRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::union::struct_with_union_into_bytes;
@@ -428,6 +429,9 @@ pub struct SignalInfoHeader {
 pub struct UncheckedSignalInfo {
     header: SignalInfoHeader,
     data: [u8; SI_DETAIL_SIZE],
+
+    /// The task that sent this signal. None for kernel-originated signals.
+    sender: Option<WeakRef<Task>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -457,7 +461,7 @@ impl UncheckedSignalInfo {
         let header = SignalInfoHeader::read_from_bytes(&siginfo_mem[..SI_HEADER_SIZE]).unwrap();
         let mut data = [0u8; SI_DETAIL_SIZE];
         data.copy_from_slice(&siginfo_mem[SI_HEADER_SIZE..]);
-        Ok(Self { header, data })
+        Ok(Self { header, data, sender: Some(current_task.weak_task()) })
     }
 
     pub fn signo(&self) -> u32 {
@@ -475,21 +479,21 @@ impl UncheckedSignalInfo {
     /// consistency with the signal number passed in.
     #[track_caller]
     pub fn into_signal_info(
-        &self,
+        self,
         signal: Signal,
         options: IntoSignalInfoOptions,
     ) -> Result<SignalInfo, Errno> {
         if matches!(options, IntoSignalInfoOptions::CheckSigno) && self.signo() != signal.number() {
             return error!(EINVAL);
         }
-        Ok(SignalInfo {
+        Ok(SignalInfo::new(
             signal,
-            errno: self.header.errno,
-            code: self.header.code,
-            detail: SignalDetail::Raw { data: self.data },
-            force: false,
-            source: SignalSource::capture(),
-        })
+            self.header.errno,
+            self.header.code,
+            SignalDetail::Raw { data: self.data },
+            false,
+            self.sender,
+        ))
     }
 }
 
@@ -503,7 +507,7 @@ impl TryFrom<UncheckedSignalInfo> for SignalInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SignalInfo {
     pub signal: Signal,
     pub errno: i32,
@@ -516,7 +520,12 @@ pub struct SignalInfo {
 
     /// The source code location where this signal was generated.
     source: SignalSource,
+
+    /// The task that sent this signal. None for kernel-originated signals.
+    sender: Option<WeakRef<Task>>,
 }
+
+impl Eq for SignalInfo {}
 
 macro_rules! make_siginfo {
             ($self:ident $(, $( $sifield:ident ).*, $value:expr)?) => {
@@ -611,22 +620,39 @@ impl SignalInfo {
     /// Signal that originates from the Kernel.
     #[track_caller]
     pub fn kernel(signal: Signal) -> Self {
-        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, false)
+        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, false, None)
     }
 
     #[track_caller]
     pub fn forced(signal: Signal) -> Self {
-        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, true)
+        Self::new(signal, 0, SI_KERNEL as i32, SignalDetail::None, true, None)
     }
 
     #[track_caller]
     pub fn with_detail(signal: Signal, code: i32, detail: SignalDetail) -> Self {
-        Self::new(signal, 0, code, detail, false)
+        Self::new(signal, 0, code, detail, false, None)
     }
 
     #[track_caller]
-    pub fn new(signal: Signal, errno: i32, code: i32, detail: SignalDetail, force: bool) -> Self {
-        Self { signal, errno, code, detail, force, source: SignalSource::capture() }
+    pub fn with_sender(
+        signal: Signal,
+        code: i32,
+        detail: SignalDetail,
+        sender: Option<WeakRef<Task>>,
+    ) -> Self {
+        Self::new(signal, 0, code, detail, false, sender)
+    }
+
+    #[track_caller]
+    pub fn new(
+        signal: Signal,
+        errno: i32,
+        code: i32,
+        detail: SignalDetail,
+        force: bool,
+        sender: Option<WeakRef<Task>>,
+    ) -> Self {
+        Self { signal, errno, code, detail, force, source: SignalSource::capture(), sender }
     }
 
     pub fn write<MA: MemoryAccessor>(
@@ -658,6 +684,11 @@ impl SignalInfo {
         } else {
             self.as_siginfo64_bytes()
         }
+    }
+
+    /// Returns true if the signal was sent by the given task.
+    pub fn is_sent_by(&self, weak_task: &WeakRef<Task>) -> bool {
+        self.sender.as_ref().map_or(false, |sender| WeakRef::ptr_eq(sender, weak_task))
     }
 
     // TODO(tbodt): Add a bound requiring siginfo_t to be FromBytes. This will help ensure the

@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTask, ExitStatus};
+use crate::signals::SignalInfo;
+use crate::task::CurrentTask;
 use crash_throttling::{CrashThrottler, PendingCrashReport};
 use fidl_fuchsia_feedback::{
     Annotation, CrashReport, CrashReporterProxy, MAX_ANNOTATION_VALUE_LENGTH,
@@ -60,7 +61,7 @@ impl CrashReporter {
     pub fn handle_core_dump(
         &self,
         current_task: &CurrentTask,
-        exit_status: &ExitStatus,
+        signal_info: &SignalInfo,
         pending_crash_report: PendingCrashReport,
     ) {
         trace_instant!(CATEGORY_STARNIX, "RecordCoreDump", TraceScope::Process);
@@ -81,15 +82,6 @@ impl CrashReporter {
             .expect("handles for crashing threads are still valid");
         let linux_pid = current_task.thread_group().leader as i64;
         let thread_name = current_task.command().to_string();
-        let signal = match exit_status {
-            ExitStatus::CoreDump(s) => s.signal,
-            other => {
-                log_error!(
-                    "only core dump exit statuses should be handled as core dumps, got {other:?}"
-                );
-                return;
-            }
-        };
 
         // TODO(https://fxbug.dev/356912301) use boot time
         let uptime = zx::MonotonicInstant::get() - current_task.thread_group().start_time;
@@ -101,7 +93,7 @@ impl CrashReporter {
             uptime: uptime.into_nanos(),
             argv: argv.clone(),
             thread_name: thread_name.clone(),
-            signal: signal.to_string(),
+            signal: signal_info.signal.to_string(),
         };
         self.core_dumps.record_core_dump(dump_info);
 
@@ -117,7 +109,7 @@ impl CrashReporter {
             .join(" ");
         truncate_with_ellipsis(&mut env_joined, MAX_ANNOTATION_VALUE_LENGTH as usize);
 
-        let signal_str = signal.to_string();
+        let signal_str = signal_info.signal.to_string();
 
         // Truncate program name to fit in crash signature with a space and signal string added.
         let max_signature_prefix_len = MAX_CRASH_SIGNATURE_LENGTH as usize - (signal_str.len() + 1);

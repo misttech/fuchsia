@@ -504,6 +504,7 @@ impl SeccompState {
                         arch: arch_val,
                     },
                     true,
+                    None,
                 );
 
                 send_standard_signal(locked, current_task, siginfo);

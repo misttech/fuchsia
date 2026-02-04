@@ -437,13 +437,14 @@ where
     send_signal(
         locked,
         target,
-        SignalInfo::with_detail(
+        SignalInfo::with_sender(
             signal,
             si_code,
             SignalDetail::Kill {
                 pid: current_task.thread_group().leader,
                 uid: current_task.current_creds().uid,
             },
+            Some(current_task.weak_self.clone()),
         ),
     )
 }
