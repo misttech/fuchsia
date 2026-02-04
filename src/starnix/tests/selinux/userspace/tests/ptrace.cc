@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <sys/ptrace.h>
 
 #include <gtest/gtest.h>
@@ -306,6 +307,32 @@ TEST(PtraceTest, PtraceAttachThenExecAllowed) {
         SAFE_SYSCALL(kill(pid, SIGKILL));
       }
     }
+  }));
+}
+
+// Reading /proc/<pid>/maps triggers a PTRACE_MODE_READ_FSCREDS check. The read
+// part implies that we should check a file { read } permission instead of
+// process { ptrace }.
+TEST(PtraceTest, ReadProcMaps) {
+  constexpr char kParentSecurityContext[] =
+      "test_u:test_r:test_ptrace_parent_deny_ptrace_allow_read_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_ptrace_child_t:s0";
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    pid_t pid;
+    ASSERT_TRUE((pid = fork()) >= 0);
+    if (pid == 0) {
+      ASSERT_TRUE(WriteTaskAttr("current", kChildSecurityContext).is_ok());
+      raise(SIGSTOP);
+      // Never resumed.
+    }
+    int wstatus;
+    ASSERT_THAT(waitpid(pid, &wstatus, WUNTRACED), SyscallSucceeds());
+    ASSERT_TRUE(WIFSTOPPED(wstatus));
+    EXPECT_THAT(open(("/proc/" + std::to_string(pid) + "/maps").c_str(), O_RDONLY),
+                SyscallSucceeds());
+    kill(pid, 9);
   }));
 }
 

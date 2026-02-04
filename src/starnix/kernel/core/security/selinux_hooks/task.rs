@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use crate::security::selinux_hooks::{
-    KernelPermission, PermissionCheck, ProcessPermission, TaskAttrs, check_permission,
-    check_self_permission, current_task_state, fs_node_effective_sid_and_class,
-    fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
-    permissions_from_flags, task_consistent_attrs,
+    CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, ProcessPermission,
+    TaskAttrs, check_permission, check_self_permission, current_task_state,
+    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
+    has_file_permissions, is_internal_operation, permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, Auditable, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
@@ -18,7 +18,9 @@ use selinux::{
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_types::ownership::TempRef;
-use starnix_uapi::auth::{PTRACE_MODE_NOAUDIT, PtraceAccessMode};
+use starnix_uapi::auth::{
+    PTRACE_MODE_ATTACH, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ, PtraceAccessMode,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -908,9 +910,14 @@ pub(in crate::security) fn ptrace_access_check(
     let audit_context = current_task.into();
     let tracer_sid = current_task_state(current_task).lock().current_sid;
     let tracee_sid = target.security_state.lock().current_sid;
+    let permission: KernelPermission =
+        if mode.contains(PTRACE_MODE_READ) && !mode.contains(PTRACE_MODE_ATTACH) {
+            CommonFsNodePermission::Read.for_class(FileClass::File).into()
+        } else {
+            ProcessPermission::Ptrace.into()
+        };
     if mode.contains(PTRACE_MODE_NOAUDIT) {
-        let result =
-            permission_check.has_permission(tracer_sid, tracee_sid, ProcessPermission::Ptrace);
+        let result = permission_check.has_permission(tracer_sid, tracee_sid, permission);
         return result.permit.then_some(()).ok_or_else(|| errno!(EACCES));
     }
     check_permission(
@@ -918,7 +925,7 @@ pub(in crate::security) fn ptrace_access_check(
         current_task,
         tracer_sid,
         tracee_sid,
-        ProcessPermission::Ptrace,
+        permission,
         audit_context,
     )
 }
