@@ -6,7 +6,7 @@
 //!
 //! See [KeymapHandler] for details.
 
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{input_device, keyboard_binding};
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
@@ -29,6 +29,24 @@ pub struct KeymapHandler {
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
+}
+
+impl Handler for KeymapHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "KeymapHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Keyboard]
+    }
 }
 
 /// This trait implementation allows the [KeymapHandler] to be hooked up into the input
@@ -64,22 +82,6 @@ impl UnhandledInputHandler for KeymapHandler {
                 vec![input_device::InputEvent::from(input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "KeymapHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::Keyboard]
     }
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{input_device, metrics};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
@@ -28,6 +28,24 @@ pub struct TextSettingsHandler {
 
     /// The metrics logger.
     metrics_logger: metrics::MetricsLogger,
+}
+
+impl Handler for TextSettingsHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "TextSettingsHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Keyboard]
+    }
 }
 
 #[async_trait(?Send)]
@@ -75,22 +93,6 @@ impl UnhandledInputHandler for TextSettingsHandler {
                 vec![input_device::InputEvent::from(unhandled_input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "TextSettingsHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::Keyboard]
     }
 }
 

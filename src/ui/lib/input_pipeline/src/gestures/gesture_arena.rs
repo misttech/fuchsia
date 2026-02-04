@@ -5,7 +5,7 @@
 use super::{
     args, motion, one_finger_button, primary_tap, scroll, secondary_button, secondary_tap,
 };
-use crate::input_handler::{InputHandler, InputHandlerStatus};
+use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::utils::Size;
 use crate::{input_device, mouse_binding, touch_binding};
 use anyhow::{Context, Error, format_err};
@@ -63,7 +63,7 @@ impl ContenderFactory for GestureArenaInitialContenders {
 pub fn make_input_handler(
     inspect_node: &InspectNode,
     input_handlers_node: &InspectNode,
-) -> std::rc::Rc<dyn crate::input_handler::InputHandler> {
+) -> std::rc::Rc<dyn crate::input_handler::BatchInputHandler> {
     // TODO(https://fxbug.dev/42056283): Remove log message.
     log::info!("touchpad: created input handler");
     std::rc::Rc::new(GestureArena::new_internal(
@@ -1015,6 +1015,24 @@ impl GestureArena {
     }
 }
 
+impl Handler for GestureArena {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "GestureArena"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Touchpad, input_device::InputEventType::Keyboard]
+    }
+}
+
 #[async_trait(?Send)]
 impl InputHandler for GestureArena {
     /// Handle `input_event`:
@@ -1062,22 +1080,6 @@ impl InputHandler for GestureArena {
                 vec![input_event]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "GestureArena"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::Touchpad, input_device::InputEventType::Keyboard]
     }
 }
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #![warn(clippy::await_holding_refcell_ref)]
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::utils::{Position, Size};
 use crate::{input_device, metrics, touch_binding};
 use anyhow::{Context, Error, Result};
@@ -77,6 +77,24 @@ struct MutableState {
     pub send_event_task_tracker: LocalTaskTracker,
 }
 
+impl Handler for TouchInjectorHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "TouchInjectorHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::TouchScreen]
+    }
+}
+
 #[async_trait(?Send)]
 impl UnhandledInputHandler for TouchInjectorHandler {
     async fn handle_unhandled_input_event(
@@ -140,22 +158,6 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                 vec![input_device::InputEvent::from(unhandled_input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "TouchInjectorHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::TouchScreen]
     }
 }
 

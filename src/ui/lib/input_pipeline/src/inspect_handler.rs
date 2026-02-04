@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input_device::{Handled, InputDeviceEvent, InputDeviceType, InputEvent, InputEventType};
-use crate::input_handler::InputHandler;
+use crate::input_handler::{Handler, InputHandler};
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
@@ -229,30 +229,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> Debug for InspectHandler<F> {
     }
 }
 
-#[async_trait(?Send)]
-impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandler<F> {
-    async fn handle_input_event(self: Rc<Self>, input_event: InputEvent) -> Vec<InputEvent> {
-        fuchsia_trace::duration!("input", "inspect_handler");
-        let tracing_id = input_event.trace_id.unwrap_or_else(|| 0.into());
-        fuchsia_trace::flow_step!("input", "event_in_input_pipeline", tracing_id);
-
-        let event_time = input_event.event_time;
-        let now = (self.now.borrow_mut())();
-        self.events_count.add(1);
-        self.last_seen_timestamp_ns.set(now.into_nanos());
-        self.last_generated_timestamp_ns.set(event_time.into_nanos());
-        let event_type = EventType::for_device_event(&input_event.device_event);
-        self.events_by_type
-            .get(&event_type)
-            .unwrap_or_else(|| panic!("no event counters for {}", event_type))
-            .count_event(now, event_time, &input_event.handled);
-        if let Some(recent_events_log) = &self.recent_events_log {
-            recent_events_log.lock().await.push(input_event.clone());
-        }
-        self.pipeline_latency_ms.insert((now - event_time).into_millis());
-        vec![input_event]
-    }
-
+impl<F: FnMut() -> zx::MonotonicInstant + 'static> Handler for InspectHandler<F> {
     fn set_handler_healthy(self: std::rc::Rc<Self>) {
         self.health_node.borrow_mut().set_ok();
     }
@@ -276,6 +253,31 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
             #[cfg(test)]
             InputEventType::Fake,
         ]
+    }
+}
+
+#[async_trait(?Send)]
+impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandler<F> {
+    async fn handle_input_event(self: Rc<Self>, input_event: InputEvent) -> Vec<InputEvent> {
+        fuchsia_trace::duration!("input", "inspect_handler");
+        let tracing_id = input_event.trace_id.unwrap_or_else(|| 0.into());
+        fuchsia_trace::flow_step!("input", "event_in_input_pipeline", tracing_id);
+
+        let event_time = input_event.event_time;
+        let now = (self.now.borrow_mut())();
+        self.events_count.add(1);
+        self.last_seen_timestamp_ns.set(now.into_nanos());
+        self.last_generated_timestamp_ns.set(event_time.into_nanos());
+        let event_type = EventType::for_device_event(&input_event.device_event);
+        self.events_by_type
+            .get(&event_type)
+            .unwrap_or_else(|| panic!("no event counters for {}", event_type))
+            .count_event(now, event_time, &input_event.handled);
+        if let Some(recent_events_log) = &self.recent_events_log {
+            recent_events_log.lock().await.push(input_event.clone());
+        }
+        self.pipeline_latency_ms.insert((now - event_time).into_millis());
+        vec![input_event]
     }
 }
 

@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 #[cfg(test)]
-use crate::{input_device, input_handler};
+use crate::{
+    input_device,
+    input_handler::{self, Handler},
+};
 #[cfg(test)]
 use async_trait::async_trait;
 #[cfg(test)]
@@ -28,21 +31,8 @@ impl ObserveFakeEventsInputHandler {
     }
 }
 
-#[async_trait(?Send)]
 #[cfg(test)]
-impl input_handler::InputHandler for ObserveFakeEventsInputHandler {
-    async fn handle_input_event(
-        self: Rc<Self>,
-        input_event: input_device::InputEvent,
-    ) -> Vec<input_device::InputEvent> {
-        match self.event_sender.borrow_mut().try_send(input_event.clone()) {
-            Err(_) => assert!(false),
-            _ => {}
-        };
-
-        vec![input_event]
-    }
-
+impl Handler for ObserveFakeEventsInputHandler {
     fn set_handler_healthy(self: std::rc::Rc<Self>) {
         // No inspect data on ObserveFakeEventsInputHandler. Do nothing.
     }
@@ -65,5 +55,21 @@ impl input_handler::InputHandler for ObserveFakeEventsInputHandler {
             input_device::InputEventType::Touchpad,
             input_device::InputEventType::Fake,
         ]
+    }
+}
+
+#[async_trait(?Send)]
+#[cfg(test)]
+impl input_handler::InputHandler for ObserveFakeEventsInputHandler {
+    async fn handle_input_event(
+        self: Rc<Self>,
+        input_event: input_device::InputEvent,
+    ) -> Vec<input_device::InputEvent> {
+        match self.event_sender.borrow_mut().try_send(input_event.clone()) {
+            Err(_) => assert!(false),
+            _ => {}
+        };
+
+        vec![input_event]
     }
 }

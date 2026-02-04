@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::consumer_controls_binding::ConsumerControlsEvent;
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{input_device, metrics};
 use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
@@ -401,6 +401,24 @@ impl FactoryResetHandler {
     }
 }
 
+impl Handler for FactoryResetHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "FactoryResetHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::ConsumerControls]
+    }
+}
+
 #[async_trait(?Send)]
 impl UnhandledInputHandler for FactoryResetHandler {
     /// This InputHandler doesn't consume any input events. It just passes them on to the next handler in the pipeline.
@@ -445,22 +463,6 @@ impl UnhandledInputHandler for FactoryResetHandler {
         };
 
         vec![input_device::InputEvent::from(unhandled_input_event)]
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "FactoryResetHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::ConsumerControls]
     }
 }
 

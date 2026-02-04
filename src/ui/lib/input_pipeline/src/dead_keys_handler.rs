@@ -39,7 +39,7 @@ use crate::input_device::{
     Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
     UnhandledInputEvent,
 };
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::KeyboardEvent;
 use async_trait::async_trait;
 use core::fmt;
@@ -303,15 +303,7 @@ pub struct DeadKeysHandler {
 
 /// This trait implementation allows the [Handler] to be hooked up into the input
 /// pipeline.
-#[async_trait(?Send)]
-impl UnhandledInputHandler for DeadKeysHandler {
-    async fn handle_unhandled_input_event(
-        self: Rc<Self>,
-        unhandled_input_event: UnhandledInputEvent,
-    ) -> Vec<InputEvent> {
-        self.handle_unhandled_input_event_internal(unhandled_input_event)
-    }
-
+impl Handler for DeadKeysHandler {
     fn set_handler_healthy(self: std::rc::Rc<Self>) {
         self.inspect_status.health_node.borrow_mut().set_ok();
     }
@@ -326,6 +318,16 @@ impl UnhandledInputHandler for DeadKeysHandler {
 
     fn interest(&self) -> Vec<InputEventType> {
         vec![InputEventType::Keyboard]
+    }
+}
+
+#[async_trait(?Send)]
+impl UnhandledInputHandler for DeadKeysHandler {
+    async fn handle_unhandled_input_event(
+        self: Rc<Self>,
+        unhandled_input_event: UnhandledInputEvent,
+    ) -> Vec<InputEvent> {
+        self.handle_unhandled_input_event_internal(unhandled_input_event)
     }
 }
 

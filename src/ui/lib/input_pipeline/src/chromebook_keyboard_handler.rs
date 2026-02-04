@@ -17,7 +17,7 @@ use crate::input_device::{
     Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
     UnhandledInputEvent,
 };
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
 use async_trait::async_trait;
 use fidl_fuchsia_input::Key;
@@ -109,6 +109,24 @@ fn is_chromebook_keyboard(device_info: &fidl_fuchsia_input_report::DeviceInforma
         && device_info.vendor_id.unwrap_or_default() == VENDOR_ID
 }
 
+impl Handler for ChromebookKeyboardHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ChromebookKeyboardHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
+    }
+}
+
 #[async_trait(?Send)]
 impl UnhandledInputHandler for ChromebookKeyboardHandler {
     async fn handle_unhandled_input_event(
@@ -140,22 +158,6 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
                 vec![InputEvent::from(input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "ChromebookKeyboardHandler"
-    }
-
-    fn interest(&self) -> Vec<InputEventType> {
-        vec![InputEventType::Keyboard]
     }
 }
 

@@ -5,7 +5,7 @@
 use crate::input_device::{
     Handled, InputDeviceEvent, InputEvent, InputEventType, UnhandledInputEvent,
 };
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3::{KeyMeaning, Modifiers, NonPrintableKey};
 use fuchsia_inspect::health::Reporter;
@@ -32,6 +32,24 @@ pub struct ModifierHandler {
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
+}
+
+impl Handler for ModifierHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ModifierHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
+    }
 }
 
 #[async_trait(?Send)]
@@ -80,22 +98,6 @@ impl UnhandledInputHandler for ModifierHandler {
             }
         }
     }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "ModifierHandler"
-    }
-
-    fn interest(&self) -> Vec<InputEventType> {
-        vec![InputEventType::Keyboard]
-    }
 }
 
 impl ModifierHandler {
@@ -134,6 +136,24 @@ impl ModifierMeaningHandler {
             /* generates_events */ false,
         );
         Rc::new(Self { modifier_state: RefCell::new(ModifierState::new()), inspect_status })
+    }
+}
+
+impl Handler for ModifierMeaningHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "ModifierHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::Keyboard]
     }
 }
 
@@ -188,22 +208,6 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "ModifierHandler"
-    }
-
-    fn interest(&self) -> Vec<InputEventType> {
-        vec![InputEventType::Keyboard]
     }
 }
 

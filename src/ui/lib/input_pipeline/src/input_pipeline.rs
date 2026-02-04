@@ -4,7 +4,7 @@
 
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
-use crate::input_handler::UnhandledInputHandler;
+use crate::input_handler::Handler;
 use crate::{input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
 use focus_chain_provider::FocusChainProviderPublisher;
@@ -65,8 +65,9 @@ pub struct InputPipelineAssembly {
     /// The bottom-level receiver: any events that fall through the entire pipeline can
     /// be read from this receiver.
     receiver: UnboundedReceiver<input_device::InputEvent>,
+
     /// The input handlers that comprise the input pipeline.
-    handlers: Vec<Rc<dyn input_handler::InputHandler>>,
+    handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
 
     /// The display ownership watcher task.
     display_ownership_fut: Option<LocalBoxFuture<'static, ()>>,
@@ -93,15 +94,15 @@ impl InputPipelineAssembly {
         }
     }
 
-    /// Adds another [input_handler::InputHandler] into the [InputPipelineAssembly]. The handlers
+    /// Adds another [input_handler::BatchInputHandler] into the [InputPipelineAssembly]. The handlers
     /// are invoked in the order they are added. Returns `Self` for chaining.
-    pub fn add_handler(mut self, handler: Rc<dyn input_handler::InputHandler>) -> Self {
+    pub fn add_handler(mut self, handler: Rc<dyn input_handler::BatchInputHandler>) -> Self {
         self.handlers.push(handler);
         self
     }
 
     /// Adds all handlers into the assembly in the order they appear in `handlers`.
-    pub fn add_all_handlers(self, handlers: Vec<Rc<dyn input_handler::InputHandler>>) -> Self {
+    pub fn add_all_handlers(self, handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>) -> Self {
         handlers.into_iter().fold(self, |assembly, handler| assembly.add_handler(handler))
     }
 
@@ -142,7 +143,7 @@ impl InputPipelineAssembly {
     ) -> (
         UnboundedSender<input_device::InputEvent>,
         UnboundedReceiver<input_device::InputEvent>,
-        Vec<Rc<dyn input_handler::InputHandler>>,
+        Vec<Rc<dyn input_handler::BatchInputHandler>>,
         metrics::MetricsLogger,
         Option<LocalBoxFuture<'static, ()>>,
         Option<LocalBoxFuture<'static, ()>>,
@@ -559,7 +560,7 @@ impl InputPipeline {
     /// Initializes all handlers and starts the input pipeline loop in an asynchronous executor.
     fn run(
         mut receiver: UnboundedReceiver<input_device::InputEvent>,
-        handlers: Vec<Rc<dyn input_handler::InputHandler>>,
+        handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
     ) {
         fasync::Task::local(async move {
             for handler in &handlers {
@@ -572,7 +573,7 @@ impl InputPipeline {
             // Pre-compute handler lists for each event type.
             let mut handlers_by_type: HashMap<
                 InputEventType,
-                Vec<Rc<dyn input_handler::InputHandler>>,
+                Vec<Rc<dyn input_handler::BatchInputHandler>>,
             > = HashMap::new();
 
             // TODO: b/478262850 - We can use supported_input_devices to populate this list.
@@ -588,7 +589,7 @@ impl InputPipeline {
             ];
 
             for event_type in event_types {
-                let handlers_for_type: Vec<Rc<dyn input_handler::InputHandler>> = handlers
+                let handlers_for_type: Vec<Rc<dyn input_handler::BatchInputHandler>> = handlers
                     .iter()
                     .filter(|h| h.interest().contains(&event_type))
                     .cloned()
@@ -604,21 +605,16 @@ impl InputPipeline {
 
                 let mut events = vec![event];
                 for handler in handlers {
-                    let mut next_events = vec![];
                     let handler_name = handler.get_name();
-                    for e in events {
-                        let out_events = {
-                            let _async_trace = fuchsia_trace::async_enter!(
-                                fuchsia_trace::Id::random(),
-                                "input",
-                                "handle_input_event",
-                                "name" => handler_name
-                            );
-                            handler.clone().handle_input_event(e).await
-                        };
-                        next_events.extend(out_events);
-                    }
-                    events = next_events;
+                    events = {
+                        let _async_trace = fuchsia_trace::async_enter!(
+                            fuchsia_trace::Id::random(),
+                            "input",
+                            "handle_input_events",
+                            "name" => handler_name
+                        );
+                        handler.clone().handle_input_events(events).await
+                    };
                 }
 
                 for event in events {
@@ -1273,6 +1269,18 @@ mod tests {
         }
     }
 
+    impl Handler for SpecificInterestFakeHandler {
+        fn set_handler_healthy(self: std::rc::Rc<Self>) {}
+        fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {}
+        fn get_name(&self) -> &'static str {
+            "SpecificInterestFakeHandler"
+        }
+
+        fn interest(&self) -> Vec<input_device::InputEventType> {
+            self.interest_types.clone()
+        }
+    }
+
     #[async_trait(?Send)]
     impl input_handler::InputHandler for SpecificInterestFakeHandler {
         async fn handle_input_event(
@@ -1284,16 +1292,6 @@ mod tests {
                 Ok(_) => {}
             }
             vec![input_event]
-        }
-
-        fn set_handler_healthy(self: std::rc::Rc<Self>) {}
-        fn set_handler_unhealthy(self: std::rc::Rc<Self>, _msg: &str) {}
-        fn get_name(&self) -> &'static str {
-            "SpecificInterestFakeHandler"
-        }
-
-        fn interest(&self) -> Vec<input_device::InputEventType> {
-            self.interest_types.clone()
         }
     }
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //!
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::utils::Position;
 use crate::{input_device, metrics, mouse_binding};
 use async_trait::async_trait;
@@ -38,6 +38,24 @@ const PIXELS_PER_TICK: f32 = 120.0;
 /// TODO(https://fxbug.dev/42059911): Temporary apply a linear scale factor to scroll to make it feel
 /// faster.
 const SCALE_SCROLL: f32 = 2.0;
+
+impl Handler for PointerSensorScaleHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "PointerSensorScaleHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Mouse]
+    }
+}
 
 #[async_trait(?Send)]
 impl UnhandledInputHandler for PointerSensorScaleHandler {
@@ -187,22 +205,6 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                 vec![input_device::InputEvent::from(unhandled_input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "PointerSensorScaleHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::Mouse]
     }
 }
 

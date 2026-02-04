@@ -21,6 +21,18 @@ impl<T: Any> AsRcAny for T {
     }
 }
 
+pub trait Handler: AsRcAny {
+    fn set_handler_healthy(self: std::rc::Rc<Self>);
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
+
+    /// Returns the name of the input handler.
+    fn get_name(&self) -> &'static str;
+
+    /// Returns the types of input events this handler is interested in.
+    fn interest(&self) -> Vec<input_device::InputEventType>;
+}
+
 /// An [`InputHandler`] dispatches InputEvents to an external service. It maintains
 /// service connections necessary to handle the events.
 ///
@@ -38,7 +50,7 @@ impl<T: Any> AsRcAny for T {
 ///   propagating to downstream handlers in a timely manner. See
 ///   [further discussion of blocking](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/ui/lib/input_pipeline/docs/coding.md).
 #[async_trait(?Send)]
-pub trait InputHandler: AsRcAny {
+pub trait InputHandler: Handler {
     /// Returns a vector of InputEvents to propagate to the next InputHandler.
     ///
     /// * The vector may be empty if, e.g., the handler chose to buffer the
@@ -53,21 +65,44 @@ pub trait InputHandler: AsRcAny {
         self: std::rc::Rc<Self>,
         input_event: input_device::InputEvent,
     ) -> Vec<input_device::InputEvent>;
+}
 
-    fn set_handler_healthy(self: std::rc::Rc<Self>);
+/// A [`BatchInputHandler`] dispatches multiple InputEvents to an external service.
+#[async_trait(?Send)]
+pub trait BatchInputHandler: Handler {
+    /// Returns a vector of InputEvents to propagate to the next InputHandler.
+    ///
+    /// # Parameters
+    /// `input_events`: The InputEvents to be handled.
+    async fn handle_input_events(
+        self: std::rc::Rc<Self>,
+        input_events: Vec<input_device::InputEvent>,
+    ) -> Vec<input_device::InputEvent>;
+}
 
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
-
-    /// Returns the name of the input handler.
-    fn get_name(&self) -> &'static str;
-
-    /// Returns the types of input events this handler is interested in.
-    fn interest(&self) -> Vec<input_device::InputEventType>;
+#[async_trait(?Send)]
+impl<T> BatchInputHandler for T
+where
+    T: InputHandler,
+{
+    async fn handle_input_events(
+        self: std::rc::Rc<Self>,
+        input_events: Vec<input_device::InputEvent>,
+    ) -> Vec<input_device::InputEvent> {
+        // Pre-allocate the output vector to avoid reallocations when the handler generates
+        // the same number of events or fewer. It will still reallocate if the handler
+        // produces more events.
+        let mut out_events = Vec::with_capacity(input_events.len());
+        for input_event in input_events {
+            out_events.extend(self.clone().handle_input_event(input_event).await);
+        }
+        out_events
+    }
 }
 
 /// An [`UnhandledInputHandler`] is like an [`InputHandler`], but only deals in unhandled events.
 #[async_trait(?Send)]
-pub trait UnhandledInputHandler: AsRcAny {
+pub trait UnhandledInputHandler: Handler {
     /// Returns a vector of InputEvents to propagate to the next InputHandler.
     ///
     /// * The vector may be empty if, e.g., the handler chose to buffer the
@@ -82,15 +117,6 @@ pub trait UnhandledInputHandler: AsRcAny {
         self: std::rc::Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent>;
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>);
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str);
-
-    fn get_name(&self) -> &'static str;
-
-    /// Returns the types of input events this handler is interested in.
-    fn interest(&self) -> Vec<input_device::InputEventType>;
 }
 
 #[async_trait(?Send)]
@@ -117,22 +143,6 @@ where
                 .await
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        T::set_handler_healthy(self);
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        T::set_handler_unhealthy(self, msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        T::get_name(self)
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        T::interest(self)
     }
 }
 
@@ -204,7 +214,7 @@ impl InputHandlerStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{InputHandler, UnhandledInputHandler, async_trait};
+    use super::*;
     use crate::input_device::{
         Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
         UnhandledInputEvent,
@@ -221,18 +231,7 @@ mod tests {
         mark_events_handled: bool,
     }
 
-    #[async_trait(?Send)]
-    impl UnhandledInputHandler for FakeUnhandledInputHandler {
-        async fn handle_unhandled_input_event(
-            self: std::rc::Rc<Self>,
-            unhandled_input_event: UnhandledInputEvent,
-        ) -> Vec<InputEvent> {
-            self.event_sender
-                .unbounded_send(unhandled_input_event.clone())
-                .expect("failed to send");
-            vec![InputEvent::from(unhandled_input_event).into_handled_if(self.mark_events_handled)]
-        }
-
+    impl super::Handler for FakeUnhandledInputHandler {
         fn set_handler_healthy(self: std::rc::Rc<Self>) {
             // No inspect data on FakeUnhandledInputHandler. Do nothing.
         }
@@ -247,6 +246,19 @@ mod tests {
 
         fn interest(&self) -> Vec<InputEventType> {
             vec![InputEventType::Fake]
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl UnhandledInputHandler for FakeUnhandledInputHandler {
+        async fn handle_unhandled_input_event(
+            self: std::rc::Rc<Self>,
+            unhandled_input_event: UnhandledInputEvent,
+        ) -> Vec<InputEvent> {
+            self.event_sender
+                .unbounded_send(unhandled_input_event.clone())
+                .expect("failed to send");
+            vec![InputEvent::from(unhandled_input_event).into_handled_if(self.mark_events_handled)]
         }
     }
 
@@ -357,15 +369,7 @@ mod tests {
     #[fuchsia::test]
     fn get_name() {
         struct NeuralInputHandler {}
-        #[async_trait(?Send)]
-        impl InputHandler for NeuralInputHandler {
-            async fn handle_input_event(
-                self: std::rc::Rc<Self>,
-                _input_event: InputEvent,
-            ) -> Vec<InputEvent> {
-                unimplemented!()
-            }
-
+        impl super::Handler for NeuralInputHandler {
             fn set_handler_healthy(self: std::rc::Rc<Self>) {
                 unimplemented!()
             }
@@ -380,6 +384,16 @@ mod tests {
 
             fn interest(&self) -> Vec<InputEventType> {
                 vec![InputEventType::Fake]
+            }
+        }
+
+        #[async_trait(?Send)]
+        impl InputHandler for NeuralInputHandler {
+            async fn handle_input_event(
+                self: std::rc::Rc<Self>,
+                _input_event: InputEvent,
+            ) -> Vec<InputEvent> {
+                unimplemented!()
             }
         }
 

@@ -5,7 +5,7 @@
 use crate::input_device::{
     Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
 };
-use crate::input_handler::{InputHandler, InputHandlerStatus};
+use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::inspect_handler::{BufferNode, CircularBuffer};
 use crate::light_sensor::calibrator::{Calibrate, Calibrator};
 use crate::light_sensor::led_watcher::{CancelableTask, LedWatcher, LedWatcherHandle};
@@ -542,6 +542,27 @@ fn correlated_color_temperature(reading: Rgbc<f32>) -> Option<f32> {
     Some(449.0 * n.powi(3) + 3525.0 * n.powi(2) + 6823.3 * n + 5520.33)
 }
 
+impl<T> Handler for LightSensorHandler<T>
+where
+    T: Calibrate + 'static,
+{
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "LightSensorHandler"
+    }
+
+    fn interest(&self) -> Vec<InputEventType> {
+        vec![InputEventType::LightSensor]
+    }
+}
+
 #[async_trait(?Send)]
 impl<T> InputHandler for LightSensorHandler<T>
 where
@@ -598,22 +619,6 @@ where
             self.inspect_status.count_handled_event();
         }
         vec![input_event]
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "LightSensorHandler"
-    }
-
-    fn interest(&self) -> Vec<InputEventType> {
-        vec![InputEventType::LightSensor]
     }
 }
 

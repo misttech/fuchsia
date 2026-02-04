@@ -4,7 +4,7 @@
 
 #![warn(clippy::await_holding_refcell_ref)]
 
-use crate::input_handler::{InputHandler, InputHandlerStatus};
+use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::utils::{CursorMessage, Position, Size};
 use crate::{input_device, metrics, mouse_binding};
 use anyhow::{Context, Error, Result, anyhow};
@@ -80,6 +80,24 @@ struct MutableState {
     cursor_message_sender: Sender<CursorMessage>,
 }
 
+impl Handler for MouseInjectorHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "MouseInjectorHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::Mouse]
+    }
+}
+
 #[async_trait(?Send)]
 impl InputHandler for MouseInjectorHandler {
     async fn handle_input_event(
@@ -150,22 +168,6 @@ impl InputHandler for MouseInjectorHandler {
             }
         }
         vec![input_event]
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "MouseInjectorHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::Mouse]
     }
 }
 

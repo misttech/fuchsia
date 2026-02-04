@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{consumer_controls_binding, input_device, metrics};
 use async_trait::async_trait;
 use fidl::HandleBased;
@@ -41,6 +41,24 @@ struct MediaButtonsHandlerInner {
     pub last_event: Option<fidl_ui_input::MediaButtonsEvent>,
 
     pub send_event_task_tracker: LocalTaskTracker,
+}
+
+impl Handler for MediaButtonsHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "MediaButtonsHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        vec![input_device::InputEventType::ConsumerControls]
+    }
 }
 
 #[async_trait(?Send)]
@@ -87,22 +105,6 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 vec![input_device::InputEvent::from(unhandled_input_event)]
             }
         }
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "MediaButtonsHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        vec![input_device::InputEventType::ConsumerControls]
     }
 }
 

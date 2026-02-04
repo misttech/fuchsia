@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 #![cfg(fuchsia_api_level_at_least = "HEAD")]
 use crate::input_device;
-use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher, Subscriber};
@@ -303,6 +303,34 @@ pub fn init_interaction_hanging_get() -> InteractionHangingGet {
     InteractionHangingGet::new(initial_state, notify_fn)
 }
 
+impl Handler for InteractionStateHandler {
+    fn set_handler_healthy(self: std::rc::Rc<Self>) {
+        self.inspect_status.health_node.borrow_mut().set_ok();
+    }
+
+    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
+        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
+    }
+
+    fn get_name(&self) -> &'static str {
+        "InteractionStateHandler"
+    }
+
+    fn interest(&self) -> Vec<input_device::InputEventType> {
+        let mut interest = vec![];
+        if !self.enable_button_baton_passing {
+            interest.push(input_device::InputEventType::ConsumerControls);
+        }
+        if !self.enable_mouse_baton_passing {
+            interest.push(input_device::InputEventType::Mouse);
+        }
+        if !self.enable_touch_baton_passing {
+            interest.push(input_device::InputEventType::TouchScreen);
+        }
+        interest
+    }
+}
+
 #[async_trait(?Send)]
 impl UnhandledInputHandler for InteractionStateHandler {
     /// This InputHandler doesn't consume any input events.
@@ -383,32 +411,6 @@ impl UnhandledInputHandler for InteractionStateHandler {
         }
 
         vec![input_device::InputEvent::from(unhandled_input_event)]
-    }
-
-    fn set_handler_healthy(self: std::rc::Rc<Self>) {
-        self.inspect_status.health_node.borrow_mut().set_ok();
-    }
-
-    fn set_handler_unhealthy(self: std::rc::Rc<Self>, msg: &str) {
-        self.inspect_status.health_node.borrow_mut().set_unhealthy(msg);
-    }
-
-    fn get_name(&self) -> &'static str {
-        "InteractionStateHandler"
-    }
-
-    fn interest(&self) -> Vec<input_device::InputEventType> {
-        let mut interest = vec![];
-        if !self.enable_button_baton_passing {
-            interest.push(input_device::InputEventType::ConsumerControls);
-        }
-        if !self.enable_mouse_baton_passing {
-            interest.push(input_device::InputEventType::Mouse);
-        }
-        if !self.enable_touch_baton_passing {
-            interest.push(input_device::InputEventType::TouchScreen);
-        }
-        interest
     }
 }
 
