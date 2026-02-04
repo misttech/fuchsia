@@ -6,7 +6,7 @@ pub mod format;
 pub mod metadata;
 
 use crate::metadata::{SuperDeviceRange, SuperMetadata, round_up_to_alignment};
-use anyhow::{Error, anyhow, ensure};
+use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -120,6 +120,7 @@ fn into_merged_regions(mut regions: BTreeSet<SuperDeviceRange>) -> BTreeSet<Supe
     merged_used_regions
 }
 
+#[derive(Clone)]
 pub struct SuperPartitionDevice {
     device: Arc<dyn Device>,
     // Stores mapping of the (inclusive) end of the logical range to the physical range (which is
@@ -146,6 +147,53 @@ impl SuperPartitionDevice {
             extents_map: extent_map,
             partition_size_in_bytes: round_up_to_alignment(cursor, device.block_size() as u64)?,
         })
+    }
+
+    /// Returns all physical extents for this partition, in logical order.
+    pub fn extents(&self) -> Vec<Range<u64>> {
+        self.extents_map.values().map(|r| r.start..r.end).collect()
+    }
+
+    /// Returns the set of physical extents for a given logical range.
+    /// The returned extents are physical byte ranges on the underlying device.
+    /// Fails if the range contains sparse gaps or is out of bounds.
+    pub fn get_extents_for_range(&self, range: Range<u64>) -> Result<Vec<Range<u64>>, Error> {
+        let mut result = Vec::new();
+        let mut current_logical = range.start;
+
+        while current_logical < range.end {
+            // Find the extent that covers `current_logical`.
+            // `extents_map` keys are the *inclusive end* of the logical range.
+            // So if we have extents [0, 100], [101, 200], keys are 100, 200.
+            let mut range_iter = self.extents_map.range(current_logical..);
+            if let Some((&logical_end_inclusive, physical_range)) = range_iter.next() {
+                let extent_len = physical_range.end - physical_range.start;
+                let logical_start = logical_end_inclusive + 1 - extent_len;
+
+                // If `current_logical` < `logical_start`, it means there is a gap (hole)
+                // or we are before the first extent.
+                if current_logical < logical_start {
+                    // We are in a hole before this extent. We don't support this.
+                    bail!("get_extents_for_range() called over a sparse range.");
+                }
+
+                let intersection_start = current_logical;
+                let intersection_end = std::cmp::min(range.end, logical_end_inclusive + 1);
+
+                if intersection_start < intersection_end {
+                    let offset_within_extent = intersection_start - logical_start;
+                    let len = intersection_end - intersection_start;
+                    let physical_start = physical_range.start + offset_within_extent;
+                    result.push(physical_start..physical_start + len);
+                    current_logical = intersection_end;
+                } else {
+                    bail!("bug in get_extents_for_range or extent_maps corrupt");
+                }
+            } else {
+                bail!("get_extents_for_range() tried to read past end of partition.");
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -255,7 +303,7 @@ impl Device for SuperPartitionDevice {
 
 #[cfg(test)]
 mod tests {
-    use crate::{SuperDeviceRange, SuperParser, into_merged_regions};
+    use crate::{SuperDeviceRange, SuperParser, SuperPartitionDevice, into_merged_regions};
     use std::collections::BTreeSet;
     use std::path::Path;
     use std::sync::Arc;
@@ -771,5 +819,64 @@ mod tests {
             partition_used_regions,
             expected_partition_regions.iter().map(|r| r.0.clone()).collect::<Vec<_>>()
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_get_extents() {
+        let parent_device = open_image(std::path::Path::new(IMAGE_PATH));
+        let super_parser =
+            SuperParser::new(parent_device.clone()).await.expect("SuperParser::new failed");
+
+        let system_partition =
+            super_parser.get_sub_partition("system_a", 0).expect("failed to load partition device");
+
+        // Let's test `system_a` for a subset.
+        let extents = system_partition.get_extents_for_range(0..4096).expect("valid range");
+        assert_eq!(extents, vec![1048576..1052672]);
+
+        let extents = system_partition.get_extents_for_range(0..8192).expect("valid range");
+        assert_eq!(extents, vec![1048576..1056768]);
+
+        // Partial
+        let extents = system_partition.get_extents_for_range(100..4200).expect("valid range");
+        // Should range from 1048576 + 100 .. 1048576 + 4200
+        assert_eq!(extents, vec![1048676..1052776]);
+
+        // Out of bounds
+        system_partition
+            .get_extents_for_range(8000..9000)
+            .expect_err("should return error for sparse/oob");
+
+        // Completely out of bounds
+        system_partition
+            .get_extents_for_range(9000..10000)
+            .expect_err("should return error for oob");
+
+        // Test a fragmented partition.
+        // We can't build a "super" partition but we can fake up a SuperPartitionDevice for this.
+        let device = Arc::new(FakeDevice::new(5000, 4096));
+        let extent_locations = vec![
+            SuperDeviceRange(1000..2000), // 1000 bytes
+            SuperDeviceRange(5000..5500), // 500 bytes
+            SuperDeviceRange(4000..4500), // 500 bytes
+        ];
+        let partition =
+            SuperPartitionDevice::new(device.clone(), extent_locations).expect("new failed");
+
+        // Test spanning
+        let extents = partition.get_extents_for_range(500..1500).expect("valid spanning range");
+        // Should be [1500..2000, 5000..5500]
+        assert_eq!(extents, vec![1500..2000, 5000..5500]);
+
+        // Test spanning exact boundaries
+        let extents = partition.get_extents_for_range(1000..2000).expect("valid range");
+        assert_eq!(extents, vec![5000..5500, 4000..4500]);
+
+        let extents = partition.get_extents_for_range(999..1001).expect("valid range");
+        assert_eq!(extents, vec![1999..2000, 5000..5001]);
+
+        // Test crossing from second to third extent (out of order)
+        let extents = partition.get_extents_for_range(1400..1600).expect("valid range");
+        assert_eq!(extents, vec![5400..5500, 4000..4100]);
     }
 }
