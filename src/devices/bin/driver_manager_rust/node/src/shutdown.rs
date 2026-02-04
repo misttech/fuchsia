@@ -40,7 +40,7 @@ impl ShutdownNode for Node {
         }
     }
     fn set_should_destroy_driver_component(&self, val: bool) {
-        self.should_destroy_driver_component.set(val);
+        self.inner.borrow_mut().should_destroy_driver_component = val;
     }
 }
 
@@ -48,8 +48,8 @@ impl ShutdownNode for Node {
 impl NodeShutdownBridge for NodeBridge {
     fn get_removal_tracker_info(&self, shutdown_state: ShutdownState) -> NodeInfo {
         if let Some(node) = self.0.upgrade() {
-            let state = node.state.borrow();
-            let driver_url = match &*state {
+            let inner = node.inner.borrow();
+            let driver_url = match &inner.state {
                 NodeState::Starting { driver_url } => driver_url.clone(),
                 NodeState::DriverComponent(c) => c.driver_url.clone(),
                 NodeState::Quarantined { driver_url } => driver_url.clone(),
@@ -87,11 +87,15 @@ impl NodeShutdownBridge for NodeBridge {
         if let Some(node) = self.0.upgrade() { node.is_pending_bind() } else { false }
     }
     fn has_children(&self) -> bool {
-        if let Some(node) = self.0.upgrade() { !node.children.borrow().is_empty() } else { false }
+        if let Some(node) = self.0.upgrade() {
+            !node.inner.borrow().children.is_empty()
+        } else {
+            false
+        }
     }
     fn has_driver(&self) -> bool {
         if let Some(node) = self.0.upgrade() {
-            match &*node.state.borrow() {
+            match &node.inner.borrow().state {
                 NodeState::DriverComponent(component) => component.driver_client_binding.is_some(),
                 _ => false,
             }
@@ -101,7 +105,7 @@ impl NodeShutdownBridge for NodeBridge {
     }
     fn has_driver_component(&self) -> bool {
         if let Some(node) = self.0.upgrade() {
-            match &*node.state.borrow() {
+            match &node.inner.borrow().state {
                 NodeState::DriverComponent(component) => component.state != DriverState::Stopped,
                 _ => false,
             }
@@ -132,7 +136,7 @@ impl NodeShutdownBridge for NodeBridge {
     }
     fn children(&self) -> Vec<Rc<dyn ShutdownNode>> {
         if let Some(node) = self.0.upgrade() {
-            node.children.borrow().iter().map(|c| c.clone() as Rc<dyn ShutdownNode>).collect()
+            node.inner.borrow().children.iter().map(|c| c.clone() as Rc<dyn ShutdownNode>).collect()
         } else {
             vec![]
         }
@@ -145,15 +149,15 @@ impl NodeShutdownBridge for NodeBridge {
 impl Node {
     fn remove_child(&self, child: &Rc<Node>) {
         log::debug!("RemoveChild {} from parent {}", child.name(), self.name());
-        self.children.borrow_mut().retain(|c| !Rc::ptr_eq(c, child));
+        let mut inner = self.inner.borrow_mut();
+        inner.children.retain(|c| !Rc::ptr_eq(c, child));
 
-        if !self.unbinding_children_completers.borrow().is_empty()
-            && self.children.borrow().is_empty()
-        {
-            for completer in self.unbinding_children_completers.borrow_mut().drain(..) {
+        if !inner.unbinding_children_completers.is_empty() && inner.children.is_empty() {
+            for completer in inner.unbinding_children_completers.drain(..) {
                 let _ = completer.send(Ok(()));
             }
         }
+        drop(inner);
         self.node_shutdown_coordinator.borrow_mut().check_node_state();
     }
 
@@ -166,25 +170,28 @@ impl Node {
             attributor.remove_driver(koid.raw_koid());
         }
 
-        if let Some(binding) = self.node_controller_server_binding.take() {
+        if let Some(binding) = self.inner.borrow_mut().node_controller_server_binding.take() {
             binding.close();
         }
 
-        match *self.state.borrow_mut() {
-            NodeState::DriverComponent(ref mut driver_component) => {
-                driver_component.close_node();
-                driver_component.driver_client_binding.take();
-            }
-            NodeState::OwnedByParent { ref mut node_server_binding } => {
-                if let Some(binding) = node_server_binding.take() {
-                    binding.close()
+        {
+            let mut inner = self.inner.borrow_mut();
+            match inner.state {
+                NodeState::DriverComponent(ref mut driver_component) => {
+                    driver_component.close_node();
+                    driver_component.driver_client_binding.take();
                 }
+                NodeState::OwnedByParent { ref mut node_server_binding } => {
+                    if let Some(binding) = node_server_binding.take() {
+                        binding.close()
+                    }
+                }
+                _ => {}
             }
-            _ => {}
-        }
 
-        drop(self.devfs_device.borrow_mut().topological.take());
-        drop(self.devfs_device.borrow_mut().protocol.take());
+            inner.devfs_device.topological.take();
+            inner.devfs_device.protocol.take();
+        }
 
         for parent in self.parents() {
             if let Some(p) = parent.upgrade() {
@@ -194,19 +201,21 @@ impl Node {
             }
         }
 
-        *self.state.borrow_mut() = NodeState::Unbound;
+        {
+            let mut inner = self.inner.borrow_mut();
+            inner.state = NodeState::Unbound;
 
-        let mut node_type = self.node_type.borrow_mut();
-        match *node_type {
-            NodeTypeVariant::Normal { .. } => {
-                *node_type = NodeTypeVariant::Normal { parent: Weak::new() };
-            }
-            NodeTypeVariant::Composite { .. } => {
-                *node_type = NodeTypeVariant::Composite {
-                    parents: vec![],
-                    parents_names: vec![],
-                    primary_index: 0,
-                };
+            match inner.node_type {
+                NodeTypeVariant::Normal { .. } => {
+                    inner.node_type = NodeTypeVariant::Normal { parent: Weak::new() };
+                }
+                NodeTypeVariant::Composite { .. } => {
+                    inner.node_type = NodeTypeVariant::Composite {
+                        parents: vec![],
+                        parents_names: vec![],
+                        primary_index: 0,
+                    };
+                }
             }
         }
     }
@@ -235,12 +244,12 @@ impl Node {
             return;
         }
 
-        if let Some(cb) = self.remove_complete_callback.borrow_mut().take() {
+        if let Some(cb) = self.inner.borrow_mut().remove_complete_callback.take() {
             let _ = cb.send(());
         }
 
         if intent == ShutdownIntent::RebindComposite
-            && let Some(completer) = self.composite_rebind_completer.borrow_mut().take()
+            && let Some(completer) = self.inner.borrow_mut().composite_rebind_completer.take()
         {
             let _ = completer.send(Ok(()));
         }
@@ -253,8 +262,8 @@ impl Node {
 
         // Perform cleanups for previous driver before we try to start the next driver.
         {
-            let mut state = self.state.borrow_mut();
-            match *state {
+            let mut inner = self.inner.borrow_mut();
+            match inner.state {
                 NodeState::DriverComponent(ref mut driver_component) => {
                     driver_component.close_node();
                     driver_component.driver_client_binding.take();
@@ -266,21 +275,21 @@ impl Node {
                 }
                 _ => {}
             }
-            *state = NodeState::Unbound;
+            inner.state = NodeState::Unbound;
         }
 
-        if self.host_restart_on_crash.get() {
-            self.driver_host.borrow_mut().take();
+        if self.inner.borrow().host_restart_on_crash {
+            self.inner.borrow_mut().driver_host.take();
         }
 
-        let suffix = self.restart_driver_url_suffix.borrow_mut().take();
+        let suffix = self.inner.borrow_mut().restart_driver_url_suffix.take();
         if let Some(suffix) = suffix {
             let tracker = self.create_bind_result_tracker(false);
             self.node_manager.bind_to_url(self, &suffix, tracker);
             return;
         }
 
-        let package_type = self.driver_package_type.get();
+        let package_type = self.inner.borrow().driver_package_type;
         if let Err(e) = self.node_manager.start_driver(self, &previous_url, package_type) {
             error!("Failed to start driver '{}': {}", self.name(), e);
         }
@@ -289,14 +298,14 @@ impl Node {
     fn finish_quarantine(self: &Rc<Self>) {
         self.get_shutdown_coordinator().reset_shutdown();
         assert!(
-            matches!(*self.state.borrow(), NodeState::Quarantined { .. }),
+            matches!(self.inner.borrow().state, NodeState::Quarantined { .. }),
             "Node::state_ was not set to Quarantined"
         );
     }
 
     fn stop_driver(&self) {
-        let mut state = self.state.borrow_mut();
-        if let NodeState::DriverComponent(driver_component) = &mut *state {
+        let mut inner = self.inner.borrow_mut();
+        if let NodeState::DriverComponent(ref mut driver_component) = inner.state {
             if driver_component.state == DriverState::Binding {
                 warn!(
                     "Stopping driver '{}' for node '{}' while bind is in process",
@@ -310,13 +319,14 @@ impl Node {
                 && let Err(e) = driver.driver_host_proxy.stop()
             {
                 error!("Node: {} failed to stop driver: {}", self.name(), e);
+                drop(inner);
                 self.clear_driver_host();
             }
         }
     }
 
     fn stop_driver_component(self: &Rc<Self>) {
-        if let NodeState::DriverComponent(ref driver_component) = *self.state.borrow()
+        if let NodeState::DriverComponent(ref driver_component) = self.inner.borrow().state
             && driver_component.state != DriverState::Stopped
         {
             debug!(
@@ -328,18 +338,19 @@ impl Node {
     }
 
     fn maybe_destroy_driver_component(self: &Rc<Self>, intent: ShutdownIntent) -> bool {
-        if self.should_destroy_driver_component.get()
+        let inner = self.inner.borrow();
+        if inner.should_destroy_driver_component
             || intent != ShutdownIntent::Removal
-            || self.remove_complete_callback.borrow().is_some()
+            || inner.remove_complete_callback.is_some()
             || self.is_root_node()
         {
-            let proxy = self
+            let proxy = inner
                 .component_controller
-                .borrow()
                 .as_ref()
                 .expect("component_controller_proxy")
                 .component_controller_proxy
                 .clone();
+            drop(inner);
 
             let name = self.make_component_moniker();
 
@@ -358,7 +369,7 @@ impl Node {
                     }
                 }
 
-                self_rc.should_destroy_driver_component.set(false);
+                self_rc.inner.borrow_mut().should_destroy_driver_component = false;
             });
 
             return true;

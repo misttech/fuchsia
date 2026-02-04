@@ -19,38 +19,39 @@ impl Node {
             if matches!(
                 *self.node_shutdown_coordinator.borrow().node_state(),
                 ShutdownState::Running
-            ) && !matches!(*self.state.borrow(), NodeState::Unbound)
+            ) && !matches!(self.inner.borrow().state, NodeState::Unbound)
             {
                 warn!("Quarantining node '{}'", self.make_component_moniker());
                 self.quarantine_node().await;
             } else {
-                *self.state.borrow_mut() = NodeState::Unbound;
+                self.inner.borrow_mut().state = NodeState::Unbound;
             }
         }
 
-        let mut state = self.state.borrow_mut();
-        if let NodeState::DriverComponent(driver_component) = &mut *state {
+        let mut inner = self.inner.borrow_mut();
+        if let NodeState::DriverComponent(ref mut driver_component) = inner.state {
             if driver_component.state == DriverState::Stopped {
                 warn!("completed bind but the driver {} is already stopped", self.name());
             } else {
                 driver_component.state = DriverState::Running;
-                drop(state);
+                drop(inner);
                 self.on_bind();
             }
         } else {
-            drop(state);
+            drop(inner);
         }
 
-        if let Some(completer) = self.pending_bind_completer.borrow_mut().take() {
+        if let Some(completer) = self.inner.borrow_mut().pending_bind_completer.take() {
             let _ = completer.send(result);
         }
 
         if let Err(status) = &result {
             self.on_start_error(*status);
-        } else if let Some(completer) = self.wait_for_driver_completer.borrow_mut().take() {
+        } else if let Some(completer) = self.inner.borrow_mut().wait_for_driver_completer.take() {
             let token = if self.is_composite() {
-                self.children.borrow().iter().find_map(|child| {
-                    if let NodeState::DriverComponent(driver_component) = &*child.state.borrow()
+                self.inner.borrow().children.iter().find_map(|child| {
+                    if let NodeState::DriverComponent(driver_component) =
+                        &child.inner.borrow().state
                         && driver_component.state == DriverState::Running
                     {
                         Some(driver_component.duplicate_instance_handle())
@@ -58,7 +59,8 @@ impl Node {
                         None
                     }
                 })
-            } else if let NodeState::DriverComponent(driver_component) = &*self.state.borrow() {
+            } else if let NodeState::DriverComponent(driver_component) = &self.inner.borrow().state
+            {
                 Some(driver_component.duplicate_instance_handle())
             } else {
                 None
@@ -78,7 +80,7 @@ impl Node {
         self: &Rc<Self>,
         completer: oneshot::Sender<Result<fdf::DriverResult, zx::Status>>,
     ) {
-        if let NodeState::DriverComponent(driver_component) = &*self.state.borrow()
+        if let NodeState::DriverComponent(driver_component) = &self.inner.borrow().state
             && driver_component.state == DriverState::Running
         {
             let token = driver_component.duplicate_instance_handle();
@@ -86,18 +88,19 @@ impl Node {
             return;
         }
 
-        if self.wait_for_driver_completer.borrow().is_some() {
+        if self.inner.borrow().wait_for_driver_completer.is_some() {
             let _ = completer.send(Err(zx::Status::ALREADY_EXISTS));
             return;
         }
 
-        *self.wait_for_driver_completer.borrow_mut() = Some(completer);
+        self.inner.borrow_mut().wait_for_driver_completer = Some(completer);
 
         let node_clone = self.clone();
         self.scope.spawn_local(async move {
             node_clone.node_manager.wait_for_bootup().await;
-            if let Some(completer) = node_clone.wait_for_driver_completer.borrow_mut().take() {
-                if let Some(result) = node_clone.bind_error.borrow().as_ref() {
+            if let Some(completer) = node_clone.inner.borrow_mut().wait_for_driver_completer.take()
+            {
+                if let Some(result) = node_clone.inner.borrow().bind_error.as_ref() {
                     let response = match result {
                         fdf::DriverResult::MatchError(s) => Ok(fdf::DriverResult::MatchError(*s)),
                         fdf::DriverResult::StartError(s) => Ok(fdf::DriverResult::StartError(*s)),
@@ -108,7 +111,8 @@ impl Node {
                 }
 
                 // Re-check running state
-                if let NodeState::DriverComponent(driver_component) = &*node_clone.state.borrow()
+                if let NodeState::DriverComponent(driver_component) =
+                    &node_clone.inner.borrow().state
                     && driver_component.state == DriverState::Running
                 {
                     let token = driver_component.duplicate_instance_handle();
@@ -129,19 +133,19 @@ impl Node {
         force_rebind: bool,
         driver_url_suffix: Option<String>,
     ) -> Result<(), zx::Status> {
-        if !force_rebind && let NodeState::DriverComponent(_) = &*self.state.borrow() {
+        if !force_rebind && let NodeState::DriverComponent(_) = &self.inner.borrow().state {
             return Err(zx::Status::ALREADY_BOUND);
         }
 
-        if self.pending_bind_completer.borrow().is_some() {
+        if self.inner.borrow().pending_bind_completer.is_some() {
             return Err(zx::Status::ALREADY_EXISTS);
         }
 
         let (tx, rx) = oneshot::channel();
-        if let NodeState::DriverComponent(_) = &*self.state.borrow() {
+        if let NodeState::DriverComponent(_) = &self.inner.borrow().state {
             self.restart_node_with_rematch(driver_url_suffix, tx);
         } else {
-            *self.pending_bind_completer.borrow_mut() = Some(tx);
+            self.inner.borrow_mut().pending_bind_completer = Some(tx);
             let tracker = self.create_bind_result_tracker(false);
             if let Some(driver_url_suffix) = driver_url_suffix {
                 self.node_manager.bind_to_url(self, &driver_url_suffix, tracker);
@@ -166,7 +170,7 @@ impl Node {
                 return;
             };
             if info.is_empty() {
-                *self_ptr.state.borrow_mut() = NodeState::Unbound;
+                self_ptr.inner.borrow_mut().state = NodeState::Unbound;
                 self_ptr.on_match_error(zx::Status::NOT_FOUND);
                 if !silent {
                     // We need to call a method on Node here, or replicate logic.
@@ -197,16 +201,17 @@ impl Node {
     }
 
     pub(crate) async fn unbind_children(self: &Rc<Self>) -> Result<(), zx::Status> {
-        if self.children.borrow().is_empty() {
+        if self.inner.borrow().children.is_empty() {
             return Ok(());
         }
 
         let rx = {
             let (tx, rx) = oneshot::channel();
-            let mut completers = self.unbinding_children_completers.borrow_mut();
-            completers.push(tx);
-            if completers.len() == 1 {
-                let children = self.children.borrow().clone();
+            let mut inner = self.inner.borrow_mut();
+            inner.unbinding_children_completers.push(tx);
+            if inner.unbinding_children_completers.len() == 1 {
+                let children = inner.children.clone();
+                drop(inner);
                 for child in children {
                     child.remove(RemovalSet::All, None);
                 }
@@ -225,13 +230,15 @@ impl Node {
         restart_driver_url_suffix: Option<String>,
         completer: oneshot::Sender<Result<(), zx::Status>>,
     ) {
-        if self.pending_bind_completer.borrow().is_some() {
+        if self.inner.borrow().pending_bind_completer.is_some() {
             let _ = completer.send(Err(zx::Status::ALREADY_EXISTS));
             return;
         }
 
-        *self.pending_bind_completer.borrow_mut() = Some(completer);
-        *self.restart_driver_url_suffix.borrow_mut() = restart_driver_url_suffix;
+        let mut inner = self.inner.borrow_mut();
+        inner.pending_bind_completer = Some(completer);
+        inner.restart_driver_url_suffix = restart_driver_url_suffix;
+        drop(inner);
         self.restart_node();
     }
 
@@ -244,8 +251,8 @@ impl Node {
         let driver_url = self.driver_url();
 
         {
-            let mut state = self.state.borrow_mut();
-            match *state {
+            let mut inner = self.inner.borrow_mut();
+            match inner.state {
                 NodeState::DriverComponent(ref mut driver_component) => {
                     driver_component.close_node();
                     driver_component.driver_client_binding.take();
@@ -258,7 +265,7 @@ impl Node {
 
             // TODO(novinc): consider keeping the DriverComponent and going through shutdown flow
             // with all of that state. This just drops all the connections currently.
-            *state = NodeState::Quarantined { driver_url };
+            inner.state = NodeState::Quarantined { driver_url };
         }
 
         self.node_shutdown_coordinator.borrow_mut().set_shutdown_intent(ShutdownIntent::Quarantine);
@@ -266,9 +273,9 @@ impl Node {
     }
 
     fn on_bind(&self) {
-        if let Some(controller_ref) = self.node_controller_server_binding.borrow().as_ref() {
-            let state = self.state.borrow();
-            if let NodeState::DriverComponent(driver_component) = &*state {
+        if let Some(controller_ref) = self.inner.borrow().node_controller_server_binding.as_ref() {
+            let inner = self.inner.borrow();
+            if let NodeState::DriverComponent(driver_component) = &inner.state {
                 let node_token = Some(driver_component.duplicate_instance_handle());
                 let event = fdf::NodeControllerOnBindRequest { node_token, ..Default::default() };
                 if let Err(e) = controller_ref.node_controller_ref.send_on_bind(event) {
@@ -277,7 +284,7 @@ impl Node {
             }
         }
 
-        if let NodeState::DriverComponent(driver_component) = &*self.state.borrow() {
+        if let NodeState::DriverComponent(driver_component) = &self.inner.borrow().state {
             let node_token = driver_component.duplicate_instance_handle();
             let koid = driver_component.instance_koid().raw_koid();
             if let Some(driver_host) = self.driver_host() {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::{Node, NodePropertyEntry};
+use crate::node::{Node, NodeInner, NodePropertyEntry};
 use crate::node_manager::NodeManager;
 use crate::shutdown::NodeBridge;
 use crate::types::{NodeDictionary, NodeState, NodeTypeVariant};
@@ -10,7 +10,7 @@ use driver_manager_devfs::DevfsDevice;
 use driver_manager_shutdown::{NodeShutdownCoordinator, ShutdownIntent};
 use driver_manager_types::{Collection, NodeOffer, OfferTransport};
 use futures::channel::oneshot;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 use {
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_driver_framework as fdf,
@@ -26,7 +26,7 @@ impl Node {
         node_manager: Box<dyn NodeManager>,
     ) -> Rc<Self> {
         let driver_host = if let Some(parent) = parents[primary_index as usize].upgrade() {
-            parent.driver_host.borrow().clone()
+            parent.inner.borrow().driver_host.clone()
         } else {
             None
         };
@@ -37,45 +37,43 @@ impl Node {
             Self {
                 name: name.to_string(),
                 node_manager,
-                collection: Cell::new(Collection::None),
-                driver_package_type: Cell::new(fdf::DriverPackageType::Base),
-                node_type: RefCell::new(NodeTypeVariant::Composite {
-                    parents,
-                    parents_names,
-                    primary_index,
+                inner: RefCell::new(NodeInner {
+                    collection: Collection::None,
+                    driver_package_type: fdf::DriverPackageType::Base,
+                    node_type: NodeTypeVariant::Composite { parents, parents_names, primary_index },
+                    children: Vec::new(),
+                    properties: Vec::new(),
+                    symbols: Vec::new(),
+                    offers: Vec::new(),
+                    devfs_device: DevfsDevice::new(),
+                    protocol_connector: None,
+                    controller_allowlist_passthrough: None,
+                    state: NodeState::Unbound,
+                    driver_host,
+                    host_restart_on_crash: false,
+                    remove_complete_callback: None,
+                    bus_info: None,
+                    composite_rebind_completer: None,
+                    restart_driver_url_suffix: Option::None,
+                    driver_host_name_for_colocation: String::new(),
+                    node_controller_server_binding: None,
+                    pending_bind_completer: None,
+                    bind_error: None,
+                    unbinding_children_completers: Vec::new(),
+                    dictionary: NodeDictionary::None,
+                    wait_for_driver_completer: None,
+                    component_controller: None,
+                    start_request_receiver: None,
+                    start_handles: None,
+                    should_destroy_driver_component: false,
                 }),
-                children: RefCell::new(Vec::new()),
-                properties: RefCell::new(Vec::new()),
-                symbols: RefCell::new(Vec::new()),
-                offers: RefCell::new(Vec::new()),
-                devfs_device: RefCell::new(DevfsDevice::new()),
-                protocol_connector: RefCell::new(None),
-                controller_allowlist_passthrough: RefCell::new(None),
                 node_shutdown_coordinator: RefCell::new(NodeShutdownCoordinator::new(
                     bridge,
                     enable_test_shutdown_delays,
                     shutdown_test_rng,
                 )),
-                state: RefCell::new(NodeState::Unbound),
-                driver_host: RefCell::new(driver_host),
-                host_restart_on_crash: Cell::new(false),
-                remove_complete_callback: RefCell::new(None),
-                bus_info: RefCell::new(None),
-                composite_rebind_completer: RefCell::new(None),
-                restart_driver_url_suffix: RefCell::new(None),
-                driver_host_name_for_colocation: RefCell::new(String::new()),
                 can_multibind_composites: true,
-                node_controller_server_binding: RefCell::new(None),
-                pending_bind_completer: RefCell::new(None),
-                bind_error: RefCell::new(None),
-                unbinding_children_completers: RefCell::new(Vec::new()),
                 weak_self: weak_self.clone(),
-                dictionary: RefCell::new(NodeDictionary::None),
-                wait_for_driver_completer: RefCell::new(None),
-                component_controller: RefCell::new(None),
-                start_request_receiver: RefCell::new(None),
-                start_handles: RefCell::new(None),
-                should_destroy_driver_component: Cell::new(false),
                 scope: fasync::Scope::new_with_name(format!("node:{name}")),
             }
         })
@@ -173,7 +171,7 @@ impl Node {
         let mut offers = vec![];
         for (i, parent) in parents.iter().enumerate() {
             let parent = parent.upgrade().expect("parent should be alive");
-            for offer in parent.offers.borrow().iter() {
+            for offer in parent.inner.borrow().offers.iter() {
                 let new_offer = Self::create_composite_offer(
                     offer,
                     &parents_names[i],
@@ -191,28 +189,30 @@ impl Node {
         let composite =
             Self::new_composite(node_name, parents, parents_names, primary_index, node_manager);
 
-        *composite.driver_host_name_for_colocation.borrow_mut() = driver_host_name_for_colocation;
+        composite.inner.borrow_mut().driver_host_name_for_colocation =
+            driver_host_name_for_colocation;
 
         Self::set_composite_parent_properties(&composite, parent_properties);
 
         let primary_parent = composite.get_primary_parent().expect("primary parent should exist");
-        let symbols = primary_parent.symbols.borrow().clone();
-        *composite.symbols.borrow_mut() = symbols;
+        let symbols = primary_parent.inner.borrow().symbols.clone();
+        composite.inner.borrow_mut().symbols = symbols;
 
         // Copy the subtree dictionary of the primary parent node down to the composite.
-        if let NodeDictionary::Subtree(d) = *primary_parent.dictionary.borrow() {
+        if let NodeDictionary::Subtree(d) = primary_parent.inner.borrow().dictionary {
             if has_dictionary_offer {
                 panic!("Cannot use dictionary offers on node");
             }
 
-            *composite.dictionary.borrow_mut() = NodeDictionary::Subtree(d);
+            composite.inner.borrow_mut().dictionary = NodeDictionary::Subtree(d);
         }
 
-        *composite.offers.borrow_mut() = offers;
+        composite.inner.borrow_mut().offers = offers;
 
         composite.add_to_parents();
 
-        let Some(ref topological) = primary_parent.devfs_device.borrow().topological else {
+        let inner = primary_parent.inner.borrow();
+        let Some(ref topological) = inner.devfs_device.topological else {
             panic!(
                 "Missing topological devfs node for primary parent: {}",
                 composite.make_topological_path(false)
@@ -225,18 +225,18 @@ impl Node {
             None,
             composite.create_devfs_passthrough(None, None, true, "".to_string()),
         )?;
-        *composite.devfs_device.borrow_mut() = devfs_device;
+        composite.inner.borrow_mut().devfs_device = devfs_device;
 
         Ok(composite)
     }
 
     pub fn set_composite_parent_properties(&self, parent_properties: &[NodePropertyEntry]) {
-        let mut properties = self.properties.borrow_mut();
-        properties.clear();
-        *properties = parent_properties.to_vec();
-        if let NodeTypeVariant::Composite { primary_index, .. } = &*self.node_type.borrow() {
+        let mut inner = self.inner.borrow_mut();
+        inner.properties.clear();
+        inner.properties = parent_properties.to_vec();
+        if let NodeTypeVariant::Composite { primary_index, .. } = &inner.node_type {
             let default_properties = &parent_properties[*primary_index as usize].properties;
-            properties.push(NodePropertyEntry {
+            inner.properties.push(NodePropertyEntry {
                 name: "default".to_string(),
                 properties: default_properties.to_vec(),
             });
@@ -247,18 +247,19 @@ impl Node {
         self: &Rc<Self>,
         completer: oneshot::Sender<Result<(), zx::Status>>,
     ) {
-        let mut rebind_completer = self.composite_rebind_completer.borrow_mut();
-        if rebind_completer.is_some() {
+        let mut inner = self.inner.borrow_mut();
+        if inner.composite_rebind_completer.is_some() {
             let _ = completer.send(Err(zx::Status::ALREADY_EXISTS));
             return;
         }
 
-        if !matches!(&*self.node_type.borrow(), NodeTypeVariant::Composite { .. }) {
+        if !matches!(&inner.node_type, NodeTypeVariant::Composite { .. }) {
             let _ = completer.send(Err(zx::Status::NOT_SUPPORTED));
             return;
         }
 
-        *rebind_completer = Some(completer);
+        inner.composite_rebind_completer = Some(completer);
+        drop(inner);
         self.node_shutdown_coordinator
             .borrow_mut()
             .set_shutdown_intent(ShutdownIntent::RebindComposite);

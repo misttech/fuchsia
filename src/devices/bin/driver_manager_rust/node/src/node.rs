@@ -16,7 +16,7 @@ use flyweights::FlyStr;
 use fuchsia_async::{self as fasync};
 use futures::channel::oneshot;
 use log::{debug, warn};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use {
@@ -97,42 +97,45 @@ impl std::convert::From<NodePropertyEntry> for fdf::NodePropertyEntry2 {
     }
 }
 
+pub(crate) struct NodeInner {
+    pub(crate) collection: Collection,
+    pub(crate) driver_package_type: fdf::DriverPackageType,
+    pub(crate) node_type: NodeTypeVariant,
+    pub(crate) children: Vec<Rc<Node>>,
+    pub(crate) properties: Vec<NodePropertyEntry>,
+    pub(crate) symbols: Vec<fdf::NodeSymbol>,
+    pub(crate) offers: Vec<NodeOffer>,
+    pub(crate) devfs_device: DevfsDevice,
+    pub(crate) protocol_connector: Option<fdevfs::ConnectorProxy>,
+    pub(crate) controller_allowlist_passthrough: Option<Rc<ControllerAllowlistPassthrough>>,
+    pub(crate) state: NodeState,
+    pub(crate) driver_host: Option<Rc<dyn DriverHost>>,
+    pub(crate) host_restart_on_crash: bool,
+    pub(crate) remove_complete_callback: Option<oneshot::Sender<()>>,
+    pub(crate) bus_info: Option<fdf::BusInfo>,
+    pub(crate) composite_rebind_completer: Option<oneshot::Sender<Result<(), zx::Status>>>,
+    pub(crate) restart_driver_url_suffix: Option<String>,
+    pub(crate) driver_host_name_for_colocation: String,
+    pub(crate) node_controller_server_binding: Option<NodeControllerServerBinding>,
+    pub(crate) pending_bind_completer: Option<oneshot::Sender<Result<(), zx::Status>>>,
+    pub(crate) bind_error: Option<fdf::DriverResult>,
+    pub(crate) unbinding_children_completers: Vec<oneshot::Sender<Result<(), zx::Status>>>,
+    pub(crate) dictionary: NodeDictionary,
+    pub(crate) wait_for_driver_completer:
+        Option<oneshot::Sender<Result<fdf::DriverResult, zx::Status>>>,
+    pub(crate) component_controller: Option<ComponentControllerClientBinding>,
+    pub(crate) start_request_receiver: Option<StartRequestReceiver>,
+    pub(crate) start_handles: Option<Vec<fidl_fuchsia_process::HandleInfo>>,
+    pub(crate) should_destroy_driver_component: bool,
+}
+
 pub struct Node {
     pub(crate) name: String,
     pub(crate) node_manager: Box<dyn NodeManager>,
-    pub(crate) collection: Cell<Collection>,
-    pub(crate) driver_package_type: Cell<fdf::DriverPackageType>,
-    pub(crate) node_type: RefCell<NodeTypeVariant>,
-    pub(crate) children: RefCell<Vec<Rc<Node>>>,
-    pub(crate) properties: RefCell<Vec<NodePropertyEntry>>,
-    pub(crate) symbols: RefCell<Vec<fdf::NodeSymbol>>,
-    pub(crate) offers: RefCell<Vec<NodeOffer>>,
-    pub(crate) devfs_device: RefCell<DevfsDevice>,
-    pub(crate) protocol_connector: RefCell<Option<fdevfs::ConnectorProxy>>,
-    pub(crate) controller_allowlist_passthrough:
-        RefCell<Option<Rc<ControllerAllowlistPassthrough>>>,
+    pub(crate) inner: RefCell<NodeInner>,
     pub(crate) node_shutdown_coordinator: RefCell<NodeShutdownCoordinator>,
-    pub(crate) state: RefCell<NodeState>,
-    pub(crate) driver_host: RefCell<Option<Rc<dyn DriverHost>>>,
-    pub(crate) host_restart_on_crash: Cell<bool>,
-    pub(crate) remove_complete_callback: RefCell<Option<oneshot::Sender<()>>>,
-    pub(crate) bus_info: RefCell<Option<fdf::BusInfo>>,
-    pub(crate) composite_rebind_completer: RefCell<Option<oneshot::Sender<Result<(), zx::Status>>>>,
-    pub(crate) restart_driver_url_suffix: RefCell<Option<String>>,
-    pub(crate) driver_host_name_for_colocation: RefCell<String>,
     pub can_multibind_composites: bool,
-    pub(crate) node_controller_server_binding: RefCell<Option<NodeControllerServerBinding>>,
-    pub(crate) pending_bind_completer: RefCell<Option<oneshot::Sender<Result<(), zx::Status>>>>,
-    pub(crate) bind_error: RefCell<Option<fdf::DriverResult>>,
-    pub(crate) unbinding_children_completers: RefCell<Vec<oneshot::Sender<Result<(), zx::Status>>>>,
     pub(crate) weak_self: Weak<Self>,
-    pub(crate) dictionary: RefCell<NodeDictionary>,
-    pub(crate) wait_for_driver_completer:
-        RefCell<Option<oneshot::Sender<Result<fdf::DriverResult, zx::Status>>>>,
-    pub(crate) component_controller: RefCell<Option<ComponentControllerClientBinding>>,
-    pub(crate) start_request_receiver: RefCell<Option<StartRequestReceiver>>,
-    pub(crate) start_handles: RefCell<Option<Vec<fidl_fuchsia_process::HandleInfo>>>,
-    pub(crate) should_destroy_driver_component: Cell<bool>,
     pub(crate) scope: fasync::Scope,
 }
 
@@ -145,7 +148,7 @@ impl Drop for Node {
 impl Node {
     pub fn new(name: &str, parent: Weak<Node>, node_manager: Box<dyn NodeManager>) -> Rc<Self> {
         let driver_host = if let Some(parent) = parent.upgrade() {
-            parent.driver_host.borrow().clone()
+            parent.inner.borrow().driver_host.clone()
         } else {
             None
         };
@@ -156,41 +159,43 @@ impl Node {
             Self {
                 name: name.to_string(),
                 node_manager,
-                collection: Cell::new(Collection::None),
-                driver_package_type: Cell::new(fdf::DriverPackageType::Base),
-                node_type: RefCell::new(NodeTypeVariant::Normal { parent }),
-                children: RefCell::new(Vec::new()),
-                properties: RefCell::new(Vec::new()),
-                symbols: RefCell::new(Vec::new()),
-                offers: RefCell::new(Vec::new()),
-                devfs_device: RefCell::new(DevfsDevice::new()),
-                protocol_connector: RefCell::new(None),
-                controller_allowlist_passthrough: RefCell::new(None),
+                inner: RefCell::new(NodeInner {
+                    collection: Collection::None,
+                    driver_package_type: fdf::DriverPackageType::Base,
+                    node_type: NodeTypeVariant::Normal { parent },
+                    children: Vec::new(),
+                    properties: Vec::new(),
+                    symbols: Vec::new(),
+                    offers: Vec::new(),
+                    devfs_device: DevfsDevice::new(),
+                    protocol_connector: None,
+                    controller_allowlist_passthrough: None,
+                    state: NodeState::Unbound,
+                    driver_host,
+                    host_restart_on_crash: false,
+                    remove_complete_callback: None,
+                    bus_info: None,
+                    composite_rebind_completer: None,
+                    restart_driver_url_suffix: None,
+                    driver_host_name_for_colocation: String::new(),
+                    node_controller_server_binding: None,
+                    pending_bind_completer: None,
+                    bind_error: None,
+                    unbinding_children_completers: Vec::new(),
+                    dictionary: NodeDictionary::None,
+                    wait_for_driver_completer: None,
+                    component_controller: None,
+                    start_request_receiver: None,
+                    start_handles: None,
+                    should_destroy_driver_component: false,
+                }),
                 node_shutdown_coordinator: RefCell::new(NodeShutdownCoordinator::new(
                     bridge,
                     enable_test_shutdown_delays,
                     shutdown_test_rng,
                 )),
-                state: RefCell::new(NodeState::Unbound),
-                driver_host: RefCell::new(driver_host),
-                host_restart_on_crash: Cell::new(false),
-                remove_complete_callback: RefCell::new(None),
-                bus_info: RefCell::new(None),
-                composite_rebind_completer: RefCell::new(None),
-                restart_driver_url_suffix: RefCell::new(None),
-                driver_host_name_for_colocation: RefCell::new(String::new()),
                 can_multibind_composites: true,
-                node_controller_server_binding: RefCell::new(None),
-                pending_bind_completer: RefCell::new(None),
-                bind_error: RefCell::new(None),
-                unbinding_children_completers: RefCell::new(Vec::new()),
                 weak_self: weak_self.clone(),
-                dictionary: RefCell::new(NodeDictionary::None),
-                wait_for_driver_completer: RefCell::new(None),
-                component_controller: RefCell::new(None),
-                start_request_receiver: RefCell::new(None),
-                start_handles: RefCell::new(None),
-                should_destroy_driver_component: Cell::new(false),
                 scope: fasync::Scope::new_with_name(format!("node:{name}")),
             }
         })
@@ -201,7 +206,7 @@ impl Node {
     }
 
     pub fn token_koid(&self) -> Option<zx::Koid> {
-        match &*self.state.borrow() {
+        match &self.inner.borrow().state {
             NodeState::DriverComponent(driver_component) => Some(driver_component.instance_koid()),
             _ => None,
         }
@@ -223,30 +228,30 @@ impl Node {
     }
 
     pub fn on_match_error(&self, error: zx::Status) {
-        *self.bind_error.borrow_mut() = Some(fdf::DriverResult::MatchError(error.into_raw()));
+        self.inner.borrow_mut().bind_error = Some(fdf::DriverResult::MatchError(error.into_raw()));
     }
 
     pub fn on_start_error(&self, error: zx::Status) {
-        *self.bind_error.borrow_mut() = Some(fdf::DriverResult::StartError(error.into_raw()));
+        self.inner.borrow_mut().bind_error = Some(fdf::DriverResult::StartError(error.into_raw()));
     }
 
     pub fn mark_as_composite_parent(&self) {
-        *self.state.borrow_mut() = NodeState::CompositeParent;
+        self.inner.borrow_mut().state = NodeState::CompositeParent;
     }
 
     pub fn unmark_as_composite_parent(&self) {
-        *self.state.borrow_mut() = NodeState::Unbound;
+        self.inner.borrow_mut().state = NodeState::Unbound;
     }
 
     pub(crate) fn is_pending_bind(&self) -> bool {
-        match &*self.state.borrow() {
+        match &self.inner.borrow().state {
             NodeState::DriverComponent(component) => component.state == DriverState::Binding,
             _ => false,
         }
     }
 
     pub(crate) fn clear_driver_host(&self) {
-        if let NodeState::DriverComponent(ref mut component) = *self.state.borrow_mut() {
+        if let NodeState::DriverComponent(ref mut component) = self.inner.borrow_mut().state {
             component.driver_client_binding.take();
         }
     }
@@ -276,11 +281,11 @@ impl Node {
     }
 
     pub fn children(&self) -> Vec<Rc<Node>> {
-        self.children.borrow().clone()
+        self.inner.borrow().children.clone()
     }
 
     pub fn parents(&self) -> Vec<Weak<Node>> {
-        match &*self.node_type.borrow() {
+        match &self.inner.borrow().node_type {
             NodeTypeVariant::Normal { parent } => vec![parent.clone()],
             NodeTypeVariant::Composite { parents, .. } => parents.clone(),
         }
@@ -291,7 +296,7 @@ impl Node {
     }
 
     pub fn driver_url(&self) -> String {
-        match &*self.state.borrow() {
+        match &self.inner.borrow().state {
             NodeState::Starting { driver_url } => driver_url.clone(),
             NodeState::DriverComponent(c) => c.driver_url.clone(),
             NodeState::Quarantined { driver_url } => driver_url.clone(),
@@ -302,11 +307,11 @@ impl Node {
     }
 
     pub fn is_quarantined(&self) -> bool {
-        matches!(*self.state.borrow(), NodeState::Quarantined { .. })
+        matches!(self.inner.borrow().state, NodeState::Quarantined { .. })
     }
 
     pub fn get_primary_parent(&self) -> Option<Rc<Node>> {
-        match &*self.node_type.borrow() {
+        match &self.inner.borrow().node_type {
             NodeTypeVariant::Normal { parent } => parent.upgrade(),
             NodeTypeVariant::Composite { parents, primary_index, .. } => {
                 parents.get(*primary_index as usize).and_then(|p| p.upgrade())
@@ -318,7 +323,7 @@ impl Node {
         let mut segments = vec![];
         let mut current = self.weak_self.upgrade();
         while let Some(node) = current {
-            if let Some(bus_info) = node.bus_info.borrow().as_ref() {
+            if let Some(bus_info) = node.inner.borrow().bus_info.as_ref() {
                 segments.push(bus_info.clone());
             }
             current = node.get_primary_parent();
@@ -332,8 +337,8 @@ impl Node {
         parent_name: Option<&str>,
     ) -> Option<Vec<fdf::NodeProperty2>> {
         let parent_name = parent_name.unwrap_or("default");
-        let properties = self.properties.borrow();
-        for entry in properties.iter() {
+        let inner = self.inner.borrow();
+        for entry in inner.properties.iter() {
             if entry.name == parent_name {
                 return Some(entry.properties.clone().into_iter().map(|p| p.into()).collect());
             }
@@ -343,10 +348,10 @@ impl Node {
 
     pub(crate) fn add_to_parents(&self) {
         let this_node = self.weak_self.upgrade().unwrap();
-        match &*self.node_type.borrow() {
+        match &self.inner.borrow().node_type {
             NodeTypeVariant::Normal { parent } => {
                 if let Some(p) = parent.upgrade() {
-                    p.children.borrow_mut().push(this_node);
+                    p.inner.borrow_mut().children.push(this_node);
                 } else {
                     warn!("Parent freed before child {} could be added to it", self.name());
                 }
@@ -354,7 +359,7 @@ impl Node {
             NodeTypeVariant::Composite { parents, .. } => {
                 for parent in parents {
                     if let Some(p) = parent.upgrade() {
-                        p.children.borrow_mut().push(this_node.clone());
+                        p.inner.borrow_mut().children.push(this_node.clone());
                     } else {
                         warn!("Parent freed before child {} could be added to it", self.name());
                     }
@@ -364,15 +369,15 @@ impl Node {
     }
 
     pub fn driver_host(&self) -> Option<Rc<dyn DriverHost>> {
-        self.driver_host.borrow().clone()
+        self.inner.borrow().driver_host.clone()
     }
 
     pub fn is_composite(&self) -> bool {
-        matches!(*self.node_type.borrow(), NodeTypeVariant::Composite { .. })
+        matches!(self.inner.borrow().node_type, NodeTypeVariant::Composite { .. })
     }
 
     pub fn is_bound(&self) -> bool {
-        matches!(*self.state.borrow(), NodeState::DriverComponent { .. })
+        matches!(self.inner.borrow().state, NodeState::DriverComponent { .. })
     }
 
     pub fn evaluate_rematch_flags(
@@ -400,19 +405,19 @@ impl Node {
     }
 
     pub fn set_subtree_dictionary(&self, dictionary: fidl_fuchsia_component_sandbox::CapabilityId) {
-        if matches!(*self.dictionary.borrow(), NodeDictionary::Standard(_)) {
+        if matches!(self.inner.borrow().dictionary, NodeDictionary::Standard(_)) {
             panic!("Cannot set subtree dictionary on nodes with standard dictionaries");
         }
 
-        *self.dictionary.borrow_mut() = NodeDictionary::Subtree(dictionary);
+        self.inner.borrow_mut().dictionary = NodeDictionary::Subtree(dictionary);
     }
 
     pub fn remove_subtree_dictionary(&self) {
-        *self.dictionary.borrow_mut() = NodeDictionary::None;
+        self.inner.borrow_mut().dictionary = NodeDictionary::None;
     }
 
     pub fn has_subtree_dictionary(&self) -> bool {
-        matches!(*self.dictionary.borrow(), NodeDictionary::Subtree(_))
+        matches!(self.inner.borrow().dictionary, NodeDictionary::Subtree(_))
     }
 
     pub fn skip_injected_offers(&self) -> bool {
@@ -424,7 +429,7 @@ impl Node {
     ) -> Option<fidl_fuchsia_component_sandbox::DictionaryRef> {
         let dictionary_util = self.node_manager.get_dictionary_util().ok()?;
 
-        let to_export = match *self.dictionary.borrow() {
+        let to_export = match self.inner.borrow().dictionary {
             NodeDictionary::None => None,
             NodeDictionary::Standard(d) => Some(d),
             NodeDictionary::Subtree(d) => Some(d),
@@ -436,22 +441,25 @@ impl Node {
 
         // map service to vec of aggregate sources.
         let mut sources = HashMap::<String, Vec<AggregateSource>>::new();
-        for dictionary_offer in self.offers.borrow().iter() {
-            if !matches!(dictionary_offer.transport, OfferTransport::Dictionary) {
-                continue;
-            }
+        {
+            let mut inner = self.inner.borrow_mut();
+            for dictionary_offer in inner.offers.iter_mut() {
+                if !matches!(dictionary_offer.transport, OfferTransport::Dictionary) {
+                    continue;
+                }
 
-            if let Some(connector) = dictionary_offer.dir_connector.take() {
-                sources.entry(dictionary_offer.service_name.clone()).or_default().push(
-                    AggregateSource {
-                        dir_connector: Some(connector),
-                        source_instance_filter: Some(
-                            dictionary_offer.source_instance_filter.clone(),
-                        ),
-                        renamed_instances: Some(dictionary_offer.renamed_instances.clone()),
-                        ..Default::default()
-                    },
-                );
+                if let Some(connector) = dictionary_offer.dir_connector.take() {
+                    sources.entry(dictionary_offer.service_name.clone()).or_default().push(
+                        AggregateSource {
+                            dir_connector: Some(connector),
+                            source_instance_filter: Some(
+                                dictionary_offer.source_instance_filter.clone(),
+                            ),
+                            renamed_instances: Some(dictionary_offer.renamed_instances.clone()),
+                            ..Default::default()
+                        },
+                    );
+                }
             }
         }
 
@@ -459,7 +467,7 @@ impl Node {
             dictionary_util.create_aggregate_dictionary(sources).await.ok()?;
 
         // Next time we prepare_dictionary, we can just use this
-        *self.dictionary.borrow_mut() = NodeDictionary::Standard(aggregate_dictionary);
+        self.inner.borrow_mut().dictionary = NodeDictionary::Standard(aggregate_dictionary);
 
         dictionary_util.copy_export_dictionary(aggregate_dictionary).await.ok()
     }
@@ -483,34 +491,34 @@ impl Node {
     }
 
     pub fn collection(&self) -> Collection {
-        self.collection.get()
+        self.inner.borrow().collection
     }
 
     pub fn set_collection(&self, collection: Collection) {
-        self.collection.set(collection);
+        self.inner.borrow_mut().collection = collection;
     }
 
     pub(crate) fn set_should_destroy_driver_component(&self, value: bool) {
-        self.should_destroy_driver_component.set(value);
+        self.inner.borrow_mut().should_destroy_driver_component = value;
     }
 
     pub fn set_driver_package_type(&self, package_type: fdf::DriverPackageType) {
-        self.driver_package_type.set(package_type);
+        self.inner.borrow_mut().driver_package_type = package_type;
     }
 
     pub fn set_driver_host_name_for_colocation(&self, name: &str) {
-        *self.driver_host_name_for_colocation.borrow_mut() = name.to_string();
+        self.inner.borrow_mut().driver_host_name_for_colocation = name.to_string();
     }
 
     pub fn node_type(&self) -> std::cell::Ref<'_, NodeTypeVariant> {
-        self.node_type.borrow()
+        std::cell::Ref::map(self.inner.borrow(), |i| &i.node_type)
     }
 
-    pub fn offers(&self) -> std::cell::RefMut<'_, Vec<NodeOffer>> {
-        self.offers.borrow_mut()
+    pub fn offers(&self) -> std::cell::Ref<'_, Vec<NodeOffer>> {
+        std::cell::Ref::map(self.inner.borrow(), |i| &i.offers)
     }
 
     pub fn has_component_controller_proxy(&self) -> bool {
-        self.component_controller.borrow().is_some()
+        self.inner.borrow().component_controller.is_some()
     }
 }

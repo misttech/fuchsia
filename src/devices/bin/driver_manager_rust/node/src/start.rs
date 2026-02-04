@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::Node;
+use crate::node::{Node, NodeInner};
 use crate::types::{DriverComponent, DriverState, NodeState};
 use driver_manager_driver_host::{DriverLoadArgs, DriverStartArgs};
 use driver_manager_types::{ShutdownState, StartRequestReceiver};
@@ -21,8 +21,9 @@ use {
 impl Node {
     pub async fn send_start_request(&self) -> Result<(), zx::Status> {
         let handles = self
-            .start_handles
+            .inner
             .borrow()
+            .start_handles
             .as_ref()
             .expect("handles")
             .iter()
@@ -39,8 +40,9 @@ impl Node {
             fcomponent::StartChildArgs { numbered_handles: Some(handles), ..Default::default() };
         let (_, server_end) = fidl::endpoints::create_endpoints();
         let proxy = self
-            .component_controller
+            .inner
             .borrow()
+            .component_controller
             .as_ref()
             .expect("component_controller_proxy")
             .component_controller_proxy
@@ -68,20 +70,20 @@ impl Node {
     > {
         struct ReleaseStartRequestReceiverGuard<'a> {
             receiver: Option<StartRequestReceiver>,
-            cell: &'a RefCell<Option<StartRequestReceiver>>,
+            inner: &'a RefCell<NodeInner>,
         }
 
         impl<'a> Drop for ReleaseStartRequestReceiverGuard<'a> {
             fn drop(&mut self) {
                 if let Some(rx) = self.receiver.take() {
-                    *self.cell.borrow_mut() = Some(rx);
+                    self.inner.borrow_mut().start_request_receiver = Some(rx);
                 }
             }
         }
 
         let mut guard = ReleaseStartRequestReceiverGuard {
-            receiver: self.start_request_receiver.borrow_mut().take(),
-            cell: &self.start_request_receiver,
+            receiver: self.inner.borrow_mut().start_request_receiver.take(),
+            inner: &self.inner,
         };
 
         let start_request =
@@ -100,7 +102,7 @@ impl Node {
             self.node_shutdown_coordinator.borrow_mut().reset_shutdown();
         }
         let url = start_info.resolved_url.clone().ok_or(zx::Status::INVALID_ARGS)?;
-        *self.state.borrow_mut() = NodeState::Starting { driver_url: url.clone() };
+        self.inner.borrow_mut().state = NodeState::Starting { driver_url: url.clone() };
 
         let program = start_info.program.as_ref();
         let get_prog_val = |key: &str| -> Option<String> {
@@ -130,9 +132,9 @@ impl Node {
             );
             return Err(zx::Status::INVALID_ARGS);
         }
-        self.host_restart_on_crash.set(host_restart_on_crash);
+        self.inner.borrow_mut().host_restart_on_crash = host_restart_on_crash;
 
-        let driver_host = self.driver_host.borrow().clone();
+        let driver_host = self.inner.borrow().driver_host.clone();
         let mut found_driver_host = colocate;
         let driver_host = if found_driver_host {
             match driver_host {
@@ -146,11 +148,11 @@ impl Node {
                 }
             }
         } else {
-            let driver_host_name = self.driver_host_name_for_colocation.borrow().clone();
+            let driver_host_name = self.inner.borrow().driver_host_name_for_colocation.clone();
             match self.node_manager.get_driver_host(&driver_host_name) {
                 Some(dh) => {
                     found_driver_host = true;
-                    *self.driver_host.borrow_mut() = Some(dh.clone());
+                    self.inner.borrow_mut().driver_host = Some(dh.clone());
                     dh
                 }
                 None => {
@@ -159,7 +161,7 @@ impl Node {
                             .node_manager
                             .create_driver_host_dynamic_linker(driver_host_name)
                             .await?;
-                        *self.driver_host.borrow_mut() = Some(driver_host.clone());
+                        self.inner.borrow_mut().driver_host = Some(driver_host.clone());
                         driver_host
                     } else {
                         debug!(
@@ -175,7 +177,7 @@ impl Node {
                                 error!("Failed to start driver '{url}': {e:?}");
                                 zx::Status::INTERNAL
                             })?;
-                        *self.driver_host.borrow_mut() = Some(driver_host.clone());
+                        self.inner.borrow_mut().driver_host = Some(driver_host.clone());
                         driver_host
                     }
                 }
@@ -215,7 +217,7 @@ impl Node {
         let driver = driver_client.into_proxy();
         let driver_client_binding = self.serve_driver_host_client(driver);
 
-        *self.state.borrow_mut() = NodeState::DriverComponent(DriverComponent::new(
+        self.inner.borrow_mut().state = NodeState::DriverComponent(DriverComponent::new(
             url.clone(),
             node_token_dup,
             node_token.koid().unwrap(),
@@ -225,8 +227,8 @@ impl Node {
             DriverState::Binding,
         ));
 
-        let symbols = if colocate { Some(self.symbols.borrow().clone()) } else { None };
-        let offers: Vec<fdf::Offer> = self.offers.borrow().iter().map(|f| f.into()).collect();
+        let symbols = if colocate { Some(self.inner.borrow().symbols.clone()) } else { None };
+        let offers: Vec<fdf::Offer> = self.inner.borrow().offers.iter().map(|f| f.into()).collect();
         let properties = self.get_node_property_dict();
 
         let load_args = if use_dynamic_linker {
@@ -262,8 +264,9 @@ impl Node {
     }
 
     fn get_node_property_dict(&self) -> fdf::NodePropertyDictionary2 {
-        let properties = self.properties.borrow();
-        properties
+        let inner = self.inner.borrow();
+        inner
+            .properties
             .iter()
             .map(|entry| fdf::NodePropertyEntry2 {
                 name: entry.name.clone(),

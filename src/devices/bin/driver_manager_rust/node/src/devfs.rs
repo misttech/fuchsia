@@ -27,7 +27,6 @@ static CONTROLLER_ALLOWLISTS: Map<&'static str, Set<&'static str>> = phf_map! {
         "nand",
         "skip-block",
         "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/fvm.cm",
-        "No_class_name_but_driver_url_is_fuchsia-boot:///fvm#meta/fvm.cm",
         "No_class_name_but_driver_url_is_fuchsia-boot:///gpt#meta/gpt.cm",
         "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/gpt.cm",
         "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/nand-broker.cm",
@@ -197,11 +196,11 @@ impl ControllerAllowlistPassthrough {
 
 impl Node {
     pub fn setup_devfs_for_root_node(&self, root: TopologicalDevnode) {
-        self.devfs_device.borrow_mut().topological = Some(root);
+        self.inner.borrow_mut().devfs_device.topological = Some(root);
     }
 
     pub(crate) fn connect_to_device_fidl(&self, server: zx::Channel) {
-        if let Some(connector) = self.protocol_connector.borrow().as_ref()
+        if let Some(connector) = self.inner.borrow().protocol_connector.as_ref()
             && let Err(e) = connector.connect(server)
         {
             error!("Failed to connect to device fidl: {}", e);
@@ -209,7 +208,7 @@ impl Node {
     }
 
     pub(crate) fn connect_to_controller(&self, server_end: ServerEnd<fdevice::ControllerMarker>) {
-        if let Some(ref passthrough) = *self.controller_allowlist_passthrough.borrow() {
+        if let Some(ref passthrough) = self.inner.borrow().controller_allowlist_passthrough {
             let _ = passthrough.serve(server_end);
         } else {
             warn!(
@@ -229,17 +228,20 @@ impl Node {
         allow_controller_connection: bool,
         class_name: String,
     ) -> Connector {
-        if allow_controller_connection {
-            let passthrough = ControllerAllowlistPassthrough::new(
-                self.weak_from_this(),
-                class_name,
-                controller_connector,
-                self.scope.as_handle(),
-            );
-            *self.controller_allowlist_passthrough.borrow_mut() = Some(passthrough);
+        {
+            let mut inner = self.inner.borrow_mut();
+            if allow_controller_connection {
+                let passthrough = ControllerAllowlistPassthrough::new(
+                    self.weak_from_this(),
+                    class_name,
+                    controller_connector,
+                    self.scope.as_handle(),
+                );
+                inner.controller_allowlist_passthrough = Some(passthrough);
+            }
+            inner.protocol_connector =
+                protocol_connector.map(|c: ClientEnd<fdevfs::ConnectorMarker>| c.into_proxy());
         }
-        *self.protocol_connector.borrow_mut() =
-            protocol_connector.map(|c: ClientEnd<fdevfs::ConnectorMarker>| c.into_proxy());
         let weak_node = self.weak_from_this();
         let node_name = self.name().to_string();
         let (tx, mut rx) = mpsc::unbounded::<ConnectorMsg>();
