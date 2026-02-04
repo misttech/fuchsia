@@ -251,15 +251,19 @@ impl ResourceAccessor for RemoteResourceAccessor {
                     get_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
                     ..Default::default()
                 })?;
-                for fbinder::FileHandle { file, flags, .. } in
+                for fbinder::FileHandle { handle, flags, bag, .. } in
                     response.get_responses.into_iter().flatten()
                 {
                     let Some(flags) = flags else {
                         log_warn!("Incorrect response to file request. Missing flags.");
                         return error!(ENOENT);
                     };
-                    let file = if let Some(file) = file {
-                        new_remote_file(locked, current_task, file, flags.into_fidl())?
+                    let file = if let Some(handle) = handle {
+                        new_remote_file(locked, current_task, handle, flags.into_fidl())?
+                    } else if let Some(_bag) = bag {
+                        // TODO(fxbug.dev/481167098): Support composite file descriptors.
+                        log_warn!("FileHandle::bag is not supported");
+                        return error!(EBADFD);
                     } else {
                         new_null_file(locked, current_task, flags.into_fidl())
                     };
@@ -285,8 +289,12 @@ impl ResourceAccessor for RemoteResourceAccessor {
             for chunk in files.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
                 let mut handles = Vec::with_capacity(chunk.len());
                 for (file, _) in chunk.into_iter() {
+                    let handle = file.to_handle(current_task);
+                    let bag =
+                        if handle.is_err() { Some(file.get_handles(current_task)?) } else { None };
                     handles.push(fbinder::FileHandle {
-                        file: file.to_handle(current_task)?,
+                        handle: handle.ok().flatten(),
+                        bag,
                         // NOTE: We do not pass flags when adding files to a Fuchsia process as:
                         //   1. The flags are already set on the underlying fuchsia.io file.
                         //   2. There is only one flag (append) that you can set after the fact.

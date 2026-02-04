@@ -140,20 +140,7 @@ impl FileOps for SyncFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        // TODO: This will not be supported in a subsequent CL.
-        if self.fence.sync_points.len() != 1 {
-            log_warn!(
-                "SyncFile::to_handle failed: multiple sync points ({}) not supported: {:?}",
-                self.fence.sync_points.len(),
-                self.fence.sync_points.iter().map(|p| p.timeline.clone()).collect::<Vec<_>>()
-            );
-            return error!(ENOTSUP);
-        }
-        let dup = self.fence.sync_points[0]
-            .counter
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .map_err(impossible_error)?;
-        Ok(Some(dup.into()))
+        error!(ENOTSUP)
     }
 
     fn get_handles(

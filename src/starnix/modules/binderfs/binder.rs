@@ -1524,8 +1524,12 @@ impl BinderDriver {
             let file = if let Some(pos) = source_map.get(&fd.raw()) {
                 let source_file = std::mem::replace(&mut source_files[*pos], Default::default());
                 let flags = source_file.flags.ok_or_else(|| errno!(ENOENT))?.into_fidl();
-                let new_file = if let Some(file) = source_file.file {
-                    new_remote_file(locked, source.current_task, file, flags)?
+                let new_file = if let Some(handle) = source_file.handle {
+                    new_remote_file(locked, source.current_task, handle, flags)?
+                } else if let Some(_bag) = source_file.bag {
+                    // TODO(fxbug.dev/481167098): Support composite file descriptors.
+                    log_warn!("FileHandle::bag is not supported");
+                    return error!(EBADFD);
                 } else {
                     new_null_file(locked, source.current_task, flags)
                 };

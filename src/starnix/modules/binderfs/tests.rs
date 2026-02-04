@@ -3005,7 +3005,7 @@ pub mod tests {
                 current_task.add_file(locked, file.clone(), FdFlags::empty()).expect("add file");
 
             let mut source_files = vec![fbinder::FileHandle {
-                file: file.to_handle(current_task).expect("to_handle"),
+                handle: file.to_handle(current_task).expect("to_handle"),
                 flags: Some(FileFlags::empty()),
                 fd: Some(sender_fd.raw()),
                 ..Default::default()
