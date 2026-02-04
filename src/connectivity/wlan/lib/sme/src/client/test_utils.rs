@@ -68,12 +68,20 @@ pub fn create_connect_conf(
     bssid: Bssid,
     result_code: fidl_fuchsia_wlan_ieee80211::StatusCode,
 ) -> fidl_mlme::MlmeEvent {
+    create_connect_conf_with_ies(bssid, result_code, vec![])
+}
+
+pub fn create_connect_conf_with_ies(
+    bssid: Bssid,
+    result_code: fidl_fuchsia_wlan_ieee80211::StatusCode,
+    ies: Vec<u8>,
+) -> fidl_mlme::MlmeEvent {
     fidl_mlme::MlmeEvent::ConnectConf {
         resp: fidl_mlme::ConnectConfirm {
             peer_sta_address: bssid.to_array(),
             result_code,
             association_id: 42,
-            association_ies: vec![],
+            association_ies: ies,
         },
     }
 }
@@ -139,6 +147,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
     let on_sae_handshake_ind_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_sae_frame_rx_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_sae_timeout_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
+    let initiate_owe_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
+    let on_owe_public_key_rx_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_eapol_frame_cb = Arc::new(Mutex::new(None));
     let supplicant = MockSupplicant {
         started: started.clone(),
@@ -152,6 +162,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
         on_sae_handshake_ind: on_sae_handshake_ind_sink.clone(),
         on_sae_frame_rx: on_sae_frame_rx_sink.clone(),
         on_sae_timeout: on_sae_timeout_sink.clone(),
+        initiate_owe: initiate_owe_sink.clone(),
+        on_owe_public_key_rx: on_owe_public_key_rx_sink.clone(),
         auth_cfg,
     };
     let mock = MockSupplicantController {
@@ -165,6 +177,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
         mock_on_sae_handshake_ind: on_sae_handshake_ind_sink,
         mock_on_sae_frame_rx: on_sae_frame_rx_sink,
         mock_on_sae_timeout: on_sae_timeout_sink,
+        mock_initiate_owe: initiate_owe_sink,
+        mock_on_owe_public_key_rx: on_owe_public_key_rx_sink,
         on_eapol_frame_cb,
     };
     (supplicant, mock)
@@ -191,6 +205,10 @@ pub fn mock_sae_supplicant() -> (MockSupplicant, MockSupplicantController) {
     mock_supplicant(config)
 }
 
+pub fn mock_owe_supplicant() -> (MockSupplicant, MockSupplicantController) {
+    mock_supplicant(auth::Config::Owe)
+}
+
 type Cb = dyn Fn() + Send + 'static;
 
 pub struct MockSupplicant {
@@ -205,6 +223,8 @@ pub struct MockSupplicant {
     on_sae_handshake_ind: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_sae_frame_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_sae_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    initiate_owe: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    on_owe_public_key_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     auth_cfg: auth::Config,
 }
 
@@ -298,6 +318,17 @@ impl Supplicant for MockSupplicant {
     ) -> Result<(), Error> {
         populate_update_sink(update_sink, &self.on_sae_timeout)
     }
+    fn initiate_owe(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
+        populate_update_sink(update_sink, &self.initiate_owe)
+    }
+    fn on_owe_public_key_rx(
+        &mut self,
+        update_sink: &mut UpdateSink,
+        _group: u16,
+        _public_key: Vec<u8>,
+    ) -> Result<(), Error> {
+        populate_update_sink(update_sink, &self.on_owe_public_key_rx)
+    }
     fn get_auth_cfg(&self) -> &auth::Config {
         &self.auth_cfg
     }
@@ -323,6 +354,8 @@ pub struct MockSupplicantController {
     mock_on_sae_handshake_ind: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     mock_on_sae_frame_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     mock_on_sae_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    mock_initiate_owe: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    mock_on_owe_public_key_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_eapol_frame_cb: Arc<Mutex<Option<Box<Cb>>>>,
 }
 
@@ -373,6 +406,22 @@ impl MockSupplicantController {
 
     pub fn set_on_sae_timeout_failure(&self, error: anyhow::Error) {
         *self.mock_on_sae_timeout.lock() = Err(error);
+    }
+
+    pub fn set_initiate_owe_updates(&self, updates: UpdateSink) {
+        *self.mock_initiate_owe.lock() = Ok(updates);
+    }
+
+    pub fn set_initiate_owe_failure(&self, error: anyhow::Error) {
+        *self.mock_initiate_owe.lock() = Err(error);
+    }
+
+    pub fn set_on_owe_public_key_rx_updates(&self, updates: UpdateSink) {
+        *self.mock_on_owe_public_key_rx.lock() = Ok(updates);
+    }
+
+    pub fn set_on_owe_public_key_rx_failure(&self, error: anyhow::Error) {
+        *self.mock_on_owe_public_key_rx.lock() = Err(error);
     }
 
     pub fn set_on_eapol_frame_callback<F>(&self, cb: F)

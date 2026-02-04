@@ -5,7 +5,7 @@
 use crate::client::EstablishRsnaFailureReason;
 use fidl_fuchsia_wlan_mlme::{EapolResultCode, SaeFrame};
 use wlan_rsn::rsna::UpdateSink;
-use wlan_rsn::{auth, Error, NegotiatedProtection};
+use wlan_rsn::{Error, NegotiatedProtection, auth};
 
 #[derive(Debug)]
 pub struct Rsna {
@@ -46,7 +46,7 @@ pub trait Supplicant: std::fmt::Debug + std::marker::Send {
     ) -> Result<(), Error>;
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     fn on_rsna_retransmission_timeout(&mut self, update_sink: &mut UpdateSink)
-        -> Result<(), Error>;
+    -> Result<(), Error>;
     fn on_rsna_response_timeout(&self) -> EstablishRsnaFailureReason;
     fn on_rsna_completion_timeout(&self) -> EstablishRsnaFailureReason;
     // TODO(https://fxbug.dev/335283785): Remove or explain unused code.
@@ -68,6 +68,15 @@ pub trait Supplicant: std::fmt::Debug + std::marker::Send {
     ) -> Result<(), Error>;
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     fn on_sae_timeout(&mut self, update_sink: &mut UpdateSink, event_id: u64) -> Result<(), Error>;
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
+    fn initiate_owe(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error>;
+    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
+    fn on_owe_public_key_rx(
+        &mut self,
+        update_sink: &mut UpdateSink,
+        group: u16,
+        public_key: Vec<u8>,
+    ) -> Result<(), Error>;
     fn get_auth_cfg(&self) -> &auth::Config;
     fn get_auth_method(&self) -> auth::MethodName;
 }
@@ -139,6 +148,19 @@ impl Supplicant for wlan_rsn::Supplicant {
 
     fn on_sae_timeout(&mut self, update_sink: &mut UpdateSink, event_id: u64) -> Result<(), Error> {
         wlan_rsn::Supplicant::on_sae_timeout(self, update_sink, event_id)
+    }
+
+    fn initiate_owe(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
+        wlan_rsn::Supplicant::initiate_owe(self, update_sink)
+    }
+
+    fn on_owe_public_key_rx(
+        &mut self,
+        update_sink: &mut UpdateSink,
+        group: u16,
+        public_key: Vec<u8>,
+    ) -> Result<(), Error> {
+        wlan_rsn::Supplicant::on_owe_public_key_rx(self, update_sink, group, public_key)
     }
 
     fn get_auth_cfg(&self) -> &auth::Config {

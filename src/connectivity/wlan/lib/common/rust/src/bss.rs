@@ -500,6 +500,10 @@ impl BssDescription {
         matches!(self.protection(), Protection::Open | Protection::OpenOweTransition)
     }
 
+    pub fn has_owe_configured(&self) -> bool {
+        matches!(self.protection(), Protection::Owe)
+    }
+
     pub fn has_wep_configured(&self) -> bool {
         matches!(self.protection(), Protection::Wep)
     }

@@ -100,6 +100,26 @@ impl<'a, C> SecurityContext<'a, C> {
     }
 }
 
+struct OweAuthenticator;
+
+impl SecurityContext<'_, OweAuthenticator> {
+    /// Gets the authenticator and supplicant RSNEs for OWE from the associated BSS.
+    fn authenticator_supplicant_rsne(&self) -> Result<(Rsne, Rsne), Error> {
+        let a_rsne_ie = self
+            .bss
+            .rsne()
+            .ok_or_else(|| format_err!("OWE requested but RSNE is not present in BSS."))?;
+        let (_, a_rsne) = rsne::from_bytes(a_rsne_ie)
+            .map_err(|error| format_err!("Invalid RSNE IE {:02x?}: {:?}", a_rsne_ie, error))?;
+        let s_rsne = a_rsne.derive_owe_s_rsne(self.security_support)?;
+        Ok((a_rsne, s_rsne))
+    }
+
+    fn authentication_config(&self) -> Result<auth::Config, Error> {
+        Ok(auth::Config::Owe)
+    }
+}
+
 impl SecurityContext<'_, wpa::Wpa1Credentials> {
     /// Gets the authenticator and supplicant IEs for WPA1 from the associated BSS.
     fn authenticator_supplicant_ie(&self) -> Result<(WpaIe, WpaIe), Error> {
@@ -215,7 +235,7 @@ impl<'a> TryFrom<SecurityContext<'a, SecurityAuthenticator>> for Protection {
                 .is_open()
                 .then(|| Protection::Open)
                 .ok_or_else(|| format_err!("BSS is not configured for open authentication")),
-            SecurityAuthenticator::Owe => Err(format_err!("OWE is unsupported")),
+            SecurityAuthenticator::Owe => context.map(&OweAuthenticator).try_into(),
             SecurityAuthenticator::Wep(authenticator) => context.map(authenticator).try_into(),
             SecurityAuthenticator::Wpa(wpa) => match wpa {
                 wpa::WpaAuthenticator::Wpa1 { credentials, .. } => {
@@ -233,6 +253,39 @@ impl<'a> TryFrom<SecurityContext<'a, SecurityAuthenticator>> for Protection {
                 },
             },
         }
+    }
+}
+
+impl<'a> TryFrom<SecurityContext<'a, OweAuthenticator>> for Protection {
+    type Error = Error;
+
+    fn try_from(context: SecurityContext<'a, OweAuthenticator>) -> Result<Self, Self::Error> {
+        context
+            .bss
+            .has_owe_configured()
+            .then(|| -> Result<_, Self::Error> {
+                let sta_addr = context.device.sta_addr.into();
+                if !context.config.owe_supported {
+                    return Err(format_err!("OWE requested but client does not support OWE"));
+                }
+                let (a_rsne, s_rsne) = context.authenticator_supplicant_rsne()?;
+                let negotiated_protection = NegotiatedProtection::from_rsne(&s_rsne)?;
+                let supplicant = wlan_rsn::Supplicant::new_wpa_personal(
+                    NonceReader::new(&sta_addr)?,
+                    context.authentication_config()?,
+                    sta_addr,
+                    ProtectionInfo::Rsne(s_rsne),
+                    context.bss.bssid.into(),
+                    ProtectionInfo::Rsne(a_rsne),
+                )
+                .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
+                Ok(Protection::Rsna(Rsna {
+                    negotiated_protection,
+                    supplicant: Box::new(supplicant),
+                }))
+            })
+            .transpose()?
+            .ok_or_else(|| format_err!("BSS is not configured for OWE"))
     }
 }
 
@@ -438,6 +491,16 @@ mod tests {
             supplicant: Box::new(client::test_utils::mock_sae_supplicant().0),
         });
         assert_eq!(protection.rsn_auth_method(), Some(auth::MethodName::Sae));
+
+        // OWE
+        let protection_info = ProtectionInfo::Rsne(Rsne::common_owe_rsne());
+        let negotiated_protection = NegotiatedProtection::from_protection(&protection_info)
+            .expect("could create mocked OWE NegotiatedProtection");
+        let protection = Protection::Rsna(Rsna {
+            negotiated_protection,
+            supplicant: Box::new(client::test_utils::mock_owe_supplicant().0),
+        });
+        assert_eq!(protection.rsn_auth_method(), Some(auth::MethodName::Owe));
     }
 
     #[test]
@@ -567,6 +630,41 @@ mod tests {
         })
         .unwrap();
         assert!(matches!(protection, Protection::Rsna(_)));
+    }
+
+    #[test]
+    fn protection_from_owe() {
+        let device = crate::test_utils::fake_device_info([1u8; 6].into());
+        let security_support = fake_security_support();
+        let config = ClientConfig { owe_supported: true, ..Default::default() };
+        let bss = fake_bss_description!(Owe);
+        let security = SecurityAuthenticator::Owe;
+        let protection = Protection::try_from(SecurityContext {
+            security: &security,
+            device: &device,
+            security_support: &security_support,
+            config: &config,
+            bss: &bss,
+        })
+        .unwrap();
+        assert!(matches!(protection, Protection::Rsna(_)));
+    }
+
+    #[test]
+    fn protection_from_owe_no_security_support_features() {
+        let device = crate::test_utils::fake_device_info([1u8; 6].into());
+        let security_support = fake_security_support_empty();
+        let config = Default::default();
+        let bss = fake_bss_description!(Owe);
+        let security = SecurityAuthenticator::Owe;
+        let protection = Protection::try_from(SecurityContext {
+            security: &security,
+            device: &device,
+            security_support: &security_support,
+            config: &config,
+            bss: &bss,
+        });
+        let _ = protection.expect_err("created OWE auth config for incompatible device");
     }
 
     #[test]
@@ -799,5 +897,28 @@ mod tests {
         let _ = context
             .authentication_config()
             .expect_err("created WPA3 auth config for incompatible device");
+    }
+
+    #[test]
+    fn owe_rsna_sme_auth() {
+        let device = crate::test_utils::fake_device_info([1u8; 6].into());
+        let security_support = fake_security_support();
+        let config = ClientConfig { owe_supported: true, ..Default::default() };
+        let bss = fake_bss_description!(Owe);
+        let security = OweAuthenticator;
+        let context = SecurityContext {
+            security: &security,
+            device: &device,
+            security_support: &security_support,
+            config: &config,
+            bss: &bss,
+        };
+        assert!(context.authenticator_supplicant_rsne().is_ok());
+        assert!(matches!(context.authentication_config(), Ok(auth::Config::Owe)));
+
+        let protection = Protection::try_from(context).unwrap();
+        assert_matches!(protection, Protection::Rsna(rsna) => {
+            assert_eq!(rsna.supplicant.get_auth_method(), auth::MethodName::Owe);
+        });
     }
 }

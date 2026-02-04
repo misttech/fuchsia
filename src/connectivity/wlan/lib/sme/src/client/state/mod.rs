@@ -7,13 +7,14 @@ mod link_state;
 use crate::client::event::{self, Event};
 use crate::client::internal::Context;
 use crate::client::protection::{Protection, ProtectionIe, SecurityContext, build_protection_ie};
+use crate::client::rsn::Rsna;
 use crate::client::{
     AssociationFailure, ClientConfig, ClientSmeStatus, ConnectResult, ConnectTransactionEvent,
     ConnectTransactionSink, EstablishRsnaFailure, EstablishRsnaFailureReason, RoamFailure,
     RoamFailureType, RoamResult, ServingApInfo, report_connect_finished, report_roam_finished,
 };
 use crate::{MlmeRequest, MlmeSink, mlme_event_name};
-use anyhow::bail;
+use anyhow::{bail, format_err};
 use fidl_fuchsia_wlan_common_security::Authentication;
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent};
 use fuchsia_inspect_contrib::inspect_log;
@@ -24,7 +25,7 @@ use log::{error, info, warn};
 use wlan_common::bss::BssDescription;
 use wlan_common::ie::rsn::cipher;
 use wlan_common::ie::rsn::suite_selector::OUI;
-use wlan_common::ie::{self};
+use wlan_common::ie::{self, IeSummaryIter};
 use wlan_common::security::SecurityAuthenticator;
 use wlan_common::security::wep::WepKey;
 use wlan_common::timer::EventHandle;
@@ -205,7 +206,7 @@ impl StateChangeContextExt for Option<StateChangeContext> {
 impl Idle {
     fn on_connect(
         self,
-        cmd: ConnectCommand,
+        mut cmd: ConnectCommand,
         state_change_ctx: &mut Option<StateChangeContext>,
         context: &mut Context,
     ) -> Result<Connecting, Idle> {
@@ -220,21 +221,42 @@ impl Idle {
                     bssid: cmd.bss.bssid,
                     ssid: cmd.bss.ssid,
                 });
+                // TODO(https://fxbug.dev/481036835): Send a failed connect result to the sink.
                 return Err(self);
             }
         };
-        let (auth_type, sae_password, wep_key) = match &cmd.protection {
+        let (auth_type, sae_password, wep_key, owe_public_key) = match &mut cmd.protection {
             Protection::Rsna(rsna) => match rsna.supplicant.get_auth_cfg() {
-                auth::Config::Sae { .. } => (fidl_mlme::AuthenticationTypes::Sae, vec![], None),
+                auth::Config::Sae { .. } => {
+                    (fidl_mlme::AuthenticationTypes::Sae, vec![], None, None)
+                }
                 auth::Config::DriverSae { password } => {
-                    (fidl_mlme::AuthenticationTypes::Sae, password.clone(), None)
+                    (fidl_mlme::AuthenticationTypes::Sae, password.clone(), None, None)
                 }
                 auth::Config::ComputedPsk(_) => {
-                    (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None)
+                    (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None, None)
                 }
                 auth::Config::Owe => {
-                    // TODO(https://fxbug.dev/312485949): Initiate OWE handshake and provide public key.
-                    (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None)
+                    let owe_public_key = match initiate_owe(rsna) {
+                        Ok(owe_public_key) => owe_public_key,
+                        Err(e) => {
+                            error!("{}", e);
+                            let bss_protection = cmd.bss.protection();
+                            let _ = state_change_ctx.replace(StateChangeContext::Connect {
+                                msg: e.to_string(),
+                                bssid: cmd.bss.bssid,
+                                ssid: cmd.bss.ssid,
+                            });
+                            let connect_result = AssociationFailure {
+                                bss_protection,
+                                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                            }
+                            .into();
+                            report_connect_finished(&mut cmd.connect_txn_sink, connect_result);
+                            return Err(self);
+                        }
+                    };
+                    (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None, Some(owe_public_key))
                 }
             },
             Protection::Wep(key) => {
@@ -244,15 +266,17 @@ impl Idle {
                     cipher: format!("{:?}", cipher::Cipher::new_dot11(wep_key.cipher_suite_type.into_primitive() as u8)),
                     key_index: wep_key.key_id,
                 });
-                (fidl_mlme::AuthenticationTypes::SharedKey, vec![], Some(wep_key))
+                (fidl_mlme::AuthenticationTypes::SharedKey, vec![], Some(wep_key), None)
             }
-            _ => (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None),
+            _ => (fidl_mlme::AuthenticationTypes::OpenSystem, vec![], None, None),
         };
+
         let security_ie = match protection_ie.as_ref() {
             Some(ProtectionIe::Rsne(v)) => v.to_vec(),
             Some(ProtectionIe::VendorIes(v)) => v.to_vec(),
             None => vec![],
         };
+
         context.mlme_sink.send(MlmeRequest::Connect(fidl_mlme::ConnectRequest {
             selected_bss: (*cmd.bss).clone().into(),
             connect_failure_timeout: DEFAULT_JOIN_AUTH_ASSOC_FAILURE_TIMEOUT,
@@ -260,8 +284,7 @@ impl Idle {
             sae_password,
             wep_key: wep_key.map(Box::new),
             security_ie,
-            // TODO(https://fxbug.dev/312485949): Plumb OWE public key if it's OWE network
-            owe_public_key: None,
+            owe_public_key: owe_public_key.map(Box::new),
         }));
         context.att_id += 1;
 
@@ -307,6 +330,21 @@ impl Idle {
     }
 }
 
+fn initiate_owe(rsna: &mut Rsna) -> Result<fidl_internal::OwePublicKey, anyhow::Error> {
+    let mut update_sink = UpdateSink::default();
+    if let Err(e) = rsna.supplicant.initiate_owe(&mut update_sink) {
+        bail!("Failed to initiate OWE: {}", e);
+    }
+    for update in update_sink {
+        if let SecAssocUpdate::TxOwePublicKey { group_id, key } = update {
+            return Ok(fidl_internal::OwePublicKey { group: group_id, key });
+        } else {
+            warn!("Unexpected RSNA update after initiating OWE: {:?}", update);
+        }
+    }
+    Err(anyhow::format_err!("No public key after initiating OWE"))
+}
+
 fn parse_wmm_from_ies(ies: &[u8]) -> Option<ie::WmmParam> {
     let mut wmm_param = None;
     for (id, body) in ie::Reader::new(ies) {
@@ -327,6 +365,27 @@ fn parse_wmm_from_ies(ies: &[u8]) -> Option<ie::WmmParam> {
     wmm_param
 }
 
+fn parse_diffie_hellman_param_from_ies(ies: &[u8]) -> Option<(u16, Vec<u8>)> {
+    for (ie_type, range) in IeSummaryIter::new(ies) {
+        if ie_type == ie::IeType::DIFFIE_HELLMAN_PARAM {
+            match ies.get(range.clone()) {
+                Some(body) => match ie::parse_diffie_hellman_param(body) {
+                    Ok(df_param) => {
+                        return Some((df_param.group, df_param.public_key.to_vec()));
+                    }
+                    Err(e) => warn!("Fail parsing Diffie Hellman Param IE. Error: {}", e),
+                },
+                None => warn!(
+                    "Diffie Hellman Param IE range {:?} is out of bounds, IE len: {}",
+                    range,
+                    ies.len()
+                ),
+            }
+        }
+    }
+    None
+}
+
 impl Connecting {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     fn on_connect_conf(
@@ -340,6 +399,47 @@ impl Connecting {
 
         let link_state = match conf.result_code {
             fidl_ieee80211::StatusCode::Success => {
+                // If OWE, get the public key from the association response first to derive PMK.
+                if let Protection::Rsna(rsna) = &mut self.cmd.protection
+                    && let auth::Config::Owe = rsna.supplicant.get_auth_cfg()
+                {
+                    let result = parse_diffie_hellman_param_from_ies(&conf.association_ies)
+                        .ok_or_else(|| format_err!(
+                            "Connect terminated; Diffie Hellman Param not found in association resp"
+                        ))
+                        .and_then(|(group, ap_public_key)| {
+                            rsna.supplicant.on_owe_public_key_rx(
+                                &mut UpdateSink::default(),
+                                group,
+                                ap_public_key,
+                            )
+                            .map_err(|e| {
+                                format_err!("Connect terminated; failed OWE handshake: {}", e)
+                            })
+                        });
+
+                    if let Err(e) = result {
+                        error!("{}", e);
+                        state_change_ctx.set_msg(e.to_string());
+                        send_deauthenticate_request(&self.cmd.bss.bssid, &context.mlme_sink);
+                        let timeout = context.timer.schedule(event::DeauthenticateTimeout);
+                        return Err(Disconnecting {
+                            cfg: self.cfg,
+                            action: PostDisconnectAction::ReportConnectFinished {
+                                sink: self.cmd.connect_txn_sink,
+                                result: ConnectResult::Failed(
+                                    AssociationFailure {
+                                        bss_protection: self.cmd.bss.protection(),
+                                        code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                                    }
+                                    .into(),
+                                ),
+                            },
+                            _timeout: Some(timeout),
+                        });
+                    }
+                }
+
                 // TODO(https://fxbug.dev/359842400) Check that peer_sta_address matches request.
                 match LinkState::new(self.cmd.protection, context) {
                     Ok(link_state) => link_state,
@@ -2157,6 +2257,7 @@ mod tests {
     use link_state::{EstablishingRsna, LinkUp};
     use std::sync::Arc;
     use std::task::Poll;
+    use std::vec;
     use wlan_common::bss::Protection as BssProtection;
     use wlan_common::channel::{Cbw, Channel};
     use wlan_common::ie::fake_ies::{fake_probe_resp_wsc_ie_bytes, get_vendor_ie_bytes_for_wsc_ie};
@@ -2178,8 +2279,9 @@ mod tests {
     use crate::client::event::RsnaCompletionTimeout;
     use crate::client::rsn::Rsna;
     use crate::client::test_utils::{
-        MockSupplicant, MockSupplicantController, create_connect_conf, create_on_wmm_status_resp,
-        expect_stream_empty, fake_wmm_param, mock_psk_supplicant,
+        MockSupplicant, MockSupplicantController, create_connect_conf,
+        create_connect_conf_with_ies, create_on_wmm_status_resp, expect_stream_empty,
+        fake_wmm_param, mock_owe_supplicant, mock_psk_supplicant,
     };
     use crate::client::{ConnectTransactionStream, RoamFailureType, inspect};
     use crate::test_utils::{self, make_wpa1_ie};
@@ -2544,6 +2646,207 @@ mod tests {
                         ctx: AnyStringProperty,
                         from: CONNECTING_STATE,
                         to: LINK_UP_STATE,
+                    },
+                },
+            },
+        });
+    }
+
+    #[test]
+    fn connect_happy_path_owe() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_owe_supplicant();
+
+        let state = idle_state();
+        let (command, mut connect_txn_stream) = connect_command_owe(supplicant);
+        let bss = (*command.bss).clone();
+
+        // Issue a "connect" command
+        suppl_mock.set_initiate_owe_updates(vec![SecAssocUpdate::TxOwePublicKey {
+            group_id: 19,
+            key: vec![0xaa; 32],
+        }]);
+        let state = state.connect(command, &mut h.context);
+
+        // (sme->mlme) Expect a ConnectRequest
+        assert_matches!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Connect(req))) => {
+            assert_eq!(req, fidl_mlme::ConnectRequest {
+                selected_bss: bss.clone().into(),
+                connect_failure_timeout: DEFAULT_JOIN_AUTH_ASSOC_FAILURE_TIMEOUT,
+                auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
+                sae_password: vec![],
+                wep_key: None,
+                security_ie: vec![
+                    0x30, 26, // Element header
+                    1, 0, // Version
+                    0x00, 0x0F, 0xAC, 4, // Group Cipher: CCMP-128
+                    1, 0, 0x00, 0x0F, 0xAC, 4, // 1 Pairwise Cipher: CCMP-128
+                    1, 0, 0x00, 0x0F, 0xAC, 18, // 1 AKM: OWE
+                    0b11000000, 0, // RSN Capabilities: MFP required + capable
+                    0, 0, // PMKID count
+                    0x00, 0x0F, 0xAC, 6, // Group Management Cipher: BIP-GMAC-256
+                ],
+                owe_public_key: Some(Box::new(fidl_internal::OwePublicKey { group: 19, key: vec![0xaa; 32] })),
+            });
+        });
+
+        // (mlme->sme) Send a ConnectConf as a response
+        // For the test, it doesn't matter what update we put in here, but in a normal happy path,
+        // the PMK would be derived by the supplicant on connect conf.
+        suppl_mock
+            .set_on_owe_public_key_rx_updates(vec![SecAssocUpdate::Key(Key::Pmk(vec![0xbb; 32]))]);
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        let connect_conf = create_connect_conf_with_ies(
+            bss.bssid,
+            fidl_ieee80211::StatusCode::Success,
+            vec![
+                0xff, 7, 32, // Diffie Hellman Param Element header (including the length)
+                19, 0, // Group
+                0xcc, 0xcc, 0xcc,
+                0xcc, // AP's public key (invalid len, but doesn't affect test)
+            ],
+        );
+        let state = state.on_mlme_event(connect_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
+
+        // From this point on, the RSNA establishment is the same as WPA2-PSK happy path.
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with key frame
+        let update = SecAssocUpdate::TxEapolKeyFrame {
+            frame: test_utils::eapol_key_frame(),
+            expect_response: true,
+        };
+        let state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![update]);
+
+        expect_eapol_req(&mut h.mlme_stream, bss.bssid);
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with keys
+        let ptk = SecAssocUpdate::Key(Key::Ptk(test_utils::ptk()));
+        let gtk = SecAssocUpdate::Key(Key::Gtk(test_utils::gtk()));
+        let state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![ptk, gtk]);
+
+        expect_set_ptk(&mut h.mlme_stream, bss.bssid);
+        expect_set_gtk(&mut h.mlme_stream);
+
+        let state = on_set_keys_conf(state, &mut h, vec![0, 2]);
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with completion status
+        let update = SecAssocUpdate::Status(SecAssocStatus::EssSaEstablished);
+        let _state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![update]);
+
+        expect_set_ctrl_port(&mut h.mlme_stream, bss.bssid, fidl_mlme::ControlledPortState::Open);
+        assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
+            assert_eq!(result, ConnectResult::Success);
+        });
+    }
+
+    #[test]
+    fn initiate_owe_fails() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_owe_supplicant();
+
+        let state = idle_state();
+        let (command, mut connect_txn_stream) = connect_command_owe(supplicant);
+        let bss = (*command.bss).clone();
+
+        // Issue a "connect" command
+        suppl_mock.set_initiate_owe_failure(format_err!("OWE initiation failed"));
+        let state = state.connect(command, &mut h.context);
+        assert_idle(state);
+
+        // There should not be a Connect request sent to MLME because OWE initiation fails
+        assert_matches!(h.mlme_stream.try_next(), Err(_));
+        assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
+            assert_eq!(result, AssociationFailure {
+                bss_protection: bss.protection(),
+                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+            }.into());
+        });
+
+        assert_data_tree!(@executor h.executor, h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: IDLE_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                }
+            },
+        });
+    }
+
+    #[test]
+    fn handle_owe_public_key_fails() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_owe_supplicant();
+
+        let state = idle_state();
+        let (command, mut connect_txn_stream) = connect_command_owe(supplicant);
+        let bss = (*command.bss).clone();
+
+        // Issue a "connect" command
+        suppl_mock.set_initiate_owe_updates(vec![SecAssocUpdate::TxOwePublicKey {
+            group_id: 19,
+            key: vec![0xaa; 32],
+        }]);
+        let state = state.connect(command, &mut h.context);
+
+        // (sme->mlme) Expect a ConnectRequest
+        assert_matches!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Connect(_req))));
+
+        // (mlme->sme) Send a ConnectConf as a response
+        // For the test, it doesn't matter what update we put in here, but in a normal happy path,
+        // the PMK would be derived by the supplicant on connect conf.
+        suppl_mock.set_on_owe_public_key_rx_failure(format_err!("Failed to handle OWE public key"));
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        let connect_conf = create_connect_conf_with_ies(
+            bss.bssid,
+            fidl_ieee80211::StatusCode::Success,
+            vec![
+                0xff, 7, 32, // Diffie Hellman Param Element header (including the length)
+                19, 0, // Group
+                0xcc, 0xcc, 0xcc,
+                0xcc, // AP's public key (invalid len, but doesn't affect test)
+            ],
+        );
+        let state = state.on_mlme_event(connect_conf, &mut h.context);
+        assert!(!suppl_mock.is_supplicant_started());
+        let state = exchange_deauth(state, &mut h);
+        assert_idle(state);
+        assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
+            assert_eq!(result, AssociationFailure {
+                bss_protection: bss.protection(),
+                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+            }.into());
+        });
+
+        assert_data_tree!(@executor h.executor, h.inspector, root: contains {
+            usme: contains {
+                state_events: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: IDLE_STATE,
+                        to: CONNECTING_STATE,
+                        bssid: bss.bssid.to_string(),
+                        ssid: bss.ssid.to_string(),
+                    },
+                    "1": {
+                        "@time": AnyNumericProperty,
+                        ctx: AnyStringProperty,
+                        from: CONNECTING_STATE,
+                        to: DISCONNECTING_STATE,
+                    },
+                    "2": {
+                        "@time": AnyNumericProperty,
+                        from: DISCONNECTING_STATE,
+                        to: IDLE_STATE,
                     },
                 },
             },
@@ -5481,6 +5784,25 @@ mod tests {
                 supplicant: Box::new(supplicant),
             }),
             authentication: Authentication { protocol: Protocol::Wpa3Personal, credentials: None },
+        };
+        (cmd, connect_txn_stream)
+    }
+
+    fn connect_command_owe(
+        supplicant: MockSupplicant,
+    ) -> (ConnectCommand, ConnectTransactionStream) {
+        let (connect_txn_sink, connect_txn_stream) = ConnectTransactionSink::new_unbounded();
+        let bss = fake_bss_description!(Owe, ssid: Ssid::try_from("owe").unwrap());
+        let rsne = Rsne::common_owe_rsne();
+        let cmd = ConnectCommand {
+            bss: Box::new(bss),
+            connect_txn_sink,
+            protection: Protection::Rsna(Rsna {
+                negotiated_protection: NegotiatedProtection::from_rsne(&rsne)
+                    .expect("invalid NegotiatedProtection"),
+                supplicant: Box::new(supplicant),
+            }),
+            authentication: Authentication { protocol: Protocol::Owe, credentials: None },
         };
         (cmd, connect_txn_stream)
     }

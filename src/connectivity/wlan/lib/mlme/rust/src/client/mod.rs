@@ -40,8 +40,9 @@ use wlan_frame_writer::{append_frame_to, write_frame, write_frame_with_fixed_sli
 use zerocopy::SplitByteSlice;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_minstrel as fidl_minstrel, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac, fuchsia_trace as trace, wlan_trace as wtrace,
+    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_minstrel as fidl_minstrel,
+    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
+    fuchsia_trace as trace, wlan_trace as wtrace,
 };
 
 pub use scanner::ScanError;
@@ -374,6 +375,7 @@ impl<D: DeviceOps> ClientMlme<D> {
                     sae_password: req.sae_password,
                     wep_key: req.wep_key.map(|k| *k),
                     security_ie: req.security_ie,
+                    owe_public_key: req.owe_public_key.map(|k| *k),
                 };
                 self.join_device(&req.selected_bss).await.map(|cap| (req, cap))
             }
@@ -1161,6 +1163,7 @@ pub struct ParsedConnectRequest {
     pub sae_password: Vec<u8>,
     pub wep_key: Option<fidl_mlme::SetKeyDescriptor>,
     pub security_ie: Vec<u8>,
+    pub owe_public_key: Option<fidl_internal::OwePublicKey>,
 }
 
 pub struct ParsedAssociateResp {
@@ -1384,6 +1387,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1396,6 +1400,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: RSNE.to_vec(),
+            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1765,6 +1770,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: RSNE.to_vec(),
+            owe_public_key: None,
         };
         let client_capabilities = ClientCapabilities(StaCapabilities {
             capability_info: CapabilityInfo(0x1234),

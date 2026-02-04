@@ -1512,6 +1512,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1533,6 +1534,7 @@ mod tests {
                 0x00, 0x0f, 0xac, 0x02, //  akm suite list
                 0xa8, 0x04, //  rsn capabilities
             ],
+            owe_public_key: None,
         };
         Client::new(connect_req, *IFACE_MAC, fake_client_capabilities())
     }
@@ -1638,6 +1640,7 @@ mod tests {
             sae_password: vec![],
             wep_key: None,
             security_ie: vec![],
+            owe_public_key: None,
         };
         let mut sta = Client::new(connect_req, *IFACE_MAC, fake_client_capabilities());
         let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);

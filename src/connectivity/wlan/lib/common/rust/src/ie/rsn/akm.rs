@@ -129,7 +129,7 @@ impl Akm {
     pub fn kck_bits(&self) -> Option<u16> {
         return_none_if_unknown_algo!(self);
 
-        // IEEE 802.11-2016, 12.7.3, Table 12-8
+        // IEEE 802.11-2024, 12.7.3, Table 12-11
         // TODO(https://fxbug.dev/464050097): Update this for other suite types + integrity algo.
         match self.suite_type {
             1..=11 | 18 => Some(128),
@@ -142,7 +142,7 @@ impl Akm {
     pub fn kek_bits(&self) -> Option<u16> {
         return_none_if_unknown_algo!(self);
 
-        // IEEE 802.11-2016, 12.7.3, Table 12-8
+        // IEEE 802.11-2024, 12.7.3, Table 12-11
         // TODO(https://fxbug.dev/464050097): Update this for other suite types + integrity algo.
         match self.suite_type {
             1..=11 | 18 => Some(128),
@@ -155,7 +155,7 @@ impl Akm {
     pub fn pmk_bits(&self) -> Option<u16> {
         return_none_if_unknown_algo!(self);
 
-        // IEEE 802.11-2016, 12.7.1.3
+        // IEEE 802.11-2024, 12.7.1.3
         // TODO(https://fxbug.dev/464050097): Update this for other suite types.
         match self.suite_type {
             1..=11 | 13 | 18 => Some(256),

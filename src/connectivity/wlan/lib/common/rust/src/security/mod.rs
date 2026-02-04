@@ -506,6 +506,10 @@ impl TryFrom<fidl_security::Authentication> for SecurityAuthenticator {
                 None => Ok(SecurityAuthenticator::Open),
                 _ => Err(SecurityError::Incompatible),
             },
+            fidl_security::Protocol::Owe => match credentials {
+                None => Ok(SecurityAuthenticator::Owe),
+                _ => Err(SecurityError::Incompatible),
+            },
             fidl_security::Protocol::Wep => credentials
                 .ok_or(SecurityError::Incompatible)? // No credentials.
                 .into_wep()
