@@ -306,11 +306,18 @@ impl LeaseManager {
                 inspect_node.create_child(token_info.koid.raw_koid().to_string());
             let related_koid = token_info.related_koid.raw_koid();
 
-            NodeTimeExt::<zx::BootTimeline>::record_time(&inspect_lease_node, fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT);
+            NodeTimeExt::<zx::BootTimeline>::record_time(
+                &inspect_lease_node,
+                fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+            );
             inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name.clone());
-            inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
+            inspect_lease_node
+                .record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
             inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
-            let lease_status_property = inspect_lease_node.create_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION);
+            let lease_status_property = inspect_lease_node.create_string(
+                fobs::WAKE_LEASE_ITEM_STATUS,
+                fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
+            );
 
             let lease = {
                 let mut lease_guard = execution_state_suspending_lease.lock().await;
@@ -319,40 +326,11 @@ impl LeaseManager {
                 match lease_opt {
                     Some(lease) => lease,
                     None => {
-                        match execution_state_lessor
-                            .lease(ExecutionStateLevel::Suspending.into_primitive())
-                            .await
-                        {
-                            Ok(Ok(lease_client_end)) => {
-                                let lease = lease_client_end.into_proxy();
-                                let mut status = fbroker::LeaseStatus::Unknown;
-                                let lease_result = loop {
-                                    match lease.watch_status(status).await {
-                                        Ok(fbroker::LeaseStatus::Satisfied) => break Ok(()),
-                                        Ok(new_status) => {
-                                            status = new_status;
-                                        }
-                                        Err(e) => break Err(anyhow::anyhow!(e)),
-                                    }
-                                };
-
-                                let result = Rc::new((Some(lease), lease_result));
-                                *lease_guard = Rc::downgrade(&result);
-                                result
-                            }
-                            Ok(Err(e)) => Rc::new((
-                                None,
-                                Err(anyhow::anyhow!(
-                                    "Failed to lease execution state for wake lease: {e:?})"
-                                )),
-                            )),
-                            Err(e) => Rc::new((
-                                None,
-                                Err(anyhow::anyhow!(
-                                    "Failed to contact power broker to lease execution state for wake lease: {e:?})"
-                                )),
-                            )),
-                        }
+                        Self::create_execution_state_lease(
+                            &execution_state_lessor,
+                            &mut lease_guard,
+                        )
+                        .await
                     }
                 }
             };
@@ -374,7 +352,10 @@ impl LeaseManager {
                     );
                     lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION);
                     inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, e.to_string());
-                    sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed { name: name.clone(), error: e.to_string() });
+                    sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
+                        name: name.clone(),
+                        error: e.to_string(),
+                    });
                 }
             }
 
@@ -409,6 +390,41 @@ impl LeaseManager {
         let (server_token, client_token) = fsystem::LeaseToken::create();
         self.create_wake_lease_using_token(name, server_token).await?;
         Ok(client_token)
+    }
+
+    async fn create_execution_state_lease(
+        execution_state_lessor: &fbroker::LessorProxy,
+        lease_guard: &mut std::rc::Weak<(Option<fbroker::LeaseControlProxy>, Result<()>)>,
+    ) -> Rc<(Option<fbroker::LeaseControlProxy>, Result<()>)> {
+        match execution_state_lessor.lease(ExecutionStateLevel::Suspending.into_primitive()).await {
+            Ok(Ok(lease_client_end)) => {
+                let lease = lease_client_end.into_proxy();
+                let mut status = fbroker::LeaseStatus::Unknown;
+                let lease_result = loop {
+                    match lease.watch_status(status).await {
+                        Ok(fbroker::LeaseStatus::Satisfied) => break Ok(()),
+                        Ok(new_status) => {
+                            status = new_status;
+                        }
+                        Err(e) => break Err(anyhow::anyhow!(e)),
+                    }
+                };
+
+                let result = Rc::new((Some(lease), lease_result));
+                *lease_guard = Rc::downgrade(&result);
+                result
+            }
+            Ok(Err(e)) => Rc::new((
+                None,
+                Err(anyhow::anyhow!("Failed to lease execution state for wake lease: {e:?})")),
+            )),
+            Err(e) => Rc::new((
+                None,
+                Err(anyhow::anyhow!(
+                    "Failed to contact power broker to lease execution state for wake lease: {e:?})"
+                )),
+            )),
+        }
     }
 }
 
@@ -775,190 +791,32 @@ impl SystemActivityGovernor {
         while let Some(request) = stream.next().await {
             match request {
                 Ok(fsystem::ActivityGovernorRequest::GetPowerElements { responder }) => {
-                    let result = responder.send(fsystem::PowerElements {
-                        application_activity: Some(fsystem::ApplicationActivity {
-                            assertive_dependency_token: Some(
-                                self.application_activity
-                                    .assertive_dependency_token()
-                                    .expect("token not registered"),
-                            ),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    });
-
-                    if let Err(error) = result {
-                        log::warn!(
-                            error:?;
-                            "Encountered error while responding to GetPowerElements request"
-                        );
-                    }
+                    self.handle_get_power_elements(responder).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::TakeApplicationActivityLease {
                     responder,
                     name,
                 }) => {
-                    let client_token =
-                        match self.lease_manager.create_application_activity_lease(name).await {
-                            Ok(client_token) => client_token,
-                            Err(error) => {
-                                log::warn!(
-                                    error:?;
-                                    "Encountered error while registering application activity lease"
-                                );
-                                return;
-                            }
-                        };
-
-                    if let Err(error) = responder.send(client_token) {
-                        log::warn!(
-                            error:?;
-                            "Encountered error while responding to TakeApplicationActivity request"
-                        );
-                    }
+                    self.handle_take_application_activity_lease(responder, name).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, name }) => {
-                    let client_token = match self.lease_manager.create_wake_lease(name).await {
-                        Ok(client_token) => client_token,
-                        Err(error) => {
-                            log::warn!(error:?; "Encountered error while registering wake lease");
-                            return;
-                        }
-                    };
-
-                    if let Err(error) = responder.send(client_token) {
-                        log::warn!(
-                            error:?;
-                            "Encountered error while responding to TakeWakeLease request"
-                        );
-                    }
+                    self.handle_take_wake_lease(responder, name).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease { responder, name }) => {
-                    let client_token_res = if name.is_empty() {
-                        log::warn!("Received invalid name while acquiring wake lease");
-                        Err(fsystem::AcquireWakeLeaseError::InvalidName)
-                    } else {
-                        self.lease_manager
-                            .create_wake_lease(name)
-                            .await
-                            .and_then(|client_token| {
-                                client_token
-                                    .replace_handle(
-                                        zx::Rights::TRANSFER
-                                            | zx::Rights::DUPLICATE
-                                            | zx::Rights::WAIT,
-                                    )
-                                    .map_err(|status| {
-                                        anyhow::anyhow!(
-                                            "Failed to replace client token handle: {status}"
-                                        )
-                                    })
-                            })
-                            .or_else(|error| {
-                                log::warn!(
-                                    error:?;
-                                    "Encountered error while registering wake lease"
-                                );
-
-                                Err(fsystem::AcquireWakeLeaseError::Internal)
-                            })
-                    };
-
-                    if let Err(error) = responder.send(client_token_res) {
-                        log::warn!(
-                            error:?;
-                            "Encountered error while responding to AcquireWakeLease request"
-                        );
-                    }
+                    self.handle_acquire_wake_lease(responder, name).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::AcquireWakeLeaseWithToken {
                     responder,
                     name,
                     server_token,
                 }) => {
-                    let client_token_res = if name.is_empty() {
-                        log::warn!("Received invalid name while acquiring wake lease");
-                        Err(fsystem::AcquireWakeLeaseError::InvalidName)
-                    } else {
-                        self.lease_manager
-                            .create_wake_lease_using_token(name, server_token)
-                            .await
-                            .or_else(|error| {
-                                log::warn!(
-                                    error:?;
-                                    "Encountered error while registering wake lease"
-                                );
-
-                                Err(fsystem::AcquireWakeLeaseError::Internal)
-                            })
-                    };
-
-                    if let Err(error) = responder.send(client_token_res) {
-                        log::warn!(
-                            error:?;
-                            "Encountered error while responding to AcquireWakeLease request"
-                        );
-                    }
+                    self.handle_acquire_wake_lease_with_token(responder, name, server_token).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
                     responder,
                     payload,
                 }) => {
-                    let res = match (payload.suspend_blocker, payload.name) {
-                        (Some(suspend_blocker), Some(name)) => {
-                            if name.is_empty() {
-                                log::warn!(
-                                    "Received invalid name while registering suspend blocker"
-                                );
-                                let _ = responder
-                                    .send(Err(fsystem::RegisterSuspendBlockerError::InvalidArgs));
-                                continue;
-                            }
-
-                            self.lease_manager
-                                .create_wake_lease(name.clone())
-                                .await
-                                .and_then(|client_token| {
-                                    client_token
-                                        .replace_handle(
-                                            zx::Rights::TRANSFER
-                                                | zx::Rights::DUPLICATE
-                                                | zx::Rights::WAIT,
-                                        )
-                                        .map_err(|status| {
-                                            anyhow::anyhow!(
-                                                "Failed to replace client token handle: {status}"
-                                            )
-                                        })
-                                })
-                                .and_then(|client_token| {
-                                    let proxy = suspend_blocker.into_proxy();
-                                    self.pending_suspend_blockers.borrow_mut().push((proxy, name));
-                                    Ok(client_token)
-                                })
-                                .or_else(|error| {
-                                    log::warn!(
-                                        error:?;
-                                        "Encountered error while registering wake lease"
-                                    );
-
-                                    Err(fsystem::RegisterSuspendBlockerError::Internal)
-                                })
-                        }
-                        (None, Some(_)) => {
-                            log::warn!("No suspend blocker provided in request");
-                            Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
-                        }
-                        (Some(_), None) => {
-                            log::warn!("No name provided in request");
-                            Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
-                        }
-                        (None, None) => {
-                            log::warn!("No arguments provided in request");
-                            Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
-                        }
-                    };
-                    let _ = responder.send(res);
+                    self.handle_register_suspend_blocker(responder, payload).await;
                 }
                 Ok(fsystem::ActivityGovernorRequest::_UnknownMethod { ordinal, .. }) => {
                     log::warn!(ordinal:?; "Unknown ActivityGovernorRequest method");
@@ -968,6 +826,199 @@ impl SystemActivityGovernor {
                 }
             }
         }
+    }
+
+    async fn handle_get_power_elements(
+        &self,
+        responder: fsystem::ActivityGovernorGetPowerElementsResponder,
+    ) {
+        let result = responder.send(fsystem::PowerElements {
+            application_activity: Some(fsystem::ApplicationActivity {
+                assertive_dependency_token: Some(
+                    self.application_activity
+                        .assertive_dependency_token()
+                        .expect("token not registered"),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        if let Err(error) = result {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to GetPowerElements request"
+            );
+        }
+    }
+
+    async fn handle_take_application_activity_lease(
+        &self,
+        responder: fsystem::ActivityGovernorTakeApplicationActivityLeaseResponder,
+        name: String,
+    ) {
+        let client_token = match self.lease_manager.create_application_activity_lease(name).await {
+            Ok(client_token) => client_token,
+            Err(error) => {
+                log::warn!(
+                    error:?;
+                    "Encountered error while registering application activity lease"
+                );
+                return;
+            }
+        };
+
+        if let Err(error) = responder.send(client_token) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to TakeApplicationActivity request"
+            );
+        }
+    }
+
+    async fn handle_take_wake_lease(
+        &self,
+        responder: fsystem::ActivityGovernorTakeWakeLeaseResponder,
+        name: String,
+    ) {
+        let client_token = match self.lease_manager.create_wake_lease(name).await {
+            Ok(client_token) => client_token,
+            Err(error) => {
+                log::warn!(error:?; "Encountered error while registering wake lease");
+                return;
+            }
+        };
+
+        if let Err(error) = responder.send(client_token) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to TakeWakeLease request"
+            );
+        }
+    }
+
+    async fn handle_acquire_wake_lease(
+        &self,
+        responder: fsystem::ActivityGovernorAcquireWakeLeaseResponder,
+        name: String,
+    ) {
+        let client_token_res = if name.is_empty() {
+            log::warn!("Received invalid name while acquiring wake lease");
+            Err(fsystem::AcquireWakeLeaseError::InvalidName)
+        } else {
+            self.lease_manager
+                .create_wake_lease(name)
+                .await
+                .and_then(|client_token| {
+                    client_token
+                        .replace_handle(
+                            zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::WAIT,
+                        )
+                        .map_err(|status| {
+                            anyhow::anyhow!("Failed to replace client token handle: {status}")
+                        })
+                })
+                .or_else(|error| {
+                    log::warn!(
+                        error:?;
+                        "Encountered error while registering wake lease"
+                    );
+
+                    Err(fsystem::AcquireWakeLeaseError::Internal)
+                })
+        };
+
+        if let Err(error) = responder.send(client_token_res) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to AcquireWakeLease request"
+            );
+        }
+    }
+
+    async fn handle_acquire_wake_lease_with_token(
+        &self,
+        responder: fsystem::ActivityGovernorAcquireWakeLeaseWithTokenResponder,
+        name: String,
+        server_token: fsystem::LeaseToken,
+    ) {
+        let client_token_res = if name.is_empty() {
+            log::warn!("Received invalid name while acquiring wake lease");
+            Err(fsystem::AcquireWakeLeaseError::InvalidName)
+        } else {
+            self.lease_manager.create_wake_lease_using_token(name, server_token).await.or_else(
+                |error| {
+                    log::warn!(
+                        error:?;
+                        "Encountered error while registering wake lease"
+                    );
+
+                    Err(fsystem::AcquireWakeLeaseError::Internal)
+                },
+            )
+        };
+
+        if let Err(error) = responder.send(client_token_res) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to AcquireWakeLease request"
+            );
+        }
+    }
+
+    async fn handle_register_suspend_blocker(
+        &self,
+        responder: fsystem::ActivityGovernorRegisterSuspendBlockerResponder,
+        payload: fsystem::ActivityGovernorRegisterSuspendBlockerRequest,
+    ) {
+        let res = match (payload.suspend_blocker, payload.name) {
+            (Some(suspend_blocker), Some(name)) => {
+                if name.is_empty() {
+                    log::warn!("Received invalid name while registering suspend blocker");
+                    let _ = responder.send(Err(fsystem::RegisterSuspendBlockerError::InvalidArgs));
+                    return;
+                }
+
+                self.lease_manager
+                    .create_wake_lease(name.clone())
+                    .await
+                    .and_then(|client_token| {
+                        client_token
+                            .replace_handle(
+                                zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::WAIT,
+                            )
+                            .map_err(|status| {
+                                anyhow::anyhow!("Failed to replace client token handle: {status}")
+                            })
+                    })
+                    .and_then(|client_token| {
+                        let proxy = suspend_blocker.into_proxy();
+                        self.pending_suspend_blockers.borrow_mut().push((proxy, name));
+                        Ok(client_token)
+                    })
+                    .or_else(|error| {
+                        log::warn!(
+                            error:?;
+                            "Encountered error while registering wake lease"
+                        );
+
+                        Err(fsystem::RegisterSuspendBlockerError::Internal)
+                    })
+            }
+            (None, Some(_)) => {
+                log::warn!("No suspend blocker provided in request");
+                Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
+            }
+            (Some(_), None) => {
+                log::warn!("No name provided in request");
+                Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
+            }
+            (None, None) => {
+                log::warn!("No arguments provided in request");
+                Err(fsystem::RegisterSuspendBlockerError::InvalidArgs)
+            }
+        };
+        let _ = responder.send(res);
     }
 
     pub async fn handle_boot_control_stream(
