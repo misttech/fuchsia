@@ -1,0 +1,12 @@
+Name: pyusb
+License: BSD 3-Clause "New" or "Revised" License
+License File: src/LICENSE
+Upstream Git: https://github.com/pyusb/pyusb
+Description:
+
+PyUSB provides for easy access to the host machine's Universal Serial Bus (USB) system for Python 3.
+
+
+Upgrading the version of pyusb:
+
+Visit `//manifests/third_party/pylibs/README.md` for instructions.
