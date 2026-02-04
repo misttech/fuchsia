@@ -199,7 +199,7 @@ impl Into<fpb::ModifyDependencyError> for ModifyDependencyError {
 #[derive(Debug)]
 pub struct Topology {
     pub(crate) elements: HashMap<ElementID, Element>,
-    assertive_dependencies: HashMap<ElementLevel, Vec<ElementLevel>>,
+    dependencies: HashMap<ElementLevel, Vec<ElementLevel>>,
     unsatisfiable_element_id: ElementID,
     inspect: TopologyInspect,
 }
@@ -212,7 +212,7 @@ impl Topology {
     pub fn new(parent_inspect_node: &inspect::Node, inspect_max_event: usize) -> Self {
         let mut topology = Topology {
             elements: HashMap::new(),
-            assertive_dependencies: HashMap::new(),
+            dependencies: HashMap::new(),
             unsatisfiable_element_id: ElementID::new(0),
             inspect: TopologyInspect::new(
                 parent_inspect_node.create_child("topology"),
@@ -373,12 +373,12 @@ impl Topology {
         return elem.valid_levels[level.index - 1];
     }
 
-    /// Gets direct, assertive dependencies for the given Element and PowerLevel.
-    pub fn direct_assertive_dependencies<'a>(
+    /// Gets direct dependencies for the given Element and PowerLevel.
+    pub fn direct_dependencies<'a>(
         &'a self,
         element_level: &'a ElementLevel,
     ) -> impl Iterator<Item = Dependency> + 'a {
-        self.assertive_dependencies
+        self.dependencies
             .get(&element_level)
             .into_iter()
             .flat_map(|required_levels| required_levels.iter())
@@ -396,7 +396,7 @@ impl Topology {
     ) -> Vec<Dependency> {
         // We need to inspect the required level of every dependency encountered for any transitive
         // dependencies.
-        let mut assertive_dependencies = Vec::<Dependency>::new();
+        let mut dependencies = Vec::<Dependency>::new();
         let mut element_levels_to_inspect = vec![element_level.clone()];
         while let Some(element_level) = element_levels_to_inspect.pop() {
             if element_level.level != self.minimum_level(&element_level.element_id) {
@@ -405,12 +405,12 @@ impl Topology {
                     .decrement_element_level_index(&element_level.element_id, &element_level.level);
                 element_levels_to_inspect.push(lower_element_level);
             }
-            for dep in self.direct_assertive_dependencies(&element_level) {
+            for dep in self.direct_dependencies(&element_level) {
                 element_levels_to_inspect.push(dep.requires.clone());
-                assertive_dependencies.push(dep);
+                dependencies.push(dep);
             }
         }
-        assertive_dependencies
+        dependencies
     }
 
     /// Elements that have any type of dependency on the provided ElementID are 'invalidated'
@@ -418,11 +418,11 @@ impl Topology {
     /// will never be turned on.
     fn invalidate_dependent_elements(&mut self, invalid_element_id: &ElementID) {
         // Prior to removing any dependencies that are no longer valid, ensure that we add a
-        // assertive dependency to the unsatisfiable element, which forces *future* leases into the
+        // dependency to the unsatisfiable element, which forces *future* leases into the
         // pending state and prevents the broker from attempting to turn on other dependent
         // elements. Existing leases will remain unaffected.
-        let assertive_dependents_of_invalid_elements: Vec<ElementLevel> = self
-            .assertive_dependencies
+        let dependents_of_invalid_elements: Vec<ElementLevel> = self
+            .dependencies
             .iter()
             .filter_map(|(dependent, requires)| {
                 if requires
@@ -435,8 +435,8 @@ impl Topology {
                 }
             })
             .collect();
-        for dependent in assertive_dependents_of_invalid_elements {
-            match self.add_assertive_dependency(
+        for dependent in dependents_of_invalid_elements {
+            match self.add_dependency(
                 &Dependency {
                     dependent: dependent.clone(),
                     requires: ElementLevel {
@@ -453,17 +453,17 @@ impl Topology {
                     panic!("failed to replace dependency with unsatisfiable dependency: {:?}", e)
                 }
             }
-            for requires in self.assertive_dependencies.get(&dependent).unwrap().clone() {
+            for requires in self.dependencies.get(&dependent).unwrap().clone() {
                 if requires.element_id == *invalid_element_id {
-                    self.remove_assertive_dependency(&Dependency {
+                    self.remove_dependency(&Dependency {
                         dependent: dependent.clone(),
                         requires: requires.clone(),
                     })
-                    .expect("failed to remove invalid assertive dependency");
+                    .expect("failed to remove invalid dependency");
                 }
             }
         }
-        self.assertive_dependencies.retain(|key, _| key.element_id != *invalid_element_id);
+        self.dependencies.retain(|key, _| key.element_id != *invalid_element_id);
     }
 
     /// Checks that a dependency is valid. Returns ModifyDependencyError if not.
@@ -489,8 +489,8 @@ impl Topology {
         Ok(())
     }
 
-    /// Adds an assertive dependency to the Topology.
-    pub fn add_assertive_dependency<I>(
+    /// Adds a dependency to the Topology.
+    pub fn add_dependency<I>(
         &mut self,
         dep: &Dependency,
         inspect_writer: &mut I,
@@ -499,8 +499,7 @@ impl Topology {
         I: InspectAddDependency,
     {
         self.check_valid_dependency(dep)?;
-        let required_levels =
-            self.assertive_dependencies.entry(dep.dependent.clone()).or_insert(Vec::new());
+        let required_levels = self.dependencies.entry(dep.dependent.clone()).or_insert(Vec::new());
         if required_levels.contains(&dep.requires) {
             return Err(ModifyDependencyError::AlreadyExists);
         }
@@ -509,19 +508,15 @@ impl Topology {
         Ok(())
     }
 
-    /// Removes an assertive dependency from the Topology.
-    pub fn remove_assertive_dependency(
-        &mut self,
-        dep: &Dependency,
-    ) -> Result<(), ModifyDependencyError> {
+    /// Removes a dependency from the Topology.
+    pub fn remove_dependency(&mut self, dep: &Dependency) -> Result<(), ModifyDependencyError> {
         if !self.elements.contains_key(&dep.dependent.element_id) {
             return Err(ModifyDependencyError::NotFound(dep.dependent.element_id.clone()));
         }
         if !self.elements.contains_key(&dep.requires.element_id) {
             return Err(ModifyDependencyError::NotFound(dep.requires.element_id.clone()));
         }
-        let required_levels =
-            self.assertive_dependencies.entry(dep.dependent.clone()).or_insert(Vec::new());
+        let required_levels = self.dependencies.entry(dep.dependent.clone()).or_insert(Vec::new());
         if !required_levels.contains(&dep.requires) {
             return Err(ModifyDependencyError::NotFound(dep.requires.element_id.clone()));
         }
@@ -656,14 +651,14 @@ mod tests {
                         },
         }}}});
 
-        t.add_assertive_dependency(
+        t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
             &mut EagerInspectWriter,
         )
-        .expect("add_assertive_dependency failed");
+        .expect("add_dependency failed");
         assert_data_tree!(inspect, root: {
            topology: {
                 "fuchsia.inspect.Graph": {
@@ -729,7 +724,7 @@ mod tests {
                         },
         }}}});
 
-        let extra_add_dep_res = t.add_assertive_dependency(
+        let extra_add_dep_res = t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
@@ -738,11 +733,11 @@ mod tests {
         );
         assert!(matches!(extra_add_dep_res, Err(ModifyDependencyError::AlreadyExists { .. })));
 
-        t.remove_assertive_dependency(&Dependency {
+        t.remove_dependency(&Dependency {
             dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
             requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
         })
-        .expect("remove_assertive_dependency failed");
+        .expect("remove_dependency failed");
         assert_data_tree!(inspect, root: {
            topology: {
                 "fuchsia.inspect.Graph": {
@@ -803,24 +798,24 @@ mod tests {
                         },
         }}}});
 
-        let extra_remove_dep_res = t.remove_assertive_dependency(&Dependency {
+        let extra_remove_dep_res = t.remove_dependency(&Dependency {
             dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
             requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
         });
         assert!(matches!(extra_remove_dep_res, Err(ModifyDependencyError::NotFound { .. })));
 
         assert_eq!(t.element_exists(&fire), true);
-        t.add_assertive_dependency(
+        t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
             &mut EagerInspectWriter,
         )
-        .expect("add_assertive_dependency failed");
+        .expect("add_dependency failed");
         t.remove_element(&fire);
         assert_eq!(t.element_exists(&fire), false);
-        let removed_element_dep_res = t.remove_assertive_dependency(&Dependency {
+        let removed_element_dep_res = t.remove_dependency(&Dependency {
             dependent: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
             requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
         });
@@ -870,7 +865,7 @@ mod tests {
                         },
         }}}});
 
-        let element_not_found_res = t.add_assertive_dependency(
+        let element_not_found_res = t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: air.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
@@ -879,7 +874,7 @@ mod tests {
         );
         assert!(matches!(element_not_found_res, Err(ModifyDependencyError::NotFound { .. })));
 
-        let req_element_not_found_res = t.add_assertive_dependency(
+        let req_element_not_found_res = t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
@@ -928,14 +923,14 @@ mod tests {
                         },
         }}}});
 
-        t.add_assertive_dependency(
+        t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: water.clone(), level: BINARY_POWER_LEVEL_ON },
                 requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
             },
             &mut EagerInspectWriter,
         )
-        .expect("add_assertive_dependency failed");
+        .expect("add_dependency failed");
         assert_data_tree!(inspect, root: { topology: {
             "fuchsia.inspect.Graph": { "topology": {
             t.get_unsatisfiable_element().id.to_string() => {
@@ -1036,26 +1031,22 @@ mod tests {
             dependent: ElementLevel { element_id: b.clone(), level: ONE },
             requires: ElementLevel { element_id: a.clone(), level: ONE },
         };
-        t.add_assertive_dependency(&ba, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&ba, &mut EagerInspectWriter).expect("add_dependency failed");
         let cb = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel { element_id: b.clone(), level: ONE },
         };
-        t.add_assertive_dependency(&cb, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&cb, &mut EagerInspectWriter).expect("add_dependency failed");
         let cd = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel { element_id: d.clone(), level: ONE },
         };
-        t.add_assertive_dependency(&cd, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&cd, &mut EagerInspectWriter).expect("add_dependency failed");
         let cd2 = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: TWO },
             requires: ElementLevel { element_id: d.clone(), level: TWO },
         };
-        t.add_assertive_dependency(&cd2, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&cd2, &mut EagerInspectWriter).expect("add_dependency failed");
         assert_data_tree!(inspect, root: {
             topology: {
                 "fuchsia.inspect.Graph": {
@@ -1141,19 +1132,19 @@ mod tests {
         }}}});
 
         let mut a_deps = t
-            .direct_assertive_dependencies(&ElementLevel { element_id: a.clone(), level: ONE })
+            .direct_dependencies(&ElementLevel { element_id: a.clone(), level: ONE })
             .collect::<Vec<_>>();
         a_deps.sort();
         assert_eq!(a_deps, []);
 
         let mut b_deps = t
-            .direct_assertive_dependencies(&ElementLevel { element_id: b.clone(), level: ONE })
+            .direct_dependencies(&ElementLevel { element_id: b.clone(), level: ONE })
             .collect::<Vec<_>>();
         b_deps.sort();
         assert_eq!(b_deps, [ba]);
 
         let mut c_deps = t
-            .direct_assertive_dependencies(&ElementLevel { element_id: c.clone(), level: ONE })
+            .direct_dependencies(&ElementLevel { element_id: c.clone(), level: ONE })
             .collect::<Vec<_>>();
         let mut want_c_deps = [cb, cd];
         c_deps.sort();
@@ -1188,8 +1179,7 @@ mod tests {
                 level: IndexedPowerLevel { level: 5, index: 2 },
             },
         };
-        t.add_assertive_dependency(&c1_b5, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&c1_b5, &mut EagerInspectWriter).expect("add_dependency failed");
         let c1_d3 = Dependency {
             dependent: ElementLevel { element_id: c.clone(), level: ONE },
             requires: ElementLevel {
@@ -1197,14 +1187,12 @@ mod tests {
                 level: IndexedPowerLevel { level: 3, index: 2 },
             },
         };
-        t.add_assertive_dependency(&c1_d3, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&c1_d3, &mut EagerInspectWriter).expect("add_dependency failed");
         let d1_a1 = Dependency {
             dependent: ElementLevel { element_id: d.clone(), level: ONE },
             requires: ElementLevel { element_id: a.clone(), level: ONE },
         };
-        t.add_assertive_dependency(&d1_a1, &mut EagerInspectWriter)
-            .expect("add_assertive_dependency failed");
+        t.add_dependency(&d1_a1, &mut EagerInspectWriter).expect("add_dependency failed");
 
         let a_deps = t.all_direct_and_indirect_dependencies(&ElementLevel {
             element_id: a.clone(),
@@ -1233,7 +1221,7 @@ mod tests {
         want_c_deps.sort();
         assert_eq!(c_deps, want_c_deps);
 
-        t.remove_assertive_dependency(&c1_d3).expect("remove_direct_dep failed");
+        t.remove_dependency(&c1_d3).expect("remove_direct_dep failed");
         let c_deps = t.all_direct_and_indirect_dependencies(&ElementLevel {
             element_id: c.clone(),
             level: ONE,
@@ -1251,23 +1239,23 @@ mod tests {
         let c = t.add_element_with_inspect("C", vec![0, 1], 0, 0).expect("add_element failed");
 
         // C depends on A and B
-        t.add_assertive_dependency(
+        t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: c.clone(), level: ONE },
                 requires: ElementLevel { element_id: a.clone(), level: ONE },
             },
             &mut EagerInspectWriter,
         )
-        .expect("add_assertive_dependency failed");
+        .expect("add_dependency failed");
 
-        t.add_assertive_dependency(
+        t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: c.clone(), level: ONE },
                 requires: ElementLevel { element_id: b.clone(), level: ONE },
             },
             &mut EagerInspectWriter,
         )
-        .expect("add_assertive_dependency failed");
+        .expect("add_dependency failed");
 
         // Remove A, invalidating C -> A. C now depends on Unsatisfiable.
         t.remove_element(&a);
@@ -1276,9 +1264,8 @@ mod tests {
         // This should not panic.
         t.remove_element(&b);
 
-        let c_deps: Vec<_> = t
-            .direct_assertive_dependencies(&ElementLevel { element_id: c.clone(), level: ONE })
-            .collect();
+        let c_deps: Vec<_> =
+            t.direct_dependencies(&ElementLevel { element_id: c.clone(), level: ONE }).collect();
 
         assert_eq!(c_deps.len(), 1);
         assert_eq!(c_deps[0].requires.element_id, t.get_unsatisfiable_element_id());

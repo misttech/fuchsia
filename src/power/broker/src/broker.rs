@@ -210,7 +210,7 @@ impl Broker {
         // For each lease, find the dependencies that are parents of the broken element.
         let mut affected_elements = HashSet::new();
         let mut affected_leases = HashSet::new();
-        let assertive_dependencies_safe =
+        let dependencies_safe =
             self.catalog.topology.all_direct_and_indirect_dependencies(&element_level);
         self.catalog.leases.iter()
             .for_each(|(lease_id, lease)| {
@@ -219,9 +219,9 @@ impl Broker {
                     element_id: lease.synthetic_element_id.clone(),
                     level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
                 };
-                let assertive_dependencies_lease =
+                let dependencies_lease =
                     self.catalog.topology.all_direct_and_indirect_dependencies(&lease_element_level);
-                if !assertive_dependencies_lease
+                if !dependencies_lease
                     .iter()
                     .any(|d| {
                         d.requires.element_id == *element_id && d.requires.level.satisfies(prev_level)
@@ -234,8 +234,8 @@ impl Broker {
                 // are 'safe' as none of their dependencies are broken. The difference
                 // constitutes the dependencies of this lease that broke.
                 let broken_dependencies =
-                    HashSet::<Dependency>::from_iter(assertive_dependencies_lease)
-                        .difference(&HashSet::<Dependency>::from_iter(assertive_dependencies_safe.clone()))
+                    HashSet::<Dependency>::from_iter(dependencies_lease)
+                        .difference(&HashSet::<Dependency>::from_iter(dependencies_safe.clone()))
                         .cloned()
                         .collect::<HashSet<Dependency>>();
 
@@ -245,7 +245,7 @@ impl Broker {
                         claim_on_broken_element = true;
                     }
                     self.catalog
-                        .assertive_claims
+                        .claims
                         .activated
                         .for_lease(&lease_id)
                         .into_iter()
@@ -255,7 +255,7 @@ impl Broker {
                             // marking them for deactivation. This ensures that they
                             // drop their level immediately.
                             if !claim_on_broken_element {
-                                self.catalog.assertive_claims.deactivate_claim(&c.id);
+                                self.catalog.claims.deactivate_claim(&c.id);
                             }
                             affected_elements.insert(c.requires().element_id);
                             affected_leases.insert(lease_id.clone());
@@ -289,14 +289,14 @@ impl Broker {
             return;
         }
         if prev_level.is_none() || prev_level.unwrap() < level {
-            // The level was increased, look for activated assertive claims that are newly
+            // The level was increased, look for activated claims that are newly
             // satisfied by the new current level:
             log::debug!(
                 "update_current_level({element_id}): level increased from {prev_level:?} to {level:?}"
             );
             let claims_for_required_element: Vec<Claim> = self
                 .catalog
-                .assertive_claims
+                .claims
                 .activated
                 .for_required_element(element_id)
                 .into_iter()
@@ -320,24 +320,22 @@ impl Broker {
             let dependents_of_claims_satisfied: HashSet<ElementID> =
                 claims_satisfied.iter().map(|c| c.dependent().element_id.clone()).collect();
             // Because at least one of the dependencies of the dependent was
-            // satisfied, other previously pending assertive claims requiring the
+            // satisfied, other previously pending claims requiring the
             // dependent may now be ready to be activated (though they may not
             // if the dependent has other unsatisfied dependencies). Look for
-            // all pending assertive claims on this dependent, and pass them to
-            // activate_assertive_claims_if_dependencies_satisfied(), which will check
+            // all pending claims on this dependent, and pass them to
+            // activate_claims_if_dependencies_satisfied(), which will check
             // if all dependencies of the dependent are now satisfied, and if
             // so, activate the pending claims on dependent, raising its
             // required level:
             for dependent in dependents_of_claims_satisfied {
-                let pending_assertive_claims_on_dependent =
-                    self.catalog.assertive_claims.pending.for_required_element(&dependent);
+                let pending_claims_on_dependent =
+                    self.catalog.claims.pending.for_required_element(&dependent);
                 log::debug!(
-                    "update_current_level({element_id}): pending_assertive_claims_on_dependent({dependent}) = {}",
-                    &pending_assertive_claims_on_dependent.iter().join(", ")
+                    "update_current_level({element_id}): pending_claims_on_dependent({dependent}) = {}",
+                    &pending_claims_on_dependent.iter().join(", ")
                 );
-                self.activate_assertive_claims_if_dependencies_satisfied(
-                    pending_assertive_claims_on_dependent,
-                );
+                self.activate_claims_if_dependencies_satisfied(pending_claims_on_dependent);
             }
             // Find the set of leases for all claims satisfied:
             let leases_to_check_if_satisfied: HashSet<LeaseID> =
@@ -362,14 +360,11 @@ impl Broker {
                 "update_current_level({element_id}): level decreased from {prev_level:?} to {level:?}"
             );
 
-            let assertive_claims_marked_to_deactivate = self
-                .catalog
-                .assertive_claims
-                .activated
-                .marked_to_deactivate_for_element(element_id);
-            let assertive_claims_with_no_dependents =
-                self.find_claims_to_drop_or_deactivate(&assertive_claims_marked_to_deactivate);
-            self.drop_or_deactivate_assertive_claims(&assertive_claims_with_no_dependents);
+            let claims_marked_to_deactivate =
+                self.catalog.claims.activated.marked_to_deactivate_for_element(element_id);
+            let claims_with_no_dependents =
+                self.find_claims_to_drop_or_deactivate(&claims_marked_to_deactivate);
+            self.drop_or_deactivate_claims(&claims_with_no_dependents);
 
             // After handling the claims that were dropped properly, we handle those
             // which were dropped unexpectedly, i.e. 'disorderly' elements. When this
@@ -510,11 +505,11 @@ impl Broker {
             &self.lookup_name(element_id).into_owned() => counter
         );
 
-        let (lease, assertive_claims) =
+        let (lease, claims) =
             self.catalog.create_lease_and_claims(element_id, level, lease_control);
-        // Activate all pending assertive claims that have all of their
+        // Activate all pending claims that have all of their
         // dependencies satisfied.
-        self.activate_assertive_claims_if_dependencies_satisfied(assertive_claims);
+        self.activate_claims_if_dependencies_satisfied(claims);
         self.update_lease_status(&lease.id);
         Ok(lease)
     }
@@ -523,7 +518,7 @@ impl Broker {
     /// begins the orderly drop of the dependency chain.
     pub fn drop_lease(&mut self, lease_id: &LeaseID) -> Result<(), Error> {
         // Drop the lease to mark all the relevant claims as deactivated.
-        let (lease, assertive_claims) = self.catalog.drop(lease_id)?;
+        let (lease, claims) = self.catalog.drop(lease_id)?;
         let counter = self.adjust_lease_counter(
             &lease.underlying_element_id,
             lease.underlying_element_level.level,
@@ -535,11 +530,11 @@ impl Broker {
         );
 
         // Find the set of claims that can be dropped immediately.
-        let assertive_claims_dropped = self.find_claims_to_drop_or_deactivate(&assertive_claims);
+        let claims_dropped = self.find_claims_to_drop_or_deactivate(&claims);
         // Drop the discovered set of claims and forcefully update leases,
         // which don't have direct dependencies on this lease and thus won't be found via
         // the claim search through this lease.
-        self.drop_or_deactivate_assertive_claims(&assertive_claims_dropped);
+        self.drop_or_deactivate_claims(&claims_dropped);
         // Remove the lease information and then remove the underlying element.
         self.catalog.lease_status.remove(lease_id);
         self.remove_element(&lease.synthetic_element_id);
@@ -547,19 +542,19 @@ impl Broker {
     }
 
     fn calculate_lease_status(&self, lease_id: &LeaseID) -> LeaseStatus {
-        // If the lease has any Pending assertive claims, it is still Pending.
-        if !self.catalog.assertive_claims.pending.for_lease(lease_id).is_empty() {
+        // If the lease has any Pending claims, it is still Pending.
+        if !self.catalog.claims.pending.for_lease(lease_id).is_empty() {
             return LeaseStatus::Pending;
         }
 
-        // If the lease has any assertive claims that have not been satisfied
+        // If the lease has any claims that have not been satisfied
         // it is still Pending.
-        for claim in self.catalog.assertive_claims.activated.for_lease(lease_id) {
+        for claim in self.catalog.claims.activated.for_lease(lease_id) {
             if !self.current_level_satisfies(claim.requires()) {
                 return LeaseStatus::Pending;
             }
         }
-        // All claims are assertive and satisfied, so the lease is Satisfied.
+        // All claims are satisfied, so the lease is Satisfied.
         LeaseStatus::Satisfied
     }
 
@@ -625,22 +620,19 @@ impl Broker {
         }
     }
 
-    /// Examines a Vec of pending assertive claims and activates each for which
+    /// Examines a Vec of pending claims and activates each for which
     /// either the required element is already at the required level (and thus
     /// the claim is already satisfied) or all of the dependencies of its required
     /// ElementLevel are met. Updates required levels of affected elements.
     /// For example, let us imagine elements A, B, C and D where A depends on B
     /// and B depends on C and D. In order to activate the A->B claim, all
     /// dependencies of B (i.e. B->C and B->D) must first be satisfied.
-    fn activate_assertive_claims_if_dependencies_satisfied(
-        &mut self,
-        pending_assertive_claims: Vec<Claim>,
-    ) {
+    fn activate_claims_if_dependencies_satisfied(&mut self, pending_claims: Vec<Claim>) {
         log::debug!(
-            "activate_assertive_claims_if_dependencies_satisfied: pending_assertive_claims[{}]",
-            pending_assertive_claims.iter().join(", ")
+            "activate_claims_if_dependencies_satisfied: pending_claims[{}]",
+            pending_claims.iter().join(", ")
         );
-        let claims_to_activate: Vec<Claim> = pending_assertive_claims
+        let claims_to_activate: Vec<Claim> = pending_claims
             .into_iter()
             .filter(|c| {
                 // If the required element is already at the required level,
@@ -653,7 +645,7 @@ impl Broker {
             })
             .collect();
         for claim in &claims_to_activate {
-            self.catalog.assertive_claims.activate_claim(&claim.id);
+            self.catalog.claims.activate_claim(&claim.id);
         }
         self.update_required_levels(
             element_ids_required_by_claims(&claims_to_activate),
@@ -698,13 +690,13 @@ impl Broker {
                 log::debug!("keeping {claim_to_check}, dependent is transiting");
                 continue;
             }
-            // If this is an assertive claim and there exists another activated assertive claim
+            // If this is an claim and there exists another activated claim
             // belonging to another lease that has not been dropped and whose
             // required level satisfies its required level, we can drop this claim immediately.
-            if self.catalog.assertive_claims.activated.claims.contains_key(&claim_to_check.id) {
+            if self.catalog.claims.activated.claims.contains_key(&claim_to_check.id) {
                 let mut related_claims = self
                     .catalog
-                    .assertive_claims
+                    .claims
                     .activated
                     .for_required_element(&claim_to_check.requires().element_id)
                     .into_iter()
@@ -717,7 +709,7 @@ impl Broker {
                 });
                 if let Some(related_claim) = related_claim {
                     log::debug!(
-                        "required level still required by another lease's activated assertive claim({related_claim}), will drop/deactivate {claim_to_check}"
+                        "required level still required by another lease's activated claim({related_claim}), will drop/deactivate {claim_to_check}"
                     );
                     claims_to_drop_or_deactivate.push(claim_to_check.clone());
                     continue;
@@ -729,15 +721,13 @@ impl Broker {
             }
             let mut has_dependents = false;
             // Only claims belonging to the same lease can be a dependent.
-            for related_claim in
-                self.catalog.assertive_claims.activated.for_lease(&claim_to_check.lease_id)
-            {
+            for related_claim in self.catalog.claims.activated.for_lease(&claim_to_check.lease_id) {
                 if claim_to_check.dependent().element_id == related_claim.requires().element_id
                     && claim_to_check.dependent().level >= related_claim.requires().level
                     && self.current_level_satisfies(related_claim.requires())
                 {
                     log::debug!(
-                        "won't drop/deactivate {claim_to_check}, has assertive dependent {related_claim}"
+                        "won't drop/deactivate {claim_to_check}, has dependent {related_claim}"
                     );
                     has_dependents = true;
                     break;
@@ -752,16 +742,16 @@ impl Broker {
         claims_to_drop_or_deactivate
     }
 
-    /// Takes a Vec of assertive claims, deactivates them if their lease is open,
+    /// Takes a Vec of claims, deactivates them if their lease is open,
     /// or drops them if their lease has been dropped. Then updates lease
     /// status of leases affected and required levels of elements affected.
-    fn drop_or_deactivate_assertive_claims(&mut self, claims: &[Claim]) {
+    fn drop_or_deactivate_claims(&mut self, claims: &[Claim]) {
         for claim in claims {
-            log::debug!("deactivate assertive claim: {claim}");
+            log::debug!("deactivate claim: {claim}");
             if self.catalog.is_lease_dropped(&claim.lease_id) {
-                self.catalog.assertive_claims.drop_claim(&claim.id);
+                self.catalog.claims.drop_claim(&claim.id);
             } else {
-                self.catalog.assertive_claims.deactivate_claim(&claim.id);
+                self.catalog.claims.deactivate_claim(&claim.id);
             }
         }
         let element_ids_affected = element_ids_required_by_claims(claims).collect::<Vec<_>>();
@@ -905,7 +895,7 @@ impl Broker {
         if !requires_cred.contains(Permissions::MODIFY_DEPENDENT) {
             return Err(ModifyDependencyError::NotAuthorized);
         }
-        self.catalog.topology.add_assertive_dependency(&dependency, inspect_writer)
+        self.catalog.topology.add_dependency(&dependency, inspect_writer)
     }
 }
 
@@ -1010,15 +1000,15 @@ struct Catalog {
     topology: Topology,
     leases: HashMap<LeaseID, Lease>,
     lease_status: SubscribeMap<LeaseID, LeaseStatus>,
-    /// Assertive claims can be either Pending or Activated.
-    /// Pending assertive claims do not yet affect the required levels of their
+    /// Claims can be either Pending or Activated.
+    /// Pending claims do not yet affect the required levels of their
     /// required elements. Some dependencies of their required element are not
     /// satisfied.
-    /// Activated assertive claims affect the required level of the claim's
+    /// Activated claims affect the required level of the claim's
     /// required element.
-    /// Each assertive claim will start as Pending, and will be Activated once all
+    /// Each claim will start as Pending, and will be Activated once all
     /// dependencies of its required element are satisfied.
-    assertive_claims: ClaimActivationTracker,
+    claims: ClaimActivationTracker,
     last_claim_id: ClaimID,
 }
 
@@ -1028,7 +1018,7 @@ impl Catalog {
             topology: Topology::new(inspect_parent, INSPECT_GRAPH_EVENT_BUFFER_SIZE),
             leases: HashMap::new(),
             lease_status: SubscribeMap::new(Some(inspect_parent.create_child("leases"))),
-            assertive_claims: ClaimActivationTracker::new(),
+            claims: ClaimActivationTracker::new(),
             last_claim_id: ClaimID(0),
         }
     }
@@ -1053,13 +1043,13 @@ impl Catalog {
 
     /// Calculates the required level for each element, according to the
     /// Minimum Power Level Policy.
-    /// The required level is equal to the maximum of all **activated** assertive
+    /// The required level is equal to the maximum of all **activated**
     /// claims on the element, the maximum level of all satisfied
     /// leases on the element, or the element's minimum level if there are
     /// no activated claims or satisfied leases.
     fn calculate_required_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
         let minimum_level = self.minimum_level(element_id);
-        let activated_claims = self.assertive_claims.activated.for_required_element(element_id);
+        let activated_claims = self.claims.activated.for_required_element(element_id);
         max(
             max_level_required_by_claims(&activated_claims).unwrap_or(minimum_level),
             self.calculate_level_required_by_leases(element_id).unwrap_or(minimum_level),
@@ -1088,17 +1078,17 @@ impl Catalog {
 
     // Given a set of claims, filter out any redundant claims. A claim is redundant if there exists
     // another claim between the *same pair of elements* at an *equal or higher level*.
-    fn filter_out_redundant_claims(&self, mut assertive_claims: Vec<Claim>) -> Vec<Claim> {
-        let mut essential_assertive_claims: Vec<Claim> = Vec::new();
+    fn filter_out_redundant_claims(&self, mut claims: Vec<Claim>) -> Vec<Claim> {
+        let mut essential_claims: Vec<Claim> = Vec::new();
         let mut observed_pairs: HashMap<(ElementID, ElementID), ElementLevel> = HashMap::new();
-        assertive_claims.sort_unstable_by_key(|claim| {
+        claims.sort_unstable_by_key(|claim| {
             (
                 claim.dependent().element_id.clone(),
                 claim.requires().element_id.clone(),
                 usize::MAX - claim.requires().level.index,
             )
         });
-        for claim in assertive_claims {
+        for claim in claims {
             let element_pair =
                 (claim.dependent().element_id.clone(), claim.requires().element_id.clone());
             #[allow(clippy::map_entry, reason = "mass allow for https://fxbug.dev/381896734")]
@@ -1107,9 +1097,9 @@ impl Catalog {
             } else {
                 observed_pairs.insert(element_pair, claim.requires().clone());
             }
-            essential_assertive_claims.push(claim.clone());
+            essential_claims.push(claim.clone());
         }
-        essential_assertive_claims
+        essential_claims
     }
 
     // Creates an element that represents the lease and adds it to the topology
@@ -1129,7 +1119,7 @@ impl Catalog {
             .expect("Failed to create lease element");
         let mut inspect_writer = AddElementInspectWriter::new(lease_element_id);
         self.topology
-            .add_assertive_dependency(
+            .add_dependency(
                 &Dependency {
                     dependent: ElementLevel {
                         element_id: lease_element_id.clone(),
@@ -1142,14 +1132,14 @@ impl Catalog {
                 },
                 &mut inspect_writer,
             )
-            .expect("Failed to attach assertive dependency to lease element");
+            .expect("Failed to attach dependency to lease element");
         inspect_writer.commit(&mut self.topology);
         lease_element_id
     }
 
     /// Creates a new lease for the given element and level along with all
     /// claims necessary to satisfy this lease and adds them to pending_claims.
-    /// Returns the new lease and the Vec of assertive (pending) claims created.
+    /// Returns the new lease and the Vec of (pending) claims created.
     fn create_lease_and_claims(
         &mut self,
         element_id: &ElementID,
@@ -1158,7 +1148,7 @@ impl Catalog {
     ) -> (Lease, Vec<Claim>) {
         log::debug!("create_lease_and_claims({element_id}@{level})");
 
-        // Create an intermediate "lease" element to lease against that has a single assertive
+        // Create an intermediate "lease" element to lease against that has a single
         // dependency on the element we actually want to lease against.
         let lease_element_id = self.create_synthetic_lease_element(element_id, level);
 
@@ -1179,24 +1169,24 @@ impl Catalog {
             element_id: lease_element_id,
             level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
         };
-        // Create all possible claims from the assertive dependencies.
-        let assertive_claims = self
+        // Create all possible claims from the dependencies.
+        let claims = self
             .topology
             .all_direct_and_indirect_dependencies(&lease_element_level)
             .into_iter()
             .map(|dependency| self.add_claim(dependency, &lease.id))
             .collect::<Vec<Claim>>();
         // Filter claims down to only the essential (i.e. non-redundant) claims.
-        let essential_assertive_claims = self.filter_out_redundant_claims(assertive_claims);
-        for claim in &essential_assertive_claims {
-            self.assertive_claims.pending.add(claim.clone());
+        let essential_claims = self.filter_out_redundant_claims(claims);
+        for claim in &essential_claims {
+            self.claims.pending.add(claim.clone());
         }
-        (lease, essential_assertive_claims)
+        (lease, essential_claims)
     }
 
     /// Drops an existing lease, and initiates process of releasing all
     /// associated claims.
-    /// Returns the dropped lease and a Vec of assertive claims marked to deactivate.
+    /// Returns the dropped lease and a Vec of claims marked to deactivate.
     fn drop(&mut self, lease_id: &LeaseID) -> Result<(Lease, Vec<Claim>), Error> {
         log::debug!("drop(lease:{lease_id})");
         let lease = self.leases.remove(lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
@@ -1206,19 +1196,18 @@ impl Catalog {
         }
         log::debug!("dropping lease({:?})", &lease);
         // Pending claims should be dropped immediately.
-        let pending_assertive_claims = self.assertive_claims.pending.for_lease(&lease.id);
-        for claim in pending_assertive_claims {
-            if let Some(removed) = self.assertive_claims.pending.remove(&claim.id) {
+        let pending_claims = self.claims.pending.for_lease(&lease.id);
+        for claim in pending_claims {
+            if let Some(removed) = self.claims.pending.remove(&claim.id) {
                 log::debug!("removing pending claim: {:?}", &removed);
             } else {
-                log::error!("cannot remove pending assertive claim: not found: {}", claim.id);
+                log::error!("cannot remove pending claim: not found: {}", claim.id);
             }
         }
-        // Assertive claims should be marked to deactivate in an orderly sequence.
-        log::debug!("drop(lease:{lease_id}): marking activated assertive claims to deactivate");
-        let assertive_claims_to_deactivate =
-            self.assertive_claims.activated.mark_to_deactivate(&lease.id);
-        Ok((lease, assertive_claims_to_deactivate))
+        // Claims should be marked to deactivate in an orderly sequence.
+        log::debug!("drop(lease:{lease_id}): marking activated claims to deactivate");
+        let claims_to_deactivate = self.claims.activated.mark_to_deactivate(&lease.id);
+        Ok((lease, claims_to_deactivate))
     }
 
     pub fn get_lease_status(&self, lease_id: &LeaseID) -> Option<LeaseStatus> {
@@ -1559,15 +1548,11 @@ mod tests {
             "{lease_id} still in catalog.lease_status"
         );
         assert_eq!(
-            catalog.assertive_claims.activated.for_lease(lease_id),
+            catalog.claims.activated.for_lease(lease_id),
             vec![],
-            "assertive_claims.activated not empty"
+            "claims.activated not empty"
         );
-        assert_eq!(
-            catalog.assertive_claims.pending.for_lease(lease_id),
-            vec![],
-            "assertive_claims.pending not empty"
-        );
+        assert_eq!(catalog.claims.pending.for_lease(lease_id), vec![], "claims.pending not empty");
     }
 
     #[fuchsia::test]
@@ -1759,29 +1744,29 @@ mod tests {
         //  A     B
         //  1 ==> 1 (redundant with A@2=>B@2)
         //  2 ==> 2
-        let essential_assertive_claims = broker
+        let essential_claims = broker
             .catalog
             .filter_out_redundant_claims(vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()]);
-        assert_eq!(essential_assertive_claims, vec![claim_a_2_b_2.clone()]);
+        assert_eq!(essential_claims, vec![claim_a_2_b_2.clone()]);
 
         //  A     B     C
         //  1 ========> 1 (not redundant, not between same elements)
         //  2 ==> 2
-        let essential_assertive_claims = broker
+        let essential_claims = broker
             .catalog
             .filter_out_redundant_claims(vec![claim_a_1_c_1.clone(), claim_a_2_b_2.clone()]);
-        assert_eq!(essential_assertive_claims, vec![claim_a_2_b_2.clone(), claim_a_1_c_1.clone()]);
+        assert_eq!(essential_claims, vec![claim_a_2_b_2.clone(), claim_a_1_c_1.clone()]);
 
         //  A     B     C
         //  1 ==> 1 ==> 1 (not redundant, A@2=>C@2 cannot satisfy B@1=>C@1, not between same elements)
         //  2 ========> 2
-        let essential_assertive_claims = broker.catalog.filter_out_redundant_claims(vec![
+        let essential_claims = broker.catalog.filter_out_redundant_claims(vec![
             claim_a_1_b_1.clone(),
             claim_b_1_c_1.clone(),
             claim_a_2_c_2.clone(),
         ]);
         assert_eq!(
-            essential_assertive_claims,
+            essential_claims,
             vec![claim_a_1_b_1.clone(), claim_a_2_c_2.clone(), claim_b_1_c_1.clone()]
         );
     }
@@ -2335,7 +2320,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_broker_lease_direct() {
-        // Create a topology of a child element with two direct assertive dependencies.
+        // Create a topology of a child element with two direct dependencies.
         // P1 <= C => P2
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
@@ -3501,12 +3486,12 @@ mod tests {
     #[fuchsia::test]
     async fn test_lease_cumulative_implicit_dependency() {
         // Tests that cumulative implicit dependencies are properly resolved when a lease is
-        // acquired. Verifies a simple case of assertive dependencies only.
+        // acquired. Verifies a simple case of dependencies only.
         //
-        // A[1] has an assertive dependency on B[1].
-        // A[2] has an assertive dependency on C[1].
+        // A[1] has an dependency on B[1].
+        // A[2] has an dependency on C[1].
         //
-        // A[2] has an implicit, assertive dependency on B[1].
+        // A[2] has an implicit, dependency on B[1].
         //
         //  A     B     C
         //  1 ==> 1
@@ -3516,17 +3501,14 @@ mod tests {
 
         let v012_u8: Vec<u8> = vec![0, 1, 2];
 
-        let token_b_assertive = DependencyToken::create();
-        let token_c_assertive = DependencyToken::create();
+        let token_b = DependencyToken::create();
+        let token_c = DependencyToken::create();
         let element_b =
             broker.add_element("B", 0, v012_u8.clone(), vec![]).expect("add_element failed");
         broker
             .register_dependency_token(
                 &element_b,
-                token_b_assertive
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
+                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
         let element_c =
@@ -3534,10 +3516,7 @@ mod tests {
         broker
             .register_dependency_token(
                 &element_c,
-                token_c_assertive
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
+                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
         let element_a = broker
@@ -3548,7 +3527,7 @@ mod tests {
                 vec![
                     fpb::LevelDependency {
                         dependent_level: 1,
-                        requires_token: token_b_assertive
+                        requires_token: token_b
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .expect("dup failed")
                             .into(),
@@ -3556,7 +3535,7 @@ mod tests {
                     },
                     fpb::LevelDependency {
                         dependent_level: 2,
-                        requires_token: token_c_assertive
+                        requires_token: token_c
                             .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .expect("dup failed")
                             .into(),
@@ -3580,7 +3559,7 @@ mod tests {
 
         // Lease A[2].
         //
-        // A has two assertive dependencies, B[1] and C[1].
+        // A has two dependencies, B[1] and C[1].
         //
         // A's required level should not change.
         // B and C's required level should be 1.
