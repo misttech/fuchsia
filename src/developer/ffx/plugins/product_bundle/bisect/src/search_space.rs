@@ -133,16 +133,16 @@ impl SearchSpace {
                 if j < artifacts.versions.len() {
                     let is_culprit = culprit.map_or(false, |c| c == &artifacts.versions[j]);
                     if is_culprit {
-                        visual.push_str(" * ");
+                        visual.push_str("*");
                     } else if j == current && culprit.is_none() {
-                        visual.push_str("\x1b[32m O \x1b[0m"); // Green
+                        visual.push_str("\x1b[32mO\x1b[0m"); // Green
                     } else if range.contains(&j) {
-                        visual.push_str(" o ");
+                        visual.push_str("o");
                     } else {
-                        visual.push_str("\x1b[90m X \x1b[0m"); // Dim/Gray
+                        visual.push_str("x");
                     }
                 } else {
-                    visual.push_str(" - ");
+                    visual.push_str("-");
                 }
             }
             visual.push(']');

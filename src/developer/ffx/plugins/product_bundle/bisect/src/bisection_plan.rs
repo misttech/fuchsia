@@ -5,7 +5,7 @@
 use crate::search_space::{BisectionStatus, SearchSpace};
 use crate::strategies::{Strategy, get_strategy};
 use crate::versioned_artifact_set::VersionedArtifactSet;
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use assembly_artifact_cache::{MOSClient, MOSIdentifier, Slot};
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
@@ -138,7 +138,10 @@ impl BisectionPlan {
             name.clone(),
             version.clone()
         ))?;
-        let response = client.get_pb_release_info(name.clone(), version.clone()).await?;
+        let response = client.get_pb_release_info(name.clone(), version.clone()).await.context(format!("Unable to retrieve information about {}@{} from MOS. Perhaps this product bundle is not yet supported?\n\n -> For more info, see go/fuchsia-product-bisection-userguide\n",
+        name.clone(),
+        version.clone()
+        ))?;
         let pb = VersionedArtifactSet::new_from_mos_ids(response, slot)?;
         Ok(pb)
     }

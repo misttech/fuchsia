@@ -275,7 +275,7 @@ impl MOSClient {
 
         let identifiers = parse_identifiers_from_paths(artifact_paths)?;
         if identifiers.is_empty() {
-            bail!("MOS returned no artifact information for product bundle {}.{}", name, version);
+            bail!("MOS returned no artifact information for product bundle {}@{}", name, version);
         }
         Ok(identifiers)
     }

@@ -58,19 +58,19 @@ impl<'a> BisectionController<'a> {
                         .line(format!("Found previous bisection:\n -> [{}]\n", &plan.status()))?;
                     if confirm_action(writer).context("Failed to get user confirmation")? {
                         writer.line(format!(
-                            "\nContinuing existing plan: {}\n",
+                            "\nContinuing existing plan: {}",
                             shorten_path(&plan_file)
                         ))?;
                         return Ok(Self { plan, cache, writer, env_context });
                     } else {
                         writer.line(format!(
-                            "\nDeleting existing plan: {}...",
+                            "\nDeleting previous plan: {}",
                             shorten_path(&plan_file)
                         ))?;
                         fs::remove_file(&plan_file).with_context(|| {
                             format!("Failed to delete existing plan file at {}", plan_file)
                         })?;
-                        writer.line(format!("Plan {} deleted.\n", shorten_path(&plan_file)))?;
+                        writer.line("")?;
                     }
                 }
                 Err(e) => {
@@ -140,6 +140,7 @@ impl<'a> BisectionController<'a> {
     async fn step(&mut self) -> Result<BisectionStatus> {
         self.print("====================")?;
         self.print(&self.plan.status())?;
+        self.print("")?;
         self.print(&self.plan.search_space.to_string_representation(None))?;
 
         // Get current versioned artifact set from the plan.
@@ -168,11 +169,10 @@ impl<'a> BisectionController<'a> {
     fn prompt_for_manual_test(&mut self, product_bundle_path: &Utf8PathBuf) -> Result<bool> {
         self.print("")?;
         let shortened_pb_path = shorten_path(product_bundle_path);
-        self.print(&format!("The Fuchsia Image is located here: {}", shortened_pb_path))?;
-        self.print("Flash it to a local device by running:\n")?;
-
+        self.print("Flash this pb to a local device by running:\n")?;
         self.print(&format!("  ffx target flash {}\n", shortened_pb_path))?;
         self.print("Then run a test to determine whether or not the original issue remains.")?;
+        self.print("Press Ctrl+C to cancel, and resume by repeating the 'ffx product-bundle bisect ...' command.")?;
         self.print("-----")?;
 
         loop {
