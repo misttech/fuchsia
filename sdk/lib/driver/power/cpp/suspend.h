@@ -5,6 +5,7 @@
 #ifndef LIB_DRIVER_POWER_CPP_SUSPEND_H_
 #define LIB_DRIVER_POWER_CPP_SUSPEND_H_
 
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -99,10 +100,12 @@ class Suspendable {
     }
 
     void SetLevel(SetLevelRequest& request, SetLevelCompleter::Sync& completer) override {
-      if (request.level() > 0) {
+      if (request.level() !=
+          static_cast<uint8_t>(fuchsia_hardware_power::FrameworkElementLevels::kOff)) {
         // Log if we receive a level we don't expect. Accept this level though because it provides
         // a transition mechanism for adding new levels without needing to change existing drivers.
-        if (request.level() != 1) {
+        if (request.level() !=
+            static_cast<uint8_t>(fuchsia_hardware_power::FrameworkElementLevels::kOn)) {
           fdf::warn("Level {} mapped to 1 since that is the maximum level.", request.level());
         }
 

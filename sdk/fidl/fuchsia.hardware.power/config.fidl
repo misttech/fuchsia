@@ -32,6 +32,11 @@ type Transition = table {
     2: latency_us uint32;
 };
 
+type FrameworkElementLevels = strict enum {
+    OFF = 0;
+    ON = 1;
+};
+
 /// A zero-indexed set of levels that a device can assume.
 /// + `level` is the zero-indexed level of this `PowerLevel`.
 /// + `name` is a human-readable label for this `PowerLevel`, used only for
