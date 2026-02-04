@@ -5,22 +5,23 @@
 use async_trait::async_trait;
 use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsProperty, Severity};
 use error::LogError;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsProxy, StreamParameters};
+use fdomain_fuchsia_diagnostics_host::ArchiveAccessorMarker;
+use fdomain_fuchsia_sys2::RealmQueryProxy;
 use ffx_config::EnvironmentContext;
 use ffx_log_args::LogCommand;
 use ffx_log_command_output::CommandOutputMachineWriter;
 use ffx_writer::ToolIO;
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsProxy, StreamParameters};
-use fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker;
-use fidl_fuchsia_sys2::RealmQueryProxy;
 use futures::{FutureExt, select};
-use log_command::{
+use log_command_fdomain::{
     BootTimeAccessor, DefaultLogFormatter, LogData, LogEntry, LogProcessingResult, LogSubCommand,
     Symbolize, Timestamp, WatchCommand, WriterContainer, dump_logs_from_socket,
 };
 use std::io::Write;
 use target_connector::Connector;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use tokio::signal::ctrl_c;
 use transactional_symbolizer::{RealSymbolizerProcess, TransactionalSymbolizer};
 
@@ -114,7 +115,7 @@ where
 
 struct DeviceConnection {
     boot_timestamp: u64,
-    log_socket: fuchsia_async::Socket,
+    log_socket: fdomain_client::Socket,
     log_settings_client: LogSettingsProxy,
     boot_id: Option<u64>,
     realm_query: RealmQueryProxy,
@@ -130,7 +131,7 @@ async fn connect_to_rcs(
 // TODO(https://fxbug.dev/42080003): Remove this once Overnet
 // has support for reconnect handling.
 async fn connect_to_target(
-    stream_mode: &mut fidl_fuchsia_diagnostics::StreamMode,
+    stream_mode: &mut fdomain_fuchsia_diagnostics::StreamMode,
     prev_boot_id: Option<u64>,
     rcs_connector: &Connector<RemoteControlProxyHolder>,
 ) -> Result<DeviceConnection, LogError> {
@@ -140,47 +141,47 @@ async fn connect_to_target(
 
     let boot_timestamp = host_id.boot_timestamp_nanos.ok_or(LogError::NoBootTimestamp)?;
     let boot_id = host_id.boot_id;
-    let realm_query = rcs::root_realm_query(&rcs_client, TIMEOUT).await?;
+    let realm_query = rcs_fdomain::root_realm_query(&rcs_client, TIMEOUT).await?;
     // If we detect a reboot we want to SnapshotThenSubscribe so
     // we get all of the logs from the reboot. If not, we use Snapshot
     // to avoid getting duplicate logs.
     let was_reboot = match prev_boot_id {
         Some(id) if Some(id) == boot_id => {
             // Reconnect detected, subscribe.
-            *stream_mode = fidl_fuchsia_diagnostics::StreamMode::Subscribe;
+            *stream_mode = fdomain_fuchsia_diagnostics::StreamMode::Subscribe;
             false
         }
         Some(_) => {
             // Device rebooted
-            *stream_mode = fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe;
+            *stream_mode = fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe;
             true
         }
         _ => false,
     };
     // Connect to ArchiveAccessor
-    let diagnostics_client = rcs::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
+    let diagnostics_client = rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
         &rcs_client,
         Some(ARCHIVIST_MONIKER),
         TIMEOUT,
     )
     .await?;
     // Connect to LogSettings
-    let log_settings_client = rcs::toolbox::connect_with_timeout::<LogSettingsMarker>(
+    let log_settings_client = rcs_fdomain::toolbox::connect_with_timeout::<LogSettingsMarker>(
         &rcs_client,
         Some(ARCHIVIST_MONIKER),
         TIMEOUT,
     )
     .await?;
     // Setup stream
-    let (local, remote) = fuchsia_async::emulated_handle::Socket::create_stream();
+    let (local, remote) = rcs_client.domain().create_stream_socket();
     diagnostics_client
         .stream_diagnostics(
             &StreamParameters {
-                data_type: Some(fidl_fuchsia_diagnostics::DataType::Logs),
+                data_type: Some(fdomain_fuchsia_diagnostics::DataType::Logs),
                 stream_mode: Some(*stream_mode),
-                format: Some(fidl_fuchsia_diagnostics::Format::Json),
+                format: Some(fdomain_fuchsia_diagnostics::Format::Json),
                 client_selector_configuration: Some(
-                    fidl_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
+                    fdomain_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
                 ),
                 ..Default::default()
             },
@@ -189,7 +190,7 @@ async fn connect_to_target(
         .await?;
     Ok(DeviceConnection {
         boot_timestamp,
-        log_socket: fuchsia_async::Socket::from_socket(local),
+        log_socket: local,
         log_settings_client,
         boot_id,
         realm_query,
@@ -306,7 +307,7 @@ where
             include_timestamp,
         )
         .await;
-        if stream_mode == fidl_fuchsia_diagnostics::StreamMode::Snapshot {
+        if stream_mode == fdomain_fuchsia_diagnostics::StreamMode::Snapshot {
             break;
         }
         match result {
@@ -322,24 +323,24 @@ where
     Ok(())
 }
 
-fn get_stream_mode(cmd: LogCommand) -> Result<fidl_fuchsia_diagnostics::StreamMode, LogError> {
+fn get_stream_mode(cmd: LogCommand) -> Result<fdomain_fuchsia_diagnostics::StreamMode, LogError> {
     let sub_command = cmd.sub_command.unwrap_or(LogSubCommand::Watch(WatchCommand {}));
     let stream_mode = if matches!(sub_command, LogSubCommand::Dump(..)) {
         if cmd.since.map(|value| value.is_now).unwrap_or(false) {
             return Err(LogError::DumpWithSinceNow);
         }
-        fidl_fuchsia_diagnostics::StreamMode::Snapshot
+        fdomain_fuchsia_diagnostics::StreamMode::Snapshot
     } else {
         cmd.since
             .as_ref()
             .map(|value| {
                 if value.is_now {
-                    fidl_fuchsia_diagnostics::StreamMode::Subscribe
+                    fdomain_fuchsia_diagnostics::StreamMode::Subscribe
                 } else {
-                    fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe
+                    fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe
                 }
             })
-            .unwrap_or(fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
+            .unwrap_or(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
     };
     Ok(stream_mode)
 }
@@ -351,12 +352,12 @@ mod tests {
     use assert_matches::assert_matches;
     use chrono::{Local, TimeZone};
     use diagnostics_data::{BuilderArgs, LogsDataBuilder, Severity, Timestamp};
+    use fdomain_fuchsia_diagnostics::StreamMode;
     use ffx_log_command_output::CommandOutput;
     use ffx_writer::{Format, TestBuffers, VerifiedMachineWriter};
-    use fidl_fuchsia_diagnostics::StreamMode;
     use fuchsia_async as fasync;
     use futures::StreamExt;
-    use log_command::{
+    use log_command_fdomain::{
         DumpCommand, LogData, OneOrMany, SymbolizeMode, TIMESTAMP_FORMAT, TimeFormat,
         parse_seconds_string_as_duration, parse_time, parse_utc_time,
     };
@@ -369,8 +370,9 @@ mod tests {
     const BOOT_TIMESTAMP: u64 = 57575757;
 
     async fn check_for_message(buffers: &TestBuffers, msg: &str) {
+        let mut actual = String::new();
         loop {
-            let actual = buffers.stdout.clone().into_string();
+            actual.push_str(&buffers.stdout.clone().into_string());
             let expected = msg;
             if actual != expected {
                 buffers.stdout.wait_ready().await;
@@ -720,7 +722,7 @@ ffx log --force-set-severity.
             sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
             symbolize: SymbolizeMode::Off,
             clock: TimeFormat::Utc,
-            since: Some(log_command::DetailedDateTime {
+            since: Some(log_command_fdomain::DetailedDateTime {
                 is_now: true,
                 ..parse_utc_time("1980-01-01T00:00:01").unwrap()
             }),
@@ -796,7 +798,7 @@ ffx log --force-set-severity.
             sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
             symbolize: SymbolizeMode::Off,
             clock: TimeFormat::Utc,
-            since: Some(log_command::DetailedDateTime {
+            since: Some(log_command_fdomain::DetailedDateTime {
                 is_now: true,
                 ..parse_utc_time("1980-01-01T00:00:01").unwrap()
             }),
@@ -837,7 +839,7 @@ ffx log --force-set-severity.
             sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
             symbolize: SymbolizeMode::Off,
             clock: TimeFormat::Utc,
-            since: Some(log_command::DetailedDateTime {
+            since: Some(log_command_fdomain::DetailedDateTime {
                 is_now: true,
                 ..parse_utc_time("1980-01-01T00:00:01").unwrap()
             }),
@@ -1065,21 +1067,21 @@ ffx log --force-set-severity.
     async fn get_stream_mode_tests() {
         assert_matches!(
             get_stream_mode(LogCommand { ..LogCommand::default() }),
-            Ok(fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
         );
         assert_matches!(
             get_stream_mode(LogCommand {
                 since: Some(parse_time("now").unwrap()),
                 ..LogCommand::default()
             }),
-            Ok(fidl_fuchsia_diagnostics::StreamMode::Subscribe)
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::Subscribe)
         );
         assert_matches!(
             get_stream_mode(LogCommand {
                 since: Some(parse_time("09/04/1998").unwrap()),
                 ..LogCommand::default()
             }),
-            Ok(fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
         );
     }
 }

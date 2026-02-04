@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::transactional_symbolizer::ReadError;
+use fdomain_fuchsia_developer_remotecontrol::{ConnectCapabilityError, IdentifyHostError};
 use ffx_config::api::ConfigError;
-use fidl_fuchsia_developer_remotecontrol::{ConnectCapabilityError, IdentifyHostError};
-use log_command::FormatterError;
+use log_command_fdomain::FormatterError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -44,9 +44,9 @@ pub enum LogError {
     Internal(#[from] fho::Error),
 }
 
-impl From<log_command::LogError> for LogError {
-    fn from(value: log_command::LogError) -> Self {
-        use log_command::LogError::*;
+impl From<log_command_fdomain::LogError> for LogError {
+    fn from(value: log_command_fdomain::LogError) -> Self {
+        use log_command_fdomain::LogError::*;
         let err: fho::Error = match value {
             UnknownError(err) => err.into(),
             FuzzyMatchTooManyMatches(_)

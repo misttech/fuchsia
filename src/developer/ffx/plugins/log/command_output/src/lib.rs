@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use diagnostics_data::{DataSource, LogsHierarchy, LogsMetadata};
 use ffx_writer::{Format, TestBuffers, ToolIO, VerifiedMachineWriter};
 use fho::{FhoEnvironment, TryFromEnv};
-use log_command::LogEntry;
+use log_command_fdomain::LogEntry;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -76,7 +76,7 @@ impl From<&LogEntry> for CommandOutput {
         // LogData::TargetLog, so this should never fail.
         //
         // If new enum values are added this will fail to compile, which will force changes.
-        let log_command::LogData::TargetLog(ref other) = other.data;
+        let log_command_fdomain::LogData::TargetLog(ref other) = other.data;
         let diagnostics_data::LogsData { data_source, metadata, moniker, payload, version } =
             other.clone();
         let data = LogData::TargetLog(LogsData {

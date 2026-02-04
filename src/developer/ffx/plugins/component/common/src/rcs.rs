@@ -70,3 +70,14 @@ pub async fn connect_to_route_validator(
         .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
     Ok(route_validator)
 }
+
+/// Obtain the root RouteValidator protocol using the RemoteControl protocol.
+pub async fn connect_to_route_validator_f(
+    rcs_proxy: &rc_f::RemoteControlProxy,
+) -> Result<fsys_f::RouteValidatorProxy> {
+    let route_validator =
+        rcs_fdomain::root_route_validator(&rcs_proxy, std::time::Duration::from_secs(15))
+            .await
+            .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
+    Ok(route_validator)
+}

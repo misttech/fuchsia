@@ -20,9 +20,9 @@ if (is_host) {
       "//src/developer/ffx/plugins/component/common:ffx_component",
       "//src/developer/ffx/plugins/log:ffx_log",
       "//src/developer/ffx/plugins/log:ffx_log_args",
-      "//src/diagnostics/lib/log-command",
+      "//src/diagnostics/lib/log-command:log-command_fdomain",
       "//src/sys/lib/cm_rust",
-      "//src/sys/lib/component_debug",
+      "//src/sys/lib/component_debug:component_debug_fdomain",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:futures",
@@ -32,7 +32,7 @@ if (is_host) {
     args_deps = [
       "//src/developer/ffx/core:lib",
       "//src/lib/fuchsia-url",
-      "//src/sys/lib/component_debug",
+      "//src/sys/lib/component_debug:component_debug_fdomain",
       "//src/sys/lib/moniker",
       "//third_party/rust_crates:argh",
     ]

@@ -3,22 +3,23 @@
 // found in the LICENSE file.
 
 use diagnostics_data::{BuilderArgs, LogsData, LogsDataBuilder, Severity, Timestamp};
-use ffx_config::EnvironmentContext;
-use fho::{FhoEnvironment, TryFromEnv};
-use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_fuchsia_developer_remotecontrol::{
+use fdomain_client::AsHandleRef as _;
+use fdomain_client::fidl::DiscoverableProtocolMarker as _;
+use fdomain_fuchsia_developer_remotecontrol::{
     IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
 };
-use fidl_fuchsia_diagnostics::{
+use fdomain_fuchsia_diagnostics::{
     LogInterestSelector, LogSettingsMarker, LogSettingsRequest, LogSettingsRequestStream,
     StreamMode,
 };
-use fidl_fuchsia_diagnostics_host::{
+use fdomain_fuchsia_diagnostics_host::{
     ArchiveAccessorMarker, ArchiveAccessorRequest, ArchiveAccessorRequestStream,
 };
+use ffx_config::EnvironmentContext;
+use fho::{FhoEnvironment, TryFromEnv};
 use futures::channel::{mpsc, oneshot};
 use futures::{Stream, StreamExt, TryStreamExt};
-use log_command::parse_utc_time;
+use log_command_fdomain::parse_utc_time;
 use moniker::Moniker;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,8 +27,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use target_behavior::ConnectionBehavior;
 use target_connector::Connector;
-use target_holders::{FakeInjector, RemoteControlProxyHolder};
-use {fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
+use target_holders::FakeInjector;
+use target_holders::fdomain::RemoteControlProxyHolder;
+use {fdomain_fuchsia_sys2 as fsys, fuchsia_async as fasync};
 
 const NODENAME: &str = "Rust";
 
@@ -130,14 +132,16 @@ pub struct TestEnvironment {
 
 impl TestEnvironment {
     pub async fn new(config: TestEnvironmentConfig) -> Self {
+        let client = fdomain_local::local_client(|| Err(fidl::Status::NOT_SUPPORTED));
         let (event_snd, event_rcv) = mpsc::unbounded();
         let (disconnect_snd, disconnect_rcv) = oneshot::channel();
         let state = Rc::new(State::new(config, event_snd, disconnect_rcv));
         let state_clone = state.clone();
         let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
+            remote_factory_closure_f: Box::new(move || {
                 let state = state_clone.clone();
-                Box::pin(async { Ok(setup_fake_rcs(state)) })
+                let client = Arc::clone(&client);
+                Box::pin(async move { Ok(setup_fake_rcs(&client, state)) })
             }),
             ..Default::default()
         };
@@ -225,8 +229,9 @@ struct MutableState {
 
 async fn handle_realm_query(
     instances: Vec<fsys::Instance>,
-    server_end: fidl::endpoints::ServerEnd<fsys::RealmQueryMarker>,
+    server_end: fdomain_client::fidl::ServerEnd<fsys::RealmQueryMarker>,
 ) {
+    let client = server_end.domain();
     let mut stream = server_end.into_stream();
     let mut instance_map = HashMap::new();
     for instance in instances {
@@ -247,7 +252,7 @@ async fn handle_realm_query(
             }
             fsys::RealmQueryRequest::GetAllInstances { responder } => {
                 let instances = instance_map.values().cloned().collect();
-                let iterator = serve_instance_iterator(instances);
+                let iterator = serve_instance_iterator(&client, instances);
                 responder.send(Ok(iterator)).unwrap();
             }
             _ => panic!("Unexpected RealmQuery request"),
@@ -256,10 +261,10 @@ async fn handle_realm_query(
 }
 
 fn serve_instance_iterator(
+    client: &Arc<fdomain_client::Client>,
     instances: Vec<fsys::Instance>,
-) -> fidl::endpoints::ClientEnd<fsys::InstanceIteratorMarker> {
-    let (client, mut stream) =
-        fidl::endpoints::create_request_stream::<fsys::InstanceIteratorMarker>();
+) -> fdomain_client::fidl::ClientEnd<fsys::InstanceIteratorMarker> {
+    let (client, mut stream) = client.create_request_stream::<fsys::InstanceIteratorMarker>();
     fasync::Task::local(async move {
         let fsys::InstanceIteratorRequest::Next { responder } =
             stream.next().await.unwrap().unwrap();
@@ -274,8 +279,8 @@ fn serve_instance_iterator(
     client
 }
 
-fn setup_fake_rcs(state: Rc<State>) -> RemoteControlProxy {
-    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<RemoteControlMarker>();
+fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> RemoteControlProxy {
+    let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
     fasync::Task::local(async move {
         let mut task_group = fasync::TaskGroup::new();
         while let Ok(Some(req)) = stream.try_next().await {
@@ -290,7 +295,7 @@ fn setup_fake_rcs(state: Rc<State>) -> RemoteControlProxy {
                     server_channel,
                     responder,
                 } => {
-                    assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
+                    assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
                     let state_clone = state.clone();
                     task_group.local(async move {
                         handle_open_capability(
@@ -325,7 +330,7 @@ fn setup_fake_rcs(state: Rc<State>) -> RemoteControlProxy {
 async fn handle_open_capability(
     moniker: &str,
     capability_name: &str,
-    channel: fidl::Channel,
+    channel: fdomain_client::Channel,
     state: Rc<State>,
 ) {
     let Some(capability_name) = capability_name.strip_prefix("svc/") else {
@@ -333,24 +338,25 @@ async fn handle_open_capability(
     };
     match capability_name {
         ArchiveAccessorMarker::PROTOCOL_NAME => {
-            assert_eq!(moniker, rcs::toolbox::MONIKER);
+            assert_eq!(moniker, rcs_fdomain::toolbox::MONIKER);
             handle_archive_accessor(
-                fidl::endpoints::ServerEnd::<ArchiveAccessorMarker>::from(channel).into_stream(),
+                fdomain_client::fidl::ServerEnd::<ArchiveAccessorMarker>::from(channel)
+                    .into_stream(),
                 state,
             )
             .await;
         }
         LogSettingsMarker::PROTOCOL_NAME => {
-            assert_eq!(moniker, rcs::toolbox::MONIKER);
+            assert_eq!(moniker, rcs_fdomain::toolbox::MONIKER);
             handle_log_settings(
-                fidl::endpoints::ServerEnd::<LogSettingsMarker>::from(channel).into_stream(),
+                fdomain_client::fidl::ServerEnd::<LogSettingsMarker>::from(channel).into_stream(),
                 state,
             )
             .await;
         }
         "fuchsia.sys2.RealmQuery.root" | fsys::RealmQueryMarker::PROTOCOL_NAME => {
             assert_eq!(moniker, "toolbox");
-            let server_end = fidl::endpoints::ServerEnd::from(channel);
+            let server_end = fdomain_client::fidl::ServerEnd::from(channel);
             handle_realm_query(
                 state
                     .instances
@@ -385,7 +391,7 @@ async fn handle_archive_accessor(mut stream: ArchiveAccessorRequestStream, state
         }
         // Ignore the result, because the client may choose to close the channel.
         let _ = responder.send();
-        stream.write(serde_json::to_string(&state.messages).unwrap().as_bytes()).unwrap();
+        stream.write_all(serde_json::to_string(&state.messages).unwrap().as_bytes()).await.unwrap();
 
         match parameters.stream_mode.unwrap() {
             StreamMode::Snapshot => {}

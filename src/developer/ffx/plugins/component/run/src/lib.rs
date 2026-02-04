@@ -4,12 +4,12 @@
 
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
-use component_debug::cli::doctor::write_result_table;
-use component_debug::cli::run_cmd;
-use component_debug::config::resolve_raw_config_overrides;
-use component_debug::doctor::validate_routes;
+use component_debug_fdomain::cli::doctor::write_result_table;
+use component_debug_fdomain::cli::run_cmd;
+use component_debug_fdomain::config::resolve_raw_config_overrides;
+use component_debug_fdomain::doctor::validate_routes;
 use ffx_component::rcs::{
-    connect_to_lifecycle_controller, connect_to_realm_query, connect_to_route_validator,
+    connect_to_lifecycle_controller_f, connect_to_realm_query_f, connect_to_route_validator_f,
 };
 use ffx_component_run_args::RunComponentCommand;
 use ffx_config::EnvironmentContext;
@@ -19,9 +19,9 @@ use ffx_log_args::LogCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
 use futures::FutureExt;
-use log_command::LogEntry;
+use log_command_fdomain::LogEntry;
 use std::io::Write;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 async fn cmd_impl(
     ctx: &EnvironmentContext,
@@ -33,9 +33,9 @@ async fn cmd_impl(
     let rcs_proxy_clone = rcs_proxy.clone();
     let lifecycle_controller_factory = move || {
         let rcs_proxy_clone = rcs_proxy_clone.clone();
-        async move { connect_to_lifecycle_controller(&rcs_proxy_clone).await }.boxed()
+        async move { connect_to_lifecycle_controller_f(&rcs_proxy_clone).await }.boxed()
     };
-    let realm_query = connect_to_realm_query(&rcs_proxy).await?;
+    let realm_query = connect_to_realm_query_f(&rcs_proxy).await?;
 
     let config_overrides = resolve_raw_config_overrides(
         &realm_query,
@@ -60,7 +60,7 @@ async fn cmd_impl(
     .map_err(|e| ffx_error!(e))?;
 
     // Run `doctor` on the new component to expose any routing problems.
-    let route_validator = connect_to_route_validator(&rcs_proxy).await?;
+    let route_validator = connect_to_route_validator_f(&rcs_proxy).await?;
     let mut route_report = validate_routes(&route_validator, &args.moniker.clone()).await?;
     // Broken routes are expected in case of transitional routes. Do not report those.
     route_report.retain(|r| match r.availability {

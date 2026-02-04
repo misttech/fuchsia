@@ -5,7 +5,7 @@
 use anyhow::{Context, Error};
 use ffx_config::EnvironmentContext;
 use futures::{Future, FutureExt, Stream, StreamExt, ready, select};
-use log_command::{LogEntry, Symbolize};
+use log_command_fdomain::{LogEntry, Symbolize};
 use pin_project::pin_project;
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
@@ -605,7 +605,7 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_data::{BuilderArgs, Data, Logs, LogsDataBuilder, Severity, Timestamp};
     use fuchsia_sync::Mutex;
-    use log_command::LogData;
+    use log_command_fdomain::LogData;
     use std::fmt::Write;
     use std::sync::Arc;
     use std::task::{Context, Wake};
