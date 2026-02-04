@@ -179,8 +179,7 @@ type UnregisterDependencyTokenError = flexible enum {
 
 /// Element Permissions
 type Permissions = strict bits : uint32 {
-    MODIFY_ASSERTIVE_DEPENDENT = 0b00000001;
-    MODIFY_OPPORTUNISTIC_DEPENDENT = 0b0000010;
+    MODIFY_DEPENDENT = 0b00000001;
     MODIFY_DEPENDENCY = 0b00000100;
 };
 

@@ -149,7 +149,7 @@ impl Broker {
         element_id: &ElementID,
         token: Token,
     ) -> Result<(), RegisterDependencyTokenError> {
-        let permissions = Permissions::MODIFY_ASSERTIVE_DEPENDENT;
+        let permissions = Permissions::MODIFY_DEPENDENT;
         match self
             .credentials
             .register(element_id, CredentialToRegister { broker_token: token, permissions })
@@ -536,7 +536,7 @@ impl Broker {
 
         // Find the set of claims that can be dropped immediately.
         let assertive_claims_dropped = self.find_claims_to_drop_or_deactivate(&assertive_claims);
-        // Drop the discovered set of claims and forcefully update opportunistic leases,
+        // Drop the discovered set of claims and forcefully update leases,
         // which don't have direct dependencies on this lease and thus won't be found via
         // the claim search through this lease.
         self.drop_or_deactivate_assertive_claims(&assertive_claims_dropped);
@@ -902,7 +902,7 @@ impl Broker {
                 level: *requires_level,
             },
         };
-        if !requires_cred.contains(Permissions::MODIFY_ASSERTIVE_DEPENDENT) {
+        if !requires_cred.contains(Permissions::MODIFY_DEPENDENT) {
             return Err(ModifyDependencyError::NotAuthorized);
         }
         self.catalog.topology.add_assertive_dependency(&dependency, inspect_writer)
@@ -1179,7 +1179,7 @@ impl Catalog {
             element_id: lease_element_id,
             level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
         };
-        // Create all possible claims from the assertive and opportunistic dependencies.
+        // Create all possible claims from the assertive dependencies.
         let assertive_claims = self
             .topology
             .all_direct_and_indirect_dependencies(&lease_element_level)
