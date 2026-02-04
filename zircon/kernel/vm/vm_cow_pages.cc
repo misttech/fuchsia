@@ -3328,9 +3328,10 @@ VmCowPages::LookupCursor::TargetAllocateCopyPageAsResult(vm_page_t* source, Dirt
   // process of inserting the page.
   if (TargetIsOwner()) {
     // In the case of TargetIsOwner() we may have to create a node and need to establish a cursor.
-    // However, if we already had a node, i.e. the cursor was valid, then it would have had the page
-    // inserted into it.
-    if (!owner_info_.cursor.current()) {
+    // However, if we were able to reuse the slot and insert directly into the cursor, then we know
+    // that we already had a node and that the cursor remains valid as the page list was not
+    // otherwise modified.
+    if (!can_reuse_slot) {
       IncrementOffsetAndInvalidateCursor(kPageSize);
     } else {
       // Cursor should have been updated to the new page
