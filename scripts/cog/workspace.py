@@ -4,6 +4,7 @@
 
 import base64
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -792,6 +793,10 @@ class Workspace:
             "tools/build/scripts/generate_prebuilt_versions.sh",
             "tools/build/scripts/extract_protobuf_py3_wheel.sh",
         ]
+        # Set FUCHSIA_DIR environment variable to the cartfs fuchsia directory.
+        # This is needed for the hooks to work correctly.
+        my_env = os.environ.copy()
+        my_env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
         for hook in hooks:
             logger.log_info(f"Running hook: {hook}")
             subprocess.run(
@@ -801,6 +806,7 @@ class Workspace:
                 cwd=self.cartfs_fuchsia_dir,
                 check=True,
                 stdout=subprocess.DEVNULL,
+                env=my_env,
             )
 
         # Invoke git status in the fuchsia directory in the background. This
