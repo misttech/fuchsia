@@ -10014,7 +10014,7 @@ rustc_library("matchers-v0_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":regex-automata-v0_1_9" ]
+  deps += [ ":regex-automata-v0_1_10" ]
 
   rustenv = []
 
@@ -14830,7 +14830,7 @@ rustc_library("regex-v1_7_3") {
   applicable_licenses = [ ":regex-v1_7_3.license" ]
 }
 
-license("regex-automata-v0_1_9.license") {
+license("regex-automata-v0_1_10.license") {
   public_package_name = "regex_automata"
   license_files = [
     "//third_party/rust_crates/ask2patch/regex-automata/LICENSE-MIT",
@@ -14839,25 +14839,24 @@ license("regex-automata-v0_1_9.license") {
   ]
 }
 
-rustc_library("regex-automata-v0_1_9") {
+rustc_library("regex-automata-v0_1_10") {
   crate_name = "regex_automata"
   source_root = "//third_party/rust_crates/ask2patch/regex-automata/src/lib.rs"
-  output_name = "regex_automata-cdaa0041c57f3413"
+  output_name = "regex_automata-9a13f2d2e3083385"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":regex-syntax-v0_6_29" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=cdaa0041c57f3413",
-    "-Cextra-filename=-cdaa0041c57f3413",
+    "-Cmetadata=9a13f2d2e3083385",
+    "-Cextra-filename=-9a13f2d2e3083385",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"regex-syntax\"",
     "--cfg=feature=\"std\"",
@@ -14865,7 +14864,7 @@ rustc_library("regex-automata-v0_1_9") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":regex-automata-v0_1_9.license" ]
+  applicable_licenses = [ ":regex-automata-v0_1_10.license" ]
 }
 
 license("regex-syntax-v0_6_29.license") {

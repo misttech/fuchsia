@@ -3957,9 +3957,8 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
- "byteorder",
  "regex-syntax 0.6.29",
 ]
 
