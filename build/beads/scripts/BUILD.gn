@@ -23,6 +23,7 @@ if (is_host) {
     tests = [ "compare_rustc_commands_test.py" ]
     inputs = [
       "compare_rustc_commands.py",
+      "gn_runner.py",
       "shell_utils.py",
       "//build/api/ninja_artifacts.py",
       "//build/bazel/scripts/build_utils.py",

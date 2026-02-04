@@ -9,11 +9,11 @@ import json
 import os
 import pathlib
 import shlex
-import subprocess
 import sys
 import tempfile
 import typing as T
 
+import gn_runner
 import shell_utils
 
 # Enable debug logging.
@@ -26,9 +26,6 @@ _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 _DEFAULT_NINJA_PATH = (
     _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
 )
-
-# Path to the default GN binary.
-_DEFAULT_GN_PATH = _FUCHSIA_DIR / "prebuilt/third_party/gn/linux-x64/gn"
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
 import ninja_artifacts
@@ -120,23 +117,14 @@ def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
     """
     debug(f"Fetching Ninja command for GN label {gn_label}...")
 
-    try:
-        # TODO(https://fxbug.dev/478707341): Use a GN runner when it's available in Python.
-        cmd_outputs = [
-            _DEFAULT_GN_PATH,
-            "desc",
-            build_dir,
-            gn_label,
-            "outputs",
-        ]
-        debug(f"Running: {cmd_outputs}")
-        desc_outputs = subprocess.check_output(cmd_outputs, text=True)
-        outputs = desc_outputs.strip().splitlines()
-        if not outputs:
-            debug(f"No outputs found for GN label {gn_label}.")
-            return []
-    except Exception as e:
-        debug(f"Error running GN desc: {e}")
+    debug(
+        f"Running gn desc for target {gn_label} in build directory {build_dir}"
+    )
+    gn = gn_runner.GnRunner(build_dir)
+    desc_output = gn.run_and_extract_output(["desc", gn_label, "outputs"])
+    outputs = desc_output.strip().splitlines()
+    if not outputs:
+        debug(f"No outputs found for GN label {gn_label}.")
         return []
 
     cmd_raw = ""
