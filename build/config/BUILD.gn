@@ -698,6 +698,7 @@ config("suppress_iterator_warnings") {
 }
 
 config("default_warnings") {
+  # LINT.IfChange(default_warnings)
   cflags = [
     "-Wall",
     "-Wextra",
@@ -790,6 +791,8 @@ config("default_warnings") {
       # TODO(https://fxbug.dev/362618077): Spuriously fires.
       "-Wno-alloc-size-larger-than",
     ]
+
+    # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:default_warnings)
   }
 
   configs = [

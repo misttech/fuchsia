@@ -201,28 +201,52 @@ _flag_configs = struct(
         combine_cflags_with_ldflags = False,
     ),
     # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
+
+    # LINT.IfChange(default_warnings)
     default_warnings = _make_flag_config(
         cflags = [
             "-Wall",
-            "-Wextra-semi",
             "-Wextra",
+            "-Wextra-semi",
             "-Wnewline-eof",
-            "-Wno-missing-field-initializers",
-            "-Wno-sign-conversion",
-            "-Wno-unused-parameter",
-            "-Wnonportable-system-include-path",
             # TODO(b/315062126) Some in-tree builds are failing because we
             # are shadowing variables.
             #"-Wshadow",
             "-Wstrict-prototypes",
             "-Wwrite-strings",
-            "-Wthread-safety",
+            "-Wno-sign-conversion",
+            "-Wno-unused-parameter",
+            "-Wnonportable-system-include-path",
+
+            # TODO(https://fxbug.dev/324268041): Disable "-Wextra-qualification"
+            # which warns when an extra qualifier appears on a member.
+            "-Wno-extra-qualification",
+
+            # TODO(https://fxbug.dev/330769701): Disable
+            # "-Wcast-function-type-mismatch"  which enforces an exact type match
+            # between a function pointer and the target function.
+            "-Wno-cast-function-type-mismatch",
+            "-Wno-unknown-warning-option",
+
             # TODO(https://fxbug.dev/344080745): After the issue is fixed,
             # remove "-Wno-missing-template-arg-list-after-template-kw".
-            "-Wno-unknown-warning-option",
             "-Wno-missing-template-arg-list-after-template-kw",
+            "-Wno-missing-field-initializers",
+
+            # TODO(https://fxbug.dev/331282813): Disable "-Wdeprecated-pragma" which
+            # warns for deprecated std::errc constants.
+            "-Wno-deprecated-pragma",
+
+            # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
+            # all instances are fixed.
+            "-Wno-nontrivial-memaccess",
+
+            # TODO(https://fxbug.dev/477786942): Fix violations and enable the following checks.
+            # "-Wconversion",
+            # "-Wimplicit-fallthrough",
         ],
     ),
+    # LINT.ThenChange(//build/config/BUILD.gn:default_warnings)
     werror = _make_flag_config(
         cflags = [
             "-Werror",
@@ -384,7 +408,7 @@ def get_default_compile_flags_feature(
                     ] + (
                         [
                             # TODO(b/430020292): Re-enable werror for
-                            # strict-prototypes # on host when we have a better
+                            # strict-prototypes on host when we have a better
                             # way to address Go SDK compilation failure.
                             _make_flag_config(
                                 cflags = ["-Wno-strict-prototypes"],
