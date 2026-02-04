@@ -12,4 +12,10 @@
         vmo: "",
         event_code: 78,
     },
+    {
+        name: "StarnixRunner",
+        process: "starnix_runner.cm",
+        vmo: "",
+        event_code: 79,
+    },
 ]
