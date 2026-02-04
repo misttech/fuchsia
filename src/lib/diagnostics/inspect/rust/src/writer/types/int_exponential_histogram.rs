@@ -43,17 +43,33 @@ impl IntExponentialHistogramProperty {
     }
 
     fn get_index(&self, value: i64) -> usize {
-        let mut current_floor = self.floor;
-        let mut offset = self.initial_step;
+        // Use a larger data type to support histograms of total width larger
+        // than i64::MAX (e.g. histogram range spanning from i64::MIN to
+        // i64::MAX, a width of u64::MAX).
+        let value = value as i128;
+        let floor = self.floor as i128;
+        let mut bucket_end = floor; // Exclusive end of the current bucket.
+        let mut step = self.initial_step as i128;
+
         let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
         let overflow_index = ArrayFormat::ExponentialHistogram.overflow_bucket_index(self.buckets);
-        while value >= current_floor && index < overflow_index {
-            current_floor = self.floor + offset;
-            if let Some(o) = self.step_multiplier.checked_mul(offset) {
-                offset = o;
+
+        while value >= bucket_end && index < overflow_index {
+            if let Some(c) = floor.checked_add(step) {
+                bucket_end = c;
             } else {
-                return overflow_index;
-            };
+                // Overflow. The next bucket contains all possible remaining
+                // values for an i128; it is guaranteed to be choosen.
+                return index + 1;
+            }
+
+            if bucket_end > i64::MAX as i128 {
+                // The next bucket extends beyond representable i64; it is
+                // guaranteed to be choosen.
+                return index + 1;
+            }
+
+            step = step.saturating_mul(self.step_multiplier as i128);
             index += 1;
         }
         index
@@ -190,10 +206,10 @@ mod tests {
 
             assert_eq!(block.get(3).unwrap(), 1);
             assert_eq!(block.get(4).unwrap(), 0);
-            assert_eq!(block.get(5).unwrap(), 0);
+            assert_eq!(block.get(5).unwrap(), 1);
             assert_eq!(block.get(6).unwrap(), 0);
             assert_eq!(block.get(7).unwrap(), 0);
-            assert_eq!(block.get(8).unwrap(), 1);
+            assert_eq!(block.get(8).unwrap(), 0);
         });
     }
 }

@@ -35,11 +35,11 @@ impl DoubleLinearHistogramProperty {
     }
 
     fn get_index(&self, value: f64) -> usize {
-        let mut current_floor = self.floor;
+        let mut bucket_end = self.floor; // The exclusive end of a bucket's range.
         let mut index = ArrayFormat::LinearHistogram.underflow_bucket_index();
         let overflow_index = ArrayFormat::LinearHistogram.overflow_bucket_index(self.buckets);
-        while value >= current_floor && index < overflow_index {
-            current_floor += self.step_size;
+        while value >= bucket_end && index < overflow_index {
+            bucket_end += self.step_size;
             index += 1;
         }
         index

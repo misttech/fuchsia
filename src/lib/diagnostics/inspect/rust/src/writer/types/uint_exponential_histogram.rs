@@ -43,17 +43,22 @@ impl UintExponentialHistogramProperty {
     }
 
     fn get_index(&self, value: u64) -> usize {
-        let mut current_floor = self.floor;
-        let mut offset = self.initial_step;
+        let floor = self.floor;
+        let mut bucket_end = floor; // The exclusive end of a bucket's range.
+        let mut step = self.initial_step;
+
         let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
         let overflow_index = ArrayFormat::ExponentialHistogram.overflow_bucket_index(self.buckets);
-        while value >= current_floor && index < overflow_index {
-            current_floor = self.floor + offset;
-            if let Some(o) = self.step_multiplier.checked_mul(offset) {
-                offset = o;
+        while value >= bucket_end && index < overflow_index {
+            if let Some(c) = floor.checked_add(step) {
+                bucket_end = c;
             } else {
-                return overflow_index;
-            };
+                // Overflow. The next bucket is guaranteed to be choosen, as it
+                // contains all possible remaining values for a u64.
+                return index + 1;
+            }
+
+            step = step.saturating_mul(self.step_multiplier);
             index += 1;
         }
         index
@@ -153,9 +158,15 @@ mod tests {
             },
         );
 
-        // this will get multiplied by initial step and overflow
-        hist.insert((u64::MAX / 2) + 1);
+        // | Bucket    | Range                      |
+        // |-----------|----------------------------|
+        // | Underflow | [0, 1)                     |
+        // | 0         | [1, u64::MAX/2 + 1)        |
+        // | 1         | [u64::MAX/2 + 1, u64::MAX] |
+        // | 2..3      | Empty                      |
+        // | Overflow  | Empty                      |
 
+        hist.insert((u64::MAX / 2) + 1);
         hist.insert(0);
 
         hist.array.get_block::<_, Array<Uint>>(|block| {
@@ -163,12 +174,12 @@ mod tests {
             assert_eq!(block.get(1).unwrap(), u64::MAX / 2);
             assert_eq!(block.get(2).unwrap(), 2);
 
-            assert_eq!(block.get(3).unwrap(), 1);
-            assert_eq!(block.get(4).unwrap(), 0);
-            assert_eq!(block.get(5).unwrap(), 0);
-            assert_eq!(block.get(6).unwrap(), 0);
-            assert_eq!(block.get(7).unwrap(), 0);
-            assert_eq!(block.get(8).unwrap(), 1);
+            assert_eq!(block.get(3).unwrap(), 1); // underflow
+            assert_eq!(block.get(4).unwrap(), 0); // bucket 0
+            assert_eq!(block.get(5).unwrap(), 1); // bucket 1
+            assert_eq!(block.get(6).unwrap(), 0); // bucket 2
+            assert_eq!(block.get(7).unwrap(), 0); // bucket 3
+            assert_eq!(block.get(8).unwrap(), 0); // overflow
         });
     }
 }

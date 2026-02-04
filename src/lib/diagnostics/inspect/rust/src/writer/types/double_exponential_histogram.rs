@@ -44,16 +44,15 @@ impl DoubleExponentialHistogramProperty {
     }
 
     fn get_index(&self, value: f64) -> usize {
-        let mut current_floor = self.floor;
-        let mut offset = self.initial_step;
+        let mut bucket_end = self.floor; // The exclusive end of a bucket's range.
         let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
         let overflow_index = ArrayFormat::ExponentialHistogram.overflow_bucket_index(self.buckets);
-        while value >= current_floor && index < overflow_index {
-            current_floor = self.floor + offset;
-            offset *= self.step_multiplier;
-            if offset.is_nan() || offset.is_infinite() {
-                return overflow_index;
-            }
+        while value >= bucket_end && index < overflow_index {
+            let multiplier = self
+                .step_multiplier
+                .powi((index - ArrayFormat::ExponentialHistogram.underflow_bucket_index()) as i32);
+            // mul_add is necessary when a bucket's exclusive end is f64::MAX.
+            bucket_end = self.initial_step.mul_add(multiplier, self.floor);
             index += 1;
         }
         index
@@ -139,29 +138,39 @@ mod tests {
         let hist = root.create_double_exponential_histogram(
             "test",
             ExponentialHistogramParams {
-                floor: 1.0,
-                initial_step: f64::MAX / 2.0,
+                floor: f64::MIN,
+                initial_step: f64::MAX,
                 step_multiplier: 2.0,
                 buckets: 4,
             },
         );
 
-        // this will get multiplied by initial step and overflow
-        hist.insert((f64::MAX / 2.0) + 1.0);
+        // | Bucket    | Range         |
+        // | --------- | ------------- |
+        // | Underflow | (-inf, MIN)   |
+        // |         0 | [MIN, 0)      |
+        // |         1 | [0, MAX)      |
+        // |         2 | MAX           |
+        // |         3 | Empty         |
+        // |  Overflow | +inf          |
 
-        hist.insert(0.0);
+        hist.insert_multiple(f64::NEG_INFINITY, 1);
+        hist.insert_multiple(f64::MIN, 2);
+        hist.insert_multiple(0.0, 3);
+        hist.insert_multiple(f64::MAX, 4);
+        hist.insert_multiple(f64::INFINITY, 5);
 
         hist.array.get_block::<_, Array<Double>>(|block| {
-            assert_eq!(block.get(0).unwrap(), 1.0);
-            assert_eq!(block.get(1).unwrap(), f64::MAX / 2.0);
+            assert_eq!(block.get(0).unwrap(), f64::MIN);
+            assert_eq!(block.get(1).unwrap(), f64::MAX);
             assert_eq!(block.get(2).unwrap(), 2.0);
 
-            assert_eq!(block.get(3).unwrap(), 1.0);
-            assert_eq!(block.get(4).unwrap(), 0.0);
-            assert_eq!(block.get(5).unwrap(), 0.0);
-            assert_eq!(block.get(6).unwrap(), 0.0);
-            assert_eq!(block.get(7).unwrap(), 0.0);
-            assert_eq!(block.get(8).unwrap(), 1.0);
+            assert_eq!(block.get(3).unwrap(), 1.0); // underflow bucket
+            assert_eq!(block.get(4).unwrap(), 2.0); // bucket 0
+            assert_eq!(block.get(5).unwrap(), 3.0); // bucket 1
+            assert_eq!(block.get(6).unwrap(), 4.0); // bucket 2
+            assert_eq!(block.get(7).unwrap(), 0.0); // bucket 3
+            assert_eq!(block.get(8).unwrap(), 5.0); // overflow bucket
         });
     }
 }

@@ -291,8 +291,7 @@ where
                         } else if value < i64::MIN as i128 {
                             i64::MIN
                         } else {
-                            // Safety: Bounds are checked above.
-                            value.try_into().unwrap()
+                            value as i64
                         }
                     };
                     array.insert_multiple(value, count as usize);
@@ -352,8 +351,7 @@ where
                         } else if value < i64::MIN as i128 {
                             i64::MIN
                         } else {
-                            // Safety: Bounds are checked above.
-                            value.try_into().unwrap()
+                            value as i64
                         }
                     };
                     array.insert_multiple(value, count as usize);
@@ -403,21 +401,8 @@ where
                         }
                         u64::MIN
                     } else {
-                        // Use larger data types to avoid underflow/overflow
-                        // while calculating the value.
-                        let step = step as u128;
-                        let floor = floor as u128;
-
                         // floor + step * index
-                        let value =
-                            floor.saturating_add(step.saturating_mul((bucket_index - 1) as u128));
-
-                        if value > u64::MAX as u128 {
-                            u64::MAX
-                        } else {
-                            // Safety: Max bound is checked above.
-                            value.try_into().unwrap()
-                        }
+                        floor.saturating_add(step.saturating_mul((bucket_index - 1) as u64))
                     };
                     array.insert_multiple(value, count as usize);
                 }
@@ -459,23 +444,10 @@ where
                     } else if bucket_index == 1 {
                         floor
                     } else {
-                        // Use larger data types to avoid underflow/overflow
-                        // while calculating the value.
-                        let step_multiplier = step_multiplier as u128;
-                        let initial_step = initial_step as u128;
-                        let floor = floor as u128;
-
                         // floor + initial_step * step_multiplier^(index)
-                        let value = floor.saturating_add(initial_step.saturating_mul(
+                        floor.saturating_add(initial_step.saturating_mul(
                             step_multiplier.saturating_pow((bucket_index - 2) as u32),
-                        ));
-
-                        if value > u64::MAX as u128 {
-                            u64::MAX
-                        } else {
-                            // Safety: Bounds are checked above.
-                            value.try_into().unwrap()
-                        }
+                        ))
                     };
                     array.insert_multiple(value, count as usize);
                 }
@@ -725,27 +697,24 @@ mod tests {
         } ;
         "i64_bounds_min"
     )]
-    // TODO(https://fxbug.dev/470168998): Uncomment the following test case once
-    // bounds are correctly handled.
-    //
-    // // | Bucket | Range         |
-    // // | ------ | ------------- |
-    // // |      0 | (-inf, MIN+1) |
-    // // |      1 | [MIN+1, 0)    |
-    // // |      2 | [0, MAX)      |
-    // // |      3 | [MAX, +inf)   |
-    // #[test_case(
-    //     LinearHistogram {
-    //         size: 4,
-    //         // MIN is 1 less than MAX due to two's complement. Modify this such
-    //         // that bucket ends with MAX.
-    //         floor: i64::MIN+1,
-    //         step: i64::MAX,
-    //         counts: vec![1i64, 2i64, 3i64, 4i64],
-    //         indexes: None,
-    //     } ;
-    //     "i64_bounds_max"
-    // )]
+    // | Bucket | Range         |
+    // | ------ | ------------- |
+    // |      0 | (-inf, MIN+1) |
+    // |      1 | [MIN+1, 0)    |
+    // |      2 | [0, MAX)      |
+    // |      3 | [MAX, +inf)   |
+    #[test_case(
+        LinearHistogram {
+            size: 4,
+            // MIN is 1 less than MAX due to two's complement. Modify this such
+            // that bucket ends with MAX.
+            floor: i64::MIN+1,
+            step: i64::MAX,
+            counts: vec![1i64, 2i64, 3i64, 4i64],
+            indexes: None,
+        } ;
+        "i64_bounds_max"
+    )]
     #[test_case(
         LinearHistogram {
             size: 3,
@@ -850,63 +819,60 @@ mod tests {
         } ;
         "u64_sparse"
     )]
-    // TODO(https://fxbug.dev/470168998): Uncomment the following three test
-    // cases once bounds are correctly handled.
+    // | Bucket | Range        |
+    // | ------ | ------------ |
+    // |      0 | (-inf, MIN)  |
+    // |      1 | [MIN, 0)     |
+    // |      2 | [0, MAX)     |
+    // |      3 | [MAX, +inf)  |
     //
-    // // | Bucket | Range        |
-    // // | ------ | ------------ |
-    // // |      0 | (-inf, MIN)  |
-    // // |      1 | [MIN, 0)     |
-    // // |      2 | [0, MAX)     |
-    // // |      3 | [MAX, +inf)  |
-    // //
-    // #[test_case(
-    //     ExponentialHistogram {
-    //         size: 4,
-    //         floor: f64::MIN,
-    //         initial_step: f64::MAX,
-    //         step_multiplier: 2.0,
-    //         counts: vec![1.0, 2.0, 3.0, 4.0],
-    //         indexes: None,
-    //     } ;
-    //     "f64_bounds"
-    // )]
-    // // | Bucket | Range         |
-    // // | ------ | ------------- |
-    // // |      0 | (-inf, MIN+1) |
-    // // |      1 | [MIN+1, 0)    |
-    // // |      2 | [0, MAX)      |
-    // // |      3 | [MAX, +inf)   |
-    // #[test_case(
-    //     ExponentialHistogram {
-    //         size: 4,
-    //         // MIN is 1 less than MAX due to two's complement. Modify this such
-    //         // that bucket ends with MAX.
-    //         floor: i64::MIN + 1,
-    //         initial_step: i64::MAX,
-    //         step_multiplier: 2i64,
-    //         counts: vec![1i64, 2i64, 3i64, 4i64],
-    //         indexes: None,
-    //     } ;
-    //     "i64_bounds"
-    // )]
-    // // | Bucket | Range        |
-    // // | ------ | ------------ |
-    // // |      0 | (-inf, 0)    |
-    // // |      1 | [0, MAX)     |
-    // // |      2 | [MAX, +inf)  |
-    // #[test_case(
-    //     ExponentialHistogram {
-    //         size: 3,
-    //         floor: u64::MIN,
-    //         initial_step: u64::MAX,
-    //         step_multiplier: 2u64,
-    //         // Not possible to go below u64::MIN.
-    //         counts: vec![0u64, 1u64, 2u64],
-    //         indexes: None,
-    //     } ;
-    //     "u64_bounds"
-    // )]
+    #[test_case(
+        ExponentialHistogram {
+            size: 4,
+            floor: f64::MIN,
+            initial_step: f64::MAX,
+            step_multiplier: 2.0,
+            counts: vec![1.0, 2.0, 3.0, 4.0],
+            indexes: None,
+        } ;
+        "f64_bounds"
+    )]
+    // | Bucket | Range         |
+    // | ------ | ------------- |
+    // |      0 | (-inf, MIN+1) |
+    // |      1 | [MIN+1, 0)    |
+    // |      2 | [0, MAX)      |
+    // |      3 | [MAX, +inf)   |
+    #[test_case(
+        ExponentialHistogram {
+            size: 4,
+            // MIN is 1 less than MAX due to two's complement. Modify this such
+            // that bucket ends with MAX.
+            floor: i64::MIN + 1,
+            initial_step: i64::MAX,
+            step_multiplier: 2i64,
+            counts: vec![1i64, 2i64, 3i64, 4i64],
+            indexes: None,
+        } ;
+        "i64_bounds"
+    )]
+    // | Bucket | Range        |
+    // | ------ | ------------ |
+    // |      0 | (-inf, 0)    |
+    // |      1 | [0, MAX)     |
+    // |      2 | [MAX, +inf)  |
+    #[test_case(
+        ExponentialHistogram {
+            size: 3,
+            floor: u64::MIN,
+            initial_step: u64::MAX,
+            step_multiplier: 2u64,
+            // Not possible to go below u64::MIN.
+            counts: vec![0u64, 1u64, 2u64],
+            indexes: None,
+        } ;
+        "u64_bounds"
+    )]
     #[fuchsia::test]
     async fn record_exponential_histogram<'a, T>(histogram: ExponentialHistogram<T>)
     where

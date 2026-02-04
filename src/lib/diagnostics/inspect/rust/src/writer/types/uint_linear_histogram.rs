@@ -34,11 +34,11 @@ impl UintLinearHistogramProperty {
     }
 
     fn get_index(&self, value: u64) -> usize {
-        let mut current_floor = self.floor;
+        let mut bucket_end = self.floor; // The exclusive end of a bucket's range.
         let mut index = ArrayFormat::LinearHistogram.underflow_bucket_index();
         let overflow_index = ArrayFormat::LinearHistogram.overflow_bucket_index(self.buckets);
-        while value >= current_floor && index < overflow_index {
-            current_floor += self.step_size;
+        while value >= bucket_end && index < overflow_index {
+            bucket_end = bucket_end.saturating_add(self.step_size);
             index += 1;
         }
         index
@@ -116,6 +116,40 @@ mod tests {
         }
         node.get_block::<_, inspect_format::Node>(|node_block| {
             assert_eq!(node_block.child_count(), 0);
+        });
+    }
+
+    #[fuchsia::test]
+    fn underflow() {
+        let inspector = Inspector::default();
+        let root = inspector.root();
+        let hist = root.create_uint_linear_histogram(
+            "test",
+            LinearHistogramParams { floor: 0, step_size: u64::MAX / 2, buckets: 4 },
+        );
+
+        // | Bucket    | Range                  |
+        // |-----------|------------------------|
+        // | Underflow | Empty                  |
+        // | 0         | [0, u64::MAX/2)        |
+        // | 1         | [u64::MAX/2, u64::MAX) |
+        // | 2..3      | Empty                  |
+        // | Overflow  | [u64::MAX, +inf)       |
+
+        hist.insert(0); // increment bucket 0
+        hist.insert(u64::MAX / 2); // increment bucket 1
+        hist.insert(u64::MAX); // increment overflow bucket
+
+        hist.array.get_block::<_, Array<Uint>>(|block| {
+            assert_eq!(block.get(0).unwrap(), 0);
+            assert_eq!(block.get(1).unwrap(), u64::MAX / 2);
+
+            assert_eq!(block.get(2).unwrap(), 0); // underflow
+            assert_eq!(block.get(3).unwrap(), 1); // bucket 0
+            assert_eq!(block.get(4).unwrap(), 1); // bucket 1
+            assert_eq!(block.get(5).unwrap(), 0); // bucket 2
+            assert_eq!(block.get(6).unwrap(), 0); // bucket 3
+            assert_eq!(block.get(7).unwrap(), 1); // overflow
         });
     }
 }
