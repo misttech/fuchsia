@@ -687,27 +687,18 @@ void DriverRunner::PublishCpuElementManager(component::OutgoingDirectory& outgoi
 }
 
 void DriverRunner::GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) {
-  if (!cpu_token_.is_valid()) {
+  if (!std::holds_alternative<PowerDependencyToken>(cpu_callbacks_or_token_)) {
     if (!cpu_element_client_.has_value()) {
       completer.Close(ZX_ERR_BAD_STATE);
       return;
     }
 
-    cpu_element_client_.value()->GetCpuDependencyToken().Then(
-        [this, completer = completer.ToAsync()](
-            fidl::Result<fuchsia_power_system::CpuElementManager::GetCpuDependencyToken>&
-                result) mutable {
-          if (result.is_ok()) {
-            cpu_token_ = std::move(result->assertive_dependency_token().value());
-          } else {
-            fdf_log::warn("Request for Cpu token from SAG failed: ",
-                          result.error_value().FormatDescription());
-            completer.Close(ZX_ERR_BAD_STATE);
-            return;
-          }
-
+    std::get<CallbackSet>(cpu_callbacks_or_token_)
+        .push_back([this, completer = completer.ToAsync()]() mutable {
           zx::event cpu_copy;
-          zx_status_t dupe_result = cpu_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_copy);
+
+          zx_status_t dupe_result = std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
+                                        .duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_copy);
           if (dupe_result != ZX_OK) {
             completer.Close(dupe_result);
             return;
@@ -722,7 +713,9 @@ void DriverRunner::GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& c
   }
 
   zx::event cpu_copy;
-  zx_status_t dupe_result = cpu_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_copy);
+
+  zx_status_t dupe_result = std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
+                                .duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_copy);
   if (dupe_result != ZX_OK) {
     completer.Close(dupe_result);
     return;
@@ -1073,6 +1066,24 @@ zx::result<BindSpecResult> DriverRunner::BindToParentSpec(fidl::AnyArena& arena,
                                                            enable_multibind);
 }
 
+void DriverRunner::FetchCpuToken() {
+  if (cpu_element_client_.has_value() &&
+      !std::holds_alternative<PowerDependencyToken>(cpu_callbacks_or_token_)) {
+    cpu_element_client_.value()->GetCpuDependencyToken().Then(
+        [this](fidl::Result<fuchsia_power_system::CpuElementManager::GetCpuDependencyToken>&
+                   result) mutable {
+          ZX_ASSERT_MSG(result.is_ok(), "Error getting CPU token %s",
+                        result.error_value().FormatDescription().c_str());
+
+          CallbackSet callbacks = std::move(std::get<CallbackSet>(cpu_callbacks_or_token_));
+          cpu_callbacks_or_token_ = std::move(result->assertive_dependency_token().value());
+          for (auto& callback : callbacks) {
+            callback();
+          }
+        });
+  }
+}
+
 void DriverRunner::CreatePowerElement(std::string_view name,
                                       fuchsia_power_broker::DependencyToken element_token,
                                       std::vector<fuchsia_power_broker::DependencyToken> deps,
@@ -1086,13 +1097,32 @@ void DriverRunner::CreatePowerElement(std::string_view name,
     return;
   }
 
+  PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
+  if (!cpu_token) {
+    std::get<CallbackSet>(cpu_callbacks_or_token_)
+        .push_back([weak_self = weak_from_this(), name, element_token = std::move(element_token),
+                    deps = std::move(deps), control = std::move(control),
+                    runner = std::move(runner), lessor = std::move(lessor), for_collection,
+                    cb = std::move(cb)]() mutable {
+          auto self = weak_self.lock();
+          if (!self) {
+            return;
+          }
+
+          self->CreatePowerElement(name, std::move(element_token), std::move(deps),
+                                   std::move(control), std::move(runner), std::move(lessor),
+                                   for_collection, std::move(cb));
+        });
+    return;
+  }
+
   // If this is not a boot driver and we don't have the storage token yet, create a callback to
   // re-invoked this method later.
   // This might happen because creation of the storage power element has multiple async operations,
   // therefore it is possible that a driver from storage loads before the element is created.
   PowerDependencyToken* token = std::get_if<PowerDependencyToken>(&storage_callbacks_or_token_);
   if (for_collection != Collection::kBoot && !token) {
-    std::get<std::vector<fit::callback<void()>>>(storage_callbacks_or_token_)
+    std::get<CallbackSet>(storage_callbacks_or_token_)
         .push_back([weak_self = weak_from_this(), name, element_token = std::move(element_token),
                     deps = std::move(deps), control = std::move(control),
                     runner = std::move(runner), lessor = std::move(lessor), for_collection,
@@ -1128,6 +1158,19 @@ void DriverRunner::CreatePowerElement(std::string_view name,
 
     level_deps.push_back(std::move(level_dep));
   }
+
+  fuchsia_power_broker::DependencyToken clone;
+  ZX_ASSERT(std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
+                .duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
+
+  std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
+  reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
+
+  fuchsia_power_broker::LevelDependency level_dep;
+  level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
+  level_dep.requires_token() = std::move(clone);
+  level_dep.requires_level_by_preference() = reqs_by_pref;
+  level_deps.push_back(std::move(level_dep));
 
   // Any drivers that aren't from bootfs have a dependency on storage.
   if (for_collection != Collection::kBoot) {

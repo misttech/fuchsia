@@ -231,6 +231,11 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                                  fit::callback<void()> post_creation);
   void PublishCpuElementManager(component::OutgoingDirectory& outgoing);
 
+  // Asynchronously kicks off the process of fetching the Cpu token from SAG. The token is used to
+  // make drivers' power elements depend on the Cpu element and allow them to prevent system
+  // suspension.
+  void FetchCpuToken();
+
  private:
   // NodeManager interface.
   // Attempt to bind `node`. A nullptr for result_tracker is acceptable if the caller doesn't
@@ -336,12 +341,12 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   // Either a vector of callbacks to run when we get a storage token or the token once we
   // receive it.
-  std::variant<CallbackSet, PowerDependencyToken> storage_callbacks_or_token_ =
-      std::vector<fit::callback<void()>>();
+  std::variant<CallbackSet, PowerDependencyToken> storage_callbacks_or_token_ = CallbackSet();
   fidl::Client<fuchsia_power_broker::ElementControl> storage_control_;
 
   std::optional<fidl::Client<fuchsia_power_system::CpuElementManager>> cpu_element_client_;
-  fuchsia_power_broker::DependencyToken cpu_token_;
+  std::variant<CallbackSet, PowerDependencyToken> cpu_callbacks_or_token_ = CallbackSet();
+
   bool wait_for_storage_token_from_driver_;
 };
 

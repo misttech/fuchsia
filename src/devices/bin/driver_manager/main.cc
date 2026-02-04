@@ -174,6 +174,7 @@ int main(int argc, char** argv) {
   driver_runner->PublishComponentRunner(outgoing);
   driver_runner->PublishCpuElementManager(outgoing);
   driver_runner->StartDevfsDriver(devfs);
+  driver_runner->FetchCpuToken();
 
   // If power management is enabled, but we're not supposed to wait for a storage token from a
   // storage driver, initialize the storage power element immediately.
