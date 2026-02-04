@@ -8,7 +8,8 @@
 //! supporting tests of this `fidl_fuchsia_net_neighbor_ext` crate and tests
 //! of clients of the `fuchsia.net.neighbors` FIDL library, respectively.
 
-use futures::{Stream, StreamExt as _};
+use futures::future::FusedFuture;
+use futures::{FutureExt, Stream, StreamExt as _};
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_neighbor as fnet_neighbor};
 
 /// Responds to the given `GetNext` request with the given batch of events.
@@ -55,23 +56,86 @@ pub async fn serve_view_request(
     .await
 }
 
-/// Generates an arbitrary but valid neighbor entry iterator item that is unique
-/// to the given `seed`.
-pub(crate) fn generate_event(seed: u32) -> fnet_neighbor::EntryIteratorItem {
-    fnet_neighbor::EntryIteratorItem::Added(fnet_neighbor::Entry {
-        interface: Some(seed.into()),
-        neighbor: Some(fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, 0, 1] })),
+/// Create a `ViewProxy` whose server end will respond to the first
+/// `OpenEntryIterator` request it receives by returning an entry iterator
+/// backed by the given event stream. The returned future drives the entry
+/// iterator implementation.
+pub fn create_fake_view(
+    event_stream: impl Stream<Item = Vec<fnet_neighbor::EntryIteratorItem>>,
+) -> (fnet_neighbor::ViewProxy, impl FusedFuture<Output = ()>) {
+    let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
+
+    let entry_iter_fut = view_server_end
+        .into_stream()
+        .into_future()
+        .then(async |(req, _rest)| {
+            serve_view_request(
+                req.expect("View request stream unexpectedly ended")
+                    .expect("failed to receive `OpenEntryIterator` request"),
+                event_stream,
+            )
+            .await
+        })
+        .fuse();
+
+    (view, entry_iter_fut)
+}
+
+/// Specification for a generated neighbor event.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EventSpec {
+    /// A neighbor unique to the given seed existed prior to watching.
+    Existing(u8),
+    /// A neighbor unique to the given seed was added.
+    Added(u8),
+    /// A neighbor unique to the given seed was changed.
+    Changed(u8),
+    /// A neighbor unique to the given seed was removed.
+    Removed(u8),
+    /// An idle event.
+    Idle,
+}
+
+// Generates a neighbor entry whose IP address is unique to the given `seed`.
+fn generate_entry(seed: u8) -> fnet_neighbor::Entry {
+    fnet_neighbor::Entry {
+        interface: Some(1),
+        neighbor: Some(fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, 0, seed] })),
         state: Some(fnet_neighbor::EntryState::Reachable),
         mac: Some(fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] }),
-        updated_at: Some(seed.into()),
+        updated_at: Some(12345),
         ..Default::default()
-    })
+    }
+}
+
+/// Generates a neighbor entry iterator item from the provided spec.
+pub fn generate_event_from_spec(spec: &EventSpec) -> fnet_neighbor::EntryIteratorItem {
+    match *spec {
+        EventSpec::Existing(seed) => {
+            fnet_neighbor::EntryIteratorItem::Existing(generate_entry(seed))
+        }
+        EventSpec::Added(seed) => fnet_neighbor::EntryIteratorItem::Added(generate_entry(seed)),
+        EventSpec::Changed(seed) => fnet_neighbor::EntryIteratorItem::Changed(generate_entry(seed)),
+        EventSpec::Removed(seed) => fnet_neighbor::EntryIteratorItem::Removed(generate_entry(seed)),
+        EventSpec::Idle => fnet_neighbor::EntryIteratorItem::Idle(fnet_neighbor::IdleEvent),
+    }
+}
+
+/// Generates a list of neighbor entry iterator items from the provided spec.
+pub fn generate_events_from_spec(spec: &[EventSpec]) -> Vec<fnet_neighbor::EntryIteratorItem> {
+    spec.into_iter().map(generate_event_from_spec).collect()
+}
+
+/// Generates an arbitrary but valid neighbor entry iterator item that is unique
+/// to the given `seed`.
+pub fn generate_event(seed: u8) -> fnet_neighbor::EntryIteratorItem {
+    generate_event_from_spec(&EventSpec::Added(seed))
 }
 
 /// Generates a list of arbitrary but valid neighbor entry iterator items, one
 /// for each value in the provided range of `seeds`.
-pub(crate) fn generate_events_in_range(
-    seeds: std::ops::Range<u32>,
+pub fn generate_events_in_range(
+    seeds: std::ops::Range<u8>,
 ) -> Vec<fnet_neighbor::EntryIteratorItem> {
     seeds.into_iter().map(generate_event).collect()
 }
@@ -89,7 +153,7 @@ mod tests {
     #[test_case(vec![0..10]; "single_batch_many_events")]
     #[test_case(vec![0..10, 10..20, 20..30]; "many_batches_many_events")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn fake_event_iterator_impl_against_shape(test_shape: Vec<std::ops::Range<u32>>) {
+    async fn fake_view_impl_against_shape(test_shape: Vec<std::ops::Range<u8>>) {
         // Build the event stream based on the `test_shape`. Use a channel so
         // that the stream stays open until `close_channel` is called later.
         let (event_stream_sender, event_stream_receiver) =
@@ -100,19 +164,8 @@ mod tests {
                 .expect("failed to send event batch");
         }
 
-        // Instantiate the fake EntryIterator implementation.
-        let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
-        let mut view_event_stream = view_server_end.into_stream();
-        let entry_iter_fut = view_event_stream
-            .next()
-            .then(|req| {
-                serve_view_request(
-                    req.expect("view event stream unexpectedly ended")
-                        .expect("failed to receive `OpenEntryIterator` request"),
-                    event_stream_receiver,
-                )
-            })
-            .fuse();
+        // Instantiate the fake View implementation.
+        let (view, entry_iter_fut) = create_fake_view(event_stream_receiver);
         futures::pin_mut!(entry_iter_fut);
 
         // Drive the event iterator, asserting it observes the expected data.
@@ -137,6 +190,27 @@ mod tests {
         assert_matches!(
             entry_iter.get_next().await,
             Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. })
+        );
+    }
+
+    #[test]
+    fn generate_entry_unique_to_seed() {
+        assert_eq!(generate_entry(1), generate_entry(1));
+        assert_ne!(generate_entry(1), generate_entry(2));
+    }
+
+    #[test]
+    fn generate_multiple_events_from_spec() {
+        use EventSpec::*;
+        assert_eq!(
+            generate_events_from_spec(&[Existing(1), Added(2), Changed(3), Removed(4), Idle]),
+            &[
+                fnet_neighbor::EntryIteratorItem::Existing(generate_entry(1)),
+                fnet_neighbor::EntryIteratorItem::Added(generate_entry(2)),
+                fnet_neighbor::EntryIteratorItem::Changed(generate_entry(3)),
+                fnet_neighbor::EntryIteratorItem::Removed(generate_entry(4)),
+                fnet_neighbor::EntryIteratorItem::Idle(fnet_neighbor::IdleEvent),
+            ]
         );
     }
 }

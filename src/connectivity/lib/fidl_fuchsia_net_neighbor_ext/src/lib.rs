@@ -324,7 +324,7 @@ mod tests {
     #[test_case(vec![0..10]; "single_batch_many_events")]
     #[test_case(vec![0..10, 10..20, 20..30]; "many_batches_many_events")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn event_stream_from_view_against_shape(test_shape: Vec<std::ops::Range<u32>>) {
+    async fn event_stream_from_view_against_shape(test_shape: Vec<std::ops::Range<u8>>) {
         // Build the event stream based on the `test_shape`. Use a channel
         // so that the stream stays open until `close_channel` is called later.
         let (batches_sender, batches_receiver) =
@@ -335,19 +335,7 @@ mod tests {
                 .expect("failed to send event batch");
         }
 
-        let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
-        let mut view_request_stream = view_server_end.into_stream();
-
-        let entry_iter_fut = view_request_stream
-            .next()
-            .then(|req| {
-                testutil::serve_view_request(
-                    req.expect("View request_stream unexpectedly ended")
-                        .expect("failed to receive `OpenEntryIterator` request"),
-                    batches_receiver,
-                )
-            })
-            .fuse();
+        let (view, entry_iter_fut) = testutil::create_fake_view(batches_receiver);
 
         let event_stream =
             event_stream_from_view(&view).expect("failed to open entry iterator").fuse();
@@ -469,18 +457,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake entry iterator implementation.
-        let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
-        let mut view_request_stream = view_server_end.into_stream();
-        let entry_iter_fut = view_request_stream
-            .next()
-            .then(|req| {
-                testutil::serve_view_request(
-                    req.expect("View request_stream unexpectedly ended")
-                        .expect("failed to receive `OpenEntryIterator` request"),
-                    futures::stream::iter(batches),
-                )
-            })
-            .fuse();
+        let (view, entry_iter_fut) = testutil::create_fake_view(futures::stream::iter(batches));
 
         let event_stream = event_stream_from_view(&view).expect("failed to connect to view").fuse();
 
@@ -503,18 +480,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake EntryIterator implementation.
-        let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
-        let mut view_request_stream = view_server_end.into_stream();
-        let entry_iter_fut = view_request_stream
-            .next()
-            .then(|req| {
-                testutil::serve_view_request(
-                    req.expect("View stream unexpectedly ended")
-                        .expect("failed to receive `OpenEntryIterator` request"),
-                    futures::stream::iter(batches),
-                )
-            })
-            .fuse();
+        let (view, entry_iter_fut) = testutil::create_fake_view(futures::stream::iter(batches));
 
         let event_stream =
             event_stream_from_view(&view).expect("failed to create entry iterator").fuse();
