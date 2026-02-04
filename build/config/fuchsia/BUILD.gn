@@ -234,6 +234,11 @@ config("static_cpp_standard_library") {
   rustflags = [ "-Clink-args=--push-state -Bstatic -lc++ -Bdynamic -lm --pop-state -l:libunwind.a" ]
 }
 
+# Configure a rust target to link to libc++ dynamically.
+config("dynamic_cpp_standard_library") {
+  rustflags = [ "-Clink-args=--push-state -Bdynamic -lc++ --pop-state" ]
+}
+
 config("dynamic_rust_standard_library") {
   rustflags = [ "-Cprefer-dynamic" ]
 }
