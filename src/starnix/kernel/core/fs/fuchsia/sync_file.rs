@@ -140,6 +140,7 @@ impl FileOps for SyncFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
+        // TODO: This will not be supported in a subsequent CL.
         if self.fence.sync_points.len() != 1 {
             log_warn!(
                 "SyncFile::to_handle failed: multiple sync points ({}) not supported: {:?}",
@@ -153,6 +154,23 @@ impl FileOps for SyncFile {
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(impossible_error)?;
         Ok(Some(dup.into()))
+    }
+
+    fn get_handles(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<Vec<zx::NullableHandle>, Errno> {
+        let mut handles = Vec::with_capacity(self.fence.sync_points.len());
+        for sync_point in &self.fence.sync_points {
+            let handle = sync_point
+                .counter
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .map_err(impossible_error)?
+                .into();
+            handles.push(handle);
+        }
+        Ok(handles)
     }
 
     fn ioctl(

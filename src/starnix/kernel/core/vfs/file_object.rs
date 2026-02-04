@@ -394,6 +394,29 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             .map(|c| Some(c.0.into_handle().into()))
     }
 
+    // Return a vector of handles. This is used in situations where there is more than one handle
+    // associated with this file descriptor.
+    //
+    // In Fuchsia, there is an expectation that there is a 1:1 mapping between a file descriptor and
+    // a handle. In general, we do not want to violate that rule. This function is intended to used
+    // in very limited circumstances (compatibility with Linux and Binder), where we need to violate
+    // rule.
+    //
+    // Specifically, we are using this to implement SyncFiles correctly, where a single SyncFile can
+    // represent multiple SyncPoints. Each SyncPoint contains a zx::Counter.
+    //
+    // If you chose to implement this function, to_handle() should return an error. You must also be
+    // aware that if these handles are passed to Fuchsia over Binder, they will be represented as
+    // single file descriptor, and you should use the composite_fd library to manage that file
+    // descriptor.
+    fn get_handles(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<Vec<zx::NullableHandle>, Errno> {
+        error!(ENOTSUP)
+    }
+
     /// Returns the associated pid_t.
     ///
     /// Used by pidfd and `/proc/<pid>`. Unlikely to be used by other files.
@@ -591,6 +614,14 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.deref().to_handle(file, current_task)
+    }
+
+    fn get_handles(
+        &self,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<Vec<zx::NullableHandle>, Errno> {
+        self.deref().get_handles(file, current_task)
     }
 
     fn as_thread_group_key(&self, file: &FileObject) -> Result<ThreadGroupKey, Errno> {
@@ -2059,6 +2090,13 @@ impl FileObject {
         current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.ops().to_handle(self, current_task)
+    }
+
+    pub fn get_handles(
+        &self,
+        current_task: &CurrentTask,
+    ) -> Result<Vec<zx::NullableHandle>, Errno> {
+        self.ops().get_handles(self, current_task)
     }
 
     pub fn as_thread_group_key(&self) -> Result<ThreadGroupKey, Errno> {
