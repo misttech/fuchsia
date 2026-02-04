@@ -16,6 +16,9 @@ const MAX_COUNT_RING_BUFFERS uint32
 // Can't have more DAI interconnects than processing elements.
 const MAX_COUNT_DAI_INTERCONNECTS uint32
         = fuchsia.hardware.audio.signalprocessing.MAX_COUNT_PROCESSING_ELEMENTS;
+// Can't have more packet streams than processing elements.
+const MAX_COUNT_PACKET_STREAMS uint32
+        = fuchsia.hardware.audio.signalprocessing.MAX_COUNT_PROCESSING_ELEMENTS;
 
 // This control node only supports the creation of virtual audio composite devices.
 const CONTROL_NODE_NAME string = "sys/platform/virtual-audio/virtual-audio";
@@ -213,6 +216,11 @@ type Composite = table {
     /// Optional.
     4: topologies
             vector<fuchsia.hardware.audio.signalprocessing.Topology>:fuchsia.hardware.audio.signalprocessing.MAX_COUNT_TOPOLOGIES;
+
+    /// Packet streams configurations.
+    ///
+    /// Required.
+    5: packet_streams vector<CompositePacketStream>:MAX_COUNT_PACKET_STREAMS;
 };
 
 /// Configuration for a fuchsia.hardware.audio/RingBuffer.
@@ -300,6 +308,34 @@ type CompositeDaiInterconnect = table {
     2: dai_interconnect DaiInterconnect;
 };
 
+/// Configuration for a fuchsia.hardware.audio/PacketStreamControl.
+type PacketStream = table {
+    /// The buffer methods supported by this driver.
+    ///
+    /// Required.
+    1: supported_buffer_types fuchsia.hardware.audio.BufferType;
+
+    /// When set to true, indicates that the packet-stream runs in a different cache coherency
+    /// domain. Clients must ensure data writes are flushed to main memory (during output)
+    /// or invalidated before reading (during input).
+    ///
+    /// Optional.
+    2: needs_cache_flush_or_invalidate bool;
+};
+
+/// Configuration for a fuchsia.hardware.audio/PacketStreamControl as used by a Composite driver.
+type CompositePacketStream = table {
+    /// Signal processing id for this composite device packet stream.
+    ///
+    /// Required.
+    1: id uint64;
+
+    /// Configuration for this packet stream.
+    ///
+    /// Required.
+    2: packet_stream PacketStream;
+};
+
 type ClockProperties = table {
     /// The clock domain is an int32 provided by the clock tree to an audio
     /// driver. special values for `CLOCK_DOMAIN_MONOTONIC` (0), and
@@ -383,6 +419,7 @@ type PlugProperties = table {
 /// This protocol represents the base functionality of active audio devices. A
 /// device is active until this protocol is closed, at which point the device is
 /// automatically removed.
+// TODO(https://fxbug.dev/481120253): Update methods to support PacketStream and multiple elements (add ElementId).
 closed protocol Device {
     /// Returns the format selected by the client, or `NO_RING_BUFFER` if the
     /// client has not yet selected a ring buffer format.
