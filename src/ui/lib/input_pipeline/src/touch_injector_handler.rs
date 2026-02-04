@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #![warn(clippy::await_holding_refcell_ref)]
-use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
+use crate::input_handler::{BatchInputHandler, Handler, InputHandlerStatus};
 use crate::utils::{Position, Size};
 use crate::{input_device, metrics, touch_binding};
 use anyhow::{Context, Error, Result};
@@ -96,68 +96,21 @@ impl Handler for TouchInjectorHandler {
 }
 
 #[async_trait(?Send)]
-impl UnhandledInputHandler for TouchInjectorHandler {
-    async fn handle_unhandled_input_event(
+impl BatchInputHandler for TouchInjectorHandler {
+    async fn handle_input_events(
         self: Rc<Self>,
-        mut unhandled_input_event: input_device::UnhandledInputEvent,
+        events: Vec<input_device::InputEvent>,
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!("input", "touch_injector_handler");
-        match unhandled_input_event {
-            input_device::UnhandledInputEvent {
-                device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
-                device_descriptor:
-                    input_device::InputDeviceDescriptor::TouchScreen(ref touch_device_descriptor),
-                event_time,
-                trace_id,
-            } => {
-                self.inspect_status.count_received_event(&event_time);
-                fuchsia_trace::duration!("input", "touch_injector_handler[processing]");
-                if let Some(trace_id) = trace_id {
-                    fuchsia_trace::flow_end!("input", "event_in_input_pipeline", trace_id.into());
-                }
-                if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
-                    let mut touch_buttons_event = Self::create_touch_buttons_event(
-                        touch_event,
-                        event_time,
-                        &touch_device_descriptor,
-                    );
 
-                    // Send the event if the touch buttons are supported.
-                    self.send_event_to_listeners(&touch_buttons_event).await;
+        let mut result: Vec<input_device::InputEvent> = Vec::new();
 
-                    // Store the sent event without any wake leases.
-                    std::mem::drop(touch_buttons_event.wake_lease.take());
-                    self.mutable_state.borrow_mut().last_button_event = Some(touch_buttons_event);
-                } else if touch_event.pressed_buttons.is_empty() {
-                    // Create a new injector if this is the first time seeing device_id.
-                    if let Err(e) = self.ensure_injector_registered(&touch_device_descriptor).await
-                    {
-                        self.metrics_logger.log_error(
-                        InputPipelineErrorMetricDimensionEvent::TouchInjectorEnsureInjectorRegisteredFailed,
-                        std::format!("ensure_injector_registered failed: {}", e));
-                    }
-
-                    // Handle the event.
-                    if let Err(e) = self
-                        .send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
-                        .await
-                    {
-                        self.metrics_logger.log_error(
-                        InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
-                        std::format!("send_event_to_scenic failed: {}", e));
-                    }
-                }
-
-                // Consume the input event.
-                self.inspect_status.count_handled_event();
-                vec![input_device::InputEvent::from(unhandled_input_event).into_handled()]
-            }
-            _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
-                vec![input_device::InputEvent::from(unhandled_input_event)]
-            }
+        for event in events {
+            let out_events = self.clone().handle_single_input_event(event).await;
+            result.extend(out_events);
         }
+
+        result
     }
 }
 
@@ -287,6 +240,76 @@ impl TouchInjectorHandler {
                 )
             }),
             ..Default::default()
+        }
+    }
+
+    async fn handle_single_input_event(
+        self: Rc<Self>,
+        mut input_event: input_device::InputEvent,
+    ) -> Vec<input_device::InputEvent> {
+        match input_event {
+            input_device::InputEvent {
+                device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
+                device_descriptor:
+                    input_device::InputDeviceDescriptor::TouchScreen(ref touch_device_descriptor),
+                event_time,
+                handled: input_device::Handled::No,
+                trace_id,
+            } => {
+                self.inspect_status.count_received_event(&event_time);
+                fuchsia_trace::duration!("input", "touch_injector_handler[processing]");
+                if let Some(trace_id) = trace_id {
+                    fuchsia_trace::flow_end!("input", "event_in_input_pipeline", trace_id.into());
+                }
+                if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
+                    let mut touch_buttons_event = Self::create_touch_buttons_event(
+                        touch_event,
+                        event_time,
+                        &touch_device_descriptor,
+                    );
+
+                    // Send the event if the touch buttons are supported.
+                    self.send_event_to_listeners(&touch_buttons_event).await;
+
+                    // Store the sent event without any wake leases.
+                    std::mem::drop(touch_buttons_event.wake_lease.take());
+                    self.mutable_state.borrow_mut().last_button_event = Some(touch_buttons_event);
+                } else if touch_event.pressed_buttons.is_empty() {
+                    // Create a new injector if this is the first time seeing device_id.
+                    if let Err(e) = self.ensure_injector_registered(&touch_device_descriptor).await
+                    {
+                        self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::TouchInjectorEnsureInjectorRegisteredFailed,
+                        std::format!("ensure_injector_registered failed: {}", e));
+                    }
+
+                    // Handle the event.
+                    if let Err(e) = self
+                        .send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
+                        .await
+                    {
+                        self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
+                        std::format!("send_event_to_scenic failed: {}", e));
+                    }
+                }
+
+                // Consume the input event.
+                self.inspect_status.count_handled_event();
+                vec![input_event.into_handled()]
+            }
+            input_device::InputEvent {
+                device_event: input_device::InputDeviceEvent::TouchScreen(_),
+                handled: input_device::Handled::Yes,
+                ..
+            } => {
+                // If a touch event is handled but reached to TouchInjectorHandler, it's expected.
+                vec![input_event]
+            }
+            _ => {
+                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                vec![input_event]
+            }
         }
     }
 
@@ -671,7 +694,7 @@ impl LocalTaskTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input_handler::InputHandler;
+    use crate::input_handler::BatchInputHandler;
     use crate::testing_utilities::{
         create_fake_input_event, create_touch_contact, create_touch_pointer_sample_event,
         create_touch_screen_event, create_touch_screen_event_with_handled, create_touchpad_event,
@@ -857,7 +880,7 @@ mod tests {
         let event_time = zx::MonotonicInstant::get();
         let input_event = create_touch_screen_event(hashmap! {}, event_time, &descriptor);
 
-        let _ = fixtures.touch_handler.clone().handle_input_event(input_event).await;
+        let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
 
         let expected_touch_buttons_event = fidl_ui_input::TouchButtonsEvent {
             event_time: Some(event_time),
@@ -900,7 +923,7 @@ mod tests {
             &descriptor,
         );
 
-        let _ = fixtures.touch_handler.clone().handle_input_event(input_event).await;
+        let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
 
         assert!(listener_stream.next().now_or_never().is_none());
     }
@@ -927,7 +950,7 @@ mod tests {
         let event_time = zx::MonotonicInstant::get();
         let input_event = create_touch_screen_event(hashmap! {}, event_time, &descriptor);
 
-        let _ = fixtures.touch_handler.clone().handle_input_event(input_event).await;
+        let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
 
         let expected_touch_buttons_event = fidl_ui_input::TouchButtonsEvent {
             event_time: Some(event_time),
@@ -1063,7 +1086,7 @@ mod tests {
         fixtures.touch_handler.mutable_state.borrow_mut().viewport = None;
 
         // Try to handle the event.
-        let _ = fixtures.touch_handler.clone().handle_unhandled_input_event(input_event).await;
+        let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event.into()]).await;
 
         // Injector should not receive anything because the handler has no viewport.
         assert!(fixtures.injector_registry_request_stream.next().now_or_never().is_none());
@@ -1128,7 +1151,7 @@ mod tests {
 
         // Handle event.
         let handle_event_fut =
-            fixtures.touch_handler.clone().handle_unhandled_input_event(input_event);
+            fixtures.touch_handler.clone().handle_input_events(vec![input_event.into()]);
 
         // Declare expected event.
         let expected_event = create_touch_pointer_sample_event(
@@ -1208,7 +1231,7 @@ mod tests {
 
         // Handle event.
         let handle_event_fut =
-            fixtures.touch_handler.clone().handle_unhandled_input_event(input_event);
+            fixtures.touch_handler.clone().handle_input_events(vec![input_event.into()]);
 
         let handle_result = handle_event_fut.await;
 
@@ -1292,7 +1315,7 @@ mod tests {
         ];
 
         for input_event in input_events {
-            fixtures.touch_handler.clone().handle_input_event(input_event).await;
+            fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
         }
 
         let last_received_event_time: u64 = event_time3.into_nanos().try_into().unwrap();
