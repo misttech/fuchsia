@@ -5,8 +5,7 @@
 use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
-use fuchsia_rcu::RcuReadScope;
-use fuchsia_rcu::rcu_arc::RcuArc;
+use fuchsia_rcu::{RcuArc, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use starnix_sync::{
     FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits,

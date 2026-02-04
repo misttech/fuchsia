@@ -4,7 +4,7 @@
 
 #![warn(unsafe_op_in_unsafe_fn)]
 
-use fuchsia_rcu::rcu_ptr::{RcuPtr, RcuPtrRef};
+use fuchsia_rcu::subtle::{RcuPtr, RcuPtrRef};
 use fuchsia_rcu::{RcuReadScope, rcu_drop};
 
 use crate::rcu_intrusive_list::{Link, RcuIntrusiveList, RcuIntrusiveListCursor, RcuListAdapter};

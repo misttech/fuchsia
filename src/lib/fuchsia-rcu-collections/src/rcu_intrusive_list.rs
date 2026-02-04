@@ -5,7 +5,7 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use fuchsia_rcu::RcuReadScope;
-use fuchsia_rcu::rcu_ptr::{RcuPtr, RcuPtrRef};
+use fuchsia_rcu::subtle::{RcuPtr, RcuPtrRef};
 
 /// `Link` is an intrusive structure in a doubly-linked list.
 ///
@@ -53,20 +53,20 @@ macro_rules! field_of {
 macro_rules! rcu_list_adapter {
     ($node:ty, $link:ident) => {
         fn to_link(
-            node: fuchsia_rcu::rcu_ptr::RcuPtrRef<'_, $node>,
-        ) -> fuchsia_rcu::rcu_ptr::RcuPtrRef<'_, Link> {
+            node: fuchsia_rcu::subtle::RcuPtrRef<'_, $node>,
+        ) -> fuchsia_rcu::subtle::RcuPtrRef<'_, Link> {
             if node.is_null() {
-                return fuchsia_rcu::rcu_ptr::RcuPtrRef::null();
+                return fuchsia_rcu::subtle::RcuPtrRef::null();
             }
             // SAFETY: The pointer is valid and points to the given field.
             unsafe { $crate::field_of!(node, $node, $link, Link) }
         }
 
         fn from_link(
-            link: fuchsia_rcu::rcu_ptr::RcuPtrRef<'_, Link>,
-        ) -> fuchsia_rcu::rcu_ptr::RcuPtrRef<'_, $node> {
+            link: fuchsia_rcu::subtle::RcuPtrRef<'_, Link>,
+        ) -> fuchsia_rcu::subtle::RcuPtrRef<'_, $node> {
             if link.is_null() {
-                return fuchsia_rcu::rcu_ptr::RcuPtrRef::null();
+                return fuchsia_rcu::subtle::RcuPtrRef::null();
             }
             // SAFETY: The pointer is valid and points to the given field.
             unsafe { $crate::container_of!(link, $node, $link) }

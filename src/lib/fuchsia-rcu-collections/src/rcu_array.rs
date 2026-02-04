@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::RcuReadScope;
-use fuchsia_rcu::rcu_cell::RcuCell;
+use fuchsia_rcu::{RcuCell, RcuReadScope};
 
 /// An array-like data structure that can be read without locking.
 ///

@@ -8,7 +8,7 @@ mod tests {
     #[test]
     fn rcu_arc_example() {
         // [START rcu_arc_example]
-        use fuchsia_rcu::rcu_arc::RcuArc;
+        use fuchsia_rcu::RcuArc;
         use std::sync::Arc;
 
         // Initialize an RcuArc with an initial value.

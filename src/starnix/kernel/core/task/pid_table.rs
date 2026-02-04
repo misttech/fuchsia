@@ -4,7 +4,7 @@
 
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
-use fuchsia_rcu::rcu_option_cell::RcuOptionCell;
+use fuchsia_rcu::RcuOptionCell;
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_types::ownership::{TempRef, WeakRef};
