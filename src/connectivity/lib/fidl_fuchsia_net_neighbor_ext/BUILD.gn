@@ -3,11 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_library.gni")
+import("//src/connectivity/rustc_library_with_features.gni")
 
-rustc_library("fidl_fuchsia_net_neighbor_ext") {
-  with_unit_tests = true
+rustc_library_with_features("fidl_fuchsia_net_neighbor_ext") {
   edition = "2024"
+  check_cfgs = [ "test" ]
   deps = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
@@ -32,6 +32,18 @@ rustc_library("fidl_fuchsia_net_neighbor_ext") {
   ]
 
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
+
+  feature_sets = [
+    {
+      features = []
+      with_unit_tests = true
+    },
+    {
+      target_name = "fidl_fuchsia_net_neighbor_ext_testutils"
+      testonly = true
+      features = [ "testutils" ]
+    },
+  ]
 }
 
 fuchsia_unittest_package("fidl-fuchsia-net-neighbor-ext-test") {

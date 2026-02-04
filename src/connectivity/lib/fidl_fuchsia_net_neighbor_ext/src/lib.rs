@@ -6,7 +6,7 @@
 
 #![deny(missing_docs)]
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testutils"))]
 pub mod testutil;
 
 use async_utils::{fold, stream};
