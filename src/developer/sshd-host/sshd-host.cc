@@ -71,6 +71,8 @@ int main(int argc, const char** argv) {
     FX_LOG_KV(FATAL, "Failed to generate host keys", FX_KV("return_code", info.return_code));
   }
 
+  sshd_host::check_authorized_keys();
+
   uint16_t port = kPort;
   if (argc > 1) {
     int arg = atoi(argv[1]);

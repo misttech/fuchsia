@@ -10,6 +10,11 @@
 
 namespace sshd_host {
 
+// This function is primarily for debugging. In some cases the system can get
+// into a state where we can't access the ssh keys, so we want to explicitly log
+// when this is the case.
+void check_authorized_keys();
+
 zx_status_t provision_authorized_keys_from_bootloader_file(
     fidl::SyncClient<fuchsia_boot::Items>& boot_items);
 

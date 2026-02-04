@@ -19,6 +19,16 @@
 
 namespace sshd_host {
 
+void check_authorized_keys() {
+  struct stat buf;
+  if (auto status = stat(kAuthorizedKeysPath, &buf); status != 0) {
+    FX_LOGS(WARNING) << "While checking authorized keys, unable to stat '" << kAuthorizedKeysPath
+                     << "'. This may block ssh access to this device. Error: " << strerror(errno);
+    return;
+  }
+  FX_LOGS(INFO) << kAuthorizedKeysPath << " exists. Size: " << buf.st_size << " bytes";
+}
+
 zx_status_t provision_authorized_keys_from_bootloader_file(
     fidl::SyncClient<fuchsia_boot::Items>& boot_items) {
   auto result =
