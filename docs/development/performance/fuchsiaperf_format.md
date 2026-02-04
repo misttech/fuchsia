@@ -33,9 +33,22 @@ of the result's `values`.
 
 * `nanoseconds`  or `ns`
 * `milliseconds` or `ms`
-* `bytes/second`
 * `bytes`
+* `bytes/second`
+* `frames/second`
+* `percent`
+* `count`
+* `W` (watts)
 
+### Metric direction
+
+The `unit` string may optionally specify the metric direction (whether a smaller
+or larger value is better) by appending it with an underscore.
+
+* `_smallerIsBetter`
+* `_biggerIsBetter`
+
+For example: `ns_smallerIsBetter` or `bytes/second_biggerIsBetter`.
 
 ### Example
 
