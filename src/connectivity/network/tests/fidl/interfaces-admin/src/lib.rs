@@ -7,7 +7,6 @@
 mod blackhole;
 
 use assert_matches::assert_matches;
-use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_network::{self as fhardware_network, FrameType};
 use fidl_fuchsia_net_ext::IntoExt;
 use fidl_fuchsia_net_resources::GrantForInterfaceAuthorization;
@@ -2005,6 +2004,9 @@ async fn device_control_closes_on_device_close<N: Netstack>(name: &str) {
 //
 // Ensure that creating an interface will not panic if the netdevice instance
 // exits.
+/*
+TODO(https://fxbug.dev/481597491): Uncomment this test once we identify why
+it causes the netstack to lock up.
 #[netstack_test]
 async fn interface_create_close_race(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -2051,6 +2053,7 @@ async fn interface_create_close_race(name: &str) {
         assert!(!interfaces_state.is_closed());
     }
 }
+*/
 
 // TODO(https://fxbug.dev/42061838) Remove this trait once the source of the
 // timeout-induced-flake has been identified.
