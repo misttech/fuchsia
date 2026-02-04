@@ -6,8 +6,7 @@ import("//build/components.gni")
 import("//build/fuzz.gni")
 import("//build/rust/rustc_fuzzer.gni")
 import("//build/rust/rustc_test.gni")
-import(
-    "//src/connectivity/network/netstack3/core/rustc_library_with_features.gni")
+import("//src/connectivity/rustc_library_with_features.gni")
 
 _all_core_crates = [
   "base:netstack3-base",

@@ -4,8 +4,7 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
-import(
-    "//src/connectivity/network/netstack3/core/rustc_library_with_features.gni")
+import("//src/connectivity/rustc_library_with_features.gni")
 
 rustc_library_with_features("netstack3-icmp-echo") {
   edition = "2024"
