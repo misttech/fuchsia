@@ -39,7 +39,6 @@ impl<H: Hooks> HooksWrapper<H> {
     // Returns a mutable reference to the wrapper. This will be safe from the functions below
     // because they are all called when we have exclusive access.
     unsafe fn wrapper<'a>(meta: NonNull<Meta>) -> &'a mut Self {
-        let id = meta.as_ptr() as usize;
         unsafe {
             meta.as_ref()
                 .scope()
@@ -47,7 +46,7 @@ impl<H: Hooks> HooksWrapper<H> {
                 .hooks_map
                 .0
                 .lock()
-                .get(&id)
+                .get(&meta.as_ref().id)
                 .unwrap()
                 .cast::<Self>()
                 .as_mut()
@@ -57,7 +56,6 @@ impl<H: Hooks> HooksWrapper<H> {
     unsafe fn drop(mut meta: NonNull<Meta>) {
         let meta_ref = unsafe { meta.as_mut() };
         // Remove the hooks entry from the map.
-        let id = meta.as_ptr() as usize;
         let hooks = unsafe {
             Box::from_raw(
                 meta_ref
@@ -66,7 +64,7 @@ impl<H: Hooks> HooksWrapper<H> {
                     .hooks_map
                     .0
                     .lock()
-                    .remove(&id)
+                    .remove(&meta_ref.id)
                     .unwrap()
                     .cast::<Self>()
                     .as_mut(),
@@ -105,7 +103,6 @@ impl<H: Hooks> HooksWrapper<H> {
 impl AtomicFutureHandle<'_> {
     /// Adds hooks to the future.
     pub fn add_hooks<H: Hooks>(&mut self, hooks: H) {
-        let id = self.id();
         // SAFETY: This is safe because we have exclusive access.
         let meta: &mut Meta = unsafe { self.0.as_mut() };
         {
@@ -114,7 +111,7 @@ impl AtomicFutureHandle<'_> {
             // can use `Box::into_non_null` when it's stabilised.
             assert!(
                 hooks_map
-                    .insert(id, unsafe {
+                    .insert(meta.id, unsafe {
                         NonNull::new_unchecked(Box::into_raw(Box::new(HooksWrapper {
                             orig_vtable: meta.vtable,
                             hooks,

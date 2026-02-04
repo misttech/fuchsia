@@ -20,12 +20,17 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::Context;
 use std::thread::ThreadId;
 
 pub(crate) const TASK_READY_WAKEUP_ID: u64 = u64::MAX - 1;
+
+/// The id of the main task, which is a virtual task that lives from construction
+/// to destruction of the executor. The main task may correspond to multiple
+/// main futures, in cases where the executor runs multiple times during its lifetime.
+pub(crate) const MAIN_TASK_ID: usize = 0;
 
 thread_local!(
     static EXECUTOR: RefCell<Option<ScopeHandle>> = const { RefCell::new(None) }
@@ -86,7 +91,7 @@ impl ThreadsState {
 }
 
 #[cfg(test)]
-static ACTIVE_EXECUTORS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static ACTIVE_EXECUTORS: AtomicUsize = AtomicUsize::new(0);
 
 pub(crate) struct Executor {
     pub(super) port: zx::Port,
@@ -95,7 +100,7 @@ pub(crate) struct Executor {
     pub(super) done: AtomicBool,
     is_local: bool,
     pub(crate) receivers: PacketReceiverMap,
-
+    task_count: AtomicUsize,
     pub(super) ready_tasks: SegQueue<TaskHandle>,
     time: ExecutorTime,
     // The low byte is the number of threads currently sleeping. The high byte is the number of
@@ -144,6 +149,7 @@ impl Executor {
             done: AtomicBool::new(false),
             is_local,
             receivers: PacketReceiverMap::new(),
+            task_count: AtomicUsize::new(MAIN_TASK_ID + 1),
             ready_tasks: SegQueue::new(),
             time,
             threads_state: AtomicU32::new(0),
@@ -165,15 +171,15 @@ impl Executor {
         });
     }
 
-    fn poll_ready_tasks(&self, main_task: Option<&TaskHandle>) -> PollReadyTasksResult {
+    fn poll_ready_tasks(&self) -> PollReadyTasksResult {
         loop {
             for _ in 0..16 {
                 let Some(task) = self.ready_tasks.pop() else {
                     return PollReadyTasksResult::NoneReady;
                 };
-                let is_main = Some(&task) == main_task;
+                let task_id = task.id();
                 let complete = self.try_poll(task);
-                if complete && is_main {
+                if complete && task_id == MAIN_TASK_ID {
                     return PollReadyTasksResult::MainTaskCompleted;
                 }
                 self.polled.fetch_add(1, Ordering::Relaxed);
@@ -200,6 +206,10 @@ impl Executor {
 
     pub fn is_local(&self) -> bool {
         self.is_local
+    }
+
+    pub fn next_task_id(&self) -> usize {
+        self.task_count.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn notify_task_ready(&self) {
@@ -460,14 +470,7 @@ impl Executor {
     // The debugger looks for this function on the stack, so if its (fully-qualified) name changes,
     // the debugger needs to be updated.
     // LINT.IfChange
-    pub fn worker_lifecycle<const UNTIL_STALLED: bool>(
-        self: &Arc<Executor>,
-        // The main task should be specified for a single-threaded executor, but it isn't necessary
-        // for a multi-threaded executor since it has an independent mechanism for tracking when
-        // the main task terminates.
-        // TODO(https://fxbug.dev/481030722) remove this parameter
-        main_task: Option<&TaskHandle>,
-    ) {
+    pub fn worker_lifecycle<const UNTIL_STALLED: bool>(self: &Arc<Executor>) {
         // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
 
         assert!(
@@ -481,7 +484,7 @@ impl Executor {
             // Keep track of whether we are considered asleep.
             let mut sleeping = false;
 
-            match self.poll_ready_tasks(main_task) {
+            match self.poll_ready_tasks() {
                 PollReadyTasksResult::NoneReady => {
                     // No more tasks, indicate we are sleeping. We use SeqCst ordering because we
                     // want this change here to happen *before* we check ready_tasks below. This
@@ -567,8 +570,8 @@ impl Executor {
     /// # Safety
     ///
     /// The caller must guarantee that the executor isn't running.
-    pub(super) unsafe fn drop_main_task(&self, root_scope: &ScopeHandle, task: &TaskHandle) {
-        unsafe { root_scope.drop_task_unchecked(task) };
+    pub(super) unsafe fn drop_main_task(&self, root_scope: &ScopeHandle) {
+        unsafe { root_scope.drop_task_unchecked(MAIN_TASK_ID) };
     }
 
     fn try_poll(&self, task: TaskHandle) -> bool {
@@ -582,7 +585,7 @@ impl Executor {
                 false
             }
             AttemptPollResult::IFinished | AttemptPollResult::Aborted => {
-                task.scope().task_did_finish(&task);
+                task.scope().task_did_finish(task.id());
                 true
             }
             _ => false,
@@ -599,7 +602,7 @@ impl Executor {
         &self.boot_timers
     }
 
-    fn poll_tasks(&self, callback: impl FnOnce(), main_task: Option<&TaskHandle>) {
+    fn poll_tasks(&self, callback: impl FnOnce()) {
         assert!(!self.is_local);
 
         // Increment the count of foreign threads.
@@ -613,8 +616,8 @@ impl Executor {
             let Some(task) = self.ready_tasks.pop() else {
                 break;
             };
-            let is_main = Some(&task) == main_task;
-            if self.try_poll(task) && is_main {
+            let task_id = task.id();
+            if self.try_poll(task) && task_id == MAIN_TASK_ID {
                 break;
             }
             self.polled.fetch_add(1, Ordering::Relaxed);
@@ -772,9 +775,7 @@ impl EHandle {
             );
         });
 
-        // `poll_tasks` should only ever be used on a multi-threaded executor, it's safe to pass
-        // None.
-        self.inner().poll_tasks(callback, None);
+        self.inner().poll_tasks(callback);
 
         EXECUTOR.with(|e| *e.borrow_mut() = None);
     }

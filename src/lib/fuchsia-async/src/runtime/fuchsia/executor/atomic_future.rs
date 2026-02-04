@@ -7,6 +7,7 @@ pub mod spawnable_future;
 
 use crate::ScopeHandle;
 use futures::ready;
+use std::borrow::Borrow;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
@@ -37,7 +38,6 @@ struct AtomicFuture<F: Future> {
 // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
 
 /// A lock-free thread-safe future. The handles can be cloned.
-#[derive(Debug)]
 pub struct AtomicFutureHandle<'a>(NonNull<Meta>, PhantomData<&'a ()>);
 
 /// `AtomicFutureHandle` is safe to access from multiple threads at once.
@@ -57,20 +57,6 @@ impl Clone for AtomicFutureHandle<'_> {
     }
 }
 
-impl PartialEq for AtomicFutureHandle<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for AtomicFutureHandle<'_> {}
-
-impl Hash for AtomicFutureHandle<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
 struct Meta {
     vtable: &'static VTable,
 
@@ -78,6 +64,7 @@ struct Meta {
     state: AtomicUsize,
 
     scope: Option<ScopeHandle>,
+    id: usize,
 }
 
 impl Meta {
@@ -284,12 +271,16 @@ pub enum AbortAndDetachResult {
 
 impl<'a> AtomicFutureHandle<'a> {
     /// Create a new `AtomicFuture`.
-    pub(crate) fn new<F: Future + Send + 'a>(scope: Option<ScopeHandle>, future: F) -> Self
+    pub(crate) fn new<F: Future + Send + 'a>(
+        scope: Option<ScopeHandle>,
+        id: usize,
+        future: F,
+    ) -> Self
     where
         F::Output: Send + 'a,
     {
         // SAFETY: This is safe because the future and output are both Send.
-        unsafe { Self::new_local(scope, future) }
+        unsafe { Self::new_local(scope, id, future) }
     }
 
     /// Create a new `AtomicFuture` from a !Send future.
@@ -297,7 +288,11 @@ impl<'a> AtomicFutureHandle<'a> {
     /// # Safety
     ///
     /// The caller must uphold the Send requirements.
-    pub(crate) unsafe fn new_local<F: Future + 'a>(scope: Option<ScopeHandle>, future: F) -> Self
+    pub(crate) unsafe fn new_local<F: Future + 'a>(
+        scope: Option<ScopeHandle>,
+        id: usize,
+        future: F,
+    ) -> Self
     where
         F::Output: 'a,
     {
@@ -309,6 +304,7 @@ impl<'a> AtomicFutureHandle<'a> {
                         // The future is inactive and we start with a single reference.
                         state: AtomicUsize::new(1 | INACTIVE),
                         scope,
+                        id,
                     },
                     future: FutureOrResult { future: ManuallyDrop::new(future) },
                 })))
@@ -324,16 +320,8 @@ impl<'a> AtomicFutureHandle<'a> {
     }
 
     /// Returns the future's ID.
-    ///
-    /// The ID is only valid so long as there exists at least one live handle.
     pub fn id(&self) -> usize {
-        // We use the address of the metadata as the ID since we know it's a stable heap address.
-        // We can't use Pin to guarantee it never moves because the actual pointer to the
-        // AtomicFuture is stored as a NonNull<Meta>.
-        //
-        // See https://github.com/rust-lang/rust/issues/54815 for an upstream feature request that
-        // would let us encode this in the types.
-        self.meta() as *const Meta as usize
+        self.meta().id
     }
 
     /// Returns the associated scope.
@@ -667,6 +655,26 @@ impl Deref for BorrowedWaker<'_> {
         &self.0
     }
 }
+
+impl Borrow<usize> for AtomicFutureHandle<'static> {
+    fn borrow(&self) -> &usize {
+        &self.meta().id
+    }
+}
+
+impl Hash for AtomicFutureHandle<'static> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.meta().id.hash(state);
+    }
+}
+
+impl PartialEq for AtomicFutureHandle<'static> {
+    fn eq(&self, other: &Self) -> bool {
+        self.meta().id == other.meta().id
+    }
+}
+
+impl Eq for AtomicFutureHandle<'static> {}
 
 struct Bomb;
 impl Drop for Bomb {

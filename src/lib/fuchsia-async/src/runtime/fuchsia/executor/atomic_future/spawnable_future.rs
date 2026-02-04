@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use super::super::common::TaskHandle;
-use super::{AtomicFutureHandle, Bomb, DONE, Meta, RESULT_TAKEN};
-use crate::ScopeHandle;
+use super::{AtomicFutureHandle, Bomb, Meta, DONE, RESULT_TAKEN};
 use crate::scope::Spawnable;
+use crate::ScopeHandle;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::task::{Context, Poll, ready};
+use std::task::{ready, Context, Poll};
 
 /// `SpawnableFuture` is a boxed future that can be spawned without incurring any more allocations
 /// i.e. it doesn't end up with the double boxing that you end up with if you try and spawn `Box<dyn
@@ -29,12 +29,12 @@ impl<'a, O> SpawnableFuture<'a, O> {
     where
         O: Send + 'a,
     {
-        Self(AtomicFutureHandle::new(None, future), PhantomData)
+        Self(AtomicFutureHandle::new(None, 0, future), PhantomData)
     }
 
     fn meta(&mut self) -> &mut Meta {
         // SAFETY: This is safe because we know there is only one reference to the handle.
-        unsafe { &mut *self.0.0.as_mut() }
+        unsafe { &mut *self.0 .0.as_mut() }
     }
 }
 
@@ -43,7 +43,7 @@ impl<O> Spawnable for SpawnableFuture<'static, O> {
 
     fn into_task(mut self, scope: ScopeHandle) -> TaskHandle {
         let meta = self.meta();
-
+        meta.id = scope.executor().next_task_id();
         meta.scope = Some(scope);
         self.0
     }
@@ -77,9 +77,9 @@ mod tests {
     use super::SpawnableFuture;
     use crate::{Scope, SendExecutorBuilder};
     use std::future::poll_fn;
-    use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
     use std::sync::atomic::Ordering::Relaxed;
+    use std::sync::Arc;
     use std::task::Poll;
 
     #[test]

@@ -367,7 +367,7 @@ where
     type Output = F::Output;
 
     fn into_task(self, scope: ScopeHandle) -> TaskHandle {
-        scope.new_task(self)
+        scope.new_task(None, self)
     }
 }
 
@@ -435,9 +435,9 @@ impl ScopeHandle {
     // the task is bound to the scope: when the scope is dropped, the task will be cancelled.
     pub fn spawn(&self, future: impl Spawnable<Output = ()>) -> JoinHandle<()> {
         let task = future.into_task(self.clone());
-        let task_handle = task.clone();
+        let task_id = task.id();
         self.insert_task(task, false);
-        JoinHandle::new(self.clone(), task_handle)
+        JoinHandle::new(self.clone(), task_id)
     }
 
     /// Spawn a new task on the scope of a thread local executor.
@@ -445,9 +445,10 @@ impl ScopeHandle {
     /// NOTE: This is not supported with a [`SendExecutor`][crate::SendExecutor]
     /// and will cause a runtime panic. Use [`ScopeHandle::spawn`] instead.
     pub fn spawn_local(&self, future: impl Future<Output = ()> + 'static) -> JoinHandle<()> {
-        let task = self.new_local_task(future);
-        self.insert_task(task.clone(), false);
-        JoinHandle::new(self.clone(), task)
+        let task = self.new_local_task(None, future);
+        let id = task.id();
+        self.insert_task(task, false);
+        JoinHandle::new(self.clone(), id)
     }
 
     /// Like `spawn`, but for tasks that return a result.
@@ -459,9 +460,9 @@ impl ScopeHandle {
         future: impl Spawnable<Output = T> + Send + 'static,
     ) -> crate::Task<T> {
         let task = future.into_task(self.clone());
-        let task_handle = task.clone();
+        let id = task.id();
         self.insert_task(task, false);
-        JoinHandle::new(self.clone(), task_handle).into()
+        JoinHandle::new(self.clone(), id).into()
     }
 
     /// Like `spawn`, but for tasks that return a result.
@@ -475,9 +476,10 @@ impl ScopeHandle {
         &self,
         future: impl Future<Output = T> + 'static,
     ) -> crate::Task<T> {
-        let task = self.new_local_task(future);
-        self.insert_task(task.clone(), false);
-        JoinHandle::new(self.clone(), task).into()
+        let task = self.new_local_task(None, future);
+        let id = task.id();
+        self.insert_task(task, false);
+        JoinHandle::new(self.clone(), id).into()
     }
 
     pub(super) fn root(executor: Arc<Executor>) -> ScopeHandle {
@@ -580,11 +582,16 @@ impl ScopeHandle {
 
     /// Creates a new task associated with this scope.  This does not spawn it on the executor.
     /// That must be done separately.
-    pub(crate) fn new_task<'a, Fut: Future + Send + 'a>(&self, fut: Fut) -> AtomicFutureHandle<'a>
+    pub(crate) fn new_task<'a, Fut: Future + Send + 'a>(
+        &self,
+        id: Option<usize>,
+        fut: Fut,
+    ) -> AtomicFutureHandle<'a>
     where
         Fut::Output: Send,
     {
-        let mut task = AtomicFutureHandle::new(Some(self.clone()), fut);
+        let id = id.unwrap_or_else(|| self.executor().next_task_id());
+        let mut task = AtomicFutureHandle::new(Some(self.clone()), id, fut);
         if let Some(instrument) = &self.executor().instrument {
             instrument.task_created(self, &mut task);
         }
@@ -593,7 +600,11 @@ impl ScopeHandle {
 
     /// Creates a new task associated with this scope.  This does not spawn it on the executor.
     /// That must be done separately.
-    pub(crate) fn new_local_task<'a>(&self, fut: impl Future + 'a) -> AtomicFutureHandle<'a> {
+    pub(crate) fn new_local_task<'a>(
+        &self,
+        id: Option<usize>,
+        fut: impl Future + 'a,
+    ) -> AtomicFutureHandle<'a> {
         // Check that the executor is local and that this is the executor thread.
         if !self.executor().is_local() {
             panic!(
@@ -607,10 +618,11 @@ impl ScopeHandle {
             "Error: called `new_local_task` on a different thread to the executor",
         );
 
+        let id = id.unwrap_or_else(|| self.executor().next_task_id());
         // SAFETY: We've confirmed that the futures here will never be used across multiple threads,
         // so the Send requirements that `new_local` requires should be met.
         unsafe {
-            let mut task = AtomicFutureHandle::new_local(Some(self.clone()), fut);
+            let mut task = AtomicFutureHandle::new_local(Some(self.clone()), id, fut);
             if let Some(instrument) = &self.executor().instrument {
                 instrument.task_created(self, &mut task);
             }
@@ -912,7 +924,7 @@ mod state {
 
     pub enum JoinResult {
         Waker(Waker),
-        Ready,
+        Result(TaskHandle),
     }
 
     #[repr(u8)] // So zxdb can read the status.
@@ -990,7 +1002,7 @@ mod state {
                 return Some(task);
             }
             task.wake();
-            assert!(self.all_tasks.insert(task), "Task must be new");
+            assert!(self.all_tasks.insert(task));
             None
         }
 
@@ -1184,16 +1196,16 @@ mod state {
     }
 
     impl ScopeWaker<'_> {
-        pub fn take_task(&mut self, task: &TaskHandle) -> Option<TaskHandle> {
-            let task = self.all_tasks.take(task);
+        pub fn take_task(&mut self, id: usize) -> Option<TaskHandle> {
+            let task = self.all_tasks.take(&id);
             if task.is_some() {
                 self.on_task_removed(0);
             }
             task
         }
 
-        pub fn task_did_finish(&mut self, task: &TaskHandle) {
-            if let Some(task) = self.all_tasks.take(task) {
+        pub fn task_did_finish(&mut self, id: usize) {
+            if let Some(task) = self.all_tasks.take(&id) {
                 self.on_task_removed(1);
                 if !task.is_detached() {
                     let maybe_waker = self.results.task_did_finish(task);
@@ -1290,13 +1302,13 @@ impl ScopeHandle {
     }
 
     /// Marks the task as detached.
-    pub(crate) fn detach(&self, task: &TaskHandle) {
+    pub(crate) fn detach(&self, task_id: usize) {
         let _maybe_task = {
             let mut state = self.lock();
-            if let Some(task) = state.all_tasks().get(task) {
+            if let Some(task) = state.all_tasks().get(&task_id) {
                 task.detach();
             }
-            state.results.detach(task)
+            state.results.detach(task_id)
         };
     }
 
@@ -1305,13 +1317,13 @@ impl ScopeHandle {
     /// # Safety
     ///
     /// The caller must guarantee that `R` is the correct type.
-    pub(crate) unsafe fn abort_task<R>(&self, task: &TaskHandle) -> Option<R> {
+    pub(crate) unsafe fn abort_task<R>(&self, task_id: usize) -> Option<R> {
         let mut state = self.lock();
-        if state.results.detach(task) {
+        if let Some(task) = state.results.detach(task_id) {
             drop(state);
             return unsafe { task.take_result() };
         }
-        state.all_tasks().get(task).and_then(|task| {
+        state.all_tasks().get(&task_id).and_then(|task| {
             if task.abort() {
                 self.inner.executor.ready_tasks.push(task.clone());
             }
@@ -1320,14 +1332,14 @@ impl ScopeHandle {
     }
 
     /// Aborts and detaches the task.
-    pub(crate) fn abort_and_detach(&self, task: &TaskHandle) {
+    pub(crate) fn abort_and_detach(&self, task_id: usize) {
         let _tasks = {
             let mut state = ScopeWaker::from(self.lock());
-            let maybe_task1 = state.results.detach(task);
+            let maybe_task1 = state.results.detach(task_id);
             let mut maybe_task2 = None;
-            if state.all_tasks().contains(task) {
+            if let Some(task) = state.all_tasks().get(&task_id) {
                 match task.abort_and_detach() {
-                    AbortAndDetachResult::Done => maybe_task2 = state.take_task(task),
+                    AbortAndDetachResult::Done => maybe_task2 = state.take_task(task_id),
                     AbortAndDetachResult::AddToRunQueue => {
                         self.inner.executor.ready_tasks.push(task.clone());
                     }
@@ -1345,10 +1357,10 @@ impl ScopeHandle {
     /// The caller must guarantee that `R` is the correct type.
     pub(crate) unsafe fn poll_join_result<R>(
         &self,
-        task: &TaskHandle,
+        task_id: usize,
         cx: &mut Context<'_>,
     ) -> Poll<R> {
-        let task = ready!(self.lock().results.poll_join_result(task, cx));
+        let task = ready!(self.lock().results.poll_join_result(task_id, cx));
         match unsafe { task.take_result() } {
             Some(result) => Poll::Ready(result),
             None => {
@@ -1366,10 +1378,10 @@ impl ScopeHandle {
     /// The caller must guarantee that `R` is the correct type.
     pub(crate) unsafe fn try_poll_join_result<R>(
         &self,
-        task: &TaskHandle,
+        task_id: usize,
         cx: &mut Context<'_>,
     ) -> Poll<Result<R, JoinError>> {
-        let task = ready!(self.lock().results.poll_join_result(task, cx));
+        let task = ready!(self.lock().results.poll_join_result(task_id, cx));
         match unsafe { task.take_result() } {
             Some(result) => Poll::Ready(Ok(result)),
             None => {
@@ -1385,10 +1397,10 @@ impl ScopeHandle {
     /// Polls for the task to be aborted.
     pub(crate) unsafe fn poll_aborted<R>(
         &self,
-        task: &TaskHandle,
+        task_id: usize,
         cx: &mut Context<'_>,
     ) -> Poll<Option<R>> {
-        let task = self.lock().results.poll_join_result(task, cx);
+        let task = self.lock().results.poll_join_result(task_id, cx);
         task.map(|task| unsafe { task.take_result() })
     }
 
@@ -1407,17 +1419,17 @@ impl ScopeHandle {
     ///
     /// This is unsafe because of the call to `drop_future_unchecked` which requires that no
     /// thread is currently polling the task.
-    pub(super) unsafe fn drop_task_unchecked(&self, task: &TaskHandle) {
+    pub(super) unsafe fn drop_task_unchecked(&self, task_id: usize) {
         let mut state = ScopeWaker::from(self.lock());
-        let task = state.take_task(task);
+        let task = state.take_task(task_id);
         if let Some(task) = task {
             unsafe { task.drop_future_unchecked() };
         }
     }
 
-    pub(super) fn task_did_finish(&self, task: &TaskHandle) {
+    pub(super) fn task_did_finish(&self, id: usize) {
         let mut state = ScopeWaker::from(self.lock());
-        state.task_did_finish(task);
+        state.task_did_finish(id);
     }
 
     /// Visits scopes by state. If the callback returns `true`, children will
@@ -1528,21 +1540,20 @@ impl hash::Hash for PtrKey {
 }
 
 #[derive(Default)]
-struct JoinResults(HashMap<TaskHandle, JoinResult>);
+struct JoinResults(HashMap<usize, JoinResult>);
 
 trait Results: Send + Sync + 'static {
     /// Returns true if we allow spawning futures with arbitrary outputs on the scope.
     fn can_spawn(&self) -> bool;
 
     /// Polls for the specified task having finished.
-    fn poll_join_result(&mut self, task: &TaskHandle, cx: &mut Context<'_>) -> Poll<TaskHandle>;
+    fn poll_join_result(&mut self, task_id: usize, cx: &mut Context<'_>) -> Poll<TaskHandle>;
 
     /// Called when a task finishes.
     fn task_did_finish(&mut self, task: TaskHandle) -> Option<Waker>;
 
-    /// Called to drop any results for a particular task. Returns `true` if the
-    /// task was ready.
-    fn detach(&mut self, task: &TaskHandle) -> bool;
+    /// Called to drop any results for a particular task.
+    fn detach(&mut self, task_id: usize) -> Option<TaskHandle>;
 
     /// Takes *all* the stored results.
     fn take(&mut self) -> Box<dyn Any>;
@@ -1557,13 +1568,13 @@ impl Results for JoinResults {
         true
     }
 
-    fn poll_join_result(&mut self, task: &TaskHandle, cx: &mut Context<'_>) -> Poll<TaskHandle> {
-        match self.0.entry(task.clone()) {
+    fn poll_join_result(&mut self, task_id: usize, cx: &mut Context<'_>) -> Poll<TaskHandle> {
+        match self.0.entry(task_id) {
             Entry::Occupied(mut o) => match o.get_mut() {
                 JoinResult::Waker(waker) => *waker = cx.waker().clone(),
-                JoinResult::Ready => {
-                    o.remove();
-                    return Poll::Ready(task.clone());
+                JoinResult::Result(_) => {
+                    let JoinResult::Result(task) = o.remove() else { unreachable!() };
+                    return Poll::Ready(task);
                 }
             },
             Entry::Vacant(v) => {
@@ -1574,11 +1585,12 @@ impl Results for JoinResults {
     }
 
     fn task_did_finish(&mut self, task: TaskHandle) -> Option<Waker> {
-        match self.0.entry(task) {
+        match self.0.entry(task.id()) {
             Entry::Occupied(mut o) => {
-                let JoinResult::Waker(waker) = std::mem::replace(o.get_mut(), JoinResult::Ready)
+                let JoinResult::Waker(waker) =
+                    std::mem::replace(o.get_mut(), JoinResult::Result(task))
                 else {
-                    // It can't be JoinResult::Ready because this function is the only
+                    // It can't be JoinResult::Result because this function is the only
                     // function that sets that, and `task_did_finish` won't get called
                     // twice.
                     unreachable!()
@@ -1586,14 +1598,17 @@ impl Results for JoinResults {
                 Some(waker)
             }
             Entry::Vacant(v) => {
-                v.insert(JoinResult::Ready);
+                v.insert(JoinResult::Result(task));
                 None
             }
         }
     }
 
-    fn detach(&mut self, task: &TaskHandle) -> bool {
-        matches!(self.0.remove(task), Some(JoinResult::Ready))
+    fn detach(&mut self, task_id: usize) -> Option<TaskHandle> {
+        match self.0.remove(&task_id) {
+            Some(JoinResult::Result(task)) => Some(task),
+            _ => None,
+        }
     }
 
     fn take(&mut self) -> Box<dyn Any> {
@@ -1627,7 +1642,7 @@ impl<R: Send + 'static> Results for ResultsStream<R> {
         false
     }
 
-    fn poll_join_result(&mut self, _task: &TaskHandle, _cx: &mut Context<'_>) -> Poll<TaskHandle> {
+    fn poll_join_result(&mut self, _task_id: usize, _cx: &mut Context<'_>) -> Poll<TaskHandle> {
         Poll::Pending
     }
 
@@ -1639,8 +1654,8 @@ impl<R: Send + 'static> Results for ResultsStream<R> {
         inner.waker.take()
     }
 
-    fn detach(&mut self, _task: &TaskHandle) -> bool {
-        false
+    fn detach(&mut self, _task_id: usize) -> Option<TaskHandle> {
+        None
     }
 
     fn take(&mut self) -> Box<dyn Any> {

@@ -378,25 +378,12 @@ fxl::RefPtr<AsyncOutputBuffer> FormatScopeJoin(const ExprValue& task_runner,
 fxl::RefPtr<AsyncOutputBuffer> FormatTask(const ExprValue& task_runner,
                                           const FormatFutureOptions& options,
                                           const fxl::RefPtr<EvalContext>& context, int indent) {
-  ErrOrValue task_handle_opt = ResolveNonstaticMember(context, task_runner, {"__0", "task"});
-  if (task_handle_opt.has_error())
-    return FormatError("Invalid Task handle", task_handle_opt.err());
-
-  ErrOrValue task_handle = ResolveSingleVariantValue(context, task_handle_opt.value());
-  if (task_handle.has_error())
-    return FormatError("Invalid Task handle", task_handle.err());
-
+  ErrOrValue id = ResolveNonstaticMember(context, task_runner, {"__0", "task_id"});
   uint64_t task_id = 0;
-  if (task_handle.value().type()->GetAssignedName() == "Some") {
-    // Some(AtomicFutureHandle) -> AtomicFutureHandle -> NonNull -> pointer
-    ErrOrValue ptr =
-        ResolveNonstaticMember(context, task_handle.value(), {"__0", "__0", "pointer"});
-    if (ptr.has_error() || ptr.value().PromoteTo64(&task_id).has_error())
-      return FormatError("Invalid Task handle", ptr.err());
-  }
-
+  if (id.has_error() || id.value().PromoteTo64(&task_id).has_error())
+    return FormatError("Invalid Task handle", id.err());
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
-  out->Complete("fuchsia_async::Task(id = " + to_hex_string(task_id) + ")\n",
+  out->Complete("fuchsia_async::Task(id = " + std::to_string(task_id) + ")\n",
                 TextForegroundColor::kGray);
   return out;
 }
@@ -405,25 +392,12 @@ fxl::RefPtr<AsyncOutputBuffer> FormatJoinHandle(const ExprValue& task_runner,
                                                 const FormatFutureOptions& options,
                                                 const fxl::RefPtr<EvalContext>& context,
                                                 int indent) {
-  ErrOrValue task_handle_opt = ResolveNonstaticMember(context, task_runner, {"task"});
-  if (task_handle_opt.has_error())
-    return FormatError("Invalid JoinHandle", task_handle_opt.err());
-
-  ErrOrValue task_handle = ResolveSingleVariantValue(context, task_handle_opt.value());
-  if (task_handle.has_error())
-    return FormatError("Invalid JoinHandle", task_handle.err());
-
+  ErrOrValue id = ResolveNonstaticMember(context, task_runner, {"task_id"});
   uint64_t task_id = 0;
-  if (task_handle.value().type()->GetAssignedName() == "Some") {
-    // Some(AtomicFutureHandle) -> AtomicFutureHandle -> NonNull -> pointer
-    ErrOrValue ptr =
-        ResolveNonstaticMember(context, task_handle.value(), {"__0", "__0", "pointer"});
-    if (ptr.has_error() || ptr.value().PromoteTo64(&task_id).has_error())
-      return FormatError("Invalid JoinHandle", ptr.err());
-  }
-
+  if (id.has_error() || id.value().PromoteTo64(&task_id).has_error())
+    return FormatError("Invalid JoinHandle", id.err());
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
-  out->Complete("fuchsia_async::JoinHandle(id = " + to_hex_string(task_id) + ")\n",
+  out->Complete("fuchsia_async::JoinHandle(id = " + std::to_string(task_id) + ")\n",
                 TextForegroundColor::kGray);
   return out;
 }
@@ -513,23 +487,23 @@ void FormatActiveTasksHashSetValue(
     const ExprValue& tuple, const FormatFutureOptions& options,
     const fxl::RefPtr<EvalContext>& context, int indent,
     fit::callback<void(uint64_t, fxl::RefPtr<AsyncOutputBuffer>)> cb) {
-  // Some(AtomicFutureHandle) -> AtomicFutureHandle -> NonNull
+  // HashSet<V> looks like HashMap<V, ()>.  Then it's AtomicFutureHandle -> NonNull.
   ErrOrValue meta_ptr = ResolveNonstaticMember(context, tuple, {"__0", "__0", "pointer"});
   if (meta_ptr.has_error())
     return cb(0, FormatError("Invalid HashSet value (1)", meta_ptr.err()));
   ResolvePointer(context, meta_ptr.value(), [=, cb = std::move(cb)](ErrOrValue meta) mutable {
     if (meta.has_error())
       return cb(0, FormatError("Invalid HashSet value (2)", meta.err()));
+    ErrOrValue id = ResolveNonstaticMember(context, meta.value(), {"id"});
     uint64_t task_id = 0;
-    if (auto err = meta_ptr.value().PromoteTo64(&task_id); err.has_error())
-      return cb(0, FormatError("Invalid HashSet value (3)", err));
-
+    if (id.has_error() || id.value().PromoteTo64(&task_id).has_error())
+      return cb(0, FormatError("Invalid HashSet value (3)", id.err()));
     auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
     if (indent >= 3) {
       out->Append(std::string(indent - 3, ' '));
       out->Append(kAwaiteeMarker);
     }
-    out->Append("Task(id = " + to_hex_string(task_id) + ")\n", TextForegroundColor::kGreen);
+    out->Append("Task(id = " + std::to_string(task_id) + ")\n", TextForegroundColor::kGreen);
     out->Append(std::string(indent, ' '));
     out->Append(kAwaiteeMarker);
 

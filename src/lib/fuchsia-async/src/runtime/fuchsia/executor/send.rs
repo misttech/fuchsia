@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::common::{Executor, ExecutorTime};
+use super::common::{Executor, ExecutorTime, MAIN_TASK_ID};
 use super::scope::ScopeHandle;
 use fuchsia_sync::{Condvar, Mutex};
 
@@ -81,12 +81,15 @@ impl SendExecutor {
         let pair2 = pair.clone();
 
         // Spawn a future which will set the result upon completion.
-        let task = self.root_scope.new_task(future.map(move |fut_result| {
-            let (lock, cvar) = &*pair2;
-            let mut result = lock.lock();
-            *result = Some(fut_result);
-            cvar.notify_one();
-        }));
+        let task = self.root_scope.new_task(
+            Some(MAIN_TASK_ID),
+            future.map(move |fut_result| {
+                let (lock, cvar) = &*pair2;
+                let mut result = lock.lock();
+                *result = Some(fut_result);
+                cvar.notify_one();
+            }),
+        );
         task.detach();
         assert!(self.root_scope.insert_task(task, false));
 
@@ -156,7 +159,7 @@ impl SendExecutor {
                     if let Some(init) = worker_init.as_ref() {
                         init();
                     }
-                    inner.worker_lifecycle::</* UNTIL_STALLED: */ false>(None);
+                    inner.worker_lifecycle::</* UNTIL_STALLED: */ false>();
                 })
                 .expect("must be able to spawn threads");
             self.threads.push(thread);
