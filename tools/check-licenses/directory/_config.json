@@ -4,6 +4,15 @@
         "skips": [
             {
                 "notes": [
+                    "Skipping an OWNERS and a README file to better match the project layout"
+                ],
+                "paths": [
+                    "third_party/pylibs/OWNERS",
+                    "third_party/pylibs/README.md"
+                ]
+            },
+            {
+                "notes": [
                     "Unblock landing of android/platform/frameworks/native. b/477373903"
                 ],
                 "paths": [

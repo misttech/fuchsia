@@ -22,7 +22,8 @@
                     "prebuilt",
                     "third_party",
                     "thirdparty",
-                    "vendor"
+                    "vendor",
+                    "third_party/pylibs"
                 ],
                 "exceptions": [
                     "third_party/golibs/vendor/google.golang.org/api/internal/third_party",
