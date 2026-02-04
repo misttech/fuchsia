@@ -88,6 +88,8 @@
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
                 "fuchsia.net.ndp.RouterAdvertisementOptionWatcherProvider",
+                "fuchsia.net.neighbor.Controller",
+                "fuchsia.net.neighbor.View",
                 "fuchsia.net.root.Interfaces",
                 "fuchsia.net.routes.admin.RouteTableProviderV4",
                 "fuchsia.net.routes.admin.RouteTableProviderV6",
