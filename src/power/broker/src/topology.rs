@@ -436,7 +436,7 @@ impl Topology {
             })
             .collect();
         for dependent in assertive_dependents_of_invalid_elements {
-            self.add_assertive_dependency(
+            match self.add_assertive_dependency(
                 &Dependency {
                     dependent: dependent.clone(),
                     requires: ElementLevel {
@@ -445,8 +445,14 @@ impl Topology {
                     },
                 },
                 &mut EagerInspectWriter,
-            )
-            .expect("failed to replace assertive dependency with unsatisfiable dependency");
+            ) {
+                Ok(_) | Err(ModifyDependencyError::AlreadyExists) => {
+                    // This is fine, there could be multiple invalid elements.
+                }
+                Err(e) => {
+                    panic!("failed to replace dependency with unsatisfiable dependency: {:?}", e)
+                }
+            }
             for requires in self.assertive_dependencies.get(&dependent).unwrap().clone() {
                 if requires.element_id == *invalid_element_id {
                     self.remove_assertive_dependency(&Dependency {
@@ -1233,5 +1239,48 @@ mod tests {
             level: ONE,
         });
         assert_eq!(c_deps, [c1_b5.clone()]);
+    }
+
+    #[fuchsia::test]
+    fn test_invalidate_multiple_dependencies() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut t = Topology::new(inspect.root(), 0);
+
+        let a = t.add_element_with_inspect("A", vec![0, 1], 0, 0).expect("add_element failed");
+        let b = t.add_element_with_inspect("B", vec![0, 1], 0, 0).expect("add_element failed");
+        let c = t.add_element_with_inspect("C", vec![0, 1], 0, 0).expect("add_element failed");
+
+        // C depends on A and B
+        t.add_assertive_dependency(
+            &Dependency {
+                dependent: ElementLevel { element_id: c.clone(), level: ONE },
+                requires: ElementLevel { element_id: a.clone(), level: ONE },
+            },
+            &mut EagerInspectWriter,
+        )
+        .expect("add_assertive_dependency failed");
+
+        t.add_assertive_dependency(
+            &Dependency {
+                dependent: ElementLevel { element_id: c.clone(), level: ONE },
+                requires: ElementLevel { element_id: b.clone(), level: ONE },
+            },
+            &mut EagerInspectWriter,
+        )
+        .expect("add_assertive_dependency failed");
+
+        // Remove A, invalidating C -> A. C now depends on Unsatisfiable.
+        t.remove_element(&a);
+
+        // Remove B, invalidating C -> B. C already depends on Unsatisfiable.
+        // This should not panic.
+        t.remove_element(&b);
+
+        let c_deps: Vec<_> = t
+            .direct_assertive_dependencies(&ElementLevel { element_id: c.clone(), level: ONE })
+            .collect();
+
+        assert_eq!(c_deps.len(), 1);
+        assert_eq!(c_deps[0].requires.element_id, t.get_unsatisfiable_element_id());
     }
 }
