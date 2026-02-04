@@ -18,3 +18,6 @@ _.path = [
     # Provides jq, trace_processor_shell, etc.
     "{{ exec(command=\"source $FUCHSIA_DIR/tools/devshell/lib/platform.sh && echo -n $PREBUILT_TOOL_PATHS\") }}",
 ]
+
+[tasks]
+fxf = "fx format-code && fx"
