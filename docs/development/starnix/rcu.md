@@ -59,7 +59,7 @@ with an internal mutex. For example:
 
 ```rust
 {% includecode gerrit_repo="fuchsia/fuchsia"
-   gerrit_path="exexamples/rcu/src/rcu_hash_map_example.rs"
+   gerrit_path="examples/rcu/src/rcu_hash_map_example.rs"
    region_tag="rcu_hash_map_example"
    adjust_indentation="auto" %}
 ```
@@ -79,7 +79,7 @@ continue accessing the old value while a writer publishes a new one.
 
 ```rust
 {% includecode gerrit_repo="fuchsia/fuchsia"
-   gerrit_path="exexamples/rcu/src/rcu_arc_example.rs"
+   gerrit_path="examples/rcu/src/rcu_arc_example.rs"
    region_tag="rcu_arc_example"
    adjust_indentation="auto" %}
 ```
