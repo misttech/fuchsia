@@ -15,6 +15,11 @@ typedef struct fdio fdio_t;
 // Create a composite file descriptor from and array of handles.
 //
 // On success, the handles are owned by the file descriptor.
+//
+// In Fuchsia, there is an expectation that there is a 1:1 mapping between a file descriptor and a
+// handle. In general, we do not want to violate that rule. This library is intended to be used in
+// very limited circumstances (compatibility with Linux and Binder), where we need to violate that
+// rule.
 zx_status_t composite_fd_create(zx_handle_t* handles, size_t size, fdio_t** out_fdio);
 
 // Release the handles associated with a composite file descriptor.

@@ -14,7 +14,6 @@ source_set("composite_fd") {
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
     "//sdk/lib/zxio",
-    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
 }

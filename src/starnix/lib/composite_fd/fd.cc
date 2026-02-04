@@ -14,24 +14,16 @@
 #include <span>
 #include <vector>
 
-#include <fbl/canary.h>
-
 namespace {
 
 class CompositeFd {
  public:
   CompositeFd(zx_handle_t* handles, size_t size);
-
-  std::vector<zx::handle>& handles() {
-    canary_.Assert();
-    return handles_;
-  }
-
-  bool valid() const { return canary_.Valid(); }
+  std::vector<zx::handle>& handles() { return handles_; }
+  inline bool valid();
 
  private:
   zxio_t io_;
-  fbl::Canary<fbl::magic("COMP")> canary_;
   std::vector<zx::handle> handles_;
 };
 
@@ -48,6 +40,8 @@ CompositeFd::CompositeFd(zx_handle_t* handles, size_t size) {
     handles_.emplace_back(handle);
   }
 }
+
+bool CompositeFd::valid() { return zxio_get_ops(&io_) == &kCompositeFdOps; }
 
 }  // namespace
 
