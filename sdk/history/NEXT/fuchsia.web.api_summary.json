@@ -1135,12 +1135,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.web/FrameMediaSettings.renderer_usage",
-        "ordinal": "1",
-        "type": "fuchsia.media/AudioRenderUsage"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.web/FrameMediaSettings.renderer_usage2",
         "ordinal": "3",
         "type": "fuchsia.media/AudioRenderUsage2"
