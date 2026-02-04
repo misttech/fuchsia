@@ -8,8 +8,16 @@
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::logging::log_warn;
+use crate::client::InternalClient;
+use crate::logging::{log_debug, log_warn};
+use crate::messaging::Sender;
+use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
+use crate::util::respond_to_completer;
+use derivative::Derivative;
 use futures::StreamExt as _;
+use futures::channel::oneshot;
+use net_types::ip::IpVersion;
 use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
 use netlink_packet_route::neighbour::{
     NeighbourAttribute, NeighbourHeader, NeighbourMessage, NeighbourState,
@@ -111,6 +119,41 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
     }
 }
 
+/// Arguments for an RTM_GETNEIGH [`Request`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum GetNeighborArgs {
+    Dump { ip_version: Option<IpVersion>, interface: Option<u64> },
+    // TODO(https://fxbug.dev/285127384): Support single-neighbor RTM_GETNEIGH requests.
+}
+
+/// [`Request`] arguments associated with neighbors.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NeighborRequestArgs {
+    /// RTM_GETNEIGH
+    Get(GetNeighborArgs),
+}
+
+/// An error encountered while handling a [`Request`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RequestError {}
+
+/// A request associated with neighbors.
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
+    /// The resource and operation-specific argument(s) for this request.
+    pub args: NeighborRequestArgs,
+    /// The request's sequence number.
+    ///
+    /// This value will be copied verbatim into any message sent as a result of
+    /// this request.
+    pub sequence_number: u32,
+    /// The client that made the request.
+    pub client: InternalClient<NetlinkRoute, S>,
+    /// A completer that will have the result of the request sent over.
+    pub completer: oneshot::Sender<Result<(), RequestError>>,
+}
+
 /// Errors related to handling neighbor events from Netstack.
 #[derive(Debug, Error, PartialEq)]
 pub(crate) enum HandleWatchEventError {
@@ -133,7 +176,7 @@ pub(crate) enum HandleWatchEventError {
     UnexpectedEventReceived(fnet_neighbor_ext::Event),
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 struct NeighborKey {
     interface: u64,
     neighbor: fnet::IpAddress,
@@ -151,8 +194,6 @@ impl From<&fnet_neighbor_ext::Entry> for NeighborKey {
 ///
 /// Can respond to RTM_*NEIGH message requests.
 pub(crate) struct NeighborsWorker {
-    // TODO(https://fxbug.dev/285127384): Consider whether switching to a
-    // `BTreeMap` for stable iteration order would aid in testing.
     neighbor_table: HashMap<NeighborKey, fnet_neighbor_ext::Entry>,
 }
 
@@ -222,10 +263,41 @@ impl NeighborsWorker {
             }
         }
     }
+
+    pub(crate) fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
+        &mut self,
+        Request { args, mut client, sequence_number, completer }: Request<S>,
+    ) {
+        let result = match args {
+            NeighborRequestArgs::Get(args) => match args {
+                GetNeighborArgs::Dump { ip_version, interface } => {
+                    self.neighbor_table
+                        .values()
+                        .filter(|n| {
+                            ip_version.map_or(true, |ip_version| match n.neighbor {
+                                fnet::IpAddress::Ipv4(_) => ip_version == IpVersion::V4,
+                                fnet::IpAddress::Ipv6(_) => ip_version == IpVersion::V6,
+                            })
+                        })
+                        .filter(|n| interface.map_or(true, |i| n.interface == i))
+                        .filter_map(|e| NetlinkNeighborMessage::optionally_from(e.clone()))
+                        .for_each(|m| {
+                            client.send_unicast(m.into_rtnl_new_neighbor(sequence_number, true));
+                        });
+                    Ok(())
+                }
+            },
+        };
+
+        log_debug!("handled request {args:?} from {client} with result = {result:?}");
+        respond_to_completer(client, completer, result, args);
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::client::testutil::{CLIENT_ID_1, new_fake_client};
+
     use super::*;
 
     use assert_matches::assert_matches;
@@ -751,5 +823,99 @@ mod tests {
             )) => {}
             _ => panic!("expected PEER_CLOSED error at end of stream"),
         }
+    }
+
+    #[test_case(
+        GetNeighborArgs::Dump{ ip_version: None, interface: None },
+        &[1, 2, 3, 4];
+        "dump all"
+    )]
+    #[test_case(
+        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V4), interface: None },
+        &[1, 3];
+        "dump ipv4 only"
+    )]
+    #[test_case(
+        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V6), interface: None },
+        &[2, 4];
+        "dump ipv6 only"
+    )]
+    #[test_case(
+        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V6), interface: Some(4) },
+        &[4];
+        "dump interface 4 ipv6"
+    )]
+    #[test_case(
+        GetNeighborArgs::Dump{ ip_version: Some(IpVersion::V4), interface: Some(4) },
+        &[];
+        "dump interface 4 ipv4"
+    )]
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_get_request(
+        get_args: GetNeighborArgs,
+        expected_ifindexes: &[u32],
+    ) {
+        let (mut sender_sink, client, _async_work_drain_task) =
+            new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, completer_rcv) = oneshot::channel();
+        let request = Request {
+            args: NeighborRequestArgs::Get(get_args),
+            sequence_number: 1,
+            client,
+            completer,
+        };
+
+        let events: Vec<_> = [
+            fnet_neighbor_ext::Entry {
+                interface: 1,
+                neighbor: fidl_ip!("192.168.0.1"),
+                ..valid_neighbor_entry()
+            },
+            fnet_neighbor_ext::Entry {
+                interface: 2,
+                neighbor: fidl_ip!("fe80::2"),
+                ..valid_neighbor_entry()
+            },
+            fnet_neighbor_ext::Entry {
+                interface: 3,
+                neighbor: fidl_ip!("192.168.0.3"),
+                ..valid_neighbor_entry()
+            },
+            fnet_neighbor_ext::Entry {
+                interface: 4,
+                neighbor: fidl_ip!("fe80::4"),
+                ..valid_neighbor_entry()
+            },
+        ]
+        .into_iter()
+        .map(Into::into)
+        .map(fnet_neighbor::EntryIteratorItem::Existing)
+        .chain(std::iter::once(fnet_neighbor::EntryIteratorItem::Idle(fnet_neighbor::IdleEvent)))
+        .collect();
+
+        let batches = vec![events];
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
+
+        let worker_fut = NeighborsWorker::create(&view);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        worker.handle_request(request);
+
+        completer_rcv.await.expect("request handling result should be OK");
+
+        let mut ifindexes_seen = Vec::new();
+        for sent_message in sender_sink.take_messages() {
+            match sent_message.message.payload {
+                NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewNeighbour(
+                    NeighbourMessage { header: NeighbourHeader { ifindex, .. }, .. },
+                )) => {
+                    ifindexes_seen.push(ifindex);
+                }
+                _ => panic!("unexpected message sent"),
+            }
+        }
+        ifindexes_seen.sort();
+        assert_eq!(&ifindexes_seen[..], expected_ifindexes);
     }
 }
