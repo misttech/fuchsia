@@ -2029,14 +2029,14 @@ alias(
 )
 
 alias(
-    name = "regex-syntax-0.8.5",
-    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.5:regex_syntax",
+    name = "regex-syntax-0.8.9",
+    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.9:regex_syntax",
     tags = ["manual"],
 )
 
 alias(
     name = "regex-syntax",
-    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.5:regex_syntax",
+    actual = "//third_party/rust_crates/vendor/regex-syntax-0.8.9:regex_syntax",
     tags = ["manual"],
 )
 
