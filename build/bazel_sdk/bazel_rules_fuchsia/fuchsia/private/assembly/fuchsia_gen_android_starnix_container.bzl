@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Rule for generating an Android Starnix container."""
+
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
-
-"""Rule for generating an Android Starnix container."""
 
 def _gen_android_starnix_container_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
