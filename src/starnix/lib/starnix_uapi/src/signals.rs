@@ -69,6 +69,46 @@ impl Signal {
         self.number |= 0x80
     }
 
+    pub fn name(&self) -> &'static str {
+        if self.is_real_time() {
+            return "real time signal";
+        }
+        match self.number {
+            uapi::SIGHUP => "SIGHUP",
+            uapi::SIGINT => "SIGINT",
+            uapi::SIGQUIT => "SIGQUIT",
+            uapi::SIGILL => "SIGILL",
+            uapi::SIGTRAP => "SIGTRAP",
+            uapi::SIGABRT => "SIGABRT",
+            uapi::SIGBUS => "SIGBUS",
+            uapi::SIGFPE => "SIGFPE",
+            uapi::SIGKILL => "SIGKILL",
+            uapi::SIGUSR1 => "SIGUSR1",
+            uapi::SIGSEGV => "SIGSEGV",
+            uapi::SIGUSR2 => "SIGUSR2",
+            uapi::SIGPIPE => "SIGPIPE",
+            uapi::SIGALRM => "SIGALRM",
+            uapi::SIGTERM => "SIGTERM",
+            uapi::SIGSTKFLT => "SIGSTKFLT",
+            uapi::SIGCHLD => "SIGCHLD",
+            uapi::SIGCONT => "SIGCONT",
+            uapi::SIGSTOP => "SIGSTOP",
+            uapi::SIGTSTP => "SIGTSTP",
+            uapi::SIGTTIN => "SIGTTIN",
+            uapi::SIGTTOU => "SIGTTOU",
+            uapi::SIGURG => "SIGURG",
+            uapi::SIGXCPU => "SIGXCPU",
+            uapi::SIGXFSZ => "SIGXFSZ",
+            uapi::SIGVTALRM => "SIGVTALRM",
+            uapi::SIGPROF => "SIGPROF",
+            uapi::SIGWINCH => "SIGWINCH",
+            uapi::SIGIO => "SIGIO",
+            uapi::SIGPWR => "SIGPWR",
+            uapi::SIGSYS => "SIGSYS",
+            _ => "unknown signal",
+        }
+    }
+
     /// The number of signals, also the highest valid signal number.
     pub const NUM_SIGNALS: u32 = 64;
 }
@@ -130,44 +170,10 @@ impl fmt::Debug for Signal {
 
 impl fmt::Display for Signal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.is_real_time() {
-            let name = match self.number {
-                uapi::SIGHUP => "SIGHUP",
-                uapi::SIGINT => "SIGINT",
-                uapi::SIGQUIT => "SIGQUIT",
-                uapi::SIGILL => "SIGILL",
-                uapi::SIGTRAP => "SIGTRAP",
-                uapi::SIGABRT => "SIGABRT",
-                uapi::SIGBUS => "SIGBUS",
-                uapi::SIGFPE => "SIGFPE",
-                uapi::SIGKILL => "SIGKILL",
-                uapi::SIGUSR1 => "SIGUSR1",
-                uapi::SIGSEGV => "SIGSEGV",
-                uapi::SIGUSR2 => "SIGUSR2",
-                uapi::SIGPIPE => "SIGPIPE",
-                uapi::SIGALRM => "SIGALRM",
-                uapi::SIGTERM => "SIGTERM",
-                uapi::SIGSTKFLT => "SIGSTKFLT",
-                uapi::SIGCHLD => "SIGCHLD",
-                uapi::SIGCONT => "SIGCONT",
-                uapi::SIGSTOP => "SIGSTOP",
-                uapi::SIGTSTP => "SIGTSTP",
-                uapi::SIGTTIN => "SIGTTIN",
-                uapi::SIGTTOU => "SIGTTOU",
-                uapi::SIGURG => "SIGURG",
-                uapi::SIGXCPU => "SIGXCPU",
-                uapi::SIGXFSZ => "SIGXFSZ",
-                uapi::SIGVTALRM => "SIGVTALRM",
-                uapi::SIGPROF => "SIGPROF",
-                uapi::SIGWINCH => "SIGWINCH",
-                uapi::SIGIO => "SIGIO",
-                uapi::SIGPWR => "SIGPWR",
-                uapi::SIGSYS => "SIGSYS",
-                _ => "unknown signal",
-            };
-            write!(f, "{}({})", name, self.number)
-        } else {
+        if self.is_real_time() {
             write!(f, "SIGRTMIN+{}({})", self.number - super::SIGRTMIN, self.number)
+        } else {
+            write!(f, "{}({})", self.name(), self.number)
         }
     }
 }

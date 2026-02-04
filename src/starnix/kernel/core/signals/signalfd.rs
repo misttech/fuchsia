@@ -78,24 +78,24 @@ impl FileOps for SignalFd {
                 };
                 // Any future variants of SignalDetail need a match arm here that copies the relevant
                 // fields into the signalfd_siginfo.
-                match signal.detail {
+                match &signal.detail {
                     SignalDetail::None => {}
                     SignalDetail::Kill { pid, uid } => {
-                        siginfo.ssi_pid = pid as u32;
-                        siginfo.ssi_uid = uid;
+                        siginfo.ssi_pid = *pid as u32;
+                        siginfo.ssi_uid = *uid;
                     }
                     SignalDetail::SIGCHLD { pid, uid, status } => {
-                        siginfo.ssi_pid = pid as u32;
-                        siginfo.ssi_uid = uid;
-                        siginfo.ssi_status = status;
+                        siginfo.ssi_pid = *pid as u32;
+                        siginfo.ssi_uid = *uid;
+                        siginfo.ssi_status = *status;
                     }
                     SignalDetail::SigFault { addr } => {
-                        siginfo.ssi_addr = addr;
+                        siginfo.ssi_addr = *addr;
                     }
                     SignalDetail::SIGSYS { call_addr, syscall, arch } => {
-                        siginfo.ssi_call_addr = call_addr.into();
-                        siginfo.ssi_syscall = syscall;
-                        siginfo.ssi_arch = arch;
+                        siginfo.ssi_call_addr = (*call_addr).into();
+                        siginfo.ssi_syscall = *syscall;
+                        siginfo.ssi_arch = *arch;
                     }
                     SignalDetail::Raw { data } => {
                         // these offsets are taken from the gVisor offsets in the SignalInfo struct

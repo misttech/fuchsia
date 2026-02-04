@@ -5,6 +5,7 @@
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::task::{CurrentTask, Task, ThreadGroupReadGuard, WaitQueue, Waiter, WaiterRef};
 use crate::time::IntervalTimerHandle;
+use starnix_logging::{regular_trace_category_enabled, trace_instaflow_begin, trace_instaflow_end};
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
 use starnix_types::ownership::WeakRef;
@@ -22,6 +23,8 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+const TRACE_CATEGORY: &'static str = "starnix:signals";
 
 pub const SI_HEADER_SIZE: usize = std::mem::size_of::<SignalInfoHeader>();
 
@@ -507,7 +510,7 @@ impl TryFrom<UncheckedSignalInfo> for SignalInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct SignalInfo {
     pub signal: Signal,
     pub errno: i32,
@@ -523,9 +526,38 @@ pub struct SignalInfo {
 
     /// The task that sent this signal. None for kernel-originated signals.
     sender: Option<WeakRef<Task>>,
+
+    /// The trace id associated with this signal. Used to end the instaflow event when SignalInfo is
+    /// dropped.
+    trace_id: Option<fuchsia_trace::Id>,
 }
 
 impl Eq for SignalInfo {}
+
+impl Drop for SignalInfo {
+    fn drop(&mut self) {
+        if let Some(trace_id) = self.trace_id.take() {
+            if regular_trace_category_enabled(TRACE_CATEGORY) {
+                trace_instaflow_end!(TRACE_CATEGORY, "SignalFlow", self.signal.name(), trace_id);
+            }
+        }
+    }
+}
+
+impl Clone for SignalInfo {
+    // Cloning a SignalInfo creates a new source, and a new trace id if tracing is enabled.
+    #[track_caller]
+    fn clone(&self) -> Self {
+        Self::new(
+            self.signal.clone(),
+            self.errno,
+            self.code,
+            self.detail.clone(),
+            self.force,
+            self.sender.clone(),
+        )
+    }
+}
 
 macro_rules! make_siginfo {
             ($self:ident $(, $( $sifield:ident ).*, $value:expr)?) => {
@@ -652,7 +684,23 @@ impl SignalInfo {
         force: bool,
         sender: Option<WeakRef<Task>>,
     ) -> Self {
-        Self { signal, errno, code, detail, force, source: SignalSource::capture(), sender }
+        let trace_id = if regular_trace_category_enabled(TRACE_CATEGORY) {
+            let id = fuchsia_trace::Id::new();
+            trace_instaflow_begin!(TRACE_CATEGORY, "SignalFlow", signal.name(), id, "code" => code);
+            Some(id)
+        } else {
+            None
+        };
+        Self {
+            signal,
+            errno,
+            code,
+            detail,
+            force,
+            source: SignalSource::capture(),
+            sender,
+            trace_id,
+        }
     }
 
     pub fn write<MA: MemoryAccessor>(
