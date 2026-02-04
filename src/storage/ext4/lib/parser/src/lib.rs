@@ -80,7 +80,9 @@ fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, Construc
                     .map_err(ConstructFsError::NodeError)?;
             }
             EntryType::RegularFile => {
-                dir.insert_child(entry_name, build_fs_file(parser, entry_ino)?)
+                // TODO(https://fxbug.dev/479943428): Enable creating writeable file when this is
+                // properly supported.
+                dir.insert_child(entry_name, build_fs_file(parser, entry_ino, false)?)
                     .map_err(ConstructFsError::NodeError)?;
             }
             _ => {
@@ -92,12 +94,16 @@ fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, Construc
     Ok(dir)
 }
 
-fn build_fs_file(parser: &Parser, ino: u32) -> Result<Arc<ExtFile>, ConstructFsError> {
+fn build_fs_file(
+    parser: &Parser,
+    ino: u32,
+    writeable: bool,
+) -> Result<Arc<ExtFile>, ConstructFsError> {
     let inode = parser.inode(ino)?;
     let attributes = ExtAttributes::from_inode(inode);
     let xattrs = parser.inode_xattrs(ino)?;
     let data = parser.read_data(ino)?;
-    let file = ExtFile::from_data(ino as u64, attributes, xattrs, data)
+    let file = ExtFile::from_data(ino as u64, attributes, xattrs, data, writeable)
         .map_err(ConstructFsError::NodeError)?;
     Ok(file)
 }

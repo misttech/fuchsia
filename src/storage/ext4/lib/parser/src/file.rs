@@ -7,7 +7,9 @@ use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
-use vfs::file::{File, FileLike, FileOptions, GetVmo, StreamIoConnection, SyncMode};
+use vfs::file::{
+    FidlIoConnection, File, FileIo, FileLike, FileOptions, GetVmo, StreamIoConnection, SyncMode,
+};
 use vfs::node::Node;
 use vfs::{ObjectRequestRef, immutable_attributes};
 use zx::{self, HandleBased as _, Status, Vmo};
@@ -21,12 +23,19 @@ pub struct ExtFile {
     attributes: ExtAttributes,
     xattrs: XattrMap,
     vmo: Vmo,
+    writeable: bool,
 }
 
 impl ExtFile {
     /// Creates a new [`ExtFile`] with the given `inode`, `attributes`, and `vmo`.
-    pub fn new(inode: u64, attributes: ExtAttributes, xattrs: XattrMap, vmo: Vmo) -> Arc<Self> {
-        Arc::new(Self { inode, attributes, xattrs, vmo })
+    pub fn new(
+        inode: u64,
+        attributes: ExtAttributes,
+        xattrs: XattrMap,
+        vmo: Vmo,
+        writeable: bool,
+    ) -> Arc<Self> {
+        Arc::new(Self { inode, attributes, xattrs, vmo, writeable })
     }
 
     /// Creates a new [`ExtFile`] with the given `inode`, `attributes`, and `data`.
@@ -35,13 +44,14 @@ impl ExtFile {
         attributes: ExtAttributes,
         xattrs: XattrMap,
         data: impl AsRef<[u8]>,
+        writeable: bool,
     ) -> Result<Arc<Self>, Status> {
         let bytes = data.as_ref();
         let vmo = Vmo::create(bytes.len().try_into().map_err(|_| Status::OUT_OF_RANGE)?)?;
         if !bytes.is_empty() {
             vmo.write(bytes, 0)?;
         }
-        Ok(Self::new(inode, attributes, xattrs, vmo))
+        Ok(Self::new(inode, attributes, xattrs, vmo, writeable))
     }
 }
 
@@ -101,7 +111,13 @@ impl FileLike for ExtFile {
         options: FileOptions,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
-        StreamIoConnection::create_sync(scope, self, options, object_request.take());
+        if self.writeable {
+            // Use a FidlIoConnection to manage writes. Note that reads will be slower because they
+            // won't be using a stream.
+            FidlIoConnection::create_sync(scope, self, options, object_request.take());
+        } else {
+            StreamIoConnection::create_sync(scope, self, options, object_request.take());
+        }
         Ok(())
     }
 }
@@ -112,7 +128,7 @@ impl File for ExtFile {
     }
 
     fn writable(&self) -> bool {
-        false
+        self.writeable
     }
 
     fn executable(&self) -> bool {
@@ -159,6 +175,37 @@ impl File for ExtFile {
     }
 }
 
+// Trait required for `FidlIoConnection` to support write operations.
+impl FileIo for ExtFile {
+    async fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
+        // TODO(https://fxbug.dev/479943428): When full write support is implemented, ensure read_at
+        // handles potential race conditions with concurrent writes.
+        let vmo_size = self.vmo.get_content_size()?;
+        if offset >= vmo_size {
+            return Ok(0);
+        }
+
+        let readable_bytes = std::cmp::min(buffer.len() as u64, vmo_size - offset);
+        if readable_bytes == 0 {
+            return Ok(0);
+        }
+        self.vmo.read(&mut buffer[..readable_bytes as usize], offset)?;
+        Ok(readable_bytes)
+    }
+
+    async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
+        // TODO(https://fxbug.dev/479943428): This is a basic WIP implementation, we'll need to
+        // expand on this like adding an allocator and journalling.
+        self.vmo.write(content, offset)?;
+        Ok(content.len() as u64)
+    }
+
+    async fn append(&self, _content: &[u8]) -> Result<(u64, u64), Status> {
+        // TODO(https://fxbug.dev/479943428): Implement support.
+        Err(Status::NOT_SUPPORTED)
+    }
+}
+
 // Required by `StreamIoConnection`.
 impl GetVmo for ExtFile {
     fn get_vmo(&self) -> &Vmo {
@@ -197,6 +244,7 @@ mod tests {
     use fidl_fuchsia_io::ExtendedAttributeValue;
 
     use super::*;
+    use test_case::test_case;
 
     #[fuchsia::test]
     async fn test_read() {
@@ -206,6 +254,7 @@ mod tests {
             ExtAttributes::default(),
             XattrMap::default(),
             expected_content,
+            false,
         )
         .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
@@ -233,6 +282,7 @@ mod tests {
             ExtAttributes { mode: 0x8124, uid: 456, gid: 789 },
             XattrMap::default(),
             b"Read only test",
+            false,
         )
         .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
@@ -264,8 +314,9 @@ mod tests {
     async fn test_get_extended_attributes() {
         let xattrs =
             [(b"attr".into(), b"value".into()), (b"attr2".into(), b"value2".into())].into();
-        let file = ExtFile::from_data(123, ExtAttributes::default(), xattrs, b"Read only test")
-            .expect("from_data error");
+        let file =
+            ExtFile::from_data(123, ExtAttributes::default(), xattrs, b"Read only test", false)
+                .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
 
         let value = proxy
@@ -292,6 +343,7 @@ mod tests {
             ExtAttributes::default(),
             XattrMap::default(),
             expected_content,
+            false,
         )
         .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
@@ -350,6 +402,119 @@ mod tests {
             .unwrap_err(),
             Status::ACCESS_DENIED
         );
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+    }
+
+    // TODO(https://fxbug.dev/479943428): Test writing to allocated block.
+    #[fuchsia::test]
+    async fn test_rw_file() {
+        let expected_content = b"Read write test";
+
+        // Verify that we can't write to a Ext4 RO file.
+        let ro_file = ExtFile::from_data(
+            fio::INO_UNKNOWN,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            expected_content,
+            /* writeable= */ false,
+        )
+        .expect("from_data error");
+        let ro_proxy = vfs::file::serve_proxy(ro_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        ro_proxy.write(b"Write some stuff").await.expect_err("write FIDL request should fail");
+
+        let rw_file = ExtFile::from_data(
+            fio::INO_UNKNOWN,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            expected_content,
+            /* writeable= */ true,
+        )
+        .expect("from_data error");
+        let proxy = vfs::file::serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+
+        let content = proxy
+            .read(expected_content.len() as u64)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+        assert_eq!(content.as_slice(), expected_content);
+
+        let write_content = b"Write some stuff";
+        let bytes_written = proxy
+            .write(write_content)
+            .await
+            .expect("write FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("write error");
+        assert_eq!(bytes_written, write_content.len() as u64);
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+    }
+
+    #[test_case(false; "read only file")]
+    #[test_case(true; "read write file")]
+    #[fuchsia::test]
+    async fn test_read_past_end_of_file(writeable: bool) {
+        let content = b"0123456789"; // Size 10
+        let file = ExtFile::from_data(
+            fio::INO_UNKNOWN,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            content,
+            writeable,
+        )
+        .expect("from_data error");
+        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+
+        // Read from start past the end.
+        let content = proxy
+            .read(1024)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+        assert_eq!(content.as_slice(), content);
+
+        // Read from exactly at the end.
+        let count = 5;
+        let read_buf = proxy
+            .read_at(count, content.len() as u64)
+            .await
+            .expect("read_at FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read_at error");
+        assert_eq!(read_buf.len(), 0);
+
+        // Read from past the end.
+        let read_buf = proxy
+            .read_at(count, content.len() as u64 + 1)
+            .await
+            .expect("read_at FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read_at error");
+        assert_eq!(read_buf.len(), 0);
+
+        // Read from the middle past the end.
+        let offset = 7;
+        let read_buf = proxy
+            .read_at(count, offset)
+            .await
+            .expect("read_at FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read_at error");
+        assert_eq!(read_buf.len(), content.len() - offset as usize);
 
         proxy
             .close()
