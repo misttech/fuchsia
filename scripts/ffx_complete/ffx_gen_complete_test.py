@@ -65,6 +65,9 @@ class CompletionTest(unittest.TestCase):
     def test_root_flags(self) -> None:
         self.assertEqual("--help", self.complete("ffx --hel"))
 
+    def test_short_flags(self) -> None:
+        self.assertIn(" -t ", self.complete("ffx -"))
+
     def test_known_flags_value(self) -> None:
         self.assertEqual(
             "json-pretty",

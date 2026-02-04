@@ -32,10 +32,12 @@ except ImportError:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../memory"))
     import dataclasses_json_lite
 
-
+# Generate completion from a command flag.
+# Key is (command_name, flag_name).
+# Value is a bash expression enumerating value separated by spaces.
 ARG_NAME_TO_EXPR = {
     ("Ffx", "target"): "$(ffx target list -f n)",
-    ("Ffx", "machine"): "json json-pretty",
+    ("Ffx", "machine"): "json json-pretty raw",
     ("Ffx", "log-level"): "Info Error Warn Trace",
 }
 
@@ -121,19 +123,24 @@ def print_flag(
     def out(text: str) -> None:
         print(textwrap.indent(text, " " * indent), file=file)
 
-    out(f"{flag.long})")
-    if isinstance(flag.kind, Kind) and flag.kind.option:
-        key = (command.name, flag.kind.option.arg_name)
-        if key in ARG_NAME_TO_EXPR:
-            out(f"  if (( word_index + 1 == COMP_CWORD)); then")
-            out(
-                f"""    COMPREPLY=($(compgen -W "{ARG_NAME_TO_EXPR[key]}" -- "${{COMP_WORDS[$COMP_CWORD]}}"))"""
-            )
-            out(f"    return")
-            out(f"  fi")
+    flag_names = [flag.long]
+    if flag.short:
+        flag_names.append(f"-{flag.short}")
 
-    out(f"  ((word_index+=2))")
-    out(f"  ;;")
+    for flag_name in flag_names:
+        out(f"{flag_name})")
+        if isinstance(flag.kind, Kind) and flag.kind.option:
+            key = (command.name, flag.kind.option.arg_name)
+            if key in ARG_NAME_TO_EXPR:
+                out(f"  if (( word_index + 1 == COMP_CWORD)); then")
+                out(
+                    f"""    COMPREPLY=($(compgen -W "{ARG_NAME_TO_EXPR[key]}" -- "${{COMP_WORDS[$COMP_CWORD]}}"))"""
+                )
+                out(f"    return")
+                out(f"  fi")
+
+        out(f"  ((word_index+=2))")
+        out(f"  ;;")
 
 
 def print_command(command: Command, indent: int, file: typing.TextIO) -> None:
