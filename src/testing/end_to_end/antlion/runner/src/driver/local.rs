@@ -142,7 +142,7 @@ impl Driver for LocalDriver {
                             None => format!("{}", self.target.ip),
                             Some(port) => format!("{}:{}", self.target.ip, port),
                         },
-                        take_bug_report_on_fail: true,
+                        take_bug_report_on_fail: false,
                         ssh_port: self.target.ssh_port.clone(),
                         ssh_binary_path: self.ssh_binary.clone(),
                         // TODO(http://b/244747218): Remove when ssh_config is refactored away
@@ -335,7 +335,7 @@ mod test {
             - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
               device_ip_port: {FUCHSIA_ADDR}
-              take_bug_report_on_fail: true
+              take_bug_report_on_fail: false
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
@@ -396,7 +396,7 @@ mod test {
               ip: {FUCHSIA_IPV4}
               ssh_port: {FUCHSIA_SSH_PORT}
               device_ip_port: {FUCHSIA_IPV4}:{FUCHSIA_SSH_PORT}
-              take_bug_report_on_fail: true
+              take_bug_report_on_fail: false
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
@@ -462,7 +462,7 @@ mod test {
             - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
               device_ip_port: {FUCHSIA_ADDR}
-              take_bug_report_on_fail: true
+              take_bug_report_on_fail: false
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
@@ -529,7 +529,7 @@ mod test {
             - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
               device_ip_port: {FUCHSIA_ADDR}
-              take_bug_report_on_fail: true
+              take_bug_report_on_fail: false
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
