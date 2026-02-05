@@ -45,7 +45,9 @@ void println(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
 
 template <typename... Args>
 void println(std::format_string<Args...> fmt, Args&&... args) {
-  println(stdout, fmt, std::forward<Args>(args)...);
+  // Explicit namespace qualification avoids ambiguity due to ADL when
+  // std::println is also in scope.
+  ::cpp23::println(stdout, fmt, std::forward<Args>(args)...);
 }
 
 }  // namespace cpp23
