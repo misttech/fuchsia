@@ -467,8 +467,9 @@ impl Ffx {
             // Note: "--direct" will take precedence over "-c connectivity.direct=false"
             let mut connectivity = serde_json::Map::new();
             connectivity.insert("direct".into(), true.into());
-            let _ =
-                runtime_args.insert("connectivity".into(), serde_json::Value::Object(connectivity));
+            let mut root = serde_json::Map::new();
+            let _ = root.insert("connectivity".into(), serde_json::Value::Object(connectivity));
+            ffx_config::api::value::merge_map(&mut runtime_args, &root);
         }
         let env_path = self.env.as_ref().map(PathBuf::from);
         let current_dir = std::env::current_dir().bug_context("Failed to get working directory")?;
@@ -1222,6 +1223,31 @@ mod test {
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
         let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
+
+        // Gets overridden to true even with command line.
+        let args = ["ffx", "--direct", "-c", "connectivity.direct=false"].map(String::from);
+        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
+        let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
+        assert!(direct);
+
+        // Gets overridden to true and leaves other items alone.
+        let args = [
+            "ffx",
+            "--direct",
+            "-c",
+            "connectivity.direct=false",
+            "-c",
+            "connectivity.teletechternacon=false",
+        ]
+        .map(String::from);
+        let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
+        let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
+        let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
+        assert!(direct);
+        let teletechternacon: bool =
+            context.get("connectivity.teletechternacon").expect("config get");
+        assert!(!teletechternacon);
     }
 
     #[test]
