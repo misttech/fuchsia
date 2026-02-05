@@ -1418,10 +1418,10 @@ if (zircon_toolchain == false) {
     default_common_binary_configs += [ "//build/config/rust:analysis" ]
   }
 
-  if (is_debug) {
-    default_common_binary_configs += [ "//build/config:debug" ]
-  } else {
+  if (is_release) {
     default_common_binary_configs += [ "//build/config:release" ]
+  } else {
+    default_common_binary_configs += [ "//build/config:debug" ]
   }
 
   if (is_fuchsia) {
