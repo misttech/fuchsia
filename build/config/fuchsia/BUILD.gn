@@ -62,13 +62,8 @@ config("compiler") {
     ":compiler_target",
     ":compiler_fuchsia_api_level",
     ":max-page-size",
+    "//build/config:cpu_baseline",
   ]
-
-  if (board_configs != []) {
-    configs += board_configs
-  } else {
-    configs += [ "//build/config:cpu_baseline" ]
-  }
 
   if (use_ccache) {
     configs += [ ":ccache" ]
