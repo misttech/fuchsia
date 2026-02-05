@@ -2278,11 +2278,17 @@ void Node::PrepareDictionary(fit::callback<void(zx::result<>)> callback) {
                 map;
 
             for (auto& offer : offers()) {
+              if (offer.transport != OfferTransport::Dictionary ||
+                  !dirs.contains(offer.service_name)) {
+                continue;
+              }
+
               auto [client, server] =
                   fidl::Endpoints<fuchsia_component_sandbox::DirReceiver>::Create();
               map[offer.service_name] = std::move(client);
               dir_receivers_.emplace_back(std::move(server), std::move(dirs[offer.service_name]),
                                           dispatcher_);
+              dirs.erase(offer.service_name);
             }
 
             (*node_manager_)

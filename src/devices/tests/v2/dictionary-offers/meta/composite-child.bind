@@ -16,3 +16,7 @@ node "left" {
     fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_LEFT;
 }
 
+optional node "opt" {
+  fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY ==
+    fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_OPTIONAL;
+}

@@ -179,6 +179,46 @@ async fn test_dictionary_offers() -> Result<()> {
             .map_err(|e| format_err!("Failed to add_child: {:?}", e))?;
     }
 
+    // This node matches the optional node in the composite created by the root driver.
+    // This carries another dictionary offer of the same service.
+    {
+        let dictionary_ref = realm_proxy
+            .get_child_output_dictionary_deprecated(&child_ref)
+            .await
+            .map_err(|e| format_err!("Failed to call get child output dictionary: {:?}", e))?
+            .map_err(|e| format_err!("Failed to get child output dictionary: {:?}", e))?;
+
+        let args = fdf::NodeAddArgs {
+            name: Some("optional".to_string()),
+            offers_dictionary: Some(dictionary_ref),
+            properties2: Some(vec![fdf::NodeProperty2 {
+                key: bind_fuchsia_nodegroupbind_test::TEST_BIND_PROPERTY.to_string(),
+                value: fdf::NodePropertyValue::StringValue(
+                    bind_fuchsia_nodegroupbind_test::TEST_BIND_PROPERTY_FOUR_OPTIONAL.to_string(),
+                ),
+            }]),
+            offers2: Some(vec![fdf::Offer::DictionaryOffer(fdecl::Offer::Service(
+                fdecl::OfferService {
+                    source_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    target_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    source_instance_filter: Some(vec!["default".to_string()]),
+                    renamed_instances: Some(vec![fdecl::NameMapping {
+                        source_name: "non-default".to_string(),
+                        target_name: "default".to_string(),
+                    }]),
+                    ..Default::default()
+                },
+            ))]),
+            ..Default::default()
+        };
+
+        control
+            .add_child(args)
+            .await
+            .map_err(|e| format_err!("Failed to call add_child: {:?}", e))?
+            .map_err(|e| format_err!("Failed to add_child: {:?}", e))?;
+    }
+
     // This node matches the right node in the composite created by the root driver.
     // Its the primary node in the composite-child.bind
     {

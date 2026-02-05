@@ -33,6 +33,15 @@ fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
       fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_RIGHT),
   };
 
+  auto bind_rules_opt = std::vector{
+      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
+                               bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
+  };
+
+  auto properties_opt = std::vector{
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_DRIVER_OPTIONAL),
+  };
+
   auto parents = std::vector{
       fuchsia_driver_framework::ParentSpec2{{
           .bind_rules = bind_rules_left,
@@ -41,6 +50,10 @@ fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
       fuchsia_driver_framework::ParentSpec2{{
           .bind_rules = bind_rules_right,
           .properties = properties_right,
+      }},
+      fuchsia_driver_framework::ParentSpec2{{
+          .bind_rules = bind_rules_opt,
+          .properties = properties_opt,
       }},
   };
 

@@ -41,6 +41,12 @@ class ChildDriver : public fdf::DriverBase {
         fdf::error("Failed to connect to DataService: {}", data);
         return zx::error(ZX_ERR_INTERNAL);
       }
+
+      data = incoming()->Connect<ft::DataService::Data>("opt");
+      if (data.is_error()) {
+        fdf::error("Failed to connect to DataService: {}", data);
+        return zx::error(ZX_ERR_INTERNAL);
+      }
     }
 
     fidl::Result result = fidl::Call(data.value())->DataDo();
