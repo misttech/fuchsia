@@ -26,6 +26,7 @@ python_library("libs") {
     "ssh/connection.py",
     "ssh/formatter.py",
     "ssh/settings.py",
+    "types.py",
     "validation.py",
   ]
   source_root = "//src/testing/end_to_end/libs"

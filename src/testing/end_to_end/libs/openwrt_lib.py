@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Library for interacting with OpenWRT Access Points."""
+import json
 import logging
-from typing import Any, Mapping
+import time
 
 from libs.ssh import connection, settings
+from libs.types import ControllerConfig
 from libs.validation import MapValidator
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -17,39 +19,73 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class OpenwrtAp:
     """A basic client to interact with an OpenWRT AP via SSH."""
 
-    def __init__(self, config: Mapping[str, Any]) -> None:
+    def __init__(self, config: ControllerConfig) -> None:
+        """Initializes the OpenWrt controller.
+
+        Args:
+            config: The configuration for the OpenWRT device.
+        """
         logging.info("Connecting to OpenWRT AP with config: %s", config)
         c = MapValidator(config)
         self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
         self.ssh = connection.SshConnection(self.ssh_settings)
 
     def setup_ap(self, ssid: str) -> None:
-        """
-        Configures and enables an OpenWrt Access Point with the specified SSID.
+        """Configures and enables an OpenWrt Access Point with the specified SSID.
+
+        Args:
+            ssid: The Service Set Identifier for the Wi-Fi network.
         """
         # TODO(b/461905545): security, band, etc will be added later
-        commands = [
-            "uci set wireless.radio0.disabled='0'",
-            "uci set wireless.@wifi-iface[0].mode='ap'",
-            f"uci set wireless.@wifi-iface[0].ssid='{ssid}'",
-            f"uci set wireless.@wifi-iface[0].encryption='none'",
-            "uci commit wireless",
-        ]
-        # TODO(b/461905545): run the above commands to start AP
+        self.ssh.run("uci set wireless.radio0.disabled='0'")
+        self.ssh.run("uci set wireless.@wifi-iface[0].mode='ap'")
+        self.ssh.run(f"uci set wireless.@wifi-iface[0].ssid='{ssid}'")
+        self.ssh.run("uci set wireless.@wifi-iface[0].encryption='none'")
+        self.ssh.run("uci commit wireless")
         self.start_ap()
 
+    def get_wifi_status(self) -> bool:
+        """Checks if the wireless interface is up and running.
+
+        Returns:
+            True if the 'radio0' interface is marked as 'up', False otherwise
+            or if the status command fails.
+        """
+
+        try:
+            # TODO(b/461905545): support dual band check
+            result = self.ssh.run("wifi status radio0").stdout.decode()
+            radio_data = json.loads(result)
+            return radio_data["radio0"]["up"]
+        except Exception as e:
+            logging.error("Failed to get WiFi status: %s", e)
+            return False
+
+    def verify_wifi_status(self, timeout_sec: int = 20) -> bool:
+        """Polls the AP until the Wi-Fi interfaces are ready.
+
+        Args:
+            timeout_sec: Maximum time in seconds to wait for the interface
+                to report as 'up'.
+
+        Returns:
+            True if the radios are confirmed up within the timeout, False otherwise.
+        """
+        start_time = time.time()
+        end_time = start_time + timeout_sec
+        while time.time() < end_time:
+            if self.get_wifi_status():
+                return True
+            time.sleep(1)
+        return False
+
     def start_ap(self) -> None:
-        """Starts the Access Point."""
-        _LOGGER.info("Starting Access Point...")
-        # TODO(b/461905545): run wifi up command and wait until it's ready
+        """Starts the access point."""
+        self.ssh.run("wifi up")
 
     def stop_ap(self) -> None:
-        """Stops the Access Point."""
-        # Deleting the wireless config and recreating it from defaults
-        commands = [
-            "wifi down",
-        ]
-        # TODO(b/461905545): run the above commands to stop AP
+        """Stops the access point."""
+        self.ssh.run("wifi down")
 
     def reset_ap(self) -> None:
         """Resets wireless configuration to system defaults."""
@@ -57,7 +93,7 @@ class OpenwrtAp:
         self.ssh.run("wifi config")
 
     def close(self) -> None:
-        """Stops the AP, resets configuration, and closes the SSH connection."""
+        """Cleans up the AP state and terminates the SSH connection."""
         self.stop_ap()
         self.reset_ap()
         self.ssh.close()
