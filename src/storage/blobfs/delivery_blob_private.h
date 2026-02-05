@@ -18,7 +18,8 @@
 
 namespace blobfs {
 
-/// Metadata format corresponding to a delivery blob of type `DeliveryBlobType::kType1`.
+/// Metadata format corresponding to a delivery blob of type `DeliveryBlobType::kType1` and
+/// `DeliveryBlobType::kType2`.
 struct MetadataType1 {
   /// Flag indicating if the payload is compressed with the zstd-chunked format. If not set, the
   /// payload is assumed to be an uncompressed blob.
@@ -26,8 +27,8 @@ struct MetadataType1 {
   /// Mask of all valid flags.
   static constexpr uint32_t kValidFlagsMask = kIsCompressed;
 
-  /// Header corresponding to a Type 1 blob to simplify usage.
-  static const DeliveryBlobHeader kHeader;
+  /// The size of the header including metadata and checksum.
+  static const size_t kHeaderSize;
 
   // Fields:
 

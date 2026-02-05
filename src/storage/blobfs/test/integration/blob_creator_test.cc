@@ -5,7 +5,6 @@
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <unistd.h>
-#include <zircon/assert.h>
 #include <zircon/errors.h>
 
 #include <algorithm>
@@ -17,7 +16,6 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/predicates/status.h"
-#include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
@@ -234,7 +232,7 @@ TEST_F(BlobWriterTest, GetVmoWithTooSmallOfPayloadFails) {
   auto blob = TestDeliveryBlob::CreateUncompressed(10);
   auto writer = blob_creator().Create(blob.digest());
   ASSERT_OK(writer);
-  auto writer_vmo = writer->GetVmo(MetadataType1::kHeader.header_length - 1);
+  auto writer_vmo = writer->GetVmo(MetadataType1::kHeaderSize - 1);
   EXPECT_STATUS(writer_vmo, ZX_ERR_BAD_STATE);
 }
 

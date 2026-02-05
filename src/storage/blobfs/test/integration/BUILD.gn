@@ -228,6 +228,7 @@ test("blob-creator-test-bin") {
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//src/storage/blobfs",
+    "//src/storage/blobfs:delivery_blob",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",

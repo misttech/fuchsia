@@ -4,12 +4,10 @@
 
 #include "src/storage/tools/blobfs-compression/blobfs-compression.h"
 
-#include <fbl/algorithm.h>
 #include <fbl/array.h>
 #include <gtest/gtest.h>
 
-#include "src/lib/chunked-compression/chunked-compressor.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
+#include "src/storage/blobfs/delivery_blob.h"
 
 namespace blobfs_compress {
 namespace {
@@ -31,7 +29,8 @@ TEST(BlobfsCompressionTest, CompressBufferEmpty) {
   size_t len = 0ul;
 
   size_t compressed_len;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
   ASSERT_EQ(BlobfsCompress(data, len, compressed_data.get(), &compressed_len, params, {}), ZX_OK);
@@ -45,7 +44,8 @@ TEST(BlobfsCompressionTest, CompressBufferSmall) {
   BufferFill(data.get(), len, 0);
 
   size_t compressed_len;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
   ASSERT_EQ(BlobfsCompress(data.get(), len, compressed_data.get(), &compressed_len, params, {}),
@@ -60,7 +60,8 @@ TEST(BlobfsCompressionTest, CompressBufferlarge) {
   BufferFill(data.get(), len, 0);
 
   size_t compressed_len;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
 
@@ -76,7 +77,8 @@ TEST(BlobfsCompressionTest, CompressNoDestBuffer) {
   BufferFill(data.get(), len, 0);
 
   size_t compressed_len, compressed_len_no_dest;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
 
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
@@ -95,7 +97,8 @@ TEST(BlobfsCompressionTest, CompressWithMerkleTree) {
 
   // We use non-compact merkle tree for calculation.
   size_t compressed_len_with_merkle_tree;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
   ASSERT_EQ(BlobfsCompress(data.get(), len, compressed_data.get(), &compressed_len_with_merkle_tree,
@@ -113,7 +116,8 @@ TEST(BlobfsCompressionTest, DisableSizeAlignment) {
 
   // We use non-compact merkle tree for calculation.
   size_t compressed_len_with_aligned_size;
-  chunked_compression::CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(len);
+  chunked_compression::CompressionParams params =
+      blobfs::GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, len).value();
   size_t compressed_limit = params.ComputeOutputSizeLimit(len);
   fbl::Array<uint8_t> compressed_data(new uint8_t[compressed_limit], compressed_limit);
   ASSERT_EQ(BlobfsCompress(data.get(), len, compressed_data.get(),

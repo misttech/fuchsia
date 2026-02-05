@@ -3,23 +3,34 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/zx/result.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
 
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <set>
 #include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
 
+#include <fbl/string.h>
 #include <fbl/unique_fd.h>
 #include <safemath/safe_math.h>
-#include <src/lib/digest/merkle-tree.h>
 
+#include "src/lib/chunked-compression/compression-params.h"
+#include "src/lib/digest/digest.h"
+#include "src/lib/digest/merkle-tree.h"
+#include "src/lib/digest/node-digest.h"
 #include "src/lib/fxl/command_line.h"
 #include "src/lib/fxl/log_settings_command_line.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
+#include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/tools/blobfs-compression/blobfs-compression.h"
 
 namespace {
@@ -36,6 +47,7 @@ zx::result<DeliveryBlobType> DeliveryTypeFromString(const std::string& delivery_
   using DeliveryBlobTypeRaw = std::underlying_type_t<DeliveryBlobType>;
   const std::set<DeliveryBlobTypeRaw> kSupportedBlobTypes = {
       static_cast<DeliveryBlobTypeRaw>(DeliveryBlobType::kType1),
+      static_cast<DeliveryBlobTypeRaw>(DeliveryBlobType::kType2),
   };
   const DeliveryBlobTypeRaw type_raw =
       safemath::checked_cast<DeliveryBlobTypeRaw>(std::stoul(delivery_type_str));
@@ -60,7 +72,8 @@ void usage(const char* fname) {
           "compressed file size matches the size in stdout.");
   fprintf(stderr, "--%s=TYPE\n    %s\n", "type",
           "If specified, use specified type when generating the output. Supported types:"
-          "\n\t1 - Type A: zstd-chunked, default compression level");
+          "\n\t1 - Type 1: zstd-chunked, default compression level"
+          "\n\t2 - Type 2: zstd-chunked, high compression level, large chunks");
   fprintf(stderr, "--%s\n    %s\n", "disable_size_alignment",
           "Do not align compressed output with block size. Incompatible with --type.");
   fprintf(stderr, "--%s=/path/to/file\n    %s\n", "calculate_digest",
@@ -260,7 +273,8 @@ int main(int argc, char** argv) {
   // We need to generate a delivery blob.
   if (options.type.has_value()) {
     ZX_ASSERT(!options.compressed_file.empty() && options.compressed_file_fd.is_valid());
-    const zx::result delivery_blob = blobfs_compress::GenerateDeliveryBlob(*source, *options.type);
+    const zx::result delivery_blob = blobfs::GenerateDeliveryBlobWithType(
+        DeliveryBlobType::kType1, *source, /*compress=*/std::nullopt);
     if (delivery_blob.is_error()) {
       fprintf(stderr, "Error generating delivery blob.\n");
       return delivery_blob.error_value();
@@ -271,7 +285,9 @@ int main(int argc, char** argv) {
   }
 
   uint8_t* dest_data = nullptr;
-  CompressionParams params = blobfs::GetDefaultChunkedCompressionParams(source->size());
+  CompressionParams params = blobfs::GetChunkedCompressionParamsForType(
+                                 blobfs::kDefaultBlobfsDeliveryBlobType, source->size())
+                                 .value();
   if (!options.compressed_file.empty()) {
     const size_t dest_buffer_size =
         params.ComputeOutputSizeLimit(source->size()) +

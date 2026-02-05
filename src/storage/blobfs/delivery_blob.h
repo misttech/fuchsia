@@ -17,7 +17,8 @@
 
 #include <fbl/array.h>
 
-#include "src/storage/blobfs/format.h"
+#include "src/lib/chunked-compression/compression-params.h"
+#include "src/lib/digest/digest.h"
 
 namespace blobfs {
 
@@ -31,7 +32,19 @@ enum class DeliveryBlobType : uint32_t {
   kReserved = 0,
   // Type-1 blobs support the zstd-chunked compression format or are uncompressed.
   kType1 = 1,
+  // Type-2 blobs are the same as Type-1 except that they specifically use zstd compression level 21
+  // and chunk sizes of 128KiB.
+  kType2 = 2,
 };
+
+// The default delivery blob type used by Blobfs, this will be used internally by Blobfs when
+// compressing blobs for image generation.
+constexpr DeliveryBlobType kDefaultBlobfsDeliveryBlobType = DeliveryBlobType::kType1;
+
+// Returns the chunked compression params used for the given blob type and blob size. If the type
+// does not use ChunkedCompression, this will return an error.
+zx::result<chunked_compression::CompressionParams> GetChunkedCompressionParamsForType(
+    DeliveryBlobType type, size_t input_size);
 
 // Header of a delivery blob as specified in RFC 0207.
 struct DeliveryBlobHeader {
@@ -58,8 +71,7 @@ struct DeliveryBlobHeader {
   static zx::result<DeliveryBlobHeader> FromBuffer(std::span<const uint8_t> buffer);
 };
 
-// Generate a Type 1 delivery blob payload from the given blob `data` using the default Blobfs
-// compression parameters.
+// Generate a specific type of delivery blob payload from the given blob `data`.
 //
 // If `compress` is not specified, the result will be uncompressed if the compressed data is larger
 // than the input. If `compress` is true, the result will always be compressed, and if false, will
@@ -68,8 +80,9 @@ struct DeliveryBlobHeader {
 // *WARNING*: Modifying the compression parameters used by this function can cause a mismatch
 // between the calculated on-disk size used for size checking. This function is used to calculate
 // `compressed_file_size` in the blob info JSON file.
-zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobType1(std::span<const uint8_t> data,
-                                                          std::optional<bool> compress);
+zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobWithType(DeliveryBlobType type,
+                                                             std::span<const uint8_t> data,
+                                                             std::optional<bool> compress);
 
 // Calculate the Merkle root of an RFC 0207 compliant delivery blob. `data` must be a complete
 // delivery blob and cannot include any trailing data.
@@ -77,7 +90,7 @@ zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobType1(std::span<const uint8_
 // *WARNING*: Aside from checksum verification and basic validity checks provided by the
 // chunked_compression library, this function makes no security guarantees. Decompression is
 // performed in the thread/address space of the caller.
-zx::result<Digest> CalculateDeliveryBlobDigest(std::span<const uint8_t> data);
+zx::result<digest::Digest> CalculateDeliveryBlobDigest(std::span<const uint8_t> data);
 
 }  // namespace blobfs
 

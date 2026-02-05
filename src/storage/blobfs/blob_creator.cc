@@ -104,7 +104,7 @@ class BlobWriter final : public fidl::WireServer<fuchsia_fxfs::BlobWriter> {
       // GetVmo was already called.
       return zx::error(ZX_ERR_BAD_STATE);
     }
-    if (size < MetadataType1::kHeader.header_length) {
+    if (size < MetadataType1::kHeaderSize) {
       // The number of bytes being transferred is less than the size of the delivery blob header.
       return zx::error(ZX_ERR_BAD_STATE);
     }

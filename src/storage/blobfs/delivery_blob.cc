@@ -17,6 +17,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -32,10 +33,9 @@
 #include "src/lib/chunked-compression/compression-params.h"
 #include "src/lib/chunked-compression/multithreaded-chunked-compressor.h"
 #include "src/lib/chunked-compression/status.h"
+#include "src/lib/digest/digest.h"
 #include "src/lib/digest/merkle-tree.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
-#include "src/storage/blobfs/format.h"
 
 #ifndef __APPLE__
 #include <endian.h>
@@ -44,10 +44,12 @@
 #endif
 
 namespace {
+using ::chunked_compression::CompressionParams;
 
 constexpr bool IsValidDeliveryType(blobfs::DeliveryBlobType delivery_type) {
   switch (delivery_type) {
     case blobfs::DeliveryBlobType::kType1:
+    case blobfs::DeliveryBlobType::kType2:
       return true;
     default:
       return false;
@@ -74,6 +76,17 @@ zx::result<fbl::Array<uint8_t>> CompressData(std::span<const uint8_t> data,
     return zx::error(chunked_compression::ToZxStatus(status));
   }
   return zx::ok(fbl::Array<uint8_t>(compressed_result.release(), compressed_size));
+}
+
+blobfs::DeliveryBlobHeader HeaderForType(blobfs::DeliveryBlobType type) {
+  switch (type) {
+    case blobfs::DeliveryBlobType::kType1:
+    case blobfs::DeliveryBlobType::kType2:
+      // Type1 and Type 2 use the same metadata.
+      return blobfs::DeliveryBlobHeader::Create(type, sizeof(blobfs::MetadataType1));
+    default:
+      ZX_PANIC("Unkown Blob type");
+  }
 }
 
 }  // namespace
@@ -117,8 +130,7 @@ zx::result<DeliveryBlobHeader> DeliveryBlobHeader::FromBuffer(std::span<const ui
   return zx::ok(header);
 }
 
-const DeliveryBlobHeader MetadataType1::kHeader =
-    DeliveryBlobHeader::Create(DeliveryBlobType::kType1, sizeof(MetadataType1));
+const size_t MetadataType1::kHeaderSize = sizeof(MetadataType1) + sizeof(DeliveryBlobHeader);
 
 bool MetadataType1::IsValid(const DeliveryBlobHeader& header) const {
   constexpr size_t kExpectedHeaderLength = sizeof(DeliveryBlobHeader) + sizeof(MetadataType1);
@@ -171,51 +183,72 @@ zx::result<MetadataType1> MetadataType1::FromBuffer(std::span<const uint8_t> buf
   return zx::ok(metadata);
 }
 
-zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobType1(std::span<const uint8_t> data,
-                                                          std::optional<bool> compress) {
-  constexpr size_t kPayloadOffset = sizeof(DeliveryBlobHeader) + sizeof(MetadataType1);
+zx::result<CompressionParams> GetChunkedCompressionParamsForType(DeliveryBlobType type,
+                                                                 const size_t input_size) {
+  CompressionParams params;
+  switch (type) {
+    case DeliveryBlobType::kType1:
+      params.compression_level = 14;
+      params.chunk_size = CompressionParams::ChunkSizeForInputSize(input_size, 32ul * 1024);
+      break;
+    case DeliveryBlobType::kType2:
+      params.compression_level = 21;
+      params.chunk_size = CompressionParams::ChunkSizeForInputSize(input_size, 128ul * 1024);
+      break;
+    default:
+      return zx::error_result(ZX_ERR_NOT_SUPPORTED);
+  }
+  return zx::ok(params);
+}
 
+zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlobWithType(DeliveryBlobType type,
+                                                             std::span<const uint8_t> data,
+                                                             std::optional<bool> compress) {
   fbl::Array<uint8_t> delivery_blob;
 
   if (compress.value_or(true)) {
-    // WARNING: If we use different compression parameters here, the `compressed_file_size` in the
-    // blob info JSON file will be incorrect.
-    const chunked_compression::CompressionParams params =
-        blobfs::GetDefaultChunkedCompressionParams(data.size_bytes());
+    // This assumes that all types use chunked compression.
+    chunked_compression::CompressionParams params;
+    if (auto result = GetChunkedCompressionParamsForType(type, data.size_bytes()); result.is_ok()) {
+      params = result.value();
+    } else {
+      return result.take_error();
+    }
     zx::result compressed_data = CompressData(data, params);
     if (compressed_data.is_error()) {
       return compressed_data.take_error();
     }
     // Only use the compressed result if it saves space or we require the payload to be compressed.
     if (compressed_data->size() < data.size_bytes() || compress.value_or(false)) {
-      delivery_blob = fbl::MakeArray<uint8_t>(kPayloadOffset + compressed_data->size());
-      std::memcpy(delivery_blob.data() + kPayloadOffset, compressed_data->data(),
+      delivery_blob = fbl::MakeArray<uint8_t>(MetadataType1::kHeaderSize + compressed_data->size());
+      std::memcpy(delivery_blob.data() + MetadataType1::kHeaderSize, compressed_data->data(),
                   compressed_data->size());
     }
   }
   const bool use_compressed_result = !delivery_blob.empty();
   if (!use_compressed_result) {
-    delivery_blob = fbl::MakeArray<uint8_t>(kPayloadOffset + data.size_bytes());
+    delivery_blob = fbl::MakeArray<uint8_t>(MetadataType1::kHeaderSize + data.size_bytes());
   }
   // Write delivery blob header and metadata.
-  std::memcpy(delivery_blob.data(), &MetadataType1::kHeader, sizeof MetadataType1::kHeader);
+  DeliveryBlobHeader header = HeaderForType(type);
+  std::memcpy(delivery_blob.data(), &header, sizeof header);
   const MetadataType1 metadata =
-      MetadataType1::Create(MetadataType1::kHeader, delivery_blob.size() - kPayloadOffset,
+      MetadataType1::Create(header, delivery_blob.size() - MetadataType1::kHeaderSize,
                             /*is_compressed=*/use_compressed_result);
-  std::memcpy(delivery_blob.data() + sizeof MetadataType1::kHeader, &metadata, sizeof metadata);
+  std::memcpy(delivery_blob.data() + sizeof header, &metadata, sizeof metadata);
   // Copy uncompressed data into payload if we aren't using compression or we aborted compression.
   if (!use_compressed_result && !data.empty()) {
-    std::memcpy(delivery_blob.data() + kPayloadOffset, data.data(), data.size_bytes());
+    std::memcpy(delivery_blob.data() + MetadataType1::kHeaderSize, data.data(), data.size_bytes());
   }
   return zx::ok(std::move(delivery_blob));
 }
 
-zx::result<Digest> CalculateDeliveryBlobDigest(std::span<const uint8_t> data) {
+zx::result<digest::Digest> CalculateDeliveryBlobDigest(std::span<const uint8_t> data) {
   zx::result header = DeliveryBlobHeader::FromBuffer(data);
   if (header.is_error()) {
     return header.take_error();
   }
-  if (header->type != DeliveryBlobType::kType1) {
+  if (!IsValidDeliveryType(header->type)) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -256,7 +289,7 @@ zx::result<Digest> CalculateDeliveryBlobDigest(std::span<const uint8_t> data) {
   // Calculate Merkle root of `payload` which points to the uncompressed blob data (may be empty).
   std::unique_ptr<uint8_t[]> unused_tree;
   size_t unused_tree_len;
-  Digest root;
+  digest::Digest root;
 
   if (zx_status_t status = digest::MerkleTreeCreator::Create(payload.data(), payload.size(),
                                                              &unused_tree, &unused_tree_len, &root);

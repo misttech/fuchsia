@@ -31,6 +31,7 @@
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/compression_settings.h"
+#include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/format.h"
 
 namespace blobfs {
@@ -123,7 +124,8 @@ class TestMerkleTree {
 class TestDeliveryBlob {
  public:
   explicit TestDeliveryBlob(const TestBlobData& blob_info,
-                            std::optional<bool> compress = std::nullopt);
+                            std::optional<bool> compress = std::nullopt,
+                            DeliveryBlobType type = kDefaultBlobfsDeliveryBlobType);
 
   // Creates a compressed delivery blob from `blob_data`.
   static TestDeliveryBlob CreateCompressed(const TestBlobData& blob_data);

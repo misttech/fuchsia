@@ -55,20 +55,24 @@ struct DeliveryBlobTestParams {
   // Size of the blob the test case should write.
   size_t blob_size;
 
+  DeliveryBlobType type;
+
   using ParamsAsTuple = std::tuple</*format*/ BlobLayoutFormat, /*compress*/ bool,
-                                   /*blob_size*/ size_t>;
+                                   /*blob_size*/ size_t, /*type*/ DeliveryBlobType>;
 
   explicit DeliveryBlobTestParams(ParamsAsTuple params)
       : format(std::get<0>(params)),
         compress(std::get<1>(params)),
-        blob_size(std::get<2>(params)) {}
+        blob_size(std::get<2>(params)),
+        type(std::get<3>(params)) {}
 
   static auto GetTestCombinations() {
     return testing::ConvertGenerator<ParamsAsTuple>(testing::Combine(
         /*format*/ testing::Values(BlobLayoutFormat::kCompactMerkleTreeAtEnd,
                                    BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart),
         /*compress*/ testing::Bool(),
-        /*blob_size*/ testing::Values(0, kSmallBlobSize, kLargeBlobSize)));
+        /*blob_size*/ testing::Values(0, kSmallBlobSize, kLargeBlobSize),
+        /*type*/ testing::Values(DeliveryBlobType::kType1, DeliveryBlobType::kType2)));
   }
 
   static std::string GetTestParamName(const DeliveryBlobTestParams& params) {
@@ -83,7 +87,19 @@ struct DeliveryBlobTestParams {
         format_name = "CompactFormat";
         break;
     }
-    return format_name + std::string(params.compress ? "Compressed" : "Uncompressed") +
+    std::string type_name;
+    switch (params.type) {
+      case blobfs::DeliveryBlobType::kType1:
+        type_name = "Type1";
+        break;
+      case blobfs::DeliveryBlobType::kType2:
+        type_name = "Type2";
+        break;
+      default:
+        type_name = "INVALID";
+        break;
+    }
+    return format_name + type_name + std::string(params.compress ? "Compressed" : "Uncompressed") +
            std::string(params.blob_size > 0 ? std::to_string(params.blob_size) : "NullBlob");
   }
 };
@@ -120,7 +136,7 @@ class DeliveryBlobTest : public BlobfsTestSetup,
 
 TEST_P(DeliveryBlobTest, WriteAll) {
   auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
-  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress);
+  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress, GetParam().type);
 
   auto blob = CreateBlob(*blobfs(), delivery_blob);
   ASSERT_OK(blob);
@@ -136,7 +152,7 @@ TEST_P(DeliveryBlobTest, WriteAll) {
 
 TEST_P(DeliveryBlobTest, WriteChunked) {
   auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
-  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress);
+  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress, GetParam().type);
 
   fbl::RefPtr blob = fbl::MakeRefCounted<Blob>(*blobfs(), blob_data.digest());
   ASSERT_OK(blobfs()->GetCache().Add(blob));
@@ -169,7 +185,7 @@ TEST_P(DeliveryBlobTest, WriteChunked) {
 TEST_P(DeliveryBlobTest, CalculateDeliveryBlobDigest) {
   auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
   const fbl::Array<uint8_t> delivery_blob =
-      GenerateDeliveryBlobType1(blob_data.data(), GetParam().compress).value();
+      GenerateDeliveryBlobWithType(GetParam().type, blob_data.data(), GetParam().compress).value();
   zx::result<digest::Digest> digest = CalculateDeliveryBlobDigest(delivery_blob);
   ASSERT_OK(digest) << "Data length: " << delivery_blob.size();
   ASSERT_EQ(*digest, blob_data.digest());

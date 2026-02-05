@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <array>
+#include <optional>
 #include <span>
 
 #include <gtest/gtest.h>
@@ -18,7 +19,7 @@ using namespace blobfs;
 
 TEST(OfflineCompressionTest, Type1EmptyBlob) {
   const zx::result<fbl::Array<uint8_t>> delivery_blob =
-      GenerateDeliveryBlob({}, DeliveryBlobType::kType1);
+      blobfs::GenerateDeliveryBlobWithType(DeliveryBlobType::kType1, {}, /*compress=*/std::nullopt);
   ASSERT_TRUE(delivery_blob.is_ok());
   // Data should only contain headers and no payload.
   ASSERT_EQ(delivery_blob->size(), sizeof(DeliveryBlobHeader) + sizeof(MetadataType1));
@@ -47,8 +48,8 @@ TEST(OfflineCompressionTest, Type1ShouldNotCompress) {
   constexpr size_t kSmallPayloadSize = 4u;
   const std::vector<uint8_t> blob_data(kSmallPayloadSize);
 
-  const zx::result<fbl::Array<uint8_t>> delivery_blob =
-      GenerateDeliveryBlob({blob_data.data(), blob_data.size()}, DeliveryBlobType::kType1);
+  const zx::result<fbl::Array<uint8_t>> delivery_blob = blobfs::GenerateDeliveryBlobWithType(
+      DeliveryBlobType::kType1, {blob_data.data(), blob_data.size()}, /*compress=*/std::nullopt);
   ASSERT_TRUE(delivery_blob.is_ok());
   ASSERT_EQ(delivery_blob->size(),
             sizeof(DeliveryBlobHeader) + sizeof(MetadataType1) + blob_data.size());
@@ -77,8 +78,8 @@ TEST(OfflineCompressionTest, Type1ShouldCompress) {
   constexpr size_t kLargePayloadSize = 1ul << 16;
   const std::vector<uint8_t> blob_data(kLargePayloadSize);
 
-  const zx::result<fbl::Array<uint8_t>> delivery_blob =
-      GenerateDeliveryBlob({blob_data.data(), blob_data.size()}, DeliveryBlobType::kType1);
+  const zx::result<fbl::Array<uint8_t>> delivery_blob = blobfs::GenerateDeliveryBlobWithType(
+      DeliveryBlobType::kType1, {blob_data.data(), blob_data.size()}, /*compress=*/std::nullopt);
   ASSERT_TRUE(delivery_blob.is_ok());
   ASSERT_LE(delivery_blob->size(),
             sizeof(DeliveryBlobHeader) + sizeof(MetadataType1) + blob_data.size());

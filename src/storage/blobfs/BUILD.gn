@@ -26,8 +26,6 @@ static_library("blobfs") {
     "blob_layout.h",
     "common.h",
     "compression_settings.h",
-    "delivery_blob.h",
-    "delivery_blob_private.h",
     "format.h",
     "iterator/node_populator.h",
     "node_finder.h",
@@ -49,7 +47,6 @@ static_library("blobfs") {
     "compression/decompressor.h",
     "compression/seekable_decompressor.h",
     "compression_settings.cc",
-    "delivery_blob.cc",
     "format.cc",
     "iterator/allocated_extent_iterator.cc",
     "iterator/allocated_extent_iterator.h",
@@ -75,11 +72,11 @@ static_library("blobfs") {
     "//zircon/system/ulib/zx",
   ]
   deps = [
+    ":delivery_blob",
     "//sdk/lib/fit-promise",
     "//sdk/lib/syslog/cpp",
     "//src/lib/chunked-compression",
     "//src/lib/digest",
-    "//src/storage/blobfs/compression/configs",
     "//src/storage/lib/trace:cpp",
     "//src/storage/lib/vfs/cpp/journal",
     "//src/storage/lib/vfs/cpp/transaction",
@@ -251,6 +248,24 @@ static_library("blobfs") {
 fidl("fuchsia.blobfs.internal") {
   sources = [ "compression/decompressor_sandbox/decompressor.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
+}
+
+source_set("delivery_blob") {
+  sources = [ "delivery_blob.cc" ]
+  public = [
+    "delivery_blob.h",
+    "delivery_blob_private.h",
+  ]
+  public_deps = [
+    "//src/lib/chunked-compression",
+    "//src/lib/digest",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
+  ]
+  deps = [
+    "//zircon/third_party/ulib/cksum",
+    "//zircon/third_party/ulib/safemath",
+  ]
 }
 
 source_set("decompressor_impl") {

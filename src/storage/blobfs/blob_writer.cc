@@ -78,9 +78,6 @@ static_assert(kCacheFlushThreshold <= Blobfs::WriteBufferBlockCount(),
 // may not be page aligned, thus maximum memory consumption may be one page more than this amount.
 constexpr uint64_t kMaxDecompressionMemoryUsage = 256 * (1ull << 20);
 
-// Expected total size of a delivery blob's header.
-constexpr size_t kDeliveryBlobHeaderLength = sizeof(DeliveryBlobHeader) + sizeof(MetadataType1);
-
 const size_t kSystemPageSize = zx_system_get_page_size();
 
 }  // namespace
@@ -140,12 +137,12 @@ zx::result<> Blob::Writer::Prepare(Blob& blob, uint64_t data_size) {
   ZX_DEBUG_ASSERT(&blob_ == &blob);
   ZX_DEBUG_ASSERT_MSG(data_size > 0, "Use `WriteNullBlob` if data_size is zero!");
 
-  if (data_size < kDeliveryBlobHeaderLength) {
+  if (data_size < MetadataType1::kHeaderSize) {
     FX_LOGS(ERROR) << "Size too small for delivery blob!";
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  const uint64_t payload_size = data_size - kDeliveryBlobHeaderLength;
+  const uint64_t payload_size = data_size - MetadataType1::kHeaderSize;
 
   // Fail early if the buffer size will overflow when padding the payload to ensure block alignment.
   if (payload_size % block_size_ != 0) {
@@ -156,7 +153,8 @@ zx::result<> Blob::Writer::Prepare(Blob& blob, uint64_t data_size) {
   }
 
   VmoNameBuffer name = FormatWritingBlobDataVmoName(blob_.digest());
-  const uint64_t buffer_size = kDeliveryBlobHeaderLength + fbl::round_up(payload_size, block_size_);
+  const uint64_t buffer_size =
+      MetadataType1::kHeaderSize + fbl::round_up(payload_size, block_size_);
   if (zx_status_t status = buffer_.CreateAndMap(buffer_size, name.c_str()); status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Failed to create vmo for writing blob " << blob_.digest()
                             << " (vmo size = " << buffer_size << ")";
@@ -812,14 +810,14 @@ zx::result<> Blob::Writer::ParseDeliveryBlob() {
   if (header.is_error()) {
     return header.take_error();
   }
-  if (header->type != DeliveryBlobType::kType1) {
+  if (header->type != DeliveryBlobType::kType1 && header->type != DeliveryBlobType::kType2) {
     FX_LOGS(ERROR) << "Unsupported delivery blob type: "
                    << static_cast<std::underlying_type_t<DeliveryBlobType>>(header->type);
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  if (header->header_length != kDeliveryBlobHeaderLength) {
-    FX_LOGS(ERROR) << "Invalid header length for type 1 blob: actual = " << header->header_length
-                   << ", expected = " << kDeliveryBlobHeaderLength;
+  if (header->header_length != MetadataType1::kHeaderSize) {
+    FX_LOGS(ERROR) << "Invalid header length for type 1 or 2 blob: actual = "
+                   << header->header_length << ", expected = " << MetadataType1::kHeaderSize;
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
   // Try to decode the metadata.

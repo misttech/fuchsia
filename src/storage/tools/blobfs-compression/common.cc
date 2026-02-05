@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -12,7 +13,6 @@
 #include "src/lib/chunked-compression/chunked-compressor.h"
 #include "src/lib/chunked-compression/status.h"
 #include "src/lib/digest/merkle-tree.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
 #include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/format.h"
 
@@ -107,16 +107,6 @@ zx_status_t BlobfsCompress(const uint8_t* src, const size_t src_sz, uint8_t* des
   // By default, filling 0x00 at the end of compressed buffer to match |aligned_compressed_size|.
   *out_compressed_size = aligned_compressed_size;
   return ZX_OK;
-}
-
-zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlob(std::span<const uint8_t> data,
-                                                     blobfs::DeliveryBlobType type) {
-  switch (type) {
-    case blobfs::DeliveryBlobType::kType1:
-      return blobfs::GenerateDeliveryBlobType1(data, /*compress=*/std::nullopt);
-    default:
-      return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
 }
 
 }  // namespace blobfs_compress

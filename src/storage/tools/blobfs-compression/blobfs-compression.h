@@ -6,16 +6,18 @@
 #define SRC_STORAGE_TOOLS_BLOBFS_COMPRESSION_BLOBFS_COMPRESSION_H_
 
 #include <lib/zx/result.h>
+#include <zircon/types.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
-#include <vector>
 
 #include <fbl/array.h>
 #include <fbl/unique_fd.h>
 
-#include "src/lib/chunked-compression/chunked-compressor.h"
+#include "src/lib/chunked-compression/compression-params.h"
 #include "src/storage/blobfs/delivery_blob.h"
 
 namespace blobfs_compress {
@@ -36,9 +38,6 @@ zx_status_t BlobfsCompress(const uint8_t* src, size_t src_sz, uint8_t* dest_writ
                            size_t* out_compressed_size,
                            chunked_compression::CompressionParams params,
                            const CompressionCliOptionStruct& cli_options);
-
-zx::result<fbl::Array<uint8_t>> GenerateDeliveryBlob(std::span<const uint8_t> data,
-                                                     blobfs::DeliveryBlobType type);
 
 }  // namespace blobfs_compress
 

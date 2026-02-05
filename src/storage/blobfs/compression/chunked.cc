@@ -23,9 +23,9 @@
 #include "src/lib/chunked-compression/compression-params.h"
 #include "src/lib/chunked-compression/status.h"
 #include "src/lib/chunked-compression/streaming-chunked-compressor.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
 #include "src/storage/blobfs/compression/seekable_decompressor.h"
 #include "src/storage/blobfs/compression_settings.h"
+#include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/lib/trace/trace.h"
 
 namespace blobfs {
@@ -48,7 +48,8 @@ zx_status_t ChunkedCompressor::Create(CompressionSettings settings, size_t input
                                       size_t* output_limit_out,
                                       std::unique_ptr<ChunkedCompressor>* out) {
   ZX_DEBUG_ASSERT(settings.compression_algorithm == CompressionAlgorithm::kChunked);
-  CompressionParams params = GetDefaultChunkedCompressionParams(input_size);
+  CompressionParams params =
+      GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, input_size).value();
   if (settings.compression_level) {
     params.compression_level = *(settings.compression_level);
   }
@@ -76,7 +77,8 @@ zx_status_t ChunkedCompressor::SetOutput(void* dst, size_t dst_len) {
 }
 
 size_t ChunkedCompressor::BufferMax(size_t input_length) {
-  chunked_compression::CompressionParams params = GetDefaultChunkedCompressionParams(input_length);
+  CompressionParams params =
+      GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, input_length).value();
   return params.ComputeOutputSizeLimit(input_length);
 }
 

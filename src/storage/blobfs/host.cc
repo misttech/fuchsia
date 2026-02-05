@@ -43,7 +43,7 @@
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/chunked.h"
-#include "src/storage/blobfs/compression/configs/chunked_compression_params.h"
+#include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/fsck_host.h"
 #include "src/storage/blobfs/iterator/allocated_extent_iterator.h"
@@ -257,8 +257,9 @@ zx::result<BlobInfo> BlobInfo::CreateCompressed(
     return blob_info;
   }
 
-  zx::result<fbl::Array<uint8_t>> compressed_data =
-      compressor.Compress(GetDefaultChunkedCompressionParams(data.size()), data);
+  zx::result<fbl::Array<uint8_t>> compressed_data = compressor.Compress(
+      GetChunkedCompressionParamsForType(kDefaultBlobfsDeliveryBlobType, data.size()).value(),
+      data);
   if (compressed_data.is_error()) {
     return compressed_data.take_error();
   }

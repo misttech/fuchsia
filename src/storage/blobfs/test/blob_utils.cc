@@ -189,9 +189,10 @@ TestBlobData TestBlobData::CreateRandom(size_t size) {
   return TestBlobData(std::move(data));
 }
 
-TestDeliveryBlob::TestDeliveryBlob(const TestBlobData& blob_info, std::optional<bool> compress)
+TestDeliveryBlob::TestDeliveryBlob(const TestBlobData& blob_info, std::optional<bool> compress,
+                                   DeliveryBlobType type)
     : digest_(blob_info.digest()) {
-  auto delivery_blob = GenerateDeliveryBlobType1(blob_info.data(), compress);
+  auto delivery_blob = GenerateDeliveryBlobWithType(type, blob_info.data(), compress);
   ZX_ASSERT(delivery_blob.is_ok());
   data_ = *std::move(delivery_blob);
 }
