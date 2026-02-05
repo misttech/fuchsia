@@ -5,6 +5,7 @@
 import("//build/bazel/remote_services.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/rbe_modes.gni")
+import("//build/toolchain/resultstore.gni")
 
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
