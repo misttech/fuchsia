@@ -34,8 +34,8 @@ use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
-    CAP_SYS_NICE, CAP_SYS_RESOURCE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_NOAUDIT,
-    PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
+    CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_REALCREDS,
+    PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
 };
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
@@ -1322,13 +1322,23 @@ impl DynamicFileSource for StatusFile {
         if let Some(task) = task {
             writeln!(sink, "Umask:\t0{:03o}", task.fs().umask().bits())?;
             let task_state = task.read();
-            writeln!(sink, "SigBlk:\t{:x}", task_state.signal_mask().0)?;
-            writeln!(sink, "SigPnd:\t{:x}", task_state.task_specific_pending_signals().0)?;
+            writeln!(sink, "SigBlk:\t{:016x}", task_state.signal_mask().0)?;
+            writeln!(sink, "SigPnd:\t{:016x}", task_state.task_specific_pending_signals().0)?;
             writeln!(
                 sink,
                 "ShdPnd:\t{:x}",
                 task.thread_group().pending_signals.lock().pending().0
             )?;
+            writeln!(sink, "NoNewPrivs:\t{}", task_state.no_new_privs() as u8)?;
+
+            // Since version 3.8 all nonexistent capabilities are reported as not-enabled.
+            let creds = task.real_creds();
+            let cap_mask = Capabilities::all_existent();
+            writeln!(sink, "CapInh:\t{:016x}", creds.cap_inheritable & cap_mask)?;
+            writeln!(sink, "CapPrm:\t{:016x}", creds.cap_permitted & cap_mask)?;
+            writeln!(sink, "CapEff:\t{:016x}", creds.cap_effective & cap_mask)?;
+            writeln!(sink, "CapBnd:\t{:016x}", creds.cap_bounding & cap_mask)?;
+            writeln!(sink, "CapAmb:\t{:016x}", creds.cap_ambient & cap_mask)?;
         }
 
         let state_code =
@@ -1375,7 +1385,7 @@ impl DynamicFileSource for StatusFile {
             writeln!(sink, "Seccomp:\t{}", seccomp)?;
         }
 
-        // There should be at least on thread in Zombie processes.
+        // There should be at least one thread in Zombie processes.
         writeln!(sink, "Threads:\t{}", std::cmp::max(1, threads))?;
 
         Ok(())

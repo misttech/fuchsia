@@ -26,6 +26,10 @@ impl Capabilities {
         Self { mask: u64::MAX }
     }
 
+    pub fn all_existent() -> Self {
+        Self { mask: (1u64 << CAP_LAST_CAP) - 1 }
+    }
+
     pub fn union(&self, caps: Capabilities) -> Self {
         let mut new_caps = *self;
         new_caps.insert(caps);
@@ -119,6 +123,12 @@ impl ops::Not for Capabilities {
 impl std::fmt::Debug for Capabilities {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "Capabilities({:#x})", self.mask)
+    }
+}
+
+impl std::fmt::LowerHex for Capabilities {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::LowerHex::fmt(&self.mask, f)
     }
 }
 
