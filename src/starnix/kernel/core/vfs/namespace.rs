@@ -18,6 +18,7 @@ use crate::vfs::{
     fileops_impl_delegate_read_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fs_node_impl_not_dir,
 };
+use fuchsia_rcu::RcuReadScope;
 use macro_rules_attribute::apply;
 use ref_cast::RefCast;
 use starnix_logging::log_warn;
@@ -827,24 +828,16 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Returns path to the `dir` from the root of the file system.
         fn path_from_fs_root(dir: &DirEntryHandle) -> FsString {
             let mut path = PathBuilder::new();
-            if dir.read().is_dead() {
+            if dir.is_dead() {
                 // Return `/foo/dir//deleted` if the dir was deleted.
                 path.prepend_element("/deleted".into());
             }
-            let mut current = dir.clone();
-            loop {
-                let parent = {
-                    let state = current.read();
-                    if state.parent().is_some() {
-                        path.prepend_element(state.local_name());
-                    }
-                    state.parent().clone()
-                };
-                if let Some(next) = parent {
-                    current = next
-                } else {
-                    break;
-                }
+            let scope = RcuReadScope::new();
+            let mut current = dir.deref();
+            while let Some(parent) = current.parent_ref(&scope) {
+                let state = current.read();
+                path.prepend_element(state.local_name());
+                current = parent;
             }
             path.build_absolute()
         }
@@ -1387,7 +1380,7 @@ impl NamespaceNode {
     /// filesystem to another.
     pub fn parent(&self) -> Option<NamespaceNode> {
         let mountpoint_or_self = self.escape_mount();
-        let parent = mountpoint_or_self.entry.read().parent().clone()?;
+        let parent = mountpoint_or_self.entry.parent()?;
         Some(mountpoint_or_self.with_new_entry(parent))
     }
 
@@ -1397,7 +1390,7 @@ impl NamespaceNode {
         if let Ok(_) = self.mount_if_root() {
             return None;
         }
-        self.entry.read().parent().clone()
+        self.entry.parent()
     }
 
     /// Whether this namespace node is a descendant of the given node.
@@ -1496,7 +1489,7 @@ impl NamespaceNode {
                 } else {
                     // This node hasn't intersected with the custom root and has reached the namespace root.
                     let mut absolute_path = path.build_absolute();
-                    if self.entry.read().is_dead() {
+                    if self.entry.is_dead() {
                         absolute_path.extend_from_slice(b" (deleted)");
                     }
 
@@ -1512,7 +1505,7 @@ impl NamespaceNode {
         }
 
         let mut absolute_path = path.build_absolute();
-        if self.entry.read().is_dead() {
+        if self.entry.is_dead() {
             absolute_path.extend_from_slice(b" (deleted)");
         }
 

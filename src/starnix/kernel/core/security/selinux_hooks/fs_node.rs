@@ -17,6 +17,7 @@ use crate::task::CurrentTask;
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
 };
+use fuchsia_rcu::RcuReadScope;
 use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
 use selinux::{
     CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass, FileSystemLabel,
@@ -31,6 +32,7 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{ENODATA, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::{XATTR_NAME_SELINUX, errno, error};
+use std::ops::Deref;
 use syncio::zxio_node_attr_has_t;
 
 /// Maximum supported size for the extended attribute value used to store SELinux security
@@ -40,21 +42,13 @@ const SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE: usize = 4096;
 /// Returns the relative path from the root of the file system containing this `DirEntry`.
 fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
     let mut path_builder = PathBuilder::new();
-    let mut current_dir = dir_entry.clone();
 
-    loop {
-        let parent = {
-            let state = current_dir.read();
-            if state.parent().is_some() {
-                path_builder.prepend_element(state.local_name());
-            }
-            state.parent().clone()
-        };
-        if let Some(parent) = parent {
-            current_dir = parent;
-        } else {
-            break;
-        }
+    let scope = RcuReadScope::new();
+    let mut current_dir = dir_entry.deref();
+    while let Some(parent) = current_dir.parent_ref(&scope) {
+        let state = current_dir.read();
+        path_builder.prepend_element(state.local_name());
+        current_dir = parent;
     }
     path_builder.build_absolute()
 }
@@ -108,7 +102,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // If the parent has a from-task label then propagate it to the new node,  rather than applying
     // the filesystem's labeling scheme. This allows nodes in per-process and per-task directories
     // in "proc" to inherit the task's label.
-    let parent = dir_entry.read().parent().clone();
+    let parent = dir_entry.parent();
     if let Some(ref parent) = parent {
         let parent_node = &parent.node;
         if let FsNodeLabel::FromTask { task_state } =

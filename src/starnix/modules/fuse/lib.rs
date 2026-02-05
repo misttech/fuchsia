@@ -1116,7 +1116,7 @@ impl DirEntryOps for FuseDirEntry {
         // entry.
         let (parent, name) = {
             let state = dir_entry.read();
-            let parent = state.parent().clone().expect("non-root nodes always has a parent");
+            let parent = dir_entry.parent().expect("non-root nodes always has a parent");
             let name = state.local_name().to_owned();
             (parent, name)
         };

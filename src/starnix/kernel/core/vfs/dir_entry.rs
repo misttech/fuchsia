@@ -10,6 +10,7 @@ use crate::vfs::{
     MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
 };
 use bitflags::bitflags;
+use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
 use macro_rules_attribute::apply;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockWriteGuard};
 use starnix_uapi::auth::FsCred;
@@ -22,6 +23,7 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 #[cfg(detect_lock_cycles)]
 use tracing_mutex::util;
@@ -48,14 +50,6 @@ bitflags! {
 }
 
 pub struct DirEntryState {
-    /// The parent DirEntry.
-    ///
-    /// The DirEntry tree has strong references from child-to-parent and weak
-    /// references from parent-to-child. This design ensures that the parent
-    /// chain is always populated in the cache, but some children might be
-    /// missing from the cache.
-    parent: Option<DirEntryHandle>,
-
     /// The name that this parent calls this child.
     ///
     /// This name might not be reflected in the full path in the namespace that
@@ -65,27 +59,12 @@ pub struct DirEntryState {
     /// Most callers that want to work with names for DirEntries should use the
     /// NamespaceNodes.
     local_name: FsString,
-
-    /// Whether this directory entry has been removed from the tree.
-    is_dead: bool,
-
-    /// Whether the entry has filesystems mounted on top of it.
-    has_mounts: bool,
 }
 
 #[apply(state_implementation!)]
 impl DirEntryState<Base = DirEntry> {
     pub fn local_name(&self) -> &FsStr {
         self.local_name.as_ref()
-    }
-
-    pub fn parent(&self) -> &Option<DirEntryHandle> {
-        &self.parent
-    }
-
-    /// Whether this directory entry has been removed from the tree.
-    pub fn is_dead(&self) -> bool {
-        self.is_dead
     }
 }
 
@@ -116,6 +95,17 @@ pub trait DirEntryOps: Send + Sync + 'static {
     }
 }
 
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct DirEntryFlags: u8 {
+        /// Whether this directory entry has been removed from the tree.
+        const IS_DEAD = 1 << 0;
+
+        /// Whether the entry has filesystems mounted on top of it.
+        const HAS_MOUNTS = 1 << 1;
+    }
+}
+
 pub struct DefaultDirEntryOps;
 
 impl DirEntryOps for DefaultDirEntryOps {}
@@ -143,6 +133,17 @@ pub struct DirEntry {
     /// The `DirEntryOps` are implemented by the individual file systems to provide
     /// specific behaviours for this `DirEntry`.
     ops: Box<dyn DirEntryOps>,
+
+    /// The parent DirEntry.
+    ///
+    /// The DirEntry tree has strong references from child-to-parent and weak
+    /// references from parent-to-child. This design ensures that the parent
+    /// chain is always populated in the cache, but some children might be
+    /// missing from the cache.
+    parent: RcuOptionArc<DirEntry>,
+
+    /// The [`DirEntryFlags`] for this `DirEntry`.
+    flags: AtomicU8,
 
     /// The mutable state for this DirEntry.
     ///
@@ -180,12 +181,9 @@ impl DirEntry {
         let result = Arc::new(DirEntry {
             node,
             ops,
-            state: RwLock::new(DirEntryState {
-                parent,
-                local_name,
-                is_dead: false,
-                has_mounts: false,
-            }),
+            parent: RcuOptionArc::new(parent),
+            flags: Default::default(),
+            state: RwLock::new(DirEntryState { local_name }),
             children: Default::default(),
         });
         #[cfg(any(test, debug_assertions))]
@@ -219,7 +217,7 @@ impl DirEntry {
         local_name: FsString,
     ) -> DirEntryHandle {
         let entry = DirEntry::new_uncached(node, parent, local_name);
-        entry.state.write().is_dead = true;
+        entry.raise_flags(DirEntryFlags::IS_DEAD);
         entry
     }
 
@@ -249,14 +247,30 @@ impl DirEntry {
         let mut dir_entry_children = self.lock_children();
         assert!(dir_entry_children.children.is_empty());
         for (name, child) in children.into_iter() {
-            let mut state = child.state.write();
-            state.parent = Some(self.clone());
+            child.set_parent(self.clone());
             dir_entry_children.children.insert(name, Arc::downgrade(&child));
         }
     }
 
     fn lock_children<'a>(self: &'a DirEntryHandle) -> DirEntryLockedChildren<'a> {
         DirEntryLockedChildren { entry: self, children: self.children.write() }
+    }
+
+    /// The parent DirEntry.
+    pub fn parent(&self) -> Option<DirEntryHandle> {
+        self.parent.to_option_arc()
+    }
+
+    /// Returns a reference to the parent DirEntry.
+    ///
+    /// The reference is only valid for the duration of the RCU read scope.
+    pub fn parent_ref<'a>(&'a self, scope: &'a RcuReadScope) -> Option<&'a DirEntry> {
+        self.parent.as_ref(scope)
+    }
+
+    /// Set the parent of this DirEntry.
+    pub fn set_parent(&self, parent: DirEntryHandle) {
+        self.parent.update(Some(parent));
     }
 
     /// The parent DirEntry object or this DirEntry if this entry is the root.
@@ -269,7 +283,7 @@ impl DirEntry {
     /// NamespaceNode tree (which understands mounts) rather than the DirEntry
     /// tree.
     pub fn parent_or_self(self: &DirEntryHandle) -> DirEntryHandle {
-        self.read().parent().as_ref().unwrap_or(self).clone()
+        self.parent().unwrap_or_else(|| self.clone())
     }
 
     /// Whether the given name has special semantics as a directory entry.
@@ -278,6 +292,32 @@ impl DirEntry {
     /// (which also means "self"), or dot dot (which means "parent").
     pub fn is_reserved_name(name: &FsStr) -> bool {
         name.is_empty() || name == "." || name == ".."
+    }
+
+    /// Returns the flags of this DirEntry.
+    pub fn flags(&self) -> DirEntryFlags {
+        DirEntryFlags::from_bits_truncate(self.flags.load(Ordering::Acquire))
+    }
+
+    /// Raises the flags of this DirEntry.
+    ///
+    /// Returns the flags of this DirEntry before the flags were raised.
+    pub fn raise_flags(&self, flags: DirEntryFlags) -> DirEntryFlags {
+        let old_flags = self.flags.fetch_or(flags.bits(), Ordering::AcqRel);
+        DirEntryFlags::from_bits_truncate(old_flags)
+    }
+
+    /// Lowers the flags of this DirEntry.
+    ///
+    /// Returns the flags of this DirEntry before the flags were lowered.
+    pub fn lower_flags(&self, flags: DirEntryFlags) -> DirEntryFlags {
+        let old_flags = self.flags.fetch_and(!flags.bits(), Ordering::AcqRel);
+        DirEntryFlags::from_bits_truncate(old_flags)
+    }
+
+    /// Returns true if this DirEntry is dead.
+    pub fn is_dead(&self) -> bool {
+        self.flags().contains(DirEntryFlags::IS_DEAD)
     }
 
     /// Look up a directory entry with the given name as direct child of this
@@ -537,14 +577,13 @@ impl DirEntry {
     ///
     /// Notice that this method takes `self` by value to destroy this reference.
     fn destroy(self: DirEntryHandle, mounts: &Mounts) {
-        let unmount = {
-            let mut state = self.state.write();
-            if state.is_dead {
-                return;
-            }
-            state.is_dead = true;
-            std::mem::replace(&mut state.has_mounts, false)
-        };
+        let was_already_dead =
+            self.raise_flags(DirEntryFlags::IS_DEAD).contains(DirEntryFlags::IS_DEAD);
+        if was_already_dead {
+            return;
+        }
+        let unmount =
+            self.lower_flags(DirEntryFlags::HAS_MOUNTS).contains(DirEntryFlags::HAS_MOUNTS);
         self.node.fs().will_destroy_dir_entry(&self);
         if unmount {
             mounts.unmount(&self);
@@ -554,15 +593,15 @@ impl DirEntry {
 
     /// Returns whether this entry is a descendant of |other|.
     pub fn is_descendant_of(self: &DirEntryHandle, other: &DirEntryHandle) -> bool {
-        let mut current = self.clone();
+        let scope = RcuReadScope::new();
+        let mut current = self.deref();
         loop {
-            if Arc::ptr_eq(&current, other) {
+            if std::ptr::eq(current, other.deref()) {
                 // We found |other|.
                 return true;
             }
-            let parent = current.read().parent().clone();
-            if let Some(next) = parent {
-                current = next;
+            if let Some(parent) = current.parent_ref(&scope) {
+                current = parent;
             } else {
                 // We reached the root of the file system.
                 return false;
@@ -652,11 +691,14 @@ impl DirEntry {
             // Compute the list of ancestors of new_parent to check whether new_parent is a
             // descendant of the renamed node. This must be computed before taking any lock to
             // prevent lock inversions.
+            //
+            // TODO: This walk is now lock-free, which means we don't need to materialize this
+            // list. We can just walk the tree and check for cycles.
             let mut new_parent_ancestor_list = Vec::<DirEntryHandle>::new();
             {
                 let mut current = Some(new_parent.clone());
                 while let Some(entry) = current {
-                    current = entry.read().parent().clone();
+                    current = entry.parent();
                     new_parent_ancestor_list.push(entry);
                 }
             }
@@ -779,7 +821,7 @@ impl DirEntry {
                 // We need to update the parent and local name for the DirEntry
                 // we are renaming to reflect its new parent and its new name.
                 let mut renamed_state = renamed.state.write();
-                renamed_state.parent = Some(new_parent.clone());
+                renamed.set_parent(new_parent.clone());
                 renamed_state.local_name = new_basename.into();
             }
             // Actually add the renamed child to the new_parent's child list.
@@ -800,7 +842,7 @@ impl DirEntry {
                     maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
                 {
                     let mut replaced_state = replaced.state.write();
-                    replaced_state.parent = Some(old_parent.clone());
+                    replaced.set_parent(old_parent.clone());
                     replaced_state.local_name = old_basename.into();
                 }
                 state.old_parent().children.insert(old_basename.into(), Arc::downgrade(replaced));
@@ -970,8 +1012,7 @@ impl DirEntry {
 
     /// Notifies watchers on the current node and its parent about an event.
     pub fn notify(&self, event_mask: InotifyMask) {
-        let is_dead = self.read().is_dead();
-        self.notify_watchers(event_mask, is_dead);
+        self.notify_watchers(event_mask, self.is_dead());
     }
 
     /// Notifies watchers on the current node and its parent about an event.
@@ -986,7 +1027,8 @@ impl DirEntry {
         let mode = self.node.info().mode;
         {
             let state = self.read();
-            if let Some(parent) = state.parent() {
+            let scope = RcuReadScope::new();
+            if let Some(parent) = self.parent_ref(&scope) {
                 parent.node.notify(event_mask, 0, state.local_name(), mode, is_dead);
             }
         }
@@ -1001,7 +1043,8 @@ impl DirEntry {
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
         let state = self.read();
-        if let Some(parent) = state.parent() {
+        let scope = RcuReadScope::new();
+        if let Some(parent) = self.parent_ref(&scope) {
             parent.node.notify(InotifyMask::CREATE, 0, state.local_name(), mode, false);
         }
     }
@@ -1017,7 +1060,8 @@ impl DirEntry {
         }
 
         let state = self.read();
-        if let Some(parent) = state.parent() {
+        let scope = RcuReadScope::new();
+        if let Some(parent) = self.parent_ref(&scope) {
             parent.node.notify(InotifyMask::DELETE, 0, state.local_name(), mode, false);
         }
 
@@ -1030,17 +1074,21 @@ impl DirEntry {
 
     /// Returns true if this entry has mounts.
     pub fn has_mounts(&self) -> bool {
-        self.state.read().has_mounts
+        self.flags().contains(DirEntryFlags::HAS_MOUNTS)
     }
 
     /// Records whether or not the entry has mounts.
     pub fn set_has_mounts(&self, v: bool) {
-        self.state.write().has_mounts = v;
+        if v {
+            self.raise_flags(DirEntryFlags::HAS_MOUNTS);
+        } else {
+            self.lower_flags(DirEntryFlags::HAS_MOUNTS);
+        }
     }
 
     /// Verifies this directory has nothing mounted on it.
     fn require_no_mounts(self: &Arc<Self>, parent_mount: &MountInfo) -> Result<(), Errno> {
-        if self.state.read().has_mounts {
+        if self.has_mounts() {
             if let Some(mount) = parent_mount.as_ref() {
                 if mount.read().has_submount(self) {
                     return error!(EBUSY);
@@ -1158,10 +1206,11 @@ impl<'a> DirEntryLockedChildren<'a> {
 impl fmt::Debug for DirEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parents = vec![];
-        let mut maybe_parent = self.read().parent().clone();
+        let scope = RcuReadScope::new();
+        let mut maybe_parent = self.parent_ref(&scope);
         while let Some(parent) = maybe_parent {
             parents.push(parent.read().local_name().to_string());
-            maybe_parent = parent.read().parent().clone();
+            maybe_parent = parent.parent_ref(&scope);
         }
         let mut builder = f.debug_struct("DirEntry");
         builder.field("id", &(self as *const DirEntry));
@@ -1219,7 +1268,9 @@ impl<'a> RenameGuard<'a> {
 /// lock on the parent's child list.
 impl Drop for DirEntry {
     fn drop(&mut self) {
-        let maybe_parent = self.state.write().parent.take();
+        let scope = RcuReadScope::new();
+        let maybe_parent = self.parent_ref(&scope);
+        self.parent.update(None);
         if let Some(parent) = maybe_parent {
             parent.internal_remove_child(self);
         }

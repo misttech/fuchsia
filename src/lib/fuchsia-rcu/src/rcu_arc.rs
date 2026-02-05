@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
+use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
@@ -28,6 +29,14 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// However, another thread running concurrently might see a different value for the object.
     pub fn read(&self) -> RcuReadGuard<T> {
         self.ptr.get()
+    }
+
+    /// Returns a reference to the value of the RCU Arc.
+    ///
+    /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
+    /// However, another thread running concurrently might see a different value for the object.
+    pub fn as_ref<'a>(&self, scope: &'a RcuReadScope) -> &'a T {
+        self.ptr.read(scope).as_ref().unwrap()
     }
 
     /// Write the value of the RCU Arc.
