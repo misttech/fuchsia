@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub type FsString = bstr::BString;
-pub type FsStr = bstr::BStr;
+pub use starnix_types::string::{FsStr, FsString};
 
 pub const SEPARATOR: u8 = b'/';
 
