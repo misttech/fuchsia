@@ -314,7 +314,7 @@ impl MountedVolumesGuard<'_> {
                 _ => return,
             }
 
-            info!(store_id; "Last connection to volume closed, shutting down");
+            warn!(store_id; "Last connection to volume closed without unmount, shutting down");
             let root_store = volumes_directory.root_volume.volume_directory().store();
             let fs = root_store.filesystem();
             let _guard = fs
