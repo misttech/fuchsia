@@ -83,6 +83,7 @@
 ##   --balanced            Sets the `compilation_mode` to `"balanced"`, which is
 ##                         less optimized than `"release"`, but still has some
 ##                         optimizations enabled.
+##   --debug               Sets the `compilation_mode` to `"debug"`.
 ##   --variant             Selects which runtime variant to use (e.g., asan) by
 ##                         passing a `select_variant=[VARIANT*,...]` argument
 ##                         to gn that collects all the --variant arguments in
