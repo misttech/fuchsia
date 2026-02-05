@@ -203,6 +203,16 @@ class AssemblyInputBundle:
     assembly_config.json schema::
 
         {
+            "allowed_in": {
+                "standard": [ "user", "userdebug" ],
+            },
+            "required_in": {
+                "standard": [ "user", "userdebug" ],
+            },
+            "auto_include_in": {
+                "standard": [ "user", "userdebug" ],
+            },
+            "experimental": false,
             "packages": [
                 {
                     "package": "package1",
@@ -289,6 +299,16 @@ class AssemblyInputBundle:
     """
 
     # Fields shared with ImageAssemblyConfig.
+    allowed_in: dict[str, set[str]] = field(
+        default_factory=functools.partial(defaultdict, set)
+    )
+    scrutiny_required: dict[str, set[str]] = field(
+        default_factory=functools.partial(defaultdict, set)
+    )
+    auto_include_in: dict[str, set[str]] = field(
+        default_factory=functools.partial(defaultdict, set)
+    )
+    experimental: bool = False
     kernel: KernelInfo = field(default_factory=KernelInfo)
     qemu_kernel: Optional[FilePath] = None
     boot_args: set[str] = field(default_factory=set)
@@ -406,10 +426,34 @@ class AIBCreator:
 
     package_url_template = "{repository}/{package_name}"
 
-    def __init__(self, outdir: FilePath) -> None:
+    def __init__(
+        self,
+        outdir: FilePath,
+        experimental: bool = False,
+    ) -> None:
         # The directory to create the AIB in.  The manifest will be placed in
         # the root of this dir.
         self.outdir = outdir
+
+        # The rules that indicate which feature set and build type combinations
+        # this AIB is allowed in.
+        self.allowed_in: dict[str, set[str]] = defaultdict(set)
+
+        # The rules that indicate which feature set and build type combinations
+        # we should expect the contents of this AIB to be found in, when checking
+        # scrutiny goldens.
+        self.scrutiny_required: dict[str, set[str]] = defaultdict(set)
+
+        # The rules that indicate which feature set and build type combinations
+        # should automatically include this AIB.
+        self.auto_include_in: dict[str, set[str]] = defaultdict(set)
+
+        # Whether this AIB is experimental.
+        # This removes the AIB from the scrutiny goldens to delay security
+        # review while the feature is being developed.
+        #
+        # Experimental AIBs are only allowed in userdebug/eng builds.
+        self.experimental = experimental
 
         # The packages (paths to package manifests)
         self.packages: set[PackageDetails] = set()
@@ -453,6 +497,95 @@ class AIBCreator:
         # The package copying mechanism.
         self.package_copier: PackageCopier = PackageCopier(outdir)
 
+    def add_allowed_in(self, rule: str) -> None:
+        self.add_include_rule("allowed_in", rule)
+
+    def add_scrutiny_required(self, rule: str) -> None:
+        self.add_include_rule("scrutiny_required", rule)
+
+    def add_auto_include_in(self, rule: str) -> None:
+        self.add_include_rule("auto_include_in", rule)
+
+    def add_include_rule(self, attr: str, rule: str) -> None:
+        """
+        Add an include rule that defines a feature set + build type combination
+        for this AIB. This is a helper method for add_allowed_in, add_required_in,
+        and add_auto_include_in.
+
+        The user can provide either:
+
+          <feature_set_level>::<build_type>
+            A specific feature set level and build type combination to include the
+            AIB.
+
+          <feature_set_level>
+            A feature set level to include the AIB no matter the build type.
+
+          <build_type>
+            A build type to include the AIB no matter the feature set level.
+        """
+        supported_feature_set_levels = set(
+            ["standard", "utility", "bootstrap", "embeddable"]
+        )
+        supported_build_types = set(["user", "userdebug", "eng"])
+        if rule == "everything":
+            for level in supported_feature_set_levels:
+                self.add_include_rule(attr, level)
+            return
+
+        # rule is `<feature_set_level>::<build_type>`
+        if "::" in rule:
+            try:
+                feature_set_level, build_type_str = rule.split("::")
+            except ValueError:
+                raise ValueError(
+                    f"Invalid include rule format: '{rule}'. Must be one of:\n"
+                    f"  - 'everything'\n"
+                    f"  - <feature_set_level>::<build_type>\n"
+                    f"  - <feature_set_level> (one of {sorted(supported_feature_set_levels)})\n"
+                    f"  - <build_type> (one of {sorted(supported_build_types)})"
+                )
+            build_types = set([build_type_str])
+
+        # rule is `<feature_set_level>`
+        elif rule in supported_feature_set_levels:
+            feature_set_level = rule
+            build_types = supported_build_types
+
+        # rule is `<build_type>`
+        elif rule in supported_build_types:
+            build_type = rule
+            for level in supported_feature_set_levels:
+                self.add_include_rule(attr, level + "::" + build_type)
+            return
+
+        else:
+            raise ValueError(
+                f"Invalid include rule: '{rule}'. Must be one of:\n"
+                f"  - 'everything'\n"
+                f"  - <feature_set_level>::<build_type>\n"
+                f"  - <feature_set_level> (one of {sorted(supported_feature_set_levels)})\n"
+                f"  - <build_type> (one of {sorted(supported_build_types)})"
+            )
+
+        assert feature_set_level in supported_feature_set_levels, (
+            "feature set level must be one of "
+            + str(supported_feature_set_levels)
+            + ", got: "
+            + feature_set_level
+        )
+        assert build_types.issubset(supported_build_types), (
+            "build types must be one of "
+            + str(supported_build_types)
+            + ", got: "
+            + str(build_types)
+        )
+
+        list_attr = getattr(self, attr)
+        if feature_set_level not in list_attr:
+            list_attr[feature_set_level] = set()
+        list_attr[feature_set_level].update(build_types)
+
     def build(self) -> tuple[AssemblyInputBundle, FilePath, DepSet]:
         """
         Copy all the artifacts from the ImageAssemblyConfig into an AssemblyInputBundle that is in
@@ -465,7 +598,38 @@ class AIBCreator:
             copying operation (ie. depfile contents)
         """
 
-        # Remove the existing <outdir>, and recreate it and the "subpackages"
+        if self.auto_include_in and (self.allowed_in or self.scrutiny_required):
+            raise AssemblyInputBundleCreationException(
+                "auto_include_in cannot be specified with allowed_in or scrutiny_required"
+            )
+
+        # Experimental AIBs must be allowed on userdebug, and never on user.
+        if self.experimental:
+
+            def _allowed_in(build_type: str) -> bool:
+                allowed = set()
+                for build_types in self.auto_include_in.values():
+                    allowed.update(build_types)
+                for build_types in self.allowed_in.values():
+                    allowed.update(build_types)
+
+                # No rules specified means it is allowed everywhere.
+                if not allowed:
+                    return True
+                return build_type in allowed
+
+            if _allowed_in("user"):
+                raise AssemblyInputBundleCreationException(
+                    "experimental AIBs must never be allowed on user: "
+                    + str(self.outdir)
+                )
+            if not _allowed_in("userdebug"):
+                raise AssemblyInputBundleCreationException(
+                    "experimental AIBs must be allowed on userdebug: "
+                    + str(self.outdir)
+                )
+
+        # Remove the existing <outdir>, and recreated it and the "subpackages"
         # subdirectory.
         if os.path.exists(self.outdir):
             shutil.rmtree(self.outdir)
@@ -475,6 +639,11 @@ class AIBCreator:
 
         # Init an empty resultant AssemblyInputBundle
         result = AssemblyInputBundle()
+
+        result.allowed_in = self.allowed_in
+        result.scrutiny_required = self.scrutiny_required
+        result.auto_include_in = self.auto_include_in
+        result.experimental = self.experimental
 
         # Copy over the boot args and zbi kernel args, unchanged, into the resultant
         # assembly bundle

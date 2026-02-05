@@ -4,6 +4,8 @@
 
 /// 'package_utils' is a crate of utility types and fns for working with
 /// fuchsia-packages.
-pub use package_utils::{PackageInternalPathBuf, PackageManifestPathBuf, SourcePathBuf};
+pub use package_utils::{
+    PackageInternalPathBuf, PackageManifestPathBuf, SourcePathBuf, bootfs_files_from_package,
+};
 
 mod package_utils;

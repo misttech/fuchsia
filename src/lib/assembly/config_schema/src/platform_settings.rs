@@ -277,7 +277,9 @@ pub struct PlatformSettings {
 ///
 /// The standard (default) level is `Minimal`. It is the level that should be
 /// used by products' main system.
-#[derive(Debug, Deserialize, Serialize, PartialEq, Default, JsonSchema, Clone, Copy)]
+#[derive(
+    Debug, Deserialize, Serialize, PartialEq, Default, JsonSchema, Clone, Copy, PartialOrd, Ord, Eq,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureSetLevel {
     /// This is a small build of fuchsia which is not meant to support

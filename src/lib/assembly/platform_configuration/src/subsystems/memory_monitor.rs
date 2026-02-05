@@ -50,9 +50,6 @@ impl DefineSubsystemConfiguration<PlatformMemoryMonitorConfig> for MemoryMonitor
                 }
             }
         }
-        if *context.feature_set_level == FeatureSetLevel::Standard {
-            builder.platform_bundle("memory_monitor_page_refaults");
-        }
         Ok(())
     }
 }

@@ -120,6 +120,7 @@ kernel_assembly_input_bundle("zircon") {
 # move them to other AIBs that are included by all other products.
 #
 assembly_input_bundle("embeddable") {
+  auto_include_in = [ "everything" ]
   bootfs_files_labels = [
     "//build/info/bootfs",
     "//src/bringup:bootfs",
@@ -146,12 +147,14 @@ assembly_input_bundle("embeddable") {
 
 # This AIB contains Component Manager without tracing enabled.
 assembly_input_bundle("component_manager") {
+  scrutiny_required = [ "everything" ]
   bootfs_files_labels = [ "//src/sys/component_manager:bootfs" ]
 }
 
 # This AIB contains Component Manager with tracing, which should not
 # be used in memory-constrained builds.
 assembly_input_bundle("component_manager_with_tracing") {
+  allowed_in = [ "eng" ]
   bootfs_files_labels = [ "//src/sys/component_manager:bootfs_with_tracing" ]
   root_shards = [ "//src/sys/component_manager/meta/component_manager_root_trace.root_shard.cml" ]
 }
@@ -160,6 +163,7 @@ assembly_input_bundle("component_manager_with_tracing") {
 # instrumentation library for memory profiling. It should not be used in
 # production.
 assembly_input_bundle("component_manager_with_tracing_and_heapdump") {
+  allowed_in = [ "eng" ]
   bootfs_files_labels =
       [ "//src/sys/component_manager:bootfs_with_tracing_and_heapdump" ]
 }
@@ -168,6 +172,11 @@ assembly_input_bundle("component_manager_with_tracing_and_heapdump") {
 # standalone, regardless of build-type.
 #
 assembly_input_bundle("bootstrap") {
+  auto_include_in = [
+    "bootstrap",
+    "utility",
+    "standard",
+  ]
   bootfs_packages = [
     "//src/bringup/bin/device-name-provider:package",
     "//src/bringup/bin/kernel-args-forwarder:package",
@@ -286,6 +295,10 @@ _NETWORK_DRIVER_PACKAGES = [
 ]
 
 assembly_input_bundle("usb_cdc_function_boot") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   boot_driver_packages = [
     {
       package_target =
@@ -306,6 +319,10 @@ assembly_input_bundle("usb_cdc_function_base") {
 }
 
 assembly_input_bundle("network_drivers_boot") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   boot_driver_packages = _NETWORK_DRIVER_PACKAGES
 }
 
@@ -421,6 +438,11 @@ assembly_input_bundle("usb_ums_function") {
 # systems.
 #
 assembly_input_bundle("embeddable_userdebug") {
+  auto_include_in = [
+    "userdebug",
+    "eng",
+  ]
+
   bootfs_files_labels = [
     # tools
     "//src/bringup/bin/debuglog:bootfs",
@@ -463,6 +485,15 @@ assembly_input_bundle("embeddable_userdebug") {
 # that are meant to be standalone.
 #
 assembly_input_bundle("bootstrap_userdebug") {
+  auto_include_in = [
+    "bootstrap::userdebug",
+    "bootstrap::eng",
+    "standard::userdebug",
+    "standard::eng",
+    "utility::userdebug",
+    "utility::eng",
+  ]
+
   bootfs_files_labels = [
     # tools
     "//src/connectivity/network/bin/ping:bootfs",
@@ -483,6 +514,8 @@ assembly_input_bundle("bootstrap_userdebug") {
 # The most-common, most-basic, AIB that is included in all eng systems.
 #
 assembly_input_bundle("embeddable_eng") {
+  auto_include_in = [ "eng" ]
+
   testonly = true
   bootfs_packages = [
     "//src/bringup/bin/bootpkg:package",
@@ -581,6 +614,10 @@ assembly_input_bundle("xhci_driver") {
 
 # AIB for the fake-battery driver
 assembly_input_bundle("fake_battery_driver") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_driver_packages = [
     {
       package_target = "//src/power/testing/fake-battery:fake_battery"
@@ -591,6 +628,7 @@ assembly_input_bundle("fake_battery_driver") {
 
 # AIB for the fake-powersensor driver
 assembly_input_bundle("fake_power_sensor") {
+  allowed_in = [ "eng" ]
   base_packages =
       [ "//src/power/testing/fake-powersensor:fake_power_sensor_package" ]
   core_shards = [ "//src/power/testing/fake-powersensor/meta/fake-power-sensor.core_shard.cml" ]
@@ -608,6 +646,7 @@ assembly_input_bundle("sdhci_driver") {
 
 # AIB for the ufs driver
 assembly_input_bundle("ufs_driver") {
+  allowed_in = [ "eng" ]
   boot_driver_packages = [
     {
       package_target = "//src/devices/block/drivers/ufs:package"
@@ -618,6 +657,11 @@ assembly_input_bundle("ufs_driver") {
 
 # AIB for the interconnect core driver
 assembly_input_bundle("interconnect_driver") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   boot_driver_packages = [
     {
       package_target = "//src/devices/interconnect/drivers/interconnect:package"
@@ -633,6 +677,11 @@ assembly_input_bundle("vulkan_loader") {
 
 # Trusted execution environment.
 assembly_input_bundle("trusted_execution_environment") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [
     "//src/microfuchsia/tee/manager:ta-manager",
     "//src/microfuchsia/tee/binder-proxy",
@@ -645,6 +694,12 @@ assembly_input_bundle("trusted_execution_environment") {
 # to be standalone.
 #
 assembly_input_bundle("bootstrap_eng") {
+  auto_include_in = [
+    "bootstrap::eng",
+    "utility::eng",
+    "standard::eng",
+  ]
+
   testonly = true
 
   bootfs_files_labels = [
@@ -689,23 +744,30 @@ assembly_input_bundle("bootstrap_eng") {
 # lspci shell utility. Used in products that use PCI and have shell commands enabled.
 #
 assembly_input_bundle("lspci") {
+  allowed_in = [ "eng" ]
   bootfs_files_labels = [ "//src/devices/pci/bin:bootfs" ]
 }
 
 # ufsutil shell utility. Used in products that use UFS and have shell commands enabled.
 #
 assembly_input_bundle("ufsutil") {
+  allowed_in = [ "eng" ]
   bootfs_files_labels = [ "//src/devices/block/bin/ufsutil:bootfs" ]
 }
 
 # The kernel_debug_broker AIB is included by all eng and userdebug products.
 #
 assembly_input_bundle("kernel_debug_broker_userdebug") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/bringup/bin/kernel_debug_broker:pkg" ]
   bootstrap_shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_userdebug.bootstrap_shard.cml" ]
 }
 
 assembly_input_bundle("kernel_debug_broker_user") {
+  allowed_in = [ "user" ]
   bootstrap_shards = [ "//src/bringup/bin/kernel_debug_broker/meta/kernel_debug_broker_user.bootstrap_shard.cml" ]
 }
 
@@ -728,6 +790,10 @@ assembly_input_bundle("console") {
 # The ptysvc AIB is included by all eng and userdebug products.
 #
 assembly_input_bundle("ptysvc") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/bringup/bin/ptysvc:package" ]
   bootstrap_shards =
       [ "//src/bringup/bin/ptysvc/meta/ptysvc.bootstrap_shard.cml" ]
@@ -758,6 +824,10 @@ assembly_input_bundle("virtcon") {
 # The netsvc AIB is included by all eng products.
 #
 assembly_input_bundle("netsvc") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/bringup/bin/netsvc:package" ]
   bootstrap_shards = [ "//src/bringup/bin/netsvc/meta/netsvc.shard.cml" ]
 }
@@ -766,6 +836,10 @@ assembly_input_bundle("netsvc") {
 # These kernel args should be refactored so that the AIBs have logical names.
 #
 assembly_input_bundle("kernel_args_eng") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   kernel_cmdline = [
     "console.shell=true",
     "kernel.enable-debugging-syscalls=true",
@@ -779,6 +853,10 @@ assembly_input_bundle("kernel_args_eng") {
 # These kernel args should be refactored so that the AIBs have logical names.
 #
 assembly_input_bundle("kernel_args_userdebug") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   kernel_cmdline = [
     "console.shell=false",
     "kernel.enable-serial-syscalls=output-only",
@@ -806,6 +884,7 @@ assembly_input_bundle("kernel_args_user") {
 # do this without a large performance penalty), and when desired by the product
 # (based on build-type).
 assembly_input_bundle("kernel_pmm_checker_enabled") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [
     # Enable PMM checker to detect certain kinds of buffer overrun and
     # use-after-free bugs.
@@ -822,6 +901,7 @@ assembly_input_bundle("kernel_pmm_checker_enabled") {
 # Added when a board might support the PMM checker, but wants to defer to a run
 # time check to determine if it's real hardware or not.
 assembly_input_bundle("kernel_pmm_checker_enabled_auto") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [
     # Enable PMM checker to detect certain kinds of buffer overrun and
     # use-after-free bugs.
@@ -839,6 +919,10 @@ assembly_input_bundle("kernel_pmm_checker_enabled_auto") {
 #
 # Often used for manipulating device during E2E tests.
 assembly_input_bundle("sl4f") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [
     # We currently include SL4F in base to support E2E tests that
     # either do not download fuchsia packages or cannot start
@@ -858,11 +942,16 @@ assembly_input_bundle("sl4f") {
 
 # Includes the bin/clock and clkctl developer tools
 assembly_input_bundle("clock_development_tools") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_files_labels = [ "//src/devices/clock/bin/clock:bootfs" ]
 }
 
 # Includes the CLIs necessary for the Fuchsia installer.
 assembly_input_bundle("partitioning_tools") {
+  allowed_in = [ "eng" ]
   bootfs_files_labels = [
     "//src/storage/bin/disk-pave:bootfs",
     "//src/storage/bin/mount:bootfs",
@@ -890,6 +979,10 @@ assembly_input_bundle("partitioning_tools") {
 # All children in `/core` receive InspectSink and LogSink.
 #
 assembly_input_bundle("core_realm") {
+  auto_include_in = [
+    "standard",
+    "utility",
+  ]
   bootfs_packages = [ "//src/sys/pkg/bin/pkg-cache" ]
   base_packages = [
     # This is a required dependency of pkg-cache
@@ -980,6 +1073,7 @@ assembly_input_bundle("core_realm") {
 # whose `fuchsia.memory.heapdump.process.Registry` capability is then routed to
 # `/`.
 assembly_input_bundle("heapdump_global_collector") {
+  allowed_in = [ "eng" ]
   base_packages = [ "//src/performance/memory/heapdump/collector" ]
   root_shards = [ "//src/sys/core/meta/heapdump.root_shard.cml" ]
   core_shards = [ "//src/sys/core/meta/heapdump.core_shard.cml" ]
@@ -1014,12 +1108,22 @@ assembly_input_bundle("core_realm_networking") {
 # If config allows, timekeeper will be given some persistent storage to use.
 # Should only be allowed in eng builds.
 assembly_input_bundle("timekeeper_persistence") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   core_shards =
       [ "//src/sys/time/timekeeper/timekeeper-persistence.core_shard.cml" ]
 }
 
 # The bundle supporting wake alarms through Timekeeper.
 assembly_input_bundle("timekeeper_wake_alarms") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   core_shards =
       [ "//src/sys/time/timekeeper/timekeeper-wake-alarms.core_shard.cml" ]
 }
@@ -1156,6 +1260,11 @@ assembly_input_bundle("networking_basic_packages_gub") {
 # This is mutually-exclusive with the `core_realm_user_and_userdebug` AIB.
 #
 assembly_input_bundle("core_realm_eng") {
+  auto_include_in = [
+    "utility::eng",
+    "standard::eng",
+  ]
+
   testonly = true
   base_packages = [
     "//src/sys/pkg/bin/pkg-resolver:pkg-resolver-eng",
@@ -1434,6 +1543,13 @@ assembly_input_bundle("core_realm_eng") {
 # This is mutually-exclusive with the `core_realm_eng` AIB.
 #
 assembly_input_bundle("core_realm_user_and_userdebug") {
+  auto_include_in = [
+    "standard::user",
+    "standard::userdebug",
+    "utility::user",
+    "utility::userdebug",
+  ]
+
   base_packages = [ "//src/sys/pkg/bin/pkg-resolver" ]
   core_shards = [
     # user and userdebug only have the base resolver, not the full
@@ -1464,6 +1580,13 @@ assembly_input_bundle("core_realm_user_and_userdebug") {
 # This is included with all eng and userdebug build-type systems.
 #
 assembly_input_bundle("core_realm_development_access") {
+  auto_include_in = [
+    "utility::userdebug",
+    "utility::eng",
+    "standard::userdebug",
+    "standard::eng",
+  ]
+
   base_packages = [
     # SSH is necessary for remote access for development
     "//src/developer/sshd-host",
@@ -1519,16 +1642,33 @@ assembly_input_bundle("core_realm_development_access") {
 # Configuration that goes along with core_realm_development_access which is
 # suitable for userdebug builds.
 assembly_input_bundle("core_realm_development_access_userdebug") {
+  auto_include_in = [
+    "standard::userdebug",
+    "utility::userdebug",
+  ]
+
   config_data_labels = [ "//src/developer/sshd-host:config" ]
 }
 
 # Configuration that goes along with core_realm_development_access which is
 # suitable for eng builds.
 assembly_input_bundle("core_realm_development_access_eng") {
+  auto_include_in = [
+    "utility::eng",
+    "standard::eng",
+  ]
+
   config_data_labels = [ "//src/developer/sshd-host:config_eng" ]
 }
 
 assembly_input_bundle("bootstrap_realm_development_access") {
+  auto_include_in = [
+    "embeddable::userdebug",
+    "embeddable::eng",
+    "bootstrap::userdebug",
+    "bootstrap::eng",
+  ]
+
   bootfs_packages = [
     "//src/sys/process-resolver",
     "//src/sys/tools/debug-dash-launcher",
@@ -1544,6 +1684,11 @@ assembly_input_bundle("bootstrap_realm_development_access") {
 }
 
 assembly_input_bundle("bootstrap_realm_vsock_development_access") {
+  experimental = true
+  allowed_in = [
+    "embeddable::userdebug",
+    "embeddable::eng",
+  ]
   bootfs_files_labels = [
     "//src/developer/vsock-sshd-host:bootfs",
     "//src/developer/remote-control/runner:bootfs",
@@ -1562,15 +1707,28 @@ assembly_input_bundle("bootstrap_realm_vsock_development_access") {
 }
 
 assembly_input_bundle("mdns") {
+  auto_include_in = [
+    "utility::userdebug",
+    "utility::eng",
+    "standard",
+  ]
   base_packages = [ "//src/connectivity/network/mdns/service:mdns" ]
 }
 
 assembly_input_bundle("mdns_fuchsia_device_wired_service") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   config_data_labels =
       [ "//src/connectivity/network/mdns/service:mdns_fuchsia_udp_config" ]
 }
 
 assembly_input_bundle("core_realm_development_access_rcs_usb") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_driver_packages = [
     {
       package_target = "//src/developer/remote-control/usb:usb-vsock-package"
@@ -1584,6 +1742,10 @@ assembly_input_bundle("core_realm_development_access_rcs_usb") {
 
 # Development and debug support tools for general networking
 assembly_input_bundle("development_support_tools_connectivity_networking") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [
     "//src/connectivity/network/tools/nc",
     "//src/connectivity/network/tools/sockscripter:package",
@@ -1596,15 +1758,27 @@ assembly_input_bundle("development_support_tools_connectivity_networking") {
 
 # Development and debug support tools for wlan
 assembly_input_bundle("development_support_tools_connectivity_wlan") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/connectivity/wlan/wlancfg/tool:donut" ]
 }
 
 # Development and debug support tools for the Thread protocol
 assembly_input_bundle("development_support_tools_connectivity_thread") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   flexible_packages = [ "//src/connectivity/lowpan/tools/lowpanctl" ]
 }
 
 assembly_input_bundle("radar_proxy_with_injector") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages =
       [ "//src/devices/radar/bin/radar-proxy:radar-proxy-with-injector" ]
   core_shards = [ "//src/devices/radar/bin/radar-proxy/meta/radar-proxy-with-injector.core_shard.cml" ]
@@ -1630,9 +1804,14 @@ assembly_input_bundle("cobalt_user_config") {
   config_data_labels = [ "//src/cobalt:cobalt_user_config" ]
 }
 assembly_input_bundle("cobalt_userdebug_config") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   config_data_labels = [ "//src/cobalt:cobalt_userdebug_config" ]
 }
 assembly_input_bundle("cobalt_default_config") {
+  allowed_in = [ "eng" ]
   config_data_labels = [ "//src/cobalt:cobalt_default_config" ]
 }
 
@@ -1657,6 +1836,7 @@ assembly_input_bundle("factory_reset_trigger") {
 # move them to other AIBs that are included by all other products.
 #
 assembly_input_bundle("common_standard") {
+  auto_include_in = [ "standard" ]
   memory_buckets = [ "//src/developer/memory/buckets/buckets.json5" ]
 
   bootfs_files_labels = [ "//src/sys/core:bootfs" ]
@@ -1767,6 +1947,8 @@ assembly_input_bundle("common_standard") {
 # This is exclusive to userdebug builds on the minimal support level.
 #
 assembly_input_bundle("standard_userdebug") {
+  auto_include_in = [ "standard::userdebug" ]
+
   config_data = [
     {
       package_name = "triage-detect"
@@ -1788,6 +1970,8 @@ assembly_input_bundle("standard_userdebug") {
 # level.
 #
 assembly_input_bundle("standard_eng") {
+  auto_include_in = [ "standard::eng" ]
+
   testonly = true
   base_packages = [
     # Needed to resolve driver components from "full" packages
@@ -1810,6 +1994,11 @@ assembly_input_bundle("standard_eng") {
 # higher service level.
 #
 assembly_input_bundle("standard_userdebug_and_eng") {
+  auto_include_in = [
+    "standard::userdebug",
+    "standard::eng",
+  ]
+
   base_packages = [
     "//src/diagnostics/detect:triage-detect",
     "//src/sys/pkg/bin/pkgctl",
@@ -1854,6 +2043,10 @@ assembly_input_bundle("memory_monitor") {
 
 # Assembly support for memory_monitor (v1) with memory profiling enabled.
 assembly_input_bundle("memory_monitor_with_memory_sampler") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [
     # memory_monitor with profiling enabled.
     "//src/developer/memory/monitor:monitor_with_memory_sampler",
@@ -1867,6 +2060,10 @@ assembly_input_bundle("memory_monitor_with_memory_sampler") {
 }
 
 assembly_input_bundle("memory_monitor_critical_reports") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   config_data = [
     {
       package_name = "memory_monitor"
@@ -1882,33 +2079,19 @@ assembly_input_bundle("memory_monitor_critical_reports") {
 
 # Assembly support for memory_monitor2.
 assembly_input_bundle("memory_monitor2") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/performance/memory/attribution/monitor:monitor" ]
 
   core_shards = [ "//src/performance/memory/attribution/monitor/meta/memory_monitor2.core_shard.cml" ]
 }
 
 assembly_input_bundle("memory_monitor_page_refaults") {
-  compiled_packages = [
-    {
-      name = "core"
-      components = [
-        {
-          component_name = "core"
-          shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.core_shard.cml" ]
-        },
-      ]
-    },
-    {
-      bootfs_package = true
-      name = "root"
-      components = [
-        {
-          component_name = "root"
-          shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.root_shard.cml" ]
-        },
-      ]
-    },
-  ]
+  auto_include_in = [ "standard" ]
+  core_shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.core_shard.cml" ]
+  root_shards = [ "//src/performance/memory/attribution/monitor/meta/page_refaults.root_shard.cml" ]
 }
 
 assembly_input_bundle("detect_user") {
@@ -1928,10 +2111,6 @@ assembly_input_bundle("detect_user") {
 # Bluetooth Support
 
 # Bluetooth profile support: A2DP
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_a2dp") {
   flexible_packages =
       [ "//src/connectivity/bluetooth/profiles/bt-a2dp:without-config" ]
@@ -1939,11 +2118,8 @@ assembly_input_bundle("bluetooth_a2dp") {
 }
 
 # For configurations without A2DP support to enable A2DP testing.
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("bluetooth_a2dp_with_consumer") {
+  allowed_in = [ "eng" ]
   core_shards = [
     "//src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-eager-with-audio-consumer.core_shard.cml",
     "//src/media/audio/consumer/meta/audio_consumer.core_shard.cml",
@@ -1951,10 +2127,6 @@ assembly_input_bundle("bluetooth_a2dp_with_consumer") {
 }
 
 # Bluetooth profile support: AVRCP
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_avrcp") {
   flexible_packages = [
     "//src/connectivity/bluetooth/profiles/bt-avrcp",
@@ -1964,10 +2136,6 @@ assembly_input_bundle("bluetooth_avrcp") {
 }
 
 # Bluetooth core support
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_core") {
   flexible_packages = [ "//src/connectivity/bluetooth/core/bt-host" ]
   base_packages = [ "//src/connectivity/bluetooth/core/bt-init" ]
@@ -1977,19 +2145,11 @@ assembly_input_bundle("bluetooth_core") {
 }
 
 # Bluetooth RFCOMM support
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_rfcomm") {
   base_packages = [ "//src/connectivity/bluetooth/profiles/bt-rfcomm" ]
 }
 
 # Bluetooth profile support: Device Identification
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_device_id") {
   flexible_packages =
       [ "//src/connectivity/bluetooth/profiles/bt-device-id:without-config" ]
@@ -1997,10 +2157,6 @@ assembly_input_bundle("bluetooth_device_id") {
 }
 
 # Bluetooth profile support: HFP - Audio Gateway
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_hfp_ag") {
   flexible_packages = [
     "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:without-config",
@@ -2009,12 +2165,12 @@ assembly_input_bundle("bluetooth_hfp_ag") {
 }
 
 # Bluetooth profile support: HFP - Hands Free
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: eng, userdebug
-#
 assembly_input_bundle("bluetooth_hfp_hf") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   flexible_packages = [
     "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:without-config",
   ]
@@ -2022,10 +2178,6 @@ assembly_input_bundle("bluetooth_hfp_hf") {
 }
 
 # Bluetooth profile support: MAP - MCE
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("bluetooth_map_mce") {
   flexible_packages = [ "//src/connectivity/bluetooth/profiles/bt-map-mce" ]
   core_shards = [ "//src/connectivity/bluetooth/profiles/bt-map-mce/meta/bt-map-mce.core_shard.cml" ]
@@ -2033,8 +2185,6 @@ assembly_input_bundle("bluetooth_map_mce") {
 
 # Bluetooth snoop support
 #
-# feature_set_levels: minimal
-# build-types: all
 # This AIB provides packages for the Bluetooth snoop configuration which lazily starts. It is
 # mutually exclusive with the `bluetooth_snoop_eager` AIB.
 #
@@ -2047,8 +2197,6 @@ assembly_input_bundle("bluetooth_snoop_lazy") {
 
 # Bluetooth snoop support
 #
-# feature_set_levels: minimal
-# build-types: all
 # This AIB provides packages for the Bluetooth snoop configuration which eagerly starts at device
 # boot. It is mutually exclusive with the `bluetooth_snoop_lazy` AIB.
 #
@@ -2058,20 +2206,14 @@ assembly_input_bundle("bluetooth_snoop_eager") {
 }
 
 # Basic Bluetooth workflows for automated testing and tooling.
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("bluetooth_affordances") {
+  allowed_in = [ "eng" ]
   core_shards = [ "//src/connectivity/bluetooth/testing/bt-affordances/meta/bt-affordances-server.core_shard.cml" ]
 }
 
 # Support for Pandora Bluetooth test interface server and virtual HCI with Rootcanal.
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("bluetooth_pandora") {
+  allowed_in = [ "eng" ]
   core_shards = [
     "//src/connectivity/bluetooth/testing/pandora/bt-pandora-server/meta/bt-pandora-server.core_shard.cml",
     "//src/connectivity/bluetooth/tools/bt-rootcanal/meta/bt-rootcanal.core_shard.cml",
@@ -2087,11 +2229,8 @@ assembly_input_bundle("diagnostics_triage_detect_mali") {
 }
 
 # Driver Framework Support
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("driver_framework_common") {
+  auto_include_in = [ "everything" ]
   bootfs_packages = [
     "//src/devices/bin/devfs:package",
     "//src/devices/bin/driver_manager/devfs:package",
@@ -2101,10 +2240,6 @@ assembly_input_bundle("driver_framework_common") {
 }
 
 # Rust Driver Framework Support
-#
-# feature_set_levels: all
-# build-types: all
-#
 assembly_input_bundle("driver_framework_rust") {
   bootfs_packages = [
     "//src/devices/bin/driver_manager_rust:package",
@@ -2114,10 +2249,6 @@ assembly_input_bundle("driver_framework_rust") {
 
 # Rust Driver Framework Support. Linked with the Heapdump instrumentation library
 # for memory profiling.
-#
-# feature_set_levels: all
-# build-types: eng
-#
 assembly_input_bundle("driver_framework_rust_with_heapdump") {
   bootfs_packages = [
     "//src/devices/bin/driver_manager_rust:package_with_heapdump",
@@ -2128,11 +2259,8 @@ assembly_input_bundle("driver_framework_rust_with_heapdump") {
 }
 
 # Driver Framework Support
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("driver_framework_no_instrumentation") {
+  scrutiny_required = [ "everything" ]
   bootfs_packages = [
     "//src/devices/bin/driver_manager:package",
     "//src/devices/bin/driver-host:package",
@@ -2141,11 +2269,8 @@ assembly_input_bundle("driver_framework_no_instrumentation") {
 
 # This AIB contains Driver Manager and Driver Host linked with the Heapdump
 # instrumentation library for memory profiling.
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("driver_framework_with_heapdump") {
+  allowed_in = [ "eng" ]
   bootfs_packages = [
     "//src/devices/bin/driver_manager:package_with_heapdump",
     "//src/devices/bin/driver-host:package_with_heapdump",
@@ -2155,22 +2280,14 @@ assembly_input_bundle("driver_framework_with_heapdump") {
 }
 
 # Full Package Driver Support
-#
-# feature_set_levels: minimal
-# build-types: eng
-#
 assembly_input_bundle("full_drivers") {
+  allowed_in = [ "eng" ]
   bootstrap_shards = [
     "//src/devices/bin/driver_framework/meta/full_drivers.bootstrap_shard.cml",
   ]
 }
 
 # Core starnix support.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("starnix_support") {
   flexible_packages = [ "//src/starnix/runner:starnix_package" ]
   root_shards = [ "//src/starnix/runner/meta/starnix_runner.root_shard.cml" ]
@@ -2180,12 +2297,12 @@ assembly_input_bundle("starnix_support") {
 }
 
 # Core adb support. Does not include daemon. Daemon should be included separately.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("usb_adb_function") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_driver_packages = [
     {
       package_target = "//src/developer/adb/drivers/usb-adb-function:package"
@@ -2195,12 +2312,12 @@ assembly_input_bundle("usb_adb_function") {
 }
 
 # Userspace fastboot over usb support.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("fastbootd_usb_support") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/firmware/fastboot-usb:package" ]
   core_shards =
       [ "//src/firmware/fastboot-usb/meta/fastboot_usb.core_shard.cml" ]
@@ -2213,12 +2330,12 @@ assembly_input_bundle("fastbootd_usb_support") {
 }
 
 # Core Nanohub support. Does not include driver. Driver should be included separately.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("nanohub_support") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [
     "//src/starnix/modules/nanohub:google_backlight",
     "//src/starnix/modules/nanohub:google_display",
@@ -2234,12 +2351,12 @@ assembly_input_bundle("nanohub_support") {
 }
 
 # Core FastRPC support. Does not include driver. Driver should be included separately.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: standard
-# valid build-types: all
-#
 assembly_input_bundle("fastrpc_support") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/starnix/modules/fastrpc:google_fastrpc" ]
   core_shards = [ "//src/starnix/modules/fastrpc/meta/fastrpc.core_shard.cml" ]
 }
@@ -2247,10 +2364,13 @@ assembly_input_bundle("fastrpc_support") {
 # hvdcp_opti support. Does not include driver. Driver should be included separately.
 #
 # optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
 #
 assembly_input_bundle("hvdcp_opti_support") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/starnix/modules/hvdcp_opti:hvdcp_opti" ]
   core_shards =
       [ "//src/starnix/modules/hvdcp_opti/meta/hvdcp_opti.core_shard.cml" ]
@@ -2261,6 +2381,7 @@ assembly_input_bundle("hvdcp_opti_support") {
 #
 # This includes testing support in the bootfs packages.
 assembly_input_bundle("testing_support_bootstrap") {
+  allowed_in = [ "eng" ]
   testonly = true
 
   bootfs_packages = [
@@ -2287,6 +2408,11 @@ assembly_input_bundle("testing_support_bootstrap") {
 
 # This AIB enables tracing support for userdebug configs
 assembly_input_bundle("tracing") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
+
   base_packages = [ "//src/performance/trace_manager" ]
   core_shards =
       [ "//src/performance/trace_manager/meta/trace_manager.core_shard.cml" ]
@@ -2298,6 +2424,8 @@ assembly_input_bundle("tracing") {
 # This includes testing support in the platform `base` package set, not just
 # via `universe`
 assembly_input_bundle("testing_support") {
+  auto_include_in = [ "standard::eng" ]
+
   testonly = true
 
   bootfs_files_labels = [ "//src/tests/microbenchmarks/config:bootfs" ]
@@ -2372,10 +2500,6 @@ assembly_input_bundle("factory_data") {
 #
 # There are "pervasively routed" capability shards included here because there
 # is currently no better mechanism for providing them to the fshost component itself.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
 #
 assembly_input_bundle("fshost_common") {
   bootstrap_shards = [ "//src/storage/fshost/meta/fshost.bootstrap_shard.cml" ]
@@ -2466,12 +2590,8 @@ assembly_input_bundle("fshost_common") {
 }
 
 # AIB adding eng-build debug capabilities to fshost.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: eng
-#
 assembly_input_bundle("fshost_eng") {
+  allowed_in = [ "eng" ]
   testonly = true
   compiled_packages = [
     {
@@ -2495,12 +2615,11 @@ assembly_input_bundle("fshost_eng") {
 }
 
 # AIB that stubs out eng-build debug capabilities for non-eng builds
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: eng
-#
 assembly_input_bundle("fshost_non_eng") {
+  allowed_in = [
+    "user",
+    "userdebug",
+  ]
   compiled_packages = [
     {
       bootfs_package = true
@@ -2516,11 +2635,6 @@ assembly_input_bundle("fshost_non_eng") {
 }
 
 # AIB adding recovery capabilities to fshost.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_recovery") {
   compiled_packages = [
     {
@@ -2537,11 +2651,6 @@ assembly_input_bundle("fshost_recovery") {
 }
 
 # AIB that stubs out recovery capabilities for builds that don't require recovery capabilities.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_non_recovery") {
   compiled_packages = [
     {
@@ -2558,11 +2667,6 @@ assembly_input_bundle("fshost_non_recovery") {
 }
 
 # AIB adding support for storage, needed by all fshost variants that use anything more than bootfs
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_storage") {
   compiled_packages = [
     {
@@ -2586,11 +2690,6 @@ assembly_input_bundle("fshost_storage") {
 }
 
 # AIB for fshost's storage-host configuration with GPT+Fxfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_storage_host_fxfs") {
   compiled_packages = [
     {
@@ -2618,11 +2717,6 @@ assembly_input_bundle("fshost_storage_host_fxfs") {
 }
 
 # AIB for fshost's storage-host configuration with GPT+FVM+Minfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_storage_host_gpt_fvm_minfs") {
   compiled_packages = [
     {
@@ -2656,12 +2750,8 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_minfs") {
 }
 
 # AIB for fshost's storage-host configuration with GPT+FVM+F2fs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_storage_host_gpt_fvm_f2fs") {
+  allowed_in = [ "eng" ]
   compiled_packages = [
     {
       bootfs_package = true
@@ -2691,11 +2781,6 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_f2fs") {
 }
 
 # AIB for fshost's storage-host configuration with FVM+Minfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_storage_host_fvm_minfs") {
   compiled_packages = [
     {
@@ -2728,11 +2813,6 @@ assembly_input_bundle("fshost_storage_host_fvm_minfs") {
 }
 
 # AIB containing drivers and fshost shards needed for non-storage-host configurations.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_non_storage_host") {
   compiled_packages = [
     {
@@ -2768,11 +2848,6 @@ assembly_input_bundle("fshost_non_storage_host") {
 }
 
 # AIB containing the fshost with fxfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_fxfs") {
   compiled_packages = [
     {
@@ -2797,11 +2872,6 @@ assembly_input_bundle("fshost_fxfs") {
 }
 
 # AIB containing fshost with an fvm and blobfs only.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_fvm") {
   compiled_packages = [
     {
@@ -2824,11 +2894,6 @@ assembly_input_bundle("fshost_fvm") {
 }
 
 # AIB containing fshost with an fvm and fxfs to hold the data.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_fvm_fxfs") {
   compiled_packages = [
     {
@@ -2855,9 +2920,6 @@ assembly_input_bundle("fshost_fvm_fxfs") {
 # AIB containing fshost support for provisioning fxfs.
 # Should be included with fshost_fxfs when migration is necessary.
 #
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
 # requires: fshost_fxfs
 #
 assembly_input_bundle("fshost_provision_fxfs") {
@@ -2877,10 +2939,6 @@ assembly_input_bundle("fshost_provision_fxfs") {
 }
 
 # AIB containing fshost support for minfs. Not compatible with fxfs.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
 #
 assembly_input_bundle("fshost_fvm_minfs") {
   compiled_packages = [
@@ -2906,9 +2964,6 @@ assembly_input_bundle("fshost_fvm_minfs") {
 # Should be included with fshost_fxfs_fxblob or fshost_fxfs when migration
 # is necessary.
 #
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
 # requires: one of fshost_fxfs*
 #
 assembly_input_bundle("fshost_fvm_minfs_migration") {
@@ -2941,11 +2996,6 @@ assembly_input_bundle("fshost_fvm_minfs_migration") {
 }
 
 # AIB containing fshost support for f2fs
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: all
-# valid build-types: all
-#
 assembly_input_bundle("fshost_fvm_f2fs") {
   compiled_packages = [
     {
@@ -2967,8 +3017,6 @@ assembly_input_bundle("fshost_fvm_f2fs") {
 
 # Automatic garbage collection for mutable storage
 #
-# feature_set_levels: minimal
-# build-types:all
 #
 assembly_input_bundle("storage_cache_manager") {
   base_packages = [ "//src/sys/cache_manager" ]
@@ -2976,6 +3024,7 @@ assembly_input_bundle("storage_cache_manager") {
 }
 
 assembly_input_bundle("system_update_checker") {
+  allowed_in = [ "eng" ]
   testonly = true
   base_packages = [ "//src/sys/pkg/bin/system-update-checker" ]
   core_shards = [ "//src/sys/pkg/bin/system-update-checker/meta/system_update_checker.core_shard.cml" ]
@@ -3023,6 +3072,10 @@ assembly_input_bundle("omaha_client") {
 }
 
 assembly_input_bundle("omaha_client_empty_eager_config") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   config_data = [
     {
       package_name = "omaha-client"
@@ -3083,16 +3136,12 @@ assembly_input_bundle("system_update_configurator") {
 }
 
 assembly_input_bundle("pkgfs_disable_executability_restrictions") {
+  allowed_in = [ "eng" ]
   system_packages =
       [ "//src/sys/pkg/bin/pkg-cache:disable-executability-restrictions" ]
 }
 
 # AIB to enable virtualization support.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("virtualization_support") {
   # TODO(https://fxbug.dev/42079015): Move to the list above once build errors are resolved.
   if (current_cpu != "riscv64") {
@@ -3114,11 +3163,6 @@ assembly_input_bundle("virtualization_support") {
 }
 
 # AIB to enable running Fuchsia as a virtualized guest.
-#
-# optional: product must specify its inclusion
-# valid feature_set_levels: minimal
-# valid build-types: all
-#
 assembly_input_bundle("vsock_service") {
   base_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
   core_shards =
@@ -3126,6 +3170,11 @@ assembly_input_bundle("vsock_service") {
 }
 
 assembly_input_bundle("vsock_service_bootstrap") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/paravirtualization/vsock:vsock_service" ]
   bootstrap_shards = [
     "//src/paravirtualization/vsock/meta/vsock_service.bootstrap_shard.cml",
@@ -3133,10 +3182,6 @@ assembly_input_bundle("vsock_service_bootstrap") {
 }
 
 # AIB to include Netstack2 as the netstack for use by base networking.
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("netstack2") {
   # The Go toolchain used for netstack2 does not support RISC-V.
   if (current_cpu != "riscv64") {
@@ -3157,11 +3202,7 @@ assembly_input_bundle("netstack2") {
 
 # Netstack3 as the netstack for use by base networking.
 #
-# feature_set_levels: minimal
-# build-types: all
-#
 # To be used in conjunction with netstack3_packages or netstack3_packages_gub.
-#
 assembly_input_bundle("netstack3") {
   compiled_packages = [
     {
@@ -3196,11 +3237,7 @@ assembly_input_bundle("netstack3_packages_gub") {
 # Enable netpol network-socket-proxy. Either this or
 # network-socket-proxy-disabled must be included.
 #
-# feature_set_levels: minimal
-# build-types: all
-#
 # To be used in conjunction with socket_proxy_packages.
-#
 assembly_input_bundle("socket-proxy-enabled") {
   compiled_packages = [
     {
@@ -3219,10 +3256,6 @@ assembly_input_bundle("socket-proxy-enabled") {
 
 # Disable netpol network-socket-proxy. Either this or
 # network-socket-proxy-enabled must be included.
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("socket-proxy-disabled") {
   compiled_packages = [
     {
@@ -3247,9 +3280,6 @@ assembly_input_bundle("socket_proxy_packages") {
 }
 
 # Netstack-migration as the netstack for use by base networking.
-#
-# feature_set_levels: minimal
-# build-types: all
 #
 # Must be used in conjunction with netstack_migration_packages or
 # netstack_migration_packages_gub.
@@ -3316,11 +3346,6 @@ assembly_input_bundle("thread_lowpan") {
 }
 
 # WLAN policy component
-#
-# feature_set_levels: utility, minimal
-# build-types: all
-#
-# Not included in utility + user by default, but otherwise is included.
 assembly_input_bundle("wlan_policy") {
   base_packages = [
     "//src/connectivity/location/regulatory_region",
@@ -3332,11 +3357,11 @@ assembly_input_bundle("wlan_policy") {
 }
 
 # WLAN development support
-#
-# feature_set_levels: utility, minimal
-# build-types: eng, userdebug
-#
 assembly_input_bundle("wlan_development") {
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/connectivity/wlan/tools/wlantool:wlan-dev" ]
   shell_commands = [
     {
@@ -3347,11 +3372,6 @@ assembly_input_bundle("wlan_development") {
 }
 
 # WLAN support for WEP and WPA
-#
-# feature_set_levels: utility, minimal
-# build-types: all
-#
-# Not included in utility + user by default, but otherwise is included.
 assembly_input_bundle("wlan_legacy_privacy_support") {
   base_packages = [ "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy" ]
 
@@ -3359,11 +3379,6 @@ assembly_input_bundle("wlan_legacy_privacy_support") {
 }
 
 # WLAN support for WPA2 and later
-#
-# feature_set_levels: utility, minimal
-# build-types: all
-#
-# Not included in utility + user by default, but otherwise is included.
 assembly_input_bundle("wlan_contemporary_privacy_only_support") {
   base_packages =
       [ "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor" ]
@@ -3372,10 +3387,6 @@ assembly_input_bundle("wlan_contemporary_privacy_only_support") {
 }
 
 # WLAN support for drivers that provide their own MAC
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("wlan_fullmac_support") {
   base_driver_packages = [
     {
@@ -3386,10 +3397,6 @@ assembly_input_bundle("wlan_fullmac_support") {
 }
 
 # WLAN support for drivers that utilize a software MAC
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("wlan_softmac_support") {
   base_driver_packages = [
     {
@@ -3400,19 +3407,12 @@ assembly_input_bundle("wlan_softmac_support") {
 }
 
 # WLAN support for interfacing with starnix.
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("wlan_wlanix") {
   base_packages = [ "//src/connectivity/wlan/wlanix" ]
   core_shards = [ "//src/connectivity/wlan/wlanix/meta/wlanix.core_shard.cml" ]
 }
 
 # Emergency Location provider
-#
-# feature_set_levels: standard
-# build-types: all
 assembly_input_bundle("location_emergency") {
   flexible_packages = [ "//src/connectivity/location/emergency" ]
   core_shards =
@@ -3420,11 +3420,8 @@ assembly_input_bundle("location_emergency") {
 }
 
 # Intel High-Definition Audio class driver
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("intel_hda") {
+  allowed_in = [ "eng" ]
   boot_driver_packages = [
     {
       package_target = "//src/media/audio/drivers/intel-hda/codecs/hdmi:package"
@@ -3452,11 +3449,8 @@ assembly_input_bundle("intel_hda") {
 }
 
 # Support for interactive debugging/development of platform audio
-#
-# feature_set_levels: standard
-# build-types: eng
-#
 assembly_input_bundle("audio_development_support") {
+  allowed_in = [ "eng" ]
   base_driver_packages = [
     {
       package_target = "//src/media/audio/drivers/virtual-audio"
@@ -3476,11 +3470,8 @@ assembly_input_bundle("audio_development_support") {
 }
 
 # Tools for interactive debugging/development of audio drivers
-#
-# feature_set_levels: standard (requires AIB "audio_development_support")
-# build-types: eng
-#
 assembly_input_bundle("audio_driver_development_tools") {
+  allowed_in = [ "eng" ]
   cache_packages = [
     "//src/media/audio/tools/audio-codec-ctl",
     "//src/media/audio/tools/audio-driver-ctl",
@@ -3510,11 +3501,8 @@ assembly_input_bundle("audio_driver_development_tools") {
 }
 
 # Tools for interactive debugging/development of platform full-stack audio
-#
-# feature_set_levels: standard (requires AIB "audio_core")
-# build-types: eng
-#
 assembly_input_bundle("audio_full_stack_development_tools") {
+  allowed_in = [ "eng" ]
   cache_packages = [
     "//src/media/audio/tools/audio-capture-timestamp-validator",
     "//src/media/audio/tools/audio-effects-ctl",
@@ -3559,10 +3547,6 @@ assembly_input_bundle("audio_full_stack_development_tools") {
 }
 
 # Component that manages platform audio devices
-#
-# feature_set_levels: standard
-# build-types: all
-#
 assembly_input_bundle("audio_device_registry") {
   flexible_packages = [ "//src/media/audio/services/device_registry" ]
   core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.core_shard.cml" ]
@@ -3571,14 +3555,11 @@ assembly_input_bundle("audio_device_registry_demand") {
   core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.demand.core_shard.cml" ]
 }
 assembly_input_bundle("audio_device_registry_eager") {
+  allowed_in = [ "eng" ]
   core_shards = [ "//src/media/audio/services/device_registry/meta/audio_device_registry.eager.core_shard.cml" ]
 }
 
 # Component that routes audio on Smart Displays
-#
-# feature_set_levels: standard
-# build-types: all
-#
 assembly_input_bundle("audio_core") {
   base_packages = [ "//src/media/audio/audio_core" ]
 }
@@ -3593,10 +3574,6 @@ assembly_input_bundle("audio_core_use_adc_device") {
 }
 
 # Component that plays audio files using audio_core protocols.
-#
-# feature_set_levels: standard (requires AIB "audio_core")
-# build-types: all
-#
 assembly_input_bundle("soundplayer") {
   flexible_packages = [ "//src/media/sounds/soundplayer" ]
   core_shards =
@@ -3604,10 +3581,6 @@ assembly_input_bundle("soundplayer") {
 }
 
 # Platform-provided video and audio decoders and encoders.
-#
-# feature_set_levels: standard
-# build-types: all
-#
 assembly_input_bundle("media_codecs") {
   if (current_cpu != "riscv64") {
     flexible_packages = [ "//src/media/codec:codec_factory" ]
@@ -3617,6 +3590,7 @@ assembly_input_bundle("media_codecs") {
 }
 
 assembly_input_bundle("video_development_support") {
+  allowed_in = [ "eng" ]
   testonly = true
   cache_packages = [ "//src/media/codec/examples:encode-file" ]
   shell_commands = [
@@ -3628,19 +3602,12 @@ assembly_input_bundle("video_development_support") {
 }
 
 # Service that allows active media players (sessions) to be published and discovered.
-#
-# feature_set_levels: standard
-# build-types: all
-#
 assembly_input_bundle("media_sessions") {
   flexible_packages = [ "//src/media/sessions:mediasession" ]
   core_shards = [ "//src/media/sessions/meta/mediasession.core_shard.cml" ]
 }
 
 # Session manager support
-#
-# feature_set_levels: minimal
-# build-types: all
 assembly_input_bundle("session_manager") {
   base_packages = [ "//src/session/bin/session_manager" ]
   core_shards = [
@@ -3649,28 +3616,18 @@ assembly_input_bundle("session_manager") {
 }
 
 # Element manager support
-#
-# feature_set_levels: minimal
-# build-types: all
 assembly_input_bundle("element_manager") {
   flexible_packages = [ "//src/session/bin/element_manager" ]
 }
 
 # UI support
-#
-# feature_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("ui") {
   core_shards = [ "//src/ui/meta/ui.core_shard.cml" ]
 }
 
 # UI support for eng build types
-#
-# feature_set_levels: minimal
-# build-types: eng
-#
 icu_assembly_input_bundle("ui_eng") {
+  allowed_in = [ "eng" ]
   icu_cache_packages = [
     "//src/ui/a11y/bin/a11y_manager:a11y-manager",
 
@@ -3684,11 +3641,11 @@ icu_assembly_input_bundle("ui_eng") {
 }
 
 # UI support for user and userdebug build types
-#
-# feature_set_levels: minimal
-# build-types: user, userdebug
-#
 icu_assembly_input_bundle("ui_user_and_userdebug") {
+  allowed_in = [
+    "user",
+    "userdebug",
+  ]
   icu_base_packages = [
     "//src/ui/a11y/bin/a11y_manager:a11y-manager",
 
@@ -3702,20 +3659,17 @@ icu_assembly_input_bundle("ui_user_and_userdebug") {
 }
 
 # UI support for eng build types
-#
-# feature_set_levels: minimal
-# build-types: eng
-#
 assembly_input_bundle("ui_package_eng") {
+  allowed_in = [ "eng" ]
   cache_packages = [ "//src/ui:ui_package" ]
 }
 
 # UI support for user and userdebug build types
-#
-# feature_set_levels: minimal
-# build-types: user, userdebug
-#
 assembly_input_bundle("ui_package_user_and_userdebug") {
+  allowed_in = [
+    "user",
+    "userdebug",
+  ]
   base_packages = [ "//src/ui:ui_package" ]
 }
 
@@ -3723,30 +3677,18 @@ assembly_input_bundle("ui_package_user_and_userdebug") {
 #
 # Use PlatformUiConfig.with_synthetic_device_support to select this bundle
 # over ui_package_eng / ui_package_user_and_userdebug.
-#
-# feature_set_levels: minimal
-# build-types: eng, userdebug
-#
 assembly_input_bundle(
     "ui_package_eng_userdebug_with_synthetic_device_support") {
   flexible_packages = [ "//src/ui:ui_with_synthetic_device_support_package" ]
 }
 
 # Fan support
-#
-# feature_set_levels: utility, minimal
-# build-types: all
-#
 assembly_input_bundle("fan") {
   base_packages = [ "//src/devices/thermal/bin/fan-controller" ]
   core_shards = [ "//src/devices/thermal/bin/fan-controller/meta/fan-controller.core_shard.cml" ]
 }
 
 # Battery support
-#
-# feature_set_levels: utility, minimal
-# build-types: all
-#
 assembly_input_bundle("battery_manager") {
   base_packages = [ "//src/power/battery-manager" ]
   core_shards =
@@ -3754,20 +3696,14 @@ assembly_input_bundle("battery_manager") {
 }
 
 # TopologyTestDaemon support
-#
-# feature_set_levels: all
-# build-types: eng
-#
 assembly_input_bundle("topology_test_daemon") {
+  allowed_in = [ "eng" ]
   testonly = true
   base_packages = [ "//src/power/testing/topology-test-daemon:package" ]
   core_shards = [ "//src/power/testing/topology-test-daemon/meta/topology-test-daemon.core_shard.cml" ]
 }
 
 # Power metrics recorder support
-#
-# feature_set_levels: minimal
-# build-types: all
 assembly_input_bundle("power_metrics_recorder") {
   base_packages = [ "//src/power/metrics-logger:metrics-logger-standalone-pkg" ]
   core_shards = [
@@ -3776,31 +3712,24 @@ assembly_input_bundle("power_metrics_recorder") {
 }
 
 # Sensors support
-#
-# features_set_levels: utility, minimal
-# build-types: all
-#
 assembly_input_bundle("sensors_framework") {
   base_packages = [ "//src/sensors" ]
   core_shards = [ "//src/sensors/meta/sensors.core_shard.cml" ]
 }
 
 # Sensor playback support.
-#
-# features_set_levels: utility, minimal
-# build-types: eng
-#
 assembly_input_bundle("sensors_framework_eng") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/sensors:sensors_eng" ]
 
   core_shards = [ "//src/sensors/meta/sensors_eng.core_shard.cml" ]
 }
 
 # Brightness Manager support
-#
-# features_set_levels: minimal
-# build-types: all
-#
 assembly_input_bundle("brightness_manager") {
   flexible_packages =
       [ "//src/ui/bin/brightness_manager:brightness_manager_pkg" ]
@@ -3810,51 +3739,47 @@ assembly_input_bundle("brightness_manager") {
 }
 
 # Legacy Power Framework support. Avoids including more modern power framework components.
-#
-# feature_set_levels: all
-# build-types: all
-#
 assembly_input_bundle("legacy_power_framework") {
+  auto_include_in = [
+    "standard",
+    "utility",
+    "bootstrap",
+  ]
   bootfs_packages = [ "//src/power/power-manager:package" ]
   bootstrap_shards = [ "//src/power/meta/power-framework.shard.cml" ]
 }
 
 # Power Framework CPU Manager.
-#
-# feature_set_levels: all
-# build-types: all
-#
 assembly_input_bundle("cpu_manager") {
   bootfs_packages = [ "//src/power/cpu-manager:package" ]
   bootstrap_shards = [ "//src/power/meta/cpu-manager.bootstrap_shard.cml" ]
 }
 
 # Power Framework System Activity Governor.
-#
-# feature_set_levels: all
-# build-types: eng, userdebug
-#
 assembly_input_bundle("power_framework_sag") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/power/system-activity-governor:package" ]
   bootstrap_shards = [ "//src/power/meta/sag.shard.cml" ]
 }
 
 # Power Framework power broker.
-#
-# feature_set_levels: all except embeddable
-# build-types: eng, userdebug
-#
 assembly_input_bundle("power_framework_broker") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/power/broker:package" ]
 }
 
 # Power Framework System Activity Governor for testing. This provides extra controls over the
 # internal state that should only happen for testing.
-#
-# feature_set_levels: all except embeddable
-# build-types: eng
-#
 assembly_input_bundle("power_framework_testing_sag") {
+  allowed_in = [ "eng" ]
   bootfs_packages = [
     "//src/power/system-activity-governor:config-use-suspender",
     "//src/power/system-activity-governor:config-wait-for-token",
@@ -3865,6 +3790,7 @@ assembly_input_bundle("power_framework_testing_sag") {
 
 # An AIB for our power test related platform drivers.
 assembly_input_bundle("power_test_platform_drivers") {
+  allowed_in = [ "eng" ]
   boot_driver_packages = [
     {
       package_target = "//src/power/testing/system-integration/example/test-driver:power-system-integration-example-test-driver"
@@ -3875,11 +3801,12 @@ assembly_input_bundle("power_test_platform_drivers") {
 }
 
 # Power framework cli tools and ffx power support components
-#
-# feature_set_levels: utility
-# build-types: eng, userdebug
-#
 assembly_input_bundle("power_framework_development_support") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   bootfs_packages = [ "//src/power/tools/cli:package" ]
   base_packages = [
     "//src/devices/hrtimer/bin:hrtimer-ctl",
@@ -3908,6 +3835,12 @@ assembly_input_bundle("power_framework_development_support") {
 # Restricted for testing assembly itself (and to provide example code)
 #
 assembly_input_bundle("example_assembly_bundle") {
+  allowed_in = [
+    "eng",
+
+    # Some host e2e tests use this AIB and are using utility::user.
+    "utility::user",
+  ]
   testonly = true
   core_shards = [ "//src/tests/assembly/assemble_image/compiled_package/meta/test.core_shard.cml" ]
   compiled_packages = [
@@ -4140,21 +4073,25 @@ assembly_resources_directory("resources") {
 
 # Sets a low timeout for rebooting when the device runs out-of-memory.
 assembly_input_bundle("kernel_oom_reboot_timeout_low") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [ "kernel.oom.reboot-timeout-ms=8000" ]
 }
 
 # Enables jobkilling when the device runs out-of-memory.
 assembly_input_bundle("kernel_oom_behavior_jobkill") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [ "kernel.oom.behavior=jobkill" ]
 }
 
 # Disable kernel oom handling behavior.
 assembly_input_bundle("kernel_oom_behavior_disable") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [ "kernel.oom.enable=false" ]
 }
 
 # Enables log output to legacy serial console.
 assembly_input_bundle("kernel_serial_legacy") {
+  allowed_in = [ "eng" ]
   kernel_cmdline = [ "kernel.serial=legacy" ]
 }
 
@@ -4224,9 +4161,6 @@ assembly_input_bundle("zoneinfo") {
 }
 
 # Assembly support for performing factory resets
-#
-# feature set levels: standard (always), utility (optionally)
-# build types: all
 assembly_input_bundle("factory_reset") {
   base_packages = [ "//src/recovery/factory_reset:factory_reset_pkg" ]
   core_shards =
@@ -4253,6 +4187,11 @@ assembly_input_bundle("recovery_fdr") {
 }
 
 assembly_input_bundle("recovery_android") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [
     "//src/recovery/system:system_recovery_android",
     "//src/developer/adb/bin:adb",
@@ -4271,6 +4210,11 @@ assembly_input_bundle("recovery_android") {
 }
 
 assembly_input_bundle("session_manager_enable_pkg_cache") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   core_shards = [ "//src/session/bin/session_manager/meta/session_manager_enable_pkg_cache.core_shard.cml" ]
 }
 
@@ -4280,6 +4224,11 @@ assembly_input_bundle("session_manager_disable_pkg_cache") {
 
 # Includes GNSS functionality.
 assembly_input_bundle("gnss") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
   base_packages = [ "//src/connectivity/location/gnss:gnss_service" ]
   core_shards =
       [ "//src/connectivity/location/gnss/meta/gnss-service.core-shard.cml" ]

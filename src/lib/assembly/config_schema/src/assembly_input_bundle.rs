@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common::{DriverDetails, PackageDetails, PackageName};
+use crate::{BuildType, FeatureSetLevel};
 use assembly_constants::{CompiledPackageDestination, FileEntry};
 use assembly_container::WalkPaths;
 use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
@@ -17,6 +18,24 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[serde(default, deny_unknown_fields)]
 pub struct AssemblyInputBundle {
+    /// The feature set level and build type combinations that this AIB is allowed
+    /// to be included in.
+    pub allowed_in: BTreeMap<FeatureSetLevel, Vec<BuildType>>,
+
+    /// The feature set level and build type combinations that we should expect
+    /// to find the contents of this AIB. This helps us determine which scrutiny
+    /// entries should be 'required' (no ? prefix).
+    pub scrutiny_required: BTreeMap<FeatureSetLevel, Vec<BuildType>>,
+
+    /// The feature set level and build type combinations that should
+    /// automatically include this AIB.
+    pub auto_include_in: BTreeMap<FeatureSetLevel, Vec<BuildType>>,
+
+    /// Whether this AIB is part of a feature that is actively being developed,
+    /// and we want to delay a security review. Running scrutiny on products
+    /// that use experimental AIBs will fail.
+    pub experimental: bool,
+
     /// The parameters that specify which kernel to put into the ZBI.
     pub kernel: Option<PartialKernelConfig>,
 
@@ -68,6 +87,67 @@ pub struct AssemblyInputBundle {
     #[file_relative_paths]
     #[walk_paths]
     pub memory_buckets: Vec<FileRelativePathBuf>,
+}
+
+impl AssemblyInputBundle {
+    /// Returns whether this AIB is allowed to be included in the specified
+    /// feature set level and build type.
+    ///
+    /// If `allowed_in` is empty, then it is allowed in all build types and
+    /// feature set levels.
+    pub fn is_allowed_in(
+        &self,
+        feature_set_level: &FeatureSetLevel,
+        build_type: &BuildType,
+    ) -> bool {
+        if !self.auto_include_in.is_empty() {
+            return self.should_be_auto_included_in(feature_set_level, build_type);
+        }
+
+        // Default to allowed if no restrictions are present.
+        if self.allowed_in.is_empty() {
+            return true;
+        }
+
+        // If specific allowances are set, check them.
+        if let Some(build_types) = self.allowed_in.get(feature_set_level) {
+            return build_types.contains(build_type);
+        }
+        false
+    }
+
+    /// Returns whether the contents of the AIB should be expected in the
+    /// specified feature set level and build type.
+    pub fn required_to_be_in(
+        &self,
+        feature_set_level: &FeatureSetLevel,
+        build_type: &BuildType,
+    ) -> bool {
+        if !self.auto_include_in.is_empty() {
+            return self.should_be_auto_included_in(feature_set_level, build_type);
+        }
+
+        // If specific requirements are set, check them.
+        if let Some(build_types) = self.scrutiny_required.get(feature_set_level) {
+            return build_types.contains(build_type);
+        }
+
+        // Default to not required if no restrictions are present.
+        false
+    }
+
+    /// Returns whether this AIB should be automatically included in the
+    /// specified feature set level and build type.
+    pub fn should_be_auto_included_in(
+        &self,
+        feature_set_level: &FeatureSetLevel,
+        build_type: &BuildType,
+    ) -> bool {
+        if let Some(build_types) = self.auto_include_in.get(feature_set_level) {
+            return build_types.contains(build_type);
+        }
+        false
+    }
 }
 
 /// The information required to specify a kernel and its arguments, all optional

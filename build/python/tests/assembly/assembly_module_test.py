@@ -22,6 +22,7 @@ from assembly import (
     SubpackageEntry,
 )
 from assembly.assembly_input_bundle import (
+    AssemblyInputBundleCreationException,
     CompiledComponentDefinition,
     CompiledPackageDefinition,
     DriverDetails,
@@ -168,6 +169,10 @@ class PackageManifestTest(unittest.TestCase):
 
 
 raw_assembly_input_bundle_json = """{
+  "allowed_in": {},
+  "scrutiny_required": {},
+  "auto_include_in": {},
+  "experimental": false,
   "kernel": {
     "path": "path/to/kernel",
     "args": [
@@ -734,4 +739,109 @@ class AIBCreatorTest(unittest.TestCase):
             os.chdir(curr_cwd)
 
             # Clean up the tempdir
+            outdir.cleanup()
+
+
+class AIBCreatorIncludeRulesTest(unittest.TestCase):
+    def test_add_allowed_in_everything(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        creator.add_allowed_in("everything")
+        self.assertEqual(
+            creator.allowed_in,
+            {
+                "standard": {"user", "userdebug", "eng"},
+                "utility": {"user", "userdebug", "eng"},
+                "bootstrap": {"user", "userdebug", "eng"},
+                "embeddable": {"user", "userdebug", "eng"},
+            },
+        )
+
+    def test_add_allowed_in_feature_set(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        creator.add_allowed_in("standard")
+        self.assertEqual(
+            creator.allowed_in,
+            {
+                "standard": {"user", "userdebug", "eng"},
+            },
+        )
+
+    def test_add_allowed_in_build_type(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        creator.add_allowed_in("eng")
+        self.assertEqual(
+            creator.allowed_in,
+            {
+                "standard": {"eng"},
+                "utility": {"eng"},
+                "bootstrap": {"eng"},
+                "embeddable": {"eng"},
+            },
+        )
+
+    def test_add_allowed_in_specific(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        creator.add_allowed_in("standard::eng")
+        self.assertEqual(
+            creator.allowed_in,
+            {
+                "standard": {"eng"},
+            },
+        )
+
+    def test_add_scrutiny_required_mix(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        creator.add_scrutiny_required("standard::eng")
+        creator.add_scrutiny_required("utility")
+        self.assertEqual(
+            creator.scrutiny_required,
+            {
+                "standard": {"eng"},
+                "utility": {"user", "userdebug", "eng"},
+            },
+        )
+
+    def test_invalid_rule_format(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        with self.assertRaises(ValueError):
+            creator.add_allowed_in("invalid")
+
+    def test_invalid_feature_set(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        with self.assertRaises(AssertionError):
+            creator.add_allowed_in("invalid::eng")
+
+    def test_invalid_build_type(self) -> None:
+        creator = AIBCreator(tempfile.mkdtemp())
+        with self.assertRaises(AssertionError):
+            creator.add_allowed_in("standard::invalid")
+
+    def test_auto_include_mutual_exclusivity(self) -> None:
+        # Create a temp dir for validation
+        outdir = tempfile.TemporaryDirectory()
+        try:
+            creator = AIBCreator(outdir.name)
+            creator.add_allowed_in("standard::eng")
+            creator.add_auto_include_in("utility::user")
+
+            # This should fail because allowed_in and auto_include_in are mutually exclusive
+            # from assembly.assembly_input_bundle import AssemblyInputBundleCreationException
+            with self.assertRaises(AssemblyInputBundleCreationException):
+                creator.build()
+        finally:
+            outdir.cleanup()
+
+    def test_auto_include_mutual_exclusivity_scrutiny_required(self) -> None:
+        # Create a temp dir for validation
+        outdir = tempfile.TemporaryDirectory()
+        try:
+            creator = AIBCreator(outdir.name)
+            creator.add_scrutiny_required("standard::eng")
+            creator.add_auto_include_in("utility::user")
+
+            # This should fail because scrutiny_required and auto_include_in are mutually exclusive
+            # from assembly.assembly_input_bundle import AssemblyInputBundleCreationException
+            with self.assertRaises(AssemblyInputBundleCreationException):
+                creator.build()
+        finally:
             outdir.cleanup()

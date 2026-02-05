@@ -9,12 +9,12 @@ import("//build/testing/golden_files.gni")
 # Generates the platform configs to pass into scrutiny rules.
 #
 # Arguments
-#   assembly_input_bundles (required)
-#     [list of paths] The paths to assembly input bundle config files.
+#   platform_artifacts (required)
+#     [label] The GN label to a platform_artifacts()
 #
-#   required_assembly_input_bundles (optional; default=[])
-#     [list of paths] The paths to assembly input bundle config files that
-#     will always be present in the images.
+#   build_type (required)
+#     [string] When provided, the assembly artifacts for the given build type
+#     will be included. Valid options are "userdebug" and "user".
 #
 #   static_packages_golden (optional)
 #     [path] The static packages list source-of-truth.
@@ -29,83 +29,41 @@ import("//build/testing/golden_files.gni")
 #   kernel_cmdline_golden (optional)
 #     [path] The kernel cmdline list source-of-truth.
 #
-#   assembly_build_type (optional)
-#     [string] When provided, the assembly artifacts for the given build type
-#     will be included. Valid options are "userdebug" and "user".
-#
 template("generate_scrutiny_configs") {
-  assert(defined(invoker.assembly_input_bundles),
-         "Need to define assembly_input_bundles")
-  assert(invoker.assembly_input_bundles != [],
-         "Need to provide at least one assembly input bundle")
+  assert(defined(invoker.platform_artifacts),
+         "Need to define platform_artifacts")
+  assert(defined(invoker.build_type), "Need to defind build_type")
 
-  _assembly_build_type = false
-  if (defined(invoker.assembly_build_type)) {
-    assert(invoker.assembly_build_type == "userdebug" ||
-               invoker.assembly_build_type == "user",
-           "assembly_build_type must be either 'userdebug' or 'user'")
-    _assembly_build_type = invoker.assembly_build_type
-  }
-
-  _required_aibs = []
-  if (defined(invoker.required_assembly_input_bundles)) {
-    _required_aibs = invoker.required_assembly_input_bundles
-  }
+  build_type = invoker.build_type
+  assert(build_type == "userdebug" || build_type == "user",
+         "build_type must be either 'userdebug' or 'user'")
 
   files = {
-    assembly_static_packages =
-        "${target_out_dir}/${target_name}/assembly_static_packages.txt"
-    assembly_bootfs_packages =
-        "${target_out_dir}/${target_name}/assembly_bootfs_packages.txt"
-    assembly_bootfs_files =
-        "${target_out_dir}/${target_name}/assembly_bootfs_files.txt"
-    assembly_kernel_args =
-        "${target_out_dir}/${target_name}/assembly_kernel_args.txt"
+    platform_artifacts =
+        get_label_info(invoker.platform_artifacts, "target_out_dir") + "/" +
+        get_label_info(invoker.platform_artifacts, "name") +
+        "/platform_artifacts"
+
     static_packages = "${target_out_dir}/${target_name}/static_packages.txt"
     bootfs_packages = "${target_out_dir}/${target_name}/bootfs_packages.txt"
     bootfs_files = "${target_out_dir}/${target_name}/bootfs_files.txt"
     kernel_cmdline = "${target_out_dir}/${target_name}/kernel_cmdline.txt"
   }
   labels = {
-    generate_assembly = "${target_name}_generate_assembly"
     generate = "${target_name}_generate"
   }
 
-  if (_assembly_build_type != false) {
-    compiled_action(labels.generate_assembly) {
-      tool = "//build/assembly/tools/generate_assembly_scrutiny_configs"
-      outputs = [
-        files.assembly_static_packages,
-        files.assembly_bootfs_packages,
-        files.assembly_bootfs_files,
-        files.assembly_kernel_args,
-      ]
-      args = [
-        "--static-packages",
-        rebase_path(files.assembly_static_packages, root_build_dir),
-        "--bootfs-packages",
-        rebase_path(files.assembly_bootfs_packages, root_build_dir),
-        "--bootfs-files",
-        rebase_path(files.assembly_bootfs_files, root_build_dir),
-        "--kernel-args",
-        rebase_path(files.assembly_kernel_args, root_build_dir),
-        "--build-type",
-        _assembly_build_type,
-      ]
-    }
-  }
-
-  python_action(labels.generate) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "visibility",
-                           ])
+  compiled_action(labels.generate) {
     testonly = true
-    binary_label = "//build/assembly/scripts:generate_scrutiny_configs"
+    tool = "//build/assembly/tools/generate_assembly_scrutiny_configs"
 
-    depfile = "${target_out_dir}/${target_name}.depfile"
-    inputs = invoker.assembly_input_bundles
+    # The contents of these folders are dynamic, and managed entirely by this
+    # action.  Further, this action will need to delete items from these
+    # directories that are not added back (on an incremental build, if an item
+    # is removed from one of these sets)
+    hermetic_action_ignored_prefixes = [ files.platform_artifacts ]
+
+    deps = [ invoker.platform_artifacts ]
     outputs = [
       files.static_packages,
       files.bootfs_packages,
@@ -113,48 +71,19 @@ template("generate_scrutiny_configs") {
       files.kernel_cmdline,
     ]
     args = [
-      "--static-packages-output",
+      "--static-packages",
       rebase_path(files.static_packages, root_build_dir),
-      "--bootfs-packages-output",
+      "--bootfs-packages",
       rebase_path(files.bootfs_packages, root_build_dir),
-      "--bootfs-files-output",
+      "--bootfs-files",
       rebase_path(files.bootfs_files, root_build_dir),
-      "--kernel-cmdline-output",
+      "--kernel-args",
       rebase_path(files.kernel_cmdline, root_build_dir),
-      "--depfile",
-      rebase_path(depfile, root_build_dir),
-      "--assembly-input-bundles",
+      "--build-type",
+      build_type,
+      "--platform-artifacts",
+      rebase_path(files.platform_artifacts, root_build_dir),
     ]
-    foreach(aib, invoker.assembly_input_bundles - _required_aibs) {
-      args += [ rebase_path(aib, root_build_dir) ]
-    }
-
-    if (_required_aibs != []) {
-      args += [ "--required-assembly-input-bundles" ]
-      foreach(aib, _required_aibs) {
-        args += [ rebase_path(aib, root_build_dir) ]
-      }
-    }
-
-    if (_assembly_build_type != false) {
-      inputs += [
-        files.assembly_static_packages,
-        files.assembly_bootfs_packages,
-        files.assembly_bootfs_files,
-        files.assembly_kernel_args,
-      ]
-      args += [
-        "--static-packages-input",
-        rebase_path(files.assembly_static_packages, root_build_dir),
-        "--bootfs-packages-input",
-        rebase_path(files.assembly_bootfs_packages, root_build_dir),
-        "--bootfs-files-input",
-        rebase_path(files.assembly_bootfs_files, root_build_dir),
-        "--kernel-args-input",
-        rebase_path(files.assembly_kernel_args, root_build_dir),
-      ]
-      deps += [ ":${labels.generate_assembly}" ]
-    }
   }
 
   golden_files(target_name) {

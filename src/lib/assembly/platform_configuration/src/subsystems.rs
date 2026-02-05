@@ -5,9 +5,10 @@
 use anyhow::{Context, bail};
 use assembly_cli_args::AssemblyMode;
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
-use assembly_config_schema::platform_settings::{FeatureSetLevel, PlatformSettings};
+use assembly_config_schema::platform_settings::PlatformSettings;
 use assembly_config_schema::product_settings::ProductSettings;
-use assembly_config_schema::{BoardConfig, BuildType, ExampleConfig};
+use assembly_config_schema::{BoardConfig, ExampleConfig};
+use assembly_platform_artifacts::PlatformArtifacts;
 use camino::Utf8Path;
 
 use crate::common::{CompletedConfiguration, ConfigurationBuilderImpl, ConfigurationContextBase};
@@ -73,6 +74,7 @@ mod virtualization;
 /// Returns a map from package names to configuration updates.
 #[allow(clippy::too_many_arguments)]
 pub fn define_configuration(
+    platform_artifacts: PlatformArtifacts,
     platform: &PlatformSettings,
     product: &ProductSettings,
     board_config: &BoardConfig,
@@ -107,6 +109,7 @@ pub fn define_configuration(
         // Call the configuration functions for each subsystem.
         configure_subsystems(
             &context,
+            platform_artifacts,
             platform,
             product,
             &mut builder,
@@ -117,22 +120,7 @@ pub fn define_configuration(
     Ok(builder.build())
 }
 
-struct CommonBundles;
-impl DefineSubsystemConfiguration<()> for CommonBundles {
-    fn define_configuration(
-        context: &ConfigurationContext<'_>,
-        _: &(),
-        builder: &mut dyn ConfigurationBuilder,
-    ) -> anyhow::Result<()> {
-        // Set up the platform's common AIBs by feature_set_level and build_type.
-        let bundles = get_auto_included_bundles(context.feature_set_level, context.build_type);
-        for bundle_name in bundles {
-            builder.platform_bundle(&bundle_name);
-        }
-        Ok(())
-    }
-}
-
+#[cfg(test)]
 fn get_auto_included_bundles(
     feature_set_level: &FeatureSetLevel,
     build_type: &BuildType,
@@ -246,6 +234,7 @@ fn get_auto_included_bundles(
                 "mdns",
                 "driver_framework_common",
                 "legacy_power_framework",
+                "memory_monitor_page_refaults",
             ]
         }
         (FeatureSetLevel::Standard, BuildType::UserDebug) => {
@@ -264,6 +253,7 @@ fn get_auto_included_bundles(
                 "mdns",
                 "driver_framework_common",
                 "legacy_power_framework",
+                "memory_monitor_page_refaults",
             ]
         }
         (FeatureSetLevel::Standard, BuildType::User) => {
@@ -276,6 +266,7 @@ fn get_auto_included_bundles(
                 "mdns",
                 "driver_framework_common",
                 "legacy_power_framework",
+                "memory_monitor_page_refaults",
             ]
         }
     }
@@ -286,18 +277,17 @@ fn get_auto_included_bundles(
 
 fn configure_subsystems(
     context_base: &ConfigurationContextBase<'_>,
+    platform_artifacts: PlatformArtifacts,
     platform: &PlatformSettings,
     product: &ProductSettings,
     builder: &mut dyn ConfigurationBuilder,
     include_example_aib_for_tests: bool,
 ) -> anyhow::Result<()> {
-    // Define the common platform bundles for this platform configuration.
-    CommonBundles::define_configuration(
-        &context_base.for_subsystem("common_bundles"),
-        &(),
-        builder,
-    )
-    .context("Selecting the common platform assembly input bundles")?;
+    builder.add_auto_include_bundles(
+        &platform_artifacts,
+        &platform.feature_set_level,
+        &platform.build_type,
+    );
 
     // Configure the Product Assembly + Structured Config example, if enabled.
     if include_example_aib_for_tests {
@@ -592,6 +582,8 @@ mod tests {
     use assembly_config_schema::ProductConfig;
     use assembly_util as util;
 
+    const PLATFORM_ARTIFACTS_PATH: &str = env!("PLATFORM_ARTIFACTS_PATH");
+
     #[test]
     fn test_example_config_without_configure_example_returns_err() {
         let json5 = r#"
@@ -609,6 +601,7 @@ mod tests {
         let mut cursor = std::io::Cursor::new(json5);
         let ProductConfig { platform, product, .. } = util::from_reader(&mut cursor).unwrap();
         let result = define_configuration(
+            PlatformArtifacts::empty_for_test(),
             &platform,
             &product,
             &BoardConfig::default(),
@@ -620,5 +613,39 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    // This test asserts that the AIBs contain the correct metadata declaring
+    // when they should be auto-included in a product. This is done by looping
+    // over every feature set level and build type combination and asserting
+    // the bundles-to-include match the old logic.
+    #[test]
+    fn test_auto_include_subsystems() {
+        let platform_artifacts =
+            PlatformArtifacts::from_dir_with_path(PLATFORM_ARTIFACTS_PATH).unwrap();
+
+        for feature_set_level in [
+            FeatureSetLevel::Standard,
+            FeatureSetLevel::Utility,
+            FeatureSetLevel::Bootstrap,
+            FeatureSetLevel::Embeddable,
+        ] {
+            for build_type in [BuildType::Eng, BuildType::UserDebug, BuildType::User] {
+                let bundles = get_auto_included_bundles(&feature_set_level, &build_type);
+
+                let mut builder = ConfigurationBuilderImpl::default();
+                builder.add_auto_include_bundles(
+                    &platform_artifacts,
+                    &feature_set_level,
+                    &build_type,
+                );
+                builder.assert_exact_bundles(bundles).unwrap_or_else(|e| {
+                    panic!(
+                        "bundles do not match for {:?}::{:?}: {}",
+                        feature_set_level, build_type, e
+                    )
+                });
+            }
+        }
     }
 }

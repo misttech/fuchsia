@@ -18,7 +18,9 @@ use assembly_config_schema::platform_settings::BuildType;
 use assembly_config_schema::product_settings::{
     ProductConfigData, ProductPackageDetails, ProductPackagesConfig,
 };
-use assembly_config_schema::{BoardConfig, DriverDetails, PackageDetails, PackageSet};
+use assembly_config_schema::{
+    BoardConfig, DriverDetails, FeatureSetLevel, PackageDetails, PackageSet,
+};
 use assembly_constants::{
     BootfsDestination, BootfsPackageDestination, FileEntry, PackageDestination,
     PackageSetDestination,
@@ -55,6 +57,9 @@ use util::MapEntry;
 pub struct ImageAssemblyConfigBuilder {
     /// The RFC-0115 Build Type of the assembled product + platform.
     build_type: BuildType,
+
+    /// The feature set to include in this product by default.
+    feature_set_level: FeatureSetLevel,
 
     /// The name of the board that these images can be OTA'd to.
     board_name: String,
@@ -133,6 +138,7 @@ pub struct ImageAssemblyConfigBuilder {
 impl ImageAssemblyConfigBuilder {
     pub fn new(
         build_type: BuildType,
+        feature_set_level: FeatureSetLevel,
         board_name: String,
         partitions_config: Option<Utf8PathBuf>,
         image_mode: FilesystemImageMode,
@@ -141,6 +147,7 @@ impl ImageAssemblyConfigBuilder {
     ) -> Self {
         Self {
             build_type,
+            feature_set_level,
             board_name,
             partitions_config,
             image_mode,
@@ -260,7 +267,21 @@ impl ImageAssemblyConfigBuilder {
         bundle: AssemblyInputBundle,
     ) -> Result<()> {
         let bundle_path = bundle_path.as_ref();
+        // Assert that this AIB is supported on this feature set level and build type.
+        if !bundle.is_allowed_in(&self.feature_set_level, &self.build_type) {
+            bail!(
+                "Product is using Fuchsia '{:?}' feature set level and '{:?}' build type, but attempted to include a feature that is only allowed on: {:?}",
+                &self.feature_set_level,
+                &self.build_type,
+                bundle.allowed_in
+            );
+        }
+
         let AssemblyInputBundle {
+            allowed_in: _,
+            scrutiny_required: _,
+            auto_include_in: _,
+            experimental: _,
             kernel,
             qemu_kernel,
             boot_args,
@@ -504,15 +525,8 @@ impl ImageAssemblyConfigBuilder {
         path: impl AsRef<Utf8Path>,
         from_product: bool,
     ) -> Result<()> {
-        let manifest = PackageManifest::try_load_from(&path)
-            .with_context(|| format!("parsing {} as a package manifest", path.as_ref()))?;
-        for mut blob in manifest.into_blobs() {
-            if blob.path.starts_with("meta/") {
-                continue;
-            }
-            if let Some(path) = blob.path.strip_prefix("bootfs/") {
-                blob.path = path.to_string();
-            }
+        let blobs = assembly_package_utils::bootfs_files_from_package(&path)?;
+        for blob in blobs {
             let destination = if from_product {
                 BootfsDestination::FromProduct(blob.path.clone())
             } else {
@@ -909,6 +923,7 @@ impl ImageAssemblyConfigBuilder {
         // image assembly configuration.
         let Self {
             build_type: _,
+            feature_set_level: _,
             board_name,
             partitions_config,
             image_mode,
@@ -1619,6 +1634,10 @@ mod tests {
             FileRelativePathBuf::FileRelative(write_empty_pkg(bundle_path, name, None).clone())
         };
         AssemblyInputBundle {
+            allowed_in: Default::default(),
+            scrutiny_required: Default::default(),
+            auto_include_in: Default::default(),
+            experimental: false,
             kernel: Some(PartialKernelConfig {
                 path: Some("kernel/path".into()),
                 args: vec!["kernel_arg0".into()],
@@ -1711,6 +1730,7 @@ mod tests {
         };
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -1728,6 +1748,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -1788,6 +1809,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::UserDebug,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -1843,6 +1865,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::User,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -1897,6 +1920,7 @@ mod tests {
     ) -> ImageAssemblyConfigBuilder {
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2354,6 +2378,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2385,6 +2410,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2426,6 +2452,7 @@ mod tests {
         };
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2473,6 +2500,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2520,6 +2548,7 @@ mod tests {
         };
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2557,6 +2586,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2571,6 +2601,7 @@ mod tests {
     fn test_builder_catches_kernel_arg_duplicates() {
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
@@ -2590,6 +2621,7 @@ mod tests {
 
         let mut builder = ImageAssemblyConfigBuilder::new(
             BuildType::Eng,
+            FeatureSetLevel::Standard,
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),

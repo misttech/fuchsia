@@ -105,6 +105,27 @@ pub enum PackageSet {
     BootfsOrBase,
 }
 
+impl PackageSet {
+    /// Returns true if the package set is stored in blobs (as opposed to BootFS).
+    ///
+    /// Note: `BootfsOrBase` is treated as in blobs, because it is in blobs for
+    /// everything but bootstrap methods. This function assumes the standard
+    /// feature set level (or at least non-bootstrap).
+    pub fn is_in_blobs_assuming_standard_mode(&self) -> bool {
+        match self {
+            PackageSet::Base
+            | PackageSet::Cache
+            | PackageSet::Flexible
+            | PackageSet::BootfsOrBase => true,
+            PackageSet::System
+            | PackageSet::Bootfs
+            | PackageSet::OnDemand
+            | PackageSet::AnchoredAutomatic
+            | PackageSet::AnchoredOnDemand => false,
+        }
+    }
+}
+
 impl std::fmt::Display for PackageSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {

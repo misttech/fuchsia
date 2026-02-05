@@ -2,14 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::{Context, Result, anyhow};
 use argh::FromArgs;
-use assembly_config_schema::BuildType;
+use assembly_config_schema::assembly_input_bundle::AssemblyInputBundle;
+use assembly_config_schema::{BuildType, FeatureSetLevel, PackageSet};
 use assembly_constants::{
     AddToImage, BlobfsCompiledPackageDestination, BootfsCompiledPackageDestination,
     BootfsDestination, BootfsPackageDestination, KernelArg, PackageDestination,
 };
+use assembly_file_relative_path::SupportsFileRelativePaths;
+use assembly_platform_artifacts::PlatformArtifacts;
 use camino::Utf8PathBuf;
+use fuchsia_pkg::PackageManifest;
+use std::collections::BTreeSet;
 use strum::IntoEnumIterator;
+
+mod golden;
+use golden::Golden;
 
 #[derive(FromArgs)]
 /// Produce the bootfs/packages allowlist for assembly-generated files.
@@ -33,6 +42,10 @@ struct Args {
     /// build type of the product.
     #[argh(option)]
     build_type: BuildType,
+
+    /// the platform artifacts to use when populating the goldens.
+    #[argh(option)]
+    platform_artifacts: Utf8PathBuf,
 }
 
 /// Used to filter destinations by if they are assembly generated or not.
@@ -139,18 +152,17 @@ fn get_bootfs_packages_allowlist(build_type: BuildType) -> Vec<String> {
     bootfs_packages
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args: Args = argh::from_env();
+    let mut static_packages_golden = Golden::default();
+    let mut bootfs_packages_golden = Golden::default();
+    let mut bootfs_files_golden = Golden::default();
+    let mut kernel_args_golden = Golden::default();
 
+    // Collect the goldens from Assembly rust code.
     let static_packages = get_static_packages_allowlist(&args.build_type);
-    std::fs::write(args.static_packages, static_packages.join("\n"))
-        .expect("Writing packages allowlist");
-
     let bootfs_packages = get_bootfs_packages_allowlist(args.build_type);
-    std::fs::write(args.bootfs_packages, bootfs_packages.join("\n"))
-        .expect("Writing bootfs packages allowlist");
-
-    let mut bootfs_files: Vec<String> = BootfsDestination::iter()
+    let bootfs_files: Vec<String> = BootfsDestination::iter()
         .filter_map(|v| match v {
             // This script only returns assembly-generated files.
             // Files from AIBs are collected and merged in a separate process.
@@ -164,15 +176,124 @@ fn main() {
             a @ _ => Some(a.to_string()),
         })
         .collect();
-    bootfs_files.sort();
-    std::fs::write(args.bootfs_files, bootfs_files.join("\n")).expect("Writing bootfs allowlist");
+    static_packages_golden.add_many_optional(static_packages);
+    bootfs_packages_golden.add_many_optional(bootfs_packages);
+    bootfs_files_golden.add_many_optional(bootfs_files);
+    kernel_args_golden.add_many_optional(get_kernel_args_allowlist(args.build_type));
 
-    let kernel_args = get_kernel_args_allowlist(args.build_type);
-    std::fs::write(args.kernel_args, kernel_args.join("\n"))
-        .expect("Writing kernel args allowlist");
+    // Collect the goldens from the Platform Artifacts.
+    let platform_artifacts = PlatformArtifacts::from_dir_with_path(&args.platform_artifacts)
+        .expect("Parsing platform artifacts");
+    for aib_name in &platform_artifacts.assembly_input_bundles {
+        let aib_path = platform_artifacts.get_bundle(aib_name);
+        let aib: AssemblyInputBundle = assembly_util::read_config(&aib_path).unwrap();
+        let aib = aib.resolve_paths_from_file(&aib_path).unwrap();
+
+        // Experimental AIBs are not included in the scrutiny goldens.
+        if aib.experimental {
+            continue;
+        }
+
+        // The scrutiny goldens are generated from all feature set levels.
+        if !aib.is_allowed_in(&FeatureSetLevel::Standard, &args.build_type)
+            && !aib.is_allowed_in(&FeatureSetLevel::Utility, &args.build_type)
+            && !aib.is_allowed_in(&FeatureSetLevel::Bootstrap, &args.build_type)
+            && !aib.is_allowed_in(&FeatureSetLevel::Embeddable, &args.build_type)
+        {
+            continue;
+        }
+
+        let aib_dir = aib_path
+            .parent()
+            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", &aib_path))?;
+
+        // The AIB contents are required if they are required in Standard and Utility.
+        let required = aib.required_to_be_in(&FeatureSetLevel::Standard, &args.build_type)
+            && aib.required_to_be_in(&FeatureSetLevel::Utility, &args.build_type);
+
+        let bootfs_package_manifests: Vec<&Utf8PathBuf> = aib
+            .boot_drivers
+            .iter()
+            .map(|d| d.package.as_utf8_pathbuf())
+            .chain(aib.packages.iter().filter_map(|p| {
+                if p.set == PackageSet::Bootfs { Some(p.package.as_utf8_pathbuf()) } else { None }
+            }))
+            .collect();
+        let static_package_manifests: Vec<&Utf8PathBuf> = aib
+            .packages
+            .iter()
+            .filter_map(|p| {
+                if p.set.is_in_blobs_assuming_standard_mode() {
+                    Some(p.package.as_utf8_pathbuf())
+                } else {
+                    None
+                }
+            })
+            .chain(aib.base_drivers.iter().map(|d| d.package.as_utf8_pathbuf()))
+            .collect();
+
+        let bootfs_package_names = bootfs_package_manifests
+            .iter()
+            .map(|manifest| {
+                let manifest = aib_dir.join(&manifest);
+                let manifest = PackageManifest::try_load_from(&manifest)
+                    .with_context(|| format!("parsing {} as a package manifest", manifest))?;
+                Ok(manifest.name().to_string())
+            })
+            // TODO(https://fxbug.dev/474331015): while this is correct, I don't want the diffs
+            // in the goldens yet. We can add this after improving the ergonomics.
+            // .chain(aib.packages_to_compile.iter().filter_map(|p| {
+            //     if let CompiledPackageDestination::Boot(dest) = &p.name {
+            //         Some(Ok(dest.to_string()))
+            //     } else {
+            //         None
+            //     }
+            // }))
+            .collect::<Result<Vec<String>>>()?;
+        let static_package_names = static_package_manifests
+            .iter()
+            .map(|manifest| {
+                let manifest = aib_dir.join(&manifest);
+                let manifest = PackageManifest::try_load_from(&manifest)
+                    .with_context(|| format!("parsing {} as a package manifest", manifest))?;
+                Ok(manifest.name().to_string())
+            })
+            .collect::<Result<Vec<String>>>()?;
+
+        bootfs_packages_golden.add_many(required, bootfs_package_names);
+        static_packages_golden.add_many(required, static_package_names);
+
+        bootfs_files_golden.add_many(
+            required,
+            &aib.bootfs_files.iter().map(|e| e.destination.to_string()).collect::<Vec<String>>(),
+        );
+        if let Some(manifest) = aib.bootfs_files_package {
+            let manifest = aib_dir.join(&manifest);
+            bootfs_files_golden.add_many(
+                required,
+                assembly_package_utils::bootfs_files_from_package(manifest)?
+                    .into_iter()
+                    .map(|b| b.path),
+            );
+        }
+        if let Some(kernel) = &aib.kernel {
+            kernel_args_golden.add_many(required, kernel.args.iter());
+        }
+    }
+
+    // Write the goldens.
+    static_packages_golden
+        .write(&args.static_packages)
+        .context("Writing static packages allowlist")?;
+    bootfs_packages_golden
+        .write(&args.bootfs_packages)
+        .context("Writing bootfs packages allowlist")?;
+    bootfs_files_golden.write(&args.bootfs_files).context("Writing bootfs files allowlist")?;
+    kernel_args_golden.write(&args.kernel_args).context("Writing kernel args allowlist")?;
+    Ok(())
 }
 
-fn get_kernel_args_allowlist(build_type: BuildType) -> Vec<String> {
+fn get_kernel_args_allowlist(build_type: BuildType) -> BTreeSet<String> {
     KernelArg::iter()
         .filter(|a| match build_type {
             BuildType::UserDebug => a.add_to_userdebug_images(),

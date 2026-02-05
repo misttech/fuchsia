@@ -19,6 +19,46 @@ import("//tools/cmc/build/restricted_features.gni")
 #
 # Parameters
 #
+#  allowed_in [optional]
+#    [list, strings] Which feature set + build type combinations this AIB is
+#    allowed to be included in. Assembly asserts during product assembly that
+#    the AIB is not included in any feature set + build type combinations
+#    that are not in this list.
+#
+#    Options:
+#    - "everything"
+#    - "standard", "utility", "bootstrap", "embeddable"
+#    - "user", "userdebug", "eng"
+#    - "standard::user", "utility::eng", etc.
+#
+#  scrutiny_required [optional]
+#    [list, strings] Which feature set + build type combinations to expect the
+#    contents of this AIB to be added to. Adding to this list will force the
+#    contents of this AIB to be listed as required in scrutiny goldens.
+#
+#    Options:
+#    - "everything"
+#    - "standard", "utility", "bootstrap", "embeddable"
+#    - "user", "userdebug", "eng"
+#    - "standard::user", "utility::eng", etc.
+#
+#  auto_include_in [optional]
+#    [list, strings] Which feature set + build type combinations to
+#    automatically include this AIB in.
+#
+#    Options:
+#    - "everything"
+#    - "standard", "utility", "bootstrap", "embeddable"
+#    - "user", "userdebug", "eng"
+#    - "standard::user", "utility::eng", etc.
+#
+#  experimental [optional; default=false]
+#    [bool] Whether this AIB is experimental and should be excluded from the
+#    scrutiny goldens. Experimental AIBs must be available in userdebug and
+#    never in user. Experimental AIBs are allowed in any feature set level.
+#    The typical way to mark an AIB as available in userdebug but not user is to
+#    set `experimental = true` and `allowed_in = ["userdebug", "eng"]`.
+#
 #  base_packages [optional]
 #    [list, GN labels] A list of GN labels of fuchsia_package targets to
 #    include in the base package set.
@@ -295,6 +335,37 @@ template("assembly_input_bundle") {
   creation_deps = []
   if (defined(invoker.deps)) {
     creation_deps += invoker.deps
+  }
+
+  if (defined(invoker.allowed_in)) {
+    foreach(include, invoker.allowed_in) {
+      creation_args += [
+        "--allowed-in",
+        include,
+      ]
+    }
+  }
+
+  if (defined(invoker.scrutiny_required)) {
+    foreach(include, invoker.scrutiny_required) {
+      creation_args += [
+        "--scrutiny-required",
+        include,
+      ]
+    }
+  }
+
+  if (defined(invoker.auto_include_in)) {
+    foreach(include, invoker.auto_include_in) {
+      creation_args += [
+        "--auto-include-in",
+        include,
+      ]
+    }
+  }
+
+  if (defined(invoker.experimental) && invoker.experimental) {
+    creation_args += [ "--experimental" ]
   }
 
   fuchsia_package(labels.bootfs_files_package) {
@@ -966,6 +1037,9 @@ template("assembly_input_bundle") {
                              "visibility",
                            ])
     deps = [ ":${labels.bazel_inputs}" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
     public_deps = [ ":${labels.assembly_input_bundle}" ]
     metadata = {
       assembly_input_bundles = [

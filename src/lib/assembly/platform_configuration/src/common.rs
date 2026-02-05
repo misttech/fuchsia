@@ -4,8 +4,12 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_capabilities::CapabilityNamedMap;
-use assembly_config_schema::assembly_input_bundle::CompiledPackageDefinition;
+use assembly_config_schema::assembly_input_bundle::{
+    AssemblyInputBundle, CompiledPackageDefinition,
+};
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
+use assembly_file_relative_path::SupportsFileRelativePaths;
+use assembly_platform_artifacts::PlatformArtifacts;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 use std::collections::btree_map::Entry;
@@ -138,10 +142,22 @@ impl ConfigurationContext<'_> {
 /// // to set multiple fieds on the same component:
 /// swd_package.component("meta/mine.cm")
 ///   .field("a", "value1")
-///   .field("b", "value2");
-/// ```
 ///
 pub(crate) trait ConfigurationBuilder {
+    /// Assert that the bundles that have been added already exactly match `bundles`.
+    /// TODO(https://fxbug.dev/474331015): Remove this after we fully depend on the
+    /// metadata inside the platform artifacts.
+    #[cfg(test)]
+    fn assert_exact_bundles(&self, bundles: Vec<String>) -> Result<()>;
+
+    /// Add all the AIBs that should be auto-included based on feature set level and build type.
+    fn add_auto_include_bundles(
+        &mut self,
+        platform_artifacts: &PlatformArtifacts,
+        feature_set_level: &FeatureSetLevel,
+        build_type: &BuildType,
+    );
+
     /// Add a platform assembly input bundle that should be included in the
     /// assembled platform.
     fn platform_bundle(&mut self, name: &str);
@@ -281,6 +297,9 @@ pub(crate) struct ConfigurationBuilderImpl {
     /// The Assembly Input Bundles to add.
     bundles: BTreeSet<String>,
 
+    /// Bundles that have `auto_include_in` set, and thus cannot be manually included.
+    auto_includable_bundles: BTreeSet<String>,
+
     /// BootFS configuration.
     bootfs: BootfsConfig,
 
@@ -328,9 +347,10 @@ impl ConfigurationBuilderImpl {
             domain_configs: DomainConfigs::new("domain configs"),
             icu_config,
             core_shards: Vec::new(),
-            configuration_capabilities: CapabilityNamedMap::new("config capabilties"),
+            configuration_capabilities: CapabilityNamedMap::new("configuration capabilities"),
             kernel_args: BTreeSet::default(),
-            compiled_packages: BTreeMap::default(),
+            compiled_packages: BTreeMap::new(),
+            auto_includable_bundles: BTreeSet::new(),
         }
     }
 
@@ -339,6 +359,7 @@ impl ConfigurationBuilderImpl {
     pub fn build(self) -> CompletedConfiguration {
         let Self {
             bundles,
+            auto_includable_bundles: _,
             bootfs,
             package_configs,
             domain_configs,
@@ -496,7 +517,59 @@ impl<'a> ICUMapExt<'a> for ICUMap {
 }
 
 impl ConfigurationBuilder for ConfigurationBuilderImpl {
+    #[cfg(test)]
+    fn assert_exact_bundles(&self, bundles: Vec<String>) -> Result<()> {
+        let mut bundles_to_assert = BTreeSet::new();
+        bundles_to_assert.extend(bundles);
+
+        let extra_in_bundles: BTreeSet<&String> =
+            self.bundles.difference(&bundles_to_assert).collect();
+        if !extra_in_bundles.is_empty() {
+            anyhow::bail!("The configuration has unexpected AIBs: {:?}", &extra_in_bundles);
+        }
+
+        let missing_in_bundles: BTreeSet<&String> =
+            bundles_to_assert.difference(&self.bundles).collect();
+        if !missing_in_bundles.is_empty() {
+            anyhow::bail!("The configuration is missing AIBs: {:?}", &missing_in_bundles);
+        }
+
+        Ok(())
+    }
+
+    fn add_auto_include_bundles(
+        &mut self,
+        platform_artifacts: &PlatformArtifacts,
+        feature_set_level: &FeatureSetLevel,
+        build_type: &BuildType,
+    ) {
+        let bundle_names = platform_artifacts.assembly_input_bundles.clone();
+        for bundle_name in bundle_names {
+            let aib_path = platform_artifacts.get_bundle(&bundle_name);
+            let aib: AssemblyInputBundle = assembly_util::read_config(&aib_path).unwrap();
+
+            // Perform the "mutual exclusivity" check for the platform configuration.
+            //
+            // If the AIB has `auto_include_in` set (for *any* configuration), then it's
+            // ineligible for being manually added by a subsystem.
+            if !aib.auto_include_in.is_empty() {
+                self.auto_includable_bundles.insert(bundle_name.clone());
+            }
+
+            let aib = aib.resolve_paths_from_file(&aib_path).unwrap();
+            if aib.should_be_auto_included_in(feature_set_level, build_type) {
+                self.bundles.insert(bundle_name);
+            }
+        }
+    }
+
     fn platform_bundle(&mut self, name: &str) {
+        if self.auto_includable_bundles.contains(name) {
+            panic!(
+                "The AIB '{}' has `auto_include_in` set, and so it cannot be manually included by a subsystem.",
+                name
+            );
+        }
         self.bundles.insert(name.to_string());
     }
 

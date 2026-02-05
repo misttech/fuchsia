@@ -186,6 +186,7 @@ mod tests {
     use crate::define_configuration;
     use crate::subsystems::{AssemblyMode, BoardConfig, PlatformSettings, ProductSettings};
     use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
+    use assembly_platform_artifacts::PlatformArtifacts;
     use camino::Utf8Path;
     use fidl::unpersist;
     use std::collections::BTreeMap;
@@ -216,6 +217,7 @@ mod tests {
         .unwrap();
 
         let _result = define_configuration(
+            PlatformArtifacts::empty_for_test(),
             &platform,
             &product,
             &BoardConfig::default(),

@@ -36,7 +36,39 @@ BOOTFS_COMPILED_PACKAGE_ALLOWLIST = [
 
 def create_bundle(args: argparse.Namespace) -> None:
     """Create an Assembly Input Bundle (AIB)."""
-    aib_creator = AIBCreator(args.outdir)
+    aib_creator = AIBCreator(
+        args.outdir,
+        args.experimental,
+    )
+
+    # Set the feature set + build type combinations that we allow the contents
+    # of this AIB to be included in.
+    if args.allowed_in:
+        assert (
+            "everything" not in args.allowed_in or len(args.allowed_in) == 1
+        ), "if 'everything' is added to allowed_in, it should be the only entry"
+        for rule in args.allowed_in:
+            aib_creator.add_allowed_in(rule)
+
+    # Set the feature set + build type combinations that we expect the contents
+    # of this AIB to be included in.
+    if args.scrutiny_required:
+        assert (
+            "everything" not in args.scrutiny_required
+            or len(args.scrutiny_required) == 1
+        ), "if 'everything' is added to scrutiny_required, it should be the only entry"
+        for rule in args.scrutiny_required:
+            aib_creator.add_scrutiny_required(rule)
+
+    # Set the feature set + build type combinations that the AIB should
+    # automatically be included in.
+    if args.auto_include_in:
+        assert (
+            "everything" not in args.auto_include_in
+            or len(args.auto_include_in) == 1
+        ), "if 'everything' is added to auto_include_in, it should be the only entry"
+        for rule in args.auto_include_in:
+            aib_creator.add_auto_include_in(rule)
 
     # Add the base and cache packages, if they exist.
     if args.base_pkg_list:
@@ -436,6 +468,25 @@ def main() -> int:
         "--outdir",
         required=True,
         help="Path to the outdir that will contain the AIB",
+    )
+    bundle_creation_parser.add_argument(
+        "--allowed-in",
+        type=str,
+        action="append",
+    )
+    bundle_creation_parser.add_argument(
+        "--scrutiny-required",
+        type=str,
+        action="append",
+    )
+    bundle_creation_parser.add_argument(
+        "--auto-include-in",
+        type=str,
+        action="append",
+    )
+    bundle_creation_parser.add_argument(
+        "--experimental",
+        action="store_true",
     )
     bundle_creation_parser.add_argument(
         "--base-pkg-list",

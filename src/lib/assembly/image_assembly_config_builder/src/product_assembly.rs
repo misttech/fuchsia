@@ -87,6 +87,7 @@ impl ProductAssembly {
         let image_mode = product_config.platform.storage.filesystems.image_mode;
         let mut builder = ImageAssemblyConfigBuilder::new(
             product_config.platform.build_type,
+            product_config.platform.feature_set_level,
             board_config.name.clone(),
             board_config.partitions_config.as_ref().map(|p| p.as_utf8_path_buf().clone()),
             image_mode,
@@ -211,6 +212,7 @@ impl ProductAssembly {
         // Get platform configuration based on the ProductConfig and the BoardConfig.
         let resource_dir = self.platform_artifacts.get_resources();
         let configuration = assembly_platform_configuration::define_configuration(
+            self.platform_artifacts.to_owned(),
             &platform,
             &product,
             &board_config,
