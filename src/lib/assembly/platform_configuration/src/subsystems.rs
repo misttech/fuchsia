@@ -340,6 +340,7 @@ fn configure_subsystems(
         development_support: &platform.development_support,
         starnix: &platform.starnix,
         health_check: &platform.health_check,
+        memory_allocator: &platform.memory_allocator,
     };
     component::ComponentSubsystem::define_configuration(
         &context_base.for_subsystem("component"),

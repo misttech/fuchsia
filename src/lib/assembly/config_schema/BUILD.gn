@@ -87,6 +87,7 @@ rustc_library("config_schema") {
     "src/platform_settings/intl_config.rs",
     "src/platform_settings/kernel_config.rs",
     "src/platform_settings/media_config.rs",
+    "src/platform_settings/memory_allocator_config.rs",
     "src/platform_settings/memory_monitor_config.rs",
     "src/platform_settings/paravirtualization_config.rs",
     "src/platform_settings/power_config.rs",

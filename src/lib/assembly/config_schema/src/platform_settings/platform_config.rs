@@ -22,6 +22,7 @@ pub mod icu_config;
 pub mod intl_config;
 pub mod kernel_config;
 pub mod media_config;
+pub mod memory_allocator_config;
 pub mod memory_monitor_config;
 pub mod paravirtualization_config;
 pub mod power_config;
@@ -123,6 +124,11 @@ pub struct PlatformSettings {
     #[serde(default)]
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub media: media_config::PlatformMediaConfig,
+
+    /// Standard library memory allocator configuration.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub memory_allocator: memory_allocator_config::MemoryAllocatorConfig,
 
     /// Platform configuration options for the memory monitor area.
     #[serde(default)]

@@ -8,6 +8,7 @@ use assembly_config_schema::platform_settings::development_support_config::{
     DevelopmentSupportConfig, TracingConfig,
 };
 use assembly_config_schema::platform_settings::health_check_config::HealthCheckConfig;
+use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
 use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
 use assembly_config_schema::product_settings::ComponentPolicyConfig;
 use assembly_constants::{BootfsDestination, FileEntry};
@@ -22,6 +23,7 @@ pub(crate) struct ComponentConfig<'a> {
     pub development_support: &'a DevelopmentSupportConfig,
     pub starnix: &'a PlatformStarnixConfig,
     pub health_check: &'a HealthCheckConfig,
+    pub memory_allocator: &'a MemoryAllocatorConfig,
 }
 
 pub(crate) struct ComponentSubsystem;
@@ -124,6 +126,21 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
             input.push(heapdump_monikers_source);
         }
 
+        if !config.memory_allocator.scudo_options.is_empty() {
+            let scudo_config_source = write_config(
+                "scudo_config.json",
+                serde_json::json!(
+                    {
+                        "scudo_options": config.memory_allocator.scudo_options.iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    }
+                ),
+            )?;
+            input.push(scudo_config_source);
+        }
+
         // Collect the platform policies based on build-type.
         match (context.build_type, config.development_support.include_sl4f) {
             // The eng policies are given to Eng and UserDebug builds that also include sl4f.
@@ -160,5 +177,92 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
             })
             .context("Adding component_manager config")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::define_configuration;
+    use crate::subsystems::{AssemblyMode, BoardConfig, PlatformSettings, ProductSettings};
+    use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
+    use camino::Utf8Path;
+    use fidl::unpersist;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn compile_component_manager_config(
+        platform: PlatformSettings,
+    ) -> anyhow::Result<fidl_fuchsia_component_internal::Config> {
+        let product = ProductSettings::default();
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+
+        let resdir = tempdir().unwrap();
+        let resdir_path = Utf8Path::from_path(resdir.path()).unwrap();
+        std::fs::write(resdir_path.join("component_manager_policy_base.json5"), "{}").unwrap();
+        std::fs::write(resdir_path.join("component_manager_policy_build_type_base.json5"), "{}")
+            .unwrap();
+        std::fs::write(resdir_path.join("bootfs_config.json5"), "{}").unwrap();
+        std::fs::write(resdir_path.join("component_manager_policy.json5"), "{}").unwrap();
+        std::fs::write(resdir_path.join("component_manager_policy_eng.json5"), "{}").unwrap();
+        std::fs::write(resdir_path.join("core_component_id_index.json5"), "{ instances: [] }")
+            .unwrap();
+        std::fs::write(
+            resdir_path.join("default_sampler_config.json5"),
+            "{ fire_project_templates: [], fire_component_configs: [], project_configs: [] }",
+        )
+        .unwrap();
+
+        let _result = define_configuration(
+            &platform,
+            &product,
+            &BoardConfig::default(),
+            gendir_path,
+            resdir_path,
+            None,  // developer_only_options
+            false, // include_example_aib_for_tests
+            &AssemblyMode::default(),
+        )
+        .unwrap();
+
+        Ok(unpersist::<fidl_fuchsia_component_internal::Config>(
+            &fs::read(gendir_path.join("component/config.json5")).unwrap(),
+        )?)
+    }
+
+    #[test]
+    fn test_component_manager_minimal_configuration() {
+        let platform = PlatformSettings { build_type: BuildType::Eng, ..Default::default() };
+        let config = compile_component_manager_config(platform).unwrap();
+        assert_eq!(
+            config,
+            fidl_fuchsia_component_internal::Config {
+                security_policy: Some(Default::default()),
+                health_check: Some(fidl_fuchsia_component_internal::HealthCheck {
+                    monikers: Some(vec![]),
+                    ..Default::default()
+                }),
+                inject_capabilities: Some(vec![]),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_component_manager_with_scudo_options() {
+        let platform = PlatformSettings {
+            build_type: BuildType::Eng,
+            memory_allocator: MemoryAllocatorConfig {
+                scudo_options: BTreeMap::from([
+                    ("A".to_string(), "B".to_string()),
+                    ("C".to_string(), "D".to_string()),
+                ]),
+            },
+            ..Default::default()
+        };
+        let config = compile_component_manager_config(platform).unwrap();
+        assert_eq!(config.scudo_options, Some("A=B,C=D".to_string()));
     }
 }
