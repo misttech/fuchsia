@@ -10,6 +10,10 @@
     ],
     program: {
         binary: "bin/bt_gap_bin_test",
+        args: [
+            "--test.timeout",
+            "4m",
+        ],
     },
     children: [
         {

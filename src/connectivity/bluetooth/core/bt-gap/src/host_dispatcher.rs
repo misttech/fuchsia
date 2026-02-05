@@ -53,7 +53,11 @@ pub enum NameReplace {
     Replace,
 }
 
-pub static HOST_INIT_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(100);
+#[cfg(not(test))]
+pub static HOST_INIT_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(200);
+// Speed up tests that wait for this timeout to go off.
+#[cfg(test)]
+pub static HOST_INIT_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
 
 /// Available FIDL services that can be provided by a particular Host
 #[derive(Copy, Clone)]
