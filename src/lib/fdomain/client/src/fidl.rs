@@ -194,7 +194,7 @@ impl ::fidl::encoding::ProxyChannelFor<FDomainResourceDialect> for Channel {
     type HandleDisposition = HandleInfo;
 
     fn boxed(self) -> Self::Boxed {
-        let (a, b) = self.stream().unwrap();
+        let (a, b, _) = self.force_stream();
         FDomainProxyChannel(Mutex::new(a), b)
     }
 

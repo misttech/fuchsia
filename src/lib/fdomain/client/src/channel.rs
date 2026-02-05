@@ -306,12 +306,20 @@ impl Channel {
     /// buffer, so it may lead to memory issues if you don't intend to use the
     /// messages from the channel as fast as they come.
     pub fn stream(self) -> Result<(ChannelMessageStream, ChannelWriter), Error> {
-        self.0.client().start_channel_streaming(self.0.proto())?;
+        let (a, b, err) = self.force_stream();
+        if let Some(err) = err { Err(err) } else { Ok((a, b)) }
+    }
+
+    /// Same as `stream` but will always try to generate the stream. If the
+    /// error is populated, the stream should also return the error at use time,
+    /// which is a more convenient way to handle the error in some cases.
+    pub(crate) fn force_stream(self) -> (ChannelMessageStream, ChannelWriter, Option<Error>) {
+        let err = self.0.client().start_channel_streaming(self.0.proto()).err();
 
         let a = Arc::new(self);
         let b = Arc::clone(&a);
 
-        Ok((ChannelMessageStream(a), ChannelWriter(b)))
+        (ChannelMessageStream(a), ChannelWriter(b), err)
     }
 }
 
