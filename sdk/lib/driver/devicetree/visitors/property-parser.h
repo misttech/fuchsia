@@ -13,6 +13,7 @@
 #include <any>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -23,32 +24,6 @@ namespace fdf_devicetree {
 using PropertyName = std::string;
 // Cells specific to the property represented in a prop-encoded-array.
 using PropertyCells = devicetree::ByteView;
-
-class Property;
-using Properties = std::vector<std::unique_ptr<Property>>;
-
-class ParsedProperties;
-
-// Helper class to parse properties concerning a visitor. A visitor can bunch all the necessary
-// properties it needs to extract from a node and call the |PropertyParser::Parse| method.
-// Properties can be a string list, uint32 array or reference properties - see below for classes
-// that inherit from |Property| for the complete list of supported property types. The visitor can
-// also use this collect all connected properties and associate them appropriately using the vector
-// index.
-class PropertyParser {
- public:
-  explicit PropertyParser(Properties properties) : properties_(std::move(properties)) {}
-
-  PropertyParser(PropertyParser&&) = default;
-  PropertyParser& operator=(PropertyParser&&) = default;
-
-  virtual ~PropertyParser() = default;
-
-  virtual zx::result<ParsedProperties> Parse(Node& node);
-
- private:
-  Properties properties_;
-};
 
 // Abstract class to represent a property type.
 // To create an instance of Property, use the specific property types.
@@ -70,6 +45,8 @@ class Property {
   PropertyName name_;
   bool required_;
 };
+
+using Properties = std::vector<std::unique_ptr<Property>>;
 
 class BoolProperty : public Property {
  public:
@@ -253,6 +230,27 @@ class ParsedProperties {
 
  private:
   std::map<PropertyName, std::any> properties_;
+};
+
+// Helper class to parse properties concerning a visitor. A visitor can bunch all the necessary
+// properties it needs to extract from a node and call the |PropertyParser::Parse| method.
+// Properties can be a string list, uint32 array or reference properties - see below for classes
+// that inherit from |Property| for the complete list of supported property types. The visitor can
+// also use this collect all connected properties and associate them appropriately using the vector
+// index.
+class PropertyParser {
+ public:
+  explicit PropertyParser(Properties properties) : properties_(std::move(properties)) {}
+
+  PropertyParser(PropertyParser&&) = default;
+  PropertyParser& operator=(PropertyParser&&) = default;
+
+  virtual ~PropertyParser() = default;
+
+  virtual zx::result<ParsedProperties> Parse(Node& node);
+
+ private:
+  Properties properties_;
 };
 
 }  // namespace fdf_devicetree
