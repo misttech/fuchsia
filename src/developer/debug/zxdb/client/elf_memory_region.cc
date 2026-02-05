@@ -51,8 +51,20 @@ Err ElfMemoryRegion::DecompressSection(const elflib::Elf64_Shdr& hdr) {
     return Err("Section data not found");
   }
 
+  bool is_32bit = elflib_->GetEhdr()->e_ident[elflib::EI_CLASS] == elflib::ELFCLASS32;
+
   elflib::Elf64_Chdr compressed_section_header;
-  memcpy(&compressed_section_header, section_data.ptr, sizeof(compressed_section_header));
+  if (is_32bit) {
+    // Upcast from a 32 bit header to a 64 bit.
+    elflib::Elf32_Chdr compressed_header32;
+    memcpy(&compressed_header32, section_data.ptr, sizeof(compressed_header32));
+
+    compressed_section_header.ch_type = compressed_header32.ch_type;
+    compressed_section_header.ch_size = compressed_header32.ch_size;
+    compressed_section_header.ch_addralign = compressed_header32.ch_addralign;
+  } else {
+    memcpy(&compressed_section_header, section_data.ptr, sizeof(compressed_section_header));
+  }
 
   if (compressed_section_header.ch_type != elflib::ELFCOMPRESS_ZSTD) {
     return Err("Only zstd compression is supported for this file. Got %d.",
