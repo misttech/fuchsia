@@ -4,6 +4,7 @@
 
 import base64
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -468,15 +469,13 @@ class Workspace:
             self.cartfs_mount_point / ".jiri_root" / "bin" / "jiri",
             self.cartfs_fuchsia_dir / ".jiri_root" / "bin" / "jiri",
         )
-        subprocess.run(
+        self._run(
             [
                 ".jiri_root/bin/jiri",
                 "init",
                 "-analytics-opt=true",
-                self.cartfs_fuchsia_dir,
             ],
             cwd=self.cartfs_fuchsia_dir,
-            check=True,
         )
 
     def _is_jiri_bootstrapped(self) -> bool:
@@ -509,17 +508,8 @@ class Workspace:
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
-            subprocess.run(
-                ["git", "add", "."],
-                cwd=cartfs_fuchsia_dir,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "reset", "--hard"],
-                cwd=cartfs_fuchsia_dir,
-                check=True,
-                stdout=subprocess.DEVNULL,
-            )
+            self._run(["git", "add", "."], cwd=cartfs_fuchsia_dir)
+            self._run(["git", "reset", "--hard"], cwd=cartfs_fuchsia_dir)
 
         # Run jiri update and fetch-packages in parallel to speed up the
         # process.
@@ -528,8 +518,7 @@ class Workspace:
             cwd=cartfs_fuchsia_dir,
         )
         fetch_process = subprocess.Popen(
-            [".jiri_root/bin/jiri", "fetch-packages"],
-            cwd=cartfs_fuchsia_dir,
+            [".jiri_root/bin/jiri", "fetch-packages"], cwd=cartfs_fuchsia_dir
         )
         update_process.wait()
         fetch_process.wait()
@@ -551,23 +540,14 @@ class Workspace:
                 shutil.rmtree(integration_directory, ignore_errors=True)
             else:
                 # Pull latest changes from the remote
-                subprocess.run(
-                    [
-                        "git",
-                        "pull",
-                        "origin",
-                        "main",
-                        "--depth=100",
-                    ],
+                self._run(
+                    ["git", "pull", "origin", "main", "--depth=100"],
                     cwd=integration_directory,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
                 )
 
         # Clone the integration repository
         if not integration_directory.exists():
-            subprocess.run(
+            self._run(
                 [
                     "git",
                     "clone",
@@ -575,25 +555,15 @@ class Workspace:
                     "--depth=100",
                 ],
                 cwd=self.cartfs_directory,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
 
         # Determine the fuchsia repo commit hash.
         fuchsia_repo_states = (
-            subprocess.run(
-                [
-                    "git",
-                    "citc",
-                    "api.get-repo-states",
-                    "fuchsia",
-                ],
+            self._run(
+                ["git", "citc", "api.get-repo-states", "fuchsia"],
                 cwd=self.workspace_dir / self.repo_name,
-                check=True,
                 capture_output=True,
             )
-            .stdout.decode("utf-8")
             .strip()
             .split("\n")
         )
@@ -616,19 +586,11 @@ class Workspace:
         logger.log_info(f"commit_hash_prefix: {commit_hash_prefix}")
 
         integration_repo_commit_hash = (
-            subprocess.run(
-                [
-                    "git",
-                    "log",
-                    "--grep",
-                    commit_hash_prefix,
-                    "--format=%H",
-                ],
+            self._run(
+                ["git", "log", "--grep", commit_hash_prefix, "--format=%H"],
                 cwd=integration_directory,
-                check=True,
                 capture_output=True,
             )
-            .stdout.decode("utf-8")
             .strip()
             .split("\n")[-1]
         )
@@ -643,23 +605,15 @@ class Workspace:
             )
         else:
             # checkout the integration repo based on the fuchsia repo commit hash
-            subprocess.run(
-                [
-                    "git",
-                    "reset",
-                    "--hard",
-                    integration_repo_commit_hash,
-                ],
+            self._run(
+                ["git", "reset", "--hard", integration_repo_commit_hash],
                 cwd=integration_directory,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
 
         # clone fuchsia repository and reset it to the commit hash
         logger.log_info("Setup the fuchsia repository.")
         if not self.cartfs_fuchsia_dir.exists():
-            subprocess.run(
+            self._run(
                 [
                     "git",
                     "clone",
@@ -668,11 +622,8 @@ class Workspace:
                     "--depth=100",
                 ],
                 cwd=self.cartfs_directory,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
-            subprocess.run(
+            self._run(
                 [
                     "git",
                     "fetch",
@@ -681,43 +632,25 @@ class Workspace:
                     "--depth=100",
                 ],
                 cwd=self.cartfs_fuchsia_dir,
-                check=True,
             )
         else:
-            subprocess.run(
-                ["git", "reset", "--hard"],
-                cwd=self.cartfs_fuchsia_dir,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.run(
+            self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
+            self._run(
                 [
                     "git",
                     "fetch",
                     "origin",
-                    "main",
+                    "main:refs/remotes/origin/main",
                     "--depth=100",
                 ],
-                cwd=self.cartfs_fuchsia_dir,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                self.cartfs_fuchsia_dir,
             )
             logger.log_info(
                 f"Resetting fuchsia repository to {fuchsia_repo_commit_hash}."
             )
-            subprocess.run(
-                [
-                    "git",
-                    "reset",
-                    "--hard",
-                    fuchsia_repo_commit_hash,
-                ],
-                cwd=self.cartfs_fuchsia_dir,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            self._run(
+                ["git", "reset", "--hard", fuchsia_repo_commit_hash],
+                self.cartfs_fuchsia_dir,
             )
 
         # Couple of places in the build expect to find JIRI_HEAD for fuchsia
@@ -793,34 +726,57 @@ class Workspace:
             "tools/build/scripts/generate_prebuilt_versions.sh",
             "tools/build/scripts/extract_protobuf_py3_wheel.sh",
         ]
-        # Set FUCHSIA_DIR environment variable to the cartfs fuchsia directory.
-        # This is needed for the hooks to work correctly.
-        my_env = os.environ.copy()
-        my_env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
+
         for hook in hooks:
-            logger.log_info(f"Running hook: {hook}")
-            subprocess.run(
-                [
-                    hook,
-                ],
-                cwd=self.cartfs_fuchsia_dir,
-                check=True,
-                stdout=subprocess.DEVNULL,
-                env=my_env,
-            )
+            self._run([hook], self.cartfs_fuchsia_dir)
 
         # Invoke git status in the fuchsia directory in the background. This
         # will make the future `fx format-code` command faster.
         subprocess.Popen(
-            [
-                "git",
-                "status",
-            ],
+            ["git", "status"],
             cwd=self.workspace_dir / self.repo_name,
+            start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
         )
+
+    def _run(
+        self,
+        cmd: list[str],
+        cwd: Path,
+        capture_output: bool = False,
+    ) -> str:
+        """Runs a command."""
+        logger.log_info(f"Running command: '{' '.join(cmd)}' in {cwd}")
+
+        if logger.get_log_level() <= logging.DEBUG:
+            stdout, stderr = None, None
+        else:
+            stdout, stderr = subprocess.DEVNULL, subprocess.DEVNULL
+
+        # Set FUCHSIA_DIR environment variable to the cartfs fuchsia directory.
+        # This is needed for the hooks to work correctly.
+        env = os.environ.copy()
+        env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
+
+        if capture_output:
+            return subprocess.run(
+                cmd,
+                cwd=cwd,
+                check=True,
+                capture_output=True,
+                env=env,
+            ).stdout.decode("utf-8")
+        else:
+            subprocess.run(
+                cmd,
+                cwd=cwd,
+                check=True,
+                stdout=stdout,
+                stderr=stderr,
+                env=env,
+            )
+            return ""
 
     def _patch_file(self, filepath: str, content: str) -> None:
         """Patches the file in cartFS."""

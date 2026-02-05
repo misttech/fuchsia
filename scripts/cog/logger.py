@@ -73,6 +73,13 @@ def init_logger(level: int = logging.INFO, colors: bool = False) -> None:
     _logger = logger
 
 
+def get_log_level() -> int:
+    """Returns the current log level."""
+    if _logger is None:
+        return logging.WARNING
+    return _logger.level
+
+
 def log(level: int, *args: Any, **kwargs: Any) -> None:
     """
     Logs a message with the given level.

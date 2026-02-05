@@ -21,13 +21,13 @@ import workspace
 def prepare_workspace_instance(
     disable_snapshot: bool,
     use_local_mock_cartfs: bool,
-    repo_root: Path | None = None,
+    repo_root: Path | None,
 ) -> workspace.Workspace | None:
     """Prepares a workspace instance."""
     # Attempt to identify the current cog and associated cartfs workspace.
     try:
         workspace_instance = workspace.Workspace.create(
-            use_local_mock_cartfs, repo_root=repo_root
+            use_local_mock_cartfs, repo_root
         )
     except workspace.NotInCogWorkspaceError:
         logger.log_error("This script can only be run in cog workspaces.")
