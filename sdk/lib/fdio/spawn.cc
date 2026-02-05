@@ -96,9 +96,16 @@ void report_error(char* err_msg, const char* format, ...) {
 
 zx_status_t load_path(const char* path, zx::vmo* out_vmo, char* err_msg) {
   fbl::unique_fd fd;
+#if FUCHSIA_API_LEVEL_AT_LEAST(27)
   zx_status_t status = fdio_open3_fd(
       path, static_cast<uint64_t>(fio::wire::kPermReadable | fio::wire::kPermExecutable),
       fd.reset_and_get_address());
+#else
+  zx_status_t status = fdio_open_fd(path,
+                                    static_cast<uint32_t>(fio::wire::OpenFlags::kRightReadable |
+                                                          fio::wire::OpenFlags::kRightExecutable),
+                                    fd.reset_and_get_address());
+#endif
   if (status != ZX_OK) {
     report_error(err_msg, "Could not open file");
     return status;
