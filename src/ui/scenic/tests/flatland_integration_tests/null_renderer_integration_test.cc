@@ -36,8 +36,6 @@ using ui_testing::Screenshot;
 
 class NullRendererIntegrationTest : public ScenicCtfTest {
  public:
-  NullRendererIntegrationTest() : ScenicCtfTest(fuchsia_ui_test_context::RendererType::kNull) {}
-
   void SetUp() override {
     ScenicCtfTest::SetUp();
 
@@ -49,23 +47,16 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
       ASSERT_EQ(ZX_OK, LocalServiceDirectory()->Connect(service_name, server_end.TakeChannel()));
     }
 
-    flatland_display_ = ConnectSyncIntoRealm<fuc::FlatlandDisplay>();
     flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
     root_flatland_ = std::make_unique<FlatlandClientWithEventHandler>(
         ConnectIntoRealm<fuc::Flatland>(), dispatcher());
 
     // Attach |root_flatland_| as the only Flatland under |flatland_display_|.
     auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
-    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
-        fidl::CreateEndpoints<fuc::ChildViewWatcher>().value();
     auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
         fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
 
-    ASSERT_TRUE(flatland_display_
-                    ->SetContent({{.token = std::move(parent_token),
-                                   .child_view_watcher = std::move(child_view_watcher_server_end)}})
-                    .is_ok());
-
+    SetFlatlandDisplayContent(std::move(parent_token));
     ASSERT_TRUE(root_flatland()
                     ->CreateView2({{.token = std::move(child_token),
                                     .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
@@ -145,9 +136,6 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
   fidl::SyncClient<fuc::Allocator> flatland_allocator_;
   std::unique_ptr<FlatlandClientWithEventHandler> root_flatland_;
   fidl::SyncClient<fuc::Screenshot> screenshotter_;
-
- private:
-  fidl::SyncClient<fuc::FlatlandDisplay> flatland_display_;
 };
 
 TEST_F(NullRendererIntegrationTest, RendersContent) {

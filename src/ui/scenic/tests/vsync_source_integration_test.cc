@@ -33,21 +33,14 @@ class VsyncSourceIntegrationTest
     // Fake display only triggers vsyncs after a config is applied. Drawing a solid fill here to
     // trigger vsyncs.
     {
-      fidl::SyncClient<fuchsia_ui_composition::FlatlandDisplay> flatland_display =
-          ConnectSyncIntoRealm<fuchsia_ui_composition::FlatlandDisplay>();
       FlatlandClientWithEventHandler root_flatland(
           ConnectIntoRealm<fuchsia_ui_composition::Flatland>(), dispatcher());
       auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
-      auto child_view_watcher_endpoints =
-          fidl::CreateEndpoints<fuchsia_ui_composition::ChildViewWatcher>();
-      auto res = flatland_display->SetContent(
-          {{.token = std::move(parent_token),
-            .child_view_watcher = std::move(child_view_watcher_endpoints->server)}});
-      ASSERT_TRUE(res.is_ok());
+      SetFlatlandDisplayContent(std::move(parent_token));
       auto parent_viewport_watcher_endpoints =
           fidl::CreateEndpoints<fuchsia_ui_composition::ParentViewportWatcher>();
       fuchsia::ui::composition::FlatlandCreateView2Request request;
-      res = root_flatland->CreateView2(
+      auto res = root_flatland->CreateView2(
           {{.token = std::move(child_token),
             .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
             .parent_viewport_watcher = std::move(parent_viewport_watcher_endpoints->server)}});

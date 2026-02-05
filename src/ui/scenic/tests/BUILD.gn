@@ -74,6 +74,8 @@ source_set("common-deps-zxtest") {
     "utils/flatland_client_with_event_handler.h",
     "utils/scenic_ctf_test_base.cc",
     "utils/scenic_ctf_test_base.h",
+    "utils/scenic_ctf_test_environment.cc",
+    "utils/scenic_ctf_test_environment.h",
     "utils/utils.cc",
     "utils/utils.h",
   ]
@@ -88,6 +90,7 @@ source_set("common-deps-zxtest") {
     "//src/lib/fostr/fidl/fuchsia.ui.input",
     "//src/ui/testing/util:loop_fixture",
     "//src/ui/testing/util:screenshot_helper",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/zxtest",
   ]
   deps = [
@@ -297,7 +300,10 @@ executable("flatland-view-integration-test-validator-bin") {
 
 executable("null-renderer-integration-test-validator-bin") {
   testonly = true
-  sources = [ "flatland_integration_tests/null_renderer_integration_test.cc" ]
+  sources = [
+    "flatland_integration_tests/null_renderer_integration_test.cc",
+    "run_non_graphical_tests.cc",
+  ]
   output_name = "null-renderer-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -406,7 +412,10 @@ executable("singleton-display-integration-test-validator-bin") {
 
 executable("vsync-source-integration-test-validator-bin") {
   testonly = true
-  sources = [ "vsync_source_integration_test.cc" ]
+  sources = [
+    "run_vk_tests.cc",
+    "vsync_source_integration_test.cc",
+  ]
   output_name = "vsync-source-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -420,6 +429,7 @@ executable("trusted-flatland-factory-integration-test-validator-bin") {
   testonly = true
   sources = [
     "flatland_integration_tests/trusted_flatland_factory_integration_test.cc",
+    "run_non_graphical_tests.cc",
   ]
   output_name = "trusted-flatland-factory-integration-test-validator"
   deps = [

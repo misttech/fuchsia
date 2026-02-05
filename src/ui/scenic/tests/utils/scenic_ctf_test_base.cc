@@ -6,62 +6,34 @@
 
 namespace integration_tests {
 
-void ScenicCtfTest::SetUp() {
-  {
-    context_ = sys::ComponentContext::Create();
-
-    // Connect to realm factory.
-    {
-      auto result = fidl::CreateEndpoints<fuchsia_ui_test_context::ScenicRealmFactory>();
-      ASSERT_TRUE(result.is_ok());
-      auto& [client_end, server_end] = result.value();
-
-      const std::string& service_path =
-          fuchsia_ui_test_context::ScenicRealmFactory::kDiscoverableName;
-      ASSERT_EQ(context_->svc()->Connect(service_path, server_end.TakeChannel()), ZX_OK);
-
-      realm_factory_ =
-          fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory>(std::move(client_end));
-    }
-
-    auto result = fidl::CreateEndpoints<fuchsia_testing_harness::RealmProxy>();
-    ASSERT_TRUE(result.is_ok());
-    auto& [client_end, server_end] = result.value();
-
-    realm_proxy_ = fidl::SyncClient<fuchsia_testing_harness::RealmProxy>(std::move(client_end));
-
-    fuchsia_ui_test_context::ScenicRealmFactoryCreateRealmRequest req;
-    req.realm_server() = std::move(server_end);
-    req.display_rotation() = DisplayRotation();
-    req.renderer() = renderer_type_;
-    req.display_composition() = DisplayComposition();
-    if (DisplayDimensions().height() != 0 && DisplayDimensions().width() != 0) {
-      req.display_dimensions() = DisplayDimensions();
-    }
-    if (DisplayRefreshRateMillihertz() != 0) {
-      req.display_refresh_rate_millihertz() = DisplayRefreshRateMillihertz();
-    }
-    if (DisplayMaxLayerCount() != 0) {
-      req.display_max_layer_count() = DisplayMaxLayerCount();
-    }
-
-    ASSERT_TRUE(realm_factory_->CreateRealm(std::move(req)).is_ok());
-  }
+void ScenicCtfTest::SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token) {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayContent(
+      std::move(token));
 }
 
 const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTest::LocalServiceDirectory() const {
-  return context_->svc();
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->LocalServiceDirectory();
 }
 
-uint64_t ScenicCtfTest::DisplayRotation() const { return 0; }
+uint64_t ScenicCtfTest::GetDisplayRotation() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRotation();
+}
 
-fuchsia_math::SizeU ScenicCtfTest::DisplayDimensions() const { return fuchsia_math::SizeU(0, 0); }
+fuchsia_math::SizeU ScenicCtfTest::GetDisplayDimensions() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayDimensions();
+}
 
-uint32_t ScenicCtfTest::DisplayRefreshRateMillihertz() const { return 0; }
+uint32_t ScenicCtfTest::GetDisplayRefreshRateMillihertz() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRefreshRateMillihertz();
+}
 
-uint32_t ScenicCtfTest::DisplayMaxLayerCount() const { return 0; }
+uint32_t ScenicCtfTest::GetDisplayMaxLayerCount() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayMaxLayerCount();
+}
 
-bool ScenicCtfTest::DisplayComposition() const { return true; }
+bool ScenicCtfTest::UseDisplayComposition() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->UseDisplayComposition();
+}
 
 void ScenicCtfHlcppTest::SetUp() {
   {
@@ -72,17 +44,17 @@ void ScenicCtfHlcppTest::SetUp() {
     fuchsia::ui::test::context::ScenicRealmFactory_CreateRealm_Result res;
 
     req.set_realm_server(realm_proxy_.NewRequest());
-    req.set_display_rotation(DisplayRotation());
+    req.set_display_rotation(GetDisplayRotation());
     req.set_renderer(renderer_type_);
-    req.set_display_composition(DisplayComposition());
-    if (DisplayDimensions().height != 0 && DisplayDimensions().width != 0) {
-      req.set_display_dimensions(DisplayDimensions());
+    req.set_display_composition(UseDisplayComposition());
+    if (GetDisplayDimensions().height != 0 && GetDisplayDimensions().width != 0) {
+      req.set_display_dimensions(GetDisplayDimensions());
     }
-    if (DisplayRefreshRateMillihertz() != 0) {
-      req.set_display_refresh_rate_millihertz(DisplayRefreshRateMillihertz());
+    if (GetDisplayRefreshRateMillihertz() != 0) {
+      req.set_display_refresh_rate_millihertz(GetDisplayRefreshRateMillihertz());
     }
-    if (DisplayMaxLayerCount() != 0) {
-      req.set_display_max_layer_count(DisplayMaxLayerCount());
+    if (GetDisplayMaxLayerCount() != 0) {
+      req.set_display_max_layer_count(GetDisplayMaxLayerCount());
     }
 
     ASSERT_EQ(realm_factory_->CreateRealm(std::move(req), &res), ZX_OK);
@@ -93,16 +65,16 @@ const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDi
   return context_->svc();
 }
 
-uint64_t ScenicCtfHlcppTest::DisplayRotation() const { return 0; }
+uint64_t ScenicCtfHlcppTest::GetDisplayRotation() const { return 0; }
 
-fuchsia::math::SizeU ScenicCtfHlcppTest::DisplayDimensions() const {
+fuchsia::math::SizeU ScenicCtfHlcppTest::GetDisplayDimensions() const {
   return {.width = 0, .height = 0};
 }
 
-uint32_t ScenicCtfHlcppTest::DisplayRefreshRateMillihertz() const { return 0; }
+uint32_t ScenicCtfHlcppTest::GetDisplayRefreshRateMillihertz() const { return 0; }
 
-uint32_t ScenicCtfHlcppTest::DisplayMaxLayerCount() const { return 0; }
+uint32_t ScenicCtfHlcppTest::GetDisplayMaxLayerCount() const { return 0; }
 
-bool ScenicCtfHlcppTest::DisplayComposition() const { return true; }
+bool ScenicCtfHlcppTest::UseDisplayComposition() const { return true; }
 
 }  // namespace integration_tests

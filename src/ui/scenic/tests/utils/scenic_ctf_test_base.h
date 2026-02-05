@@ -21,6 +21,7 @@
 
 #include <zxtest/zxtest.h>
 
+#include "src/ui/scenic/tests/utils/scenic_ctf_test_environment.h"
 #include "src/ui/testing/util/logging_event_loop.h"
 
 namespace integration_tests {
@@ -41,38 +42,38 @@ namespace integration_tests {
 ///  Scenic  Cobalt  Hdcp
 class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
-  ScenicCtfTest(fuchsia_ui_test_context::RendererType renderer_type =
-                    fuchsia_ui_test_context::RendererType::kVulkan)
-      : renderer_type_(renderer_type) {}
+  ScenicCtfTest() = default;
   ~ScenicCtfTest() override = default;
 
-  /// SetUp connect test realm so test can use realm_proxy_ to access.
-  void SetUp() override;
+  void SetUp() override { zxtest::Test::SetUp(); }
+
+  // Delegates to the global test environment.
+  void SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token);
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 
-  /// Override DisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
+  /// Override GetDisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
   /// default, it returns 0.
-  virtual uint64_t DisplayRotation() const;
+  virtual uint64_t GetDisplayRotation() const;
 
-  /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
+  /// Override GetDisplayDimensions() to provide `active_width_px` and `active_height_px` to
   /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.
   /// By default, it returns {0, 0};
   ///
   /// `width` and `height` must be both non-zero or both zero.
-  virtual fuchsia_math::SizeU DisplayDimensions() const;
+  virtual fuchsia_math::SizeU GetDisplayDimensions() const;
 
-  /// Overrides DisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
+  /// Override GetDisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
   /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
-  virtual uint32_t DisplayRefreshRateMillihertz() const;
+  virtual uint32_t GetDisplayRefreshRateMillihertz() const;
 
-  /// Overrides DisplayMaxLayerCount() to provide `max_layer_count` to
+  /// Override GetDisplayMaxLayerCount() to provide `max_layer_count` to
   /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
-  virtual uint32_t DisplayMaxLayerCount() const;
+  virtual uint32_t GetDisplayMaxLayerCount() const;
 
-  /// Override DisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm. True
-  /// by default.
-  virtual bool DisplayComposition() const;
+  /// Override UseDisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm.
+  /// True by default.
+  virtual bool UseDisplayComposition() const;
 
   /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
   /// name passed in.
@@ -97,7 +98,8 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
       const std::string& service_path = Protocol::kDiscoverableName) {
     auto [client_end, server_end] = fidl::CreateEndpoints<Protocol>().value();
 
-    auto result = realm_proxy_->ConnectToNamedProtocol(
+    auto& realm_proxy = ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->realm_proxy();
+    auto result = realm_proxy->ConnectToNamedProtocol(
         fuchsia_testing_harness::RealmProxyConnectToNamedProtocolRequest(service_path,
                                                                          server_end.TakeChannel()));
     if (result.is_error()) {
@@ -107,17 +109,8 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
     }
     return std::move(client_end);
   }
-
- private:
-  fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory> realm_factory_;
-  fidl::SyncClient<fuchsia_testing_harness::RealmProxy> realm_proxy_;
-  std::unique_ptr<sys::ComponentContext> context_;
-  const fuchsia_ui_test_context::RendererType renderer_type_;
 };
 
-// TODO(https://fxbug.dev/447603809): DO NOT USE THIS TEST BASE CLASS.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
-//
 /// ScenicCtfHlcppTest use realm_proxy to connect scenic test realm.
 /// The scenic test realm consists of three components:
 ///   * Scenic
@@ -134,7 +127,7 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
 ///  Scenic  Cobalt  Hdcp
 //
 // TODO(https://fxbug.dev/447603809): DO NOT USE THIS TEST BASE CLASS.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
   ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType renderer_type =
@@ -142,33 +135,32 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
       : renderer_type_(renderer_type) {}
   ~ScenicCtfHlcppTest() override = default;
 
-  /// SetUp connect test realm so test can use realm_proxy_ to access.
   void SetUp() override;
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 
-  /// Override DisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
+  /// Override GetDisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
   /// default, it returns 0.
-  virtual uint64_t DisplayRotation() const;
+  virtual uint64_t GetDisplayRotation() const;
 
-  /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
+  /// Override GetDisplayDimensions() to provide `active_width_px` and `active_height_px` to
   /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.
   /// By default, it returns {0, 0};
   ///
   /// `width` and `height` must be both non-zero or both zero.
-  virtual fuchsia::math::SizeU DisplayDimensions() const;
+  virtual fuchsia::math::SizeU GetDisplayDimensions() const;
 
-  /// Overrides DisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
+  /// Override GetDisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
   /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
-  virtual uint32_t DisplayRefreshRateMillihertz() const;
+  virtual uint32_t GetDisplayRefreshRateMillihertz() const;
 
-  /// Overrides DisplayMaxLayerCount() to provide `max_layer_count` to
+  /// Override GetDisplayMaxLayerCount() to provide `max_layer_count` to
   /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
-  virtual uint32_t DisplayMaxLayerCount() const;
+  virtual uint32_t GetDisplayMaxLayerCount() const;
 
-  /// Override DisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm. True
-  /// by default.
-  virtual bool DisplayComposition() const;
+  /// Override UseDisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm.
+  /// True by default.
+  virtual bool UseDisplayComposition() const;
 
   /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
   /// name passed in.

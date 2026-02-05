@@ -29,6 +29,7 @@
         {
             protocol: [
                 "fuchsia.scheduler.RoleManager",
+                "fuchsia.ui.display.singleton.Info",
                 "fuchsia.vulkan.loader.Loader",
             ],
             from: "parent",

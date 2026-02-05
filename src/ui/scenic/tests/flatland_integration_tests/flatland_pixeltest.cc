@@ -101,8 +101,8 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   }
 
   // `ScenicCtfHlcppTest`:
-  uint32_t DisplayMaxLayerCount() const override { return 4; }
-  bool DisplayComposition() const override { return true; }
+  uint32_t GetDisplayMaxLayerCount() const override { return 4; }
+  bool UseDisplayComposition() const override { return true; }
 
   // Draws a rectangle of size |width|*|height|, color |color|, opacity |opacity| and origin
   // (|x|,|y|) in |flatland|'s view.

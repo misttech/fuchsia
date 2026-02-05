@@ -50,8 +50,8 @@ class SingletonDisplayIntegrationTest : public ScenicCtfHlcppTest,
   }
 
   // `ScenicCtfHlcppTest`:
-  fuchsia::math::SizeU DisplayDimensions() const override { return GetParam().dimensions; }
-  uint32_t DisplayRefreshRateMillihertz() const override {
+  fuchsia::math::SizeU GetDisplayDimensions() const override { return GetParam().dimensions; }
+  uint32_t GetDisplayRefreshRateMillihertz() const override {
     return GetParam().refresh_rate_millihertz;
   }
 
@@ -67,13 +67,13 @@ TEST_P(SingletonDisplayIntegrationTest, GetMetrics) {
   ASSERT_TRUE(metrics.has_extent_in_mm());
   ASSERT_TRUE(metrics.has_recommended_device_pixel_ratio());
 
-  EXPECT_EQ(DisplayDimensions().width, metrics.extent_in_px().width);
-  EXPECT_EQ(DisplayDimensions().height, metrics.extent_in_px().height);
+  EXPECT_EQ(GetDisplayDimensions().width, metrics.extent_in_px().width);
+  EXPECT_EQ(GetDisplayDimensions().height, metrics.extent_in_px().height);
   EXPECT_EQ(160, metrics.extent_in_mm().width);
   EXPECT_EQ(90, metrics.extent_in_mm().height);
   EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().x);
   EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().y);
-  EXPECT_EQ(DisplayRefreshRateMillihertz(), metrics.maximum_refresh_rate_in_millihertz());
+  EXPECT_EQ(GetDisplayRefreshRateMillihertz(), metrics.maximum_refresh_rate_in_millihertz());
 }
 
 TEST_P(SingletonDisplayIntegrationTest, DevicePixelRatioChange) {
