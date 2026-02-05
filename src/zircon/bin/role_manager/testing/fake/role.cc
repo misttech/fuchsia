@@ -27,6 +27,8 @@ class FakeRoleManager : public fidl::WireServer<fuchsia_scheduler::RoleManager> 
  public:
   static zx::result<std::unique_ptr<FakeRoleManager>> Create();
   void SetRole(SetRoleRequestView request, SetRoleCompleter::Sync& completer) override;
+  void GetProfileForRole(GetProfileForRoleRequestView request,
+                         GetProfileForRoleCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_scheduler::RoleManager> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
@@ -85,6 +87,11 @@ void FakeRoleManager::SetRole(SetRoleRequestView request, SetRoleCompleter::Sync
 
   FX_LOG_KV(DEBUG, "Requested role not found", FX_KV("role", role->name()),
             FX_KV("tag", "FakeRoleManager"));
+  completer.ReplyError(ZX_ERR_NOT_FOUND);
+}
+
+void FakeRoleManager::GetProfileForRole(GetProfileForRoleRequestView request,
+                                        GetProfileForRoleCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_FOUND);
 }
 

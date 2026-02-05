@@ -15,6 +15,8 @@ class RoleManager : public fidl::WireServer<fuchsia_scheduler::RoleManager> {
  public:
   static zx::result<std::unique_ptr<RoleManager>> Create(inspect::Node& parent);
   void SetRole(SetRoleRequestView request, SetRoleCompleter::Sync& completer) override;
+  void GetProfileForRole(GetProfileForRoleRequestView request,
+                         GetProfileForRoleCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_scheduler::RoleManager> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 

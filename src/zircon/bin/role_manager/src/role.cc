@@ -191,3 +191,54 @@ fpromise::promise<inspect::Inspector> RoleManager::Inspect() {
 
   return fpromise::make_ok_promise(inspector);
 }
+
+void RoleManager::GetProfileForRole(GetProfileForRoleRequestView request,
+                                    GetProfileForRoleCompleter::Sync& completer) {
+  const std::string_view role_name{request->role().role.get()};
+
+  std::vector<fuchsia_scheduler::Parameter> input_params = {};
+  if (request->has_input_parameters()) {
+    std::optional<std::vector<fuchsia_scheduler::Parameter>> maybe_input_params =
+        fidl::ToNatural(request->input_parameters());
+    if (!maybe_input_params.has_value()) {
+      FX_LOG_KV(WARNING, "Unable to take ownership of input parameters.", FX_KV("role", role_name),
+                FX_KV("tag", "RoleManager"));
+      completer.ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
+    }
+    input_params = maybe_input_params.value();
+  }
+
+  const fit::result role = Role::Create(role_name, input_params);
+  if (role.is_error()) {
+    completer.ReplyError(role.error_value());
+    return;
+  }
+
+  // Look for the requested role in the profile map.
+  if (!request->has_target()) {
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+  const auto& profile_map =
+      request->target() == fuchsia_scheduler::RoleType::kTask ? profiles_.thread : profiles_.memory;
+  if (auto search = profile_map.find(*role); search != profile_map.cend()) {
+    zx::profile profile;
+    zx_status_t status = search->second.profile.duplicate(ZX_RIGHT_SAME_RIGHTS, &profile);
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
+      return;
+    }
+
+    fidl::Arena arena;
+    auto builder = fuchsia_scheduler::wire::RoleManagerGetProfileForRoleResponse::Builder(arena);
+    builder.profile(std::move(profile));
+    builder.output_parameters(fidl::ToWire(arena, search->second.output_parameters));
+    completer.ReplySuccess(builder.Build());
+    return;
+  }
+
+  FX_LOG_KV(DEBUG, "Requested role not found", FX_KV("role", role->name()),
+            FX_KV("tag", "RoleManager"));
+  completer.ReplyError(ZX_ERR_NOT_FOUND);
+}

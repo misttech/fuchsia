@@ -40,6 +40,15 @@ type RoleTarget = flexible resource union {
     2: vmar zx.Handle:VMAR;
 };
 
+@available(added=HEAD)
+type RoleType = strict enum : uint32 {
+    // Profiles that can be applied to threads (and eventually other task types).
+    TASK = 0;
+
+    // Profiles that can be applied to VMARs (and eventually other memory objects).
+    MEMORY = 1;
+};
+
 /// Allows callers to modify the runtime profiles of zircon objects.
 @discoverable
 open protocol RoleManager {
@@ -61,5 +70,25 @@ open protocol RoleManager {
         3: input_parameters vector<Parameter>:MAX_PARAMETER_COUNT;
     }) -> (resource table {
         1: output_parameters vector<Parameter>:MAX_PARAMETER_COUNT;
+    }) error zx.Status;
+
+    /// Returns a profile handle for the requested role.
+    ///
+    /// + request `target` is the type of profile to retrieve.
+    /// + request `role` is the name of the role to retrieve.
+    /// + request `input_parameters` is a vector of key/value pairs used to
+    ///     distinguish between multiple variants of the same role.
+    /// - response `profile` is the handle to the requested profile.
+    /// - response `output_parameters` is a vector of key/value pairs that
+    ///     roles can be configured to emit.
+    /// * error a zx_status value indicating success or failure.
+    @available(added=HEAD)
+    flexible GetProfileForRole(resource table {
+        1: target RoleType;
+        2: role RoleName;
+        3: input_parameters vector<Parameter>:MAX_PARAMETER_COUNT;
+    }) -> (resource table {
+        1: profile zx.Handle:PROFILE;
+        2: output_parameters vector<Parameter>:MAX_PARAMETER_COUNT;
     }) error zx.Status;
 };

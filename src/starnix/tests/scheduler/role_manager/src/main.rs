@@ -295,6 +295,9 @@ impl FakeRoleManager {
                             })
                             .unwrap();
                     }
+                    RoleManagerRequest::GetProfileForRole { payload: _, responder } => {
+                        responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap();
+                    }
                     other => {
                         panic!("unexpected RoleManager request from starnix kernel {other:?}")
                     }

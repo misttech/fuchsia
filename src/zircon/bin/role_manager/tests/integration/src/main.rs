@@ -6,8 +6,9 @@ use anyhow::Result;
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_scheduler::{
-    Parameter, ParameterValue, RoleManagerMarker, RoleManagerSetRoleRequest,
-    RoleManagerSetRoleResponse, RoleName, RoleTarget,
+    Parameter, ParameterValue, RoleManagerGetProfileForRoleRequest,
+    RoleManagerGetProfileForRoleResponse, RoleManagerMarker, RoleManagerSetRoleRequest,
+    RoleManagerSetRoleResponse, RoleName, RoleTarget, RoleType,
 };
 use fidl_test_rolemanager as ftest;
 use fuchsia_async::Timer;
@@ -58,6 +59,38 @@ async fn test_set_role_thread() -> Result<()> {
             ..Default::default()
         })
     );
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_get_profile_for_role_thread() -> Result<()> {
+    // Test that getting a profile for a thread role works.
+    let realm_options = ftest::RealmOptions::default();
+    let realm = create_realm(realm_options).await?;
+    let role_manager = realm.connect_to_protocol::<RoleManagerMarker>().await?;
+
+    let request = RoleManagerGetProfileForRoleRequest {
+        target: Some(RoleType::Task),
+        role: Some(RoleName { role: "test.core.a".to_string() }),
+        ..Default::default()
+    };
+    let response = role_manager.get_profile_for_role(request).await?;
+    match response {
+        Ok(RoleManagerGetProfileForRoleResponse {
+            profile: Some(_),
+            output_parameters: Some(params),
+            ..
+        }) => {
+            assert_eq!(
+                params,
+                vec![Parameter {
+                    key: "set_role".to_string(),
+                    value: ParameterValue::StringValue("test.core.a".to_string())
+                }]
+            );
+        }
+        _ => panic!("Unexpected response: {:?}", response),
+    }
     Ok(())
 }
 

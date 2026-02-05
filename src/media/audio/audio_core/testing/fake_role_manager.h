@@ -27,6 +27,12 @@ class FakeRoleManager : public fuchsia::scheduler::RoleManager {
         fuchsia::scheduler::RoleManager_SetRole_Response{}));
   }
 
+  void GetProfileForRole(fuchsia::scheduler::RoleManagerGetProfileForRoleRequest req,
+                         GetProfileForRoleCallback callback) override {
+    callback(fuchsia::scheduler::RoleManager_GetProfileForRole_Result::WithResponse(
+        fuchsia::scheduler::RoleManager_GetProfileForRole_Response{}));
+  }
+
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {}
 
   fidl::BindingSet<fuchsia::scheduler::RoleManager> bindings_;
