@@ -128,6 +128,34 @@ TEST_F(NamespaceInitTest, MoveAndRecordBootId) {
   EXPECT_EQ(ReadFile(from), "boot-id-4");
 }
 
+TEST_F(NamespaceInitTest, BootIdTimelineRecorded) {
+  const std::string to = MakeFilepath(RootdDir(), "to.txt");
+  const std::string from = MakeFilepath(RootdDir(), "from.txt");
+  const std::string timeline = MakeFilepath(RootdDir(), "timeline.txt");
+
+  // Initial boot.
+  MoveAndRecordBootId("boot-id-1", to, from, timeline);
+  EXPECT_EQ(ReadFile(timeline), "[boot-id-1]");
+
+  // Second boot.
+  MoveAndRecordBootId("boot-id-2", to, from, timeline);
+  EXPECT_EQ(ReadFile(timeline), "[boot-id-2, boot-id-1]");
+}
+
+TEST_F(NamespaceInitTest, BootIdTimelinePruned) {
+  const std::string to = MakeFilepath(RootdDir(), "to.txt");
+  const std::string from = MakeFilepath(RootdDir(), "from.txt");
+  const std::string timeline = MakeFilepath(RootdDir(), "timeline.txt");
+
+  for (int i = 1; i <= 11; ++i) {
+    MoveAndRecordBootId("boot-id-" + std::to_string(i), to, from, timeline);
+  }
+
+  EXPECT_EQ(ReadFile(timeline),
+            "[boot-id-11, boot-id-10, boot-id-9, boot-id-8, boot-id-7, boot-id-6, "
+            "boot-id-5, boot-id-4, boot-id-3, boot-id-2]");
+}
+
 TEST_F(NamespaceInitTest, MoveAndRecordBuildVersion) {
   const std::string to = MakeFilepath(RootdDir(), "to.txt");
   const std::string from = MakeFilepath(RootdDir(), "from.txt");

@@ -31,9 +31,13 @@ void CreatePreviousLogsFile(cobalt::Logger* cobalt, StorageSize max_decompressed
 
 // Move the boot id stored at |current_boot_id_path| to |previous_boot_id_path| and write a new
 // boot id to |current_boot_id_path|.
+//
+// Appends the new boot id to the timeline stored at |timeline_path| and truncates the timeline
+// to the last 10 boot ids.
 void MoveAndRecordBootId(const std::string& new_boot_id,
                          const std::string& previous_boot_id_path = kPreviousBootIdPath,
-                         const std::string& current_boot_id_path = kCurrentBootIdPath);
+                         const std::string& current_boot_id_path = kCurrentBootIdPath,
+                         const std::string& timeline_path = kBootIdTimelinePath);
 
 // Move the build version stored at |current_build_version_path| to |previous_build_version_path|
 // and write the current build version to |current_build_version_path|.

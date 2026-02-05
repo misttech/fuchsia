@@ -102,6 +102,7 @@ constexpr char kCurrentLogsDir[] = "/cache/current_system_logs";
 constexpr char kPreviousLogsFilePath[] = "/tmp/log.system.previous_boot.txt";
 constexpr char kPreviousBootIdPath[] = "/tmp/boot_id.txt";
 constexpr char kCurrentBootIdPath[] = "/data/boot_id.txt";
+constexpr char kBootIdTimelinePath[] = "/data/boot_id_timeline.txt";
 constexpr char kPreviousBuildVersionPath[] = "/tmp/build_version.txt";
 constexpr char kCurrentBuildVersionPath[] = "/data/build_version.txt";
 constexpr char kPreviousBuildPlatformVersionPath[] = "/tmp/build_platform_version.txt";

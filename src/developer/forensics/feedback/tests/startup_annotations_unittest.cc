@@ -71,6 +71,7 @@ TEST_F(StartupAnnotationsTest, Keys) {
                                        Key(kDeviceBoardNameKey),
                                        Key(kDeviceNumCPUsKey),
                                        Key(kSystemBootIdCurrentKey),
+                                       Key(kSystemBootIdTimelineKey),
                                        Key(kSystemBootIdPreviousKey),
                                        Key(kSystemLastRebootReasonKey),
                                        Key(kSystemLastRebootRuntimeKey),
@@ -102,6 +103,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
       {kPreviousBuildProductVersionPath, "previous-product-version"},
       {kCurrentBootIdPath, "current-boot-id"},
       {kPreviousBootIdPath, "previous-boot-id"},
+      {kBootIdTimelinePath, "boot-id-timeline"},
   });
 
   auto final_shutdown_info = std::make_unique<FinalGracefulShutdownInfo>(
@@ -132,6 +134,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
           Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, ErrorOrString("current-boot-id")),
           Pair(kSystemBootIdPreviousKey, ErrorOrString("previous-boot-id")),
+          Pair(kSystemBootIdTimelineKey, ErrorOrString("boot-id-timeline")),
           Pair(kSystemLastRebootReasonKey,
                ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
                                                         SpontaneousRebootReason::kSpontaneous))),
@@ -171,6 +174,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
           Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemBootIdPreviousKey, ErrorOrString(Error::kFileReadFailure)),
+          Pair(kSystemBootIdTimelineKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemLastRebootReasonKey,
                ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
                                                         SpontaneousRebootReason::kSpontaneous))),
@@ -244,9 +248,9 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
           Pair(kBuildProductVersionPreviousBootKey, ErrorOrString("previous-version")),
           Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, _), Pair(kSystemBootIdPreviousKey, _),
-          Pair(kSystemLastRebootRuntimeKey, _), Pair(kSystemLastRebootTotalSuspendedTimeKey, _),
-          Pair(kSystemLastRebootUptimeKey, _), Pair(kSystemLastShutdownGracefulActionKey, _),
-          Pair(kSystemLastRebootReasonKey, _)));
+          Pair(kSystemBootIdTimelineKey, _), Pair(kSystemLastRebootRuntimeKey, _),
+          Pair(kSystemLastRebootTotalSuspendedTimeKey, _), Pair(kSystemLastRebootUptimeKey, _),
+          Pair(kSystemLastShutdownGracefulActionKey, _), Pair(kSystemLastRebootReasonKey, _)));
 }
 
 }  // namespace

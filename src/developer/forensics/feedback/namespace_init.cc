@@ -6,14 +6,24 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <vector>
+
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/production_encoding.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/version.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/reader.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
+#include "src/lib/fxl/strings/join_strings.h"
+#include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/lib/fxl/strings/trim.h"
 
 namespace forensics::feedback {
+namespace {
+
+constexpr size_t kMaxBootIdTimelineSize = 10;
+
+}
 
 void MoveFile(const std::string& from, const std::string& to) {
   // Bail if the file doesn't exist.
@@ -78,9 +88,27 @@ void CreatePreviousLogsFile(cobalt::Logger* cobalt, const StorageSize max_decomp
 }
 
 void MoveAndRecordBootId(const std::string& new_boot_id, const std::string& previous_boot_id_path,
-                         const std::string& current_boot_id_path) {
+                         const std::string& current_boot_id_path,
+                         const std::string& timeline_path) {
   MoveFile(/*from=*/current_boot_id_path, /*to=*/previous_boot_id_path);
   files::WriteFile(current_boot_id_path, new_boot_id);
+
+  std::string timeline_content;
+  if (!files::ReadFileToString(timeline_path, &timeline_content)) {
+    timeline_content = "";
+  }
+
+  timeline_content = std::string(fxl::TrimString(timeline_content, "[]"));
+
+  std::vector<std::string> timeline =
+      fxl::SplitStringCopy(timeline_content, ",", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
+  timeline.insert(timeline.begin(), new_boot_id);
+
+  if (timeline.size() > kMaxBootIdTimelineSize) {
+    timeline.resize(kMaxBootIdTimelineSize);
+  }
+
+  files::WriteFile(timeline_path, "[" + fxl::JoinStrings(timeline, ", ") + "]");
 }
 
 void MoveAndRecordBuildVersion(const std::string& current_build_version,

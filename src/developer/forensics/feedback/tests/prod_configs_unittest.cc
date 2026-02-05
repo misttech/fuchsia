@@ -58,6 +58,7 @@ TEST_F(ProdConfigTest, DefaultSnapshot) {
                                                "hardware.product.sku",
                                                "system.boot-id.current",
                                                "system.boot-id.previous",
+                                               "system.boot-id.timeline",
                                                "system.last-reboot.reason",
                                                "system.last-reboot.runtime",
                                                "system.last-reboot.total-suspended-time",
