@@ -23,6 +23,7 @@ rustc_library("fdf_sys") {
   visibility = [
     "//sdk/lib/driver/*",
     "//src/devices/bin/driver-host/*",
+    "//src/sys/runners/dso/*",
   ]
 }
 

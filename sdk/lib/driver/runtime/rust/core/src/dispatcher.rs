@@ -350,6 +350,15 @@ impl<'a> DispatcherRef<'a> {
         .unwrap();
         unsafe { Self::from_raw(handle) }
     }
+
+    /// Gets the raw handle from this dispatcher ref.
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for ensuring that the dispatcher handle is used safely.
+    pub unsafe fn as_raw(&mut self) -> *mut fdf_dispatcher_t {
+        unsafe { self.0.0.as_mut() }
+    }
 }
 
 impl<'a> AsyncDispatcher for DispatcherRef<'a> {
