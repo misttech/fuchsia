@@ -37,7 +37,11 @@ where
             if write_offset == buffer.len() {
                 buffer.resize(buffer.len() + INC, 0);
             }
-            let socket_bytes_read = socket.read(&mut buffer[write_offset..]).await.unwrap();
+            let read_res =  socket.read(&mut buffer[write_offset..]).await;
+            let Ok(socket_bytes_read) = read_res else {
+                log::warn!("socket.read({write_offset}..) failed: {read_res:?}");
+                break;
+            };
             if socket_bytes_read == 0 {
                 break;
             }
