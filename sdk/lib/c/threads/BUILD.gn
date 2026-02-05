@@ -166,19 +166,27 @@ source_set("zxr-tls") {
   public_deps = [ "//src/zircon/lib/zircon:headers" ]
 }
 
+source_set("zxr-thread.header") {
+  visibility = [
+    "../*",
+    "//zircon/third_party/ulib/musl/*",
+  ]
+  public = [ "zxr-thread.h" ]
+  public_deps = [
+    "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
 libc_source_set("zxr-thread") {
   visibility = [
     "../*",
     "//zircon/third_party/ulib/musl/*",
   ]
 
-  public = [ "zxr-thread.h" ]
+  public_deps = [ ":zxr-thread.header" ]
   sources = [ "zxr-thread.cc" ]
-  deps = [
-    "//src/lib/elfldltl:headers",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-  ]
+  deps = [ "//src/lib/elfldltl:headers" ]
 
   # This code is used in early startup, where safe-stack is not ready yet.
   configs = [ "//build/config/sanitizers:no_sanitizers" ]
@@ -220,6 +228,7 @@ libc_source_set("thread-exit-finish") {
   global_symbols = [ "${libc_namespace}_ThreadExitFinish" ]
   undefined_symbols = [
     "${libc_namespace}_gAllThreadsLock",
+    "${libc_namespace}_gAllThreads",
     "${libc_namespace}_gLog",
     "__sanitizer_thread_exit_hook",
     "_zx_thread_self",  # libsync uses this.

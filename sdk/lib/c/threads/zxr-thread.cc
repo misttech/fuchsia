@@ -16,72 +16,9 @@
 
 using State = zxr_thread_t::State;
 
-// Put the thread into EXITING state.  Returns the previous state.
-static State begin_exit(zxr_thread_t* thread) {
-  return thread->state.exchange(State::EXITING, std::memory_order_release);
-}
-
-// Extract the handle from the thread structure. Synchronizes with readers by
-// setting the state to FREED and checks the given expected state for consistency.
-static zx_handle_t take_handle(zxr_thread_t* thread, State expected_state) {
-  const zx_handle_t tmp = thread->handle;
-  thread->handle = ZX_HANDLE_INVALID;
-
-  if (!thread->state.compare_exchange_strong(
-          expected_state, State::FREED, std::memory_order_acq_rel, std::memory_order_acquire)) {
-    CRASH_WITH_UNIQUE_BACKTRACE();
-  }
-
-  return tmp;
-}
-
-static zx_futex_t* state_futex(zxr_thread_t* thread) {
-  return reinterpret_cast<zx_futex_t*>(&thread->state);
-}
-
-[[noreturn]] static void exit_non_detached(zxr_thread_t* thread) {
-  // Wake the _zx_futex_wait in zxr_thread_join (below), and then die.
-  // This has to be done with the special four-in-one vDSO call because
-  // as soon as the state transitions to DONE, the joiner is free to unmap
-  // our stack out from under us.  Note there is a benign race here still: if
-  // the address is unmapped and our futex_wake fails, it's OK; if the memory
-  // is reused for something else and our futex_wake tickles somebody
-  // completely unrelated, well, that's why futex_wait can always have
-  // spurious wakeups.
-  _zx_futex_wake_handle_close_thread_exit(state_futex(thread), 1, static_cast<int>(State::DONE),
-                                          ZX_HANDLE_INVALID);
-  CRASH_WITH_UNIQUE_BACKTRACE();
-}
-
-[[noreturn]] void zxr_thread_exit_unmap_if_detached(zxr_thread_t* thread,
-                                                    void (*if_detached)(void*),
-                                                    void* if_detached_arg,
-
-                                                    zx_handle_t vmar, uintptr_t addr, size_t len) {
-  const State old_state = begin_exit(thread);
-  switch (old_state) {
-    case State::DETACHED: {
-      (*if_detached)(if_detached_arg);
-      const zx_handle_t handle = take_handle(thread, State::EXITING);
-      _zx_vmar_unmap_handle_close_thread_exit(vmar, addr, len, handle);
-      break;
-    }
-    // See comments in thread_trampoline.
-    case State::JOINABLE:
-    case State::JOINED:
-      exit_non_detached(thread);
-      break;
-    default:
-      break;
-  }
-
-  // Cannot be in DONE or the EXITING and reach here.
-  CRASH_WITH_UNIQUE_BACKTRACE();
-}
-
 static void wait_for_done(zxr_thread_t* thread, State old_state) {
   do {
-    switch (_zx_futex_wait(state_futex(thread), static_cast<int>(old_state), ZX_HANDLE_INVALID,
+    switch (_zx_futex_wait(thread->StateFutex(), static_cast<int>(old_state), ZX_HANDLE_INVALID,
                            ZX_TIME_INFINITE)) {
       case ZX_ERR_BAD_STATE:  // Never blocked because it had changed.
       case ZX_OK:             // Woke up because it might have changed.
@@ -121,9 +58,8 @@ zx_status_t zxr_thread_join(zxr_thread_t* thread) {
     }
   }
 
-  // Take the handle and synchronize with readers.
-  const zx_handle_t handle = take_handle(thread, State::DONE);
-  if (handle == ZX_HANDLE_INVALID || zx_handle_close(handle) != ZX_OK) {
+  // Take the handle and synchronize with readers.  Then close the handle.
+  if (zx::thread handle = thread->TakeHandle(State::DONE); !handle) {
     CRASH_WITH_UNIQUE_BACKTRACE();
   }
 
