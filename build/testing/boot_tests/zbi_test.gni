@@ -197,9 +197,5 @@ template("zbi_test") {
     if (use_vbmeta) {
       vbmeta = ":$vbmeta_target"
     }
-
-    if (dtbo_label != false) {
-      dtbo = dtbo_label
-    }
   }
 }
