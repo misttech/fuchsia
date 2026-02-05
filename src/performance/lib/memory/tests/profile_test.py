@@ -59,7 +59,7 @@ MM2_OUTPUT = """
                     },
                     {
                         "name": "[Addl]Graphics",
-                        "populated_size": 49152,
+                        "populated_size": 65432,
                         "committed_size": 49152
                     }
                 ]
@@ -86,7 +86,13 @@ class ProfileTest(unittest.TestCase):
                     unit=metrics.Unit.bytes,
                     values=(49152,),
                     doc="Total committed bytes in the bucket: [Addl]Graphics",
-                )
+                ),
+                metrics.TestCaseResult(
+                    label="Memory/Bucket/AddlGraphics/PopulatedBytes",
+                    unit=metrics.Unit.bytes,
+                    values=(65432,),
+                    doc="Total populated bytes in the bucket: [Addl]Graphics",
+                ),
             ],
         )
 
@@ -165,7 +171,7 @@ class ProfileTest(unittest.TestCase):
                             {
                                 "name": "[Addl]Graphics",
                                 "committed_size": 49152,
-                                "populated_size": 49152,
+                                "populated_size": 65432,
                             },
                         ]
                     },

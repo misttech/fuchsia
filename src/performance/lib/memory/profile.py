@@ -92,6 +92,14 @@ def process_component_profile(
                         doc=f"Total committed bytes in the bucket: {bucket['name']}",
                     )
                 )
+                results.append(
+                    metrics.TestCaseResult(
+                        label=f"Memory/Bucket/{cleanup_bucket_name(bucket['name'])}/PopulatedBytes",
+                        unit=metrics.Unit.bytes,
+                        values=[bucket["populated_size"]],
+                        doc=f"Total populated bytes in the bucket: {bucket['name']}",
+                    )
+                )
 
     for group_name, pattern in principal_groups.items():
         digest = component_profile["ComponentDigest"]
