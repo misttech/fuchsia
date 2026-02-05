@@ -644,22 +644,37 @@ async fn run_netdevice_interface_control<
         let mut canceled_fut = pin!(scope_guard.on_cancel().fuse());
         let mut link_multicast_fut = pin!(link_multicast_fut);
         let remove_reason = futures::select! {
-            () = canceled_fut => Some(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed),
+            () = canceled_fut => {
+                log::debug!("Temp info for b/481597491: {id} - scope was canceled");
+                Some(fnet_interfaces_admin::InterfaceRemovedReason::PortClosed)
+            }
             // Remove the interface if a task servicing the port exits with a reason.
-            r = tx_task => Some(r),
-            r = link_multicast_fut => r,
-            () = interface_control_fut => None,
+            r = tx_task => {
+                log::debug!("Temp info for b/481597491: {id} - tx task exited");
+                Some(r)
+            },
+            r = link_multicast_fut => {
+                log::debug!("Temp info for b/481597491: {id} - link multicast exited");
+                r
+            },
+            () = interface_control_fut => {
+                log::debug!("Temp info for b/481597491: {id} - interface control exited");
+                None
+            },
         };
 
         if let Some(remove_reason) = remove_reason {
             if !interface_control_fut.is_terminated() {
                 // Cancel interface control and drive it to completion,
                 // allowing it to terminate each control handle.
+                log::debug!("Temp info for b/481597491: {id} - stopping interface control");
                 interface_control_stop_sender
                     .send(remove_reason)
                     .expect("failed to cancel interface control");
 
-                interface_control_fut.await
+                log::debug!("Temp info for b/481597491: {id} - awaiting interface control stop");
+                interface_control_fut.await;
+                log::debug!("Temp info for b/481597491: {id} - interface control stopped");
             }
         }
     }
@@ -804,12 +819,19 @@ pub(crate) async fn run_interface_control<S: futures::Stream<Item = DeviceState>
             // One of the interface's owning channels hung up or `Remove` was
             // called; inform the other channels.
             removal_requester = interface_control_stream.next() => {
+                log::debug!("Temp info for b/481597491: {id} - user requested removal");
                 (fnet_interfaces_admin::InterfaceRemovedReason::User, removal_requester.flatten())
             }
             // Cancelation event was received with a specified remove reason.
-            reason = stop_receiver => (reason.expect("failed to receive stop"), None),
+            reason = stop_receiver => {
+                log::debug!("Temp info for b/481597491: {id} - stop request received");
+                (reason.expect("failed to receive stop"), None)
+            },
             // Device state stream ended, assume device was removed.
-            () = device_state => (fnet_interfaces_admin::InterfaceRemovedReason::PortClosed, None),
+            () = device_state => {
+                log::debug!("Temp info for b/481597491: {id} - device state exited");
+                (fnet_interfaces_admin::InterfaceRemovedReason::PortClosed, None)
+            },
         }
     };
 
@@ -864,7 +886,9 @@ pub(crate) async fn run_interface_control<S: futures::Stream<Item = DeviceState>
 
     // Cancel our inner scope to make sure nothing else is referencing this
     // interface.
+    log::debug!("Temp info for b/481597491: {id} - canceling inner scope");
     scope.cancel().await;
+    log::debug!("Temp info for b/481597491: {id} - inner scope canceled");
 
     // Nothing else should be borrowing ctx by now. Moving to a mutable bind
     // proves this.
