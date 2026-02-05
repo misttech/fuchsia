@@ -1153,26 +1153,10 @@ group("toml_edit") {
 
 group("tracing") {
   public_deps = [ ":tracing-v0_1_41" ]
-
-  visibility = tracing_visibility
-}
-
-group("tracing-core") {
-  public_deps = [ ":tracing-core-v0_1_34" ]
-}
-
-group("tracing-log") {
-  public_deps = [ ":tracing-log-v0_2_0" ]
 }
 
 group("tracing-mutex") {
   public_deps = [ ":tracing-mutex-v0_3_2" ]
-}
-
-group("tracing-subscriber") {
-  public_deps = [ ":tracing-subscriber-v0_3_18" ]
-
-  visibility = tracing_subscriber_visibility
 }
 
 if (current_os == "fuchsia") {
@@ -19406,7 +19390,6 @@ rustc_library("tracing-log-v0_2_0") {
     "--cap-lints=allow",
     "-Cmetadata=575e9bcc83b55bcc",
     "-Cextra-filename=-575e9bcc83b55bcc",
-    "--cfg=feature=\"default\"",
     "--cfg=feature=\"log-tracer\"",
     "--cfg=feature=\"std\"",
   ]

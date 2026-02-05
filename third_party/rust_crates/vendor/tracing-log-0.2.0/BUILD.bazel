@@ -50,7 +50,6 @@ rust_library(
         ],
     ),
     crate_features = [
-        "default",
         "log-tracer",
         "std",
     ],

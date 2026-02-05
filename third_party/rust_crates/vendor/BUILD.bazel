@@ -2785,30 +2785,6 @@ alias(
 )
 
 alias(
-    name = "tracing-log-0.2.0",
-    actual = "//third_party/rust_crates/vendor/tracing-log-0.2.0:tracing_log",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tracing-log",
-    actual = "//third_party/rust_crates/vendor/tracing-log-0.2.0:tracing_log",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tracing-subscriber-0.3.18",
-    actual = "//third_party/rust_crates/vendor/tracing-subscriber-0.3.18:tracing_subscriber",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tracing-subscriber",
-    actual = "//third_party/rust_crates/vendor/tracing-subscriber-0.3.18:tracing_subscriber",
-    tags = ["manual"],
-)
-
-alias(
     name = "trust-dns-proto-0.22.0",
     actual = "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0:trust_dns_proto",
     tags = ["manual"],
