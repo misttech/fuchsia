@@ -15,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -80,7 +81,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
           register_touch_source,
       fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
           register_mouse_source,
-      fuchsia_ui_composition::TrustedFlatlandConfig config);
+      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config = std::nullopt);
 
   // Because this object captures its "this" pointer in internal closures, it is unsafe to copy or
   // move it. Disable all copy and move operations.
@@ -265,6 +266,11 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void SetDebugName(SetDebugNameRequest& request, SetDebugNameCompleter::Sync& completer) override;
   void SetDebugName(std::string name);
 
+  // |fuchsia_ui_composition::TrustedFlatland|
+  void ReleaseImageImmediately(ReleaseImageImmediatelyRequest& request,
+                               ReleaseImageImmediatelyCompleter::Sync& completer) override;
+  void ReleaseImageImmediately(ContentId image_id);
+
   // Called just before the FIDL client receives the event of the same name, indicating that this
   // Flatland instance should allow a |additional_present_credits| calls to Present().
   void OnNextFrameBegin(uint32_t additional_present_credits,
@@ -310,7 +316,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
                register_touch_source,
            fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
                register_mouse_source,
-           fuchsia_ui_composition::TrustedFlatlandConfig config);
+           std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config);
 
   // `Flatland::New()` dispatches a task to invoke this.
   void Bind(fidl::ServerEnd<fuchsia_ui_composition::Flatland> server_end,
@@ -516,8 +522,9 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
 
-  // The configuration for this Flatland instance.
-  fuchsia_ui_composition::TrustedFlatlandConfig config_;
+  // The configuration for this Flatland instance. If no configuration is provided, it means that
+  // the instance was not created by TrustedFlatlandFactory.
+  const std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config_;
 
   // Helper class that is responsible for managing the Flatland instance's FIDL connection, and also
   // provides an RAII approach to guaranteeing that `destroy_instance_function_` is invoked.

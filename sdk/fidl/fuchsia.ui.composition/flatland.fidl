@@ -444,6 +444,14 @@ type HitRegion = struct {
 /// executed until [`Present`] is called.
 @discoverable(server="platform")
 closed protocol Flatland {
+    /// Includes privileged methods for trusted Flatland instances.
+    ///
+    /// Methods in [`fuchsia.ui.composition/TrustedFlatland`] are only available if the
+    /// `Flatland` instance was created via [`fuchsia.ui.composition/TrustedFlatlandFactory`].
+    /// Calling these methods on a standard `Flatland` instance will result in a channel closure.
+    @available(added=HEAD)
+    compose TrustedFlatland;
+
     /// Complete execution of all feed-forward operations.
     ///
     /// If executing an operation produces an error (e.g., CreateTransform(0)), an [`OnError`] event

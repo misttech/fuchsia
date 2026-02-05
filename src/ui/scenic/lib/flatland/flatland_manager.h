@@ -13,6 +13,7 @@
 #include <lib/fidl/cpp/binding.h>
 
 #include <map>
+#include <optional>
 #include <unordered_map>
 
 #include "src/ui/scenic/lib/display/display.h"
@@ -47,7 +48,7 @@ class FlatlandManager {
 
   scheduling::SessionId CreateFlatland(
       fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> flatland,
-      fuchsia_ui_composition::TrustedFlatlandConfig config = {});
+      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config = std::nullopt);
 
   // TODO(https://fxbug.dev/42156949): This creates a FlatlandDisplay attached to the "primary"
   // hardware display (i.e. the only one supported). In the future there will be APIs that allow
@@ -139,7 +140,7 @@ class FlatlandManager {
       std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
       const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
           buffer_collection_importers,
-      fuchsia_ui_composition::TrustedFlatlandConfig config) const;
+      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) const;
 
   // Used to assert that code is running on the expected thread.
   void CheckIsOnMainThread() const {

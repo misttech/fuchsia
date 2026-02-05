@@ -118,7 +118,7 @@ std::shared_ptr<Flatland> Flatland::New(
         register_touch_source,
     fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
         register_mouse_source,
-    fuchsia_ui_composition::TrustedFlatlandConfig config) {
+    std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) {
   // clang-format off
   auto flatland = std::shared_ptr<Flatland>(new Flatland(
       dispatcher_holder,
@@ -159,7 +159,7 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
                        register_touch_source,
                    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
                        register_mouse_source,
-                   fuchsia_ui_composition::TrustedFlatlandConfig config)
+                   std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config)
     : dispatcher_holder_(std::move(dispatcher_holder)),
       session_id_(session_id),
       present2_helper_([this](fuchsia_scenic_scheduling::FramePresentedInfo info) {
@@ -338,7 +338,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     return;
   }
 
-  if (!config_.skips_present_credits().value_or(false)) {
+  if (!(config_ && config_->skips_present_credits().value_or(false))) {
     // Close any clients that call Present() without any present tokens.
     if (present_credits_ == 0) {
       const char* kError = "Out of present credits";
@@ -541,7 +541,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     uber_struct_queue_->Push(present_id, std::move(uber_struct), recompute_view_tree);
     flatland_presenter_->ScheduleUpdateForSession(
         zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
-        std::move(release_fences), config_.schedule_asap().value_or(false));
+        std::move(release_fences), config_ && config_->schedule_asap().value_or(false));
 
     // Finalize Link destruction operations after publishing the new UberStruct. This
     // ensures that any local Transforms referenced by the to-be-deleted Links are already
@@ -551,7 +551,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     }
   };
 
-  if (config_.pass_acquire_fences().value_or(false)) {
+  if (config_ && config_->pass_acquire_fences().value_or(false)) {
     task();
   } else {
     fence_queue_->QueueTask(std::move(task), std::move(*args.acquire_fences()));
@@ -2035,6 +2035,58 @@ void Flatland::SetDebugName(std::string name) {
   debug_name_ = std::move(name);
 }
 
+void Flatland::ReleaseImageImmediately(ReleaseImageImmediatelyRequest& request,
+                                       ReleaseImageImmediatelyCompleter::Sync& completer) {
+  ReleaseImageImmediately(ContentId(request.image_id()));
+}
+
+void Flatland::ReleaseImageImmediately(ContentId image_id) {
+  if (!config_.has_value()) {
+    error_reporter_->ERROR()
+        << "ReleaseImageImmediately called on a Flatland instance not created via "
+           "TrustedFlatlandFactory.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (image_id == kInvalidContentId) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately called with image_id 0";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto content_kv = content_handles_.find(image_id);
+
+  if (content_kv == content_handles_.end()) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately failed, image_id " << image_id
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto image_kv = image_metadatas_.find(content_kv->second);
+
+  if (image_kv == image_metadatas_.end()) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately failed, content_id " << image_id
+                             << " is not an Image";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImageImmediately() session_id=" << session_id_
+                       << "  client_image_id=" << image_id
+                       << "  image_handle=" << content_kv->second;
+
+  bool erased_from_graph = transform_graph_.ReleaseTransform(content_kv->second);
+  FX_DCHECK(erased_from_graph);
+  content_handles_.erase(image_id);
+
+  // Release the image from all importers immediately.
+  for (auto& importer : buffer_collection_importers_) {
+    importer->ReleaseBufferImage(image_kv->second.identifier);
+  }
+}
+
 void Flatland::OnNextFrameBegin(uint32_t additional_present_credits,
                                 FuturePresentationInfos presentation_infos) {
   TRACE_DURATION("gfx", "Flatland::OnNextFrameBegin");
@@ -2043,14 +2095,14 @@ void Flatland::OnNextFrameBegin(uint32_t additional_present_credits,
   FLATLAND_VERBOSE_LOG << "Flatland::OnNextFrameBegin() session_id=" << session_id_
                        << "  additional_present_credits=" << additional_present_credits
                        << "  skips_present_credits="
-                       << config_.skips_present_credits().value_or(false);
+                       << (config_ && config_->skips_present_credits().value_or(false));
 
   // Only send an `OnNextFrameBegin` event if the client has at least one present credit. It is
   // guaranteed that this won't stall clients because the current policy is to always return
   // present tokens upon processing them. If and when a new policy is adopted, we should take care
   // to ensure this guarantee is upheld.
   if (binding_data_) {
-    if (present_credits_ > 0 || config_.skips_present_credits().value_or(false)) {
+    if (present_credits_ > 0 || (config_ && config_->skips_present_credits().value_or(false))) {
       binding_data_->SendOnNextFrameBegin(additional_present_credits,
                                           std::move(presentation_infos));
     }

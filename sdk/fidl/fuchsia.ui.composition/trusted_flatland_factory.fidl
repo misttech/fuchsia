@@ -55,3 +55,16 @@ closed protocol TrustedFlatlandFactory {
         config TrustedFlatlandConfig;
     }) -> () error TrustedFlatlandFactoryError;
 };
+
+/// A privileged protocol for trusted Flatland instances that require special capabilities.
+///
+/// This protocol is composed into [`fuchsia.ui.composition/Flatland`]. Methods in this protocol
+/// are only available if the `Flatland` instance was created through
+/// [`fuchsia.ui.composition/TrustedFlatlandFactory`].
+@available(added=HEAD)
+closed protocol TrustedFlatland {
+    /// Releases an image immediately, without waiting for the next present.
+    strict ReleaseImageImmediately(struct {
+        image_id ContentId;
+    });
+};

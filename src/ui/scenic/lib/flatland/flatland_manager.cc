@@ -78,7 +78,7 @@ FlatlandManager::~FlatlandManager() {
 
 scheduling::SessionId FlatlandManager::CreateFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    fuchsia_ui_composition::TrustedFlatlandConfig config) {
+    std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) {
   CheckIsOnMainThread();
 
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
@@ -139,7 +139,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
     const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
         buffer_collection_importers,
-    fuchsia_ui_composition::TrustedFlatlandConfig config) const {
+    std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) const {
   return Flatland::New(
       std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)), session_id,
       std::move(destroy_instance_function), std::move(flatland_presenter), std::move(link_system),

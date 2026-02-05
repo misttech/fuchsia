@@ -165,7 +165,7 @@ struct GlobalIdPair {
                                    std::move((args).presentation_infos));              \
     } else {                                                                           \
       RunLoopUntilIdle();                                                              \
-      EXPECT_EQ(GetPresentError((flatland)->GetSessionId()), (args).expected_error);   \
+      EXPECT_EQ(GetFlatlandError((flatland)->GetSessionId()), (args).expected_error);  \
     }                                                                                  \
   }
 
@@ -320,7 +320,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   }
 
   std::shared_ptr<Flatland> CreateFlatland(
-      fuchsia_ui_composition::TrustedFlatlandConfig config = {}) {
+      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config = std::nullopt) {
     auto session_id = scheduling::GetNextSessionId();
     std::vector<std::shared_ptr<BufferCollectionImporter>> importers;
     importers.push_back(buffer_collection_importer_);
@@ -368,7 +368,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
           /*destroy_instance_function=*/[]() {}, std::move(presenter), std::move(link_system),
           uber_struct_system->AllocateQueueForSession(session_id),
           /*buffer_collection_importers=*/{}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-          [](auto...) {}, fuchsia_ui_composition::TrustedFlatlandConfig());
+          [](auto...) {}, std::nullopt);
 
       libsync::Completion completion;
       async::PostTask(client_loop_.dispatcher(), [&, dispatcher = client_loop_.dispatcher()]() {
@@ -641,7 +641,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   }
 
   // Returns FlatlandError code passed returned to OnNextFrameBegin() for |flatland|.
-  FlatlandError GetPresentError(scheduling::SessionId session_id) {
+  FlatlandError GetFlatlandError(scheduling::SessionId session_id) {
     return flatland_errors_[session_id];
   }
 
@@ -654,7 +654,6 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   const std::shared_ptr<LinkSystem> link_system_;
   sys::testing::ComponentContextProvider context_provider_;
 
- private:
   std::vector<
       std::pair<fidl::Client<fuchsia_ui_composition::Flatland>, std::unique_ptr<EventHandler>>>
       flatlands_;
@@ -6101,6 +6100,47 @@ TEST_F(FlatlandDisplayTest, SimpleSetContent) {
   // Verify that previously-connected Flatland sessions can re-connect to the display.
   ConnectChildViewToDisplayThenValidate(display, child2, kWidth, kHeight);
   ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+}
+
+TEST_F(FlatlandTest, ReleaseImageImmediatelyUntrusted) {
+  // Default CreateFlatland() creates an untrusted session.
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Calling ReleaseImageImmediately on an untrusted session should close the connection.
+  const ContentId kImageId(3);
+  flatland->ReleaseImageImmediately(kImageId);
+
+  RunLoopUntilIdle();
+
+  // Verify the connection was closed with kBadOperation.
+  EXPECT_EQ(GetFlatlandError(flatland->GetSessionId()), FlatlandError::kBadOperation);
+}
+
+TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
+  // Create a trusted session.
+  // Passing an empty table table is considered "trusted" because we use std::optional to track it.
+  fuchsia_ui_composition::TrustedFlatlandConfig config;
+  std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
+
+  // Create an image to release.
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  const ContentId kImageId(1);
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
+              std::move(properties));
+
+  // Verify the image is present.
+  EXPECT_TRUE(flatland->GetContentHandle(kImageId).has_value());
+
+  // Calling ReleaseImageImmediately on a trusted session should succeed (one-way call).
+  flatland->ReleaseImageImmediately(kImageId);
+
+  RunLoopUntilIdle();
+
+  // Verify the image is gone.
+  EXPECT_FALSE(flatland->GetContentHandle(kImageId).has_value());
 }
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:

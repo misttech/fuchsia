@@ -21,7 +21,7 @@ void TrustedFlatlandFactoryImpl::CreateFlatland(CreateFlatlandRequest& request,
 void TrustedFlatlandFactoryImpl::CreateFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
     fuchsia_ui_composition::TrustedFlatlandConfig config) {
-  flatland_manager_->CreateFlatland(std::move(server_end), std::move(config));
+  flatland_manager_->CreateFlatland(std::move(server_end), std::make_optional(std::move(config)));
 }
 
 }  // namespace flatland
