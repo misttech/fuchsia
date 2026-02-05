@@ -194,7 +194,7 @@ impl<'a> Packet<'a> {
         let body_len = body.len();
         if payload_len > body_len {
             return Err(std::io::Error::other(format!(
-                "payload length on usb vsock header ({payload_len}) was larger than available in buffer {body_len}"
+                "payload length ({payload_len}) on usb vsock header {header:#?} was larger than available in buffer ({body_len})"
             )));
         }
 
