@@ -3,14 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/rust/rustc_library.gni")
-import("//build/testing/host_test_data.gni")
 
 assert(is_host, "Assembly libraries are host-only")
-
-_platform_artifacts_label = "//bundles/assembly:eng($default_toolchain)"
-_platform_artifacts_path =
-    get_label_info(_platform_artifacts_label, "target_out_dir") + "/" +
-    get_label_info(_platform_artifacts_label, "name") + "/platform_artifacts"
 
 rustc_library("platform_configuration") {
   edition = "2024"
@@ -94,7 +88,6 @@ rustc_library("platform_configuration") {
     "//tools/lib/cml",
   ]
   test_deps = [
-    ":test_data",
     "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
     "//src/lib/assembly/images_config",
     "//src/lib/assembly/util",
@@ -102,25 +95,5 @@ rustc_library("platform_configuration") {
     "//src/lib/utf8_path",
     "//third_party/rust_crates:tempfile",
   ]
-  configs += [
-    "//build/config/rust/lints:clippy_warn_all",
-
-    # Include the platform artifacts so that we can write a test that asserts
-    # the metadata inside them correctly incidates when to automatically include
-    # them in a product. We can remove this after we fully depend on the
-    # metadata inside the platform artifacts.
-    # TODO(https://fxbug.dev/474331015): Remove this dependency after we fully depend
-    # on the metadata inside the platform artifacts.
-    ":platform_artifacts_path",
-  ]
-}
-
-host_test_data("test_data") {
-  deps = [ _platform_artifacts_label ]
-  sources = [ _platform_artifacts_path ]
-}
-
-config("platform_artifacts_path") {
-  _rebased_path = rebase_path(_platform_artifacts_path, root_build_dir)
-  rustenv = [ "PLATFORM_ARTIFACTS_PATH=" + _rebased_path ]
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }

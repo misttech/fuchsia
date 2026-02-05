@@ -144,12 +144,6 @@ impl ConfigurationContext<'_> {
 ///   .field("a", "value1")
 ///
 pub(crate) trait ConfigurationBuilder {
-    /// Assert that the bundles that have been added already exactly match `bundles`.
-    /// TODO(https://fxbug.dev/474331015): Remove this after we fully depend on the
-    /// metadata inside the platform artifacts.
-    #[cfg(test)]
-    fn assert_exact_bundles(&self, bundles: Vec<String>) -> Result<()>;
-
     /// Add all the AIBs that should be auto-included based on feature set level and build type.
     fn add_auto_include_bundles(
         &mut self,
@@ -517,26 +511,6 @@ impl<'a> ICUMapExt<'a> for ICUMap {
 }
 
 impl ConfigurationBuilder for ConfigurationBuilderImpl {
-    #[cfg(test)]
-    fn assert_exact_bundles(&self, bundles: Vec<String>) -> Result<()> {
-        let mut bundles_to_assert = BTreeSet::new();
-        bundles_to_assert.extend(bundles);
-
-        let extra_in_bundles: BTreeSet<&String> =
-            self.bundles.difference(&bundles_to_assert).collect();
-        if !extra_in_bundles.is_empty() {
-            anyhow::bail!("The configuration has unexpected AIBs: {:?}", &extra_in_bundles);
-        }
-
-        let missing_in_bundles: BTreeSet<&String> =
-            bundles_to_assert.difference(&self.bundles).collect();
-        if !missing_in_bundles.is_empty() {
-            anyhow::bail!("The configuration is missing AIBs: {:?}", &missing_in_bundles);
-        }
-
-        Ok(())
-    }
-
     fn add_auto_include_bundles(
         &mut self,
         platform_artifacts: &PlatformArtifacts,
