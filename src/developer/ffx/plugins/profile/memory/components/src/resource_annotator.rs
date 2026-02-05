@@ -8,12 +8,7 @@ use attribution_processing::{
 };
 use std::collections::HashMap;
 
-// VMO holding blobs served by fxfs have a name starting with this prefix.
-const BLOB_PREFIX: &[u8] = b"blob-";
-
-// TODO(b/480075841): Increase the hex size to 24.
-// Length of the hash hex representation appended to the VMO name.
-const BLOB_HASH_LENGTH: usize = 8;
+use fxfs_platform::constants::{BLOB_NAME_HASH_LENGTH, BLOB_NAME_PREFIX};
 
 /// Annotator for resources using information from the assembled system.
 ///
@@ -21,7 +16,7 @@ const BLOB_HASH_LENGTH: usize = 8;
 /// allowing it to annotate resources (like VMOs) with the blob they represent.
 #[derive(Default)]
 pub struct ResourceAnnotator {
-    merkle_to_blob_info: HashMap<[u8; BLOB_HASH_LENGTH], Vec<ResourceAnnotation>>,
+    merkle_to_blob_info: HashMap<[u8; BLOB_NAME_HASH_LENGTH], Vec<ResourceAnnotation>>,
 }
 
 impl ResourceAnnotator {
@@ -32,7 +27,7 @@ impl ResourceAnnotator {
     pub fn new_from(
         assembled_system: assembled_system::AssembledSystem,
     ) -> Result<ResourceAnnotator> {
-        let mut merkle_to_blob_info: HashMap<[u8; BLOB_HASH_LENGTH], Vec<ResourceAnnotation>> =
+        let mut merkle_to_blob_info: HashMap<[u8; BLOB_NAME_HASH_LENGTH], Vec<ResourceAnnotation>> =
             HashMap::new();
         for image in assembled_system.images.iter() {
             let blobfs_contents = match image {
@@ -51,7 +46,7 @@ impl ResourceAnnotator {
             {
                 for blob in &metadata.blobs {
                     merkle_to_blob_info
-                        .entry(blob.merkle.as_bytes()[..BLOB_HASH_LENGTH].try_into()?)
+                        .entry(blob.merkle.as_bytes()[..BLOB_NAME_HASH_LENGTH].try_into()?)
                         .or_insert_with(Vec::new)
                         .push(ResourceAnnotation::Blob(BlobAnnotation {
                             manifest: metadata.manifest.to_string(),
@@ -90,7 +85,11 @@ impl ResourceAnnotator {
 /// the hex hash following that prefix.
 fn get_blob_hash(vmo_name: &ZXName) -> Option<&[u8]> {
     let vmo_name = vmo_name.as_bytes();
-    if vmo_name.starts_with(BLOB_PREFIX) { Some(&vmo_name[BLOB_PREFIX.len()..]) } else { None }
+    if vmo_name.starts_with(BLOB_NAME_PREFIX.as_bytes()) {
+        Some(&vmo_name[BLOB_NAME_PREFIX.len()..])
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

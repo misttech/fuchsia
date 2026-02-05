@@ -85,7 +85,10 @@ rustc_library("platform") {
   with_unit_tests = true
   name = "fxfs-platform"
   deps = []
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/constants.rs",
+    "src/lib.rs",
+  ]
   test_deps = []
   if (is_fuchsia) {
     sources += platform_sources
@@ -120,6 +123,7 @@ rustc_library("platform") {
     test_vars = _concurrent_jobs.vars
   }
   visibility = [
+    "//src/developer/ffx/plugins/profile/memory/components/*",
     "//src/storage/f2fs_reader/*",
     "//src/storage/fxfs/*",
   ]
@@ -129,7 +133,10 @@ rustc_library("fxfs-testing") {
   testonly = true
   edition = "2024"
   features = [ "testing" ]
-  sources = platform_sources + [ "src/testing.rs" ]
+  sources = platform_sources + [
+              "src/constants.rs",
+              "src/testing.rs",
+            ]
   source_root = "src/testing.rs"
   deps = platform_deps + [
            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

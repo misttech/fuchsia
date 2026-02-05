@@ -28,6 +28,7 @@ ffx_plugin("ffx_profile_memory_components") {
     "//src/lib/assembly/assembled_system",
     "//src/lib/fidl/rust/fidl",
     "//src/performance/memory/attribution/processing",
+    "//src/storage/fxfs/platform",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
@@ -48,6 +49,5 @@ ffx_plugin("ffx_profile_memory_components") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:camino",
   ]
-
   with_unit_tests = true
 }

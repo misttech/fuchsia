@@ -5,6 +5,7 @@
 //! This module contains the [`FxBlob`] node type used to represent an immutable blob persisted to
 //! disk which can be read back.
 
+use crate::constants::*;
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::{FxNode, OpenedNode};
@@ -548,8 +549,8 @@ impl CompressionInfo {
 }
 
 fn set_vmo_name(vmo: &zx::Vmo, merkle_root: &Hash) {
-    let trimmed_merkle = &merkle_root.to_string()[0..8];
-    let name = format!("blob-{}", trimmed_merkle);
+    let trimmed_merkle = &merkle_root.to_string()[0..BLOB_NAME_HASH_LENGTH];
+    let name = format!("{BLOB_NAME_PREFIX}{trimmed_merkle}");
     let name = zx::Name::new(&name).unwrap();
     vmo.set_name(&name).unwrap();
 }
