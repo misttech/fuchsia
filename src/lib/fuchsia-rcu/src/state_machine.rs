@@ -19,9 +19,6 @@ const QUEUE_LENGTH: usize = 2;
 ///
 /// The queue is a ring buffer of sets of callbacks of length `QUEUE_LENGTH`.
 struct CallbackQueue {
-    /// The index at which to add the next set of callbacks.
-    index: usize,
-
     /// The callbacks that are waiting to be run.
     ///
     /// The callbacks are stored in a ring buffer.
@@ -31,25 +28,30 @@ struct CallbackQueue {
 impl CallbackQueue {
     /// Create an empty callback queue.
     const fn new() -> Self {
-        Self { index: 0, callbacks: [Vec::new(), Vec::new()] }
+        Self { callbacks: [Vec::new(), Vec::new()] }
     }
 
-    /// Add a set of callbacks to the back of the queue.
+    /// Add a set of callbacks to the queue for the given generation.
     ///
-    /// The caller is responsible for ensuring that there is an empty slot in the ring buffer to
-    /// store the callbacks.
-    fn push_back(&mut self, callbacks: Vec<RcuCallback>) {
-        assert!(self.callbacks[self.index].is_empty());
-        self.callbacks[self.index] = callbacks;
-        self.index = (self.index + 1) % QUEUE_LENGTH;
+    /// # Panics
+    ///
+    /// Panics if the slot for the given generation is already occupied.
+    fn enqueue(&mut self, generation: usize, callbacks: Vec<RcuCallback>) {
+        let index = generation % QUEUE_LENGTH;
+        assert!(
+            self.callbacks[index].is_empty(),
+            "Queue slot for generation {} is already occupied",
+            generation
+        );
+        self.callbacks[index] = callbacks;
     }
 
-    /// Pop the front set of callbacks from the queue.
-    ///
-    /// If the queue is empty, this function returns an empty vector.
-    fn pop_front(&mut self) -> Vec<RcuCallback> {
-        self.index = (self.index + 1) % QUEUE_LENGTH;
-        std::mem::take(&mut self.callbacks[self.index])
+    /// Pops the set of callbacks that are ready to be run after the given generation completes.
+    fn take_ready(&mut self, generation: usize) -> Vec<RcuCallback> {
+        // We take the callbacks that have reached the end of the queue, which is the same as the
+        // slot in the queue that the next generation will occupy.
+        let index = (generation + 1) % QUEUE_LENGTH;
+        std::mem::take(&mut self.callbacks[index])
     }
 }
 
@@ -295,12 +297,14 @@ fn rcu_grace_period() {
         // We are in the *Idle* state.
 
         // Synchronization point [H] (see design.md)
-        waiting_callbacks.push_back(RCU_CONTROL_BLOCK.callback_chain.drain());
+        let callbacks = RCU_CONTROL_BLOCK.callback_chain.drain();
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
+
+        waiting_callbacks.enqueue(generation, callbacks);
 
         // Enter the *Waiting* state.
         rcu_advancer_wait(generation);
-        waiting_callbacks.pop_front()
+        waiting_callbacks.take_ready(generation)
 
         // Return to the *Idle* state.
     };
@@ -335,4 +339,77 @@ pub fn rcu_run_callbacks() {
             rcu_synchronize();
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn test_rcu_delay_regression() {
+        // This test relies on the global RCU state machine.
+        // It verifies that callbacks are NOT executed immediately after one grace period.
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let moved_flag = flag.clone();
+
+        rcu_call(move || {
+            moved_flag.store(true, Ordering::SeqCst);
+        });
+
+        for _ in 0..QUEUE_LENGTH - 1 {
+            rcu_grace_period();
+
+            assert!(
+                !flag.load(Ordering::SeqCst),
+                "Callback executed too early! RCU requires QUEUE_LENGTH grace periods delay."
+            );
+        }
+
+        rcu_grace_period();
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "Callback should have executed after QUEUE_LENGTH grace periods"
+        );
+    }
+
+    #[test]
+    fn test_rcu_synchronize() {
+        // This test relies on the global RCU state machine.
+        // It verifies that rcu_synchronize() blocks until all callbacks have been run.
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let moved_flag = flag.clone();
+
+        rcu_call(move || {
+            moved_flag.store(true, Ordering::SeqCst);
+        });
+
+        rcu_synchronize();
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "Callback should have executed after rcu_synchronize()"
+        );
+    }
+
+    #[test]
+    fn test_rcu_run_callbacks() {
+        // This test relies on the global RCU state machine.
+        // It verifies that rcu_run_callbacks() blocks until all callbacks have been run.
+
+        let flag = Arc::new(AtomicBool::new(false));
+        let moved_flag = flag.clone();
+
+        rcu_call(move || {
+            moved_flag.store(true, Ordering::SeqCst);
+        });
+
+        rcu_run_callbacks();
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "Callback should have executed after rcu_run_callbacks()"
+        );
+    }
 }
