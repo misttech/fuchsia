@@ -701,8 +701,8 @@
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/linux-amd64",
-        "version": "git_revision:9e3e11530c7d90c67a069a451eb6537d90fbb7bd",
-        "instance_id": "REjCNAU2XOWP5ckCuKsGhCEQj4ONMQ1BdZ6yW2JcOkcC"
+        "version": "git_revision:c9977daecbc836f3609fb3512cdc2985230d46b0",
+        "instance_id": "kvFKX_Dhtr5jB-YMtmM16d3PvyxjdVivzPqaFrnjhMwC"
     },
     {
         "package": "fuchsia/third_party/starnix/fuse-overlayfs-amd64",
