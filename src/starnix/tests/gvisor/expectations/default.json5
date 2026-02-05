@@ -494,7 +494,6 @@
                 "MountTest.TmpfsSymlinkAllocCheck",
                 "MountTest.TmpfsSymlinkUnallocCheck",
                 "MountTest.UmountPropagatedSubtreeFromPrivilegedNS",
-                "MountTest.UmountReparentsCoveredMounts",
 
                 // msgqueue_test
                 "MsgqueueTest.MsgCtlIpcSet",

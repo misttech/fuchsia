@@ -356,24 +356,27 @@ impl Mount {
         self.write().add_submount_internal(dir, mount)
     }
 
-    fn remove_submount(
-        self: &MountHandle,
-        mount_hash_key: &ArcKey<DirEntry>,
-        propagate: bool,
-    ) -> Result<(), Errno> {
-        if propagate {
-            // create_submount explains why we need to make a copy of peers.
-            let peers = {
-                let state = self.state.read();
-                state.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default()
-            };
+    fn remove_submount(self: &MountHandle, mount_hash_key: &ArcKey<DirEntry>) -> Result<(), Errno> {
+        // create_submount explains why we need to make a copy of peers.
+        let peers = {
+            let state = self.state.read();
+            state.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default()
+        };
 
-            for peer in peers {
-                if Arc::ptr_eq(self, &peer) {
+        for peer in peers {
+            if Arc::ptr_eq(self, &peer) {
+                continue;
+            }
+            // mount_namespaces(7): If B is shared, then all most-recently-mounted mounts at b on
+            // mounts that receive propagation from mount B and do not have submounts under them are
+            // unmounted.
+            let mut peer = peer.write();
+            if let Some(submount) = peer.submounts.get(mount_hash_key) {
+                if !submount.mount.read().submounts.is_empty() {
                     continue;
                 }
-                let _ = peer.write().remove_submount_internal(mount_hash_key);
             }
+            let _ = peer.remove_submount_internal(mount_hash_key);
         }
 
         self.write().remove_submount_internal(mount_hash_key)
@@ -472,7 +475,7 @@ impl Mount {
         Arc::strong_count(&self.active_client_counter) - 1
     }
 
-    pub fn unmount(&self, flags: UnmountFlags, propagate: bool) -> Result<(), Errno> {
+    pub fn unmount(&self, flags: UnmountFlags) -> Result<(), Errno> {
         if !flags.contains(UnmountFlags::DETACH) {
             if self.active_clients() > 0 || !self.state.read().submounts.is_empty() {
                 return error!(EBUSY);
@@ -480,7 +483,7 @@ impl Mount {
         }
         let mountpoint = self.state.read().mountpoint().ok_or_else(|| errno!(EINVAL))?;
         let parent_mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
-        parent_mount.remove_submount(mountpoint.mount_hash_key(), propagate)
+        parent_mount.remove_submount(mountpoint.mount_hash_key())
     }
 
     /// Returns the security state of the fs.
@@ -1522,9 +1525,8 @@ impl NamespaceNode {
 
     /// If this is the root of a filesystem, unmount. Otherwise return EINVAL.
     pub fn unmount(&self, flags: UnmountFlags) -> Result<(), Errno> {
-        let propagate = self.mount_if_root().map_or(false, |mount| mount.read().is_shared());
         let mount = self.enter_mount().mount_if_root()?.clone();
-        mount.unmount(flags, propagate)
+        mount.unmount(flags)
     }
 
     pub fn rename<L>(
@@ -1777,7 +1779,7 @@ impl Mounts {
         if let Some(mounts) = mounts {
             for mount in mounts {
                 // Ignore errors.
-                let _ = mount.unmount(UnmountFlags::default(), false);
+                let _ = mount.unmount(UnmountFlags::DETACH);
             }
         }
     }

@@ -124,6 +124,10 @@ class MountTest : public ::testing::Test {
                  nullptr, flags, nullptr);
   }
 
+  int Unmount(const char *path, int flags) const {
+    return umount2(path == nullptr ? nullptr : TestPath(path).c_str(), flags);
+  }
+
   ::testing::AssertionResult FileExists(const char *name) const {
     auto path = TestPath(name);
     if (access(path.c_str(), F_OK) != 0)
@@ -258,6 +262,22 @@ TEST_F(MountTest, LotsOfShadowing) {
   ASSERT_SUCCESS(Mount("1", "a", MS_BIND));
 }
 
+TEST_F(MountTest, PropagateUnmount) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  ASSERT_SUCCESS(Mount(nullptr, "1", MS_SHARED));
+  ASSERT_SUCCESS(Mount("1", "a", MS_BIND));
+  ASSERT_SUCCESS(Mount("2", "1/1", MS_BIND));
+  ASSERT_TRUE(FileExists("1/1/2"));
+  ASSERT_TRUE(FileExists("a/1/2"));
+
+  ASSERT_SUCCESS(Unmount("1/1", 0));
+  ASSERT_FALSE(FileExists("1/1/2"));
+  ASSERT_FALSE(FileExists("a/1/2"));
+}
+
+// TODO(tbodt): write more tests:
+// - A and B are shared, make B downstream, make A private, should now both be private
+
 // Check that correct mount root is reported in in `/proc/<pid>/mountinfo`.
 TEST_F(MountTest, ProcMountInfoRoot) {
   ASSERT_SUCCESS(MakeDir("a"));
@@ -352,9 +372,6 @@ TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
 
   ASSERT_EQ(expected_contents, observed_contents);
 }
-
-// TODO(tbodt): write more tests:
-// - A and B are shared, make B downstream, make A private, should now both be private
 
 TEST_F(MountTest, BusyWithOpenFile) {
   ASSERT_SUCCESS(MakeDir("a"));
