@@ -23,6 +23,7 @@
 #include <reg.h>
 #include <string-file.h>
 #include <trace.h>
+#include <zircon/time.h>
 
 #include <cstdint>
 
@@ -157,6 +158,11 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
   LTRACEF("platform_suspend_cpu cpu-%u current_boot_time=%ld allow_domain=%d\n",
           arch_curr_cpu_num(), current_boot_time(), static_cast<int>(allow_domain));
 
+  // TODO(https://fxbug.dev/458140022): Once we have figured out the cause of "negative time" we can
+  // remove this assert.
+  [[maybe_unused]] const zx_instant_boot_ticks_t boot_ticks_before = current_boot_ticks();
+  DEBUG_ASSERT_MSG(boot_ticks_before >= 0, "boot_ticks_before=%" PRId64, boot_ticks_before);
+
   DEBUG_ASSERT(!Thread::Current::Get()->preemption_state().PreemptIsEnabled());
   DEBUG_ASSERT(arch_ints_disabled());
   // Make sure this thread is a kernel-only thread.
@@ -209,6 +215,15 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
       // |PsciCpuSuspendMaxScope::CpuOnly|).
       clocks_and_pmic_wakeup_from_suspend();
       platform_serial_wakeup_from_suspend();
+
+      // TODO(https://fxbug.dev/458140022): Once we have figured out the cause of "negative time" we
+      // can remove this assert.
+      [[maybe_unused]] const zx_instant_boot_ticks_t boot_ticks_after = current_boot_ticks();
+      DEBUG_ASSERT_MSG(boot_ticks_after >= 0, "boot_ticks_after=%" PRId64, boot_ticks_after);
+      DEBUG_ASSERT_MSG(boot_ticks_before <= boot_ticks_after,
+                       "boot_ticks_before=%" PRId64 " boot_ticks_after=%" PRId64, boot_ticks_before,
+                       boot_ticks_after);
+
       gControlRegion.OpenLeave();
     }
   }
