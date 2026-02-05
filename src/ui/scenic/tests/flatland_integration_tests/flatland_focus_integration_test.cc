@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/focus/cpp/fidl.h>
+#include <fuchsia/ui/test/context/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/syslog/cpp/macros.h>
@@ -59,7 +61,9 @@ const fuchsia::ui::composition::TransformId kRootTransform{.value = 1};
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChainListener {
  protected:
-  FlatlandFocusIntegrationTest() : focus_chain_listener_(this) {}
+  FlatlandFocusIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_),
+        focus_chain_listener_(this) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
@@ -71,11 +75,15 @@ class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChai
         ConnectSyncIntoRealm<fuchsia::ui::focus::FocusChainListenerRegistry>();
     focus_chain_listener_registry->Register(std::move(listener_handle));
     EXPECT_EQ(CountReceivedFocusChains(), 0u);
-    RunLoopUntil([this] { return CountReceivedFocusChains() >= 1u; });
-    observed_focus_chains_.clear();
+    RunLoopUntil([this] { return CountReceivedFocusChains() == 1u; });
+    EXPECT_FALSE(LastFocusChain()->has_focus_chain());
 
+    // Set up the display.
+    flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
+
+    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    SetFlatlandDisplayContent(std::move(parent_token));
+    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
 
     // Set up root view.
     root_session_ = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
@@ -94,7 +102,7 @@ class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChai
 
     // Now that the scene exists, wait for a valid focus chain. It should only contain the root
     // view.
-    RunLoopUntil([this] { return CountReceivedFocusChains() >= 1u; });
+    RunLoopUntil([this] { return CountReceivedFocusChains() == 2u; });
     EXPECT_TRUE(LastFocusChain()->has_focus_chain());
     ASSERT_EQ(LastFocusChain()->focus_chain().size(), 1u);
     EXPECT_VIEW_REF_MATCH(LastFocusChain()->focus_chain().front(), root_view_ref_);
@@ -176,6 +184,8 @@ class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChai
  private:
   fidl::Binding<FocusChainListener> focus_chain_listener_;
   std::vector<FocusChain> observed_focus_chains_;
+
+  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
 };
 
 TEST_F(FlatlandFocusIntegrationTest, RequestValidity_RequestUnconnected_ShouldFail) {

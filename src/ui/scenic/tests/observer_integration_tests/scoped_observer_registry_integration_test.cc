@@ -153,7 +153,9 @@ std::vector<fuog_ViewTreeSnapshot>::const_iterator GetFirstSnapshotWithView(
 class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                                                 public fuf_FocusChainListener {
  protected:
-  FlatlandObserverRegistryIntegrationTest() : focus_chain_listener_(this) {}
+  FlatlandObserverRegistryIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_),
+        focus_chain_listener_(this) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
@@ -164,8 +166,8 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
     auto focus_chain_listener_registry = ConnectSyncIntoRealm<fuf_FocusChainListenerRegistry>();
     focus_chain_listener_registry->Register(std::move(listener_handle));
     EXPECT_EQ(CountReceivedFocusChains(), 0u);
-    RunLoopUntil([this] { return CountReceivedFocusChains() >= 1u; });
-    observed_focus_chains_.clear();
+    RunLoopUntil([this] { return CountReceivedFocusChains() == 1u; });
+    EXPECT_FALSE(LastFocusChain()->has_focus_chain());
 
     scoped_observer_registry_ptr_ = ConnectAsyncIntoRealm<fuos_Registry>();
 
@@ -173,16 +175,19 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
       FAIL("Lost connection to Observer Registry Protocol: %s", zx_status_get_string(status));
     });
 
+    flatland_display_ = ConnectSyncIntoRealm<fuc_FlatlandDisplay>();
+
     // Set up root view.
     root_session_ = ConnectAsyncIntoRealm<fuc_Flatland>();
     root_session_.set_error_handler([](zx_status_t status) {
       FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
     });
 
+    fidl::InterfacePtr<fuc_ChildViewWatcher> child_view_watcher;
     fuc_ViewBoundProtocols protocols;
     protocols.set_view_focuser(root_focuser_.NewRequest());
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    SetFlatlandDisplayContent(std::move(parent_token));
+    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
     fidl::InterfacePtr<fuc_ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
     root_view_ref_koid_ = ExtractKoid(identity.view_ref);
@@ -198,7 +203,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
 
     // Now that the scene exists, wait for a valid focus chain and for the display size.
     RunLoopUntil([this] {
-      return CountReceivedFocusChains() >= 1u && display_width_ != 0 && display_height_ != 0;
+      return CountReceivedFocusChains() == 2u && display_width_ != 0 && display_height_ != 0;
     });
     EXPECT_TRUE(LastFocusChain()->has_focus_chain());
     ASSERT_EQ(LastFocusChain()->focus_chain().size(), 1u);
@@ -263,6 +268,7 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
   fuv_FocuserPtr root_focuser_;
 
  private:
+  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
   fidl::Binding<fuf_FocusChainListener> focus_chain_listener_;
   std::vector<fuf_FocusChain> observed_focus_chains_;
 };

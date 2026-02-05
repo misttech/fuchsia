@@ -7,10 +7,8 @@
 
 #include <fidl/fuchsia.testing.harness/cpp/fidl.h>
 #include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
-#include <fidl/fuchsia.ui.views/cpp/natural_types.h>
 #include <fuchsia/testing/harness/cpp/fidl.h>
 #include <fuchsia/ui/test/context/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/fidl/cpp/interface_handle.h>
 #include <lib/fidl/cpp/synchronous_interface_ptr.h>
 #include <lib/sys/cpp/component_context.h>
@@ -132,12 +130,12 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
-  ScenicCtfHlcppTest() = default;
+  ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType renderer_type =
+                         fuchsia::ui::test::context::RendererType::VULKAN)
+      : renderer_type_(renderer_type) {}
   ~ScenicCtfHlcppTest() override = default;
 
-  void SetUp() override { zxtest::Test::SetUp(); }
-
-  void SetFlatlandDisplayContent(fuchsia::ui::views::ViewportCreationToken token);
+  void SetUp() override;
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 
@@ -172,9 +170,8 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
     fidl::SynchronousInterfacePtr<Interface> ptr;
 
     fuchsia::testing::harness::RealmProxy_ConnectToNamedProtocol_Result result;
-    auto& realm_proxy = ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->realm_proxy_hlcpp();
-    if (realm_proxy->ConnectToNamedProtocol(service_path, ptr.NewRequest().TakeChannel(),
-                                            &result) != ZX_OK) {
+    if (realm_proxy_->ConnectToNamedProtocol(service_path, ptr.NewRequest().TakeChannel(),
+                                             &result) != ZX_OK) {
       std::cerr << "ConnectToNamedProtocol(" << service_path << ", " << Interface::Name_
                 << ") failed." << std::endl;
       std::abort();
@@ -190,15 +187,20 @@ class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventL
     fidl::InterfacePtr<Interface> ptr;
 
     fuchsia::testing::harness::RealmProxy_ConnectToNamedProtocol_Result result;
-    auto& realm_proxy = ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->realm_proxy_hlcpp();
-    if (realm_proxy->ConnectToNamedProtocol(service_path, ptr.NewRequest().TakeChannel(),
-                                            &result) != ZX_OK) {
+    if (realm_proxy_->ConnectToNamedProtocol(service_path, ptr.NewRequest().TakeChannel(),
+                                             &result) != ZX_OK) {
       std::cerr << "ConnectToNamedProtocol(" << service_path << ", " << Interface::Name_
                 << ") failed." << std::endl;
       std::abort();
     }
     return std::move(ptr);
   }
+
+ private:
+  fuchsia::ui::test::context::ScenicRealmFactorySyncPtr realm_factory_;
+  fuchsia::testing::harness::RealmProxySyncPtr realm_proxy_;
+  std::unique_ptr<sys::ComponentContext> context_;
+  const fuchsia::ui::test::context::RendererType renderer_type_;
 };
 
 }  // namespace integration_tests

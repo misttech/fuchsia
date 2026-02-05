@@ -17,7 +17,8 @@ using fuci_DisplayOwnership = fuchsia::ui::composition::internal::DisplayOwnersh
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class DisplayOwnershipIntegrationTest : public ScenicCtfHlcppTest {
  protected:
-  DisplayOwnershipIntegrationTest() = default;
+  DisplayOwnershipIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
 
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();

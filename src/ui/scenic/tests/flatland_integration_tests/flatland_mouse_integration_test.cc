@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <fuchsia/input/report/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <fuchsia/ui/pointerinjector/cpp/fidl.h>
+#include <fuchsia/ui/test/context/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/view_creation_tokens.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
@@ -132,6 +134,10 @@ void ExpectEqualPointer(const fuchsia::ui::pointer::MousePointerSample& pointer_
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
+ public:
+  FlatlandMouseIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
+
  protected:
   static constexpr uint32_t kDeviceId = 1111;
 
@@ -150,6 +156,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
+    flatland_display_ = ConnectSyncIntoRealm<FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<Registry>();
 
     // Set up root view and root transform.
@@ -157,6 +164,8 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
     root_instance_.set_error_handler([](zx_status_t status) {
       FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
     });
+
+    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
 
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
     fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
@@ -166,7 +175,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
     root_instance_->CreateView2(std::move(child_token), std::move(identity),
                                 /*view_bound_protocols*/ {}, parent_viewport_watcher.NewRequest());
 
-    SetFlatlandDisplayContent(std::move(parent_token));
+    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
 
     root_instance_->CreateTransform(kRootTransform);
     root_instance_->SetRootTransform(kRootTransform);
@@ -361,6 +370,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
   float display_height_ = 0;
 
  private:
+  FlatlandDisplaySyncPtr flatland_display_;
   RegistrySyncPtr pointerinjector_registry_;
   DevicePtr injector_;
 

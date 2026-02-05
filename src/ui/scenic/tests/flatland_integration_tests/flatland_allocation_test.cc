@@ -55,11 +55,16 @@ fuchsia::sysmem2::BufferCollectionConstraints GetDefaultBufferConstraints() {
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class AllocationTest : public ScenicCtfHlcppTest {
  public:
+  AllocationTest() : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
+
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
     auto context = sys::ComponentContext::Create();
     context->svc()->Connect(sysmem_allocator_.NewRequest());
+
+    // Create a flatland display so render and cleanup loops happen.
+    flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
 
     // Create a root Flatland.
     root_flatland_ = ConnectAsyncIntoRealm<Flatland>();
@@ -70,7 +75,8 @@ class AllocationTest : public ScenicCtfHlcppTest {
 
     // Attach |root_flatland_| as the only Flatland under |flatland_display_|.
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    SetFlatlandDisplayContent(std::move(parent_token));
+    fidl::InterfacePtr<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher;
+    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
     fidl::InterfacePtr<fuchsia::ui::composition::ParentViewportWatcher> parent_viewport_watcher;
     root_flatland_->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(), {},
                                 parent_viewport_watcher.NewRequest());
@@ -80,6 +86,7 @@ class AllocationTest : public ScenicCtfHlcppTest {
 
   void TearDown() override {
     root_flatland_.Unbind();
+    flatland_display_.Unbind();
 
     ScenicCtfHlcppTest::TearDown();
   }
@@ -118,6 +125,9 @@ class AllocationTest : public ScenicCtfHlcppTest {
 
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
   fuchsia::ui::composition::FlatlandPtr root_flatland_;
+
+ private:
+  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
 };
 
 TEST_F(AllocationTest, CreateAndReleaseImage) {

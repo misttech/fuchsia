@@ -30,9 +30,15 @@ using WatchResult = fuv::ViewRefInstalled_Watch_Result;
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandViewRefInstalledIntegrationTest : public ScenicCtfHlcppTest {
+ public:
+  FlatlandViewRefInstalledIntegrationTest()
+      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
+
  protected:
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
+
+    flatland_display_ = ConnectSyncIntoRealm<fuc::FlatlandDisplay>();
 
     // Set up root view.
     root_session_ = ConnectAsyncIntoRealm<fuc::Flatland>();
@@ -40,9 +46,10 @@ class FlatlandViewRefInstalledIntegrationTest : public ScenicCtfHlcppTest {
       FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
     });
 
+    fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
     fuc::ViewBoundProtocols protocols;
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    SetFlatlandDisplayContent(std::move(parent_token));
+    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
     fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
     root_session_->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
@@ -89,6 +96,7 @@ class FlatlandViewRefInstalledIntegrationTest : public ScenicCtfHlcppTest {
  private:
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
+  fuc::FlatlandDisplaySyncPtr flatland_display_;
 };
 
 TEST_F(FlatlandViewRefInstalledIntegrationTest, InvalidatedViewRef_ShouldReturnError) {

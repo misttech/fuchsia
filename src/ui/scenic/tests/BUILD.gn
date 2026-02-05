@@ -193,10 +193,7 @@ template("ctf_components_packages") {
 
 executable("flatland-allocation-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_allocation_test.cc",
-    "run_vk_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_allocation_test.cc" ]
   output_name = "flatland-allocation-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -208,10 +205,7 @@ executable("flatland-allocation-test-validator-bin") {
 
 executable("flatland-pixeltest-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_pixeltest.cc",
-    "run_vk_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
   output_name = "flatland-pixeltest-validator"
   deps = [
     ":common-deps-zxtest",
@@ -227,10 +221,7 @@ executable("flatland-pixeltest-validator-bin") {
 
 executable("flatland-pixeltest-exotic-srgb-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_pixeltest.cc",
-    "run_vk_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_pixeltest.cc" ]
   output_name = "flatland-pixeltest-exotic-srgb-validator"
   deps = [
     ":common-deps-zxtest",
@@ -250,7 +241,6 @@ executable("flatland-touch-integration-test-validator-bin") {
   sources = [
     "flatland_integration_tests/flatland_touch_integration_test.cc",
     "flatland_integration_tests/flatland_touch_local_hit_integration_test.cc",
-    "run_non_graphical_tests.cc",
   ]
   output_name = "flatland-touch-integration-test-validator"
   deps = [
@@ -264,10 +254,7 @@ executable("flatland-touch-integration-test-validator-bin") {
 
 executable("flatland-focus-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_focus_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_focus_integration_test.cc" ]
   output_name = "flatland-focus-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -278,10 +265,7 @@ executable("flatland-focus-integration-test-validator-bin") {
 
 executable("flatland-mouse-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_mouse_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_mouse_integration_test.cc" ]
   output_name = "flatland-mouse-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -295,10 +279,7 @@ executable("flatland-mouse-integration-test-validator-bin") {
 
 executable("flatland-view-ref-installed-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_view_ref_installed_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_view_ref_installed_integration_test.cc" ]
   output_name = "flatland-view-ref-installed-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -308,10 +289,7 @@ executable("flatland-view-ref-installed-integration-test-validator-bin") {
 
 executable("flatland-view-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/flatland_view_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/flatland_view_integration_test.cc" ]
   output_name = "flatland-view-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -337,10 +315,8 @@ executable("null-renderer-integration-test-validator-bin") {
 
 executable("observer-registry-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "observer_integration_tests/observer_registry_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources =
+      [ "observer_integration_tests/observer_registry_integration_test.cc" ]
   output_name = "observer-registry-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -355,7 +331,6 @@ executable("scoped-observer-registry-integration-test-validator-bin") {
   testonly = true
   sources = [
     "observer_integration_tests/scoped_observer_registry_integration_test.cc",
-    "run_non_graphical_tests.cc",
   ]
   output_name = "scoped-observer-registry-integration-test-validator"
   deps = [
@@ -369,10 +344,8 @@ executable("scoped-observer-registry-integration-test-validator-bin") {
 
 executable("flatland-protected-memory-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/protected_memory_integration_test.cc",
-    "run_vk_tests.cc",
-  ]
+  sources =
+      [ "flatland_integration_tests/protected_memory_integration_test.cc" ]
   output_name = "flatland-protected-memory-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -384,10 +357,7 @@ executable("flatland-protected-memory-integration-test-validator-bin") {
 
 executable("screen-capture-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/screen_capture_integration_test.cc",
-    "run_vk_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/screen_capture_integration_test.cc" ]
   output_name = "screen-capture-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -401,10 +371,7 @@ executable("screen-capture-integration-test-validator-bin") {
 
 executable("screen-capture2-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "flatland_integration_tests/screen_capture2_integration_test.cc",
-    "run_vk_tests.cc",
-  ]
+  sources = [ "flatland_integration_tests/screen_capture2_integration_test.cc" ]
   output_name = "screen-capture2-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
@@ -420,10 +387,7 @@ executable("screen-capture2-integration-test-validator-bin") {
 
 executable("display-ownership-integration-test-validator-bin") {
   testonly = true
-  sources = [
-    "display_ownership_integration_test.cc",
-    "run_non_graphical_tests.cc",
-  ]
+  sources = [ "display_ownership_integration_test.cc" ]
   output_name = "display-ownership-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
