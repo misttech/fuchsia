@@ -81,34 +81,57 @@ def print_comments(comments_data):
     has_unresolved = False
 
     for file_path, comments in comments_data.items():
+        by_id = {c["id"]: c for c in comments if "id" in c}
+        threads = {}
+
+        for c in comments:
+            curr = c
+            while curr.get("in_reply_to") in by_id:
+                curr = by_id[curr["in_reply_to"]]
+            root_id = curr.get("id")
+            if not root_id:
+                root_id = id(c)
+            if root_id not in threads:
+                threads[root_id] = []
+            threads[root_id].append(c)
+
+        unresolved_comments = []
+        for thread_comments in threads.values():
+            thread_comments.sort(key=lambda x: x.get("updated", ""))
+            # A thread is unresolved if its *latest* comment is unresolved
+            if thread_comments[-1].get("unresolved", False):
+                unresolved_comments.extend(thread_comments)
+
+        if not unresolved_comments:
+            continue
+
         # sort comments by line
-        comments.sort(key=lambda x: x.get("line", 0))
+        unresolved_comments.sort(key=lambda x: x.get("line", 0))
 
-        for comment in comments:
-            if comment.get("unresolved", False):
-                has_unresolved = True
-                line = comment.get("line", "FILE")
-                msg = comment.get("message", "").strip()
-                author = comment.get("author", {}).get("name", "Unknown")
+        for comment in unresolved_comments:
+            has_unresolved = True
+            line = comment.get("line", "FILE")
+            msg = comment.get("message", "").strip()
+            author = comment.get("author", {}).get("name", "Unknown")
 
-                print(f"\n{'='*60}")
-                print(f"File: {file_path}:{line}")
-                print(f"Author: {author}")
-                print(f"Comment: {msg}")
+            print(f"\n{'='*60}")
+            print(f"File: {file_path}:{line}")
+            print(f"Author: {author}")
+            print(f"Comment: {msg}")
 
-                # Try to print the code line
-                if isinstance(line, int) and os.path.exists(file_path):
-                    try:
-                        with open(
-                            file_path, "r", encoding="utf-8", errors="replace"
-                        ) as f:
-                            # Read file, get line (1-indexed)
-                            lines = f.readlines()
-                            if 0 <= line - 1 < len(lines):
-                                code_line = lines[line - 1].strip()
-                                print(f"Code: {code_line}")
-                    except Exception:
-                        pass
+            # Try to print the code line
+            if isinstance(line, int) and os.path.exists(file_path):
+                try:
+                    with open(
+                        file_path, "r", encoding="utf-8", errors="replace"
+                    ) as f:
+                        # Read file, get line (1-indexed)
+                        lines = f.readlines()
+                        if 0 <= line - 1 < len(lines):
+                            code_line = lines[line - 1].strip()
+                            print(f"Code: {code_line}")
+                except Exception:
+                    pass
 
     if not has_unresolved:
         print("\nNo unresolved comments found.")
