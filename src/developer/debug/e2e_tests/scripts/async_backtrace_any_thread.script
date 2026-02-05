@@ -18,38 +18,38 @@ Launched Process 1 state=Running koid=?? name=async_rust_multithreaded.cm compon
 # fasync::run annotation to main.
 [zxdb] t 1 abt
 ## allow-out-of-order-output
-Task(id = 0)
+Task(id = ??)
 └─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
    └─ fuchsia_async::runtime::fuchsia::timer::Timer
 Scope("scope")
-└─ Task(id = 3)
+└─ Task(id = ??)
    └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 └─ Scope("child")
-   └─ Task(id = 4)
+   └─ Task(id = ??)
       └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 
 [zxdb] t 2 abt
 ## allow-out-of-order-output
-Task(id = 0)
+Task(id = ??)
 └─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
    └─ fuchsia_async::runtime::fuchsia::timer::Timer
 Scope("scope")
-└─ Task(id = 3)
+└─ Task(id = ??)
    └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 └─ Scope("child")
-   └─ Task(id = 4)
+   └─ Task(id = ??)
       └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 
 [zxdb] t 3 abt
 ## allow-out-of-order-output
-Task(id = 0)
+Task(id = ??)
 └─ async_rust_multithreaded::main::func • async_rust_multithreaded.rs:??
    └─ fuchsia_async::runtime::fuchsia::timer::Timer
 Scope("scope")
-└─ Task(id = 3)
+└─ Task(id = ??)
    └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 └─ Scope("child")
-   └─ Task(id = 4)
+   └─ Task(id = ??)
       └─ async_rust_multithreaded::foo (Unresumed) • async_rust_multithreaded.rs:??
 
 [zxdb] kill

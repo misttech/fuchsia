@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::atomic_future::AtomicFutureHandle;
-use super::common::{EHandle, Executor, ExecutorTime, MAIN_TASK_ID, TaskHandle};
+use super::common::{EHandle, Executor, ExecutorTime, TaskHandle};
 use super::scope::ScopeHandle;
 use super::time::{BootInstant, MonotonicInstant};
 use zx::BootDuration;
@@ -99,23 +99,22 @@ impl LocalExecutor {
         }
 
         let scope = &self.ehandle.root_scope;
-        let task = scope.new_local_task(Some(MAIN_TASK_ID), main_future);
-
+        let task = scope.new_local_task(main_future);
         // SAFETY: Erasing the lifetime is safe because we make sure to drop the main task within
         // the required lifetime.
-        unsafe {
-            scope.insert_task(remove_lifetime(task), false);
-        }
+        let task_handle = unsafe { remove_lifetime(task) };
 
-        struct DropMainTask<'a>(&'a EHandle);
+        scope.insert_task(task_handle.clone(), false);
+
+        struct DropMainTask<'a>(&'a EHandle, TaskHandle);
         impl Drop for DropMainTask<'_> {
             fn drop(&mut self) {
                 // SAFETY: drop_main_tasks requires that the executor isn't running
                 // i.e. worker_lifecycle isn't running, which will be the case when this runs.
-                unsafe { self.0.inner().drop_main_task(&self.0.root_scope) };
+                unsafe { self.0.inner().drop_main_task(&self.0.root_scope, &self.1) };
             }
         }
-        let _drop_main_task = DropMainTask(&self.ehandle);
+        let _drop_main_task = DropMainTask(&self.ehandle, task_handle.clone());
 
         // Ensure that this object is available for zxdb to find in this stack frame (even if it is
         // inlined). With certain optimization settings, `self` might get optimized such that there
@@ -123,14 +122,14 @@ impl LocalExecutor {
         // order to walk the async task tree.
         std::hint::black_box(&self);
 
-        self.ehandle.inner().worker_lifecycle::<UNTIL_STALLED>();
+        self.ehandle.inner().worker_lifecycle::<UNTIL_STALLED>(Some(&task_handle));
 
         // SAFETY: We spawned the task earlier, so `R` (the return type) will be the correct type
         // here.
         unsafe {
             self.ehandle
                 .global_scope()
-                .poll_join_result(MAIN_TASK_ID, &mut Context::from_waker(std::task::Waker::noop()))
+                .poll_join_result(&task_handle, &mut Context::from_waker(std::task::Waker::noop()))
         }
     }
 

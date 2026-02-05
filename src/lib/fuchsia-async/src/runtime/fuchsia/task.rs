@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::EHandle;
+use crate::runtime::fuchsia::executor::TaskHandle;
 use crate::runtime::fuchsia::scope::JoinError;
 use crate::scope::ScopeHandle;
 use futures::prelude::*;
@@ -25,7 +26,7 @@ use std::task::{Context, Poll};
 // LINT.IfChange
 pub struct JoinHandle<T> {
     scope: ScopeHandle,
-    task_id: usize,
+    task: Option<TaskHandle>,
     phantom: PhantomData<T>,
 }
 // LINT.ThenChange(//src/developer/debug/zxdb/console/commands/verb_async_backtrace.cc)
@@ -33,8 +34,8 @@ pub struct JoinHandle<T> {
 impl<T> Unpin for JoinHandle<T> {}
 
 impl<T> JoinHandle<T> {
-    pub(crate) fn new(scope: ScopeHandle, task_id: usize) -> Self {
-        Self { scope, task_id, phantom: PhantomData }
+    pub(crate) fn new(scope: ScopeHandle, task: TaskHandle) -> Self {
+        Self { scope, task: Some(task), phantom: PhantomData }
     }
 
     /// Aborts a task and returns a future that resolves once the task is
@@ -42,9 +43,9 @@ impl<T> JoinHandle<T> {
     /// aborted.
     pub fn abort(mut self) -> impl Future<Output = Option<T>> {
         // SAFETY: We spawned the task so the return type should be correct.
-        let result = unsafe { self.scope.abort_task(self.task_id) };
+        let result = self.task.as_ref().and_then(|t| unsafe { self.scope.abort_task(t) });
         // TODO(https://fxbug.dev/452064816): The compiler throws a false
-        // positive linter warning because it thinks that `self.task_id = 0;` is
+        // positive linter warning because it thinks that `self.task = None;` is
         // never read, even though it is read in the Drop implementation below.
         #[allow(unused_assignments)]
         async move {
@@ -53,11 +54,14 @@ impl<T> JoinHandle<T> {
                 None => {
                     // If we are dropped from here, we'll end up calling `abort_and_detach`.
                     let result = std::future::poll_fn(|cx| {
+                        let Some(task) = self.task.as_ref() else {
+                            return Poll::Ready(None);
+                        };
                         // SAFETY: We spawned the task so the return type should be correct.
-                        unsafe { self.scope.poll_aborted(self.task_id, cx) }
+                        unsafe { self.scope.poll_aborted(task, cx) }
                     })
                     .await;
-                    self.task_id = 0;
+                    self.task = None;
                     result
                 }
             }
@@ -67,8 +71,8 @@ impl<T> JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
-        if self.task_id != 0 {
-            self.scope.detach(self.task_id);
+        if let Some(task) = &self.task {
+            self.scope.detach(task);
         }
     }
 }
@@ -77,9 +81,9 @@ impl<T: 'static> Future for JoinHandle<T> {
     type Output = T;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: We spawned the task so the return type should be correct.
-        let result = unsafe { self.scope.poll_join_result(self.task_id, cx) };
+        let result = unsafe { self.scope.poll_join_result(self.task.as_ref().unwrap(), cx) };
         if result.is_ready() {
-            self.task_id = 0;
+            self.task = None;
         }
         result
     }
@@ -111,9 +115,10 @@ impl<T: 'static> Future for CancelableJoinHandle<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: We spawned the task so the return type should be correct.
-        let result = unsafe { self.inner.scope.try_poll_join_result(self.inner.task_id, cx) };
+        let result =
+            unsafe { self.inner.scope.try_poll_join_result(self.inner.task.as_ref().unwrap(), cx) };
         if result.is_ready() {
-            self.inner.task_id = 0;
+            self.inner.task = None;
         }
         result
     }
@@ -166,8 +171,8 @@ impl Task<()> {
     ///
     /// can meet your needs.
     pub fn detach(mut self) {
-        self.0.scope.detach(self.0.task_id);
-        self.0.task_id = 0;
+        self.0.scope.detach(self.0.task.as_ref().unwrap());
+        self.0.task = None;
     }
 }
 
@@ -228,9 +233,9 @@ impl<T: 'static> Future for Task<T> {
     type Output = T;
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: We spawned the task so the return type should be correct.
-        let result = unsafe { self.0.scope.poll_join_result(self.0.task_id, cx) };
+        let result = unsafe { self.0.scope.poll_join_result(self.0.task.as_ref().unwrap(), cx) };
         if result.is_ready() {
-            self.0.task_id = 0;
+            self.0.task = None;
         }
         result
     }
@@ -238,9 +243,9 @@ impl<T: 'static> Future for Task<T> {
 
 impl<T> Drop for Task<T> {
     fn drop(&mut self) {
-        if self.0.task_id != 0 {
-            self.0.scope.abort_and_detach(self.0.task_id);
-            self.0.task_id = 0;
+        if let Some(task) = &self.0.task {
+            self.0.scope.abort_and_detach(task);
+            self.0.task = None;
         }
     }
 }
