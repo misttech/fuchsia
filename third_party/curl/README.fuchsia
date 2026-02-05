@@ -3,7 +3,8 @@ URL: https://curl.haxx.se/
 License: MIT/X derivate
 License File: src/COPYING
 Upstream Git: https://github.com/curl/curl
-CPEPrefix: cpe:/a:haxx:curl:8.15.0
+CPEPrefix: cpe:/a:haxx:curl
+Version: 8.18.0
 Description:
 
 Curl is a command-line tool for transferring data specified with URL
@@ -13,6 +14,8 @@ How to upgrade the version of curl:
 
   * `git tag` to look for the latest version.
   * `git merge curl-7_84_0`, resolve any conflict.
+  * Before doing anything else, update the `Version` field at the top of this file to match the git
+    tag that you chose above.
   * `autoreconf -fi`
   * `./configure --with-openssl --with-sysroot=$PWD/../../prebuilt/third_party/sysroot/linux`
   * `cp lib/curl_config.h lib/curl_config.h.host` and modify accordingly.
