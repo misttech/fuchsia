@@ -7,7 +7,7 @@ use component_debug::copy::copy_cmd;
 use errors::ffx_bail;
 use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_copy_args::CopyComponentCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::RawWriter;
 use fho::{FfxMain, FfxTool};
 use target_holders::RemoteControlProxyHolder;
 
@@ -22,7 +22,7 @@ fho::embedded_plugin!(CopyTool);
 
 #[async_trait(?Send)]
 impl FfxMain for CopyTool {
-    type Writer = SimpleWriter;
+    type Writer = RawWriter;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let query_proxy = connect_to_realm_query(&self.rcs).await?;
         let CopyComponentCommand { paths, verbose } = self.cmd;
