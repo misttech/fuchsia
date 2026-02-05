@@ -19,10 +19,19 @@
         { service: "fuchsia.hardware.bluetooth.HciService" },
         { service: "fuchsia.hardware.serialimpl.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: "fuchsia.hardware.serialimpl.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     expose: [
         {
@@ -35,6 +44,10 @@
         },
         {
             service: "fuchsia.boot.metadata.MacAddressMetadata",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.power.PowerTokenService",
             from: "self",
         },
     ],

@@ -18,6 +18,15 @@ driver_bind_rules("bt_transport_uart_bind") {
   ]
 }
 
+fuchsia_component_manifest("bt-transport-uart-manifest") {
+  component_name = "bt-transport-uart"
+  manifest = "meta/bt-transport-uart.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("bt-transport-uart-config") {
+  cm_label = ":bt-transport-uart-manifest"
+}
+
 source_set("common") {
   sources = [
     "bt_transport_uart.cc",
@@ -25,6 +34,7 @@ source_set("common") {
   ]
 
   public_deps = [
+    ":bt-transport-uart-config",
     ":bt_transport_uart_bind",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
@@ -59,9 +69,9 @@ fuchsia_cc_driver("bt-transport-uart-driver") {
 
 fuchsia_driver_component("bt-transport-uart") {
   component_name = "bt-transport-uart"
-  deps = [ ":bt-transport-uart-driver" ]
   info = "meta/bt-transport-uart-info.json"
   manifest = "meta/bt-transport-uart.cml"
+  deps = [ ":bt-transport-uart-driver" ]
 }
 
 fuchsia_driver_package("uart") {

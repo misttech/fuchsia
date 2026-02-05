@@ -9,7 +9,9 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
@@ -23,8 +25,6 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/event.h>
 #include <threads.h>
-
-#include <mutex>
 
 #include <sdk/lib/driver/logging/cpp/logger.h>
 

@@ -19,7 +19,11 @@
 
 #include <bind/fuchsia/hardware/serial/cpp/bind.h>
 
+#include "lib/driver/component/cpp/node_add_args.h"
+#include "src/connectivity/bluetooth/hci/transport/uart/bt_transport_uart_config.h"
+
 namespace bt_transport_uart {
+
 namespace fhbt = fuchsia_hardware_bluetooth;
 
 ScoConnectionServer::ScoConnectionServer(SendHandler send_handler, StopHandler stop_handler,
@@ -71,6 +75,7 @@ BtTransportUart::BtTransportUart(fuchsia_driver_framework::DriverStartArgs start
 
 zx::result<> BtTransportUart::Start() {
   fdf::debug("Start");
+  const auto config = take_config<bt_transport_uart_config::Config>();
 
   zx::result<fdf::ClientEnd<fuchsia_hardware_serialimpl::Device>> client_end =
       incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
@@ -129,7 +134,7 @@ zx::result<> BtTransportUart::Start() {
 
   zx_status_t status = ServeProtocols();
   if (status != ZX_OK) {
-    fdf::error("Failed to serve protocols: {}j", zx_status_get_string(status));
+    fdf::error("Failed to serve protocols: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -144,13 +149,36 @@ zx::result<> BtTransportUart::Start() {
     return result.take_error();
   }
 
-  // Add child node for the vendor driver to bind.
-  // Build offers
-  fuchsia_driver_framework::Offer offers[]{
+  std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fhbt::HciService>(),
       fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
       mac_address_metadata_server_.MakeOffer(),
   };
+
+  if (config.enable_suspend()) {
+    // Forward PowerTokenService to our parent if suspend is enabled.
+    fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
+        .token_provider =
+            [this](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+              zx::result<> result =
+                  incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                      std::move(server));
+              if (result.is_error()) {
+                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
+                        result.status_string());
+              }
+            },
+    });
+
+    zx::result result = outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(
+        std::move(handler), "default");
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      return result.take_error();
+    }
+
+    offers.push_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>());
+  }
 
   auto properties = std::to_array({
       // Prevent the serial core driver from binding to our node.
@@ -749,14 +777,15 @@ void BtTransportUart::QueueUartRead() {
     }
 
     if (result->is_error()) {
-      if (result->error_value() == ZX_ERR_CANCELED) {
+      const zx_status_t error = result->error_value();
+      if (error == ZX_ERR_CANCELED) {
         fdf::warn(
             "Read request is cancel by the bus driver, it's likely the serial driver is de-initialized.");
       } else {
         fdf::error("Read request failed with error {}",
                    zx_status_get_string(result->error_value()));
       }
-      HciReadComplete(result->error_value(), nullptr, 0);
+      HciReadComplete(error, nullptr, 0);
       return;
     }
     HciReadComplete(ZX_OK, result->value()->data.data(), result->value()->data.size());

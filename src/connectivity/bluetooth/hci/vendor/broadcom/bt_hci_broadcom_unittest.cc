@@ -7,6 +7,8 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
+#include <fidl/fuchsia.power.broker/cpp/test_base.h>
+#include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
@@ -23,8 +25,10 @@
 #include <gtest/gtest.h>
 
 #include "fidl/fuchsia.hardware.bluetooth/cpp/markers.h"
+#include "lib/driver/component/cpp/driver_base.h"
 #include "lib/fidl/cpp/unified_messaging_declarations.h"
 #include "lib/fidl/cpp/wire/unknown_interaction_handler.h"
+#include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
@@ -51,6 +55,142 @@ const std::array<uint8_t, 6> kCommandCompleteEvent = {
     0x01,        // num_hci_command_packets
     0x00, 0x00,  // command opcode (hardcoded for simplicity since this isn't checked by the driver)
     0x00,        // return_code (success)
+};
+
+using fuchsia_power_system::LeaseToken;
+class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
+                        public fidl::Server<fuchsia_power_broker::Lessor>,
+                        public fidl::testing::TestBase<fuchsia_power_broker::ElementControl> {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) {
+    return to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
+        topology_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                         fidl::kIgnoreBindingClosure));
+  }
+
+  std::optional<uint8_t> lease_power_level() const { return lease_power_level_; }
+
+  zx::unowned_event dependency_token() const { return dependency_token_.borrow(); }
+
+  fidl::ServerEnd<fuchsia_power_broker::LeaseControl> TakeLeaseControlServerEnd() {
+    return std::move(lease_control_server_end_);
+  }
+
+  // Verify that the lease has been released at this point (and reset lease power level)
+  void ExpectLeaseReleased() {
+    EXPECT_TRUE(lease_control_server_end_.is_valid());
+    if (!lease_control_server_end_.is_valid()) {
+      return;
+    }
+    zx_signals_t observed{};
+    EXPECT_EQ(lease_control_server_end_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
+                                                           zx::time::infinite_past(), &observed),
+              ZX_OK);
+    EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+    if (observed & ZX_CHANNEL_PEER_CLOSED) {
+      lease_control_server_end_.reset();
+      lease_power_level_.reset();
+    }
+  }
+
+  fidl::ClientEnd<fuchsia_power_broker::ElementRunner> TakeElementRunnerClientEnd() {
+    return std::move(element_runner_client_end_);
+  }
+
+  // fuchsia.power.broker/Topology
+  void AddElement(fuchsia_power_broker::ElementSchema& req,
+                  AddElementCompleter::Sync& completer) override {
+    if (!req.lessor_channel() || !req.element_control() || !req.element_runner()) {
+      completer.Reply(fit::error(fuchsia_power_broker::AddElementError::kInvalid));
+      return;
+    }
+
+    lessor_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                *std::move(req.lessor_channel()), this,
+                                fidl::kIgnoreBindingClosure);
+    element_control_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                         *std::move(req.element_control()), this,
+                                         fidl::kIgnoreBindingClosure);
+    element_runner_client_end_ = *std::move(req.element_runner());
+
+    completer.Reply(fit::success());
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
+  // fuchsia.power.broker/Lessor
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+    EXPECT_FALSE(lease_power_level_);
+    lease_power_level_ = request.level();
+
+    auto [lease_control_client_end, lease_control_server_end] =
+        fidl::Endpoints<fuchsia_power_broker::LeaseControl>::Create();
+    lease_control_server_end_ = std::move(lease_control_server_end);
+    completer.Reply(fit::ok(std::move(lease_control_client_end)));
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Lessor> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
+  // fuchsia.power.broker/ElementControl
+  void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
+                               RegisterDependencyTokenCompleter::Sync& completer) override {
+    if (dependency_token_.is_valid()) {
+      completer.Reply(
+          fit::error(fuchsia_power_broker::RegisterDependencyTokenError::kAlreadyInUse));
+      return;
+    }
+
+    dependency_token_ = std::move(request.token());
+    completer.Reply(fit::ok());
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementControl> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> topology_bindings_;
+
+  fidl::ServerBindingGroup<fuchsia_power_broker::Lessor> lessor_bindings_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> element_control_bindings_;
+  fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end_;
+
+  std::optional<uint8_t> lease_power_level_;
+  fidl::ServerEnd<fuchsia_power_broker::LeaseControl> lease_control_server_end_;
+  zx::event dependency_token_;
+};
+
+class FakePowerTokenProvider : public fidl::Server<fuchsia_hardware_power::PowerTokenProvider> {
+ public:
+  fuchsia_hardware_power::PowerTokenService::InstanceHandler GetInstanceHandler() {
+    return fuchsia_hardware_power::PowerTokenService::InstanceHandler({
+        .token_provider = bindings_.CreateHandler(
+            this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
+    });
+  }
+
+  void GetToken(GetTokenCompleter::Sync& completer) override {
+    zx::event token;
+    ASSERT_TRUE(zx::event::create(0, &token) == ZX_OK);
+    completer.Reply(
+        fit::success(fuchsia_hardware_power::PowerTokenProviderGetTokenResponse{std::move(token)}));
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_power::PowerTokenProvider> md,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_hardware_power::PowerTokenProvider> bindings_;
 };
 
 class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::Device>,
@@ -180,10 +320,23 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
 class TestEnvironment : fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    // Add our package data dir
+    auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+    zx_status_t status =
+        fdio_open3("/pkg/data/", static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                   server.TakeChannel().release());
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    zx::result result = to_driver_vfs.AddDirectoryAt(std::move(client), "pkg", "data");
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    // Serve our firmware directory locally
     auto dir_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
     firmware_server_.SetDispatcher(fdf::Dispatcher::GetCurrent()->async_dispatcher());
-    // Serve our firmware directory (will start serving FIDL requests on dir_endpoints with
-    // dispatcher on previous line)
+
     ZX_ASSERT(firmware_server_.ServeDirectory(firmware_dir_, std::move(dir_endpoints.server)) ==
               ZX_OK);
     // Attach the firmware directory endpoint to "pkg/lib"
@@ -193,15 +346,26 @@ class TestEnvironment : fdf_testing::Environment {
 
     // Add the services that the fake parent driver exposes to the incoming directory of the driver
     // under test.
-    zx::result result = to_driver_vfs.AddService<fuchsia_hardware_serialimpl::Service>(
+    result = to_driver_vfs.AddService<fuchsia_hardware_serialimpl::Service>(
         transport_device_.GetSerialInstanceHandler());
     EXPECT_TRUE(result.is_ok());
+
+    EXPECT_EQ(fake_power_broker_.Serve(to_driver_vfs).status_value(), ZX_OK);
+
+    // Serve (fake) power_token_provider.
+    result = to_driver_vfs.AddService<fuchsia_hardware_power::PowerTokenService>(
+        std::move(fake_power_token_provider_.GetInstanceHandler()), "default");
+    if (result.is_error()) {
+      return result.take_error();
+    }
 
     result = to_driver_vfs.AddService<fhbt::HciService>(transport_device_.GetHciInstanceHandler());
     ZX_ASSERT(mac_address_metadata_server_
                   .Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher())
                   .is_ok());
+
     EXPECT_TRUE(result.is_ok());
+
     return zx::ok();
   }
 
@@ -230,6 +394,8 @@ class TestEnvironment : fdf_testing::Environment {
     return ZX_OK;
   }
 
+  FakePowerBroker& fake_power_broker() { return fake_power_broker_; }
+
   FakeTransportDevice transport_device_;
 
  private:
@@ -237,6 +403,9 @@ class TestEnvironment : fdf_testing::Environment {
   fs::SynchronousVfs firmware_server_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
       mac_address_metadata_server_;
+
+  FakePowerBroker fake_power_broker_;
+  FakePowerTokenProvider fake_power_token_provider_;
 };
 
 class FixtureConfig final {
@@ -244,10 +413,21 @@ class FixtureConfig final {
   using DriverType = BtHciBroadcom;
   using EnvironmentType = TestEnvironment;
 };
-
 class BtHciBroadcomTest : public ::testing::Test {
  public:
   BtHciBroadcomTest() = default;
+
+  void SetUp() override { SetUp(/* enable_suspend=*/false); }
+
+  void SetUp(bool enable_suspend) { enable_suspend_ = enable_suspend; }
+
+  zx::result<> StartDriver() {
+    return driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+      bt_hci_broadcom_config::Config config;
+      config.enable_suspend() = enable_suspend_;
+      args.config(config.ToVmo());
+    });
+  }
 
   void TearDown() override {
     zx::result<> result = driver_test().StopDriver();
@@ -301,39 +481,53 @@ class BtHciBroadcomTest : public ::testing::Test {
     hci_transport_client_.Bind(std::move(response->channel));
   }
 
+  const fidl::WireSyncClient<fhbt::Vendor>& vendor_client() { return vendor_client_; }
+  const fidl::WireSyncClient<fhbt::HciTransport>& hci_transport_client() {
+    return hci_transport_client_;
+  }
+
+ private:
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
 
   fidl::WireSyncClient<fhbt::Vendor> vendor_client_;
   fidl::WireSyncClient<fhbt::HciTransport> hci_transport_client_;
+
+  bool enable_suspend_ = false;
 };
 
 class BtHciBroadcomInitializedTest : public BtHciBroadcomTest {
  public:
-  void SetUp() override {
-    BtHciBroadcomTest::SetUp();
+  void SetUp() override { SetUp(/* enable_suspend=*/false); }
+  void SetUp(bool enable_suspend) {
+    BtHciBroadcomTest::SetUp(enable_suspend);
     SetFirmware();
     SetMacAddressMetadata();
-    ASSERT_TRUE(driver_test().StartDriver().is_ok());
+    ASSERT_TRUE(StartDriver().is_ok());
     OpenVendor();
   }
+};
+
+class BtHciBroadcomInitializedWithPowerTest : public BtHciBroadcomInitializedTest {
+ public:
+  void SetUp() override { BtHciBroadcomInitializedTest::SetUp(/* enable_suspend=*/true); }
 };
 
 TEST_F(BtHciBroadcomInitializedTest, Lifecycle) {}
 
 TEST_F(BtHciBroadcomInitializedTest, OpenSnoop) {
   ::fidl::WireResult<::fuchsia_hardware_bluetooth::Vendor::OpenSnoop> result =
-      vendor_client_->OpenSnoop();
+      vendor_client()->OpenSnoop();
   ASSERT_TRUE(result.ok());
   ASSERT_FALSE(result->is_error());
 }
 
 TEST_F(BtHciBroadcomInitializedTest, HciTransportOpenTwice) {
   // Should be able to open two copies of HciTransport.
-  auto result = vendor_client_->OpenHciTransport();
+  auto result = vendor_client()->OpenHciTransport();
   ASSERT_TRUE(result.ok());
   ASSERT_FALSE(result->is_error());
 
-  auto result_second = vendor_client_->OpenHciTransport();
+  auto result_second = vendor_client()->OpenHciTransport();
   ASSERT_TRUE(result_second.ok());
   ASSERT_FALSE(result_second->is_error());
 }
@@ -343,7 +537,7 @@ TEST_F(BtHciBroadcomTest, ReportLoadFirmwareError) {
   SetMacAddressMetadata();
 
   // No firmware has been set, so load_firmware() should fail during initialization.
-  ASSERT_EQ(driver_test().StartDriver().status_value(), ZX_ERR_NOT_FOUND);
+  ASSERT_EQ(StartDriver().status_value(), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(BtHciBroadcomTest, TooSmallFirmwareBuffer) {
@@ -351,7 +545,7 @@ TEST_F(BtHciBroadcomTest, TooSmallFirmwareBuffer) {
   SetMacAddressMetadata();
 
   SetFirmware(std::vector<uint8_t>{0x00});
-  ASSERT_EQ(driver_test().StartDriver().status_value(), ZX_ERR_INTERNAL);
+  ASSERT_EQ(StartDriver().status_value(), ZX_ERR_INTERNAL);
 }
 
 TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanEventHeader) {
@@ -362,7 +556,7 @@ TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanEventHeader) {
 
   SetFirmware();
   SetMacAddressMetadata();
-  ASSERT_NE(driver_test().StartDriver().status_value(), ZX_OK);
+  ASSERT_NE(StartDriver().status_value(), ZX_OK);
 }
 
 TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanCommandComplete) {
@@ -373,7 +567,7 @@ TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanCommandComplete) {
 
   SetFirmware();
   SetMacAddressMetadata();
-  ASSERT_FALSE(driver_test().StartDriver().is_ok());
+  ASSERT_FALSE(StartDriver().is_ok());
 }
 
 TEST_F(BtHciBroadcomTest, ControllerFailsToInitializeWhenMissingBdAddr) {
@@ -388,7 +582,7 @@ TEST_F(BtHciBroadcomTest, ControllerFailsToInitializeWhenMissingBdAddr) {
   SetFirmware();
 
   // Initialization should fail as missing the MAC address is a fatal error.
-  ASSERT_TRUE(driver_test().StartDriver().is_error());
+  ASSERT_TRUE(StartDriver().is_error());
 }
 
 TEST_F(BtHciBroadcomTest, SendsPowerCapWhenNeeded) {
@@ -400,7 +594,7 @@ TEST_F(BtHciBroadcomTest, SendsPowerCapWhenNeeded) {
   SetFirmware();
 
   // Initialization should succeed
-  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+  ASSERT_TRUE(StartDriver().is_ok());
 
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
     ASSERT_TRUE(env.transport_device_.HasReceivedOpCode(kBcmSetPowerCapCmdOpCode));
@@ -416,7 +610,7 @@ TEST_F(BtHciBroadcomTest, EnablesLowPowerMode) {
   SetFirmware();
 
   // Initialization should succeed
-  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+  ASSERT_TRUE(StartDriver().is_ok());
 
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
     auto packet = env.transport_device_.LastPacketByOpCode(kBcmWriteSleepModeCmdOpCode);
@@ -432,14 +626,14 @@ TEST_F(BtHciBroadcomTest, EnablesLowPowerMode) {
 TEST_F(BtHciBroadcomTest, VendorProtocolUnknownMethod) {
   SetFirmware();
   SetMacAddressMetadata();
-  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+  ASSERT_TRUE(StartDriver().is_ok());
 
   OpenVendorWithHciTransportClient();
 
   fidl::Arena arena;
   std::vector<uint8_t> packet = {1};
   auto packet_view = fidl::VectorView<uint8_t>::FromExternal(packet);
-  auto result = hci_transport_client_->Send(fhbt::wire::SentPacket::WithAcl(arena, packet_view));
+  auto result = hci_transport_client()->Send(fhbt::wire::SentPacket::WithAcl(arena, packet_view));
 
   ASSERT_EQ(result.status(), ZX_ERR_NOT_SUPPORTED);
 }
@@ -453,7 +647,7 @@ TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersHi
   builder.direction(fhbt::wire::VendorAclDirection::kSink);
 
   auto command = fhbt::wire::VendorCommand::WithSetAclPriority(arena, builder.Build());
-  auto result = vendor_client_->EncodeCommand(command);
+  auto result = vendor_client()->EncodeCommand(command);
   ASSERT_TRUE(result.ok());
   ASSERT_FALSE(result->is_error());
 
@@ -480,7 +674,7 @@ TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersNo
   builder.direction(fhbt::wire::VendorAclDirection::kSource);
 
   auto command = fhbt::wire::VendorCommand::WithSetAclPriority(arena, builder.Build());
-  auto result = vendor_client_->EncodeCommand(command);
+  auto result = vendor_client()->EncodeCommand(command);
   ASSERT_TRUE(result.ok());
   ASSERT_FALSE(result->is_error());
 
@@ -526,7 +720,7 @@ TEST_F(BtHciBroadcomInitializedTest, HciTransportPassthrough) {
 
   fidl::Arena arena;
   auto result =
-      hci_transport_client_->Send(fhbt::wire::SentPacket::WithCommand(arena, kExpectedBuffer));
+      hci_transport_client()->Send(fhbt::wire::SentPacket::WithCommand(arena, kExpectedBuffer));
 
   ASSERT_EQ(result.status(), ZX_OK);
 
@@ -559,8 +753,110 @@ TEST_F(BtHciBroadcomInitializedTest, HciTransportPassthrough) {
 
   EventHandler event_handler;
   event_handler.SetExpected(kExpectedResponse);
-  fidl::Status status = hci_transport_client_.HandleOneEvent(event_handler);
+  fidl::Status status = hci_transport_client().HandleOneEvent(event_handler);
   EXPECT_TRUE(status.ok());
+}
+
+TEST_F(BtHciBroadcomInitializedWithPowerTest, InitPowerManagement) {
+  // Should have acquired a Boot lease as part of startup
+  std::optional<uint8_t> lease_power_level = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<std::optional<uint8_t>(TestEnvironment&)>(
+          [](TestEnvironment& env) { return env.fake_power_broker().lease_power_level(); }));
+  ASSERT_TRUE(lease_power_level);
+  EXPECT_EQ(*lease_power_level, BtHciBroadcom::kBoot);
+
+  // But after startup firmware load, the lease should be dropped already.
+  fidl::ServerEnd<fuchsia_power_broker::LeaseControl> lease_control_server_end =
+      driver_test().RunInEnvironmentTypeContext(
+          fit::callback<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>(TestEnvironment&)>(
+              [](TestEnvironment& env) {
+                return env.fake_power_broker().TakeLeaseControlServerEnd();
+              }));
+  EXPECT_TRUE(lease_control_server_end.is_valid());
+
+  zx_signals_t observed{};
+  EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
+                                                        zx::time::infinite_past(), &observed),
+            ZX_OK);
+  EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+
+  // SetLevel should be kOff, and respond as fine.
+  // Do the initial SetLevel call to make sure that the element responds.
+  fidl::ClientEnd element_runner_client_end = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>(TestEnvironment&)>(
+          [](TestEnvironment& env) {
+            return env.fake_power_broker().TakeElementRunnerClientEnd();
+          }));
+  fidl::Client<fuchsia_power_broker::ElementRunner> element_runner(
+      std::move(element_runner_client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  element_runner->SetLevel(BtHciBroadcom::kOff)
+      .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+        if (result.is_error()) {
+          FDF_LOG(WARNING, "Result: %s", result.error_value().status_string());
+        }
+        EXPECT_TRUE(result.is_ok());
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
+  driver_test().runtime().ResetQuit();
+}
+
+TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
+  // Should have acquired a Boot lease as part of startup
+  std::optional<uint8_t> lease_power_level = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<std::optional<uint8_t>(TestEnvironment&)>(
+          [](TestEnvironment& env) { return env.fake_power_broker().lease_power_level(); }));
+  ASSERT_TRUE(lease_power_level);
+  EXPECT_EQ(*lease_power_level, BtHciBroadcom::kBoot);
+
+  FDF_LOG(INFO, "Checking that boot lease has been dropped");
+  // But after startup firmware load, the lease should be dropped already.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.fake_power_broker().ExpectLeaseReleased(); });
+
+  OpenHciTransportClient();
+  FDF_LOG(INFO, "Sending a packet through, should get a power lease");
+
+  fidl::Arena arena;
+  auto result = hci_transport_client()->Send(
+      fhbt::wire::SentPacket::WithCommand(arena, std::vector<uint8_t>{0x1A, 0xFD}));
+
+  ASSERT_EQ(result.status(), ZX_OK);
+
+  FDF_LOG(INFO, "waiting for power lease");
+  // Should acquire an On lease
+  driver_test().runtime().RunUntil([&]() {
+    lease_power_level = driver_test().RunInEnvironmentTypeContext(
+        fit::callback<std::optional<uint8_t>(TestEnvironment&)>(
+            [](TestEnvironment& env) { return env.fake_power_broker().lease_power_level(); }));
+    return lease_power_level.has_value();
+  });
+
+  EXPECT_EQ(*lease_power_level, BtHciBroadcom::kOn);
+  FDF_LOG(INFO, "Lease at On, waiting for lease off");
+
+  // Lease should be dropped after a timeout.
+  auto lease_control_server_end = driver_test().RunInEnvironmentTypeContext(
+      fit::callback<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>(TestEnvironment&)>(
+          [](TestEnvironment& env) {
+            return env.fake_power_broker().TakeLeaseControlServerEnd();
+          }));
+  EXPECT_TRUE(lease_control_server_end.is_valid());
+
+  driver_test().runtime().RunUntil([&]() {
+    return !driver_test().RunInEnvironmentTypeContext<bool>([&](TestEnvironment& env) {
+      zx_signals_t observed{};
+      auto result = lease_control_server_end.channel().wait_one(
+          ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+      if (result == ZX_ERR_TIMED_OUT) {
+        return false;
+      }
+      EXPECT_EQ(result, ZX_OK);
+      return (observed & ZX_CHANNEL_PEER_CLOSED) != 0;
+      FDF_LOG(INFO, "Lease dropped");
+    });
+  });
 }
 
 }  // namespace

@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include "src/connectivity/bluetooth/hci/transport/uart/bt_transport_uart_config.h"
+
 namespace bt_transport_uart {
 namespace fhbt = fuchsia_hardware_bluetooth;
 namespace {
@@ -180,7 +182,12 @@ class BtTransportUartTest : public ::testing::Test {
   BtTransportUartTest() = default;
 
   void SetUp() override {
-    zx::result<> result = driver_test().StartDriver();
+    zx::result<> result =
+        driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+          bt_transport_uart_config::Config config;
+          config.enable_suspend() = false;
+          args.config(config.ToVmo());
+        });
     ASSERT_EQ(ZX_OK, result.status_value());
     EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
         [](FixtureBasedTestEnvironment& env) { return env.serial_device_.enabled(); }));

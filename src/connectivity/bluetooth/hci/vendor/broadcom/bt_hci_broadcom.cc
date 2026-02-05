@@ -7,6 +7,8 @@
 #include <assert.h>
 #include <endian.h>
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
@@ -15,6 +17,7 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/metadata/cpp/metadata.h>
+#include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +30,12 @@
 #include <zircon/threads.h>
 
 #include "fidl/fuchsia.hardware.bluetooth/cpp/markers.h"
-#include "fidl/fuchsia.hardware.bluetooth/cpp/natural_types.h"
-#include "lib/async/dispatcher.h"
 #include "lib/fidl/cpp/channel.h"
-#include "lib/fidl/cpp/unified_messaging_declarations.h"
+#include "lib/fit/function.h"
+#include "lib/fpromise/promise.h"
+#include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
+#include "tools/power_config/lib/cpp/power_config.h"
 
 namespace bt_hci_broadcom {
 namespace fhbt = fuchsia_hardware_bluetooth;
@@ -71,16 +75,20 @@ void HciEventHandler::OnReceive(fhbt::wire::ReceivedPacket* packet) {
 class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
                                     public fidl::AsyncEventHandler<fhbt::HciTransport> {
  public:
+  using ActivityCallback = fit::function<void(ActivityType)>;
+
   explicit HciTransportPassthroughImpl(fidl::ClientEnd<fhbt::HciTransport> upstream_client_end,
-                                       async_dispatcher_t* dispatcher)
-      : upstream_client_(std::move(upstream_client_end), dispatcher, this) {}
+                                       ActivityCallback activity_cb, async_dispatcher_t* dispatcher)
+      : activity_cb_(std::move(activity_cb)),
+        upstream_client_(std::move(upstream_client_end), dispatcher, this) {}
 
   static fidl::ServerBindingRef<fhbt::HciTransport> BindServer(
       async_dispatcher_t* dispatcher,
       fidl::ServerEnd<fuchsia_hardware_bluetooth::HciTransport> server_end,
-      fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end) {
-    std::unique_ptr impl =
-        std::make_unique<HciTransportPassthroughImpl>(std::move(upstream_client_end), dispatcher);
+      fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end,
+      ActivityCallback activity_cb) {
+    std::unique_ptr impl = std::make_unique<HciTransportPassthroughImpl>(
+        std::move(upstream_client_end), std::move(activity_cb), dispatcher);
     HciTransportPassthroughImpl* impl_ptr = impl.get();
 
     fidl::ServerBindingRef binding_ref =
@@ -91,6 +99,7 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
   }
 
   void Send(SendRequest& request, SendCompleter::Sync& completed) override {
+    activity_cb_(ActivityType::kSendPacket);
     upstream_client_->Send(request).Then(
         [completer = completed.ToAsync()](auto result) mutable { completer.Reply(); });
   }
@@ -103,6 +112,7 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
   }
 
   void OnReceive(fidl::Event<fhbt::HciTransport::OnReceive>& event) override {
+    activity_cb_(ActivityType::kReceivePacket);
     if (!binding_ref_.has_value()) {
       FDF_LOG(WARNING, "OnReceive with no server?!?");
     }
@@ -141,6 +151,7 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
   }
 
  private:
+  ActivityCallback activity_cb_;
   fidl::Client<fhbt::HciTransport> upstream_client_;
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> binding_ref_;
 };
@@ -202,6 +213,20 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
     }
   }
 
+  const auto config = take_config<bt_hci_broadcom_config::Config>();
+
+  if (config.enable_suspend()) {
+    zx::result<> power_init_result = InitPowerManagement();
+    if (power_init_result.is_ok()) {
+      FDF_LOG(INFO, "Initialized power management");
+    } else {
+      FDF_LOG(ERROR, "Failed to initialize power management: %s",
+              power_init_result.status_string());
+      CompleteStart(power_init_result.error_value());
+      return;
+    }
+  }
+
   // Continue initialization through the fpromise executor.
   start_completer_.emplace(std::move(completer));
   executor_.emplace(dispatcher());
@@ -250,7 +275,8 @@ fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> BtHciBroadcom::AddHciT
     fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end) {
   auto [client_end, server_end] = fidl::Endpoints<fhbt::HciTransport>::Create();
   auto binding_ref = HciTransportPassthroughImpl::BindServer(
-      executor_->dispatcher(), std::move(server_end), std::move(upstream_client_end));
+      executor_->dispatcher(), std::move(server_end), std::move(upstream_client_end),
+      fit::bind_member<&BtHciBroadcom::NoteActivity>(this));
   active_clients_.push_back(binding_ref);
   return std::move(client_end);
 }
@@ -482,6 +508,210 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
       });
 }
 
+zx::result<> BtHciBroadcom::InitPowerManagement() {
+  zx::result open_result = incoming()->Open<fuchsia_io::File>("/pkg/data/broadcom_power.fidl",
+                                                              fuchsia_io::Flags::kPermReadBytes);
+  if (!open_result.is_ok() || !open_result->is_valid()) {
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  zx::result<fuchsia_hardware_power::ComponentPowerConfiguration> load_result =
+      power_config::Load(std::move(open_result.value()));
+  if (load_result.is_error()) {
+    FDF_LOG(ERROR, "Loading Power config failed: %s", load_result.status_string());
+    return load_result.take_error();
+  }
+
+  std::vector<fdf_power::PowerElementConfiguration> element_configs;
+  for (const fuchsia_hardware_power::PowerElementConfiguration& element_config :
+       load_result.value().power_elements()) {
+    auto converted = fdf_power::PowerElementConfiguration::FromFidl(element_config);
+    if (converted.is_error()) {
+      FDF_LOG(ERROR, "Converting power element config failed: %s", converted.status_string());
+      return converted.take_error();
+    }
+    element_configs.push_back(converted.value());
+  }
+
+  zx::result<fdf_power::ElementDesc> element_desc =
+      ApplyPowerConfiguration(std::move(element_configs));
+  if (element_desc.is_error()) {
+    return element_desc.take_error();
+  }
+
+  assertive_token_ = std::move(element_desc->assertive_token);
+  element_control_client_end_ = *std::move(element_desc->element_control_client);
+  element_runner_server_binding_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                         std::move(element_desc->element_runner_server.value()),
+                                         this, fidl::kIgnoreBindingClosure);
+  element_lessor_client_ = std::move(*element_desc->lessor_client);
+
+  fidl::WireResult lease = fidl::WireCall(element_lessor_client_)->Lease(PowerLevel::kBoot);
+  if (!lease.ok()) {
+    FDF_LOG(ERROR, "Call to Lease failed: %s", lease.error().FormatDescription().c_str());
+    return zx::error(lease.error().status());
+  }
+  if (lease->is_error()) {
+    FDF_LOG(ERROR, "Failed to acquire lease: %s",
+            fdf_power::LeaseErrorToString(lease->error_value()));
+    return fdf_power::LeaseErrorToZxError(lease->error_value());
+  }
+  level_lease_client_.emplace(std::move(lease->value()->lease_control), dispatcher());
+  return zx::ok();
+}
+
+zx::result<fdf_power::ElementDesc> BtHciBroadcom::ApplyPowerConfiguration(
+    std::vector<fdf_power::PowerElementConfiguration> element_configs) {
+  // One for the power element
+  constexpr size_t kExpectedPowerElementConfigs = 1;
+
+  if (element_configs.size() != kExpectedPowerElementConfigs) {
+    FDF_LOG(ERROR, "Unexpected number of power element configs: %zu != %zu", element_configs.size(),
+            kExpectedPowerElementConfigs);
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  fit::result<fdf_power::Error, std::vector<fdf_power::ElementDesc>> result =
+      fdf_power::ApplyPowerConfiguration(*incoming(), element_configs,
+                                         /*use_element_runner=*/true);
+  if (result.is_error()) {
+    FDF_LOG(INFO, "Failed to apply power config: %s",
+            fdf_power::ErrorToString(result.error_value()));
+    return fdf_power::ErrorToZxError(result.error_value());
+  }
+  if (result->size() != 1) {
+    FDF_LOG(ERROR, "Unexpected element desc count %zu", result->size());
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  fdf_power::ElementDesc& element_desc = result->at(0);
+  FDF_LOG(INFO, "Power element applied: \"%s\"", element_desc.element_config.element.name.c_str());
+
+  if (element_desc.element_config.element.levels.size() != PowerLevel::kPowerLevelCount) {
+    FDF_LOG(ERROR, "Got %zu power levels, expected %u",
+            element_desc.element_config.element.levels.size(), PowerLevel::kPowerLevelCount);
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  return zx::ok(std::move(element_desc));
+}
+
+void BtHciBroadcom::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRequest* request,
+                             SetLevelCompleter::Sync& completer) {
+  FDF_LOG(DEBUG, "SetLevel %u ?-> %u ", power_level_, request->level);
+
+  if (power_level_ == request->level) {
+    completer.Reply();
+    return;
+  }
+
+  if (power_level_ == PowerLevel::kBoot) {
+    if (request->level == PowerLevel::kOff) {
+      FDF_LOG(DEBUG, "Initial powerlevel off request (but we are trying to boot), ignoring..");
+      completer.Reply();
+      return;
+    }
+    // We don't expect another transition within Boot mode, until we drop the Boot lease at the end
+    // of initialization.
+    FDF_LOG(WARNING, "Within boot mode, got unexpected SetLevel(%d) - ignoring..", request->level);
+  }
+
+  // The only two transitions we expect are from OFF -> ON, and ON -> OFF.
+  // These are caused by our self-lease (in AcquirePowerElementLease) and signal that
+  // dependent power elements are at the correct level when ON.
+  // Log any other transitions.
+  if ((power_level_ == PowerLevel::kOff && request->level != PowerLevel::kOn) ||
+      (power_level_ == PowerLevel::kOn && request->level != PowerLevel::kOff)) {
+    FDF_LOG(WARNING, "Got unexpected SetLevel Transition: %d -> %d", power_level_, request->level);
+  }
+
+  completer.Reply();
+}
+
+void BtHciBroadcom::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FDF_LOG(ERROR, "Unexpected ElementRunner method ordinal 0x%016lx", metadata.method_ordinal);
+}
+
+fpromise::promise<void, zx_status_t> BtHciBroadcom::AssertLevel(PowerLevel requested_level) {
+  if (!element_lessor_client_.is_valid() || requested_level == power_level_) {
+    // We are not using power framework or no change is needed.
+    return fpromise::make_promise(
+        []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
+  }
+  switch (requested_level) {
+    case PowerLevel::kOn:
+    case PowerLevel::kBoot:
+      return AcquirePowerElementLease();
+    case PowerLevel::kOff:
+      if (level_lease_client_) {
+        // We are not asserting anymore, release any lease we have.
+        auto result = level_lease_client_->UnbindMaybeGetEndpoint();
+        if (result.is_error()) {
+          FDF_LOG(ERROR, "Tried to unbind when we have a pending call?!");
+        }
+        level_lease_client_.reset();
+      } else {
+        FDF_LOG(WARNING, "Would have unbound, but we don't have a valid cilent");
+      }
+      break;
+    default:
+      FDF_LOG(ERROR, "Unexpected level %u", requested_level);
+      return fpromise::make_error_promise(ZX_ERR_INVALID_ARGS);
+  }
+
+  power_level_ = requested_level;
+  return fpromise::make_promise(
+      []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
+}
+
+fpromise::promise<void, zx_status_t> BtHciBroadcom::AcquirePowerElementLease() {
+  if (level_lease_client_) {
+    FDF_LOG(DEBUG, "Not acquiring a lease due to already having a lease");
+    return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
+  }
+
+  // Request dependent power nodes rise to kPowerLevelOn
+  fidl::WireResult lease = fidl::WireCall(element_lessor_client_)->Lease(kOn);
+  if (!lease.ok()) {
+    FDF_LOG(ERROR, "Call to Lease failed: %s", lease.error().FormatDescription().c_str());
+    return fpromise::make_result_promise<void, zx_status_t>(fpromise::error(ZX_ERR_IO));
+  }
+  if (lease->is_error()) {
+    FDF_LOG(ERROR, "Failed to acquire lease: %s",
+            fdf_power::LeaseErrorToString(lease->error_value()));
+    return fpromise::make_result_promise<void, zx_status_t>(fpromise::error(ZX_ERR_IO));
+  }
+
+  level_lease_client_.emplace(std::move(lease->value()->lease_control), dispatcher());
+
+  fpromise::bridge<void, zx_status_t> bridge;
+  (*level_lease_client_)
+      ->WatchStatus(fuchsia_power_broker::wire::LeaseStatus::kPending)
+      .Then([this, completer = std::move(bridge.completer)](auto& lease_satisfied_result) mutable {
+        if (!lease_satisfied_result.ok()) {
+          FDF_LOG(ERROR, "Call to Lease WatchStatus failed: %s",
+                  lease_satisfied_result.error().FormatDescription().c_str());
+          completer.complete_error(ZX_ERR_INTERNAL);
+          return;
+        }
+        if (lease_satisfied_result->status != fuchsia_power_broker::LeaseStatus::kSatisfied) {
+          FDF_LOG(ERROR, "Call to Lease WatchStatus did not result in kSatisfied!?");
+          completer.complete_error(ZX_ERR_BAD_STATE);
+          return;
+        }
+        FDF_LOG(DEBUG, "Lease is satisfied");
+        power_level_ = PowerLevel::kOn;
+        completer.complete_ok();
+        return;
+      });
+  return bridge.consumer.promise();
+}
+
+void BtHciBroadcom::HandleWakeLeaseTimeout() {
+  executor_->schedule_task(AssertLevel(PowerLevel::kOff));
+}
+
 fpromise::promise<void, zx_status_t> BtHciBroadcom::SetBdaddr(
     const std::array<uint8_t, kMacAddrLen>& bdaddr) {
   BcmSetBdaddrCmd command = {
@@ -515,6 +745,12 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
           }
         }
       });
+}
+
+void BtHciBroadcom::NoteActivity(ActivityType activity) {
+  drop_level_task_.Cancel();
+  drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultIdleThreshold);
+  executor_->schedule_task(AssertLevel(PowerLevel::kOn));
 }
 
 constexpr auto kOpenFlags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile;
@@ -747,6 +983,9 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::OnInitializeComplete(zx_stat
     return fpromise::make_error_promise(status);
   }
 
+  // We are done booting, we can drop our boot power needs.
+  FDF_LOG(DEBUG, "dropping boot power lease");
+  executor_->schedule_task(AssertLevel(PowerLevel::kOff));
   FDF_LOG(INFO, "initialization completed successfully.");
   return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
 }

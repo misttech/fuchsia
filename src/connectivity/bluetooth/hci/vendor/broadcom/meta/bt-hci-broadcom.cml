@@ -15,9 +15,32 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
     },
+    capabilities: [
+        { service: "fuchsia.hardware.power.PowerTokenService" },
+    ],
     use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: "fuchsia.hardware.bluetooth.HciService" },
         { service: "fuchsia.hardware.serialimpl.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
+
+        // START: Power-related capabilities, some used by
+        // //sdk/lib/driver/power/ccp
+        {
+            protocol: [
+                "fuchsia.power.broker.Topology",
+                "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.power.system.CpuElementManager",
+            ],
+        },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
+
+        // END
     ],
 }

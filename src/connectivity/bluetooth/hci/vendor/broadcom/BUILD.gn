@@ -9,6 +9,7 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
+import("//tools/power_config/build/config.gni")
 
 driver_bind_rules("bcm_hci_bind") {
   rules = "meta/bcm_hci.bind"
@@ -17,6 +18,15 @@ driver_bind_rules("bcm_hci_bind") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_bindlib",
   ]
+}
+
+fuchsia_component_manifest("bt-hci-broadcom-manifest") {
+  component_name = "bt-hci-broadcom"
+  manifest = "meta/bt-hci-broadcom.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("bt-hci-broadcom-config") {
+  cm_label = ":bt-hci-broadcom-manifest"
 }
 
 source_set("common") {
@@ -45,13 +55,17 @@ source_set("common") {
   ]
 
   public_deps = [
+    ":bt-hci-broadcom-config",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/power/cpp",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//tools/power_config/lib/cpp",
   ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
@@ -68,6 +82,11 @@ fuchsia_driver_component("bt-hci-broadcom") {
   deps = [ ":bt-hci-broadcom-driver" ]
   info = "meta/bt-hci-broadcom-info.json"
   manifest = "meta/bt-hci-broadcom.cml"
+}
+
+power_config("broadcom-power-config") {
+  output_name = "broadcom_power.fidl"
+  value_file = "meta/broadcom_power.json5"
 }
 
 # This is the firmware for VIM3 board only
@@ -89,8 +108,10 @@ resource("broadcom-firmware-sorrel") {
 fuchsia_driver_package("broadcom") {
   driver_components = [ ":bt-hci-broadcom" ]
 
+  deps = [ ":broadcom-power-config" ]
+
   if (internal_access) {
-    deps = [ ":broadcom-firmware-vim3" ]
+    deps += [ ":broadcom-firmware-vim3" ]
   }
 }
 
@@ -99,8 +120,10 @@ fuchsia_driver_package("broadcom-sorrel") {
   export_to_bazel = true
   driver_components = [ ":bt-hci-broadcom" ]
 
+  deps = [ ":broadcom-power-config" ]
+
   if (internal_access) {
-    deps = [ ":broadcom-firmware-sorrel" ]
+    deps += [ ":broadcom-firmware-sorrel" ]
   }
 }
 
@@ -132,7 +155,10 @@ cc_test_executable("tests_executable") {
 }
 
 fuchsia_unittest_package("bt-hci-broadcom-tests") {
-  deps = [ ":tests_executable" ]
+  deps = [
+    ":broadcom-power-config",
+    ":tests_executable",
+  ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

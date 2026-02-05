@@ -8,14 +8,19 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/fidl.h>
 #include <fidl/fuchsia.io/cpp/wire_test_base.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/power/cpp/element-description-builder.h>
+#include <lib/driver/power/cpp/power-support.h>
+#include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/sync/cpp/completion.h>
 
 #include "packets.h"
@@ -35,10 +40,16 @@ class HciEventHandler
   fit::function<void(std::vector<uint8_t>&)> on_receive_callback_;
 };
 
+enum class ActivityType : uint8_t {
+  kSendPacket,
+  kReceivePacket,
+};
+
 class BtHciBroadcom final
     : public fdf::DriverBase,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController>,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
+      public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
   explicit BtHciBroadcom(fdf::DriverStartArgs start_args,
@@ -51,6 +62,13 @@ class BtHciBroadcom final
       fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata) override {}
+
+  enum PowerLevel : uint8_t {
+    kOff = 0,
+    kBoot,
+    kOn,
+    kPowerLevelCount,
+  };
 
  private:
   static constexpr size_t kMacAddrLen = 6;
@@ -68,6 +86,13 @@ class BtHciBroadcom final
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  // fuchsia.power.broker/ElementRunner implementation
+  void SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRequest* request,
+                SetLevelCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
   void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
@@ -99,6 +124,17 @@ class BtHciBroadcom final
                                                           zx::duration device_idle_threshhold);
 
   fpromise::promise<void, zx_status_t> DisableLowPowerMode();
+
+  zx::result<> InitPowerManagement();
+  zx::result<fdf_power::ElementDesc> ApplyPowerConfiguration(
+      std::vector<fdf_power::PowerElementConfiguration> element_configs);
+  fpromise::promise<void, zx_status_t> AssertLevel(PowerLevel requested_level);
+  fpromise::promise<void, zx_status_t> AcquirePowerElementLease();
+  void HandleWakeLeaseTimeout();
+
+  // Called when there is some transport activity, used to manage the transport and controller power
+  // states.
+  void NoteActivity(ActivityType activity);
 
   fpromise::promise<void, zx_status_t> LoadFirmware();
 
@@ -142,6 +178,21 @@ class BtHciBroadcom final
   fidl::WireClient<fuchsia_driver_framework::Node> node_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> node_controller_;
   fidl::WireClient<fuchsia_driver_framework::Node> child_node_;
+
+  PowerLevel power_level_ = PowerLevel::kBoot;
+  async::TaskClosureMethod<BtHciBroadcom, &BtHciBroadcom::HandleWakeLeaseTimeout> drop_level_task_{
+      this};
+
+  zx::event assertive_token_;
+  fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control_client_end_;
+  fidl::ClientEnd<fuchsia_power_broker::Lessor> element_lessor_client_;
+  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
+      element_runner_server_binding_;
+
+  // A lease on our power element is kept when we are asserting our level.
+  // It's kept at Boot level until we are done initializing the controller, then
+  // asserted at On when we are transmitting or expecting to receive.
+  std::optional<fidl::WireClient<fuchsia_power_broker::LeaseControl>> level_lease_client_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
   driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
