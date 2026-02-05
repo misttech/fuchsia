@@ -41,35 +41,40 @@ impl Node {
             drop(inner);
         }
 
-        if let Some(completer) = self.inner.borrow_mut().pending_bind_completer.take() {
+        let completer = self.inner.borrow_mut().pending_bind_completer.take();
+        if let Some(completer) = completer {
             let _ = completer.send(result);
         }
 
         if let Err(status) = &result {
             self.on_start_error(*status);
-        } else if let Some(completer) = self.inner.borrow_mut().wait_for_driver_completer.take() {
-            let token = if self.is_composite() {
-                self.inner.borrow().children.iter().find_map(|child| {
-                    if let NodeState::DriverComponent(driver_component) =
-                        &child.inner.borrow().state
-                        && driver_component.state == DriverState::Running
-                    {
-                        Some(driver_component.duplicate_instance_handle())
-                    } else {
-                        None
-                    }
-                })
-            } else if let NodeState::DriverComponent(driver_component) = &self.inner.borrow().state
-            {
-                Some(driver_component.duplicate_instance_handle())
-            } else {
-                None
-            };
+        } else {
+            let completer = self.inner.borrow_mut().wait_for_driver_completer.take();
+            if let Some(completer) = completer {
+                let token = if self.is_composite() {
+                    self.inner.borrow().children.iter().find_map(|child| {
+                        if let NodeState::DriverComponent(driver_component) =
+                            &child.inner.borrow().state
+                            && driver_component.state == DriverState::Running
+                        {
+                            Some(driver_component.duplicate_instance_handle())
+                        } else {
+                            None
+                        }
+                    })
+                } else if let NodeState::DriverComponent(driver_component) =
+                    &self.inner.borrow().state
+                {
+                    Some(driver_component.duplicate_instance_handle())
+                } else {
+                    None
+                };
 
-            if let Some(token) = token {
-                let _ = completer.send(Ok(fdf::DriverResult::DriverStartedNodeToken(token)));
-            } else {
-                let _ = completer.send(Err(zx::Status::INTERNAL));
+                if let Some(token) = token {
+                    let _ = completer.send(Ok(fdf::DriverResult::DriverStartedNodeToken(token)));
+                } else {
+                    let _ = completer.send(Err(zx::Status::INTERNAL));
+                }
             }
         }
 
@@ -98,8 +103,8 @@ impl Node {
         let node_clone = self.clone();
         self.scope.spawn_local(async move {
             node_clone.node_manager.wait_for_bootup().await;
-            if let Some(completer) = node_clone.inner.borrow_mut().wait_for_driver_completer.take()
-            {
+            let completer = node_clone.inner.borrow_mut().wait_for_driver_completer.take();
+            if let Some(completer) = completer {
                 if let Some(result) = node_clone.inner.borrow().bind_error.as_ref() {
                     let response = match result {
                         fdf::DriverResult::MatchError(s) => Ok(fdf::DriverResult::MatchError(*s)),
@@ -117,9 +122,10 @@ impl Node {
                 {
                     let token = driver_component.duplicate_instance_handle();
                     let _ = completer.send(Ok(fdf::DriverResult::DriverStartedNodeToken(token)));
-                } else {
-                    let _ = completer.send(Err(zx::Status::NOT_FOUND));
+                    return;
                 }
+
+                let _ = completer.send(Err(zx::Status::INTERNAL));
             }
         });
     }
