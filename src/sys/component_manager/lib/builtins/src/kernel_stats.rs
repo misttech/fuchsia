@@ -146,6 +146,10 @@ impl KernelStats {
                             reschedule_ipis: Some(cpu_stat.reschedule_ipis),
                             generic_ipis: Some(cpu_stat.generic_ipis),
                             normalized_busy_time: Some(cpu_stat.normalized_busy_time),
+                            active_energy_consumption_nj: Some(
+                                cpu_stat.active_energy_consumption_nj,
+                            ),
+                            idle_energy_consumption_nj: Some(cpu_stat.idle_energy_consumption_nj),
                             ..Default::default()
                         });
                     }
