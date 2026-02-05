@@ -5,6 +5,9 @@
 import logging
 from typing import Any, Mapping
 
+from libs.ssh import connection, settings
+from libs.validation import MapValidator
+
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -16,19 +19,15 @@ class OpenwrtAp:
 
     def __init__(self, config: Mapping[str, Any]) -> None:
         logging.info("Connecting to OpenWRT AP with config: %s", config)
-        # TODO(b/461905545): use MayValidator to validate config
-        self.host: str = "placeholder host name"
-
-        # TODO(b/461905545): reuse the SSH lib to start the connection
-        # from https://source.corp.google.com/h/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/utils_lib/ssh/connection.py;bpv=0;bpt=0
+        c = MapValidator(config)
+        self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
+        self.ssh = connection.SshConnection(self.ssh_settings)
 
     def setup_ap(self, ssid: str) -> None:
         """
         Configures and enables an OpenWrt Access Point with the specified SSID.
         """
         # TODO(b/461905545): security, band, etc will be added later
-
-        _LOGGER.info("Starting Access Point...")
         commands = [
             "uci set wireless.radio0.disabled='0'",
             "uci set wireless.@wifi-iface[0].mode='ap'",
@@ -41,6 +40,7 @@ class OpenwrtAp:
 
     def start_ap(self) -> None:
         """Starts the Access Point."""
+        _LOGGER.info("Starting Access Point...")
         # TODO(b/461905545): run wifi up command and wait until it's ready
 
     def stop_ap(self) -> None:
@@ -53,15 +53,11 @@ class OpenwrtAp:
 
     def reset_ap(self) -> None:
         """Resets wireless configuration to system defaults."""
-        # Deleting the wireless config and recreating it from defaults
-        commands = [
-            "rm -f /etc/config/wireless",
-            "wifi config",
-        ]
-        # TODO(b/461905545): run the above commands to reset AP
+        self.ssh.run("rm -f /etc/config/wireless")
+        self.ssh.run("wifi config")
 
     def close(self) -> None:
         """Stops the AP, resets configuration, and closes the SSH connection."""
         self.stop_ap()
         self.reset_ap()
-        # TODO(b/461905545): reuse the SSH lib to close the connection
+        self.ssh.close()

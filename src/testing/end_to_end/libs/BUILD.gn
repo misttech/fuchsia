@@ -21,6 +21,12 @@ python_library("libs") {
   sources = [
     "__init__.py",
     "openwrt_lib.py",
+    "proc/job.py",
+    "proc/runner.py",
+    "ssh/connection.py",
+    "ssh/formatter.py",
+    "ssh/settings.py",
+    "validation.py",
   ]
   source_root = "//src/testing/end_to_end/libs"
   library_deps = []

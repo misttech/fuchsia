@@ -45,4 +45,4 @@ def get_info(objects: List[OpenwrtAp]) -> List[str]:
     Returns:
       A list of hostnames for each OpenWRT device.
     """
-    return [ap.host for ap in objects]
+    return [ap.ssh._settings.hostname for ap in objects]

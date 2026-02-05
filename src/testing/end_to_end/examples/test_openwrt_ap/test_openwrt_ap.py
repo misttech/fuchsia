@@ -31,7 +31,7 @@ class OpenwrtApTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def teardown_class(self) -> None:
         super().teardown_class()
-        if self.openwrt_aps:
+        if self.openwrt_ap:
             self.openwrt_ap.close()
         else:
             _LOGGER.warning(
