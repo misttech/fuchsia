@@ -19,14 +19,11 @@ function die {
   exit 1
 }
 
-# Find FUCHSIA_DIR if not defined in the environment.
-if [[ -z "${FUCHSIA_DIR}" ]]; then
-  # Assume this script is under //tools/build/scripts/
-  _SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
-  FUCHSIA_DIR=$(cd "${_SCRIPT_DIR}/../../.." && pwd)
-fi
+# Assume this script lives under //tools/build/scripts/
+_SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+FUCHSIA_DIR="$(cd "${_SCRIPT_DIR}/../../.." && pwd -P 2>/dev/null)"
 [[ -f "${FUCHSIA_DIR}/.jiri_manifest" ]] ||
-  die "Invalid FUCHSIA_DIR directory: ${FUCHSIA_DIR}"
+    die "Cannot locate proper FUCHSIA_DIR, got: ${FUCHSIA_DIR}"
 
 # The source and destination directories are hard-coded here.
 SOURCE_DIR="$FUCHSIA_DIR/$SOURCE_SUBDIR"
