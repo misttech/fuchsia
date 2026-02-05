@@ -347,7 +347,31 @@ impl BindManager {
         }
     }
 
-    fn process_pending_bind_requests(&self) {
+    pub fn record_inspect(&self, root: &fuchsia_inspect::Node) {
+        root.record_child("orphan_nodes", |orphans| {
+            let mut i = 0;
+            for (moniker, node_weak) in self.bind_node_set.borrow().current_orphaned_nodes() {
+                if node_weak.upgrade().is_some() {
+                    orphans.record_child(format!("orphan-{}", i), |orphan| {
+                        orphan.record_string("moniker", moniker);
+                    });
+                    i += 1;
+                }
+            }
+
+            orphans.record_bool("bind_all_ongoing", self.bind_node_set.borrow().is_bind_ongoing());
+            orphans.record_uint(
+                "pending_bind_requests",
+                self.pending_bind_requests.borrow().len() as u64,
+            );
+            orphans.record_uint(
+                "pending_orphan_rebind_callbacks",
+                self.pending_orphan_rebind_completers.borrow().len() as u64,
+            );
+        });
+    }
+
+    pub fn process_pending_bind_requests(&self) {
         assert!(self.bind_node_set.borrow().is_bind_ongoing());
         if self.pending_bind_requests.borrow().is_empty()
             && self.pending_orphan_rebind_completers.borrow().is_empty()
@@ -434,5 +458,9 @@ impl BindManagerHandle {
 
     pub async fn try_bind_all_available(&self) -> Vec<fdd::NodeBindingInfo> {
         self.0.try_bind_all_available().await
+    }
+
+    pub fn record_inspect(&self, root: &fuchsia_inspect::Node) {
+        self.0.record_inspect(root);
     }
 }

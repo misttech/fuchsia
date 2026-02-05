@@ -21,6 +21,7 @@ rustc_library("driver_manager_bind") {
     "//sdk/rust/zx",
     "//src/devices/bin/driver_manager_rust/node:driver_manager_node",
     "//src/devices/bin/driver_manager_rust/types:driver_manager_types",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:async-trait",

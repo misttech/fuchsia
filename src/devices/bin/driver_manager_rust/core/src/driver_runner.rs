@@ -19,6 +19,7 @@ use driver_manager_utils::DictionaryUtil;
 use fidl::endpoints::{ServerEnd, create_endpoints};
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
+use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
 use futures::channel::oneshot;
 use log::{debug, error, info, warn};
@@ -35,6 +36,7 @@ use {
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
     fidl_fuchsia_driver_host as fdh, fidl_fuchsia_driver_index as fdi,
     fidl_fuchsia_driver_token as fdt, fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fuchsia_inspect as inspect,
 };
 
 pub struct DriverRunner {
@@ -748,6 +750,106 @@ impl DriverRunner {
                 restarted_node.remove_subtree_dictionary();
                 restarted_node.restart_node();
             });
+        }
+    }
+
+    pub fn inspect(&self) -> inspect::Inspector {
+        let inspector =
+            inspect::Inspector::new(inspect::InspectorConfig::default().size(2 * 256 * 1024));
+
+        let mut roots = Vec::new();
+        let mut unique_nodes = HashSet::new();
+
+        let device_tree = inspector.root().create_child("node_topology");
+        let mut root_node_inspect = device_tree.create_child(self.root_node.name());
+
+        self.inspect_node_recursive(
+            &self.root_node,
+            &mut root_node_inspect,
+            &mut roots,
+            &mut unique_nodes,
+        );
+
+        device_tree.record(root_node_inspect);
+        inspector.root().record(device_tree);
+
+        for root in roots {
+            inspector.root().record(root);
+        }
+
+        self.bind_manager.record_inspect(inspector.root());
+
+        inspector
+    }
+
+    fn inspect_node_recursive(
+        &self,
+        node: &Rc<Node>,
+        inspect_node: &mut inspect::Node,
+        roots: &mut Vec<inspect::Node>,
+        unique_nodes: &mut HashSet<*const Node>,
+    ) {
+        let node_ptr = Rc::as_ptr(node);
+        if !unique_nodes.insert(node_ptr) {
+            return;
+        }
+
+        let offers = node.offers();
+        if !offers.is_empty() {
+            let array = inspect_node.create_string_array("offers", offers.len());
+            for (i, offer) in offers.iter().enumerate() {
+                array.set(i, &offer.service_name);
+            }
+            inspect_node.record(array);
+        }
+
+        let symbols = node.symbols();
+        if !symbols.is_empty() {
+            let array = inspect_node.create_string_array("symbols", symbols.len());
+            for (i, symbol) in symbols.iter().enumerate() {
+                if let Some(name) = &symbol.name {
+                    array.set(i, name);
+                }
+            }
+            inspect_node.record(array);
+        }
+
+        if let Some(properties) = node.get_node_properties(None)
+            && !properties.is_empty()
+        {
+            inspect_node.record_child("properties", |properties_node| {
+                for (i, property) in properties.iter().enumerate() {
+                    properties_node.record_child(i.to_string(), |inspect_property| {
+                        inspect_property.record_string("key", &property.key);
+                        match &property.value {
+                            fdf::NodePropertyValue::StringValue(s) => {
+                                inspect_property.record_string("value", s)
+                            }
+                            fdf::NodePropertyValue::IntValue(i) => {
+                                inspect_property.record_uint("value", *i as u64)
+                            }
+                            fdf::NodePropertyValue::EnumValue(e) => {
+                                inspect_property.record_string("value", e)
+                            }
+                            fdf::NodePropertyValue::BoolValue(b) => {
+                                inspect_property.record_bool("value", *b)
+                            }
+                            _ => inspect_property.record_string("value", "UNKNOWN VALUE TYPE"),
+                        }
+                    });
+                }
+            });
+        }
+
+        inspect_node
+            .record_string("type", if node.is_composite() { "Composite Device" } else { "Device" });
+        inspect_node.record_string("topological_path", node.make_topological_path(false));
+        inspect_node.record_string("driver", node.driver_url());
+
+        for child in node.children() {
+            let mut child_inspect_node = inspect_node.create_child(child.name());
+            self.inspect_node_recursive(&child, &mut child_inspect_node, roots, unique_nodes);
+            roots.push(child_inspect_node);
         }
     }
 }

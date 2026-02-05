@@ -514,6 +514,10 @@ impl Node {
         std::cell::Ref::map(self.inner.borrow(), |i| &i.node_type)
     }
 
+    pub fn symbols(&self) -> std::cell::Ref<'_, Vec<fdf::NodeSymbol>> {
+        std::cell::Ref::map(self.inner.borrow(), |i| &i.symbols)
+    }
+
     pub fn offers(&self) -> std::cell::Ref<'_, Vec<NodeOffer>> {
         std::cell::Ref::map(self.inner.borrow(), |i| &i.offers)
     }

@@ -39,8 +39,6 @@ async fn main() -> Result<(), Error> {
 
     let mut fs = ServiceFs::new_local();
 
-    let _inspector = fuchsia_inspect::component::inspector();
-
     // Connect to required services.
     let realm = connect_to_protocol::<fcomponent::RealmMarker>()?;
     let introspector = connect_to_protocol::<fcomponent::IntrospectorMarker>()?;
@@ -93,6 +91,13 @@ async fn main() -> Result<(), Error> {
         Devfs::new(outgoing_tx),
     );
     driver_runner.register_notifier()?;
+
+    let inspector = fuchsia_inspect::component::inspector();
+    let driver_runner_inspect = driver_runner.clone();
+    inspector.root().record_lazy_child_with_thread_local("driver_runner", move || {
+        let driver_runner = driver_runner_inspect.clone();
+        async move { Ok(driver_runner.inspect()) }.boxed_local()
+    });
 
     driver_runner.publish(&mut fs);
 

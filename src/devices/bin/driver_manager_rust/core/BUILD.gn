@@ -45,6 +45,7 @@ rustc_library("driver_manager_core") {
     "//src/devices/bin/driver_manager_rust/shutdown:driver_manager_shutdown",
     "//src/devices/bin/driver_manager_rust/types:driver_manager_types",
     "//src/devices/bin/driver_manager_rust/utils:driver_manager_utils",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
