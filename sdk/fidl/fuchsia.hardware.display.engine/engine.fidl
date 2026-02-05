@@ -318,7 +318,7 @@ type EngineInfo = struct {
 
 /// This protocol is `open` while under development.
 /// TODO(b/316631158): We should make it `closed` once the API is stabilized.
-@discoverable
+@discoverable(client="platform")
 @transport("Driver")
 open protocol Engine {
     /// Starts the information flow from the engine driver to the Coordinator.

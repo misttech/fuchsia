@@ -11,7 +11,7 @@ using zx;
 /// client.  In some cases, the provider service may provide access to only one or
 /// the other; if the client tries to open the other then `ZX_ERR_NOT_SUPPORTED` will
 /// be returned.
-@discoverable
+@discoverable(server="platform")
 closed protocol Provider {
     /// Opens a Virtcon client connection to the display coordinator.
     ///
