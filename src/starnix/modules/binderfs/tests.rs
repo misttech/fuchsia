@@ -26,6 +26,7 @@ pub mod tests {
     use memoffset::offset_of;
     use starnix_core::device::DeviceOps;
     use starnix_core::device::mem::new_null_file;
+    use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
     use starnix_core::mm::memory::MemoryObject;
     use starnix_core::mm::{
         DesiredAddress, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
@@ -4111,6 +4112,63 @@ pub mod tests {
             let fds = process_accessor_thread.join().expect("join").expect("fds");
             // Close and get requests both remove file descriptors.
             assert_eq!(fds.len(), fbinder::MAX_REQUEST_COUNT as usize);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn remote_binder_composite_file_descriptors() {
+        let (process_accessor_client_end, process_accessor_server_end) =
+            create_endpoints::<fbinder::ProcessAccessorMarker>();
+
+        let process_accessor_thread =
+            spawn_new_process_accessor_thread(process_accessor_server_end);
+
+        let process_accessor = fbinder::ProcessAccessorSynchronousProxy::new(
+            process_accessor_client_end.into_channel(),
+        );
+
+        spawn_kernel_and_run(async |locked, task| {
+            let process = fuchsia_runtime::process_self()
+                .duplicate(zx::Rights::SAME_RIGHTS)
+                .expect("process");
+            let remote_creds = FullCredentials::for_kernel();
+            let remote_binder_task =
+                Arc::new(RemoteResourceAccessor { process_accessor, process, remote_creds });
+
+            let locked = locked.cast_locked::<ResourceAccessorLevel>();
+
+            let sync_file = SyncFile::new_file(
+                locked,
+                &task,
+                [0; 32],
+                SyncFence {
+                    sync_points: vec![
+                        SyncPoint::new(Timeline::Hwc, zx::Counter::create()),
+                        SyncPoint::new(Timeline::Hwc, zx::Counter::create()),
+                    ],
+                },
+            )
+            .expect("new_file");
+
+            let files = vec![(sync_file, FdFlags::empty())];
+            let fds = remote_binder_task
+                .add_files_with_flags(locked, &task, files, &mut |_| {})
+                .expect("add_files_with_flags");
+            assert_eq!(fds.len(), 1);
+
+            // TODO(https://fxbug.dev/481167098): Support composite file descriptors.
+            assert_eq!(
+                remote_binder_task
+                    .get_files_with_flags(locked, &task, vec![fds[0]])
+                    .expect_err("get_files_with_flags should fail for composite file descriptors"),
+                errno!(EBADFD)
+            );
+
+            std::mem::drop(remote_binder_task);
+            let fds = process_accessor_thread.join().expect("join").expect("fds");
+            // Close and get requests both remove file descriptors.
+            assert_eq!(fds.len(), 0);
         })
         .await;
     }

@@ -1527,7 +1527,7 @@ impl BinderDriver {
                 let new_file = if let Some(handle) = source_file.handle {
                     new_remote_file(locked, source.current_task, handle, flags)?
                 } else if let Some(_bag) = source_file.bag {
-                    // TODO(fxbug.dev/481167098): Support composite file descriptors.
+                    // TODO(https://fxbug.dev/481167098): Support composite file descriptors.
                     log_warn!("FileHandle::bag is not supported");
                     return error!(EBADFD);
                 } else {

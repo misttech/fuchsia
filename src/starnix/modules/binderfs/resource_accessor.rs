@@ -261,7 +261,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
                     let file = if let Some(handle) = handle {
                         new_remote_file(locked, current_task, handle, flags.into_fidl())?
                     } else if let Some(_bag) = bag {
-                        // TODO(fxbug.dev/481167098): Support composite file descriptors.
+                        // TODO(https://fxbug.dev/481167098): Support composite file descriptors.
                         log_warn!("FileHandle::bag is not supported");
                         return error!(EBADFD);
                     } else {
