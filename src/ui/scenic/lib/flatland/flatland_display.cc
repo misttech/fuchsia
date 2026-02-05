@@ -70,7 +70,7 @@ FlatlandDisplay::FlatlandDisplay(
              const zx_packet_signal_t* signal) { destroy_display_function_(); });
   FX_DCHECK(status == ZX_OK);
 
-  FLATLAND_VERBOSE_LOG << "FlatlandDisplay NEW session_id=" << session_id_;
+  FX_LOGS(INFO) << "FlatlandDisplay NEW session_id=" << session_id_;
 }
 
 FlatlandDisplay::~FlatlandDisplay() {
@@ -78,7 +78,7 @@ FlatlandDisplay::~FlatlandDisplay() {
   // pass a release fence to RemoveSession().
   flatland_presenter_->RemoveSession(session_id_, std::nullopt);
 
-  FLATLAND_VERBOSE_LOG << "FlatlandDisplay DESTROYED session_id=" << session_id_;
+  FX_LOGS(INFO) << "FlatlandDisplay DESTROYED session_id=" << session_id_;
 }
 
 void FlatlandDisplay::SetContent(ViewportCreationToken token,

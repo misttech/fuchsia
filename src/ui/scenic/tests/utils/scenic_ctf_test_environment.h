@@ -8,7 +8,9 @@
 #include <fidl/fuchsia.testing.harness/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
+#include <fuchsia/testing/harness/cpp/fidl.h>
 #include <lib/sys/cpp/component_context.h>
+#include <lib/syslog/cpp/macros.h>
 
 #include <zxtest/base/environment.h>
 #include <zxtest/zxtest.h>
@@ -40,7 +42,27 @@ class ScenicCtfTestEnvironment : public zxtest::Environment {
 
   bool UseDisplayComposition() const;
 
-  fidl::SyncClient<fuchsia_testing_harness::RealmProxy>& realm_proxy() { return realm_proxy_; }
+  fidl::SyncClient<fuchsia_testing_harness::RealmProxy>& realm_proxy() {
+    if (!realm_proxy_) {
+      FX_CHECK(realm_proxy_hlcpp_);
+      fidl::InterfaceHandle<fuchsia::testing::harness::RealmProxy> interface_handle =
+          realm_proxy_hlcpp_.Unbind();
+      fidl::ClientEnd<fuchsia_testing_harness::RealmProxy> client_end(
+          interface_handle.TakeChannel());
+      realm_proxy_.Bind(std::move(client_end));
+    }
+    return realm_proxy_;
+  }
+
+  fuchsia::testing::harness::RealmProxySyncPtr& realm_proxy_hlcpp() {
+    if (!realm_proxy_hlcpp_) {
+      FX_CHECK(realm_proxy_);
+      fidl::ClientEnd<fuchsia_testing_harness::RealmProxy> client_end =
+          realm_proxy_.TakeClientEnd();
+      realm_proxy_hlcpp_.Bind(client_end.TakeChannel());
+    }
+    return realm_proxy_hlcpp_;
+  }
 
  private:
   explicit ScenicCtfTestEnvironment(fuchsia_ui_test_context::RendererType renderer_type);
@@ -48,6 +70,7 @@ class ScenicCtfTestEnvironment : public zxtest::Environment {
   fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory> realm_factory_;
   fidl::SyncClient<fuchsia_ui_composition::FlatlandDisplay> flatland_display_;
   fidl::SyncClient<fuchsia_testing_harness::RealmProxy> realm_proxy_;
+  fuchsia::testing::harness::RealmProxySyncPtr realm_proxy_hlcpp_;
   std::unique_ptr<sys::ComponentContext> context_;
   const fuchsia_ui_test_context::RendererType renderer_type_;
 

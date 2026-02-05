@@ -36,16 +36,9 @@ constexpr fuc::ContentId kContentId = {1};
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandViewIntegrationTest : public ScenicCtfHlcppTest {
- public:
-  FlatlandViewIntegrationTest()
-      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
-
  protected:
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
-
-    // Create the flatland display.
-    flatland_display_ = ConnectSyncIntoRealm<fuc::FlatlandDisplay>();
 
     // Get the display's width and height.
     auto singleton_display = ConnectSyncIntoRealm<fuchsia::ui::display::singleton::Info>();
@@ -93,7 +86,6 @@ class FlatlandViewIntegrationTest : public ScenicCtfHlcppTest {
     return flatland;
   }
 
-  fuc::FlatlandDisplaySyncPtr flatland_display_;
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
   std::optional<fuc::FlatlandError> last_error_;
@@ -117,12 +109,10 @@ TEST_F(FlatlandViewIntegrationTest, ParentViewportWatcherUnbindsOnParentDeath) {
   {
     fuc::FlatlandPtr parent;
     parent = MakeFlatland();
-    fidl::InterfacePtr<fuc::ChildViewWatcher> parent_view_watcher;
     auto [parent_view_token, display_viewport_token] = scenic::ViewCreationTokenPair::New();
 
     // Connect the parent view to the display.
-    flatland_display_->SetContent(std::move(display_viewport_token),
-                                  parent_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(display_viewport_token));
 
     fidl::InterfacePtr<fuc::ParentViewportWatcher> display_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
@@ -167,12 +157,10 @@ TEST_F(FlatlandViewIntegrationTest, ParentViewportWatcherUnbindsOnReleaseView) {
   // Create the parent view.
   fuc::FlatlandPtr parent;
   parent = MakeFlatland();
-  fidl::InterfacePtr<fuc::ChildViewWatcher> parent_view_watcher;
   auto [parent_view_creation_token, display_viewport_token] = scenic::ViewCreationTokenPair::New();
 
   // Connect the parent view to the display.
-  flatland_display_->SetContent(std::move(display_viewport_token),
-                                parent_view_watcher.NewRequest());
+  SetFlatlandDisplayContent(std::move(display_viewport_token));
 
   fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
   auto identity = scenic::NewViewIdentityOnCreation();
@@ -202,10 +190,8 @@ TEST_F(FlatlandViewIntegrationTest, ChildViewWatcherUnbindsOnChildDeath) {
   // Create the parent view and connect it to the display.
   {
     parent = MakeFlatland();
-    fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
     auto [child_view_token, parent_viewport_token] = scenic::ViewCreationTokenPair::New();
-    flatland_display_->SetContent(std::move(parent_viewport_token),
-                                  child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_viewport_token));
 
     fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
@@ -244,11 +230,10 @@ TEST_F(FlatlandViewIntegrationTest, ChildViewWatcherUnbindsOnInvalidToken) {
   fuc::FlatlandPtr parent;
   parent = MakeFlatland();
 
-  fidl::InterfacePtr<fuc::ChildViewWatcher> parent_view_watcher;
   auto [child_view_token, parent_viewport_token] = scenic::ViewCreationTokenPair::New();
 
   // Connect the parent view to the display.
-  flatland_display_->SetContent(std::move(parent_viewport_token), parent_view_watcher.NewRequest());
+  SetFlatlandDisplayContent(std::move(parent_viewport_token));
 
   fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
   auto identity = scenic::NewViewIdentityOnCreation();
@@ -283,11 +268,9 @@ TEST_F(FlatlandViewIntegrationTest, ParentViewportStatusTest) {
   // Create the parent view and connect it to the display.
   {
     parent = MakeFlatland();
-    fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
 
     auto [child_view_token, parent_viewport_token] = scenic::ViewCreationTokenPair::New();
-    flatland_display_->SetContent(std::move(parent_viewport_token),
-                                  child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_viewport_token));
 
     fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
@@ -344,9 +327,7 @@ TEST_F(FlatlandViewIntegrationTest, ChildViewStatusTest) {
     parent = MakeFlatland();
 
     auto [child_view_token, parent_viewport_token] = scenic::ViewCreationTokenPair::New();
-    fidl::InterfacePtr<fuc::ChildViewWatcher> parent_view_watcher;
-    flatland_display_->SetContent(std::move(parent_viewport_token),
-                                  parent_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_viewport_token));
 
     fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
@@ -385,7 +366,6 @@ TEST_F(FlatlandViewIntegrationTest, ChildViewStatusTest) {
 TEST_F(FlatlandViewIntegrationTest, GetViewRefTest) {
   fuc::FlatlandPtr parent;
   auto [parent_view_creation_token, display_viewport_token] = scenic::ViewCreationTokenPair::New();
-  fidl::InterfacePtr<fuc::ChildViewWatcher> parent_view_watcher;
 
   // Create the parent view.
   {
@@ -436,8 +416,7 @@ TEST_F(FlatlandViewIntegrationTest, GetViewRefTest) {
   // topology, because neither is connected to the root.
   EXPECT_FALSE(child_view_ref.has_value());
 
-  flatland_display_->SetContent(std::move(display_viewport_token),
-                                parent_view_watcher.NewRequest());
+  SetFlatlandDisplayContent(std::move(display_viewport_token));
 
   // Parent's ChildViewWatcher receives the view ref as it is now connected to the display.
   RunLoopUntil([&child_view_ref] { return child_view_ref.has_value(); });

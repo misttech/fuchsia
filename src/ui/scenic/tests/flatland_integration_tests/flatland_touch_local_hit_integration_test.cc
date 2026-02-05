@@ -63,10 +63,6 @@ using ViewRef = fuchsia::ui::views::ViewRef;
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
- public:
-  FlatlandTouchLocalHitIntegrationTest()
-      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
-
  protected:
   static constexpr uint32_t kDeviceId = 1111;
   static constexpr uint32_t kPointerId = 2222;
@@ -82,7 +78,6 @@ class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
-    flatland_display_ = ConnectSyncIntoRealm<FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<fuchsia::ui::pointerinjector::Registry>();
     local_hit_registry_ = ConnectAsyncIntoRealm<fuchsia::ui::pointer::augment::LocalHit>();
     local_hit_registry_.set_error_handler([](zx_status_t status) {
@@ -103,8 +98,7 @@ class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
     root_instance_->CreateView2(std::move(child_token), std::move(identity),
                                 /*view bound protocols*/ {}, parent_viewport_watcher.NewRequest());
 
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
-    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_token));
 
     root_instance_->CreateTransform(kRootTransform);
     root_instance_->SetRootTransform(kRootTransform);
@@ -262,8 +256,6 @@ class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
   float display_height_ = 0;
 
  private:
-  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
-
   fuchsia::ui::pointerinjector::RegistrySyncPtr pointerinjector_registry_;
 
   DevicePtr injector_;
