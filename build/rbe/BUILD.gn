@@ -289,7 +289,8 @@ if (current_toolchain == default_toolchain) {
 
         # Set the following to true if any remote build service is used.
         needs_auth =
-            needs_reproxy || bazel_enable || bazel_upload_build_events != ""
+            needs_reproxy || bazel_enable || bazel_upload_build_events != "" ||
+            ninja_upload_build_events != ""
       }
     }
     output_conversion = "json"
