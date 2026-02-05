@@ -24,6 +24,7 @@ from honeydew.typing import custom_types
 from mobly import base_test, signals, test_runner
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
+from mobly_controller import openwrt_ap
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -107,6 +108,9 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
         self.fuchsia_devices: list[
             fuchsia_device.FuchsiaDevice
         ] = self.register_controller(fuchsia_device_mobly_controller)
+        self.openwrt_aps: list[openwrt_ap.OpenwrtAp] = self.register_controller(
+            openwrt_ap, required=False, min_number=0
+        )
 
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS

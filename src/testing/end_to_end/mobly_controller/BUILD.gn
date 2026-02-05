@@ -24,7 +24,11 @@ python_library("mobly_controller_no_testonly") {
   sources = [
     "__init__.py",
     "fuchsia_device.py",
+    "openwrt_ap.py",
   ]
   source_root = "."
-  library_deps = [ "//src/testing/end_to_end/honeydew:honeydew_no_testonly" ]
+  library_deps = [
+    "//src/testing/end_to_end/honeydew:honeydew_no_testonly",
+    "//src/testing/end_to_end/libs",
+  ]
 }

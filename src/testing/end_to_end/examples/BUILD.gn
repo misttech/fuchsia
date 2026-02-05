@@ -17,6 +17,7 @@ if (is_host) {
       "test_data_resource_access:tests",
       "test_hello_world:tests",
       "test_multi_device:tests",
+      "test_openwrt_ap:tests",
       "test_power_cycle:tests",
       "test_soft_reboot:tests",
     ]
