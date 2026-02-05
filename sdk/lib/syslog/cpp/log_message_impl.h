@@ -23,6 +23,7 @@
 #include <atomic>
 #include <limits>
 #include <sstream>
+#include <type_traits>
 
 namespace fuchsia_logging {
 
@@ -141,7 +142,12 @@ void WriteStructuredLog(fuchsia_logging::LogSeverity severity, const char* file,
   if (file) {
     builder.WithFile(file, line);
   }
-  if (msg != nullptr) {
+  // If nullptr or a const char* that is nullptr is passed, ignore it.
+  if constexpr (std::is_convertible_v<Msg, const char*>) {
+    if (const char* msg_str = msg) {
+      builder.WithMsg(msg_str);
+    }
+  } else {
     // NOTE: If you see build errors on this line, it might be because of a Clang issue: fix
     // previous build errors and then try again.
     builder.WithMsg(msg);
