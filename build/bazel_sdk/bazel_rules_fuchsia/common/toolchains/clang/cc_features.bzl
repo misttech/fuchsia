@@ -12,7 +12,6 @@ load(
     "flag_set",
     "with_feature_set",
 )
-load("//common:toolchains/clang/clang_utils.bzl", "to_clang_target_tuple")
 
 _all_actions = [
     ACTION_NAMES.assemble,
@@ -343,9 +342,7 @@ _flag_configs = struct(
 # This is a special feature in that Bazel will put all of these flags first
 def get_default_compile_flags_feature(
         clang_info,
-        toolchain_repo_name,
         target_os,
-        target_cpu,
         sysroot = ""):
     """Compute the special "default_compile_flags" feature().
 
@@ -354,9 +351,7 @@ def get_default_compile_flags_feature(
 
     Args:
        clang_info: A ClangInfo provider value.
-       toolchain_repo_name: Canonical name of toolchain repository.
        target_os: Target OS, following Fuchsia conventions.
-       target_cpu: Target CPU, following Fuchsia conventions.
        sysroot: Optional path to sysroot to use.
 
     Returns:
@@ -370,12 +365,12 @@ def get_default_compile_flags_feature(
     default_ldflags = []
 
     if sysroot:
-        default_cflags += [
+        default_cflags.append(
             "--sysroot={}".format(sysroot),
-        ]
-        default_ldflags += [
+        )
+        default_ldflags.append(
             "--sysroot={}".format(sysroot),
-        ]
+        )
 
     default_system_flags = _make_flag_config(
         cflags = default_cflags,

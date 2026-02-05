@@ -47,7 +47,7 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
 
     clang_tuple = to_clang_target_tuple(target_os, target_cpu)
 
-    default_compile_flags_feature = get_default_compile_flags_feature(clang_info, repo_name, target_os, target_cpu, sysroot = sysroot)
+    default_compile_flags_feature = get_default_compile_flags_feature(clang_info, target_os, sysroot = sysroot)
 
     # A feature that adds a --target=<clang_tuple> to compiler and linker commands.
     target_system_name_feature = feature(
@@ -537,7 +537,7 @@ def generate_clang_cc_toolchain(
            This must be set if sysroot_header_files or sysroot_library_files
            are used.
 
-        extra_target_compatible_with: (optional) A list of extra target
+       extra_target_compatible_with: (optional) A list of extra target
            constraint values for the toolchain() target definition.
     """
     _prebuilt_clang_cc_toolchain_config(
