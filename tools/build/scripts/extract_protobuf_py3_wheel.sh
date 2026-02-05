@@ -21,7 +21,7 @@ function die {
 
 # Assume this script lives under //tools/build/scripts/
 _SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
-FUCHSIA_DIR="$(cd "${_SCRIPT_DIR}/../../.." && pwd -P 2>/dev/null)"
+FUCHSIA_DIR="$(readlink -f "${_SCRIPT_DIR}/../../..")"
 [[ -f "${FUCHSIA_DIR}/.jiri_manifest" ]] ||
     die "Cannot locate proper FUCHSIA_DIR, got: ${FUCHSIA_DIR}"
 
