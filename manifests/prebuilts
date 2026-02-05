@@ -163,6 +163,11 @@
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/pigz"/>
 
+      <!-- GBL from Android Artifacts. -->
+     <package name="fuchsia/third_party/android/gbl/mainline"
+              path="prebuilt/third_party/android/gbl/mainline"
+              version="bid:14827210"/>
+
     <!--
         ************************************************************
         Tools maintained in fuchsia.git itself.

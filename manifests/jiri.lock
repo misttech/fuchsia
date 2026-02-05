@@ -360,6 +360,11 @@
         "instance_id": "fEOsCxnjW-g6y7cuvl0TUxRRVGMdSyHGCGdJpHPj8HsC"
     },
     {
+        "package": "fuchsia/third_party/android/gbl/mainline",
+        "version": "bid:14827210",
+        "instance_id": "Ud6l7dHEZBGISKs7fMZwSGrc81j0DXaFYOqBdRP8_xcC"
+    },
+    {
         "package": "fuchsia/third_party/android/libsparse/release/linux-amd64",
         "version": "bid:13155864",
         "instance_id": "1XvyD9yGD2oc4DeZP-2I1WfxzNFx9_G3jymXclZok3kC"

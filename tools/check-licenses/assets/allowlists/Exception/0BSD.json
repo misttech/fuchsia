@@ -49,6 +49,14 @@
                         "notes": [
                             "adler2 is released under MIT and APACHE license as well"
                         ]
+                    },
+                                        {
+                        "projects": [
+                            "prebuilt/third_party/android/gbl/mainline"
+                        ],
+                        "bug": "https://fxbug.dev/479248426",
+                        "notes": [
+                        ]
                     }
                 ]
             }
