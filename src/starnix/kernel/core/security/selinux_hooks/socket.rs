@@ -44,38 +44,13 @@ pub(super) fn has_socket_permission(
     };
 
     let audit_context = [audit_context, socket_node.into()];
-    has_socket_permission_for_sid(
+    check_permission(
         permission_check,
         current_task,
         subject_sid,
         socket_sid,
         permission.for_class(socket_class),
         (&audit_context).into(),
-    )
-}
-
-/// Checks that `current_task` has the specified `permission` for the `socket_sid`.
-fn has_socket_permission_for_sid(
-    permission_check: &PermissionCheck<'_>,
-    current_task: &CurrentTask,
-    subject_sid: SecurityId,
-    socket_sid: SecurityId,
-    permission: KernelPermission,
-    audit_context: Auditable<'_>,
-) -> Result<(), Errno> {
-    // If the socket is for kernel-internal use we can return success immediately.
-    // TODO: https://fxbug.dev/364569010 - check if there are additional cases when the socket is
-    // for kernel-internal use.
-    if subject_sid == InitialSid::Kernel.into() || socket_sid == InitialSid::Kernel.into() {
-        return Ok(());
-    }
-    check_permission(
-        permission_check,
-        current_task,
-        subject_sid,
-        socket_sid,
-        permission,
-        audit_context,
     )
 }
 
@@ -206,7 +181,7 @@ where
         InitialSid::Unlabeled.into()
     };
 
-    has_socket_permission_for_sid(
+    check_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
