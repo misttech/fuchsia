@@ -198,18 +198,18 @@ TEST(PidFdTest, PidFdOpenAfterZombification) {
 
     // Use the `pid_fd` to wait for the child to exit, becoming a zombie.
     pollfd pfd{.fd = pid_fd.get(), .events = POLLIN};
-    ASSERT_EQ(poll(&pfd, 1, -1), 1);
+    ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceedsWithValue(1));
 
     // Connect a new PID-FD, which should be immediately in the signalled state.
     auto new_pid_fd = fbl::unique_fd(DoPidFdOpen(child_pid));
     ASSERT_TRUE(new_pid_fd.is_valid()) << strerror(errno);
     pfd = {.fd = new_pid_fd.get(), .events = POLLIN};
-    EXPECT_EQ(poll(&pfd, 1, 0), 1);
+    EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(1));
 
     // Now reap the zombie child process.
     int wait_status = 0;
     pid_t wait_result = waitpid(child_pid, &wait_status, 0);
-    EXPECT_EQ(wait_result, child_pid);
+    EXPECT_THAT(wait_result, SyscallSucceedsWithValue(child_pid));
   }
 }
 
