@@ -653,6 +653,14 @@ type ImageFormatConstraints = table {
     /// intersection, the `required_min_size` and `required_max_size` aggregate
     /// by effectively taking the union.
     ///
+    /// The `min_size` is the minimum size that a client is capable of handling.
+    /// If any participant sets `required_min_size` smaller than this,
+    /// allocation will fail.
+    ///
+    /// The `max_size` is the maximum size that a client is capable of handling.
+    /// If any participant sets `required_max_size` larger than this, allocation
+    /// will fail.
+    ///
     /// This field aggregates by taking the min per component, and
     /// required_max_size aggregates by taking the max per component. In
     /// addition the aggregated required_max_size is included in the aggregated
