@@ -568,6 +568,17 @@ fn example_cml_integration_test() {
         facets: Some(facets),
         environments: Some(envs),
         config: Some(config),
+        debug_info: Some(DebugInfo {
+            manifest_sources: Some(vec![
+                "tools/cmc/meta/example.cml".to_string(),
+                "sdk/lib/inspect/offer.shard.cml".to_string(),
+                "sdk/lib/sys/testing/coverage.shard.cml".to_string(),
+                "sdk/lib/syslog/client.shard.cml".to_string(),
+                "sdk/lib/syslog/offer.shard.cml".to_string(),
+                "sdk/lib/syslog/use.shard.cml".to_string(),
+            ]),
+            ..Default::default()
+        }),
         ..Default::default()
     };
     fancy_assert_eq(&cm_decl, &expected_decl);

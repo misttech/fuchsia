@@ -115,6 +115,20 @@ pub(crate) fn read_cm(file: &Path) -> Result<ComponentDecl, Error> {
     })
 }
 
+pub(crate) fn strip_leading_dots(path: &str) -> String {
+    let mut path = path;
+    loop {
+        if let Some(stripped) = path.strip_prefix("../") {
+            path = stripped;
+        } else if let Some(stripped) = path.strip_prefix("./") {
+            path = stripped;
+        } else {
+            break;
+        }
+    }
+    path.to_string()
+}
+
 pub(crate) fn ensure_directory_exists(output: &PathBuf) -> Result<(), Error> {
     if let Some(parent) = output.parent() {
         if !parent.exists() {
@@ -173,5 +187,16 @@ mod tests {
         // Operation is idempotent
         ensure_directory_exists(&nested_file).unwrap();
         assert!(nested_directory.exists());
+    }
+
+    #[test]
+    fn test_strip_leading_dots() {
+        assert_eq!(strip_leading_dots("foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots("../foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots("../../foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots("./foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots("./../foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots(".././foo/bar.cml"), "foo/bar.cml");
+        assert_eq!(strip_leading_dots("..foo/bar.cml"), "..foo/bar.cml");
     }
 }

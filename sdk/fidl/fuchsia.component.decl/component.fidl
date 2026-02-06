@@ -56,4 +56,15 @@ type Component = table {
 
     /// (Optional) The schema of the component's configuration interface.
     10: config ConfigSchema;
+
+    /// (Optional) Debug information about the component.
+    @available(added=NEXT)
+    11: debug_info DebugInfo;
+};
+
+/// Debug information about the component.
+@available(added=NEXT)
+type DebugInfo = table {
+    /// The list of CML files that were compiled to produce this manifest.
+    1: manifest_sources vector<string:MAX>:MAX;
 };

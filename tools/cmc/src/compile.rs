@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::features::FeatureSet;
 use crate::{Program, include, util};
 use fidl::persist;
+use fidl_fuchsia_component_decl as fdecl;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile_ext::NamedTempFileExt as _;
@@ -65,10 +66,16 @@ pub(crate) fn compile(
         .protocol_requirements(required_capabilities);
     let options =
         if let Some(s) = config_package_path { options.config_package_path(s) } else { options };
-    let out_data = cml::compile(&document, options)?;
+    let mut out_data = cml::compile(&document, options)?;
 
     // Write to the output file, but only if the bytes have changed.
+    let mut sources = vec![util::strip_leading_dots(&file.to_string_lossy())];
+    sources.extend(includes.iter().map(|p| util::strip_leading_dots(&p.to_string_lossy())));
+    out_data.debug_info =
+        Some(fdecl::DebugInfo { manifest_sources: Some(sources), ..Default::default() });
+
     let mut tmp = tempfile::NamedTempFile::new_in(output_parent)?;
+
     tmp.write_all(&persist(&out_data)?)?;
     tmp.persist_if_changed(&output).map_err(|e| e.error)?;
 
@@ -165,7 +172,8 @@ mod tests {
         let mut buffer = Vec::new();
         File::open(&out_path).unwrap().read_to_end(&mut buffer).unwrap();
 
-        let output: fdecl::Component = unpersist(&buffer).unwrap();
+        let mut output: fdecl::Component = unpersist(&buffer).unwrap();
+        output.debug_info = None;
         if output != expected_output {
             let e = format!("{:#?}", expected_output);
             let a = format!("{:#?}", output);

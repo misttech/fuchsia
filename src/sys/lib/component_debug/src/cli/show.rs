@@ -4,8 +4,8 @@
 
 use crate::query::get_single_instance_from_query;
 use crate::realm::{
-    get_config_fields, get_merkle_root, get_outgoing_capabilities, get_resolved_declaration,
-    get_runtime, ConfigField, ExecutionInfo, ResolvedInfo, Runtime,
+    ConfigField, ExecutionInfo, ResolvedInfo, Runtime, get_config_fields, get_merkle_root,
+    get_outgoing_capabilities, get_resolved_declaration, get_runtime,
 };
 use ansi_term::Colour;
 use anyhow::Result;
@@ -13,7 +13,7 @@ use cm_rust::ExposeDeclCommon;
 use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 
 #[cfg(feature = "serde")]
 use {schemars::JsonSchema, serde::Serialize};
@@ -37,6 +37,7 @@ pub struct ShowCmdResolvedInfo {
     pub config: Option<Vec<ConfigField>>,
     pub started: Option<ShowCmdExecutionInfo>,
     pub collections: Vec<String>,
+    pub manifest_sources: Option<Vec<String>>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, JsonSchema))]
@@ -129,6 +130,9 @@ async fn get_instance_by_query(
             let collections =
                 IntoIterator::into_iter(manifest.collections).map(|c| c.name.to_string()).collect();
 
+            let manifest_sources =
+                manifest.debug_info.and_then(|i| i.manifest_sources).map(|s| s.into_vec());
+
             Some(ShowCmdResolvedInfo {
                 resolved_url,
                 runner,
@@ -138,6 +142,7 @@ async fn get_instance_by_query(
                 config: structured_config,
                 started: execution_info,
                 collections,
+                manifest_sources,
             })
         }
         None => None,
@@ -183,11 +188,7 @@ fn create_config_table(instance: ShowCmdInstance) -> Table {
 }
 
 fn colorized(string: &str, color: Colour, with_style: bool) -> String {
-    if with_style {
-        color.paint(string).to_string()
-    } else {
-        string.to_string()
-    }
+    if with_style { color.paint(string).to_string() } else { string.to_string() }
 }
 
 fn add_resolved_info_to_table(
@@ -220,6 +221,12 @@ fn add_resolved_info_to_table(
 
         if !resolved.collections.is_empty() {
             table.add_row(row!(r->"Collections:", resolved.collections.join("\n")));
+        }
+
+        if let Some(sources) = &resolved.manifest_sources {
+            if !sources.is_empty() {
+                table.add_row(row!(r->"Manifest Sources:", sources.join("\n")));
+            }
         }
 
         add_execution_info_to_table(table, resolved.started, with_style)
@@ -402,6 +409,13 @@ mod tests {
                         durability: Some(fdecl::Durability::Transient),
                         ..Default::default()
                     }]),
+                    debug_info: Some(fdecl::DebugInfo {
+                        manifest_sources: Some(vec![
+                            "tools/cmc/meta/example.cml".to_string(),
+                            "sdk/lib/syslog/client.shard.cml".to_string(),
+                        ]),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 },
             )]),
@@ -452,6 +466,13 @@ mod tests {
         );
 
         assert_eq!(resolved.collections, vec!["my-collection"]);
+        assert_eq!(
+            resolved.manifest_sources.unwrap(),
+            vec![
+                "tools/cmc/meta/example.cml".to_string(),
+                "sdk/lib/syslog/client.shard.cml".to_string(),
+            ]
+        );
 
         let started = resolved.started.unwrap();
         assert_eq!(started.outgoing_capabilities, vec!["diagnostics".to_string()]);

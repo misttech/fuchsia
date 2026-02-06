@@ -194,6 +194,8 @@ pub struct ComponentDecl {
     pub facets: Option<fdata::Dictionary>,
     pub environments: Box<[EnvironmentDecl]>,
     pub config: Option<ConfigDecl>,
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    pub debug_info: Option<DebugInfo>,
 }
 
 impl ComponentDecl {
@@ -1263,6 +1265,14 @@ pub struct ConfigDecl {
     pub fields: Box<[ConfigField]>,
     pub checksum: ConfigChecksum,
     pub value_source: ConfigValueSource,
+}
+
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[fidl_decl(fidl_table = "fdecl::DebugInfo")]
+pub struct DebugInfo {
+    pub manifest_sources: Option<Box<[String]>>,
 }
 
 #[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
@@ -2923,6 +2933,7 @@ mod tests {
                 facets: None,
                 environments: Box::from([]),
                 config: None,
+                debug_info: None,
             },
         },
         try_from_all => {
@@ -3797,6 +3808,7 @@ mod tests {
                         ]),
                         value_source: ConfigValueSource::PackagePath("fake.cvf".to_string())
                     }),
+                    debug_info: None,
                 }
             },
         },
@@ -4077,6 +4089,7 @@ mod tests {
                     }),
                     environments: Box::from([]),
                     config: None,
+                    debug_info: None,
                 }
             },
         },

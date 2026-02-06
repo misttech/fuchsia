@@ -248,6 +248,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.component.decl/Component.debug_info",
+        "ordinal": "11",
+        "type": "fuchsia.component.decl/DebugInfo"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.component.decl/Component.environments",
         "ordinal": "8",
         "type": "vector<fuchsia.component.decl/Environment>"
@@ -650,6 +656,16 @@
     {
         "kind": "table",
         "name": "fuchsia.component.decl/Configuration"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/DebugInfo.manifest_sources",
+        "ordinal": "1",
+        "type": "vector<string>"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.component.decl/DebugInfo"
     },
     {
         "kind": "table/member",
