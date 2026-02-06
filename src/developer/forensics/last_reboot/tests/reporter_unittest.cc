@@ -44,6 +44,7 @@ using testing::IsEmpty;
 using testing::UnorderedElementsAreArray;
 
 constexpr char kHasReportedOnPath[] = "/tmp/has_reported_on_reboot_log.txt";
+constexpr char kNoGracefulAction[] = "GRACEFUL SHUTDOWN ACTION: (NONE)";
 constexpr char kNoGracefulReason[] = "GRACEFUL REBOOT REASONS: (NONE)";
 
 struct UngracefulShutdownTestParam {
@@ -73,6 +74,7 @@ struct GracefulShutdownWithCrashTestParam {
   zx::duration output_uptime;
   zx::duration output_runtime;
   cobalt::LastRebootReason output_last_reboot_reason;
+  std::string output_graceful_action;
   bool output_is_fatal;
 };
 
@@ -451,8 +453,9 @@ TEST_P(UngracefulReporterTest, Succeed) {
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = param.output_crash_signature,
-          .reboot_log = fxl::StringPrintf("%s\n%s\n\n%s", param.zircon_reboot_log.c_str(),
-                                          kNoGracefulReason, param.reboot_reason.c_str()),
+          .reboot_log =
+              fxl::StringPrintf("%s\n%s\n%s\n\n%s", param.zircon_reboot_log.c_str(),
+                                kNoGracefulAction, kNoGracefulReason, param.reboot_reason.c_str()),
           .uptime = param.output_uptime,
           .runtime = param.output_runtime,
           .is_fatal = true,
@@ -545,6 +548,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kSessionFailure,
+            "REBOOT",
             false,
         },
         {
@@ -556,6 +560,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kSystemOutOfMemory,
+            "REBOOT",
             true,
         },
         {
@@ -567,6 +572,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kSysmgrFailure,
+            "REBOOT",
             true,
         },
         {
@@ -579,6 +585,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kCriticalComponentFailure,
+            "REBOOT",
             true,
         },
         {
@@ -590,6 +597,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kRetrySystemUpdate,
+            "REBOOT",
             true,
         },
         {
@@ -601,6 +609,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kHighTemperature,
+            "REBOOT",
             true,
         },
         {
@@ -612,6 +621,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
+            "REBOOT",
             true,
         },
         {
@@ -623,6 +633,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
+            "REBOOT",
             true,
         },
         {
@@ -634,6 +645,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
+            "REBOOT",
             true,
         },
         {
@@ -645,6 +657,7 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(65487494),
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
+            "NOT PARSEABLE",
             true,
         },
     })),
@@ -668,7 +681,8 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = param.output_crash_signature,
           .reboot_log = fxl::StringPrintf(
-              "%s\nGRACEFUL REBOOT REASONS: (%s)\n\n%s", zircon_reboot_log.c_str(),
+              "%s\nGRACEFUL SHUTDOWN ACTION: (%s)\nGRACEFUL REBOOT REASONS: (%s)\n\n%s",
+              zircon_reboot_log.c_str(), param.output_graceful_action.c_str(),
               feedback::ToRawStrings(param.graceful_shutdown_reasons).c_str(),
               param.reboot_reason.c_str()),
           .uptime = param.output_uptime,
@@ -701,7 +715,11 @@ TEST_P(GracefulWithCrashReporterTest, SucceedForLegacyFile) {
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = param.output_crash_signature,
           .reboot_log = fxl::StringPrintf(
-              "%s\nGRACEFUL REBOOT REASONS: (%s)\n\n%s", zircon_reboot_log.c_str(),
+              "%s\nGRACEFUL SHUTDOWN ACTION: (%s)\nGRACEFUL REBOOT REASONS: (%s)\n\n%s",
+              zircon_reboot_log.c_str(),
+              // The legacy file didn't store the action, so it's inferred from the reasons both
+              // here and in the production code.
+              param.graceful_shutdown_reasons.empty() ? "NONE" : "REBOOT",
               feedback::ToRawStrings(param.graceful_shutdown_reasons).c_str(),
               param.reboot_reason.c_str()),
           .uptime = param.output_uptime,

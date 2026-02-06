@@ -278,8 +278,12 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
     lines.push_back(zircon_reboot_log.value());
   }
 
+  const std::string graceful_action =
+      graceful_info.has_value() ? ToString(graceful_info->action) : "NONE";
   const std::vector<GracefulShutdownReason> graceful_reasons =
       graceful_info.has_value() ? graceful_info->reasons : std::vector<GracefulShutdownReason>();
+
+  lines.push_back(fxl::StringPrintf("GRACEFUL SHUTDOWN ACTION: (%s)", graceful_action.c_str()));
 
   // TODO(https://fxbug.dev/414413282): rename output to "shutdown" reasons once any
   // dependencies are ready for the migration. To make it a cleaner break this can be done once the

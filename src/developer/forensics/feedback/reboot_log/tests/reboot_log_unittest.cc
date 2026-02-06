@@ -633,8 +633,9 @@ INSTANTIATE_TEST_SUITE_P(
             "ConcatenatesZirconAndGraceful",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
             {ShutdownReason::USER_REQUEST},
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: (USER "
-            "REQUEST)\n\nFINAL REBOOT REASON (USER REQUEST)",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+            "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
+            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (USER REQUEST)",
         },
         {
             // This test is the same as the above test, but is used to show that there may be an
@@ -642,28 +643,33 @@ INSTANTIATE_TEST_SUITE_P(
             "ConcatenatesZirconUngracefulAndGraceful",
             "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
             {ShutdownReason::USER_REQUEST},
-            "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: "
-            "(USER REQUEST)\n\nFINAL REBOOT REASON (KERNEL PANIC)",
+            "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+            "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
+            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (KERNEL PANIC)",
         },
         {
             "NoGracefulRebootLog",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
             {},
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: "
-            "(NONE)\n\nFINAL REBOOT REASON (GENERIC GRACEFUL)",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+            "GRACEFUL SHUTDOWN ACTION: (NONE)\n"
+            "GRACEFUL REBOOT REASONS: (NONE)\n\nFINAL REBOOT REASON (GENERIC GRACEFUL)",
         },
         {
             "MultipleGracefulRebootLog",
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
             {ShutdownReason::NETSTACK_MIGRATION, ShutdownReason::SYSTEM_UPDATE},
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\nGRACEFUL REBOOT REASONS: "
-            "(NETSTACK MIGRATION,SYSTEM UPDATE)\n\nFINAL REBOOT REASON (SYSTEM UPDATE)",
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+            "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
+            "GRACEFUL REBOOT REASONS: (NETSTACK MIGRATION,SYSTEM UPDATE)\n\nFINAL REBOOT REASON (SYSTEM UPDATE)",
         },
         {
             "NoZirconRebootLog",
             std::nullopt,
             {ShutdownReason::USER_REQUEST},
-            "ZIRCON REBOOT REASON (COLD)\nGRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
+            "ZIRCON REBOOT REASON (COLD)\n"
+            "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
+            "GRACEFUL REBOOT REASONS: (USER REQUEST)\n\nFINAL REBOOT REASON (COLD)",
         },
     })),
     [](const testing::TestParamInfo<RebootLogStrTestParam>& info) { return info.param.test_name; });
@@ -699,6 +705,7 @@ TEST_F(RebootLogStrTest, Succeed_SetGracefulFDR) {
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
   EXPECT_EQ(reboot_log.RebootLogStr(),
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+            "GRACEFUL SHUTDOWN ACTION: (REBOOT)\n"
             "GRACEFUL REBOOT REASONS: (FACTORY DATA RESET)\n\n"
             "FINAL REBOOT REASON (FACTORY DATA RESET)");
 }
@@ -713,7 +720,9 @@ TEST_F(RebootLogStrTest, Succeed_InferFDR) {
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "FACTORY DATA RESET");
   EXPECT_EQ(reboot_log.RebootLogStr(),
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
-            "GRACEFUL REBOOT REASONS: (NONE)\n\nFINAL REBOOT REASON (FACTORY DATA RESET)");
+            "GRACEFUL SHUTDOWN ACTION: (NONE)\n"
+            "GRACEFUL REBOOT REASONS: (NONE)\n\n"
+            "FINAL REBOOT REASON (FACTORY DATA RESET)");
 }
 
 TEST_F(RebootLogStrTest, Succeed_SetDlog) {
@@ -731,6 +740,7 @@ test dlog dump line2
 
 --- END DLOG DUMP ---
 
+GRACEFUL SHUTDOWN ACTION: (REBOOT)
 GRACEFUL REBOOT REASONS: (NONE)
 
 FINAL REBOOT REASON (ROOT JOB TERMINATION))";
@@ -757,6 +767,7 @@ TEST_F(RebootLogStrTest, Succeed_EmptyDlog) {
   --- BEGIN DLOG DUMP ---
   --- END DLOG DUMP ---
 
+  GRACEFUL SHUTDOWN ACTION: (REBOOT)
   GRACEFUL REBOOT REASONS: (NONE)
 
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
@@ -780,6 +791,7 @@ TEST_F(RebootLogStrTest, Succeed_NoDlog) {
   RUNTIME (ms)
   1098
 
+  GRACEFUL SHUTDOWN ACTION: (REBOOT)
   GRACEFUL REBOOT REASONS: (NONE)
 
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
