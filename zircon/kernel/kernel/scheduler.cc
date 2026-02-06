@@ -1599,9 +1599,12 @@ cpu_stats Scheduler::GetProjectedCpuStats(cpu_num_t cpu_num) {
   concurrent::WellDefinedCopyFrom<concurrent::SyncOpt::None, alignof(decltype(cpu_stats))>(
       &cpu_stats, &percpu.stats, sizeof(cpu_stats));
 
-  const SchedDuration duration_since_last_update_ns =
-      CurrentTime() - cpu_stats.last_updated_instant;
-  DEBUG_ASSERT(duration_since_last_update_ns >= 0);
+  const SchedTime now = CurrentTime();
+  const SchedDuration duration_since_last_update_ns = now - cpu_stats.last_updated_instant;
+  DEBUG_ASSERT_MSG(
+      duration_since_last_update_ns >= 0,
+      "now=%" PRId64 " last_updated_instant=%" PRId64 " duration_since_last_update_ns=%" PRId64,
+      now.raw_value(), cpu_stats.last_updated_instant, duration_since_last_update_ns.raw_value());
 
   if (PeekIsIdle(cpu_num)) {
     cpu_stats.idle_time += duration_since_last_update_ns;
