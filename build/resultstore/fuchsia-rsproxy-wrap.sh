@@ -27,7 +27,14 @@ readonly rsproxy="$PREBUILT_RSCLIENT_DIR/bin/rsproxy"
 readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
 
 # default options:
-loas_type=auto
+if command -v gcert >/dev/null 2>&1; then
+  # Detect LOAS type if it is not already passed in.
+  loas_type=auto
+else
+  # Assume this in an infra environment, and do not attempt to
+  # use any credential helpers.
+  loas_type=skip
+fi
 verbose=0
 
 function die() {
@@ -46,6 +53,7 @@ function usage() {
 usage: $0 [options] -- command ...
 
 options:
+  -h | --help: print help and exit
   --loas-type TYPE: {skip,auto,restricted,unrestricted}, default [$loas_type]
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
@@ -77,6 +85,7 @@ do
   esac
 
   case "$opt" in
+    -h | --help) usage; exit ;;
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
     -v | --verbose) verbose=1 ;;
@@ -134,6 +143,12 @@ case "$loas_type" in
       --cfg "$CFG"
     )
     ;;
+  skip) : ;;
+
+  *)
+    echo "Error: unhandled LOAS type: $loas_type"
+    exit 1
+    ;;
 esac
 
 ### infra builds
@@ -144,6 +159,21 @@ esac
 #   * RS_rs_instance
 #   * RS_cas_service
 #   * RS_cas_instance
+
+# When rs_service points to a unix socket, TLS assumes a server name of
+# "localhost", for which certs are invalid.  Fix this by using the
+# real name of the service.  Same for cas_service.
+# TODO: pass these from recipes as RS_* environment variables.
+case "${RS_rs_service:-NOT_SET}" in
+  unix://*)
+    rsproxy_options+=( --rs_tls_server_name="resultstore.googleapis.com")
+    ;;
+esac
+case "${RS_cas_service:-NOT_SET}" in
+  unix://*)
+    rsproxy_options+=( --cas_tls_server_name="remotebuildexecution.googleapis.com")
+    ;;
+esac
 
 # Scan wrapped command arguments for important options.
 # Note: this loops scans *all* arguments, which could potentially
@@ -226,6 +256,12 @@ fi
 # Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
 # outside of 'fx build', so just fallback to using some temp dir.
 
+[[ "${GCE_METADATA_HOST:-NOT_SET}" == "NOT_SET" ]] || {
+  # Workaround: avoid DNS lookup of "localhost"
+  wrap_env+=( GCE_METADATA_HOST="${GCE_METADATA_HOST/localhost/127.0.0.1}" )
+}
+
+
 # Ensure that the prebuilt python3 is in the PATH (needed in infra environment).
 # rsproxy-wrap.sh uses python3 as an alternative means for mkfifo and sleep.
 readonly py3_bindir="${PREBUILT_PYTHON3%/*}"  # dirname
@@ -243,5 +279,12 @@ full_cmd=(
   "${wrapped_command[@]}"
 )
 
-debug_msg "full command: ${wrapped_command[*]}"
+[[ "$verbose" == 0 ]] || {
+  echo "[$SCRIPT_NAME] ---- env start ----"
+  export SH_WRAPPER_TEST_DEBUG=1  # extra verbosity in rsproxy-wrap.sh
+  env
+  echo "[$SCRIPT_NAME] ---- env end ----"
+}
+
+debug_msg "full command: ${full_cmd[*]}"
 exec "${full_cmd[@]}"
