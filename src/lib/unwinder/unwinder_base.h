@@ -32,6 +32,9 @@ class UnwinderBase {
     return cb(Error("Not implemented"), Registers(current.regs.arch()));
   }
 
+  // The trust that should be associated with this unwinder.
+  virtual Frame::Trust trust() const = 0;
+
   virtual CfiUnwinder* cfi_unwinder() const { return cfi_unwinder_; }
 
  protected:

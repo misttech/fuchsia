@@ -44,6 +44,8 @@ class CfiUnwinder : public UnwinderBase {
   void AsyncStep(AsyncMemory* stack, const Frame& current,
                  fit::callback<void(Error, Registers)> cb) override;
 
+  Frame::Trust trust() const override { return Frame::Trust::kCFI; }
+
   // For other unwinders that want to check whether a value looks like a valid PC.
   bool IsValidPC(uint64_t pc);
 

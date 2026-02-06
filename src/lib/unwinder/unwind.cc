@@ -49,15 +49,14 @@ bool PcIsReturnAddress(const Registers& regs) {
   return regs.Get(reg_id, val).has_err();
 }
 
-Error TryUnwinder(UnwinderBase* unwinder, Frame::Trust trust, Memory* stack, const Frame& current,
-                  Frame& next) {
+Error TryUnwinder(UnwinderBase* unwinder, Memory* stack, const Frame& current, Frame& next) {
   auto err = unwinder->Step(stack, current, next);
 
   if (err.has_err()) {
     return err;
   }
 
-  next.trust = trust;
+  next.trust = unwinder->trust();
 
   // If the frame was identified with an S augmentation by the CFI unwinder, then we know that this
   // definitely not a return address.
@@ -78,9 +77,9 @@ Error TryUnwinder(UnwinderBase* unwinder, Frame::Trust trust, Memory* stack, con
   }
 
   // Otherwise defer to the value of the return address register.
-  if (trust == Frame::Trust::kCFI) {
+  if (next.trust == Frame::Trust::kCFI) {
     next.pc_is_return_address = PcIsReturnAddress(next.regs);
-  } else if (trust == Frame::Trust::kSigReturn) {
+  } else if (next.trust == Frame::Trust::kSigReturn) {
     next.pc_is_return_address = false;
   } else {
     next.pc_is_return_address = true;
@@ -172,8 +171,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   // means the CFI unwinder got an S augmentation or we already successfully probed sigreturn
   // instructions for |current.pc|.
   if (current.is_signal_frame) {
-    if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack, current, next);
-        err.ok()) {
+    if (auto err = TryUnwinder(&sigreturn_unwinder, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "SIGRETURN: " + err.msg();
@@ -183,8 +181,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   // For non-signal frames, try CFI first because it's the most accurate one.
   // TODO(https://fxbug.dev/316047562): Make CFI work on RISC-V.
   if (current.regs.arch() != Registers::Arch::kRiscv64) {
-    if (auto err = TryUnwinder(&cfi_unwinder_, Frame::Trust::kCFI, stack, current, next);
-        err.ok()) {
+    if (auto err = TryUnwinder(&cfi_unwinder_, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "; CFI: " + err.msg();
@@ -201,8 +198,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   // as well.
   uint64_t maybe_pc = 0;
   if (!success || next.regs.GetPC(maybe_pc).has_err() || maybe_pc == 0) {
-    if (auto err = TryUnwinder(&arm_ehabi_unwinder, Frame::Trust::kArmEhAbi, stack, current, next);
-        err.ok()) {
+    if (auto err = TryUnwinder(&arm_ehabi_unwinder, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "; ARMEHABI: " + err.msg();
@@ -211,7 +207,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
 
   if (!success && !current.pc_is_return_address) {
     // PLT unwinder only works for the first frame.
-    if (auto err = TryUnwinder(&plt_unwinder, Frame::Trust::kPLT, stack, current, next); err.ok()) {
+    if (auto err = TryUnwinder(&plt_unwinder, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "; PLT: " + err.msg();
@@ -220,7 +216,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
 
   // Try frame pointers before SCS because it plays well with the CFI.
   if (!success) {
-    if (auto err = TryUnwinder(&fp_unwinder, Frame::Trust::kFP, stack, current, next); err.ok()) {
+    if (auto err = TryUnwinder(&fp_unwinder, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "; FP: " + err.msg();
@@ -229,7 +225,7 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
 
   // Try shadow call stacks last because it can only recover PC.
   if (!success) {
-    if (auto err = TryUnwinder(&scs_unwinder, Frame::Trust::kSCS, stack, current, next); err.ok()) {
+    if (auto err = TryUnwinder(&scs_unwinder, stack, current, next); err.ok()) {
       success = true;
     } else {
       err_msg += "; SCS: " + err.msg();
@@ -286,9 +282,7 @@ void AsyncUnwinder::Step(Frame& current) {
         // sigreturn instructions for |current.pc|.
         if (current.is_signal_frame) {
           SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
-          if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack_.get(),
-                                     current, next);
-              err.ok()) {
+          if (auto err = TryUnwinder(&sigreturn_unwinder, stack_.get(), current, next); err.ok()) {
             success = true;
           } else {
             err_msg += "SIGRETURN: " + err.msg();
@@ -298,9 +292,7 @@ void AsyncUnwinder::Step(Frame& current) {
         if (!success && !current.pc_is_return_address) {
           // PLT unwinder only works for the first frame.
           PltUnwinder plt_unwinder(&cfi_unwinder_);
-          if (auto err =
-                  TryUnwinder(&plt_unwinder, Frame::Trust::kPLT, stack_.get(), current, next);
-              err.ok()) {
+          if (auto err = TryUnwinder(&plt_unwinder, stack_.get(), current, next); err.ok()) {
             success = true;
           } else {
             err_msg += "; PLT: " + err.msg();
@@ -311,8 +303,7 @@ void AsyncUnwinder::Step(Frame& current) {
         // CFI in the next frame, so we also try here.
         if (!success) {
           FramePointerUnwinder fp_unwinder(&cfi_unwinder_);
-          if (auto err = TryUnwinder(&fp_unwinder, Frame::Trust::kFP, stack_.get(), current, next);
-              err.ok()) {
+          if (auto err = TryUnwinder(&fp_unwinder, stack_.get(), current, next); err.ok()) {
             success = true;
           } else {
             err_msg += "; FP:" + err.msg();
@@ -322,9 +313,7 @@ void AsyncUnwinder::Step(Frame& current) {
         // Try sigreturn before SCS, since it can recover more than SCS.
         if (!success && current.regs.arch() == Registers::Arch::kArm64) {
           SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
-          if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack_.get(),
-                                     current, next);
-              err.ok()) {
+          if (auto err = TryUnwinder(&sigreturn_unwinder, stack_.get(), current, next); err.ok()) {
             success = true;
           } else {
             err_msg += "; SIGRETURN: " + err.msg();
@@ -335,9 +324,7 @@ void AsyncUnwinder::Step(Frame& current) {
         // is pointing.
         if (!success) {
           ShadowCallStackUnwinder scs_unwinder(&cfi_unwinder_);
-          if (auto err =
-                  TryUnwinder(&scs_unwinder, Frame::Trust::kSCS, stack_.get(), current, next);
-              err.ok()) {
+          if (auto err = TryUnwinder(&scs_unwinder, stack_.get(), current, next); err.ok()) {
             success = true;
           } else {
             err_msg += "; SCS:" + err.msg();

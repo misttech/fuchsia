@@ -20,6 +20,8 @@ class PltUnwinder : public UnwinderBase {
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
+  Frame::Trust trust() const override { return Frame::Trust::kPLT; }
+
  private:
   // Note that only the topmost frame could be in PLT.
   // This function assume the current frame has a trust level kContext to avoid false positives!

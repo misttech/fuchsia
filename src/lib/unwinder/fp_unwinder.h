@@ -23,6 +23,7 @@ class FramePointerUnwinder : public UnwinderBase {
   explicit FramePointerUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
+  Frame::Trust trust() const override { return Frame::Trust::kFP; }
 
  private:
   Error Step(Memory* stack, const Registers& current, Registers& next, CfiModuleInfo* module_info);

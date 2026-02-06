@@ -22,6 +22,8 @@ class SigReturnUnwinder : public UnwinderBase {
     return Step(stack, current.regs, next.regs);
   }
 
+  Frame::Trust trust() const override { return Frame::Trust::kSigReturn; }
+
   static Error ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Registers& regs);
 
  private:

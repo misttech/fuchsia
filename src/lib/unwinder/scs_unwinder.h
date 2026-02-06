@@ -24,6 +24,7 @@ class ShadowCallStackUnwinder : public UnwinderBase {
   explicit ShadowCallStackUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* scs, const Frame& current, Frame& next) override;
+  Frame::Trust trust() const override { return Frame::Trust::kSCS; }
 
  private:
   Error Step(Memory* scs, const Registers& current, Registers& next);
