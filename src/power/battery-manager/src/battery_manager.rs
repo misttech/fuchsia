@@ -9,12 +9,11 @@ use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
-use fuchsia_sync::{Mutex as SMutex, RwLock};
 use futures::channel::mpsc;
-use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt, stream};
 use log::{debug, error, info};
-use std::sync::Arc;
+use std::cell::RefCell;
+use std::rc::Rc;
 use {
     fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_system as fsystem,
     fuchsia_async as fasync,
@@ -27,7 +26,7 @@ pub(crate) trait BatterySimulationStateObserver {
 
 impl BatterySimulationStateObserver for BatteryManager {
     fn update_simulation(&self, is_simulating: bool) {
-        let mut sim_state = self.simulation_state.write();
+        let mut sim_state = self.simulation_state.borrow_mut();
         *sim_state = is_simulating;
         drop(sim_state);
         if !is_simulating {
@@ -35,7 +34,7 @@ impl BatterySimulationStateObserver for BatteryManager {
         }
     }
     fn update_simulated_battery_info(&self, battery_info: fpower::BatteryInfo) {
-        let mut simulated_battery_info = self.simulated_battery_info.write();
+        let mut simulated_battery_info = self.simulated_battery_info.borrow_mut();
         *simulated_battery_info = battery_info;
         drop(simulated_battery_info);
         self.update_watchers_conditionally(true, None);
@@ -49,18 +48,18 @@ impl BatterySimulationStateObserver for BatteryManager {
 ///
 /// simulation_state: true when the simulator is running
 pub struct BatteryManager {
-    battery_info: Arc<RwLock<fpower::BatteryInfo>>,
-    watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
-    simulation_state: RwLock<bool>,
-    simulated_battery_info: RwLock<fpower::BatteryInfo>,
-    data_polisher: Arc<Mutex<Polisher>>,
+    battery_info: RefCell<fpower::BatteryInfo>,
+    watchers: Rc<RefCell<Vec<fpower::BatteryInfoWatcherProxy>>>,
+    simulation_state: RefCell<bool>,
+    simulated_battery_info: RefCell<fpower::BatteryInfo>,
+    data_polisher: RefCell<Polisher>,
     /// Publishes battery events to Inspect.
-    history_logger: Arc<SMutex<HistoryLogger>>,
+    history_logger: Rc<RefCell<HistoryLogger>>,
     info_recorders: BatteryInfoRecorders,
     /// Blocking suspension if charging
-    charge_wake_lease: Arc<Mutex<Option<fsystem::LeaseToken>>>,
+    charge_wake_lease: RefCell<Option<fsystem::LeaseToken>>,
 
-    previous_level: Arc<Mutex<Option<f32>>>,
+    previous_level: RefCell<Option<f32>>,
     update_sender: mpsc::Sender<(fpower::BatteryInfo, Option<zx::EventPair>)>,
 }
 
@@ -74,26 +73,13 @@ impl BatteryManager {
         logger: HistoryLogger,
         recorder_config: RecorderConfig,
     ) -> BatteryManager {
-        let watchers_arc = Arc::new(Mutex::new(Vec::new()));
+        let watchers_rc = Rc::new(RefCell::new(Vec::new()));
         // For now the size is arbitrary chosen. Will log error and catch in CQ.
         let (sender, receiver) = futures::channel::mpsc::channel(10);
-        Self::start_watcher_worker(watchers_arc.clone(), receiver);
+        Self::start_watcher_worker(watchers_rc.clone(), receiver);
 
         BatteryManager {
-            battery_info: Arc::new(RwLock::new(fpower::BatteryInfo {
-                status: Some(fpower::BatteryStatus::NotAvailable),
-                charge_status: Some(fpower::ChargeStatus::Unknown),
-                charge_source: Some(fpower::ChargeSource::Unknown),
-                level_percent: None,
-                level_status: Some(fpower::LevelStatus::Unknown),
-                health: Some(fpower::HealthStatus::Unknown),
-                time_remaining: Some(fpower::TimeRemaining::Indeterminate(0)),
-                timestamp: Some(get_current_time()),
-                ..Default::default()
-            })),
-            watchers: watchers_arc,
-            simulation_state: RwLock::new(false),
-            simulated_battery_info: RwLock::new(fpower::BatteryInfo {
+            battery_info: RefCell::new(fpower::BatteryInfo {
                 status: Some(fpower::BatteryStatus::NotAvailable),
                 charge_status: Some(fpower::ChargeStatus::Unknown),
                 charge_source: Some(fpower::ChargeSource::Unknown),
@@ -104,25 +90,38 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
-            data_polisher: Arc::new(Mutex::new(Polisher::new())),
-            history_logger: Arc::new(SMutex::new(logger)),
+            watchers: watchers_rc,
+            simulation_state: RefCell::new(false),
+            simulated_battery_info: RefCell::new(fpower::BatteryInfo {
+                status: Some(fpower::BatteryStatus::NotAvailable),
+                charge_status: Some(fpower::ChargeStatus::Unknown),
+                charge_source: Some(fpower::ChargeSource::Unknown),
+                level_percent: None,
+                level_status: Some(fpower::LevelStatus::Unknown),
+                health: Some(fpower::HealthStatus::Unknown),
+                time_remaining: Some(fpower::TimeRemaining::Indeterminate(0)),
+                timestamp: Some(get_current_time()),
+                ..Default::default()
+            }),
+            data_polisher: RefCell::new(Polisher::new()),
+            history_logger: Rc::new(RefCell::new(logger)),
             info_recorders: BatteryInfoRecorders::new(recorder_config),
-            charge_wake_lease: Arc::new(Mutex::new(None)),
-            previous_level: Arc::new(Mutex::new(None)),
+            charge_wake_lease: RefCell::new(None),
+            previous_level: RefCell::new(None),
             update_sender: sender,
         }
     }
 
     // Global Worker Task (This runs only once)
     fn start_watcher_worker(
-        watchers_arc: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
+        watchers_rc: Rc<RefCell<Vec<fpower::BatteryInfoWatcherProxy>>>,
         mut receiver: mpsc::Receiver<(fpower::BatteryInfo, Option<zx::EventPair>)>,
     ) {
         fasync::Task::local(async move {
             // Processes updates sequentially, guaranteeing order.
             while let Some((info, wake_lease)) = receiver.next().await {
                 let watchers_to_send = {
-                    let mut watchers_guard = watchers_arc.lock().await;
+                    let mut watchers_guard = watchers_rc.borrow_mut();
                     watchers_guard.retain(|w| !w.is_closed()); // Cleanup of closed channels
                     watchers_guard.clone() // Clone the cleaned list for concurrent sending
                 };
@@ -147,8 +146,8 @@ impl BatteryManager {
     }
 
     // Adds watcher
-    pub async fn add_watcher(&self, watcher: fpower::BatteryInfoWatcherProxy) {
-        let mut watchers = self.watchers.lock().await;
+    pub fn add_watcher(&self, watcher: fpower::BatteryInfoWatcherProxy) {
+        let mut watchers = self.watchers.borrow_mut();
         debug!("::manager:: adding watcher: {:?} [{:?}]", watcher, watchers.len());
         watchers.push(watcher)
     }
@@ -193,36 +192,36 @@ impl BatteryManager {
             fpower::ChargeSource::Unknown | fpower::ChargeSource::None => false,
             _ => true,
         };
-        let mut charge_wake_lease = self.charge_wake_lease.lock().await;
-        if is_charging && charge_wake_lease.is_none() {
+
+        if is_charging && self.charge_wake_lease.borrow().is_none() {
             let res = sag
                 .take_wake_lease("charging_block_suspension")
                 .await
                 .context("failed to take wake lease");
 
-            *charge_wake_lease = match res {
+            match res {
                 Ok(token) => {
                     info!("Acquired wake lock to block suspension while charging");
-                    Some(token)
+                    *self.charge_wake_lease.borrow_mut() = Some(token);
                 }
                 Err(e) => {
                     error!("Can't block suspension due to error: {e}");
-                    None
                 }
             };
         }
-        if !is_charging && charge_wake_lease.is_some() {
-            *charge_wake_lease = None;
+
+        if !is_charging && self.charge_wake_lease.borrow().is_some() {
+            *self.charge_wake_lease.borrow_mut() = None;
             info!("Dropped wake lease token, allowing suspension.");
         }
     }
 
-    async fn publish_battery_level_on_change(&self, new_level: Option<f32>) {
+    fn publish_battery_level_on_change(&self, new_level: Option<f32>) {
         if let Some(level_to_publish) = new_level {
-            let mut previous_level = self.previous_level.lock().await;
+            let mut previous_level = self.previous_level.borrow_mut();
             if new_level != *previous_level {
                 *previous_level = new_level;
-                Self::publish_battery_level(self.history_logger.clone(), level_to_publish);
+                self.publish_battery_level(level_to_publish);
             }
         }
     }
@@ -238,7 +237,7 @@ impl BatteryManager {
         self.info_recorders.record_raw_level_on_change(raw_level);
 
         let info = {
-            let mut data_polisher = self.data_polisher.lock().await;
+            let mut data_polisher = self.data_polisher.borrow_mut();
             if recovery_event == FaultRecoveryEvent::Recovered {
                 data_polisher.reset_rate_limiter();
             }
@@ -247,17 +246,17 @@ impl BatteryManager {
 
         self.determine_suspend_status(info.charge_source, sag).await;
 
-        let mut new_battery_info = self.battery_info.write();
+        let mut new_battery_info = self.battery_info.borrow_mut();
         *new_battery_info = info;
         let now = get_current_time();
         new_battery_info.timestamp = Some(now);
 
-        self.publish_to_inspect(&new_battery_info).await;
+        self.publish_to_inspect(&new_battery_info);
     }
 
-    async fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
-        self.publish_battery_level_on_change(info.level_percent).await;
-        Self::publish_charge_status(self.history_logger.clone(), info.charge_status);
+    fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
+        self.publish_battery_level_on_change(info.level_percent);
+        self.publish_charge_status(info.charge_status);
 
         self.info_recorders.record_level_on_change(info.level_percent);
         self.info_recorders.record_present_voltage(info.present_voltage_mv);
@@ -267,11 +266,11 @@ impl BatteryManager {
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
-        if *self.simulation_state.read() {
-            let info_lock = self.simulated_battery_info.read();
+        if *self.simulation_state.borrow() {
+            let info_lock = self.simulated_battery_info.borrow();
             (*info_lock).clone()
         } else {
-            let info_lock = self.battery_info.read();
+            let info_lock = self.battery_info.borrow();
             (*info_lock).clone()
         }
     }
@@ -282,7 +281,7 @@ impl BatteryManager {
     }
 
     pub fn is_simulating(&self) -> bool {
-        *self.simulation_state.read()
+        *self.simulation_state.borrow()
     }
 
     pub(crate) async fn serve(
@@ -304,7 +303,7 @@ impl BatteryManager {
                         fpower::BatteryManagerRequest::Watch { watcher, .. } => {
                             let watcher = watcher.into_proxy();
                             debug!("::battery_manager_request:: handle Watch request");
-                            self.add_watcher(watcher.clone()).await;
+                            self.add_watcher(watcher.clone());
 
                             // Make sure watcher has current battery info.
                             // But there is no copy of the wake lease.
@@ -359,15 +358,12 @@ impl BatteryManager {
         self.wait_on_updates(server_end, sag).await
     }
 
-    fn publish_battery_level(history_logger: Arc<SMutex<HistoryLogger>>, percent: f32) {
-        history_logger.lock().add_battery_level(zx::BootInstant::get(), percent as i32);
+    fn publish_battery_level(&self, percent: f32) {
+        self.history_logger.borrow_mut().add_battery_level(zx::BootInstant::get(), percent as i32);
     }
 
-    fn publish_charge_status(
-        history_logger: Arc<SMutex<HistoryLogger>>,
-        status: Option<fpower::ChargeStatus>,
-    ) {
-        history_logger.lock().update_charge_status(zx::BootInstant::get(), status);
+    fn publish_charge_status(&self, status: Option<fpower::ChargeStatus>) {
+        self.history_logger.borrow_mut().update_charge_status(zx::BootInstant::get(), status);
     }
 
     // This function takes a reference to an Option<zx::EventPair>
@@ -410,7 +406,7 @@ mod tests {
         }
     }
 
-    pub fn create_manager() -> (TempDir, Arc<BatteryManager>) {
+    pub fn create_manager() -> (TempDir, BatteryManager) {
         let inspector = inspect::Inspector::default();
         let dir = tempdir().unwrap();
         let storage_path = dir.path().join("data");
@@ -430,7 +426,7 @@ mod tests {
         let recorder_config = RecorderConfig {
             persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
         };
-        let battery_manager = Arc::new(BatteryManager::new_with_logger(logger, recorder_config));
+        let battery_manager = BatteryManager::new_with_logger(logger, recorder_config);
         (dir, battery_manager)
     }
 
@@ -448,7 +444,7 @@ mod tests {
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();
         let watcher = watcher_client_end.into_proxy();
 
-        battery_manager.add_watcher(watcher.clone()).await;
+        battery_manager.add_watcher(watcher.clone());
 
         // Create a zx::EventPair for the test
         let (tx, rx) = zx::EventPair::create();
@@ -502,8 +498,8 @@ mod tests {
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();
         let watcher2 = watcher2_client_end.into_proxy();
 
-        battery_manager.add_watcher(watcher1).await;
-        battery_manager.add_watcher(watcher2).await;
+        battery_manager.add_watcher(watcher1);
+        battery_manager.add_watcher(watcher2);
 
         let serve1_fut = async move {
             // first request should match first change notification sent
@@ -609,6 +605,7 @@ mod tests {
         let wake_lease = Some(rx);
 
         let (_dir, battery_manager) = create_manager();
+        let battery_manager = Rc::new(battery_manager);
 
         // Create a client and server pair for the FIDL call to be used by the pair of
         // wait_on_updates(business logic) and on_change_battery_info(test)
@@ -619,22 +616,20 @@ mod tests {
         let mut updated_info = battery_manager.get_battery_info_copy();
         updated_info.level_percent = Some(100.0);
         updated_info.status = Some(fpower::BatteryStatus::Ok);
-        battery_manager
-            .add_watcher(fake_watcher(
-                move |info| {
-                    assert_eq!(info.level_percent, Some(100.0));
-                    assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
-                },
-                move |lease| {
-                    let lease = lease.expect("Should not be None");
-                    let token_info = lease.basic_info().unwrap();
-                    let related_id = token_info.related_koid;
-                    assert_eq!(related_id, tx_id);
-                    info!("fake watcher ends checking lease");
-                    let _ = tx_signal.send(());
-                },
-            ))
-            .await;
+        battery_manager.add_watcher(fake_watcher(
+            move |info| {
+                assert_eq!(info.level_percent, Some(100.0));
+                assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
+            },
+            move |lease| {
+                let lease = lease.expect("Should not be None");
+                let token_info = lease.basic_info().unwrap();
+                let related_id = token_info.related_koid;
+                assert_eq!(related_id, tx_id);
+                info!("fake watcher ends checking lease");
+                let _ = tx_signal.send(());
+            },
+        ));
 
         // The 'server' task: run wait_on_updates in the background
         let battery_clone = battery_manager.clone();
@@ -706,28 +701,25 @@ mod tests {
         let first_info = battery_manager.get_battery_info_copy();
         let first_timestamp = first_info.timestamp.unwrap();
 
-        battery_manager
-            .add_watcher(fake_watcher(
-                move |info| {
-                    assert_eq!(info.level_percent, Some(100.0));
-                    assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
-                    let timestamp = info.timestamp.unwrap();
-                    assert!(timestamp >= first_timestamp);
-                },
-                move |lease| {
-                    let lease = lease.expect("Should not be None");
-                    let token_info = lease.basic_info().unwrap();
-                    let related_id = token_info.related_koid;
-                    assert_eq!(related_id, tx_id);
-                    info!("fake watcher ends checking lease");
-                    let _ = tx_signal.send(());
-                },
-            ))
-            .await;
+        battery_manager.add_watcher(fake_watcher(
+            move |info| {
+                assert_eq!(info.level_percent, Some(100.0));
+                assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
+                let timestamp = info.timestamp.unwrap();
+                assert!(timestamp >= first_timestamp);
+            },
+            move |lease| {
+                let lease = lease.expect("Should not be None");
+                let token_info = lease.basic_info().unwrap();
+                let related_id = token_info.related_koid;
+                assert_eq!(related_id, tx_id);
+                info!("fake watcher ends checking lease");
+                let _ = tx_signal.send(());
+            },
+        ));
 
         // test start_watching_battery_info
         let _ = battery_manager
-            .clone()
             .start_watching_battery_info(fake_driver(updated_info, wake_lease), None)
             .await;
 
@@ -744,7 +736,7 @@ mod tests {
 
     // This function acts as a fake sag server and respond with leases from the queue.
     fn fake_sag_vec(
-        lease_sequence: Arc<Mutex<VecDeque<fsystem::LeaseToken>>>,
+        lease_sequence: Rc<RefCell<VecDeque<fsystem::LeaseToken>>>,
     ) -> fsystem::ActivityGovernorProxy {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
@@ -752,7 +744,7 @@ mod tests {
             while let Ok(req) = stream.try_next().await {
                 match req {
                     Some(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, .. }) => {
-                        let mut queue = lease_sequence.lock().await;
+                        let mut queue = lease_sequence.borrow_mut();
                         let result = queue.pop_front().unwrap();
                         responder.send(result).unwrap();
                     }
@@ -770,7 +762,7 @@ mod tests {
         info!("Starting");
         let (_dir, battery_manager) = create_manager();
         {
-            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            let charge_wake_lease = battery_manager.charge_wake_lease.borrow();
             assert!(charge_wake_lease.is_none());
         }
 
@@ -783,16 +775,16 @@ mod tests {
         let tx_id2 = token_info.koid;
 
         let vector = vec![rx1, rx2];
-        let sag = Some(fake_sag_vec(Arc::new(Mutex::new(VecDeque::from(vector)))));
+        let sag = Some(fake_sag_vec(Rc::new(RefCell::new(VecDeque::from(vector)))));
 
         battery_manager
             .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
             .await;
         {
-            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            let charge_wake_lease = battery_manager.charge_wake_lease.borrow();
             assert!(!charge_wake_lease.is_none());
             let lease_token =
-                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the RefCell");
             let token_info = lease_token.basic_info().unwrap();
             let related_id = token_info.related_koid;
             assert_eq!(related_id, tx_id1);
@@ -803,10 +795,10 @@ mod tests {
             .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
             .await;
         {
-            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            let charge_wake_lease = battery_manager.charge_wake_lease.borrow();
             assert!(!charge_wake_lease.is_none());
             let lease_token =
-                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the RefCell");
             let token_info = lease_token.basic_info().unwrap();
             let related_id = token_info.related_koid;
             assert_eq!(related_id, tx_id1);
@@ -817,7 +809,7 @@ mod tests {
             .determine_suspend_status(Some(fpower::ChargeSource::None), sag.clone())
             .await;
         {
-            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            let charge_wake_lease = battery_manager.charge_wake_lease.borrow();
             assert!(charge_wake_lease.is_none());
         }
 
@@ -826,10 +818,10 @@ mod tests {
             .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
             .await;
         {
-            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            let charge_wake_lease = battery_manager.charge_wake_lease.borrow();
             assert!(!charge_wake_lease.is_none());
             let lease_token =
-                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the RefCell");
             let token_info = lease_token.basic_info().unwrap();
             let related_id = token_info.related_koid;
             assert_eq!(related_id, tx_id2);

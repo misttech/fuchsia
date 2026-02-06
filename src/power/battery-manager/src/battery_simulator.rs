@@ -243,7 +243,7 @@ mod tests {
         let watcher = watcher_client_end.into_proxy();
 
         let (_dir, battery_manager) = create_manager();
-        battery_manager.add_watcher(watcher).await;
+        battery_manager.add_watcher(watcher);
 
         let mut battery_info: fpower::BatteryInfo = battery_manager.get_battery_info_copy();
         battery_info.level_percent = Some(50.0);
