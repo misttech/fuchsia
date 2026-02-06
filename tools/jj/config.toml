@@ -38,4 +38,4 @@ command = [
   "--emit",
   "--files=$path"
 ]
-patterns = ["glob:**/*.rs"]
+patterns = ["all()"]
