@@ -35,6 +35,7 @@ pub enum ComponentSubcommand {
     Reload(ReloadArgs),
     Doctor(DoctorArgs),
     Copy(CopyArgs),
+    Route(RouteArgs),
     Storage(StorageArgs),
     Collection(CollectionArgs),
     Explore(ExploreArgs),
@@ -170,6 +171,27 @@ pub struct RunArgs {
     /// `KEY=VALUE` where `VALUE` is a JSON string which can be resolved as the correct type of
     /// configuration value.
     pub config: Vec<RawConfigEntry>,
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "route", description = "Same as `ffx component route`")]
+pub struct RouteArgs {
+    #[argh(positional)]
+    /// component URL, moniker or instance ID of target component. Partial matches allowed.
+    pub target: String,
+
+    #[argh(positional)]
+    /// optional filter of comma-separated capability names or <decl type>:<capability> pairs.
+    /// If provided, <decl type> is one of `use` or `expose`, otherwise it will match both used
+    /// and exposed capabilities. Partial matches on <capability> are allowed.
+    ///
+    /// Examples:
+    /// - fuchsia.pkg.FontResolver
+    /// - use:fuchsia.pkg.FontResolver
+    /// - expose:fuchsia.fonts.Provider
+    /// - fuchsia.pkg.FontResolver,expose:fuchsia.fonts.Provider
+    /// - fuchsia.pkg
+    pub filter: Option<String>,
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
