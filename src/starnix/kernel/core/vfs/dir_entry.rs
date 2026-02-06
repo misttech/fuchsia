@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
@@ -11,7 +10,7 @@ use crate::vfs::{
 };
 use bitflags::bitflags;
 use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
-use macro_rules_attribute::apply;
+use starnix_rcu::RcuString;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockWriteGuard};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::{ENOENT, Errno};
@@ -46,25 +45,6 @@ bitflags! {
 
         // Internal flags that cannot be passed to `sys_rename()`
         const INTERNAL = Self::REPLACE_ANY.bits();
-    }
-}
-
-pub struct DirEntryState {
-    /// The name that this parent calls this child.
-    ///
-    /// This name might not be reflected in the full path in the namespace that
-    /// contains this DirEntry. For example, this DirEntry might be the root of
-    /// a chroot.
-    ///
-    /// Most callers that want to work with names for DirEntries should use the
-    /// NamespaceNodes.
-    local_name: FsString,
-}
-
-#[apply(state_implementation!)]
-impl DirEntryState<Base = DirEntry> {
-    pub fn local_name(&self) -> &FsStr {
-        self.local_name.as_ref()
     }
 }
 
@@ -145,19 +125,21 @@ pub struct DirEntry {
     /// The [`DirEntryFlags`] for this `DirEntry`.
     flags: AtomicU8,
 
-    /// The mutable state for this DirEntry.
+    /// The name that this parent calls this child.
     ///
-    /// Leaf lock - do not acquire other locks while holding this one.
-    state: RwLock<DirEntryState>,
+    /// This name might not be reflected in the full path in the namespace that
+    /// contains this DirEntry. For example, this DirEntry might be the root of
+    /// a chroot.
+    ///
+    /// Most callers that want to work with names for DirEntries should use the
+    /// NamespaceNodes.
+    local_name: RcuString,
 
     /// A partial cache of the children of this DirEntry.
     ///
     /// DirEntries are added to this cache when they are looked up and removed
     /// when they are no longer referenced.
     ///
-    /// This is separated from the DirEntryState for lock ordering. rename needs to lock the source
-    /// parent, the target parent, the source, and the target - four (4) DirEntries in total.
-    //
     // FIXME(b/379929394): The lock ordering here assumes parent-to-child lock acquisition, which
     // a number of algorithms in the DirEntry operations also assume. This assumption can be broken
     // by the rename operation, which can move nodes around the hierarchy. See the referenced bug
@@ -169,8 +151,6 @@ type DirEntryChildren = BTreeMap<FsString, Weak<DirEntry>>;
 pub type DirEntryHandle = Arc<DirEntry>;
 
 impl DirEntry {
-    state_accessor!(DirEntry, state);
-
     #[allow(clippy::let_and_return)]
     pub fn new_uncached(
         node: FsNodeHandle,
@@ -183,13 +163,14 @@ impl DirEntry {
             ops,
             parent: RcuOptionArc::new(parent),
             flags: Default::default(),
-            state: RwLock::new(DirEntryState { local_name }),
+            local_name: local_name.into(),
             children: Default::default(),
         });
         #[cfg(any(test, debug_assertions))]
         {
+            // Taking this lock tells the lock tracing system about the parent/child ordering
+            // relation.
             let _l1 = result.children.read();
-            let _l2 = result.state.read();
         }
         result
     }
@@ -284,6 +265,13 @@ impl DirEntry {
     /// tree.
     pub fn parent_or_self(self: &DirEntryHandle) -> DirEntryHandle {
         self.parent().unwrap_or_else(|| self.clone())
+    }
+
+    /// The name that this parent calls this child.
+    ///
+    /// The reference is only valid for the duration of the RCU read scope.
+    pub fn local_name<'a>(&self, scope: &'a RcuReadScope) -> &'a FsStr {
+        self.local_name.read(scope)
     }
 
     /// Whether the given name has special semantics as a directory entry.
@@ -817,13 +805,11 @@ impl DirEntry {
                 )?;
             }
 
-            {
-                // We need to update the parent and local name for the DirEntry
-                // we are renaming to reflect its new parent and its new name.
-                let mut renamed_state = renamed.state.write();
-                renamed.set_parent(new_parent.clone());
-                renamed_state.local_name = new_basename.into();
-            }
+            // We need to update the parent and local name for the DirEntry
+            // we are renaming to reflect its new parent and its new name.
+            renamed.set_parent(new_parent.clone());
+            renamed.local_name.update(new_basename.to_owned());
+
             // Actually add the renamed child to the new_parent's child list.
             // This operation implicitly removes the replaced child (if any)
             // from the child list.
@@ -840,11 +826,8 @@ impl DirEntry {
                 // Reparent `replaced` when exchanging.
                 let replaced =
                     maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
-                {
-                    let mut replaced_state = replaced.state.write();
-                    replaced.set_parent(old_parent.clone());
-                    replaced_state.local_name = old_basename.into();
-                }
+                replaced.set_parent(old_parent.clone());
+                replaced.local_name.update(old_basename.to_owned());
                 state.old_parent().children.insert(old_basename.into(), Arc::downgrade(replaced));
 
                 #[cfg(detect_lock_cycles)]
@@ -989,17 +972,18 @@ impl DirEntry {
     // being looked up. If the lookup fails, they'll be removed.
     #[cfg(test)]
     pub fn copy_child_names(&self) -> Vec<FsString> {
+        let scope = RcuReadScope::new();
         self.children
             .read()
             .values()
-            .filter_map(|child| Weak::upgrade(child).map(|c| c.read().local_name().to_owned()))
+            .filter_map(|child| Weak::upgrade(child).map(|c| c.local_name.read(&scope).to_owned()))
             .collect()
     }
 
     fn internal_remove_child(&self, child: &DirEntry) {
         let mut children = self.children.write();
-        let state = child.read();
-        let local_name = state.local_name();
+        let scope = RcuReadScope::new();
+        let local_name = child.local_name.read(&scope);
         if let Some(weak_child) = children.get(local_name) {
             // If this entry is occupied, we need to check whether child is
             // the current occupant. If so, we should remove the entry
@@ -1026,10 +1010,10 @@ impl DirEntry {
     fn notify_watchers(&self, event_mask: InotifyMask, is_dead: bool) {
         let mode = self.node.info().mode;
         {
-            let state = self.read();
             let scope = RcuReadScope::new();
             if let Some(parent) = self.parent_ref(&scope) {
-                parent.node.notify(event_mask, 0, state.local_name(), mode, is_dead);
+                let local_name = self.local_name.read(&scope);
+                parent.node.notify(event_mask, 0, local_name, mode, is_dead);
             }
         }
         self.node.notify(event_mask, 0, Default::default(), mode, is_dead);
@@ -1042,10 +1026,10 @@ impl DirEntry {
             // Notify about link change only if there is already a hardlink.
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
-        let state = self.read();
         let scope = RcuReadScope::new();
         if let Some(parent) = self.parent_ref(&scope) {
-            parent.node.notify(InotifyMask::CREATE, 0, state.local_name(), mode, false);
+            let local_name = self.local_name.read(&scope);
+            parent.node.notify(InotifyMask::CREATE, 0, local_name, mode, false);
         }
     }
 
@@ -1059,10 +1043,10 @@ impl DirEntry {
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
 
-        let state = self.read();
         let scope = RcuReadScope::new();
         if let Some(parent) = self.parent_ref(&scope) {
-            parent.node.notify(InotifyMask::DELETE, 0, state.local_name(), mode, false);
+            let local_name = self.local_name.read(&scope);
+            parent.node.notify(InotifyMask::DELETE, 0, local_name, mode, false);
         }
 
         // This check is incorrect if there's another hard link to this FsNode that isn't in
@@ -1159,12 +1143,6 @@ impl<'a> DirEntryLockedChildren<'a> {
             );
 
             let entry = DirEntry::new(node, Some(self.entry.clone()), name.to_owned());
-            #[cfg(any(test, debug_assertions))]
-            {
-                // Take the lock on child while holding the one on the parent to ensure any wrong
-                // ordering will trigger the tracing-mutex at the right call site.
-                let _l1 = entry.state.read();
-            }
             Ok((entry, create_result))
         };
 
@@ -1205,16 +1183,16 @@ impl<'a> DirEntryLockedChildren<'a> {
 
 impl fmt::Debug for DirEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut parents = vec![];
         let scope = RcuReadScope::new();
+        let mut parents = vec![];
         let mut maybe_parent = self.parent_ref(&scope);
         while let Some(parent) = maybe_parent {
-            parents.push(parent.read().local_name().to_string());
+            parents.push(parent.local_name.read(&scope));
             maybe_parent = parent.parent_ref(&scope);
         }
         let mut builder = f.debug_struct("DirEntry");
         builder.field("id", &(self as *const DirEntry));
-        builder.field("local_name", &self.read().local_name().to_string());
+        builder.field("local_name", &self.local_name.read(&scope).to_owned());
         if !parents.is_empty() {
             builder.field("parents", &parents);
         }

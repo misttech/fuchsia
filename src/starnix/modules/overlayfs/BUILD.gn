@@ -15,6 +15,7 @@ rustc_library("overlayfs") {
   configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
+    "//src/lib/fuchsia-rcu",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

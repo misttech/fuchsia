@@ -838,8 +838,7 @@ impl DynamicFileSource for ProcMountinfoFile {
             let scope = RcuReadScope::new();
             let mut current = dir.deref();
             while let Some(parent) = current.parent_ref(&scope) {
-                let state = current.read();
-                path.prepend_element(state.local_name());
+                path.prepend_element(current.local_name(&scope));
                 current = parent;
             }
             path.build_absolute()
@@ -1483,11 +1482,12 @@ impl NamespaceNode {
         let mut path = PathBuilder::new();
         let mut current = self.escape_mount();
         if let Some(root) = root {
+            let scope = RcuReadScope::new();
             // The current node is expected to intersect with the custom root as we travel up the tree.
             let root = root.escape_mount();
             while current != root {
                 if let Some(parent) = current.parent() {
-                    path.prepend_element(current.entry.read().local_name());
+                    path.prepend_element(current.entry.local_name(&scope));
                     current = parent.escape_mount();
                 } else {
                     // This node hasn't intersected with the custom root and has reached the namespace root.
@@ -1501,8 +1501,9 @@ impl NamespaceNode {
             }
         } else {
             // No custom root, so travel up the tree to the namespace root.
+            let scope = RcuReadScope::new();
             while let Some(parent) = current.parent() {
-                path.prepend_element(current.entry.read().local_name());
+                path.prepend_element(current.entry.local_name(&scope));
                 current = parent.escape_mount();
             }
         }

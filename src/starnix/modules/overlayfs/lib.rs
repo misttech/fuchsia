@@ -4,6 +4,7 @@
 
 #![recursion_limit = "512"]
 
+use fuchsia_rcu::RcuReadScope;
 use once_cell::sync::OnceCell;
 use rand::Rng;
 use starnix_core::fs::tmpfs::{TmpFs, TmpFsDirectory};
@@ -331,17 +332,16 @@ impl OverlayNode {
             let lower = self.lower.as_ref().expect("lower is expected when upper is missing");
             let parent = self.parent.as_ref().expect("Parent is expected when upper is missing");
             let parent_upper = parent.ensure_upper(locked, current_task)?;
-            let state = lower.entry().read();
-            let name = state.local_name();
+            let name = lower.entry.local_name(&RcuReadScope::new()).to_owned();
             let info = {
-                let info = lower.entry().node.info();
+                let info = lower.entry.node.info();
                 info.clone()
             };
             let cred = info.cred();
 
             let res = security::fs_node_copy_up(current_task, &lower.entry.node, || {
                 if info.mode.is_lnk() {
-                    let link_target = lower.entry().node.readlink(locked, current_task)?;
+                    let link_target = lower.entry.node.readlink(locked, current_task)?;
                     let link_path = match &link_target {
                         SymlinkTarget::Node(_) => return error!(EIO),
                         SymlinkTarget::Path(path) => path,
@@ -349,7 +349,7 @@ impl OverlayNode {
                     parent_upper.create_entry(
                         locked,
                         current_task,
-                        name,
+                        name.as_ref(),
                         |locked, dir, mount, name| {
                             dir.create_symlink(
                                 locked,

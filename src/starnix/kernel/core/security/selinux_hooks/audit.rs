@@ -8,6 +8,7 @@ use crate::vfs::{
     PathWithReachability,
 };
 use bstr::BStr;
+use fuchsia_rcu::RcuReadScope;
 use fuchsia_sync::Mutex;
 use hex;
 use linux_uapi::AUDIT_AVC;
@@ -285,7 +286,8 @@ impl Display for Auditable<'_> {
             }
             Auditable::CurrentTask => Ok(()),
             Auditable::DirEntry(entry) => {
-                write!(f, " name={}", hex_escape(entry.read().local_name()))
+                let scope = RcuReadScope::new();
+                write!(f, " name={}", hex_escape(entry.local_name(&scope)))
             }
             Auditable::FileObject(file) => {
                 write!(f, " path={}", hex_escape(&file.name.path_escaping_chroot()))

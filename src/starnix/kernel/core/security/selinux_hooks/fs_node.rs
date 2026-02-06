@@ -46,8 +46,7 @@ fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
     let scope = RcuReadScope::new();
     let mut current_dir = dir_entry.deref();
     while let Some(parent) = current_dir.parent_ref(&scope) {
-        let state = current_dir.read();
-        path_builder.prepend_element(state.local_name());
+        path_builder.prepend_element(current_dir.local_name(&scope));
         current_dir = parent;
     }
     path_builder.build_absolute()
@@ -208,14 +207,13 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     // the filesystem sid if they don't have a parent node).
                     // TODO: https://fxbug.dev/381275592 - Use the SID from the creating task,
                     // rather than current_task!
-                    let state = dir_entry.read();
-                    let name = state.local_name();
+                    let scope = RcuReadScope::new();
                     return fs_node_init_on_create(
                         security_server,
                         current_task,
                         fs_node,
                         parent.as_ref().map(|x| &**x.node),
-                        name,
+                        dir_entry.local_name(&scope),
                     )
                     .map(|_| ());
                 }

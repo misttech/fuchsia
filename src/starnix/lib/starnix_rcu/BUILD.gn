@@ -19,11 +19,13 @@ rustc_library("starnix_rcu") {
     "src/lib.rs",
     "src/rcu_cache.rs",
     "src/rcu_hash_map.rs",
+    "src/rcu_string.rs",
   ]
   deps = [
     "//src/lib/fuchsia-rcu",
     "//src/lib/fuchsia-rcu-collections",
     "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_types",
   ]
 }
 

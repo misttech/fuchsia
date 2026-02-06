@@ -4,6 +4,7 @@
 
 #![recursion_limit = "512"]
 
+use fuchsia_rcu::RcuReadScope;
 use linux_uapi::FUSE_DEV_IOC_PASSTHROUGH_OPEN_V2;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE};
 use starnix_core::mutable_state::Guard;
@@ -1115,9 +1116,9 @@ impl DirEntryOps for FuseDirEntry {
         // Perform a lookup on this entry's parent FUSE node to revalidate this
         // entry.
         let (parent, name) = {
-            let state = dir_entry.read();
+            let scope = RcuReadScope::new();
             let parent = dir_entry.parent().expect("non-root nodes always has a parent");
-            let name = state.local_name().to_owned();
+            let name = dir_entry.local_name(&scope).to_owned();
             (parent, name)
         };
         let parent = FuseNode::from_node(&parent.node);

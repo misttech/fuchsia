@@ -16,6 +16,7 @@ rustc_library("fuse") {
 
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-rcu",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_lifecycle",

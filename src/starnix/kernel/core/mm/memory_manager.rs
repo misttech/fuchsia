@@ -617,15 +617,6 @@ impl MemoryManagerState {
             populate,
         )?;
 
-        #[cfg(any(test, debug_assertions))]
-        {
-            // Take the lock on directory entry while holding the one on the mm state to ensure any
-            // wrong ordering will trigger the tracing-mutex at the right call site.
-            if let MappingName::File(file) = &name {
-                let _l1 = file.name.entry.read();
-            }
-        }
-
         let end = (mapped_addr + length)?.round_up(*PAGE_SIZE)?;
 
         if let DesiredAddress::FixedOverwrite(addr) = addr {
