@@ -10,6 +10,6 @@
         "//src/starnix/tests/starnix_test.shard.cml",
     ],
     program: {
-        binary: "data/bin/starnix_proc_exception",
+        binary: "data/tests/starnix_proc_exception",
     },
 }

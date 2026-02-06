@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
+import("//src/starnix/build/starnix_linux_executable.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
 
@@ -145,41 +146,24 @@ inferior("rust_functions") {
 
 ## Starnix
 
-if (is_linux) {
-  executable("starnix_proc_bin") {
-    output_name = "starnix_proc"
-    sources = [ "starnix_proc.cc" ]
-  }
-
-  executable("starnix_proc_exception_bin") {
-    output_name = "starnix_proc_exception"
-    sources = [ "starnix_proc_exception.cc" ]
-  }
+starnix_linux_executable("starnix_proc_bin") {
+  output_name = "starnix_proc"
+  sources = [ "starnix_proc.cc" ]
 }
 
-# By default, executables in another toolchain will not be included in the package.
-resource("starnix_proc_resource") {
-  out_dir = get_label_info(":starnix_proc_bin($target_linux_toolchain)",
-                           "root_out_dir")
-  sources = [
-    "${out_dir}/starnix_proc",
-    "${out_dir}/starnix_proc_exception",
-  ]
-
-  # Cannot be in /bin because it's not a Fuchsia executable.
-  outputs = [ "data/bin/{{source_name_part}}" ]
-  deps = [
-    ":starnix_proc_bin($target_linux_toolchain)",
-    ":starnix_proc_exception_bin($target_linux_toolchain)",
-  ]
+starnix_linux_executable("starnix_proc_exception_bin") {
+  output_name = "starnix_proc_exception"
+  sources = [ "starnix_proc_exception.cc" ]
 }
 
 fuchsia_component("starnix_proc") {
   manifest = "starnix_proc.cml"
+  deps = [ ":starnix_proc_bin" ]
 }
 
 fuchsia_component("starnix_proc_exception") {
   manifest = "starnix_proc_exception.cml"
+  deps = [ ":starnix_proc_exception_bin" ]
 }
 
 fuchsia_package("zxdb_e2e_inferiors") {
@@ -204,7 +188,6 @@ fuchsia_package("zxdb_e2e_inferiors") {
   deps += [
     ":starnix_proc",
     ":starnix_proc_exception",
-    ":starnix_proc_resource",
   ]
   subpackages = starnix_test_subpackages +
                 [ "//src/starnix/containers/debian:debian_package" ]
