@@ -162,4 +162,7 @@ type StatusCode = flexible enum : uint16 {
     CANCELED = 258;
     /// Failure establishing security association
     ESTABLISH_RSNA_FAILURE = 259;
+    /// Failure initiating OWE handshake or receiving public key from peer
+    @available(added=NEXT)
+    OWE_HANDSHAKE_FAILURE = 260;
 };

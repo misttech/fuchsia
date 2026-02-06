@@ -911,6 +911,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/StatusCode.OWE_HANDSHAKE_FAILURE",
+        "value": "260"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.wlan.ieee80211/StatusCode.PENDING_ADMITTING_FST_SESSION",
         "value": "86"
     },

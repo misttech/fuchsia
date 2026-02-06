@@ -249,7 +249,7 @@ impl Idle {
                             });
                             let connect_result = AssociationFailure {
                                 bss_protection,
-                                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                                code: fidl_ieee80211::StatusCode::OweHandshakeFailure,
                             }
                             .into();
                             report_connect_finished(&mut cmd.connect_txn_sink, connect_result);
@@ -430,7 +430,7 @@ impl Connecting {
                                 result: ConnectResult::Failed(
                                     AssociationFailure {
                                         bss_protection: self.cmd.bss.protection(),
-                                        code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                                        code: fidl_ieee80211::StatusCode::OweHandshakeFailure,
                                     }
                                     .into(),
                                 ),
@@ -2760,7 +2760,7 @@ mod tests {
         assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, AssociationFailure {
                 bss_protection: bss.protection(),
-                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                code: fidl_ieee80211::StatusCode::OweHandshakeFailure,
             }.into());
         });
 
@@ -2822,7 +2822,7 @@ mod tests {
         assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
             assert_eq!(result, AssociationFailure {
                 bss_protection: bss.protection(),
-                code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                code: fidl_ieee80211::StatusCode::OweHandshakeFailure,
             }.into());
         });
 
