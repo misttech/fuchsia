@@ -64,8 +64,10 @@ class CfiUnwinder : public UnwinderBase {
   fit::result<Error, bool> Step(Memory* stack, const Registers& current, Registers& next,
                                 bool is_return_address);
 
-  void AsyncStep(AsyncMemory* stack, Registers current, bool is_return_address,
+  void AsyncStep(AsyncMemory* stack, const Registers& current, bool is_return_address,
                  fit::callback<void(Error, Registers)> cb);
+
+  fit::result<Error, Registers> ConvertTo32BitIfNeeded(uint64_t pc, const Registers& current);
 
   // Mapping from module load addresses to a pair of (module description, lazily-initialized CFI
   // modules for the binary and optional debugging info).

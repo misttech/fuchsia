@@ -13,6 +13,7 @@
 
 #include "src/lib/unwinder/cfi_module.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
 
@@ -52,17 +53,23 @@ Error Validate32BitRegisters(const Registers& regs) {
   return Success();
 }
 
-// Returns an error if the |next| registers do not have PC and LR populated with 32 bit values.
-fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& current,
-                                                         const Registers& next,
+// Attempts to convert |current| to an equivalent Register object with the arm32 ABI and the given
+// (possibly adjusted) |pc|. All other registers in the returned value will be converted from
+// |current|.
+//
+// In particular, this means:
+//   * x0-x12 are restored to r0-r12 in the returned object verbatim.
+//   * x29 (aarch64 FP) is NOT restored.
+//   * x30 (aarch64 LR) is restored to r14 (arm32 LR).
+//   * x31 (aarch64 SP) is restored to r13 (arm32 SP).
+//
+// See Registers::To32Bit for more details.
+fit::result<Error, Registers> TryConvertRegistersTo32Bit(uint64_t pc, const Registers& current,
                                                          const Module* next_module) {
   if (current.arch() != Registers::Arch::kArm64) {
     return fit::error(Error("Current registers are not kArm64."));
-  } else if (next.arch() == Registers::Arch::kArm32) {
-    return fit::error(Error("Next registers are already kArm32, nothing to do."));
   }
 
-  uint64_t pc = 0;
   uint64_t ra = 0;
 
   // As of today the only way we should ever successfully transition to a 32 bit frame is when we
@@ -70,12 +77,8 @@ fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& curren
   // the restricted mode stack. That means that we should _always_ have both PC and LR available
   // from the CFI (which should be finished processing by the time this is called). Therefore if we
   // cannot fetch either of them from |next| we bail out.
-  if (next.GetPC(pc).has_err()) {
-    return fit::error(Error("Next registers do not have PC set: %s", next.Describe().c_str()));
-  }
-
-  if (next.GetReturnAddress(ra).has_err()) {
-    return fit::error(Error("Next registers do not have LR set: %s", next.Describe().c_str()));
+  if (current.GetReturnAddress(ra).has_err()) {
+    return fit::error(Error("Next registers do not have LR set: %s", current.Describe().c_str()));
   }
 
   if (!(pc < std::numeric_limits<uint32_t>::max()) ||
@@ -85,7 +88,15 @@ fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& curren
                             pc, ra));
   }
 
-  return next.To32Bit();
+  auto result = current.To32Bit();
+  if (!result.is_ok()) {
+    return result.take_error();
+  }
+
+  // Set the PC ourselves because it has already been adjusted by the time this function has been
+  // called.
+  result->SetPC(pc);
+  return result.take_value();
 }
 
 }  // namespace
@@ -134,40 +145,12 @@ fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& curre
     regs.SetPC(pc);
   }
 
-  // We might have a PC in a 32 bit module. If we do, we'll need to convert the registers to the 32
-  // bit arch so all the named registers correspond to their 32 bit register numbers instead of 64
-  // bit. Checking that PC < UINT32_MAX is just a heuristic and doesn't actually indicate
-  // anything about address size for the module.
-  if (regs.arch() != Registers::Arch::kArm32 && pc < std::numeric_limits<uint32_t>::max()) {
-    Module* next_module = nullptr;
-    if (auto err = GetModuleForPc(pc, &next_module); err.has_err()) {
-      return fit::error(err);
-    };
-
-    if (next_module->size == Module::AddressSize::k32Bit) {
-      // In the error case, the message is probably only useful for developing and debugging the
-      // unwinder itself and will happen frequently enough that we shouldn't log it, but for
-      // debugging purposes can be displayed if needed. The validation step in the success case is a
-      // fatal error since we have strict expectations of what registers are restored by Starnix,
-      // which is currently the only way we should ever transition to code in a 32 bit address
-      // space.
-      if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, regs, next_module);
-          maybe_32bit.is_ok()) {
-        // Both PC and LR in |next| appear to be 32 bit addresses, now validate that the converted
-        // 32 bit registers actually have everything that we expect to get from Starnix's CFI: PC,
-        // LR, and SP should all be populated and have 32 bit addresses, if this fails at this
-        // point, it's an error.
-        if (auto err = Validate32BitRegisters(*maybe_32bit); err.has_err()) {
-          return fit::error(err);
-        }
-
-        // Validations succeeded, |next| is a 32 bit frame recovered from Starnix restricted mode.
-        // It's entirely possible at this point for the 32 bit binary to have CFI instructions for
-        // this 32 bit PC value, so we continue on.
-        regs = *maybe_32bit;
-        next = Registers(regs.arch());
-      }
-    }
+  if (auto result = ConvertTo32BitIfNeeded(pc, current); result.is_ok()) {
+    // Validations succeeded, |next| is a 32 bit frame recovered from Starnix restricted mode.
+    // It's entirely possible at this point for the 32 bit binary to have CFI instructions for
+    // this 32 bit PC value, so we continue on.
+    regs = result.value();
+    next = Registers(regs.arch());
   }
 
   CfiModuleInfo* cfi;
@@ -194,12 +177,14 @@ void CfiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
   AsyncStep(stack, current.regs, current.pc_is_return_address, std::move(cb));
 }
 
-void CfiUnwinder::AsyncStep(AsyncMemory* stack, Registers current, bool is_return_address,
+void CfiUnwinder::AsyncStep(AsyncMemory* stack, const Registers& current, bool is_return_address,
                             fit::callback<void(Error, Registers)> cb) {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
     return cb(err, Registers(current.arch()));
   }
+
+  Registers regs = current;
 
   // is_return_address indicates whether pc in the current registers is a return address from a
   // previous "Step". If it is, we need to subtract 1 to find the call site because "call" could
@@ -211,7 +196,14 @@ void CfiUnwinder::AsyncStep(AsyncMemory* stack, Registers current, bool is_retur
   // instruction.
   if (is_return_address) {
     pc -= 1;
-    current.SetPC(pc);
+    regs.SetPC(pc);
+  }
+
+  if (auto result = ConvertTo32BitIfNeeded(pc, current); result.is_ok()) {
+    // Validations succeeded, |next| is a 32 bit frame recovered from Starnix restricted mode.
+    // It's entirely possible at this point for the 32 bit binary to have CFI instructions for
+    // this 32 bit PC value, so we continue on.
+    regs = result.value();
   }
 
   CfiModuleInfo* cfi_info;
@@ -225,14 +217,14 @@ void CfiUnwinder::AsyncStep(AsyncMemory* stack, Registers current, bool is_retur
     // in the case of a separated debug_info binary. Both have to fail for us to try again with the
     // "binary" file, which will only contain an .eh_frame section.
     cfi_info->debug_info->AsyncStep(
-        stack, current,
-        [cfi_info, stack, current, cb = std::move(cb)](Error err, Registers regs) mutable {
+        stack, regs,
+        [cfi_info, stack, regs, cb = std::move(cb)](Error err, Registers next_regs) mutable {
           if (err.has_err()) {
             // debug_info didn't work, try again with the binary module instead. If this fails it's
             // a fatal error for this unwinder.
             if (cfi_info->binary) {
               return cfi_info->binary->AsyncStep(
-                  stack, current, [e = err, cb = std::move(cb)](Error err, Registers regs) mutable {
+                  stack, regs, [e = err, cb = std::move(cb)](Error err, Registers regs) mutable {
                     if (err.has_err()) {
                       // Propagate both errors up.
                       return cb(Error("debug_info:" + e.msg() + ";binary:" + err.msg()),
@@ -243,19 +235,61 @@ void CfiUnwinder::AsyncStep(AsyncMemory* stack, Registers current, bool is_retur
                     cb(err, std::move(regs));
                   });
             } else {
-              return cb(Error("debug_info:" + err.msg() + ";binary not present."), regs);
+              return cb(Error("debug_info:" + err.msg() + ";binary not present."), next_regs);
             }
           }
 
           // Unwinding with the debug_info module worked, issue the callback.
-          cb(err, std::move(regs));
+          cb(err, std::move(next_regs));
         });
   } else if (cfi_info->binary) {
     // No debug_info available, unwind with the binary module.
-    cfi_info->binary->AsyncStep(stack, current, std::move(cb));
+    cfi_info->binary->AsyncStep(stack, regs, std::move(cb));
   } else {
     return cb(Error("Module has no associated memory."), Registers(current.arch()));
   }
+}
+
+fit::result<Error, Registers> CfiUnwinder::ConvertTo32BitIfNeeded(uint64_t pc,
+                                                                  const Registers& current) {
+  // We might have a PC in a 32 bit module. If we do, we'll need to convert the registers to the 32
+  // bit arch so all the named registers correspond to their 32 bit register numbers instead of 64
+  // bit. Checking that PC < UINT32_MAX is just a heuristic and doesn't actually indicate
+  // anything about address size for the module.
+  if (current.arch() != Registers::Arch::kArm32 && pc < std::numeric_limits<uint32_t>::max()) {
+    Module* next_module = nullptr;
+    if (auto err = GetModuleForPc(pc, &next_module); err.has_err()) {
+      return fit::error(err);
+    };
+
+    if (next_module->size == Module::AddressSize::k32Bit) {
+      // In the error case, the message is probably only useful for developing and debugging the
+      // unwinder itself and will happen frequently enough that we shouldn't log it, but for
+      // debugging purposes can be displayed if needed. The validation step in the success case is a
+      // fatal error since we have strict expectations of what registers are restored by Starnix,
+      // which is currently the only way we should ever transition to code in a 32 bit address
+      // space.
+      if (auto maybe_32bit = TryConvertRegistersTo32Bit(pc, current, next_module);
+          maybe_32bit.is_ok()) {
+        // Both PC and LR in |current| appear to be 32 bit addresses, now validate that the
+        // converted 32 bit registers actually have everything that we expect to get from Starnix's
+        // CFI: PC, LR, and SP should all be populated and have 32 bit addresses, if this fails at
+        // this point, it's an error.
+        if (auto err = Validate32BitRegisters(*maybe_32bit); err.has_err()) {
+          return fit::error(err);
+        }
+
+        return maybe_32bit.take_value();
+      } else {
+        return fit::error(Error("failed to convert registers to 32 bit: %s\n",
+                                maybe_32bit.error_value().msg().c_str()));
+      }
+    } else {
+      return fit::error(Error("next module at 0x%lx is not 32 bit!\n", next_module->load_address));
+    }
+  }
+
+  return fit::error(Error("Invalid input: current.arch = %d, pc = 0x%lx\n", current.arch(), pc));
 }
 
 bool CfiUnwinder::IsValidPC(uint64_t pc) {
