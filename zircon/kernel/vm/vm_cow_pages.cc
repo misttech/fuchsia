@@ -1563,7 +1563,7 @@ VmCowPages::ParentAndRange VmCowPages::FindParentAndRangeForCloneLocked(
 
 zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
     uint64_t offset, uint64_t limit, uint64_t size, VmPageList&& initial_page_list,
-    const LockedPtr& parent) {
+    AttributionTracker&& initial_page_list_tracker, const LockedPtr& parent) {
   canary_.Assert();
 
   const VmCowPagesOptions options = inheritable_options();
@@ -1627,6 +1627,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // will eventually become our page_list_, but not until we've updated the backlinks and moved it
   // into the hidden parent.
   VmPageList temp_list;
+  // TODO(ethanws): Keep temp_list_tracker up-to-date with temp_list.
+  AttributionTracker temp_list_tracker;
   if (tree_has_parent_content_markers()) {
     zx_status_t status = page_list_.ForEveryPage([&](const VmPageOrMarker* p, uint64_t offset) {
       // If a tree is using parent content markers then, since we are a leaf node, we know that
@@ -1698,6 +1700,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // Move our pagelist before adding ourselves as its child, because we cannot be added as a child
   // unless we have no pages.
   hidden_parent.locked().page_list_ = ktl::move(page_list_);
+  hidden_parent.locked().continuous_attribution_tracker_ =
+      ktl::move(continuous_attribution_tracker_);
 
   hidden_parent.locked().TransitionToAliveLocked();
 
@@ -1728,7 +1732,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   hidden_parent.locked().AddChildLocked(this, 0, size_);
   hidden_parent.locked().AddChildLocked(&cow_clone.locked(), offset, limit);
   page_list_ = ktl::move(temp_list);
+  continuous_attribution_tracker_ = ktl::move(temp_list_tracker);
   cow_clone.locked().page_list_ = ktl::move(initial_page_list);
+  cow_clone.locked().continuous_attribution_tracker_ = ktl::move(initial_page_list_tracker);
 
   // Checking this node's hierarchy will also check the parent's hierarchy.
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
@@ -1736,10 +1742,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   return zx::ok(ktl::move(cow_clone));
 }
 
-zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneChildLocked(uint64_t offset, uint64_t limit,
-                                                                  uint64_t size,
-                                                                  VmPageList&& initial_page_list,
-                                                                  const LockedPtr& parent) {
+zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneChildLocked(
+    uint64_t offset, uint64_t limit, uint64_t size, VmPageList&& initial_page_list,
+    AttributionTracker&& initial_page_list_tracker, const LockedPtr& parent) {
   canary_.Assert();
 
   VmCowPagesOptions options = inheritable_options();
@@ -1776,6 +1781,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneChildLocked(uint64_t offse
   // If given a non-empty initial_page_list then place it in the clone.
   if (!initial_page_list.IsEmpty()) {
     cow_clone.locked().page_list_ = ktl::move(initial_page_list);
+    cow_clone.locked().continuous_attribution_tracker_ = ktl::move(initial_page_list_tracker);
   }
 
   // Checking this node's hierarchy will also check the parent's hierarchy.
@@ -1866,7 +1872,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
 
     return child_range.parent.locked_or(this).CloneChildLocked(
         child_range.parent_offset, child_range.parent_limit, child_range.size, VmPageList(),
-        child_range.grandparent);
+        AttributionTracker(), child_range.grandparent);
   }
 
   if (require_unidirectional) {
@@ -1890,6 +1896,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
   // content we are able to see is possibly determined by content markers in *this* node, even if we
   // will be able to mechanically hang the new node higher up.
   VmPageList page_list;
+  // TODO(ethanws): Keep page_list_tracker up-to-date with page_list.
+  AttributionTracker page_list_tracker;
 
   // To account for any errors that result in needing to roll back we remember the range we have
   // processed the share counts for.
@@ -1958,13 +1966,14 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
 
   // If we found a hidden node to be our parent, then we can just hang a new node under that,
   // otherwise we need to also create a new hidden node to place this and the new child under.
-  auto result = child_range.parent.locked_or(this).is_hidden()
-                    ? child_range.parent.locked().CloneChildLocked(
-                          child_range.parent_offset, child_range.parent_limit, child_range.size,
-                          ktl::move(page_list), child_range.grandparent)
-                    : child_range.parent.locked_or(this).CloneNewHiddenParentLocked(
-                          child_range.parent_offset, child_range.parent_limit, child_range.size,
-                          ktl::move(page_list), child_range.grandparent);
+  auto result =
+      child_range.parent.locked_or(this).is_hidden()
+          ? child_range.parent.locked().CloneChildLocked(
+                child_range.parent_offset, child_range.parent_limit, child_range.size,
+                ktl::move(page_list), ktl::move(page_list_tracker), child_range.grandparent)
+          : child_range.parent.locked_or(this).CloneNewHiddenParentLocked(
+                child_range.parent_offset, child_range.parent_limit, child_range.size,
+                ktl::move(page_list), ktl::move(page_list_tracker), child_range.grandparent);
   // If everything went well then we can finally cancel the rollback and let the clone own the
   // content we added the share counts for.
   if (result.is_ok()) {

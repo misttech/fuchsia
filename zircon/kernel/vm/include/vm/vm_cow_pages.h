@@ -1381,10 +1381,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // If there is a parent_ then the passed in |parent| is a locked ptr to it.
   // An |initial_page_list| may be passed in to populate the clone's page list with any parent
-  // content markers if needed.
-  zx::result<LockedRefPtr> CloneNewHiddenParentLocked(uint64_t offset, uint64_t limit,
-                                                      uint64_t size, VmPageList&& initial_page_list,
-                                                      const LockedPtr& parent) TA_REQ(lock());
+  // content markers if needed. In this case, |initial_page_list_tracker| must be tracking the
+  // number of populated slots in |initial_page_list|.
+  zx::result<LockedRefPtr> CloneNewHiddenParentLocked(
+      uint64_t offset, uint64_t limit, uint64_t size, VmPageList&& initial_page_list,
+      AttributionTracker&& initial_page_list_tracker, const LockedPtr& parent) TA_REQ(lock());
 
   // Helper function for |CreateCloneLocked|.
   //
@@ -1395,10 +1396,12 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // If there is a parent_ then the passed in |parent| is a locked ptr to it.
   // An |initial_page_list| may be passed in to populate the clone's page list with any parent
-  // content markers if needed.
+  // content markers if needed. In this case, |initial_page_list_tracker| must be tracking the
+  // number of populated slots in |initial_page_list|.
   zx::result<LockedRefPtr> CloneChildLocked(uint64_t offset, uint64_t limit, uint64_t size,
-                                            VmPageList&& initial_page_list, const LockedPtr& parent)
-      TA_REQ(lock());
+                                            VmPageList&& initial_page_list,
+                                            AttributionTracker&& initial_page_list_tracker,
+                                            const LockedPtr& parent) TA_REQ(lock());
 
   // Release any pages this VMO can reference from the provided start offset till the end of the
   // VMO. This releases both directly owned pages, as well as pages in hidden parents that may be

@@ -152,7 +152,7 @@ bool continuous_attribution_tracker_populate_vmo() {
 
   {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
-    ASSERT(cow_pages);
+    ASSERT_NONNULL(cow_pages);
     auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
     EXPECT_EQ(0u, tracker.FetchCurrent());  // There is no content.
   }
@@ -168,7 +168,7 @@ bool continuous_attribution_tracker_populate_vmo() {
 
   {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
-    ASSERT(cow_pages);
+    ASSERT_NONNULL(cow_pages);
     auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
     EXPECT_EQ(2u, tracker.FetchCurrent());  // There are two populated pages.
   }
@@ -176,6 +176,117 @@ bool continuous_attribution_tracker_populate_vmo() {
   END_TEST;
 }
 
+// Test that the correct tracker is provided to the unidirectional clone and parent.
+bool continuous_attribution_tracker_unidirectional_child() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/2, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, nullptr, &vmo));
+
+  // Create a unidirectional clone.
+  fbl::RefPtr<VmObject> child_vmo_no_paged;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, /*offset=*/0,
+                             /*size=*/3 * kPageSize, /*copy_name=*/false, &child_vmo_no_paged));
+
+  // Assert there is no hidden parent (true unidirectional)
+  {
+    fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+    ASSERT_NULL(hidden_parent);
+  }
+
+  {
+    fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+    ASSERT_NONNULL(cow_pages);
+
+    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+    // There are two pages committed in the parent.
+    EXPECT_EQ(2u, tracker.FetchCurrent());
+  }
+
+  {
+    VmObjectPaged *child = DownCastVmObject<VmObjectPaged>(child_vmo_no_paged.get());
+    ASSERT_NONNULL(child);
+    fbl::RefPtr<VmCowPages> cow_pages = child->DebugGetCowPages();
+    ASSERT_NONNULL(cow_pages);
+
+    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
+    // should not be zero.
+    EXPECT_EQ(0u, tracker.FetchCurrent());
+  }
+
+  END_TEST;
+}
+
+// Test that the correct tracker is provided to the bidirectional clone and parent.
+bool continuous_attribution_tracker_bidirectional_child() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &vmo));
+
+  // Write a non-zero value to the first two pages.
+  {
+    fbl::AllocChecker ac;
+    fbl::Vector<uint8_t> a;
+    a.resize(2 * kPageSize, 42, &ac);
+    ASSERT_TRUE(ac.check());
+    EXPECT_EQ(ZX_OK, vmo->Write(a.data(), 0, a.size()));
+  }
+
+  // Create a bidirectional clone.
+  fbl::RefPtr<VmObject> child_vmo_no_paged;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                             /*size=*/3 * kPageSize, /*copy_name=*/false, &child_vmo_no_paged));
+
+  // Assert there is a hidden parent (true bidirectional)
+  fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(hidden_parent);
+
+  {
+    fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+    ASSERT_NONNULL(cow_pages);
+
+    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
+    // should not be zero.
+    EXPECT_EQ(0u, tracker.FetchCurrent());
+  }
+
+  {
+    VmObjectPaged *child = DownCastVmObject<VmObjectPaged>(child_vmo_no_paged.get());
+    ASSERT_NONNULL(child);
+    fbl::RefPtr<VmCowPages> cow_pages = child->DebugGetCowPages();
+    ASSERT_NONNULL(cow_pages);
+
+    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
+    // should not be zero.
+    EXPECT_EQ(0u, tracker.FetchCurrent());
+  }
+
+  auto &tracker = hidden_parent->DebugGetContinuousAttributionTracker();
+
+  // There are two pages committed in the parent.
+  EXPECT_EQ(2u, tracker.FetchCurrent());
+
+  END_TEST;
+}
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -183,6 +294,8 @@ VM_UNITTEST(continuous_attribution_tracker_transfer)
 VM_UNITTEST(continuous_attribution_tracker_high_water_mark)
 VM_UNITTEST(continuous_attribution_tracker_extreme)
 VM_UNITTEST(continuous_attribution_tracker_populate_vmo)
+VM_UNITTEST(continuous_attribution_tracker_unidirectional_child)
+VM_UNITTEST(continuous_attribution_tracker_bidirectional_child)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 
