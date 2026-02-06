@@ -6,6 +6,7 @@ import logging
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -30,7 +31,8 @@ class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
                 "copy",
                 "core/feedback::/data/boot_id.txt",
                 boot_id_before_reboot_file,
-            ]
+            ],
+            machine=ffx_types.MachineFormat.RAW,
         )
 
         _LOGGER.info("[test_reboot_reason] Rebooting device...")
@@ -46,7 +48,8 @@ class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
                 "copy",
                 "core/feedback::/tmp/boot_id.txt",
                 previous_boot_id_after_reboot_file,
-            ]
+            ],
+            machine=ffx_types.MachineFormat.RAW,
         )
 
         # We always expect "DEVELOPER_REQUEST", but now that we have set up the test, we are finding
