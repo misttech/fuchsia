@@ -35,7 +35,8 @@ Created Breakpoint 2 scope="pr 1" type=execute @ sys_exit_group
 # shipped along with the debug info for the starnix container's (linux) prebuilt libc. This is only
 # relevant here since there's a linux libc call on the stack in this test case that we cannot unwind
 # through to get to the linux portion of the stack. The other starnix e2e tests don't need this
-# because they don't have libc calls on the stack so unwinding using local debug info is enough.
+# because they don't have libc calls on the stack so unwinding using unwind tables from our binary
+# is enough.
 [zxdb] frame --force-remote-unwind
 # When optimization is on, there might be other inlined frame so we only check
 # the existence of sys_exit_group and main function in the backtrace.
