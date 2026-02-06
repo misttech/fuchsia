@@ -118,7 +118,7 @@
     {
         "kind": "protocol",
         "name": "fuchsia.mediacodec/CodecFactory",
-        "openness": "closed",
+        "openness": "open",
         "transport": "channel"
     },
     {

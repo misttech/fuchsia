@@ -113,6 +113,19 @@ class CodecFactoryImpl final : public fuchsia::mediacodec::CodecFactory {
 
   void AttachLifetimeTracking(zx::eventpair codec_end) override {}
 
+  // All CodecFactory servers implement this way, so for consistency we implement the same way here.
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
+    // See src/media/codec/factory/codec_factory_impl.cc handle_unknown_method for why we handle
+    // this way.
+    if (!method_has_response) {
+      // As a client author, if you see this message, please read the comments
+      // in src/media/codec/factory/codec_factory_impl.cc handle_unknown_method.
+      FX_LOGS(WARNING) << "Unrecognized one-way message - ordinal: " << std::hex << ordinal;
+    } else {
+      FX_LOGS(INFO) << "Unrecognized two-way message - ordinal: " << std::hex << ordinal;
+    }
+  }
+
  private:
   fidl::Binding<fuchsia::mediacodec::CodecFactory> binding_{this};
 };

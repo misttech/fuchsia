@@ -379,6 +379,62 @@ void CodecFactoryImpl::AttachLifetimeTracking(zx::eventpair codec_end) {
   lifetime_tracking_.emplace_back(std::move(codec_end));
 }
 
+void CodecFactoryImpl::handle_unknown_method(uint64_t ordinal, bool method_has_response) {
+  // There's a reason this is WARNING not INFO when !method_has_response:
+  //
+  // FIDL opinion re. versioning says unknown flexible messages are supposed to be ignored (if
+  // one-way) or failed with transport error (if two-way; presumably handled by the calling FIDL
+  // dispatch code). New flexible two-way messages without error syntax are not really a thing. So
+  // we shouldn't close the channel here per FIDL opinion, regardless of method_has_response value.
+  //
+  // FIDL (including both fidl-lang and the associated versioning checks) doesn't allow adding
+  // strict messages to a protocol that has clients and servers in both "platform" and "external"
+  // (per @discoverable args), which does apply to this protocol. This means this protocol has no
+  // way to have the client tell the server to close the channel if a specific new non-ignorable
+  // one-way message is unrecognized by the server. Overall this means that when adding a new
+  // message, if it isn't purely ignoreable, we'll either want to add a two-way message with error
+  // syntax instead (and accept the round-trip cost), or provide an application layer way for the
+  // client to first determine whether the server supports a new set of one-way messages before the
+  // client sends those (amortized round-trip cost of the one-time check message can be lower than a
+  // repeated two-way call that could have been one-way with prior one-time check for server
+  // support). If the client sends a new non-ignoreable flexible one-way message despite lack of
+  // support reported by the server, then the client (given current fidl-lang and versioning checks)
+  // won't get any feedback re. having done something wrong other than this message being logged at
+  // WARNING with method_has_response false.
+  //
+  // Since FIDL versioning doesn't allow adding a "strict" message to a protocol that has both
+  // clients and servers in both platform and external, there's no current way in fidl-lang
+  // (including versioning checks) to say that the client should set "strict" on the wire for such a
+  // message (concurrent with versioning checks allowing the message to be added in the first
+  // place).
+  //
+  // If fidl-lang changes in this regard, we could drop the !method_has_response from WARNING to
+  // INFO.
+  if (!method_has_response) {
+    // This WARNING can be ignored only if the one-way message in question is 100% fine for the
+    // server to completely ignore.
+    //
+    // As a client author, if you see this message due to the client newly sending this message, you
+    // should check whether this message is entirely advisory/hint and 100% safe for a
+    // not-yet-updated server to completely ignore (other than this log message), or if the client
+    // is missing a previous check for server support that would inform the client not to send the
+    // new one-way message due to lack of server support for the new message.
+    //
+    // Once a server is updated to recognize but not yet support a new non-ignoreable one-way
+    // message, the server's handler for the message can close the channel (the client shouldn't
+    // have sent the message). But there's a protocol enforcement gap for not-yet-recognizing
+    // servers where a client could inappropriately send a new important flexible one-way message
+    // and not get any obvious feedback about that being unsupported by the server other than this
+    // message, and of course the overall protocol failing to do what the client author is trying to
+    // do.
+    FX_LOGS(WARNING) << "Unrecognized one-way message - ordinal: " << std::hex << ordinal;
+  } else {
+    // This is INFO since an unrecognized flexible two-way call with error response will also inform
+    // the client via transport error.
+    FX_LOGS(INFO) << "Unrecognized two-way message - ordinal: " << std::hex << ordinal;
+  }
+}
+
 void CodecFactoryImpl::AttachLifetimeTrackingEventpairDownstream(
     const fuchsia::mediacodec::CodecFactoryPtr* factory) {
   while (!lifetime_tracking_.empty()) {

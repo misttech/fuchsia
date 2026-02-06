@@ -85,6 +85,8 @@ class LocalCodecFactory : public fuchsia::mediacodec::CodecFactory {
 
   void AttachLifetimeTracking(zx::eventpair codec_end) override;
 
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
+
  private:
   DeviceCtx* device_ = nullptr;
 

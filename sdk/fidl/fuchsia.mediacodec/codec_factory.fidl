@@ -548,7 +548,7 @@ type DetailedCodecDescription = table {
 /// The interface methods don't attempt to homogenize all codec types,
 /// preferring to have a separate dedicated message for decoders.
 @discoverable
-closed protocol CodecFactory {
+open protocol CodecFactory {
     /// Driver-based local CodecFactory(s) will send this once shortly after the
     /// main CodecFactory connects to the driver-local CodecFactory.
     ///

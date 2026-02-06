@@ -429,4 +429,16 @@ void LocalCodecFactory::AttachLifetimeTracking(zx::eventpair codec_end) {
   lifetime_tracking_.emplace_back(std::move(codec_end));
 }
 
+void LocalCodecFactory::handle_unknown_method(uint64_t ordinal, bool method_has_response) {
+  // See src/media/codec/factory/codec_factory_impl.cc handle_unknown_method for why we handle
+  // this way.
+  if (!method_has_response) {
+    // As a client author, if you see this message, please read the comments
+    // in src/media/codec/factory/codec_factory_impl.cc handle_unknown_method.
+    LOG(WARNING, "unrecognized one-way message - ordinal: %" PRIx64, ordinal);
+  } else {
+    LOG(INFO, "unrecognized two-way message - ordinal: %" PRIx64, ordinal);
+  }
+}
+
 }  // namespace amlogic_decoder

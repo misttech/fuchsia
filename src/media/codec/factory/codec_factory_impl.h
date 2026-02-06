@@ -33,6 +33,8 @@ class CodecFactoryImpl : public fuchsia::mediacodec::CodecFactory {
 
   void AttachLifetimeTracking(zx::eventpair codec_end) override;
 
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
+
  private:
   CodecFactoryImpl(CodecFactoryApp* app, sys::ComponentContext* component_context,
                    fidl::InterfaceRequest<fuchsia::mediacodec::CodecFactory> request);

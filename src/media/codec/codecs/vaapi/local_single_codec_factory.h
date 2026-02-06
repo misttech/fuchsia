@@ -82,6 +82,18 @@ class LocalSingleCodecFactory : public fuchsia::mediacodec::CodecFactory {
     lifetime_tracking_.emplace_back(std::move(codec_end));
   }
 
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {
+    // See src/media/codec/factory/codec_factory_impl.cc handle_unknown_method for why we handle
+    // this way.
+    if (!method_has_response) {
+      // As a client author, if you see this message, please read the comments
+      // in src/media/codec/factory/codec_factory_impl.cc handle_unknown_method.
+      FX_LOGS(WARNING) << "Unrecognized one-way message - ordinal: " << std::hex << ordinal;
+    } else {
+      FX_LOGS(INFO) << "Unrecognized two-way message - ordinal: " << std::hex << ordinal;
+    }
+  }
+
  private:
   template <typename Adapter, typename Params>
   void VendCodecAdapter(Params params,
