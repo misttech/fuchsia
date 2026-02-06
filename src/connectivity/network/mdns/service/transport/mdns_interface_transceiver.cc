@@ -70,10 +70,11 @@ bool MdnsInterfaceTransceiver::Start(InboundMessageCallback callback) {
   }
 
   // Set socket options and bind.
-  if (SetOptionSharePort() != 0 || SetOptionDisableMulticastLoop() != 0 ||
-      SetOptionJoinMulticastGroup() != 0 || SetOptionOutboundInterface() != 0 ||
-      SetOptionUnicastTtl() != 0 || SetOptionMulticastTtl() != 0 ||
-      SetOptionFamilySpecific() != 0 || SetOptionBindToDevice() != 0 || Bind() != 0) {
+  if (SetOptionShareAddress() != 0 || SetOptionSharePort() != 0 ||
+      SetOptionDisableMulticastLoop() != 0 || SetOptionJoinMulticastGroup() != 0 ||
+      SetOptionOutboundInterface() != 0 || SetOptionUnicastTtl() != 0 ||
+      SetOptionMulticastTtl() != 0 || SetOptionFamilySpecific() != 0 ||
+      SetOptionBindToDevice() != 0 || Bind() != 0) {
     socket_fd_.reset();
     return false;
   }
@@ -167,6 +168,16 @@ int MdnsInterfaceTransceiver::SetOptionBindToDevice() {
     FX_LOGS(ERROR) << "Failed to set socket option SO_BINDTODEVICE with ifname=" << ifname
                    << ", error" << strerror(errno);
   }
+  return result;
+}
+
+int MdnsInterfaceTransceiver::SetOptionShareAddress() {
+  int param = 1;
+  int result = setsockopt(socket_fd_.get(), SOL_SOCKET, SO_REUSEADDR, &param, sizeof(param));
+  if (result < 0) {
+    FX_LOGS(ERROR) << "Failed to set socket option SO_REUSEADDR, " << strerror(errno);
+  }
+
   return result;
 }
 

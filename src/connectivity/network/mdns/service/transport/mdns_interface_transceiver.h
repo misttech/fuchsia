@@ -101,6 +101,7 @@ class MdnsInterfaceTransceiver {
       const DnsName& host_full_name);
 
  private:
+  int SetOptionShareAddress();
   int SetOptionSharePort();
   int SetOptionBindToDevice();
 
