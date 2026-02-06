@@ -444,11 +444,6 @@ impl SysFs {
                 });
             });
             dir.subdir("virtual", dir_mode, |dir| {
-                dir.entry(
-                    "country",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
                 dir.subdir("leds", dir_mode, |_dir| {});
                 dir.subdir("power_supply", dir_mode, |dir| {
                     dir.subdir("battery", dir_mode, |dir| {
