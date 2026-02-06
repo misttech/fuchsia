@@ -48,6 +48,12 @@ pub struct StartCommand {
 
     #[argh(switch, description = "do not do USB discovery (local discovery only)")]
     pub no_usb: bool,
+
+    #[argh(
+        option,
+        description = "file to store the monitor log file (relative to log.dir or absolute)"
+    )]
+    pub log_file: Option<String>,
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]

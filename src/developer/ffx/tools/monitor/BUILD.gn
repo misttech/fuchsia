@@ -28,6 +28,8 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
   ]
 
+  test_deps = [ "//third_party/rust_crates:tempfile" ]
+
   sources = [
     "src/args.rs",
     "src/lib.rs",
