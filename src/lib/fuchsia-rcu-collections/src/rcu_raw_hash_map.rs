@@ -11,7 +11,7 @@ use crate::rcu_intrusive_list::{
 use crate::rcu_list::RcuList;
 use fuchsia_rcu::RcuReadScope;
 use std::borrow::Borrow;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The initial capacity of the hash map.
@@ -81,10 +81,11 @@ type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 
 /// A hash map that uses read-copy-update (RCU) to manage concurrent accesses.
 #[derive(Debug)]
-pub struct RcuRawHashMap<K, V>
+pub struct RcuRawHashMap<K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// The table of buckets.
     table: RcuArray<Bucket<K, V>>,
@@ -94,51 +95,70 @@ where
 
     /// The entries in this map in the order they were inserted.
     insertion_chain: RcuIntrusiveList<Entry<K, V>, InsertionAdapter>,
+
+    /// The build hasher.
+    hash_builder: S,
 }
 
-impl<K, V> Default for RcuRawHashMap<K, V>
+impl<K, V> Default for RcuRawHashMap<K, V, std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
-        Self::with_capacity(INITIAL_CAPACITY)
+        Self::with_capacity_and_hasher(
+            INITIAL_CAPACITY,
+            std::collections::hash_map::RandomState::new(),
+        )
     }
 }
 
-impl<K, V> RcuRawHashMap<K, V>
+impl<K, V> RcuRawHashMap<K, V, std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
     /// Creates a new hash map with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacity_and_hasher(capacity, std::collections::hash_map::RandomState::new())
+    }
+}
+
+impl<K, V, S> RcuRawHashMap<K, V, S>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    /// Creates a new hash map with the given capacity and hasher.
+    pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
         let mut table = Vec::new();
         table.resize_with((capacity + 1) / 2, Default::default);
         Self {
             table: RcuArray::from(table),
             num_entries: AtomicUsize::new(0),
             insertion_chain: Default::default(),
+            hash_builder,
         }
     }
 
     /// Returns the hash of the key as a u64.
-    fn hash_key<Q>(key: &Q) -> u64
+    fn hash_key<Q>(&self, key: &Q) -> u64
     where
         Q: ?Sized + Hash,
     {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = self.hash_builder.build_hasher();
         key.hash(&mut hasher);
         hasher.finish()
     }
 
     /// Returns the bucket for the given key in the given table.
-    fn get_bucket<'a, Q>(table: &'a [Bucket<K, V>], key: &Q) -> &'a Bucket<K, V>
+    fn get_bucket<'a, Q>(&self, table: &'a [Bucket<K, V>], key: &Q) -> &'a Bucket<K, V>
     where
         K: Borrow<Q>,
         Q: ?Sized + Hash,
     {
-        let hash = Self::hash_key(key);
+        let hash = self.hash_key(key);
         let index = hash as usize % table.len();
         &table[index]
     }
@@ -150,7 +170,7 @@ where
         Q: ?Sized + Hash,
     {
         let table = self.table.as_slice(scope);
-        Self::get_bucket(table, key)
+        self.get_bucket(table, key)
     }
 
     /// Returns a reference to the value corresponding to the key.
@@ -192,7 +212,7 @@ where
             // writers.
             table = unsafe { self.grow(&scope, table) };
         }
-        let bucket = Self::get_bucket(table, &key);
+        let bucket = self.get_bucket(table, &key);
         let mut cursor = bucket.cursor(&scope);
         while let Some(entry) = cursor.current() {
             if entry.key == key {
@@ -279,7 +299,7 @@ where
         new_table.resize_with(new_size, Default::default);
 
         for entry in self.insertion_chain.iter(scope) {
-            let bucket = Self::get_bucket(&new_table, &entry.key);
+            let bucket = self.get_bucket(&new_table, &entry.key);
             let key = entry.key.clone();
             let value = entry.value.clone();
             // SAFETY: We have exclusive access to new_table_vec because we just created it.
@@ -300,7 +320,7 @@ where
     /// Returns a cursor that can be used to traverse and modify the map.
     ///
     /// The cursor iterates through the map in insertion order.
-    pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuRawHashMapCursor<'a, K, V> {
+    pub fn cursor<'a>(&'a self, scope: &'a RcuReadScope) -> RcuRawHashMapCursor<'a, K, V, S> {
         RcuRawHashMapCursor { inner: self.insertion_chain.cursor(scope), map: self }
     }
 
@@ -313,19 +333,21 @@ where
 /// A cursor for traversing and modifying an `RcuRawHashMap`.
 ///
 /// See `RcuRawHashMap::cursor` for more information.
-pub struct RcuRawHashMapCursor<'a, K, V>
+pub struct RcuRawHashMapCursor<'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     inner: RcuIntrusiveListCursor<'a, Entry<K, V>, InsertionAdapter>,
-    map: &'a RcuRawHashMap<K, V>,
+    map: &'a RcuRawHashMap<K, V, S>,
 }
 
-impl<'a, K, V> RcuRawHashMapCursor<'a, K, V>
+impl<'a, K, V, S> RcuRawHashMapCursor<'a, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// Returns the element at the current cursor position.
     pub fn current(&self) -> Option<(&'a K, &'a V)> {
@@ -362,6 +384,19 @@ where
 mod tests {
     use super::*;
     use fuchsia_rcu::rcu_synchronize;
+
+    #[test]
+    fn test_rcu_hash_map_custom_hasher() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::BuildHasherDefault;
+        let hasher = BuildHasherDefault::<DefaultHasher>::default();
+        let map = RcuRawHashMap::with_capacity_and_hasher(10, hasher);
+        let scope = RcuReadScope::new();
+        unsafe {
+            map.insert(&scope, 1, 10);
+        }
+        assert_eq!(map.get(&scope, &1), Some(&10));
+    }
 
     #[test]
     fn test_rcu_hash_map_insert_and_get() {

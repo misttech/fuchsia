@@ -6,23 +6,24 @@ use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu_collections::rcu_raw_hash_map::{InsertionResult, RcuRawHashMap};
 use starnix_sync::Mutex;
 use std::borrow::Borrow;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 
 /// A concurrent hash map that uses RCU for read synchronization and a mutex for write synchronization.
 ///
 /// This map allows concurrent readers to access entries without blocking, while writers are
 /// synchronized via a `Mutex`.
 #[derive(Debug)]
-pub struct RcuHashMap<K, V>
+pub struct RcuHashMap<K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
-    map: RcuRawHashMap<K, V>,
+    map: RcuRawHashMap<K, V, S>,
     mutex: Mutex<()>,
 }
 
-impl<K, V> Default for RcuHashMap<K, V>
+impl<K, V> Default for RcuHashMap<K, V, std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -32,11 +33,19 @@ where
     }
 }
 
-impl<K, V> RcuHashMap<K, V>
+impl<K, V, S> RcuHashMap<K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
+    /// Creates a new hash map with the given capacity and hasher.
+    pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
+        Self {
+            map: RcuRawHashMap::with_capacity_and_hasher(capacity, hash_builder),
+            mutex: Mutex::new(()),
+        }
+    }
     /// Returns a reference to the value associated with the given key, if it exists.
     ///
     /// The returned reference is bound to the lifetime of the `RcuReadScope`.
@@ -49,7 +58,7 @@ where
     }
 
     /// Locks the map for exclusive access, returning a guard that allows mutation.
-    pub fn lock(&self) -> RcuHashMapGuard<'_, K, V> {
+    pub fn lock(&self) -> RcuHashMapGuard<'_, K, V, S> {
         RcuHashMapGuard { map: &self.map, _guard: self.mutex.lock() }
     }
 
@@ -86,19 +95,21 @@ where
 }
 
 /// A guard that provides exclusive access to the `RcuHashMap`.
-pub struct RcuHashMapGuard<'a, K, V>
+pub struct RcuHashMapGuard<'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
-    map: &'a RcuRawHashMap<K, V>,
+    map: &'a RcuRawHashMap<K, V, S>,
     _guard: starnix_sync::MutexGuard<'a, ()>,
 }
 
-impl<'a, K, V> RcuHashMapGuard<'a, K, V>
+impl<'a, K, V, S> RcuHashMapGuard<'a, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// Returns a copy (clone) of the value associated with the given key, if it exists.
     pub fn get<Q>(&self, key: &Q) -> Option<V>
@@ -149,7 +160,7 @@ where
     }
 
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
-    pub fn entry<'b>(&'b mut self, key: K) -> Entry<'b, 'a, K, V> {
+    pub fn entry<'b>(&'b mut self, key: K) -> Entry<'b, 'a, K, V, S> {
         if self.get(&key).is_some() {
             Entry::Occupied(OccupiedEntry { guard: self, key })
         } else {
@@ -159,25 +170,27 @@ where
 }
 
 /// A view into a single entry in the map, which may either be vacant or occupied.
-pub enum Entry<'b, 'a, K, V>
+pub enum Entry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// An occupied entry.
-    Occupied(OccupiedEntry<'b, 'a, K, V>),
+    Occupied(OccupiedEntry<'b, 'a, K, V, S>),
     /// A vacant entry.
-    Vacant(VacantEntry<'b, 'a, K, V>),
+    Vacant(VacantEntry<'b, 'a, K, V, S>),
 }
 
-impl<'b, 'a, K, V> Entry<'b, 'a, K, V>
+impl<'b, 'a, K, V, S> Entry<'b, 'a, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// Ensures a value is in the entry by inserting the result of the default function if empty,
     /// and returns an occupied entry.
-    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> OccupiedEntry<'b, 'a, K, V> {
+    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> OccupiedEntry<'b, 'a, K, V, S> {
         match self {
             Entry::Occupied(entry) => entry,
             Entry::Vacant(entry) => entry.insert_entry(default()),
@@ -186,19 +199,21 @@ where
 }
 
 /// A view into an occupied entry in a `RcuHashMap`.
-pub struct OccupiedEntry<'b, 'a, K, V>
+pub struct OccupiedEntry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
-    guard: &'b mut RcuHashMapGuard<'a, K, V>,
+    guard: &'b mut RcuHashMapGuard<'a, K, V, S>,
     key: K,
 }
 
-impl<K, V> OccupiedEntry<'_, '_, K, V>
+impl<K, V, S> OccupiedEntry<'_, '_, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// Gets a copy (clone) of the value in the entry.
     pub fn get(&self) -> V {
@@ -217,19 +232,21 @@ where
 }
 
 /// A view into a vacant entry in a `RcuHashMap`.
-pub struct VacantEntry<'b, 'a, K, V>
+pub struct VacantEntry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
-    guard: &'b mut RcuHashMapGuard<'a, K, V>,
+    guard: &'b mut RcuHashMapGuard<'a, K, V, S>,
     key: K,
 }
 
-impl<'b, 'a, K, V> VacantEntry<'b, 'a, K, V>
+impl<'b, 'a, K, V, S> VacantEntry<'b, 'a, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
 {
     /// Sets the value of the entry with the VacantEntry's key.
     pub fn insert(self, value: V) {
@@ -237,7 +254,7 @@ where
     }
 
     /// Sets the value of the entry with the VacantEntry's key, and returns an occupied entry.
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'b, 'a, K, V> {
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'b, 'a, K, V, S> {
         self.guard.insert(self.key.clone(), value);
         OccupiedEntry { guard: self.guard, key: self.key }
     }
@@ -249,8 +266,19 @@ mod tests {
     use fuchsia_rcu::rcu_synchronize;
 
     #[test]
+    fn test_rcu_hash_map_custom_hasher() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::BuildHasherDefault;
+        let hasher = BuildHasherDefault::<DefaultHasher>::default();
+        let map = RcuHashMap::with_capacity_and_hasher(10, hasher);
+        let mut guard = map.lock();
+        guard.insert(1, 10);
+        assert_eq!(guard.get(&1), Some(10));
+    }
+
+    #[test]
     fn test_rcu_hash_map_insert_and_get() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
         let scope = RcuReadScope::new();
 
@@ -272,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_update() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
         let scope = RcuReadScope::new();
 
@@ -291,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_remove() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
         let scope = RcuReadScope::new();
 
@@ -310,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_entry_api() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
 
         // Vacant entry
@@ -336,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_iter() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let scope = RcuReadScope::new();
         map.insert(1, 10);
         map.insert(2, 20);
@@ -349,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_keys() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let scope = RcuReadScope::new();
         map.insert(1, 10);
         map.insert(2, 20);
@@ -362,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_or_insert_with() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
 
         // test or_insert_with
@@ -386,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_drain() {
-        let map = RcuHashMap::default();
+        let map = RcuHashMap::<i32, i32>::default();
         let mut guard = map.lock();
 
         guard.insert(1, 10);
