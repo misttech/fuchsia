@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include <ktl/algorithm.h>
+#include <ktl/type_traits.h>
 #include <ktl/utility.h>
 
 // Tracks the number of populated slots in the VmCowPages' local page list. If the VmCowPages
@@ -66,5 +67,30 @@ class ContinuousAttributionTracker final {
 // VmCowPages, reducing its size (by not using a 64-bit count) is a substantial memory saving for
 // the system.
 static_assert(sizeof(ContinuousAttributionTracker) == 8);
+
+// The stub continuous attribution tracker. This object stores no data. Intended to be used in place
+// of the regular continuous attribution tracker, unless users opt-in to its existence.
+class StubContinuousAttributionTracker final {
+ public:
+  StubContinuousAttributionTracker() = default;
+  ~StubContinuousAttributionTracker() = default;
+
+  StubContinuousAttributionTracker(StubContinuousAttributionTracker&& source) = default;
+  StubContinuousAttributionTracker& operator=(StubContinuousAttributionTracker&& source) = default;
+  StubContinuousAttributionTracker(StubContinuousAttributionTracker&) = delete;
+  StubContinuousAttributionTracker& operator=(StubContinuousAttributionTracker&) = delete;
+
+  // Unconditionally panics.
+  uint32_t FetchCurrent() const { PANIC("stub"); }
+
+  // Unconditionally panics.
+  uint32_t FetchHwmAndReset() { PANIC("stub"); }
+
+  void Increment(uint32_t by) {}
+  void Decrement(uint32_t by) {}
+};
+
+// The continuous attribution tracker supports an empty "stubbed out" state.
+static_assert(ktl::is_empty_v<StubContinuousAttributionTracker>);
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_CONTINUOUS_ATTRIBUTION_TRACKER_H_

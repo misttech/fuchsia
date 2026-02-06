@@ -11,6 +11,37 @@ namespace vm_unittest {
 
 namespace {
 
+// Test that the continuous attribution tracker supports a "stubbed out" state.
+bool continuous_attribution_tracker_stub() {
+  BEGIN_TEST;
+
+  StubContinuousAttributionTracker tracker;
+
+  tracker.Increment(1);
+  tracker.Decrement(1);
+
+  tracker.Increment(100);
+  tracker.Decrement(100);
+
+  tracker.Increment(100);
+  tracker.Increment(100);
+  tracker.Increment(100);
+
+  tracker.Decrement(150);
+  tracker.Decrement(150);
+
+  // Overflow is okay.
+  tracker.Decrement(3000);
+
+  // Do not call stub FetchCurrent and FetchHwmAndReset methods, as these unconditionally panic.
+
+  StubContinuousAttributionTracker assigned = ktl::move(tracker);
+  StubContinuousAttributionTracker moved(ktl::move(assigned));
+  ktl::ignore = moved;
+
+  END_TEST;
+}
+
 // Test that the initial state of the ContinuousAttributionTracker is zero.
 bool continuous_attribution_tracker_create() {
   BEGIN_TEST;
@@ -97,6 +128,7 @@ bool continuous_attribution_tracker_extreme() {
 }
 
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
+VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
 VM_UNITTEST(continuous_attribution_tracker_transfer)
 VM_UNITTEST(continuous_attribution_tracker_high_water_mark)
