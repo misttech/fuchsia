@@ -23,10 +23,14 @@ class FramePointerUnwinder : public UnwinderBase {
   explicit FramePointerUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
+  void AsyncStep(AsyncMemory* stack, const Frame& current,
+                 fit::callback<void(Error, Registers)> cb) override;
   Frame::Trust trust() const override { return Frame::Trust::kFP; }
 
  private:
   Error Step(Memory* stack, const Registers& current, Registers& next, CfiModuleInfo* module_info);
+  void AsyncStep(AsyncMemory* stack, const Registers& current, CfiModuleInfo* module_info,
+                 fit::callback<void(Error, Registers)> cb);
   Error ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_t& next_fp, uint64_t& next_pc,
                         CfiModuleInfo* module_info);
 };

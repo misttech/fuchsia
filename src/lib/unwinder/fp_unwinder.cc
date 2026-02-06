@@ -20,11 +20,35 @@ namespace {
 // This could be further improved to ask users to provide the stack size.
 uint64_t kMaxFrameSize = 8ull * 1024 * 1024;  // 8 MB
 
+fit::result<Error, uint64_t> GetValidatedFP(const Registers& current) {
+  uint64_t fp;
+  if (auto err = current.GetFP(fp); err.has_err()) {
+    return fit::error(err);
+  }
+
+  if (current.arch() == Registers::Arch::kRiscv64 && fp >= 16) {
+    fp -= 16;
+  }
+
+  uint64_t sp;
+  if (auto err = current.GetSP(sp); err.has_err()) {
+    return fit::error(err);
+  }
+
+  if (fp < sp || fp > sp + kMaxFrameSize) {
+    return fit::error(Error("current FP %#" PRIx64 " doesn't seem to be on the stack", fp));
+  }
+
+  return fit::ok(fp);
+}
+
 }  // namespace
 
 Error FramePointerUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   uint64_t pc = 0;
-  auto e = current.regs.GetPC(pc);
+  if (auto e = current.regs.GetPC(pc); e.has_err()) {
+    return e;
+  }
 
   CfiModuleInfo* info;
   if (auto e = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); e.has_err()) {
@@ -36,38 +60,12 @@ Error FramePointerUnwinder::Step(Memory* stack, const Frame& current, Frame& nex
 
 Error FramePointerUnwinder::Step(Memory* stack, const Registers& current, Registers& next,
                                  CfiModuleInfo* module_info) {
-  RegisterID fp_reg;
-  switch (current.arch()) {
-    case Registers::Arch::kX64:
-      fp_reg = RegisterID::kX64_rbp;
-      break;
-    case Registers::Arch::kArm32:
-      fp_reg = RegisterID::kArm32_fp;
-      break;
-    case Registers::Arch::kArm64:
-      fp_reg = RegisterID::kArm64_x29;
-      break;
-    case Registers::Arch::kRiscv64:
-      fp_reg = RegisterID::kRiscv64_s0;
-      break;
-  }
+  uint64_t fp = 0;
 
-  uint64_t fp;
-  if (auto err = current.Get(fp_reg, fp); err.has_err()) {
-    return err;
-  }
-
-  if (current.arch() == Registers::Arch::kRiscv64 && fp >= 16) {
-    fp -= 16;
-  }
-
-  uint64_t sp;
-  if (auto err = current.GetSP(sp); err.has_err()) {
-    return err;
-  }
-
-  if (fp < sp || fp > sp + kMaxFrameSize) {
-    return Error("current FP %#" PRIx64 " doesn't seem to be on the stack", fp);
+  if (auto result = GetValidatedFP(current); result.is_ok()) {
+    fp = result.value();
+  } else {
+    return result.error_value();
   }
 
   uint64_t next_fp;
@@ -78,8 +76,56 @@ Error FramePointerUnwinder::Step(Memory* stack, const Registers& current, Regist
 
   next.SetSP(fp);
   next.SetPC(next_pc);
-  next.Set(fp_reg, next_fp);
+  next.SetFP(next_fp);
   return Success();
+}
+
+void FramePointerUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
+                                     fit::callback<void(Error, Registers)> cb) {
+  uint64_t pc = 0;
+  if (auto e = current.regs.GetPC(pc); e.has_err()) {
+    cb(e, Registers(current.regs.arch()));
+    return;
+  }
+
+  CfiModuleInfo* info;
+  if (auto e = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); e.has_err()) {
+    cb(e, Registers(current.regs.arch()));
+    return;
+  }
+
+  AsyncStep(stack, current.regs, info, std::move(cb));
+}
+
+void FramePointerUnwinder::AsyncStep(AsyncMemory* stack, const Registers& current,
+                                     CfiModuleInfo* module_info,
+                                     fit::callback<void(Error, Registers)> cb) {
+  uint64_t fp = 0;
+
+  if (auto result = GetValidatedFP(current); result.is_ok()) {
+    fp = result.value();
+  } else {
+    cb(result.error_value(), Registers(current.arch()));
+    return;
+  }
+
+  // There's no harm in potentially reading more than we need, since |ReadNextFpAndSp| will account
+  // for expected register sizes for this module.
+  constexpr uint32_t kDefaultReadSize = 16;
+  stack->FetchMemoryRanges({{fp, kDefaultReadSize}}, [=, cb = std::move(cb)]() mutable {
+    uint64_t next_fp;
+    uint64_t next_pc;
+    if (auto err = ReadNextFpAndSp(stack, fp, next_fp, next_pc, module_info); err.has_err()) {
+      cb(err, Registers(current.arch()));
+      return;
+    }
+
+    Registers next(current.arch());
+    next.SetSP(fp);
+    next.SetPC(next_pc);
+    next.SetFP(next_fp);
+    cb(Success(), std::move(next));
+  });
 }
 
 Error FramePointerUnwinder::ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_t& next_fp,
