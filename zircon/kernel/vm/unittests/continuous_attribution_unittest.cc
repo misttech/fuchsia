@@ -287,6 +287,93 @@ bool continuous_attribution_tracker_bidirectional_child() {
 
   END_TEST;
 }
+
+// Test that zeroing an anonymous VMO decreases the populated slots count.
+bool continuous_attribution_tracker_zero_anonymous() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &vmo));
+
+  fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+  ASSERT_NONNULL(cow_pages);
+  auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+  // Write a non-zero value to the first two pages.
+  {
+    fbl::AllocChecker ac;
+    fbl::Vector<uint8_t> a;
+    a.resize(2 * kPageSize, 42, &ac);
+    ASSERT_TRUE(ac.check());
+    EXPECT_EQ(ZX_OK, vmo->Write(a.data(), 0, a.size()));
+  }
+
+  EXPECT_EQ(2u, tracker.FetchCurrent());
+
+  // Clear out one page, so that afterwards the VMO will only have one populated page.
+  {
+    __UNINITIALIZED MultiPageRequest page_request;
+    VmCowPages::DeferredOps deferred(cow_pages.get());
+    Guard<CriticalMutex> guard{cow_pages->lock()};
+    VmCowRange range(0, kPageSize);
+    // Directly call the lower-level interface, as opposed to the method on VmObject. The
+    // attribution for the higher-level method is incomplete.
+    auto [status, zeroed_bytes] =
+        cow_pages->ZeroPagesLocked(range, /*dirty_track=*/false, deferred, &page_request);
+    EXPECT_EQ(kPageSize, zeroed_bytes);
+    EXPECT_OK(status);
+  }
+
+  EXPECT_EQ(1u, tracker.FetchCurrent());
+
+  END_TEST;
+}
+
+// Test that zeroing a pager-backed VMO decreases the populated slots count.
+bool continuous_attribution_tracker_zero_pager_backed() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/2, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, nullptr, &vmo));
+
+  fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+  ASSERT_NONNULL(cow_pages);
+  auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
+
+  EXPECT_EQ(2u, tracker.FetchCurrent());
+
+  // Clear out one page, so that afterwards the VMO will only have one populated page.
+  {
+    __UNINITIALIZED MultiPageRequest page_request;
+    VmCowPages::DeferredOps deferred(cow_pages.get());
+    Guard<CriticalMutex> guard{cow_pages->lock()};
+    VmCowRange range(0, kPageSize);
+    // Directly call the lower-level interface, as opposed to the method on VmObject. The
+    // attribution for the higher-level method is incomplete.
+    auto [status, zeroed_bytes] =
+        cow_pages->ZeroPagesLocked(range, /*dirty_track=*/false, deferred, &page_request);
+    EXPECT_EQ(kPageSize, zeroed_bytes);
+    EXPECT_OK(status);
+  }
+
+  EXPECT_EQ(1u, tracker.FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -296,6 +383,8 @@ VM_UNITTEST(continuous_attribution_tracker_extreme)
 VM_UNITTEST(continuous_attribution_tracker_populate_vmo)
 VM_UNITTEST(continuous_attribution_tracker_unidirectional_child)
 VM_UNITTEST(continuous_attribution_tracker_bidirectional_child)
+VM_UNITTEST(continuous_attribution_tracker_zero_anonymous)
+VM_UNITTEST(continuous_attribution_tracker_zero_pager_backed)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

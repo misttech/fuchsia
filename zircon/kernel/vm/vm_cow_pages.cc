@@ -4158,6 +4158,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesDirectUserPagerLocked(
         vm_page_t* page = page_list_.ReplacePageWithZeroInterval(state.start, required_state);
         DEBUG_ASSERT(page->object.pin_count == 0);
         RemovePageLocked(page, deferred);
+        continuous_attribution_tracker_.Decrement(1);
       } else if (state.overwrite_interval) {
         uint64_t old_start = state.start;
         uint64_t old_end = state.end;
@@ -4373,6 +4374,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           // compressed reference wasn't mapped in the first place, we don't have to do an unmap
           // here.
           DEBUG_ASSERT(node_has_parent_content_markers());
+          continuous_attribution_tracker_.Decrement(1);
           FreeReference(slot->ReleaseReference());
           zeroed_len += kPageSize;
           return ZX_ERR_NEXT;
@@ -4384,6 +4386,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
         if (slot->IsPage() && !is_root_source_user_pager_backed()) {
           // We have a page in an anonymous hierarchy, so we can just remove the content.
           DEBUG_ASSERT(node_has_parent_content_markers());
+          continuous_attribution_tracker_.Decrement(1);
           vm_page_t* page = slot->ReleasePage();
           RemovePageLocked(page, deferred);
           zeroed_len += kPageSize;
@@ -4413,6 +4416,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           return status;
         }
         // An empty slot is safe to represent zero in non- user pager hierarchies.
+        continuous_attribution_tracker_.Decrement(1);
         *slot = VmPageOrMarker::Empty();
         zeroed_len += kPageSize;
         return ZX_ERR_NEXT;
