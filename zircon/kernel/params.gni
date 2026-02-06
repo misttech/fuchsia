@@ -127,6 +127,9 @@ declare_args() {
   # Support streaming ktrace data out of the kernel.
   experimental_ktrace_streaming_enabled = true
 
+  # Add in-kernel support for querying a per-VMO populated bytes high-water mark.
+  experimental_continuous_per_vmo_attribution_enabled = false
+
   # Propagate bandwidth and enable run queue promotion for threads making channel calls.
   experimental_channel_call_propagation_enabled = false
 

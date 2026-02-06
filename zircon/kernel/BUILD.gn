@@ -363,6 +363,7 @@ if (is_kernel) {
       "EXPERIMENTAL_KTRACE_STREAMING_ENABLED=$experimental_ktrace_streaming_enabled",
       "EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED=$experimental_channel_call_propagation_enabled",
       "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
+      "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
       "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",
     ]
 

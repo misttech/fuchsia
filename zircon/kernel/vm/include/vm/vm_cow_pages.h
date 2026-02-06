@@ -25,6 +25,7 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/mutex.h>
 #include <vm/compressor.h>
+#include <vm/continuous_attribution_tracker.h>
 #include <vm/page_source.h>
 #include <vm/physical_page_borrowing_config.h>
 #include <vm/pmm.h>
@@ -133,6 +134,12 @@ enum class PageSourceType : uint8_t {
   // * The VmCowPages must implement dirty tracking.
   UserPager,
 };
+
+#if EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
+using AttributionTracker = ContinuousAttributionTracker;
+#else   // EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
+using AttributionTracker = StubContinuousAttributionTracker;
+#endif  // EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED
 
 class ScopedPageFreedList;
 
@@ -880,6 +887,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   }
 
   static void DebugDumpReclaimCounters();
+
+  // Test-only interface to get the associated ContinuousAttributionTracker.
+  AttributionTracker& DebugGetContinuousAttributionTracker() {
+    return continuous_attribution_tracker_;
+  }
 
  private:
   // private constructor (use Create...())
@@ -1641,6 +1653,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // a tree of pages
   VmPageList page_list_ TA_GUARDED(lock());
+
+  // Tracks the populated bytes count and its high-water mark.
+  //
+  // TODO(ethanws): Inform this object about changes to the number of slots populated in page_list_.
+  //
+  // Mark it as __NO_UNIQUE_ADDRESS so that we don't pessimize the
+  // case when AttributionTracker may be empty.
+  __NO_UNIQUE_ADDRESS AttributionTracker continuous_attribution_tracker_ TA_GUARDED(lock());
 
   // Reference back to a VmObjectPaged, which should be valid at all times after creation until the
   // VmObjectPaged has been destroyed, unless this is a hidden node. We use this in places where we

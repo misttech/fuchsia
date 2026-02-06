@@ -2430,7 +2430,16 @@ VmPageOrMarker VmCowPages::CompleteAddPageLocked(AddPageTransaction& transaction
     DEBUG_ASSERT(low_level_page->object.pin_count == 0);
     SetNotPinnedLocked(low_level_page, transaction.offset());
   }
+  const bool after_is_populated = p.IsPageOrRef();  // |p| is either a page, reference, or a marker.
+
   VmPageOrMarker old = transaction.Complete(ktl::move(p));
+
+  const bool before_was_populated = old.IsPageOrRef() || old.IsParentContent();
+  if (before_was_populated && !after_is_populated) {
+    continuous_attribution_tracker_.Decrement(1);
+  } else if (!before_was_populated && after_is_populated) {
+    continuous_attribution_tracker_.Increment(1);
+  }
 
   if (deferred) {
     // If the old entry is a reference then we know that there can be no mappings to it, since a
