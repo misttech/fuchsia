@@ -11,6 +11,7 @@ use crate::vfs::{
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
 use fidl_fuchsia_fxfs::CryptMarker;
+use fidl_fuchsia_hardware_inlineencryption::DeviceMarker as InlineEncryptionDeviceMarker;
 use fidl_fuchsia_io as fio;
 use starnix_crypt::CryptService;
 use starnix_logging::{log_error, log_info};
@@ -275,32 +276,19 @@ pub fn new_remote_vol(
     let (keys, created_key_file) = VolumeKeys::get_or_create(&key_location_proxy, KEY_FILE_PATH)?;
 
     // Attempt to connect to the inline encryption device if mount options specify inline crypt
-    let inline_encryption_provider = match options.params.get(FsStr::new(b"inlinecrypt")) {
-        Some(_) => {
-            let (inline_encryption_provider, inline_encryption_server) =
-                fidl::endpoints::create_sync_proxy();
-            // TODO(https://fxbug.dev/477720373): Use component routing instead.
-            match volume_provider
-                .connect_to_inline_encryption(
-                    inline_encryption_server,
-                    zx::MonotonicInstant::INFINITE,
-                )
-                .map_err(|e| {
-                    log_error!(
-                        "FIDL error on StarnixVolumeProvider.ConnectToInlineEncryption {:?}",
-                        e
-                    );
-                    errno!(EIO)
-                })? {
-                Ok(()) => Some(inline_encryption_provider),
-                Err(e) => {
-                    let error = from_status_like_fdio!(zx::Status::from_raw(e));
-                    log_error!(error:?; "Error while connecting to inline encryption");
-                    return Err(error);
-                }
+    let inline_encryption_provider = if options.params.get(FsStr::new(b"inlinecrypt")).is_some() {
+        match current_task
+            .kernel()
+            .connect_to_protocol_at_container_svc::<InlineEncryptionDeviceMarker>()
+        {
+            Ok(client_end) => Some(client_end.into_sync_proxy()),
+            Err(error) => {
+                log_error!(error:?; "Error connecting to inline encryption device");
+                return Err(error);
             }
         }
-        None => None,
+    } else {
+        None
     };
     let crypt_service =
         Arc::new(CryptService::new(&keys.metadata, &keys.data, inline_encryption_provider));

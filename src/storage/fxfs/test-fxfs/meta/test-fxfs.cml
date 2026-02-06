@@ -27,6 +27,7 @@
         {
             protocol: [
                 "fuchsia.fshost.StarnixVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
                 "fuchsia.test.fxfs.StarnixVolumeAdmin",
             ],
         },
@@ -45,7 +46,10 @@
     ],
     offer: [
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            protocol: [
+                "fuchsia.fshost.StarnixVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
+            ],
             from: "self",
             to: "self/starnix-volume",
         },

@@ -16,7 +16,6 @@ use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_test_fxfs::{
     StarnixVolumeAdminMarker, StarnixVolumeAdminRequest, StarnixVolumeAdminRequestStream,
 };
-use fuchsia_async::Task;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
@@ -36,9 +35,7 @@ use storage_device::block_device::BlockDevice;
 use test_fxfs_config::Config;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
-use vmo_backed_block_server::{
-    InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
-};
+use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt};
 
 const BLOCK_SIZE: u32 = 4096; // 4KiB
 const USER_VOLUME_NAME: &str = "test_fxfs_user_volume";
@@ -218,7 +215,6 @@ async fn handle_starnix_volume_provider_requests(
     mut stream: StarnixVolumeProviderRequestStream,
     volumes_directory: Arc<VolumesDirectory>,
     mounted_volume: Arc<Mutex<Option<MountedVolume>>>,
-    block_server: Arc<VmoBackedServer>,
 ) {
     while let Some(Ok(request)) = stream.next().await {
         match request {
@@ -243,19 +239,6 @@ async fn handle_starnix_volume_provider_requests(
                 };
                 responder.send(res.as_ref().map_err(|e| *e)).unwrap_or_else(|error| {
                     log::error!(error:?; "failed to send Mount response");
-                });
-            }
-            StarnixVolumeProviderRequest::ConnectToInlineEncryption { server_end, responder } => {
-                log::info!("volume provider connect to inline encryption");
-                let block_server_clone = block_server.clone();
-                Task::spawn(async move {
-                    block_server_clone
-                        .connect_insecure_inline_encryption_server(server_end, UUID)
-                        .await;
-                })
-                .detach();
-                responder.send(Ok(())).unwrap_or_else(|error| {
-                    log::error!(error:?; "failed to send ConnectToInlineCrypto response");
                 });
             }
         }
@@ -369,7 +352,6 @@ async fn main() -> Result<(), Error> {
                         stream,
                         volumes_directory.clone(),
                         mounted_volume.clone(),
-                        block_server.clone(),
                     )
                 }
             }),
@@ -384,6 +366,14 @@ async fn main() -> Result<(), Error> {
                     volumes_directory.clone(),
                     mounted_volume.clone(),
                 )
+            }),
+        )
+        .unwrap();
+    svc_dir
+        .add_entry(
+            fidl_fuchsia_hardware_inlineencryption::DeviceMarker::PROTOCOL_NAME,
+            vfs::service::host(move |stream| {
+                block_server.clone().serve_insecure_inline_encryption(stream, UUID)
             }),
         )
         .unwrap();

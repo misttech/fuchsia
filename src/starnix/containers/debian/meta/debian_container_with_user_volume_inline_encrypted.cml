@@ -22,7 +22,10 @@
     },
     use: [
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            protocol: [
+                "fuchsia.fshost.StarnixVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
+            ],
             from: "parent/starnix-volume",
         },
     ],

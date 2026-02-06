@@ -36,6 +36,7 @@
             protocol: [
                 "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
             ],
             from: "void",
             availability: "optional",

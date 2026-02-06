@@ -30,6 +30,10 @@
             path: "/user_volumes/starnix",
         },
         {
+            protocol: "fuchsia.hardware.inlineencryption.Device",
+            path: "/svc/fuchsia.hardware.block.volume.Service/system_gpt/inline_encryption",
+        },
+        {
             protocol: "fuchsia.fxfs.BlobCreator",
             path: "/fs/blob/svc/fuchsia.fxfs.BlobCreator",
         },
@@ -121,7 +125,10 @@
             from: "self",
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            protocol: [
+                "fuchsia.fshost.StarnixVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
+            ],
             from: "self",
         },
         {

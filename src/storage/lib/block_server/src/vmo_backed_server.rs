@@ -207,8 +207,8 @@ impl VmoBackedServer {
         Err(zx::Status::NO_RESOURCES)
     }
 
-    async fn serve_insecure_inline_encryption_device_requests(
-        &self,
+    pub async fn serve_insecure_inline_encryption(
+        self: Arc<Self>,
         mut requests: DeviceRequestStream,
         uuid: [u8; 16],
     ) {
@@ -432,7 +432,7 @@ impl VmoBackedServerTestingExt for VmoBackedServer {
     ) -> impl Future<Output = ()> + Send {
         let this = self.clone();
         async move {
-            this.serve_insecure_inline_encryption_device_requests(server.into_stream(), uuid).await;
+            this.serve_insecure_inline_encryption(server.into_stream(), uuid).await;
         }
     }
 

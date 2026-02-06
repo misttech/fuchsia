@@ -141,7 +141,10 @@
             target_availability: "unknown",
         },
         {
-            protocol: "fuchsia.fshost.StarnixVolumeProvider",
+            protocol: [
+                "fuchsia.fshost.StarnixVolumeProvider",
+                "fuchsia.hardware.inlineencryption.Device",
+            ],
             from: "#fshost",
             to: "self/starnix-volume",
             availability: "optional",

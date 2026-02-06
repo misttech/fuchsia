@@ -236,6 +236,7 @@ _starnix_core_deps = [
   "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
   "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_rust",
   "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
+  "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
   "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
   "//sdk/fidl/fuchsia.hardware.qualcomm.router:fuchsia.hardware.qualcomm.router_rust",
   "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",

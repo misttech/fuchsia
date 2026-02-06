@@ -180,7 +180,7 @@ async fn main() -> Result<(), Error> {
                 launcher,
             ),
         fidl_fuchsia_hardware_block_volume::ServiceMarker::SERVICE_NAME => vfs::pseudo_directory! {
-            "default" => remote_dir(system_gpt_service_instance),
+            "system_gpt" => remote_dir(system_gpt_service_instance),
         }
     };
     if config.fxfs_blob {
