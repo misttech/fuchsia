@@ -10,6 +10,7 @@ fidl("test.example") {
   public_deps = [
     "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.testing.harness",
+    "//zircon/vdso/zx",
   ]
   enable_hlcpp = true
 }

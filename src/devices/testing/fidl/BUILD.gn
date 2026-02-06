@@ -8,10 +8,10 @@ fidl("fuchsia.driver.testing") {
   testonly = true
   sources = [ "realm_factory.test.fidl" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.driver.test",
     "//sdk/fidl/fuchsia.io",
     "//sdk/fidl/fuchsia.testing.harness",
     "//sdk/fidl/fuchsia.url",
+    "//zircon/vdso/zx",
   ]
 }

@@ -4,12 +4,12 @@
 
 library fuchsia.hardware.sensors.realm;
 
-using fuchsia.component.sandbox;
 using fuchsia.testing.harness;
+using zx;
 
 @discoverable
 open protocol RealmFactory {
     flexible CreateRealm(resource struct {
-        dictionary server_end:fuchsia.component.sandbox.Dictionary;
+        dictionary zx.Handle:EVENTPAIR;
     }) -> () error fuchsia.testing.harness.OperationError;
 };

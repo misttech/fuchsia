@@ -4,8 +4,8 @@
 
 library test.echoserver;
 
-using fuchsia.component.sandbox;
 using fuchsia.testing.harness;
+using zx;
 
 /// RealmOptions tells the RealmFactory protocol how to create the test realm.
 type RealmOptions = resource table {
@@ -21,6 +21,6 @@ open protocol RealmFactory {
     flexible CreateRealm(resource struct {
         options RealmOptions;
     }) -> (resource struct {
-        dictionary client_end:fuchsia.component.sandbox.Dictionary;
+        dictionary zx.Handle:EVENTPAIR;
     }) error fuchsia.testing.harness.OperationError;
 };

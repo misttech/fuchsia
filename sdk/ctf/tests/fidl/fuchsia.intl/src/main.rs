@@ -2,17 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Result};
-use fidl::endpoints::create_endpoints;
+use anyhow::{Context, Result, format_err};
 use fidl_fuchsia_intl_test::*;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
 use futures::StreamExt;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use {fidl_fuchsia_intl as fintl, fidl_fuchsia_settings as fsettings};
 
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
 async fn create_realm(options: RealmOptions) -> Result<InstalledNamespace> {
     let realm_factory = connect_to_protocol::<RealmFactoryMarker>()?;
-    let (dict_client, dict_server) = create_endpoints();
+    let (dictionary, dictionary_other_end) = fidl::EventPair::create();
+
+    realm_factory
+        .create_realm3(options, dictionary)
+        .await?
+        .map_err(realm_client::Error::OperationError)?;
+    let ns = extend_namespace(realm_factory, dictionary_other_end).await?;
+
+    Ok(ns)
+}
+
+#[cfg(fuchsia_api_level_less_than = "HEAD")]
+async fn create_realm(options: RealmOptions) -> Result<InstalledNamespace> {
+    let realm_factory = connect_to_protocol::<RealmFactoryMarker>()?;
+    let (dict_client, dict_server) = fidl::endpoints::create_endpoints();
 
     realm_factory
         .create_realm2(options, dict_server)

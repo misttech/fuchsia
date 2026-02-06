@@ -21,7 +21,7 @@
 
 using fuchsia_component::Namespace;
 using fuchsia_component::NamespaceEntry;
-using fuchsia_component::NamespaceInputEntry;
+using fuchsia_component::NamespaceInputEntry2;
 using fuchsia_hardware_sensors::Driver;
 using fuchsia_hardware_sensors::Playback;
 using fuchsia_hardware_sensors::Service;
@@ -87,21 +87,20 @@ class InstalledNamespace {
   zx::channel realm_factory_;
 };
 template <typename Interface>
-InstalledNamespace ExtendNamespace(
-    fidl::ClientEnd<fuchsia_component_sandbox::Dictionary> dictionary,
-    fidl::ClientEnd<Interface> realm_factory) {
+InstalledNamespace ExtendNamespace(zx::eventpair dictionary,
+                                   fidl::ClientEnd<Interface> realm_factory) {
   std::string prefix = std::string("/dict-") + std::to_string(namespace_ctr++);
 
   zx::result namespace_client_end = component::Connect<Namespace>();
   EXPECT_TRUE(namespace_client_end.is_ok());
   fidl::SyncClient<Namespace> ns_client(std::move(*namespace_client_end));
 
-  std::vector<NamespaceInputEntry> entries;
-  entries.emplace_back(NamespaceInputEntry{{
+  std::vector<NamespaceInputEntry2> entries;
+  entries.emplace_back(NamespaceInputEntry2{{
       .path = prefix,
-      .dictionary = std::move(dictionary),
+      .capability = std::move(dictionary),
   }});
-  fidl::Result<Namespace::Create> namespace_create_result = ns_client->Create(std::move(entries));
+  fidl::Result<Namespace::Create2> namespace_create_result = ns_client->Create2(std::move(entries));
   EXPECT_TRUE(namespace_create_result.is_ok());
 
   std::vector<NamespaceEntry> namespace_entries =
@@ -124,13 +123,15 @@ InstalledNamespace SetupNamespace() {
   EXPECT_TRUE(realm_factory_client_end.is_ok());
   fidl::SyncClient<RealmFactory> realm_factory(std::move(*realm_factory_client_end));
 
-  auto [dictionary_client_end, dictionary_server_end] =
-      fidl::Endpoints<fuchsia_component_sandbox::Dictionary>::Create();
+  zx::eventpair dictionary;
+  zx::eventpair dictionary_other_end;
+  zx_status_t status = zx::eventpair::create(0, &dictionary, &dictionary_other_end);
+  EXPECT_EQ(status, ZX_OK);
   fidl::Result<RealmFactory::CreateRealm> create_realm_result =
-      realm_factory->CreateRealm(std::move(dictionary_server_end));
+      realm_factory->CreateRealm(std::move(dictionary));
   EXPECT_TRUE(create_realm_result.is_ok());
 
-  return ExtendNamespace(std::move(dictionary_client_end), realm_factory.TakeClientEnd());
+  return ExtendNamespace(std::move(dictionary_other_end), realm_factory.TakeClientEnd());
 }
 
 std::pair<fidl::ClientEnd<Playback>, fidl::ClientEnd<Driver>> CreateStandardEndpoints(

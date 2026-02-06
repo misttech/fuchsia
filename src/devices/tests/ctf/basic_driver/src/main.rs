@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use fidl::endpoints::{create_endpoints, create_proxy, DiscoverableProtocolMarker, ServiceMarker};
-use fuchsia_component::client::{connect_to_protocol, Service};
+use fidl::endpoints::{DiscoverableProtocolMarker, ServiceMarker, create_endpoints, create_proxy};
+use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use log::info;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use {
     fidl_fuchsia_basicdriver_ctftest as ctf, fidl_fuchsia_driver_test as fdt,
     fidl_fuchsia_driver_testing as ftest, fidl_fuchsia_io as fio, fuchsia_async as fasync,
@@ -38,12 +38,12 @@ async fn run_offers_server(
 
 async fn create_realm(options: ftest::RealmOptions) -> Result<InstalledNamespace> {
     let realm_factory = connect_to_protocol::<ftest::RealmFactoryMarker>()?;
-    let (dict_client, dict_server) = create_endpoints();
+    let (event_pair_1, event_pair_2) = zx::EventPair::create();
     realm_factory
-        .create_realm2(options, dict_server)
+        .create_realm2(options, event_pair_1)
         .await?
         .map_err(realm_client::Error::OperationError)?;
-    let ns = extend_namespace(realm_factory, dict_client).await?;
+    let ns = extend_namespace(realm_factory, event_pair_2).await?;
     Ok(ns)
 }
 

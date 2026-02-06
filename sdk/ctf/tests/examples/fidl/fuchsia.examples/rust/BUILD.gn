@@ -24,6 +24,7 @@ rustc_test("bin") {
   deps = [
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
     "//sdk/ctf/tests/examples/fidl/fuchsia.examples/testing/fidl:test.example_rust",
+    "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",

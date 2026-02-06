@@ -15,6 +15,12 @@
     capabilities: [
         { protocol: "test.sampler.RealmFactory" },
     ],
+    use: [
+        {
+            protocol: "fuchsia.component.runtime.Capabilities",
+            from: "framework",
+        },
+    ],
     offer: [
         {
             protocol: [

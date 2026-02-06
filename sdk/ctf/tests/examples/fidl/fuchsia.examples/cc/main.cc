@@ -68,10 +68,15 @@ std::atomic_int32_t namespace_ctr{1};
 template <typename Interface>
 InstalledNamespace ExtendNamespace(
     sys::ComponentContext* context, fidl::InterfaceHandle<Interface> realm_factory,
+#if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
     fidl::InterfaceHandle<::fuchsia::component::sandbox::Dictionary> dictionary) {
+#else
+    zx::eventpair dictionary) {
+#endif
   std::string prefix = std::string("/dict-") + std::to_string(namespace_ctr++);
   fuchsia::component::NamespaceSyncPtr namespace_proxy;
   EXPECT_OK(context->svc()->Connect(namespace_proxy.NewRequest()));
+#if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
   std::vector<fuchsia::component::NamespaceInputEntry> entries;
   entries.emplace_back(fuchsia::component::NamespaceInputEntry{
       .path = prefix,
@@ -79,6 +84,15 @@ InstalledNamespace ExtendNamespace(
   });
   fuchsia::component::Namespace_Create_Result result;
   EXPECT_OK(namespace_proxy->Create(std::move(entries), &result));
+#else
+  std::vector<fuchsia::component::NamespaceInputEntry2> entries;
+  entries.emplace_back(fuchsia::component::NamespaceInputEntry2{
+      .path = prefix,
+      .capability = std::move(dictionary),
+  });
+  fuchsia::component::Namespace_Create2_Result result;
+  EXPECT_OK(namespace_proxy->Create2(std::move(entries), &result));
+#endif
   EXPECT_TRUE(!result.is_err());
   std::vector<fuchsia::component::NamespaceEntry> namespace_entries =
       std::move(result.response().entries);
@@ -100,11 +114,23 @@ TEST(FuchsiaExamplesTest, Echo) {
   auto context = sys::ComponentContext::Create();
   EXPECT_OK(context->svc()->Connect(realm_factory.NewRequest()));
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
   fuchsia::component::sandbox::DictionarySyncPtr dictionary;
   test::example::RealmFactory_CreateRealm_Result result;
   test::example::RealmOptions options;
   EXPECT_OK(realm_factory->CreateRealm(std::move(options), dictionary.NewRequest(), &result));
   auto test_ns = ExtendNamespace(context.get(), realm_factory.Unbind(), dictionary.Unbind());
+#else
+  zx::eventpair dictionary;
+  zx::eventpair dictionary_other_end;
+  zx_status_t status = zx::eventpair::create(0, &dictionary, &dictionary_other_end);
+  ZX_ASSERT(status == ZX_OK);
+  test::example::RealmFactory_CreateRealm2_Result result;
+  test::example::RealmOptions options;
+  EXPECT_OK(realm_factory->CreateRealm2(std::move(options), std::move(dictionary), &result));
+  auto test_ns =
+      ExtendNamespace(context.get(), realm_factory.Unbind(), std::move(dictionary_other_end));
+#endif
 
   fuchsia::examples::EchoSyncPtr echo;
   EXPECT_OK(test_ns.Connect(echo.NewRequest()));

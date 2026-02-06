@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::*;
-use fidl::endpoints::create_endpoints;
 use fuchsia_component::client::connect_to_protocol;
 use realm_client::{InstalledNamespace, extend_namespace};
 
@@ -27,11 +26,8 @@ async fn inner_create_realm(
     options: fidl_test_sampler::RealmOptions,
 ) -> Result<InstalledNamespace, Error> {
     let realm_factory = connect_to_protocol::<fidl_test_sampler::RealmFactoryMarker>()?;
-    let (dict_client, dict_server) = create_endpoints();
-    realm_factory
-        .create_realm(options, dict_server)
-        .await?
-        .map_err(realm_client::Error::OperationError)?;
-    let ns = extend_namespace(realm_factory, dict_client).await?;
+    let (e1, e2) = fidl::EventPair::create();
+    realm_factory.create_realm(options, e1).await?.map_err(realm_client::Error::OperationError)?;
+    let ns = extend_namespace(realm_factory, e2).await?;
     Ok(ns)
 }

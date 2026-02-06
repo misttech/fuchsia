@@ -74,6 +74,7 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/device-watcher/rust",
+    "//sdk/rust/zx",
     "//src/devices/testing/fidl:fuchsia.driver.testing_rust",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",

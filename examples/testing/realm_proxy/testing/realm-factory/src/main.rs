@@ -3,17 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use fidl::endpoints;
 use fidl_test_echoserver::{RealmFactoryRequest, RealmFactoryRequestStream, RealmOptions};
-use fuchsia_component::client;
+use fuchsia_component::runtime::{Connector, Dictionary};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
 use log::*;
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component_sandbox as fsandbox,
-    fuchsia_async as fasync,
-};
+use {fidl_fidl_examples_routing_echo as fecho, fuchsia_async as fasync};
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
@@ -26,8 +22,6 @@ async fn main() -> Result<(), Error> {
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
     let mut task_group = fasync::TaskGroup::new();
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let id_gen = sandbox::CapabilityIdGenerator::new();
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
@@ -35,16 +29,8 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                     let realm = create_realm(options).await?;
 
                     // Get a dict containing the capabilities exposed by the realm.
-                    let exposed_dict =
-                        realm.root.controller().get_exposed_dictionary().await?.unwrap();
-                    let source_dict_id = id_gen.next();
-                    store
-                        .import(source_dict_id, fsandbox::Capability::Dictionary(exposed_dict))
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    let dict_id = id_gen.next();
-                    store.dictionary_copy(source_dict_id, dict_id).await?.unwrap();
+                    let handle = realm.root.controller().get_output_dictionary().await?.unwrap();
+                    let output_dictionary = Dictionary::from(handle);
 
                     // Mix in additional capabilities to the dict.
                     //
@@ -61,32 +47,14 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                     //
                     // ... code to serve echo here ...
 
-                    let (echo_receiver_client, echo_receiver_stream) =
-                        endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
-                    let connector_id = id_gen.next();
-                    store.connector_create(connector_id, echo_receiver_client).await?.unwrap();
-                    store
-                        .dictionary_insert(
-                            dict_id,
-                            &fsandbox::DictionaryItem {
-                                key: "reverse-echo".into(),
-                                value: connector_id,
-                            },
-                        )
-                        .await?
-                        .unwrap();
-                    let (dictionary, server) = endpoints::create_endpoints();
-                    store
-                        .dictionary_legacy_export(dict_id, server.into_channel())
-                        .await
-                        .unwrap()
-                        .unwrap();
+                    let (connector, receiver) = Connector::new().await;
+                    output_dictionary.insert("reverse-echo", connector).await;
 
                     // Serve the mixed-in capability.
                     task_group.spawn(async move {
                         let _realm = realm;
                         let _ = realm_proxy::service::handle_receiver::<fecho::EchoMarker, _, _>(
-                            echo_receiver_stream,
+                            receiver,
                             handle_echo_request_stream,
                         )
                         .await
@@ -95,7 +63,7 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                         });
                     });
 
-                    responder.send(Ok(dictionary))?;
+                    responder.send(Ok(output_dictionary.handle))?;
                 }
                 RealmFactoryRequest::_UnknownMethod { .. } => unimplemented!(),
             }

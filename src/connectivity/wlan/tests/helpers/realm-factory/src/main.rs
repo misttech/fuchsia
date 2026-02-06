@@ -7,6 +7,7 @@ use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_testing_harness::OperationError;
 use fidl_test_wlan_realm::*;
 use fuchsia_component::client;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
@@ -66,6 +67,15 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                         .await
                         .unwrap()
                         .unwrap();
+                    realms.push(realm);
+                    responder.send(Ok(()))?;
+                }
+                RealmFactoryRequest::CreateRealm3 { options, dictionary, responder } => {
+                    let realm = create_realm(options).await?;
+                    let output_dictionary_handle =
+                        realm.root.controller().get_output_dictionary().await?.unwrap();
+                    let output_dictionary = Dictionary::from(output_dictionary_handle);
+                    output_dictionary.associate_with_handle(dictionary).await;
                     realms.push(realm);
                     responder.send(Ok(()))?;
                 }

@@ -14,6 +14,7 @@ rustc_library("common") {
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
     "//sdk/lib/device-watcher/rust",
+    "//sdk/rust/zx",
     "//src/connectivity/wlan/tests/helpers/realm-factory/fidl:test.wlan.realm_rust",
     "//src/connectivity/wlan/tests/helpers/test-realm-helpers",
     "//src/connectivity/wlan/tests/helpers/testcontroller-driver/fidl:test.wlan.testcontroller_rust",

@@ -3,22 +3,21 @@
 // found in the LICENSE file.
 
 use core::pin::pin;
-use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_sensors::*;
 use fidl_fuchsia_sensors_types::*;
 use fuchsia_async::TestExecutor;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
 use futures_util::StreamExt;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use std::collections::HashSet;
 use {fidl_fuchsia_hardware_sensors as playback_fidl, fidl_fuchsia_sensors_realm as sensors_realm};
 
 async fn setup_realm() -> anyhow::Result<InstalledNamespace> {
     let realm_factory = connect_to_protocol::<sensors_realm::RealmFactoryMarker>()?;
-    let (dict_client, dict_server) = create_endpoints();
+    let (dictionary_1, dictionary_2) = fidl::EventPair::create();
 
-    realm_factory.create_realm(dict_server).await?.map_err(realm_client::Error::OperationError)?;
-    let ns = extend_namespace(realm_factory, dict_client).await?;
+    realm_factory.create_realm(dictionary_1).await?.map_err(realm_client::Error::OperationError)?;
+    let ns = extend_namespace(realm_factory, dictionary_2).await?;
 
     Ok(ns)
 }

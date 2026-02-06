@@ -11,6 +11,7 @@ using fuchsia.component.sandbox;
 using fuchsia.testing.harness;
 using fuchsia.io;
 using fuchsia.driver.test;
+using zx;
 
 /// Defines the configuration of the WLAN components under test.
 @deprecated
@@ -93,5 +94,11 @@ open protocol RealmFactory {
     flexible CreateRealm2(resource struct {
         options RealmOptions;
         dictionary server_end:fuchsia.component.sandbox.Dictionary;
+    }) -> () error fuchsia.testing.harness.OperationError;
+
+    /// Creates a new realm and returns a dictionary containing its exposed capabilities.
+    flexible CreateRealm3(resource struct {
+        options RealmOptions;
+        dictionary zx.Handle:EVENTPAIR;
     }) -> () error fuchsia.testing.harness.OperationError;
 };

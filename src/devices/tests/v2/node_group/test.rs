@@ -10,7 +10,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use {
     fidl_fuchsia_driver_test as fdt, fidl_fuchsia_driver_testing as ftest, fidl_fuchsia_io as fio,
     fidl_fuchsia_nodegroup_test as ft, fuchsia_async as fasync,
@@ -41,12 +41,9 @@ async fn run_offers_server(
 
 async fn create_realm(options: ftest::RealmOptions) -> Result<InstalledNamespace> {
     let realm_factory = connect_to_protocol::<ftest::RealmFactoryMarker>()?;
-    let (dict_client, dict_server) = create_endpoints();
-    realm_factory
-        .create_realm2(options, dict_server)
-        .await?
-        .map_err(realm_client::Error::OperationError)?;
-    let ns = extend_namespace(realm_factory, dict_client).await?;
+    let (e1, e2) = zx::EventPair::create();
+    realm_factory.create_realm2(options, e1).await?.map_err(realm_client::Error::OperationError)?;
+    let ns = extend_namespace(realm_factory, e2).await?;
     Ok(ns)
 }
 

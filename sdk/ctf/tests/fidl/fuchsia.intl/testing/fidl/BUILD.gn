@@ -13,5 +13,6 @@ fidl("fuchsia.intl.test") {
   public_deps = [
     "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.testing.harness",
+    "//zircon/vdso/zx",
   ]
 }

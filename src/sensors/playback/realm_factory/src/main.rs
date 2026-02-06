@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_hardware_sensors_realm::{RealmFactoryRequest, RealmFactoryRequestStream};
-use fuchsia_component::client;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
@@ -21,26 +20,15 @@ async fn main() -> Result<(), Error> {
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
     let mut realms = vec![];
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 RealmFactoryRequest::CreateRealm { dictionary, responder } => {
                     let realm = create_realm().await?;
-                    let dict_ref = realm.root.controller().get_exposed_dictionary().await?.unwrap();
-                    let dict_id = id_gen.next();
-                    store
-                        .import(dict_id, fsandbox::Capability::Dictionary(dict_ref))
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    store
-                        .dictionary_legacy_export(dict_id, dictionary.into_channel())
-                        .await
-                        .unwrap()
-                        .unwrap();
+                    let output_dictionary_handle =
+                        realm.root.controller().get_output_dictionary().await?.unwrap();
+                    let output_dictionary = Dictionary::from(output_dictionary_handle);
+                    output_dictionary.associate_with_handle(dictionary).await;
                     realms.push(realm);
                     let _ = responder.send(Ok(()));
                 }

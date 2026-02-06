@@ -3,11 +3,16 @@
 // found in the LICENSE file.
 
 use fdio::Namespace;
-use fidl::endpoints::{ClientEnd, Proxy};
+use fidl::endpoints::Proxy;
+use fidl_fuchsia_component as fcomponent;
 use fuchsia_component::client::connect_to_protocol;
 use std::fmt::Debug;
 use uuid::Uuid;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox};
+
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+use fidl_fuchsia_component_sandbox as _;
+#[cfg(fuchsia_api_level_less_than = "HEAD")]
+use {fidl::endpoints::ClientEnd, fidl_fuchsia_component_sandbox as fsandbox};
 
 mod error;
 pub use error::Error;
@@ -66,7 +71,8 @@ impl AsRef<str> for &InstalledNamespace {
 /// needs to connect to the capabilities or needs activity performed on their behalf.
 pub async fn extend_namespace<T>(
     realm_factory: T,
-    dictionary: ClientEnd<fsandbox::DictionaryMarker>,
+    #[cfg(fuchsia_api_level_at_least = "HEAD")] capability: zx::EventPair,
+    #[cfg(fuchsia_api_level_less_than = "HEAD")] dictionary: ClientEnd<fsandbox::DictionaryMarker>,
 ) -> Result<InstalledNamespace, error::Error>
 where
     T: Proxy + Debug,
@@ -77,9 +83,18 @@ where
     // the namespace's unique id? Could also consider an atomic counter,
     // or the name of the test.
     let prefix = format!("/dict-{}", Uuid::new_v4());
-    let dicts = vec![fcomponent::NamespaceInputEntry { path: prefix.clone().into(), dictionary }];
-    let mut namespace_entries =
-        namespace_proxy.create(dicts).await?.map_err(error::Error::NamespaceCreation)?;
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    let mut namespace_entries = {
+        let dicts =
+            vec![fcomponent::NamespaceInputEntry2 { path: prefix.clone().into(), capability }];
+        namespace_proxy.create2(dicts).await?.map_err(error::Error::NamespaceCreation)?
+    };
+    #[cfg(fuchsia_api_level_less_than = "HEAD")]
+    let mut namespace_entries = {
+        let dicts =
+            vec![fcomponent::NamespaceInputEntry { path: prefix.clone().into(), dictionary }];
+        namespace_proxy.create(dicts).await?.map_err(error::Error::NamespaceCreation)?
+    };
     let namespace = Namespace::installed().map_err(error::Error::NamespaceNotInstalled)?;
     let count = namespace_entries.len();
     if count != 1 {

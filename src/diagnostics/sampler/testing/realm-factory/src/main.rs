@@ -7,9 +7,8 @@ mod realm_factory;
 use crate::realm_factory::*;
 
 use anyhow::{Error, Result};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_test_sampler::{RealmFactoryRequest, RealmFactoryRequestStream};
-use fuchsia_component::client;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::error;
@@ -25,25 +24,15 @@ async fn main() -> Result<(), Error> {
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
     let mut realms = vec![];
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 RealmFactoryRequest::CreateRealm { options, dictionary, responder } => {
                     let realm = create_realm(options).await?;
-                    let dict_ref = realm.root.controller().get_exposed_dictionary().await?.unwrap();
-                    let dict_id = id_gen.next();
-                    store
-                        .import(dict_id, fsandbox::Capability::Dictionary(dict_ref))
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    store
-                        .dictionary_legacy_export(dict_id, dictionary.into_channel())
-                        .await
-                        .unwrap()
-                        .unwrap();
+                    let output_dictionary_handle =
+                        realm.root.controller().get_output_dictionary().await?.unwrap();
+                    let output_dictionary = Dictionary::from(output_dictionary_handle);
+                    output_dictionary.associate_with_handle(dictionary).await;
                     realms.push(realm);
                     responder.send(Ok(()))?;
                 }

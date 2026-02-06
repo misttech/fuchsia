@@ -78,7 +78,7 @@ impl TestRealmContext {
         let realm_factory = connect_to_protocol::<fidl_realm::RealmFactoryMarker>()
             .expect("Could not connect to realm factory protocol");
 
-        let (dict_client, dict_server) = create_endpoints();
+        let (dict_1, dict_2) = zx::EventPair::create();
         let (devfs_proxy, devfs_server) = create_proxy();
 
         // Create the test realm for this test. This returns a
@@ -91,13 +91,9 @@ impl TestRealmContext {
             wlan_config: Some(config),
             ..Default::default()
         };
-        let _ = realm_factory
-            .create_realm2(options, dict_server)
-            .await
-            .expect("Could not create realm");
-        let test_ns = Arc::new(
-            extend_namespace(realm_factory, dict_client).await.expect("failed to extend ns"),
-        );
+        let _ = realm_factory.create_realm3(options, dict_1).await.expect("Could not create realm");
+        let test_ns =
+            Arc::new(extend_namespace(realm_factory, dict_2).await.expect("failed to extend ns"));
 
         // Start the driver test realm
         let driver_test_realm_proxy =

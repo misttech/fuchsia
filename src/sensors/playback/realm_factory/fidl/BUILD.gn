@@ -8,7 +8,7 @@ fidl("fuchsia.hardware.sensors.realm") {
   testonly = true
   sources = [ "realm_factory.test.fidl" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.testing.harness",
+    "//zircon/vdso/zx",
   ]
 }

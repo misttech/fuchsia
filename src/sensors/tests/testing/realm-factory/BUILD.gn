@@ -11,11 +11,9 @@ rustc_binary("bin") {
   name = "sensors_realm_factory"
   sources = [ "src/main.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
-    "//src/lib/sandbox",
     "//src/sensors/tests/testing/realm-factory/fidl:fuchsia.sensors.realm_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

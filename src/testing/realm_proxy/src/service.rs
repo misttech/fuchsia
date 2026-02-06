@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Error, Result};
 use fidl::endpoints;
 use fidl_fuchsia_testing_harness::{OperationError, RealmProxy_Request, RealmProxy_RequestStream};
+use fuchsia_component::runtime::ConnectorReceiver;
 use fuchsia_component_test::RealmInstance;
-
-use futures::{Future, StreamExt, TryStreamExt};
+use futures::{Future, StreamExt};
 use log::{debug, error, warn};
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // RealmProxy mediates a test suite's access to the services in a test realm.
 pub trait RealmProxy {
@@ -196,8 +196,8 @@ pub async fn serve(realm: RealmInstance, stream: RealmProxy_RequestStream) -> Re
     Ok(())
 }
 
-/// Dispatches incoming connections on `receiver_stream to `request_stream_handler`.
-/// `receiver_stream` is a sandbox receiver channel.
+/// Dispatches incoming connections on `receiver to `request_stream_handler`.
+/// `receiver` is a component framework runtime receiver channel.
 ///
 /// Example:
 ///
@@ -209,7 +209,7 @@ pub async fn serve(realm: RealmInstance, stream: RealmProxy_RequestStream) -> Re
 /// ...
 /// task_group.spawn(async move {
 ///     let _ = realm_proxy::service::handle_receiver::<fecho::EchoMarker, _, _>(
-///         echo_receiver_stream,
+///         echo_receiver,
 ///         handle_echo_request_stream,
 ///     )
 ///     .await
@@ -218,7 +218,7 @@ pub async fn serve(realm: RealmInstance, stream: RealmProxy_RequestStream) -> Re
 ///     });
 /// });
 pub async fn handle_receiver<T, Fut, F>(
-    mut receiver_stream: fsandbox::ReceiverRequestStream,
+    mut receiver: ConnectorReceiver,
     request_stream_handler: F,
 ) -> Result<(), Error>
 where
@@ -227,21 +227,12 @@ where
     F: Fn(T::RequestStream) -> Fut + Send + Sync + Copy + 'static,
 {
     let mut task_group = fasync::TaskGroup::new();
-    while let Some(request) =
-        receiver_stream.try_next().await.context("failed to read request from stream")?
-    {
-        match request {
-            fsandbox::ReceiverRequest::Receive { channel, control_handle: _ } => {
-                task_group.spawn(async move {
-                    let server_end = endpoints::ServerEnd::<T>::new(channel.into());
-                    let stream: T::RequestStream = server_end.into_stream();
-                    request_stream_handler(stream).await;
-                });
-            }
-            fsandbox::ReceiverRequest::_UnknownMethod { .. } => {
-                unimplemented!()
-            }
-        }
+    while let Some(channel) = receiver.next().await {
+        task_group.spawn(async move {
+            let server_end = endpoints::ServerEnd::<T>::new(channel.into());
+            let stream: T::RequestStream = server_end.into_stream();
+            request_stream_handler(stream).await;
+        });
     }
     Ok(())
 }

@@ -16,6 +16,12 @@
     capabilities: [
         { protocol: "test.wlan.realm.RealmFactory" },
     ],
+    use: [
+        {
+            protocol: "fuchsia.component.runtime.Capabilities",
+            from: "framework",
+        },
+    ],
     offer: [
         {
             protocol: [

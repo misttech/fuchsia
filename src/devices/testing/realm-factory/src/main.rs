@@ -7,8 +7,8 @@ use cm_rust::push_box;
 use fidl::endpoints::{ClientEnd, ControlHandle};
 use fidl_fuchsia_driver_testing::*;
 use fidl_fuchsia_testing_harness::OperationError;
-use fuchsia_component::client;
 use fuchsia_component::directory::AsRefDirectory;
+use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, RealmInstance, Ref,
@@ -18,10 +18,7 @@ use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_driver_test as fdt,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
+use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
@@ -41,8 +38,6 @@ async fn serve_realm_factory(stream: RealmFactoryRequestStream) {
 async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<()> {
     let mut task_group = fasync::TaskGroup::new();
     let mut realms = vec![];
-    let id_gen = sandbox::CapabilityIdGenerator::new();
-    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
     loop {
         match stream.try_next().await {
             Ok(Some(request)) => match request {
@@ -67,19 +62,10 @@ async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<
                     let realm_result = create_realm(options).await;
                     match realm_result {
                         Ok(realm) => {
-                            let dict_ref =
-                                realm.root.controller().get_exposed_dictionary().await?.unwrap();
-                            let dict_id = id_gen.next();
-                            store
-                                .import(dict_id, fsandbox::Capability::Dictionary(dict_ref))
-                                .await
-                                .unwrap()
-                                .unwrap();
-                            store
-                                .dictionary_legacy_export(dict_id, dictionary.into())
-                                .await
-                                .unwrap()
-                                .unwrap();
+                            let output_handle =
+                                realm.root.controller().get_output_dictionary().await?.unwrap();
+                            let output_dictionary = Dictionary::from(output_handle);
+                            output_dictionary.associate_with_handle(dictionary).await;
                             realms.push(realm);
                             responder.send(Ok(()))?;
                         }

@@ -24,7 +24,7 @@ impl DriversOnlyTestRealm {
         let realm_factory = connect_to_protocol::<fidl_realm::RealmFactoryMarker>()
             .expect("Could not connect to realm factory protocol");
 
-        let (dict_client, dict_server) = create_endpoints();
+        let (dict_1, dict_2) = zx::EventPair::create();
         let (dev_topological, dev_topological_server) = create_proxy();
         let (_dev_class, dev_class_server) = create_proxy();
 
@@ -53,7 +53,7 @@ impl DriversOnlyTestRealm {
         };
 
         realm_factory
-            .create_realm2(options, dict_server)
+            .create_realm3(options, dict_1)
             .await
             .expect("FIDL error on create_realm")
             .expect("create_realm returned an error");
@@ -66,9 +66,8 @@ impl DriversOnlyTestRealm {
         .await
         .expect("Could not open testcontroller_proxy");
 
-        let test_ns = Arc::new(
-            extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns"),
-        );
+        let test_ns =
+            Arc::new(extend_namespace(realm_factory, dict_2).await.expect("Failed to extend ns"));
         let tracing = Tracing::start_at(Arc::clone(&test_ns)).await.unwrap();
 
         Self {
