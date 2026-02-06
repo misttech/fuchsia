@@ -4013,7 +4013,7 @@
     {
         "kind": "protocol",
         "name": "fuchsia.media/StreamProcessor",
-        "openness": "closed",
+        "openness": "open",
         "transport": "channel"
     },
     {

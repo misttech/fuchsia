@@ -511,7 +511,7 @@ type Packet = table {
 /// doing so can sometimes skip over re-allocation of buffers. This can be a
 /// useful thing to do for cases like seeking to a new location - at the
 /// StreamProcessor interface that can look like switching to a new stream.
-closed protocol StreamProcessor {
+open protocol StreamProcessor {
     /// Permit the server to use OnStreamFailed() instead of the server just
     /// closing the whole StreamProcessor channel on stream failure.
     ///

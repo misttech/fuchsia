@@ -1183,6 +1183,32 @@ void CodecImpl::QueueInputEndOfStream(uint64_t stream_lifetime_ordinal) {
   });
 }
 
+void CodecImpl::handle_unknown_method(uint64_t ordinal, bool method_has_response) {
+  // StreamProcessor servers report which new sets of messages they support via
+  // DetailedCodecDescription. Clients are not supposed to send messages that
+  // the server didn't report support for via DetailedCodecDescription.
+  //
+  // For tooling reasons (abi_compat), we add new messages as "flexible", even
+  // when we'd ideally like to add most messages as "strict" to get
+  // non-recognizing servers to close the channel, since a client shouldn't use
+  // messages that the server didn't report as supported. We may be able to add
+  // messages as "strict" in future if abi_compat is changed to permit this, in
+  // particular when servers and clients can both be in "platform" and
+  // "external".
+  //
+  // For these current reasons, this unknown interaction handler currently logs
+  // then closes the channel. This is achieving logically strict behavior for
+  // all unknown messages, despite the new messages being added as "flexible"
+  // for reasons mentioned above.
+  //
+  // In future we may be able to ignore new "flexible" messages added in future
+  // (if any, in said hypothetical future), but at the moment we must assume all
+  // unknown messages are logically strict despite not being "strict" in FIDL.
+  Fail("unknown message received; closing channel - ordinal: 0x%" PRIx64
+       " 'method_has_response': %u",
+       ordinal, method_has_response);
+}
+
 void CodecImpl::QueueInputEndOfStream_StreamControl(uint64_t stream_lifetime_ordinal) {
   ZX_DEBUG_ASSERT(thrd_current() == stream_control_thread_);
   {  // scope lock

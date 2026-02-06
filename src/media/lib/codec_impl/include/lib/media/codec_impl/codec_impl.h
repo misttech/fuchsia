@@ -170,6 +170,13 @@ class CodecImpl : public fuchsia::media::StreamProcessor,
                                fuchsia::media::FormatDetails format_details) override;
   void QueueInputPacket(fuchsia::media::Packet packet) override;
   void QueueInputEndOfStream(uint64_t stream_lifetime_ordinal) override;
+  // Currently this will log and close the channel, because currently for a
+  // protocol whose clients and servers are both "platform" and "external", the
+  // abi_compat tool prevents adding a strict message, forcing all new
+  // StreamProcessor messages to be added as "flexible". So currently we have to
+  // assume every unrecognized message is logically strict despite not being
+  // "strict" in FIDL.
+  void handle_unknown_method(uint64_t ordinal, bool method_has_response) override;
 
   // These are public so that CodecBuffer doesn't have to be a friend of CodecImpl.
 
