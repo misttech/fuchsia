@@ -28,7 +28,8 @@ declare_args() {
   #
   # The argument can be set via `fx set --args=...` or by directly modifying the `args.gn` file,
   # i.e. `out/default/args.gn`.
-  gigaboot_gbl_efi_app = ""
+  gigaboot_gbl_efi_app =
+      "//prebuilt/third_party/android/gbl/mainline/gbl_x86_64_dev.efi"
 
   # Boolean to indicate whether to use GBL for boot.
   #
