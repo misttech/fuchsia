@@ -27,6 +27,7 @@ SESSION_MANAGER_TIMEOUT_SEC = 10
 FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES = 3
 DEFAULT_GET_UPDATE_TIMEOUT = 60
 DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE = 5  # seconds
+TIME_WAIT_BETWEEN_STOP_START_CONNECTIONS = 0.15  # 150 ms in seconds for "sleep"
 
 
 class WlanPolicyControllerError(signals.ControllerError):
@@ -106,6 +107,11 @@ class WlanPolicyController:
                         "Restarting client connections to run test in a clean state"
                     )
                     self.stop_client_connections_and_wait()
+
+                    # Sleep 150 ms to give a bit of time and specifically to prevent race
+                    # conditions with retrying failed scans
+                    time.sleep(TIME_WAIT_BETWEEN_STOP_START_CONNECTIONS)
+
                 self.honeydew.wlan_policy.start_client_connections()
                 self.log.info(
                     "ACTS tests now have control of the WLAN policy layer."
