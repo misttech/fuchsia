@@ -4,13 +4,14 @@
 
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_test.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
 #include <lib/trace/event.h>
 
-#include <sstream>
+#include <atomic>
 #include <vector>
 
 #include "src/lib/fxl/strings/join_strings.h"
@@ -593,12 +594,23 @@ inspect::Hierarchy HermeticAudioTest::GetInspectHierarchy() {
   RunLoopUntil([&] { return realm_->InspectTree()->has_value(); });
 
   std::optional<zx::vmo> vmo;
-  realm_->InspectTree()->value()->GetContent().Then(
-      [&](fidl::WireUnownedResult<fuchsia_inspect::Tree::GetContent>& content) {
-        vmo.emplace(std::move(content.value().content.buffer().vmo));
-      });
+  std::atomic<bool> done = false;
+  async::PostTask(bg_loop_.dispatcher(), [&] {
+    realm_->InspectTree()->value()->GetContent().Then(
+        [&](fidl::WireUnownedResult<fuchsia_inspect::Tree::GetContent>& content) {
+          if (content.ok()) {
+            vmo.emplace(std::move(content.value().content.buffer().vmo));
+          }
+          done = true;
+        });
+  });
 
-  RunLoopUntil([&] { return vmo.has_value(); });
+  RunLoopUntil([&] { return done.load(); });
+
+  if (!vmo) {
+    FX_LOGS(ERROR) << "Failed to get Inspect VMO";
+    return {};
+  }
 
   return std::move(inspect::ReadFromVmo(*vmo).value());
 }
