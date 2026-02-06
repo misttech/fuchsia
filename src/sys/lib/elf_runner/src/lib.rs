@@ -4,15 +4,15 @@
 
 mod component;
 mod component_set;
-pub mod config;
+mod config;
 mod crash_handler;
 pub mod crash_info;
-pub mod error;
+mod error;
 mod logger;
 mod memory;
 pub mod process_launcher;
 mod runtime_dir;
-pub mod stdout;
+mod stdout;
 pub mod vdso_vmo;
 
 use self::component::{ElfComponent, ElfComponentInfo};
@@ -465,7 +465,7 @@ impl ElfRunner {
 
         // This also checks relevant security policy for config that it wraps using the provided
         // PolicyChecker.
-        let program_config = ElfProgramConfig::parse_and_check(&start_info.program, Some(checker))
+        let program_config = ElfProgramConfig::parse_and_check(&start_info.program, &checker)
             .map_err(|err| {
                 StartComponentError::StartInfoError(StartInfoError::ProgramError(err))
             })?;

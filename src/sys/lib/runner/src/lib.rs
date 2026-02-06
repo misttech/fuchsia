@@ -99,11 +99,6 @@ pub fn get_bool<'a>(dict: &'a fdata::Dictionary, key: &str) -> Result<bool, Star
     }
 }
 
-/// Retrieve value of type string, or None if not present.
-pub fn get_string<'a>(dict: &'a fdata::Dictionary, key: &str) -> Option<&'a str> {
-    if let fdata::DictionaryValue::Str(value) = get_value(dict, key)? { Some(value) } else { None }
-}
-
 fn get_program_value<'a>(
     start_info: &'a fcrunner::ComponentStartInfo,
     key: &str,

@@ -70,29 +70,20 @@ impl ElfProgramConfig {
     /// enforcement is as close to the point of parsing as possible and can't be inadvertently skipped.
     pub fn parse_and_check(
         program: &fdata::Dictionary,
-        checker: Option<&ScopedPolicyChecker>,
+        checker: &ScopedPolicyChecker,
     ) -> Result<Self, ProgramError> {
         let config = Self::parse(program).map_err(ProgramError::Parse)?;
 
         if config.ambient_mark_vmo_exec {
-            checker
-                .ok_or(ProgramError::DenyPolicy)?
-                .ambient_mark_vmo_exec_allowed()
-                .map_err(ProgramError::Policy)?;
+            checker.ambient_mark_vmo_exec_allowed().map_err(ProgramError::Policy)?;
         }
 
         if config.main_process_critical {
-            checker
-                .ok_or(ProgramError::DenyPolicy)?
-                .main_process_critical_allowed()
-                .map_err(ProgramError::Policy)?;
+            checker.main_process_critical_allowed().map_err(ProgramError::Policy)?;
         }
 
         if config.create_raw_processes {
-            checker
-                .ok_or(ProgramError::DenyPolicy)?
-                .create_raw_processes_allowed()
-                .map_err(ProgramError::Policy)?;
+            checker.create_raw_processes_allowed().map_err(ProgramError::Policy)?;
         }
 
         if config.is_shared_process && !config.create_raw_processes {
@@ -147,7 +138,7 @@ impl ElfProgramConfig {
     }
 }
 
-pub fn get_stream_sink(
+fn get_stream_sink(
     dict: &fdata::Dictionary,
     key: &str,
 ) -> Result<StreamSink, StartInfoProgramError> {
@@ -223,7 +214,7 @@ mod tests {
             ScopedPolicyChecker::new(PERMISSIVE_SECURITY_POLICY.clone(), TEST_MONIKER.clone());
         let program = new_program_stanza(key, value);
 
-        let actual = ElfProgramConfig::parse_and_check(&program, Some(&checker)).unwrap();
+        let actual = ElfProgramConfig::parse_and_check(&program, &checker).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -240,7 +231,7 @@ mod tests {
             ScopedPolicyChecker::new(RESTRICTIVE_SECURITY_POLICY.clone(), TEST_MONIKER.clone());
         let program = new_program_stanza(key, value);
 
-        let actual = ElfProgramConfig::parse_and_check(&program, Some(&checker));
+        let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
         assert_matches!(
             actual,
@@ -261,7 +252,7 @@ mod tests {
             ScopedPolicyChecker::new(PERMISSIVE_SECURITY_POLICY.clone(), TEST_MONIKER.clone());
         let program = new_program_stanza(key, value);
 
-        let actual = ElfProgramConfig::parse_and_check(&program, Some(&checker));
+        let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
         assert_matches!(
             actual,
@@ -284,7 +275,7 @@ mod tests {
             ScopedPolicyChecker::new(PERMISSIVE_SECURITY_POLICY.clone(), TEST_MONIKER.clone());
         let program = new_program_stanza(key, value);
 
-        let actual = ElfProgramConfig::parse_and_check(&program, Some(&checker));
+        let actual = ElfProgramConfig::parse_and_check(&program, &checker);
 
         assert_matches!(
             actual,
