@@ -419,6 +419,8 @@ impl KeyboardBinding {
     /// A [`UnboundedReceiver<InputEvent>`] which will poll asynchronously generated events to be
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
+    ///
+    /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
@@ -446,7 +448,7 @@ impl KeyboardBinding {
     }
 
     fn process_report(
-        report: InputReport,
+        mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
@@ -470,6 +472,9 @@ impl KeyboardBinding {
             }
             _ => (),
         };
+
+        // Keyboard events cannot handle wake leases, so we drop them here.
+        drop(report.wake_lease.take());
 
         let new_keys = match KeyboardBinding::parse_pressed_keys(&report) {
             Some(keys) => keys,
