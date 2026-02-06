@@ -23,6 +23,7 @@ class TestSetupCogWorkspace(unittest.TestCase):
                 verbose=0,
                 disable_snapshot=False,
                 use_local_mock_cartfs=False,
+                enable_status_updates=False,
             ),
         ), patch("pathlib.Path.is_dir", return_value=False), patch(
             "setup_cog_workspace.logger.log_error"

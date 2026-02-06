@@ -7,6 +7,7 @@ import("//build/python/python_host_test.gni")
 group("tests") {
   testonly = true
   deps = [
+    ":logger_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":setup_cog_workspace_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
@@ -27,6 +28,7 @@ if (is_host) {
     "mock_fs",
     "setup_cog_workspace",
     "workspace",
+    "logger",
   ]
 
   foreach(test_name, test_names) {

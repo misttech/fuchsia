@@ -8,6 +8,7 @@ import sys
 from typing import Any, Optional
 
 _logger: Optional[logging.Logger] = None
+_enable_status_updates: bool = False
 
 
 _EXCEPTION = logging.CRITICAL + 1
@@ -39,15 +40,22 @@ class ColoredFormatter(logging.Formatter):
         return log_message
 
 
-def init_logger(level: int = logging.INFO, colors: bool = False) -> None:
+def init_logger(
+    level: int = logging.INFO,
+    colors: bool = False,
+    enable_status_updates: bool = False,
+) -> None:
     """
     Initializes the global logger.
 
     Args:
         level: The minimum log level to display.
         colors: Whether to use colored output.
+        enable_status_updates: Whether to enable status updates.
     """
     global _logger
+    global _enable_status_updates
+    _enable_status_updates = enable_status_updates
     logger = logging.getLogger("cog")
 
     # Clear any existing handlers. This can happen if log() is called before
@@ -115,6 +123,21 @@ def log(level: int, *args: Any, **kwargs: Any) -> None:
         return
 
     _logger.log(level, message, stacklevel=stacklevel + 1)
+
+
+def emit_status(message: str) -> None:
+    """
+    Emits a status update to stdout.
+
+    Args:
+        message: The status message to emit.
+    """
+    if not _enable_status_updates:
+        return
+
+    # Status updates are printed to stdout with a special prefix so that they can
+    # be identified by the IDEs.
+    print(f"STATUS_UPDATE:{message}")
 
 
 def _add_stacklevel(func: Any) -> Any:

@@ -491,6 +491,7 @@ class Workspace:
 
     def _fetch_prebuilts(self, current_integration_hash: str) -> None:
         """Fetches prebuilts for the given repo."""
+        logger.emit_status("Fetching prebuilts...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
@@ -529,6 +530,7 @@ class Workspace:
     def _create_integration_repository(self) -> str:
         """Creates the integration repository."""
         logger.log_info("Setup the integration repository.")
+        logger.emit_status("Creating integration repo...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
@@ -546,6 +548,7 @@ class Workspace:
                 )
 
         # Clone the integration repository
+        logger.emit_status("Cloning integration repo...")
         if not integration_directory.exists():
             self._run(
                 [
@@ -670,6 +673,7 @@ class Workspace:
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
+        logger.emit_status("Creating symlinks...")
         # Link the paths in the repo to cartfs
         (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
             exist_ok=True, parents=True

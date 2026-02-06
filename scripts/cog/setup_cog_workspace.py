@@ -24,6 +24,7 @@ def prepare_workspace_instance(
     repo_root: Path | None,
 ) -> workspace.Workspace | None:
     """Prepares a workspace instance."""
+    logger.emit_status("Preparing workspace instance...")
     # Attempt to identify the current cog and associated cartfs workspace.
     try:
         workspace_instance = workspace.Workspace.create(
@@ -109,6 +110,11 @@ def _parse_args() -> argparse.Namespace:
         default=0,
         help="Increase verbosity level (-v for INFO, -vv for DEBUG).",
     )
+    parser.add_argument(
+        "--enable-status-updates",
+        action="store_true",
+        help="Enable status updates.",
+    )
     return parser.parse_args()
 
 
@@ -126,6 +132,7 @@ def main() -> int:
     logger.init_logger(
         level=log_level,
         colors=True,
+        enable_status_updates=args.enable_status_updates,
     )
 
     repo_root = None
