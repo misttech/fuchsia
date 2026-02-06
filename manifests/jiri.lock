@@ -241,13 +241,13 @@
     },
     {
         "package": "fuchsia/shac/linux-amd64",
-        "version": "git_revision:ef3b0318ff010952fc7ec0b8fe310de6eb0369f3",
-        "instance_id": "DUBCAGMQlucHxxdvX_rr7rKY482KxqxE2z4pczhO2aQC"
+        "version": "git_revision:e70a7440b3c646308ca115406ae33c5ce922afe7",
+        "instance_id": "je7iRtmbKxsffrIfeJ-Y6pIA8UwUPtrVsxva2tYzdeUC"
     },
     {
         "package": "fuchsia/shac/linux-arm64",
-        "version": "git_revision:ef3b0318ff010952fc7ec0b8fe310de6eb0369f3",
-        "instance_id": "dMIeTynLv-FUnYjOIg7jJo4D6XiFfBdGn52rI08aBu8C"
+        "version": "git_revision:e70a7440b3c646308ca115406ae33c5ce922afe7",
+        "instance_id": "o8m6T1J33Rc4KlNEXeCeyt9CGaqBqHZJ3RK9yGpn5iIC"
     },
     {
         "package": "fuchsia/starnix/alpine-image-amd64",
