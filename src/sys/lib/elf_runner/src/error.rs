@@ -108,6 +108,8 @@ pub enum ProgramError {
     Parse(#[source] runner::StartInfoProgramError),
     #[error("configuration violates policy: {_0}")]
     Policy(#[source] routing::policy::PolicyError),
+    #[error("policy disallows all sensitive features")]
+    DenyPolicy,
 }
 
 impl ProgramError {
@@ -117,6 +119,7 @@ impl ProgramError {
             ProgramError::SharedProcessRequiresJobPolicy => zx::Status::INVALID_ARGS,
             ProgramError::Parse(_) => zx::Status::INVALID_ARGS,
             ProgramError::Policy(_) => zx::Status::ACCESS_DENIED,
+            ProgramError::DenyPolicy => zx::Status::ACCESS_DENIED,
         }
     }
 }
