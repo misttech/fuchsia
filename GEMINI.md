@@ -87,6 +87,21 @@ When working with Rust (`.rs`), a common pitfall is specifying the wrong
 "edition" in new targets defined in `BUILD.gn` files. The current correct
 edition is "2024".
 
+**Common Agent Pitfalls in Rust:**
+
+*   **Do not use `fuchsia_zircon`**: The `fuchsia_zircon` crate no longer exists.
+    Do not try to `use fuchsia_zircon as zx;` or `use zx as zx;`. This will fail
+    to compile.
+*   **Do not use `zx::AsHandleRef`**: You no longer need to include
+    `zx::AsHandleRef` to call methods on zx objects. Including it will cause
+    compilation failures.
+*   **Do not use `lazy_static!`**: The `lazy_static` crate has been removed
+    from the Fuchsia tree. Use `std::sync::LazyLock` from the standard library
+    instead.
+*   **Do not detach tasks**: Do not use
+    `fuchsia_async::Task::spawn(...).detach();`. Detaching tasks is considered
+    bad style and can lead to bugs. Use `scope.spawn(...);` instead.
+
 ## Finding or moving a FIDL method
 
 When trying to find FIDL methods, they are typically defined somewhere
@@ -157,9 +172,11 @@ When running `fx build` give your shell command tool longer wait intervals than
 the default. Consider waiting 1+ minutes at minimum each time you build
 depending on the number of targets you're building.
 
-ALWAYS prefix your GN labels with `//` on the command-line. If you pass an
-unprefixed path to `fx build` it will interpret it as a path relative to the
-out directory.
+ALWAYS prefix your GN labels with `//` on the command-line (e.g.
+`fx build //path/to:executable`). If you pass an unprefixed path to `fx build`
+(like `fx build path/to:executable`) it will interpret it as a path relative
+to the out directory, fail to build the designated target, and fall back to
+building the entire tree without a specific target, which is a lot slower.
 
 ### Linting
 
