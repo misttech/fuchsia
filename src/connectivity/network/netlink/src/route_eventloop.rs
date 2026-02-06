@@ -16,6 +16,7 @@ use net_types::ip::{Ip, IpInvariant, Ipv4, Ipv6};
 use {
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_ndp as fnet_ndp,
+    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext,
     fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext,
@@ -29,8 +30,8 @@ use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
 use crate::protocol_family::route::{NetlinkRoute, RouteAsyncWork};
 use crate::{
-    NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces, route_tables,
-    routes, rules,
+    NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces, neighbors,
+    route_tables, routes, rules,
 };
 
 #[derive(Derivative)]
@@ -41,6 +42,7 @@ pub(crate) enum UnifiedRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Respo
     RoutesV6Request(routes::Request<S, Ipv6>),
     RuleV4Request(rules::RuleRequest<S, Ipv4>, oneshot::Sender<Result<(), Errno>>),
     RuleV6Request(rules::RuleRequest<S, Ipv6>, oneshot::Sender<Result<(), Errno>>),
+    NeighborsRequest(neighbors::Request<S>),
 }
 
 impl<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>, I: Ip> From<routes::Request<S, I>>
@@ -68,6 +70,7 @@ pub(crate) enum UnifiedEvent {
     RoutesV4Event(fnet_routes_ext::Event<Ipv4>),
     RoutesV6Event(fnet_routes_ext::Event<Ipv6>),
     InterfacesEvent(fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>),
+    NeighborsEvent(fnet_neighbor_ext::Event),
 }
 
 #[derive(Derivative)]
@@ -97,6 +100,7 @@ pub(crate) struct RouteEventLoop<
     pub(crate) v4_rule_table: fnet_routes_admin::RuleTableV4Proxy,
     pub(crate) v6_rule_table: fnet_routes_admin::RuleTableV6Proxy,
     pub(crate) ndp_option_watcher_provider: fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
+    pub(crate) neighbors_view: fnet_neighbor::ViewProxy,
     pub(crate) interfaces_handler: H,
     pub(crate) route_clients: ClientTable<NetlinkRoute, S>,
     pub(crate) async_work_receiver:
@@ -192,6 +196,7 @@ pub(crate) trait EventLoopSpec {
     type RuleV4Worker: EventLoopOptionality;
     type RuleV6Worker: EventLoopOptionality;
     type NduseroptWorker: EventLoopOptionality;
+    type NeighborWorker: EventLoopOptionality;
 }
 
 pub(crate) struct IncludedWorkers<E: EventLoopSpec> {
@@ -201,6 +206,7 @@ pub(crate) struct IncludedWorkers<E: EventLoopSpec> {
     pub(crate) rules_v4: EventLoopComponent<(), E::RuleV4Worker>,
     pub(crate) rules_v6: EventLoopComponent<(), E::RuleV6Worker>,
     pub(crate) nduseropt: EventLoopComponent<(), E::NduseroptWorker>,
+    pub(crate) neighbors: EventLoopComponent<(), E::NeighborWorker>,
 }
 
 enum AllWorkers {}
@@ -222,6 +228,7 @@ impl EventLoopSpec for AllWorkers {
     type RuleV4Worker = Required;
     type RuleV6Worker = Required;
     type NduseroptWorker = Required;
+    type NeighborWorker = Required;
 }
 
 pub(crate) struct EventLoopInputs<
@@ -250,6 +257,7 @@ pub(crate) struct EventLoopInputs<
         fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
         E::NduseroptWorker,
     >,
+    pub(crate) neighbors_view: EventLoopComponent<fnet_neighbor::ViewProxy, E::NeighborWorker>,
     pub(crate) interfaces_handler: EventLoopComponent<H, E::InterfacesHandler>,
     pub(crate) route_clients: EventLoopComponent<ClientTable<NetlinkRoute, S>, E::RouteClients>,
     pub(crate) async_work_receiver:
@@ -282,13 +290,14 @@ impl<
             v6_route_table_provider,
             v4_rule_table,
             v6_rule_table,
+            neighbors_view,
             ndp_option_watcher_provider,
             interfaces_handler,
             route_clients,
             async_work_receiver,
             unified_request_stream,
         } = self;
-        let (routes_v4, routes_v6, interfaces) = futures::join!(
+        let (routes_v4, routes_v6, interfaces, neighbors) = futures::join!(
             async {
                 match included_workers.routes_v4 {
                     EventLoopComponent::Present(()) => {
@@ -351,11 +360,25 @@ impl<
                     ),
                 }
             },
+            async {
+                match included_workers.neighbors {
+                    EventLoopComponent::Present(()) => {
+                        let (worker, stream) =
+                            neighbors::NeighborsWorker::create(neighbors_view.get_ref()).await;
+                        (EventLoopComponent::Present(worker), stream.left_stream())
+                    }
+                    EventLoopComponent::Absent(omitted) => (
+                        EventLoopComponent::Absent(omitted),
+                        futures::stream::pending().right_stream(),
+                    ),
+                }
+            }
         );
 
         let (routes_v4_worker, mut v4_route_table_map, v4_route_event_stream) = routes_v4;
         let (routes_v6_worker, mut v6_route_table_map, v6_route_event_stream) = routes_v6;
         let (interfaces_worker, if_event_stream) = interfaces;
+        let (neighbors_worker, neighbor_event_stream) = neighbors;
         let rules_v4_worker = match included_workers.rules_v4 {
             EventLoopComponent::Present(()) => {
                 let worker = rules::RulesWorker::<Ipv4>::create(
@@ -416,6 +439,16 @@ impl<
                     "The Interfaces event stream should not end"
                 )))
                 .fuse(),
+            neighbor_event_stream
+                .map(|res| {
+                    UnifiedEvent::NeighborsEvent(
+                        res.expect("Watching Neighbor events from the Netstack should succeed"),
+                    )
+                })
+                .chain(futures::stream::poll_fn(|_| panic!(
+                    "The Neighbors event stream should not end"
+                )))
+                .fuse(),
         )
         .boxed()
         .fuse();
@@ -427,6 +460,7 @@ impl<
             rules_v4_worker,
             rules_v6_worker,
             nduseropt_worker,
+            neighbors_worker,
             unified_pending_request: None,
             unified_event_stream,
             route_clients,
@@ -455,6 +489,7 @@ pub(crate) struct EventLoopState<
     rules_v4_worker: EventLoopComponent<rules::RulesWorker<Ipv4>, E::RuleV4Worker>,
     rules_v6_worker: EventLoopComponent<rules::RulesWorker<Ipv6>, E::RuleV6Worker>,
     nduseropt_worker: EventLoopComponent<crate::nduseropt::NduseroptWorker, E::NduseroptWorker>,
+    neighbors_worker: EventLoopComponent<neighbors::NeighborsWorker, E::NeighborWorker>,
 
     route_clients: EventLoopComponent<ClientTable<NetlinkRoute, S>, E::RouteClients>,
     interfaces_proxy: EventLoopComponent<fnet_root::InterfacesProxy, E::InterfacesProxy>,
@@ -510,6 +545,7 @@ impl<
             rules_v4_worker,
             rules_v6_worker,
             nduseropt_worker,
+            neighbors_worker,
             unified_pending_request,
             unified_request_stream,
             unified_event_stream,
@@ -699,6 +735,12 @@ impl<
                                 v6_route_table_map.present_mut())).await;
                         Cleanup::None
                     },
+                    UnifiedEvent::NeighborsEvent(event) => {
+                        neighbors_worker.get_mut().handle_neighbor_watcher_event(
+                            event,
+                        ).expect("should not fail to handle neighbor event");
+                        Cleanup::None
+                    },
                 }
             }
             request = request_fut => {
@@ -782,7 +824,12 @@ impl<
                             }
                             Err(_) => Cleanup::None,
                         }
-                    }
+                    },
+                    UnifiedRequest::NeighborsRequest(request) => {
+                        neighbors_worker.get_mut()
+                            .handle_request(request);
+                        Cleanup::None
+                    },
                 }
             }
         };
@@ -935,6 +982,7 @@ impl<
             v4_rule_table,
             v6_rule_table,
             ndp_option_watcher_provider,
+            neighbors_view,
             interfaces_handler,
             route_clients,
             async_work_receiver,
@@ -953,6 +1001,7 @@ impl<
             v4_rule_table: EventLoopComponent::Present(v4_rule_table),
             v6_rule_table: EventLoopComponent::Present(v6_rule_table),
             ndp_option_watcher_provider: EventLoopComponent::Present(ndp_option_watcher_provider),
+            neighbors_view: EventLoopComponent::Present(neighbors_view),
             interfaces_handler: EventLoopComponent::Present(interfaces_handler),
             route_clients: EventLoopComponent::Present(route_clients),
             async_work_receiver,
@@ -965,6 +1014,7 @@ impl<
             rules_v4: EventLoopComponent::Present(()),
             rules_v6: EventLoopComponent::Present(()),
             nduseropt: EventLoopComponent::Present(()),
+            neighbors: EventLoopComponent::Present(()),
         })
         .await;
 

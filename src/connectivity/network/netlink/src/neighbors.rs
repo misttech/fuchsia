@@ -458,6 +458,12 @@ impl NeighborsWorker {
 #[cfg(test)]
 mod tests {
     use crate::client::testutil::{CLIENT_ID_1, new_fake_client};
+    use crate::interfaces::testutil::FakeInterfacesHandler;
+    use crate::messaging::testutil::FakeSender;
+    use crate::route_eventloop::{
+        EventLoopComponent, EventLoopInputs, EventLoopSpec, IncludedWorkers, Optional, Required,
+        UnifiedRequest,
+    };
 
     use super::*;
 
@@ -465,7 +471,8 @@ mod tests {
     use fidl_fuchsia_net as fnet;
     use fidl_fuchsia_net_neighbor::ViewRequest;
     use fidl_fuchsia_net_neighbor_ext::testutil::EventSpec;
-    use futures::FutureExt;
+    use futures::channel::mpsc;
+    use futures::{FutureExt, SinkExt};
     use net_declare::{fidl_ip, std_ip_v4, std_ip_v6};
     use netlink_packet_core::NetlinkPayload;
     use netlink_packet_route::neighbour::{NeighbourAddress, NeighbourFlags};
@@ -1376,5 +1383,136 @@ mod tests {
     #[fuchsia::test]
     fn request_error_into_errno(error: RequestError) -> Errno {
         error.into()
+    }
+
+    enum OnlyNeighbors {}
+    impl EventLoopSpec for OnlyNeighbors {
+        type NeighborWorker = Required;
+
+        type InterfacesProxy = Optional;
+        type InterfacesStateProxy = Optional;
+        type V4RoutesState = Optional;
+        type V6RoutesState = Optional;
+        type V4RoutesSetProvider = Optional;
+        type V6RoutesSetProvider = Optional;
+        type V4RouteTableProvider = Optional;
+        type V6RouteTableProvider = Optional;
+        type InterfacesHandler = Optional;
+        type RouteClients = Optional;
+
+        type RoutesV4Worker = Optional;
+        type RoutesV6Worker = Optional;
+        type InterfacesWorker = Optional;
+        type RuleV4Worker = Optional;
+        type RuleV6Worker = Optional;
+        type NduseroptWorker = Optional;
+    }
+
+    const TEST_SEQUENCE_NUMBER: u32 = 1234;
+
+    #[fuchsia::test]
+    async fn event_loop_with_watch_events_and_get_request() {
+        let included_workers = IncludedWorkers {
+            routes_v4: EventLoopComponent::Absent(Optional),
+            routes_v6: EventLoopComponent::Absent(Optional),
+            interfaces: EventLoopComponent::Absent(Optional),
+            rules_v4: EventLoopComponent::Absent(Optional),
+            rules_v6: EventLoopComponent::Absent(Optional),
+            neighbors: EventLoopComponent::Present(()),
+            nduseropt: EventLoopComponent::Absent(Optional),
+        };
+        let (mut request_sink, request_stream) = mpsc::channel(1);
+
+        // Configure the fake watch events.
+
+        let scope = fuchsia_async::Scope::new();
+        let (neighbors_view, event_sender) = {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+                Existing(1),
+                Existing(2),
+                Existing(3),
+                Idle,
+                Added(4),
+            ]);
+            let (event_sender, event_receiver) = mpsc::unbounded();
+            event_sender.unbounded_send(events).expect("failed to send events");
+            let (neighbors_view, neighbors_fut) =
+                fnet_neighbor_ext::testutil::create_fake_view(event_receiver);
+            let _join_handle = scope.spawn(neighbors_fut);
+            (neighbors_view, event_sender)
+        };
+
+        // Set up the event loop.
+
+        let (_async_work_sink, async_work_receiver) = mpsc::unbounded();
+        let base_inputs: EventLoopInputs<
+            FakeInterfacesHandler,
+            FakeSender<RouteNetlinkMessage>,
+            OnlyNeighbors,
+        > = EventLoopInputs {
+            neighbors_view: EventLoopComponent::Present(neighbors_view),
+
+            async_work_receiver,
+
+            interfaces_handler: EventLoopComponent::Absent(Optional),
+            route_clients: EventLoopComponent::Absent(Optional),
+            interfaces_proxy: EventLoopComponent::Absent(Optional),
+            interfaces_state_proxy: EventLoopComponent::Absent(Optional),
+            v4_routes_state: EventLoopComponent::Absent(Optional),
+            v6_routes_state: EventLoopComponent::Absent(Optional),
+            v4_main_route_table: EventLoopComponent::Absent(Optional),
+            v6_main_route_table: EventLoopComponent::Absent(Optional),
+            v4_route_table_provider: EventLoopComponent::Absent(Optional),
+            v6_route_table_provider: EventLoopComponent::Absent(Optional),
+            v4_rule_table: EventLoopComponent::Absent(Optional),
+            v6_rule_table: EventLoopComponent::Absent(Optional),
+            ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
+
+            unified_request_stream: request_stream,
+        };
+
+        let mut state = base_inputs.initialize(included_workers).await;
+        // Wait for `Added` event to be processed.
+        state.run_one_step_in_tests().await;
+
+        // Send a dump request and check the response.
+
+        let (mut response_sink, neighbor_client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<NetlinkRoute>(
+                crate::client::testutil::CLIENT_ID_1,
+                [],
+            );
+        let _join_handle = scope.spawn(async_work_drain_task);
+
+        let (completer, waiter) = oneshot::channel();
+        let get_request: UnifiedRequest<FakeSender<RouteNetlinkMessage>> =
+            UnifiedRequest::NeighborsRequest(Request {
+                args: NeighborRequestArgs::Get(GetNeighborArgs::Dump {
+                    ip_version: None,
+                    interface: None,
+                }),
+                sequence_number: TEST_SEQUENCE_NUMBER,
+                client: neighbor_client.clone(),
+                completer,
+            });
+        request_sink.send(get_request).await.unwrap();
+
+        // Wait for client request to be processed.
+        state.run_one_step_in_tests().await;
+        assert_matches!(waiter.await.unwrap(), Ok(()));
+
+        let responses = response_sink.take_messages();
+        assert_eq!(responses.len(), 4); // 3 existing + 1 added.
+        for response in responses {
+            assert_matches!(
+                response.message.payload,
+                NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewNeighbour(_))
+            );
+        }
+
+        event_sender.close_channel();
+        drop(neighbor_client);
+        scope.join().await;
     }
 }

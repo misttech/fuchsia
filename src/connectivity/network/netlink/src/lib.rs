@@ -17,8 +17,6 @@ pub(crate) mod logging;
 pub mod messaging;
 pub mod multicast_groups;
 mod nduseropt;
-// TODO(https://fxbug.dev/285127384): Remove once used.
-#[cfg(test)]
 pub mod neighbors;
 mod netlink_packet;
 pub mod protocol_family;
@@ -40,8 +38,8 @@ use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use protocol_family::route::NetlinkRouteNotifiedGroup;
 use {
     fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_sockets as fnet_sockets,
 };
 
@@ -274,6 +272,7 @@ pub struct NetlinkWorkerDiscoverableProtocols {
     pub ndp_option_watcher_provider: fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
     pub socket_diagnostics: fnet_sockets::DiagnosticsProxy,
     pub socket_control: fnet_sockets::ControlProxy,
+    pub neighbors_view: fnet_neighbor::ViewProxy,
 }
 
 impl NetlinkWorkerDiscoverableProtocols {
@@ -319,6 +318,8 @@ impl NetlinkWorkerDiscoverableProtocols {
             .expect("connect to fuchsia.net.sockets.Diagnostics");
         let socket_control = connect_to_protocol::<fnet_sockets::ControlMarker>()
             .expect("connect to fuchsia.net.sockets.Control");
+        let neighbors_view = connect_to_protocol::<fnet_neighbor::ViewMarker>()
+            .expect("connect to fuchsia.net.neighbor.View");
 
         Self {
             root_interfaces,
@@ -334,6 +335,7 @@ impl NetlinkWorkerDiscoverableProtocols {
             ndp_option_watcher_provider,
             socket_diagnostics,
             socket_control,
+            neighbors_view,
         }
     }
 }
@@ -396,6 +398,7 @@ pub async fn run_netlink_worker_with_protocols<
         ndp_option_watcher_provider,
         socket_diagnostics,
         socket_control,
+        neighbors_view,
     } = protocols;
 
     let route_clients = ClientTable::default();
@@ -416,6 +419,7 @@ pub async fn run_netlink_worker_with_protocols<
                 v4_rule_table,
                 v6_rule_table,
                 ndp_option_watcher_provider,
+                neighbors_view,
                 route_clients,
                 request_stream: route_request_stream,
                 interfaces_handler,

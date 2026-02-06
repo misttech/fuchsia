@@ -2162,6 +2162,7 @@ mod tests {
         type RuleV4Worker = Optional;
         type RuleV6Worker = Optional;
         type NduseroptWorker = Optional;
+        type NeighborWorker = Optional;
     }
 
     struct Setup<W, R> {
@@ -2218,6 +2219,7 @@ mod tests {
             v4_rule_table: EventLoopComponent::Absent(Optional),
             v6_rule_table: EventLoopComponent::Absent(Optional),
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
+            neighbors_view: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
         };
@@ -2449,6 +2451,7 @@ mod tests {
                 rules_v4: EventLoopComponent::Absent(Optional),
                 rules_v6: EventLoopComponent::Absent(Optional),
                 nduseropt: EventLoopComponent::Absent(Optional),
+                neighbors: EventLoopComponent::Absent(Optional),
             },
             IpVersion::V6 => crate::route_eventloop::IncludedWorkers {
                 routes_v4: EventLoopComponent::Absent(Optional),
@@ -2457,6 +2460,7 @@ mod tests {
                 rules_v4: EventLoopComponent::Absent(Optional),
                 rules_v6: EventLoopComponent::Absent(Optional),
                 nduseropt: EventLoopComponent::Absent(Optional),
+                neighbors: EventLoopComponent::Absent(Optional),
             },
         };
 
@@ -4827,6 +4831,7 @@ mod tests {
                         rules_v4: EventLoopComponent::Absent(Optional),
                         rules_v6: EventLoopComponent::Absent(Optional),
                         nduseropt: EventLoopComponent::Absent(Optional),
+                        neighbors: EventLoopComponent::Absent(Optional),
                     },
                     IpVersion::V6 => crate::route_eventloop::IncludedWorkers {
                         routes_v4: EventLoopComponent::Absent(Optional),
@@ -4835,6 +4840,7 @@ mod tests {
                         rules_v4: EventLoopComponent::Absent(Optional),
                         rules_v6: EventLoopComponent::Absent(Optional),
                         nduseropt: EventLoopComponent::Absent(Optional),
+                        neighbors: EventLoopComponent::Absent(Optional),
                     },
                 };
 

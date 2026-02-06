@@ -1661,6 +1661,7 @@ pub(crate) mod testutil {
         type RuleV4Worker = Optional;
         type RuleV6Worker = Optional;
         type NduseroptWorker = Optional;
+        type NeighborWorker = Optional;
     }
 
     pub(crate) struct Setup<E, W> {
@@ -1699,6 +1700,7 @@ pub(crate) mod testutil {
             v6_route_table_provider: EventLoopComponent::Absent(Optional),
             v4_rule_table: EventLoopComponent::Absent(Optional),
             v6_rule_table: EventLoopComponent::Absent(Optional),
+            neighbors_view: EventLoopComponent::Absent(Optional),
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
@@ -1727,6 +1729,7 @@ pub(crate) mod testutil {
                         rules_v4: EventLoopComponent::Absent(Optional),
                         rules_v6: EventLoopComponent::Absent(Optional),
                         nduseropt: EventLoopComponent::Absent(Optional),
+                        neighbors: EventLoopComponent::Absent(Optional),
                     })
                     .await;
                 event_loop.run().await

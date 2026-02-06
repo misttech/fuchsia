@@ -145,11 +145,12 @@ pub mod route {
     use crate::client::AsyncWorkCompletionWaiter;
     use crate::interfaces::AcceptRaRtTable;
     use crate::messaging::{MessageWithPermission, Permission};
+    use crate::neighbors::{GetNeighborArgs, NeighborRequestArgs};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self};
     use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
-    use crate::{SysctlError, SysctlInterfaceSelector, interfaces, routes};
+    use crate::{SysctlError, SysctlInterfaceSelector, interfaces, neighbors, routes};
 
     use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
 
@@ -1257,6 +1258,37 @@ pub mod route {
                         ),
                     }
                 }
+                GetNeighbour(ref message) => {
+                    let (completer, waiter) = oneshot::channel();
+                    let request = match GetNeighborArgs::try_from_rtnl_neighbor(message, is_dump) {
+                        Ok(get_args) => neighbors::Request {
+                            args: NeighborRequestArgs::Get(get_args),
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
+                            completer,
+                        },
+                        Err(e) => return client.send_unicast(
+                            netlink_packet::new_error(Err(e.into()), req_header)
+                        ),
+                    };
+                    unified_request_sink.send(UnifiedRequest::NeighborsRequest(request))
+                    .await
+                    .expect("route event loop should never terminate");
+                    let result =  waiter
+                    .await
+                    .expect("routes event loop should have handled the request");
+
+                    match result {
+                        Ok(()) => if is_dump {
+                            client.send_unicast(netlink_packet::new_done(req_header))
+                        } else if expects_ack {
+                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                        },
+                        Err(e) => client.send_unicast(
+                            netlink_packet::new_error(Err(e.into()), req_header)
+                        ),
+                    }
+                }
                 NewLink(_)
                 | DelLink(_)
                 | NewLinkProp(_)
@@ -1299,8 +1331,6 @@ pub mod route {
                 | GetTrafficFilter(_)
                 | GetTrafficChain(_)
                 | GetNsId(_)
-                // TODO(https://issues.fuchsia.dev/285127384): Implement GetNeighbour.
-                | GetNeighbour(_)
                 // TODO(https://issues.fuchsia.dev/278565021): Implement GetAddress.
                 | GetAddress(_)
                 // Non-dump GetRoute is not currently necessary for our use.
@@ -1520,7 +1550,9 @@ mod test {
         AF_INET, AF_INET6, AF_UNSPEC, IFA_F_NOPREFIXROUTE, RTN_MULTICAST, RTN_UNICAST,
         net_device_flags_IFF_UP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN,
     };
-    use net_declare::{net_addr_subnet, net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
+    use net_declare::{
+        fidl_ip, net_addr_subnet, net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6, std_ip_v4,
+    };
     use net_types::ip::{
         AddrSubnetEither, GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
     };
@@ -1528,6 +1560,7 @@ mod test {
     use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
+    use netlink_packet_route::neighbour::{NeighbourAttribute, NeighbourHeader, NeighbourMessage};
     use netlink_packet_route::neighbour_discovery_user_option::{
         NeighbourDiscoveryIcmpType, NeighbourDiscoveryIcmpV6Type,
         NeighbourDiscoveryUserOptionHeader, NeighbourDiscoveryUserOptionMessage,
@@ -1544,7 +1577,7 @@ mod test {
     use crate::protocol_family::route::{NetlinkRoute, NetlinkRouteRequestHandler};
     use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
-    use crate::{interfaces, routes};
+    use crate::{interfaces, neighbors, routes};
 
     enum ExpectedResponse {
         Ack,
@@ -3784,7 +3817,8 @@ mod test {
                                     UnifiedRequest::InterfacesRequest(_)
                                     | UnifiedRequest::RoutesV6Request(_)
                                     | UnifiedRequest::RuleV4Request(_, _)
-                                    | UnifiedRequest::RuleV6Request(_, _) => {
+                                    | UnifiedRequest::RuleV6Request(_, _)
+                                    | UnifiedRequest::NeighborsRequest(_) => {
                                         panic!("not RoutesV4Request")
                                     }
                                 };
@@ -3803,7 +3837,8 @@ mod test {
                                     UnifiedRequest::InterfacesRequest(_)
                                     | UnifiedRequest::RoutesV4Request(_)
                                     | UnifiedRequest::RuleV4Request(_, _)
-                                    | UnifiedRequest::RuleV6Request(_, _) => {
+                                    | UnifiedRequest::RuleV6Request(_, _)
+                                    | UnifiedRequest::NeighborsRequest(_) => {
                                         panic!("not RoutesV6Request")
                                     }
                                 };
@@ -4885,6 +4920,134 @@ mod test {
                     ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
                     ExpectedResponse::Done => netlink_packet::new_done(header),
                     ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
+                }))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    async fn test_get_neighbor_request(
+        request: NetlinkMessage<RouteNetlinkMessage>,
+        expected_request: Option<neighbors::GetNeighborArgs>,
+    ) -> Vec<SentMessage<RouteNetlinkMessage>> {
+        let (mut client_sink, mut client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<NetlinkRoute>(
+                crate::client::testutil::CLIENT_ID_1,
+                std::iter::empty(),
+            );
+        let join_handle = fasync::Task::spawn(async_work_drain_task);
+        {
+            let (unified_request_sink, mut unified_request_stream) = mpsc::channel(0);
+
+            let mut handler = NetlinkRouteRequestHandler::<FakeSender<_>> { unified_request_sink };
+
+            let mut handle_fut = handler.handle_request(request, &mut client).fuse();
+            let mut request_fut = unified_request_stream.next().fuse();
+
+            futures::select! {
+                _ = handle_fut => assert_eq!(expected_request, None),
+                request = request_fut => match request.expect("request channel should be open") {
+                    UnifiedRequest::NeighborsRequest(neigh_req) => {
+                        let neighbors::Request { args, sequence_number: _, client: _, completer } =
+                            neigh_req;
+                        assert_eq!(
+                            expected_request.map(|a| neighbors::NeighborRequestArgs::Get(a)),
+                            Some(args));
+                        completer.send(Ok(())).expect("handler should be alive");
+                        handle_fut.await;
+                    },
+                    _ => panic!("received unexpected request"),
+                }
+            }
+        }
+        drop(client);
+        join_handle.await;
+        client_sink.take_messages()
+    }
+
+    #[test_case(
+        NLM_F_DUMP,
+        NeighbourHeader::default(),
+        vec![],
+        Some(neighbors::GetNeighborArgs::Dump { ip_version: None, interface: None }),
+        Some(ExpectedResponse::Done); "dump all")]
+    #[test_case(
+        NLM_F_DUMP,
+        NeighbourHeader { family: AddressFamily::Inet, ..Default::default() },
+        vec![NeighbourAttribute::IfIndex(1)],
+        Some(neighbors::GetNeighborArgs::Dump {
+            ip_version: Some(IpVersion::V4),
+            interface: Some(NonZeroU64::new(1).unwrap()),
+        }),
+        Some(ExpectedResponse::Done); "dump ipv4 on interface 1")]
+    #[test_case(
+        NLM_F_DUMP | NLM_F_ACK,
+        NeighbourHeader::default(),
+        vec![],
+        Some(neighbors::GetNeighborArgs::Dump { ip_version: None, interface: None }),
+        Some(ExpectedResponse::Done); "dump all with ack")]
+    #[test_case(
+        NLM_F_DUMP,
+        NeighbourHeader { family: AddressFamily::Local, ..Default::default() },
+        vec![],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "dump invalid request")]
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        Some(neighbors::GetNeighborArgs::Get {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        }),
+        None; "get")]
+    #[test_case(
+        NLM_F_ACK,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        Some(neighbors::GetNeighborArgs::Get {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        }),
+        Some(ExpectedResponse::Ack); "get with ack")]
+    #[test_case(
+        0,
+        NeighbourHeader::default(),
+        vec![],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "get invalid request")]
+    #[fuchsia::test]
+    async fn get_neighbor_with_faked_response(
+        flags: u16,
+        header: NeighbourHeader,
+        attrs: Vec<NeighbourAttribute>,
+        expected_request_args: Option<neighbors::GetNeighborArgs>,
+        expected_response: Option<ExpectedResponse>,
+    ) {
+        let nl_header = header_with_flags(flags);
+        let neighbor_message = {
+            let mut message = NeighbourMessage::default();
+            message.header = header;
+            message.attributes = attrs;
+            message
+        };
+
+        pretty_assertions::assert_eq!(
+            test_get_neighbor_request(
+                NetlinkMessage::new(
+                    nl_header,
+                    NetlinkPayload::InnerMessage(RouteNetlinkMessage::GetNeighbour(
+                        neighbor_message
+                    )),
+                ),
+                expected_request_args,
+            )
+            .await,
+            expected_response
+                .into_iter()
+                .map(|expected_response| SentMessage::unicast(match expected_response {
+                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), nl_header),
+                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), nl_header),
+                    ExpectedResponse::Done => netlink_packet::new_done(nl_header),
                 }))
                 .collect::<Vec<_>>(),
         )
