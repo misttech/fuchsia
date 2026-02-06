@@ -26,6 +26,7 @@ group("tests") {
     "pkg:tests",
     "process-resolver:tests",
     "run_test_suite:tests",
+    "runners:tests",
     "stash:tests",
     "test_manager:tests",
     "test_runners:tests",
