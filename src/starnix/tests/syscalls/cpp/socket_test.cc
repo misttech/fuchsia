@@ -8,6 +8,7 @@
 #include <netinet/icmp6.h>
 #include <netinet/in.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
@@ -1226,4 +1227,19 @@ TEST_F(ReusePortSharingTest, ReusePortSharing) {
 
   // Restore original uid.
   EXPECT_THAT(setresuid(0, 0, 0), SyscallSucceeds());
+}
+
+TEST(Socket, GetSockOptZeroSize) {
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+
+  uint8_t buf = 'x';
+  socklen_t optlen = 0;
+  // This might return an error or succeed depending on the platform/kernel version,
+  // but importantly, it shouldn't crash the kernel (b/356896105).
+  getsockopt(fd.get(), SOL_SOCKET, SO_BINDTODEVICE, &buf, &optlen);
+
+  // And the original TCP_CONGESTION option
+  optlen = 0;
+  getsockopt(fd.get(), SOL_TCP, TCP_CONGESTION, &buf, &optlen);
 }
