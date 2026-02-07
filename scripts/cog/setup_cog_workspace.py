@@ -10,6 +10,7 @@ It is currently highly experimental and not guaranteed to work.
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -115,12 +116,21 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable status updates.",
     )
+    parser.add_argument(
+        "--color",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable or disable color output.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     """Main function to set up the cog workspace."""
     args = _parse_args()
+
+    if not args.color:
+        os.environ["NO_COLOR"] = "1"
 
     if args.verbose == 1:
         log_level = logging.INFO
@@ -131,7 +141,7 @@ def main() -> int:
 
     logger.init_logger(
         level=log_level,
-        colors=True,
+        colors=args.color,
         enable_status_updates=args.enable_status_updates,
     )
 
