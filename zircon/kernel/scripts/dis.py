@@ -226,19 +226,21 @@ def find_binary(
                 # It's possible the build ID file doesn't exist; skip it.
                 continue
             if build_id == bin_spec:
-                return (binary["dist"], binary["label"])
+                return (binary["debug"], binary["label"])
         fail(f"No binary with build ID '{bin_spec}' found")
 
-    debug_re = re.compile(f"(^|/){bin_spec}(.debug)?$")
+    file_re = re.compile(f"(^|/){bin_spec}$")
     label_re = re.compile(rf":{bin_spec}\(")
     matches = []
     for binary in binaries:
         if "debug" not in binary:
             continue
-        if re.search(debug_re, binary["debug"]) or (
-            "label" in binary and re.search(label_re, binary["label"])
+        if (
+            re.search(file_re, binary["dist"])
+            or re.search(file_re, binary["debug"])
+            or ("label" in binary and re.search(label_re, binary["label"]))
         ):
-            matches.append((binary["dist"], binary["label"]))
+            matches.append((binary["debug"], binary["label"]))
 
     if len(matches) == 0:
         fail(f"'{bin_spec}' did not match any binaries")
