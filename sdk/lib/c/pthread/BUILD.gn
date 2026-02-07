@@ -37,11 +37,21 @@ source_set("attr.header") {
 }
 
 llvm_libc_source_set("attr") {
-  functions = [
-    "pthread_attr_destroy",
+  os_functions = [
+    "pthread_attr_getdetachstate",
+    "pthread_attr_getguardsize",
+    "pthread_attr_getstack",
+    "pthread_attr_getstacksize",
     "pthread_attr_init",
+    "pthread_attr_setdetachstate",
+    "pthread_attr_setguardsize",
+
+    # Note that pthread_attr_setstack is explicitly omitted entirely from the
+    # ABI on Fuchsia, though it exists in upstream llvm-libc.  Nonetheless,
+    # pthread_attr_getstack is still supported for use with pthread_getattr_np.
+    "pthread_attr_setstacksize",
   ]
-  os_functions = [ "pthread_attr_init" ]
+  functions = os_functions + [ "pthread_attr_destroy" ]
   no_test_functions = functions
 
   local_deps = [ ":attr.header" ]

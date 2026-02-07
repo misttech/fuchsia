@@ -1,9 +1,11 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef LIB_C_PTHREAD_ATTR_H_
 #define LIB_C_PTHREAD_ATTR_H_
+
+#include <pthread.h>
 
 #include "../threads/thread.h"
 
@@ -11,6 +13,9 @@ namespace LIBC_NAMESPACE_DECL {
 
 constexpr pthread_attr_t ToPthreadAttr(ThreadAttributes attr) {
   return {
+      // TODO(https://fxbug.dev/473624022): POSIX requires that unrounded
+      // values be returned by get* calls exactly as set by set* calls; it
+      // permits rounding only at time of use
       ._a_stacksize = attr.stack.get(),
       ._a_guardsize = attr.guard.get(),
       ._a_detach = attr.detached,

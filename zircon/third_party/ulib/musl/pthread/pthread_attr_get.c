@@ -1,31 +1,8 @@
 #include "threads_impl.h"
 
-int pthread_attr_getdetachstate(const pthread_attr_t* a, int* state) {
-  *state = a->_a_detach;
-  return 0;
-}
-int pthread_attr_getguardsize(const pthread_attr_t* restrict a, size_t* restrict size) {
-  *size = a->_a_guardsize;
-  return 0;
-}
-
 int pthread_attr_getschedparam(const pthread_attr_t* restrict a,
                                struct sched_param* restrict param) {
   param->sched_priority = a->_a_prio;
-  return 0;
-}
-
-int pthread_attr_getstack(const pthread_attr_t* restrict a, void** restrict addr,
-                          size_t* restrict size) {
-  if (a->_a_stackaddr == NULL)
-    return EINVAL;
-  *addr = a->_a_stackaddr;
-  *size = a->_a_stacksize;
-  return 0;
-}
-
-int pthread_attr_getstacksize(const pthread_attr_t* restrict a, size_t* restrict size) {
-  *size = a->_a_stacksize;
   return 0;
 }
 
