@@ -118,13 +118,14 @@ void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
         SaveForMexec(*header, payload);
         break;
 
-      case ZBI_TYPE_CRASHLOG: {
-        ktl::span buffer = New(handoff_->crashlog, ac, payload.size());
-        ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for crash log", payload.size());
-        memcpy(buffer.data(), payload.data(), payload.size_bytes());
-        // The crashlog is propagated separately by the kernel.
+      case ZBI_TYPE_CRASHLOG:
+        if (!payload.empty()) {
+          ktl::span buffer = New(handoff_->crashlog, ac, payload.size());
+          ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for crash log", payload.size());
+          memcpy(buffer.data(), payload.data(), payload.size_bytes());
+          // The crashlog is propagated separately by the kernel.
+        }
         break;
-      }
 
       case ZBI_TYPE_SECURE_ENTROPY:
         entropy.AddEntropy(it->payload);

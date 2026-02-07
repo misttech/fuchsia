@@ -69,6 +69,7 @@ class HandoffPrep {
     requires(Lifetime != PhysHandoffPtrLifetime::kKernelImage)
   ktl::span<T> New(PhysHandoffSpan<const T, Lifetime>& handoff_span, fbl::AllocChecker& ac,
                    size_t n) {
+    ZX_DEBUG_ASSERT(n > 0);
     T* ptr;
     if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
       ptr = new (temporary_data_allocator_, ac) T[n];
@@ -87,10 +88,8 @@ class HandoffPrep {
     requires(Lifetime != PhysHandoffPtrLifetime::kKernelImage)
   ktl::string_view New(PhysHandoffString<Lifetime>& handoff_string, fbl::AllocChecker& ac,
                        ktl::string_view str) {
+    ZX_DEBUG_ASSERT(!str.empty());
     ktl::span chars = New(handoff_string, ac, str.size());
-    if (chars.empty()) {
-      return {};
-    }
     ZX_DEBUG_ASSERT(chars.size() == str.size());
     return {chars.data(), str.copy(chars.data(), chars.size())};
   }

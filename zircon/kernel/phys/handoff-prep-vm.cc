@@ -368,17 +368,19 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
     }
 
     // ...so that we can allocate the number of such mappings in the hand-off.
-    fbl::AllocChecker ac;
-    ktl::span periph_ranges = New(handoff_->periph_ranges, ac, count);
-    ZX_ASSERT(ac.check());
+    if (count > 0) {
+      fbl::AllocChecker ac;
+      ktl::span periph_ranges = New(handoff_->periph_ranges, ac, count);
+      ZX_ASSERT(ac.check());
 
-    auto map = [this, &periph_ranges](const memalloc::Range& range) {
-      ZX_DEBUG_ASSERT(range.type == memalloc::Type::kPeripheral);
-      periph_ranges.front() = PublishSingleMmioMappingVmar("periphmap"sv, range.addr, range.size);
-      periph_ranges = periph_ranges.last(periph_ranges.size() - 1);
-      return true;
-    };
-    memalloc::NormalizeRanges(pool, map, periph_filter);
+      auto map = [this, &periph_ranges](const memalloc::Range& range) {
+        ZX_DEBUG_ASSERT(range.type == memalloc::Type::kPeripheral);
+        periph_ranges.front() = PublishSingleMmioMappingVmar("periphmap"sv, range.addr, range.size);
+        periph_ranges = periph_ranges.last(periph_ranges.size() - 1);
+        return true;
+      };
+      memalloc::NormalizeRanges(pool, map, periph_filter);
+    }
   }
 
   // UART.
