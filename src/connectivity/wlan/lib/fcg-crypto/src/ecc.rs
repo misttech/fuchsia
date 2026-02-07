@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::PweMethod;
 use crate::boringssl::{self, Bignum, BignumCtx, EcGroup, EcGroupId, EcGroupParams, EcPoint};
-use crate::internal::{FiniteCyclicGroup, SaeParameters};
+use crate::fcg::FiniteCyclicGroup;
+use crate::sae::{PweMethod, SaeParameters};
 use anyhow::{Error, bail};
 use ieee80211::MacAddr;
 use log::warn;

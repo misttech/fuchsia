@@ -9,15 +9,13 @@ use wlan_common::ie::rsn::akm::{self, Akm};
 
 use crate::boringssl::{Bignum, EcGroupId, EcPoint};
 use crate::ecc;
+use crate::fcg::FiniteCyclicGroup;
 use crate::hmac_utils::{HmacUtils, HmacUtilsImpl};
 
 /// We store an FcgConstructor rather than a FiniteCyclicGroup so that our handshake
 /// can impl `Send`. FCGs are not generally `Send`, so we construct them on the fly.
-type FcgConstructor<E> = Box<
-    dyn Fn() -> Result<Box<dyn crate::internal::FiniteCyclicGroup<Element = E>>, Error>
-        + Send
-        + 'static,
->;
+type FcgConstructor<E> =
+    Box<dyn Fn() -> Result<Box<dyn FiniteCyclicGroup<Element = E>>, Error> + Send + 'static>;
 
 #[derive(Debug)]
 pub enum OweUpdate {
@@ -100,9 +98,9 @@ fn new_owe_handshake(
                 ecc::Group::new(EcGroupId::P256).map(|group| {
                     Box::new(group)
                         as Box<
-                            dyn crate::internal::FiniteCyclicGroup<
-                                    Element = <ecc::Group as crate::internal::FiniteCyclicGroup>::Element,
-                                >,
+                            dyn FiniteCyclicGroup<
+                                Element = <ecc::Group as FiniteCyclicGroup>::Element,
+                            >,
                         >
                 })
             });

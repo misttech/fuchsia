@@ -37,7 +37,7 @@ pub use crate::auth::psk;
 pub use crate::key::gtk::{self, GtkProvider};
 pub use crate::key::igtk::{self, IgtkProvider};
 pub use crate::rsna::NegotiatedProtection;
-pub use wlan_fcg_crypto::PweMethod;
+pub use wlan_fcg_crypto::sae::PweMethod;
 
 #[derive(Debug)]
 pub struct Supplicant {

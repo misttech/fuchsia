@@ -31,11 +31,13 @@ rustc_library("wlan-fcg-crypto") {
   sources = [
     "src/boringssl.rs",
     "src/ecc.rs",
-    "src/frame.rs",
+    "src/fcg.rs",
     "src/hmac_utils.rs",
     "src/lib.rs",
     "src/owe.rs",
-    "src/state.rs",
+    "src/sae/frame.rs",
+    "src/sae/mod.rs",
+    "src/sae/state.rs",
   ]
 }
 

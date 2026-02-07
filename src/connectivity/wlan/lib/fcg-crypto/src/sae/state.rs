@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::boringssl::{Bignum, BignumCtx};
 use super::frame::{write_commit, write_confirm};
-use super::internal::{FiniteCyclicGroup, SaeParameters};
 use super::{
-    AntiCloggingTokenMsg, CommitMsg, ConfirmMsg, Key, RejectReason, SaeHandshake, SaeUpdate,
-    SaeUpdateSink, Timeout,
+    AntiCloggingTokenMsg, CommitMsg, ConfirmMsg, Key, RejectReason, SaeHandshake, SaeParameters,
+    SaeUpdate, SaeUpdateSink, Timeout,
 };
+use crate::boringssl::{Bignum, BignumCtx};
+use crate::fcg::FiniteCyclicGroup;
 use anyhow::{Error, bail, format_err};
 use log::{error, warn};
 use wlan_statemachine::*;
@@ -718,8 +718,9 @@ impl<E> SaeHandshake for SaeHandshakeImpl<E> {
 mod test {
     use super::*;
     use crate::boringssl::{Bignum, EcGroupId};
+    use crate::ecc;
     use crate::hmac_utils::HmacUtilsImpl;
-    use crate::{PweMethod, ecc};
+    use crate::sae::PweMethod;
     use assert_matches::assert_matches;
     use hex::FromHex;
     use ieee80211::{MacAddr, Ssid};
