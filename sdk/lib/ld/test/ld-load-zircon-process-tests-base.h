@@ -31,23 +31,38 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
 
   const char* process_name() const;
 
+  zx::channel& bootstrap_sender() { return procargs_.bootstrap_sender(); }
+
+  // This just folds together Start() and Wait(), below.
+  int64_t Run();
+
  protected:
   const zx::process& process() const { return process_; }
 
+  // A subclass calls this when not using CreateProcess().
   void set_process(zx::process process);
 
+  // A subclass calls CreateProcess() to set process(), root_vmar(), and thread().
   void CreateProcess();
 
+  // These are set by CreateProcess() and used by Start() and Run().
   const zx::vmar& root_vmar() { return root_vmar_; }
   const zx::thread& thread() { return thread_; }
 
-  void Start(TestProcessArgs* bootstrap, zx::channel bootstrap_receiver,
-             std::optional<size_t> stack_size, const zx::thread& thread, uintptr_t entry,
-             uintptr_t vdso_base, const zx::vmar& root_vmar);
+  // This is used by Start() and Run().  If it's not empty() when they're
+  // called, its pending startup dynamic linker message gets packed and sent.
+  TestProcessArgs& bootstrap() { return procargs_; }
 
-  int64_t Run(TestProcessArgs* bootstrap, zx::channel bootstrap_receiver,
-              std::optional<size_t> stack_size, const zx::thread& thread, uintptr_t entry,
-              uintptr_t vdso_base, const zx::vmar& root_vmar);
+  // These are used by Start() and Run().  The subclass must set them first.
+  uintptr_t entry() const { return entry_; }
+  uintptr_t vdso_base() const { return vdso_base_; }
+  std::optional<size_t> stack_size() const { return stack_size_; }
+  void set_entry(uintptr_t entry) { entry_ = entry; }
+  void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
+  void set_stack_size(std::optional<size_t> stack_size) { stack_size_ = stack_size; }
+
+  // Start the process() using all those parameters.
+  void Start();
 
   // Wait for the process to die and collect its exit code.
   // This clears the process() so a new one can be installed.
@@ -59,6 +74,10 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // Not all subclasses use these.
   zx::vmar root_vmar_;
   zx::thread thread_;
+  TestProcessArgs procargs_;
+  uintptr_t entry_ = 0;
+  uintptr_t vdso_base_ = 0;
+  std::optional<size_t> stack_size_;
 };
 
 }  // namespace ld::testing

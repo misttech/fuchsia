@@ -15,6 +15,7 @@
 #include <zircon/syscalls.h>
 
 #include <array>
+#include <cassert>
 #include <functional>
 #include <numeric>
 #include <span>
@@ -193,14 +194,28 @@ void TestProcessArgs::PackBootstrap(zx::unowned_channel bootstrap_sender,
             ZX_OK);
 }
 
-zx::channel TestProcessArgs::PackBootstrap() {
+zx::channel TestProcessArgs::MakeBootstrap() {
   zx::channel bootstrap;
+  EXPECT_FALSE(bootstrap_sender_);
   if (!bootstrap_sender_) {
     zx_status_t status = zx::channel::create(0, &bootstrap_sender_, &bootstrap);
     EXPECT_EQ(status, ZX_OK);
   }
-  PackBootstrap(bootstrap_sender_.borrow());
   return bootstrap;
+}
+
+zx::channel TestProcessArgs::PackBootstrap() {
+  zx::channel bootstrap = MakeBootstrap();
+  if (bootstrap) {
+    PackBootstrap(bootstrap_sender_.borrow());
+  }
+  return bootstrap;
+}
+
+bool TestProcessArgs::empty() const {
+  assert(handles_.size() == handle_info_.size());
+  return !bootstrap_sender_ &&  // PackBootstrap() never called.
+         handles_.empty() && args_.empty() && env_.empty() && names_.empty();
 }
 
 }  // namespace ld::testing

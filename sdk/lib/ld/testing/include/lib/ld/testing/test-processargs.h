@@ -161,6 +161,13 @@ class TestProcessArgs {
   // if the bootstrap protocol wants to control that.
   std::optional<size_t> GetStackSize();
 
+  // This just creates a new channel and installs the other end as
+  // bootstrap_sender(), without packing anything into it.
+  zx::channel MakeBootstrap();
+
+  // This returns true if the object is still it default-constructed state.
+  bool empty() const;
+
  private:
   void PackBootstrap(zx::unowned_channel bootstrap_sender, size_t* count_for_stack_size);
 

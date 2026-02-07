@@ -53,15 +53,12 @@ int64_t LdLoadZirconProcessTestsBase::Wait() {
   return result;
 }
 
-void LdLoadZirconProcessTestsBase::Start(TestProcessArgs* bootstrap, zx::channel bootstrap_receiver,
-                                         std::optional<size_t> stack_size, const zx::thread& thread,
-                                         uintptr_t entry, uintptr_t vdso_base,
-                                         const zx::vmar& root_vmar) {
+void LdLoadZirconProcessTestsBase::Start() {
   // Allocate the stack.  This is delayed until here in case the test uses
   // bootstrap() methods after Init() that affect bootstrap().GetStackSize().
   zx::vmo stack_vmo;
   uintptr_t sp;
-  std::optional<size_t> bootstrap_stack_size = stack_size;
+  std::optional<size_t> bootstrap_stack_size = stack_size_;
   if (!bootstrap_stack_size) {
     // TODO(https://fxbug.dev/479521328): stack use too big for procargs piddly
     // default bootstrap_stack_size = bootstrap.GetStackSize();
@@ -76,8 +73,8 @@ void LdLoadZirconProcessTestsBase::Start(TestProcessArgs* bootstrap, zx::channel
 
   zx::vmar stack_vmar;
   uintptr_t stack_vmar_base;
-  ASSERT_EQ(root_vmar.allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0,
-                               stack_vmar_size, &stack_vmar, &stack_vmar_base),
+  ASSERT_EQ(root_vmar().allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
+                                 0, stack_vmar_size, &stack_vmar, &stack_vmar_base),
             ZX_OK);
 
   zx_vaddr_t stack_base;
@@ -85,27 +82,28 @@ void LdLoadZirconProcessTestsBase::Start(TestProcessArgs* bootstrap, zx::channel
                            page_size, stack_vmo, 0, stack_vmo_size, &stack_base),
             ZX_OK);
 
-  if (bootstrap) {
-    ASSERT_NO_FATAL_FAILURE(bootstrap->AddStackVmo(std::move(stack_vmo)));
+  if (!procargs_.empty()) {
+    ASSERT_NO_FATAL_FAILURE(procargs_.AddStackVmo(std::move(stack_vmo)));
   }
 
   sp = elfldltl::AbiTraits<>::InitialStackPointer(stack_base, stack_vmo_size);
 
   // Pack up the bootstrap message and start the process running.
-  if (bootstrap_receiver) {
-    ASSERT_FALSE(bootstrap);
-  } else if (bootstrap) {
-    bootstrap_receiver = bootstrap->PackBootstrap();
+  zx::channel bootstrap_receiver;
+  if (procargs_.empty()) {
+    // There's startup dynamic linker message being sent.  Just create the
+    // channel so bootstrap_sender() can be used.
+    bootstrap_receiver = procargs_.MakeBootstrap();
+  } else {
+    bootstrap_receiver = procargs_.PackBootstrap();
   }
 
-  ASSERT_EQ(this->process().start(thread, entry, sp, std::move(bootstrap_receiver), vdso_base),
+  ASSERT_EQ(this->process().start(thread(), entry_, sp, std::move(bootstrap_receiver), vdso_base_),
             ZX_OK);
 }
 
-int64_t LdLoadZirconProcessTestsBase::Run(  //
-    TestProcessArgs* bootstrap, zx::channel bootstrap_receiver, std::optional<size_t> stack_size,
-    const zx::thread& thread, uintptr_t entry, uintptr_t vdso_base, const zx::vmar& root_vmar) {
-  Start(bootstrap, std::move(bootstrap_receiver), stack_size, thread, entry, vdso_base, root_vmar);
+int64_t LdLoadZirconProcessTestsBase::Run() {
+  Start();
   return ::testing::Test::HasFatalFailure() ? -1 : Wait();
 }
 

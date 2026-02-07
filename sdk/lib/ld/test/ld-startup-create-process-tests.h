@@ -32,28 +32,10 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
   void Init(std::initializer_list<std::string_view> args = {},
             std::initializer_list<std::string_view> env = {});
 
-  int64_t Run();
-
   ~LdStartupCreateProcessTestsBase();
 
-  zx::channel& bootstrap_sender() { return procargs_.bootstrap_sender(); }
-
  protected:
-  TestProcessArgs& bootstrap() { return procargs_; }
-
-  void set_entry(uintptr_t entry) { entry_ = entry; }
-
-  void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
-
-  void set_stack_size(std::optional<size_t> stack_size) { stack_size_ = stack_size; }
-
   void FinishLoad(zx::vmo executable_vmo);
-
- private:
-  uintptr_t entry_ = 0;
-  uintptr_t vdso_base_ = 0;
-  std::optional<size_t> stack_size_;
-  TestProcessArgs procargs_;
 };
 
 template <class Elf = elfldltl::Elf<>>

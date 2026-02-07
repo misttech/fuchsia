@@ -45,9 +45,4 @@ void LdStartupCreateProcessTestsBase::FinishLoad(zx::vmo executable_vmo) {
 
 LdStartupCreateProcessTestsBase::~LdStartupCreateProcessTestsBase() = default;
 
-int64_t LdStartupCreateProcessTestsBase::Run() {
-  return LdLoadZirconProcessTestsBase::Run(&bootstrap(), {}, stack_size_, thread(), entry_,
-                                           vdso_base_, root_vmar());
-}
-
 }  // namespace ld::testing

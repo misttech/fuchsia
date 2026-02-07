@@ -32,6 +32,9 @@ namespace ld::testing {
 
 class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessTestsBase {
  public:
+  using LdLoadZirconProcessTestsBase::Run;
+  using LdLoadZirconProcessTestsBase::Start;
+
   static constexpr bool kCanCollectLog = false;
   static constexpr bool kRunsLdStartup = false;
 
@@ -52,10 +55,6 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
     ASSERT_NO_FATAL_FAILURE(Load(diag, executable_name, expected_config, false));
   }
 
-  void Start();
-
-  int64_t Run();
-
   template <class... Reports>
   void LoadAndFail(std::string_view name, elfldltl::testing::ExpectedErrorList<Reports...> diag) {
     ASSERT_NO_FATAL_FAILURE(Load(diag, name, std::nullopt, true));
@@ -63,8 +62,6 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
   }
 
   zx::vmo TakeStubLdVmo() { return std::move(stub_ld_vmo_); }
-
-  zx::channel& bootstrap_sender() { return bootstrap_sender_; }
 
  protected:
   using Linker = RemoteDynamicLinker<>;
@@ -97,21 +94,7 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
     };
   }
 
-  uintptr_t entry() const { return entry_; }
-
-  void set_entry(uintptr_t entry) { entry_ = entry; }
-
-  uintptr_t vdso_base() const { return vdso_base_; }
-
-  void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
-
-  std::optional<size_t> stack_size() const { return stack_size_; }
-
-  void set_stack_size(std::optional<size_t> stack_size) { stack_size_ = stack_size; }
-
  private:
-  void MakeBootstrapChannel(zx::channel& bootstrap_receiver);
-
   template <class Diagnostics>
   void Load(Diagnostics& diag, std::string_view executable_name,
             std::optional<std::string_view> expected_config, bool should_fail) {
@@ -220,11 +203,7 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
     linker.Commit();
   }
 
-  uintptr_t entry_ = 0;
-  uintptr_t vdso_base_ = 0;
-  std::optional<size_t> stack_size_;
   zx::vmo stub_ld_vmo_;
-  zx::channel bootstrap_sender_;
 };
 
 }  // namespace ld::testing

@@ -17,14 +17,15 @@
 namespace ld::testing {
 namespace {
 
-using namespace std::string_view_literals;
+using namespace std::literals;
 
 using ::testing::Ne;
 
+constexpr int64_t kNodataExitCode = 17;
+
 TYPED_TEST(LdLoadTests, LlvmProfdata) {
-  if constexpr (!TestFixture::kRunsLdStartup) {
-    GTEST_SKIP() << "test only applies to startup dynamic linker";
-  }
+  const ::testing::TestInfo* const test_info =
+      ::testing::UnitTest::GetInstance()->current_test_info();
 
   ASSERT_NO_FATAL_FAILURE(this->Init());
 
@@ -34,26 +35,33 @@ TYPED_TEST(LdLoadTests, LlvmProfdata) {
 
   this->ExpectLog("");
 
-  auto describe_exit_code = [exit_code]() -> std::string_view {
+  auto describe_exit_code = [exit_code]() -> std::string {
     switch (exit_code) {
       case ZX_TASK_RETCODE_EXCEPTION_KILL:
-        return "CRASHED"sv;
+        return "CRASHED"s;
       case 77:
-        return "SKIPPED"sv;
+        return "SKIPPED"s;
       default:
+        if (exit_code > 0) {
+          return std::to_string(exit_code);
+        }
         return zx_status_get_string(static_cast<zx_status_t>(exit_code));
     }
   };
 
-  constexpr std::string_view kInProcess =
-      std::is_same_v<ld::testing::LdStartupInProcessTests, TestFixture> ? "in-process: "sv
-                                                                        : "test process: "sv;
-
   if (exit_code == 77) {
-    GTEST_SKIP() << kInProcess << "test module not built with llvm-profdata instrumentation";
+    GTEST_SKIP() << test_info->test_suite_name()
+                 << ": test module not built with llvm-profdata instrumentation";
   }
 
-  EXPECT_EQ(exit_code, 0) << kInProcess << describe_exit_code();
+  EXPECT_EQ(exit_code, TestFixture::kRunsLdStartup ? 0 : kNodataExitCode)
+      << test_info->test_suite_name() << ": " << describe_exit_code();
+
+  if (exit_code == kNodataExitCode) {
+    // The test module reported no data; it won't send any bootstrap reply.
+    // This is the expected case when not using a startup dynamic linker.
+    return;
+  }
 
   // On successful exit, the test has written a message back on the bootstrap
   // channel.
@@ -63,7 +71,7 @@ TYPED_TEST(LdLoadTests, LlvmProfdata) {
   zx_status_t status = this->bootstrap_sender().read(
       0, buffer.data(), test_svc_server_end.reset_and_get_address(),
       static_cast<uint32_t>(buffer.size()), 1, &actual_bytes, &actual_handles);
-  ASSERT_EQ(status, ZX_OK) << kInProcess << zx_status_get_string(status);
+  ASSERT_EQ(status, ZX_OK) << test_info->test_suite_name() << ": " << zx_status_get_string(status);
 
   std::string_view bootstrap_reply_text(buffer.data(), actual_bytes);
   EXPECT_EQ(bootstrap_reply_text, "llvm-profdata"sv);

@@ -21,18 +21,20 @@ extern "C" int64_t TestStart(zx_handle_t bootstrap_channel, void* vdso,
   // process will wait for a message.
   zx::channel bootstrap{bootstrap_channel};
 
+  if (svc_server_end == ZX_HANDLE_INVALID) {
 #if HAVE_LLVM_PROFDATA
-  // The startup dynamic linker should have been compiled in the same variant
-  // as this test program.  In a variant that enables llvm-profdata, the
-  // channel should have been provided.
-  ZX_ASSERT(svc_server_end != ZX_HANDLE_INVALID);
+    // The startup dynamic linker should have been compiled in the same variant
+    // as this test program.  In a variant that enables llvm-profdata, the
+    // channel should have been provided by the startup dynamic linker.
+    // Return a status that just indicates no channel was provided, which is
+    // normal when there is no startup dynamic linker at all.
+    return 17;
 #else
-  // In a variant without llvm-profdata, no channel should have been provided.
-  ZX_ASSERT(svc_server_end == ZX_HANDLE_INVALID);
-
-  // This exit code tells the test it was skipped intentionally.
-  return 77;
+    // In a variant without llvm-profdata, no channel should have been provided.
+    // This exit code tells the test it was skipped intentionally.
+    return 77;
 #endif
+  }
 
   // Write back on the bootstrap channel to transfer the /svc server end back
   // to the test for validation.  After exit the test will inspect the message
