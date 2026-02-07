@@ -94,6 +94,64 @@ constexpr ktl::string_view VmoNameString(const PhysVmo::Name& name) {
   return str.substr(0, str.find_first_of('\0'));
 }
 
+// Normalizes types so that only those that are of interest to the kernel
+// remain.
+ktl::optional<memalloc::Type> HandoffMemoryType(memalloc::Type type) {
+  switch (type) {
+    // The allocations that should survive into the hand-off.
+    case memalloc::Type::kDataZbi:
+    case memalloc::Type::kKernel:
+    case memalloc::Type::kKernelPageTables:
+    case memalloc::Type::kBootMachineStack:
+    case memalloc::Type::kBootShadowCallStack:
+    case memalloc::Type::kBootUnsafeStack:
+    case memalloc::Type::kPhysDebugdata:
+    case memalloc::Type::kPermanentPhysHandoff:
+    case memalloc::Type::kPhysLog:
+    case memalloc::Type::kReservedLow:
+    case memalloc::Type::kTemporaryPhysHandoff:
+    case memalloc::Type::kTestRamReserve:
+    case memalloc::Type::kUserboot:
+    case memalloc::Type::kVdso:
+      return type;
+
+    // The identity map needs to be installed at the time of hand-off, but
+    // shouldn't actually be used by the kernel after that; mark it for
+    // clean-up.
+    case memalloc::Type::kTemporaryIdentityPageTables:
+      // TODO(https://fxbug.dev/398950948): Ideally these ranges would be
+      // passed on as temporary handoff data, but the kernel currently
+      // expects this memory to persist past boot (e.g, for later
+      // hotplugging). Pending revisiting that in the kernel, we hand off all
+      // "temporary" identity tables as permanent for now.
+      return memalloc::Type::kKernelPageTables;
+
+    // An NVRAM range should no longer be treated like normal RAM. The kernel
+    // will access it through the mapping provided with PhysHandoff::nvram,
+    // and will further key off that to restrict userspace access to this
+    // range of memory.
+    case memalloc::Type::kNvram:
+    // Truncations should now go into effect.
+    case memalloc::Type::kTruncatedRam:
+    // kPeripheral range content has been distilled in
+    // PhysHandoff::periph_ranges and does not need to be present in this
+    // accounting.
+    case memalloc::Type::kPeripheral:
+      return ktl::nullopt;
+
+    default:
+      ZX_DEBUG_ASSERT(type != memalloc::Type::kReserved);
+      break;
+  }
+
+  if (memalloc::IsRamType(type)) {
+    return memalloc::Type::kFreeRam;
+  }
+
+  // Anything unknown should be ignored.
+  return ktl::nullopt;
+}
+
 }  // namespace
 
 template <typename T>
@@ -188,12 +246,17 @@ void HandoffPrep::SetInstrumentation() {
   }
 }
 
-void HandoffPrep::PublishExtraVmo(PhysVmo&& vmo) { extra_vmos_.push_front(HandoffVmo::New(vmo)); }
+void HandoffPrep::PublishExtraVmo(PhysVmo&& vmo) {
+  ZX_DEBUG_ASSERT(extra_vmos_);
+  extra_vmos_->push_front(HandoffVmo::New(vmo));
+}
 
-void HandoffPrep::FinishVmObjects() {
-  ZX_ASSERT_MSG(extra_vmos_.size() <= PhysVmo::kMaxExtraHandoffPhysVmos,
-                "Too many phys VMOs in hand-off! %zu > max %zu", extra_vmos_.size(),
+void HandoffPrep::FinishVm() {
+  ZX_ASSERT_MSG(extra_vmos_->size() <= PhysVmo::kMaxExtraHandoffPhysVmos,
+                "Too many phys VMOs in hand-off! %zu > max %zu", extra_vmos_->size(),
                 PhysVmo::kMaxExtraHandoffPhysVmos);
+  NewFromList(handoff()->extra_vmos, *ktl::exchange(extra_vmos_, {}));
+  // From here, any PublishExtraVmo() call would crash.
 
   auto populate_vmar = [this](PhysVmar* vmar, ktl::string_view name,
                               HandoffMappingList mapping_list) {
@@ -205,104 +268,105 @@ void HandoffPrep::FinishVmObjects() {
     vmar->size = vmar_end - vmar->base;
   };
 
-  fbl::AllocChecker ac;
-  PhysVmar* temporary_vmar = New(handoff()->temporary_vmar, ac);
-  ZX_ASSERT(ac.check());
-  populate_vmar(temporary_vmar, "temporary hand-off data",
-                temporary_data_allocator_.allocate_function().memory().TakeMappings());
-
+  // First reify the permanent handoff mappings.  There will be no more of
+  // _these_ now, but doing this entails new _temporary_ handoff allocations
+  // and thus perhaps new mappings.
   PhysVmar permanent_data_vmar;
   populate_vmar(&permanent_data_vmar, "permanent hand-off data",
                 permanent_data_allocator_.allocate_function().memory().TakeMappings());
-  vmars_.push_front(HandoffVmar::New(ktl::move(permanent_data_vmar)));
 
-  NewFromList(handoff()->vmars, ktl::move(vmars_));
-  NewFromList(handoff()->extra_vmos, ktl::move(extra_vmos_));
-
-  if (BootOptions::Get()->phys_verbose) {
-    printf("%s: Kernel VM handoff:\n", ProgramName());
-    handoff()->LogVm(ProgramName());
-  }
-}
-
-void HandoffPrep::SetMemory() {
-  // Normalizes types so that only those that are of interest to the kernel
-  // remain.
-  auto normed_type = [](memalloc::Type type) -> ktl::optional<memalloc::Type> {
-    switch (type) {
-      // The allocations that should survive into the hand-off.
-      case memalloc::Type::kDataZbi:
-      case memalloc::Type::kKernel:
-      case memalloc::Type::kKernelPageTables:
-      case memalloc::Type::kBootMachineStack:
-      case memalloc::Type::kBootShadowCallStack:
-      case memalloc::Type::kBootUnsafeStack:
-      case memalloc::Type::kPhysDebugdata:
-      case memalloc::Type::kPermanentPhysHandoff:
-      case memalloc::Type::kPhysLog:
-      case memalloc::Type::kReservedLow:
-      case memalloc::Type::kTemporaryPhysHandoff:
-      case memalloc::Type::kTestRamReserve:
-      case memalloc::Type::kUserboot:
-      case memalloc::Type::kVdso:
-        return type;
-
-      // The identity map needs to be installed at the time of hand-off, but
-      // shouldn't actually be used by the kernel after that; mark it for
-      // clean-up.
-      case memalloc::Type::kTemporaryIdentityPageTables:
-        // TODO(https://fxbug.dev/398950948): Ideally these ranges would be
-        // passed on as temporary handoff data, but the kernel currently
-        // expects this memory to persist past boot (e.g, for later
-        // hotplugging). Pending revisiting that in the kernel, we hand off all
-        // "temporary" identity tables as permanent for now.
-        return memalloc::Type::kKernelPageTables;
-
-      // An NVRAM range should no longer be treated like normal RAM. The kernel
-      // will access it through the mapping provided with PhysHandoff::nvram,
-      // and will further key off that to restrict userspace access to this
-      // range of memory.
-      case memalloc::Type::kNvram:
-      // Truncations should now go into effect.
-      case memalloc::Type::kTruncatedRam:
-      // kPeripheral range content has been distilled in
-      // PhysHandoff::periph_ranges and does not need to be present in this
-      // accounting.
-      case memalloc::Type::kPeripheral:
-        return ktl::nullopt;
-
-      default:
-        ZX_DEBUG_ASSERT(type != memalloc::Type::kReserved);
-        break;
-    }
-
-    if (memalloc::IsRamType(type)) {
-      return memalloc::Type::kFreeRam;
-    }
-
-    // Anything unknown should be ignored.
-    return ktl::nullopt;
+  // From here any more use of the permanent handoff allocator would crash _if_
+  // it needed a new page, after TakeMappings().  Make sure that _any_ use will
+  // crash by clearing out any remaining partial page it has left.
+  constexpr auto clear_allocator = [](auto& allocator) {
+    ktl::ignore = allocator.allocate(allocator.unallocated().size_bytes(), 1);
+    ZX_DEBUG_ASSERT(allocator.unallocated().empty());
   };
+  clear_allocator(permanent_data_allocator_);
 
-  auto& pool = Allocation::GetPool();
+  // The temporary handoff mappings need to be reified too.  But this needs
+  // temporary handoff space of its own, and allocating that could require more
+  // mappings!  And finally, the physical memory ranges must also be reified
+  // into yet more temporary handoff space.  New handoff pages and perhaps new
+  // page tables to map them could cause new range splits that increase the
+  // exact size needed for that handoff array.
+  //
+  // The VMAR count cannot change, so that can do a normal allocation before
+  // the sticky situation arises.  Move the permanent handoff data VMAR into
+  // place without pushing it onto the vmars_ list.  The final VMAR list gets
+  // sorted at the very end.
+  const size_t vmars_count = vmars_->size();
+  ktl::span final_vmars = NewFromList<1, false>(handoff()->vmars, *ktl::exchange(vmars_, {}));
+  ZX_DEBUG_ASSERT(final_vmars.size() == vmars_count + 1);
+  final_vmars[vmars_count] = ktl::move(permanent_data_vmar);
 
-  // Iterate through once to determine how many normalized ranges there are,
-  // informing our allocation of its storage in the handoff.
-  size_t len = 0;
-  auto count_ranges = [&len](const memalloc::Range& range) {
-    ++len;
+  // This can't quite be filled in yet, but it can be populated in place later.
+  fbl::AllocChecker ac;
+  PhysVmar* temporary_vmar = New(handoff()->temporary_vmar, ac);
+  ZX_ASSERT(ac.check());
+
+  // The sticky situation is handled by precomputing the total size of new
+  // temporary handoff space and then reserving that in the allocator before
+  // actually filling the remaining handoff arrays:
+  //
+  //  * PhysMapping list in temporary_vmar
+  //  * Normalized memalloc::Range list
+  //
+  // This will reserve space for all those within one contiguous mapping of
+  // contiguous physical pages (see PhysPages::Allocate).  After counting those
+  // current lists, allocating the space to hold them all perturbs the counts:
+  //
+  //  * At most one additional PhysMapping in temporary_vmar
+  //  * At most one additional memalloc::Range entry for the pages mapped there
+  //  * At most one more for each level of page table (less one).  The
+  //    top-level page table is already present to be sure, but worst case a
+  //    new page table page is needed at each level down and there's a separate
+  //    range split needed for each page table page allocation.  So with the
+  //    handoff space plus the page tables (number of levels less one), there
+  //    may be as many allocations as levels an entry per allocation.
+  //
+  // So the reservation of contiguous space in the temporary handoff allocator
+  // overestimates accordingly.
+
+  constexpr size_t kMaxNewPageTablePages =  // The root is never new.
+      AddressSpace::UpperPaging::kLevels.size() - 1;
+  size_t max_memory_ranges =
+      // Start with the upper bound estimate of what might be added below.
+      1 +                     // Map new page-range to cover max_final_space.
+      kMaxNewPageTablePages;  // Page tables for that mapping.
+  auto count_ranges = [&max_memory_ranges](const memalloc::Range& range) {
+    ++max_memory_ranges;
     return true;
   };
-  memalloc::NormalizeRanges(pool, count_ranges, normed_type);
+  auto& pool = Allocation::GetPool();
+  memalloc::NormalizeRanges(pool, count_ranges, HandoffMemoryType);
 
-  // Note, however, that New() has allocation side-effects around the creation
-  // of temporary hand-off memory. Accordingly, overestimate the length by one
-  // possible ranges when allocating the array, and adjust it after the fact.
+  auto& phys_pages = temporary_data_allocator_.allocate_function().memory();
+  static_assert(alignof(PhysMapping) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+  static_assert(alignof(memalloc::Range) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+  const size_t max_new_space =  //
+      ((phys_pages.CountMappings() + 1) * sizeof(PhysMapping)) +
+      (max_memory_ranges * sizeof(memalloc::Range));
+  ZX_ASSERT_MSG(temporary_data_allocator_.reserve(max_new_space),
+                "cannot allocate %zu bytes for memory handoff", max_new_space);
 
-  fbl::AllocChecker ac;
-  ktl::span handoff_ranges = New(handoff()->memory, ac, len + 1);
+  // The last page allocations and the last mappings have all been made now.
+  // Populate the PhysVmar with all those mappings.
+  populate_vmar(temporary_vmar, "temporary hand-off data", phys_pages.TakeMappings());
+
+  // Sort the final VMARs list now that all the addresses are known.
+  ktl::ranges::sort(final_vmars);
+
+  // This final allocation cannot fail since the reserve() already worked.
+  // Note the buffer size may be an overestimate, so it will be capped below.
+  ktl::span handoff_ranges = New(handoff()->memory, ac, max_memory_ranges);
   ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for memory handoff",
-                len * sizeof(memalloc::Range));
+                max_memory_ranges * sizeof(memalloc::Range));
+
+  // From here any more use of the temporary handoff allocator would crash _if_
+  // it needed a new page, after TakeMappings().  Make sure that _any_ use will
+  // crash by clearing out any remaining partial page it has left.
+  clear_allocator(permanent_data_allocator_);
 
   // Now simply record the normalized ranges.
   auto it = handoff_ranges.begin();
@@ -310,12 +374,16 @@ void HandoffPrep::SetMemory() {
     *it++ = range;
     return true;
   };
-  memalloc::NormalizeRanges(pool, record_ranges, normed_type);
+  memalloc::NormalizeRanges(pool, record_ranges, HandoffMemoryType);
 
-  handoff()->memory.size_ = it - handoff_ranges.begin();
+  // Trim any excess buffer space that wasn't actually needed.
   handoff_ranges = ktl::span(handoff_ranges.begin(), it);
+  handoff()->memory = handoff()->memory.subspan(0, handoff_ranges.size());
 
   if (BootOptions::Get()->phys_verbose) {
+    printf("%s: Kernel VM handoff:\n", ProgramName());
+    handoff()->LogVm(ProgramName());
+
     printf("%s: Physical memory handed off to the kernel:\n", ProgramName());
     memalloc::PrintRanges(handoff_ranges, ProgramName());
   }
@@ -466,12 +534,10 @@ PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,
   SetInitArray();
 
   // Finalize the published VMOs (e.g., the log published just above), VMARs,
-  // and mappings.
-  FinishVmObjects();
-
-  // This must be called last, as this finalizes the state of memory to hand off
-  // to the kernel, which is affected by other set-up routines.
-  SetMemory();
+  // mappings, and physical memory ranges.  This must be called last, as this
+  // finalizes the state of memory to hand off to the kernel, which is affected
+  // by other set-up routines.
+  FinishVm();
 
   // One last log before the next line where we effectively disable logging
   // altogether.

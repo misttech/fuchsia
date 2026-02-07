@@ -20,6 +20,7 @@
 #include <ktl/byte.h>
 #include <ktl/concepts.h>
 #include <ktl/initializer_list.h>
+#include <ktl/optional.h>
 #include <ktl/span.h>
 #include <ktl/tuple.h>
 #include <ktl/utility.h>
@@ -242,11 +243,25 @@ class HandoffPrep {
     template <typename... Args>
     explicit PhysPages(Args&&... args) : va_allocator_(ktl::forward<Args>(args)...) {}
 
-    HandoffMappingList&& TakeMappings() { return ktl::move(mappings_); }
+    // This can only be called once and no more allocations can be made after
+    // it's been called.
+    HandoffMappingList TakeMappings() {
+      ZX_DEBUG_ASSERT(mappings_);
+      return *ktl::exchange(mappings_, ktl::nullopt);
+    }
+
+    // This reports the size the TakeMappings() return value will have if it's
+    // called before any more allocations are made.
+    size_t CountMappings() const {
+      ZX_DEBUG_ASSERT(mappings_);
+      return mappings_->size();
+    }
 
     size_t page_size() const { return AddressSpace::kPageSize; }
 
     [[nodiscard]] ktl::pair<void*, Capability> Allocate(size_t size) {
+      ZX_DEBUG_ASSERT(mappings_);
+
       fbl::AllocChecker ac;
       Allocation pages = Allocation::New(ac, Type, size, AddressSpace::kPageSize);
       if (!ac.check()) {
@@ -266,7 +281,7 @@ class HandoffPrep {
       const PhysMapping mapping(mapping_name, PhysMapping::Type::kNormal, vaddr, size, paddr,
                                 PhysMapping::Permissions::Rw());
       ApplyMapping(mapping);
-      mappings_.push_front(HandoffMapping::New(mapping));
+      mappings_->push_front(HandoffMapping::New(mapping));
 
       void* ptr = reinterpret_cast<void*>(vaddr);
       return {ptr, Capability{ktl::move(pages), ptr}};
@@ -289,7 +304,7 @@ class HandoffPrep {
 
    private:
     VirtualAddressAllocator va_allocator_;
-    HandoffMappingList mappings_;
+    ktl::optional<HandoffMappingList> mappings_{ktl::in_place};
   };
 
   template <memalloc::Type Type>
@@ -305,6 +320,8 @@ class HandoffPrep {
   class PhysVmarPrep {
    public:
     constexpr PhysVmarPrep() = default;
+    PhysVmarPrep(const PhysVmarPrep&) = delete;
+    PhysVmarPrep(PhysVmarPrep&&) = default;
 
     // Creates the provided mapping and publishes it within the associated VMAR
     // being built up.
@@ -317,18 +334,15 @@ class HandoffPrep {
 
     // Publishes the PhysVmar in the hand-off.
     void Publish() && {
+      ZX_DEBUG_ASSERT(!mappings_.is_empty());
+      ZX_DEBUG_ASSERT(prep_->vmars_);
       prep_->NewFromList(vmar_.mappings, ktl::move(mappings_));
-      prep_->vmars_.push_front(HandoffVmar::New(ktl::move(vmar_)));
+      prep_->vmars_->push_front(HandoffVmar::New(ktl::move(vmar_)));
       prep_ = nullptr;
     }
 
    private:
     friend class HandoffPrep;
-
-    explicit PhysVmarPrep(HandoffPrep* prep, ktl::string_view name, uintptr_t base, size_t size)
-        : prep_(prep), vmar_{.base = base, .size = size} {
-      vmar_.set_name(name);
-    }
 
     HandoffPrep* prep_ = nullptr;
     PhysVmar vmar_;
@@ -350,22 +364,29 @@ class HandoffPrep {
 
   // Packs a list of pending VM objects into a single hand-off span in sorted
   // order.
-  template <typename VmObject>
+  template <size_t Extra = 0, bool Sorted = true, typename VmObject>
   ktl::span<VmObject> NewFromList(PhysHandoffTemporarySpan<const VmObject>& span,
                                   HandoffVmObjectList<VmObject> list) {
     fbl::AllocChecker ac;
-    ktl::span objects = New(span, ac, list.size());
-    ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu * %zu-byte VM object span", list.size(),
+    ktl::span storage = New(span, ac, list.size() + Extra);
+    ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu * %zu-byte VM object span", list.size() + Extra,
                   sizeof(VmObject));
-    ZX_DEBUG_ASSERT(objects.size() == list.size());
+    ZX_DEBUG_ASSERT(storage.size() == list.size() + Extra);
+    ktl::span objects = storage.subspan(0, list.size());
 
     for (VmObject& obj : objects) {
       obj = ktl::move(list.pop_front()->object);
     }
-    // It's useful to normalize VM object order (e.g., on base address for
-    // PhysVmars) for more readable kernel start-up logging.
-    ktl::sort(objects.begin(), objects.end());
-    return objects;
+    ZX_DEBUG_ASSERT(list.is_empty());
+
+    if constexpr (Sorted) {
+      // It's useful to normalize VM object order (e.g., on base address for
+      // PhysVmars) for more readable kernel start-up logging.
+      ktl::ranges::sort(objects);
+    }
+
+    // Return the whole array, not just the filled prefix (if Extra > 0).
+    return storage;
   }
 
   void SaveForMexec(const zbi_header_t& header, ktl::span<const ktl::byte> payload);
@@ -442,15 +463,14 @@ class HandoffPrep {
   // This constructs a PhysElfImage from an ELF file in the KernelStorage.
   PhysElfImage MakePhysElfImage(KernelStorage::Bootfs::iterator file, ktl::string_view name);
 
-  // Do final handoff of the VM object lists.  The contents are already in
-  // place so this does not invalidate any pointers to the objects (e.g., from
-  // PublishExtraVmo).
-  void FinishVmObjects();
-
-  // Normalizes and publishes RAM and the allocations of interest to the kernel.
-  //
-  // This must be the very last set-up routine called within DoHandoff().
-  void SetMemory();
+  // Do final handoff of all VM and physical memory state.  This finalizes all
+  // the the VM object lists; their contents are already in place so this does
+  // not invalidate any pointers to the objects (e.g., from PublishExtraVmo).
+  // This also normalizes and publishes RAM and the allocations of interest to
+  // the kernel.  After this call, no more VMOs or mappings can be made and the
+  // handoff memory allocators can no longer be used.  This must be the very
+  // last set-up routine called within DoHandoff().
+  void FinishVm();
 
   // Constructs and populates the kernel's address space, and returns the
   // mapped realizations of its ABI requirements per abi_spec_.
@@ -497,8 +517,8 @@ class HandoffPrep {
   PermanentDataAllocator permanent_data_allocator_;
   VirtualAddressAllocator first_class_mapping_allocator_;
   zbitl::Image<Allocation> mexec_image_;
-  HandoffVmarList vmars_;
-  HandoffVmoList extra_vmos_;
+  ktl::optional<HandoffVmarList> vmars_{ktl::in_place};
+  ktl::optional<HandoffVmoList> extra_vmos_{ktl::in_place};
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_HANDOFF_PREP_H_
