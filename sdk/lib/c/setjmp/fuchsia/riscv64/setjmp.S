@@ -25,14 +25,12 @@ jmp_buf.llvm_libc_function setjmp
   fsd fs11, JB_FS(11)*8(a0)
 #endif
 
-  // Load the manglers into registers, as well as the unsafe SP.
+  // Load the manglers into registers.
   lla a1, LIBC_ASM_LINKAGE(gJmpBufManglers)
-  ld a7, ZX_TLS_UNSAFE_SP_OFFSET(tp)
   ld a2, JB_PC*8(a1)
   ld a3, JB_SP*8(a1)
   ld a4, JB_FP*8(a1)
-  ld a5, JB_USP*8(a1)
-  ld a6, JB_SCSP*8(a1)
+  ld a5, JB_SCSP*8(a1)
 
   // Store the vanilla call-saved registers.
   sd s1, JB_S(1)*8(a0)
@@ -50,14 +48,12 @@ jmp_buf.llvm_libc_function setjmp
   xor a2, a2, ra  // Mangled PC (ra).
   xor a3, a3, sp  // Mangled SP.
   xor a4, a4, s0  // Mangled FP (s0).
-  xor a5, a5, a7  // Mangled unsafe SP.
-  xor a6, a6, gp  // Mangled shadow call stack pointer (gp).
+  xor a5, a5, gp  // Mangled shadow call stack pointer (gp).
 
   sd a2, JB_PC*8(a0)
   sd a3, JB_SP*8(a0)
   sd a4, JB_FP*8(a0)
-  sd a5, JB_USP*8(a0)
-  sd a6, JB_SCSP*8(a0)
+  sd a5, JB_SCSP*8(a0)
 
   mv a0, zero
   ret

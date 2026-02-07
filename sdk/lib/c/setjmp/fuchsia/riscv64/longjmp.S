@@ -42,8 +42,7 @@ jmp_buf.llvm_libc_function longjmp
   ld a3, JB_PC*8(a0)
   ld a4, JB_SP*8(a0)
   ld a5, JB_FP*8(a0)
-  ld a6, JB_USP*8(a0)
-  ld a7, JB_SCSP*8(a0)
+  ld a6, JB_SCSP*8(a0)
 
   // The next instruction clobbers the state of longjmp's caller.
   // So from here on, we'll use CFI that unwinds to setjmp's caller instead.
@@ -86,7 +85,6 @@ jmp_buf.llvm_libc_function longjmp
   jb_cfi_mangled 1, JB_PC*8  // ra
   jb_cfi_mangled 2, JB_SP*8  // sp
   jb_cfi_mangled 8, JB_FP*8  // s0
-  // There's no CFI for the unsafe SP!
   jb_cfi_mangled 3, JB_SCSP*8 // gp
   jb_cfi 9, JB_S(1)*8
   jb_cfi 18, JB_S(2)*8
@@ -126,26 +124,17 @@ jmp_buf.llvm_libc_function longjmp
   load_mangler 1, JB_PC*8, 13     // a3 = x13
   load_mangler 2, JB_SP*8, 14     // a4 = x14
   load_mangler 8, JB_FP*8, 15     // a5 = x15
-  load_mangler 3, JB_SCSP*8, 17   // a7 = x17
-
-  // Reuse the temporary for the unsafe SP.  There's no CFI for it!
-  ld a2, JB_USP*8(a2)
+  load_mangler 3, JB_SCSP*8, 12   // a2 = x12
 
   // Now demangle the jmp_buf values in place.
   .macro restore_mangled reg, tmp
     xor \reg, \reg, \tmp
     .cfi_same_value \reg
   .endm
-  xor a2, a2, a6  // Unsafe SP temporary location.
   restore_mangled ra, a3
   restore_mangled sp, a4
   restore_mangled s0, a5
-  restore_mangled gp, a7
-
-  // Store the unsafe SP into its real slot.
-  // Then clear the temporary so its value isn't leaked.
-  sd a2, ZX_TLS_UNSAFE_SP_OFFSET(tp)
-  mv a2, zero
+  restore_mangled gp, a6
 
   // Restore the vanilla call-saved registers.
   .macro restore_s n
