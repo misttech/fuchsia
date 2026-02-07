@@ -19,10 +19,13 @@ namespace LIBC_NAMESPACE_DECL {
 // with `if constexpr (kShadowCallStackAbi)` guarding using `member_` as a T or
 // separate overloads for NoStack and T.
 
-// This indicates whether the Fuchsia Compiler ABI for this machine includes
-// keeping the shadow-call-stack pointer register valid.  This is an unchanging
-// fact about the ABI for each machine.  Every build of libc is required to
-// support the full ABI regardless of how libc itself is being compiled.
+// kShadowCallStackAbi indicates whether the Fuchsia Compiler ABI for this
+// machine includes keeping the shadow-call-stack pointer register valid.
+// Likewise, kSafeStackAbi indicates whether the Fuchsia Compiler ABI for this
+// machine includes the SafeStack unsafe stack pointer being maintained in the
+// $tp + ZX_TLS_UNSAFE_SP_OFFSET slot.  These are unchanging facts about the
+// ABI for each machine.  Every build of libc is required to support the full
+// ABI regardless of how libc itself is being compiled.
 //
 // The choice of compiler or configs used for the build determines whether all
 // the normal libc code in a particular build itself _uses_ shadow-call-stack
@@ -34,32 +37,67 @@ namespace LIBC_NAMESPACE_DECL {
 // _implementing_, which is specified here.
 #if defined(__x86_64__)
 inline constexpr bool kShadowCallStackAbi = false;
+inline constexpr bool kSafeStackAbi = true;
 #else
 inline constexpr bool kShadowCallStackAbi = true;
+inline constexpr bool kSafeStackAbi = false;
 #endif
 
-// This indicates whether the Fuchsia Compiler ABI for this machine includes
-// the unsafe stack pointer maintained at $tp + ZX_TLS_UNSAFE_SP_OFFSET.
-// TODO(https://fxbug.dev/454394012): Currently this is always true.  Soon it
-// will be true only on x86.
-inline constexpr bool kSafeStackAbi = true;
+// An ABI element not supported has an empty object stand-in.
+template <bool Enabled>
+struct MaybeStackBase {};
 
-struct NoStack {};
+// Distinct wrapper types for each constexpr variable ensure that two adjacent
+// members will be of differing types so [[no_unique_address]] can take effect.
+template <typename T, const bool& Enabled>
+struct MaybeStack : MaybeStackBase<Enabled> {};
+
+template <typename T, const bool& Enabled>
+  requires(Enabled)
+struct MaybeStack<T, Enabled> : MaybeStackBase<true> {
+  constexpr MaybeStack() = default;
+  constexpr MaybeStack(const MaybeStack&) = default;
+
+  constexpr MaybeStack& operator=(const MaybeStack&) = default;
+  constexpr MaybeStack& operator=(T new_value) {
+    value = new_value;
+    return *this;
+  }
+
+  T value{};
+};
+
+template <typename Stack>
+concept NoStack = std::derived_from<std::decay_t<Stack>, MaybeStackBase<false>>;
+
+template <typename Stack>
+concept SomeStack = std::derived_from<std::decay_t<Stack>, MaybeStackBase<true>>;
 
 template <typename T>
-using IfShadowCallStack = std::conditional_t<kShadowCallStackAbi, T, NoStack>;
+using IfShadowCallStack = MaybeStack<T, kShadowCallStackAbi>;
 
 template <typename T>
-using IfSafeStack = std::conditional_t<kSafeStackAbi, T, NoStack>;
+using IfSafeStack = MaybeStack<T, kSafeStackAbi>;
 
-constexpr void OnStack(NoStack, auto&& f) {}
-constexpr void OnStack(auto&& stack, auto&& f) {
-  std::forward<decltype(f)>(f)(std::forward<decltype(stack)>(stack));
+// This is unconditional but using the wrapper keeps things uniform.
+template <typename T>
+using MachineStack = MaybeStack<T, std::true_type::value>;
+
+template <SomeStack T>
+inline constexpr bool kStackGrowsUp = false;
+
+template <typename T>
+inline constexpr bool kStackGrowsUp<MaybeStack<T, kShadowCallStackAbi>> = true;
+
+constexpr void OnStack(NoStack auto&&, auto&& f) {}
+constexpr void OnStack(SomeStack auto&& stack, std::invocable<decltype(stack.value)> auto&& f) {
+  std::forward<decltype(f)>(f)(stack.value);
 }
 
-constexpr auto StackOr(NoStack, auto value) { return value; }
-constexpr auto StackOr(auto stack, std::convertible_to<decltype(stack)> auto value) {
-  return stack;
+constexpr auto StackOr(NoStack auto&&, auto value) { return value; }
+constexpr auto StackOr(SomeStack auto&& stack,
+                       std::convertible_to<decltype(stack.value)> auto value) {
+  return stack.value;
 }
 
 // This function is only used in code compiled for the basic machine ABI and

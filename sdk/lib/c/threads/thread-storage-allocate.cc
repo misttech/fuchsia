@@ -43,7 +43,7 @@ template <auto Member>
 using BlockFor = BlockTypeCheck<Block<Member>>;
 
 // This handles each of the stack blocks.
-template <uintptr_t ThreadStorage::* Member>
+template <SomeStack T, T ThreadStorage::* Member>
 class Block<Member> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
@@ -53,7 +53,7 @@ class Block<Member> {
   auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, zx::unowned_vmar vmar,
            AllocationVmo& vmo) {
     PageRoundedSize guard_below, guard_above;
-    if constexpr (ThreadStorage::StackGrowsUp(Member)) {
+    if constexpr (kStackGrowsUp<T>) {
       guard_above = storage.guard_size();
     } else {
       guard_below = storage.guard_size();
@@ -69,8 +69,8 @@ class Block<Member> {
   GuardedPageBlock block_;
 };
 
-// This handles shadow_call_stack_ when it's a no-op.
-template <NoStack ThreadStorage::* Member>
+// This handles shadow_call_stack_ or unsafe_stack_ when it's a no-op.
+template <NoStack T, T ThreadStorage::* Member>
 class Block<Member> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {

@@ -47,10 +47,12 @@ struct tls_dtor;
 // shadow call stack ABI so that other code might use it.  This is an
 // aspect of the Fuchsia ABI for the machine.  That is an implementation
 // detail of a particular build of the C library code.
-#if defined(__aarch64__) || defined(__riscv)
-#define HAVE_SHADOW_CALL_STACK 1
-#else
+#ifdef __x86_64__
 #define HAVE_SHADOW_CALL_STACK 0
+#define HAVE_UNSAFE_STACK 1
+#else
+#define HAVE_SHADOW_CALL_STACK 1
+#define HAVE_UNSAFE_STACK 0
 #endif
 
 struct pthread {
@@ -78,7 +80,9 @@ struct pthread {
   // guards.
   struct iovec tcb_region;
   struct iovec safe_stack, safe_stack_region;
+#if HAVE_UNSAFE_STACK
   struct iovec unsafe_stack, unsafe_stack_region;
+#endif
 #if HAVE_SHADOW_CALL_STACK
   struct iovec shadow_call_stack, shadow_call_stack_region;
 #endif

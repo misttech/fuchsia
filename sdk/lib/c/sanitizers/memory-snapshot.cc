@@ -401,7 +401,9 @@ class MemorySnapshot {
                  sanitizer_memory_snapshot_callback_t* tls_callback) {
     if (stacks_callback) {
       ReportStack(tcb->safe_stack, thread_sp, stacks_callback);
+#if HAVE_UNSAFE_STACK
       ReportStack(tcb->unsafe_stack, tcb->abi.unsafe_sp, stacks_callback);
+#endif
       // The shadow call stack never contains pointers to mutable data,
       // so there is no reason to report its contents.
     }

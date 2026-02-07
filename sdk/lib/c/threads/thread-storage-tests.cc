@@ -19,6 +19,7 @@
 #include <zxtest/zxtest.h>
 
 #include "../test/safe-zero-construction.h"
+#include "stack-abi.h"
 #include "thread-storage.h"
 #include "threads_impl.h"
 #include "tls-dep.h"
@@ -194,9 +195,14 @@ void CheckStorage(PageRoundedSize stack_size, PageRoundedSize guard_size,
                   const ThreadStorage& storage, Thread* thread) {
   CheckThread(thread);
 
-  // The abi.unsafe_sp slot should already be filled in.
-  CheckStack("unsafe stack", stack_size, guard_size,
-             reinterpret_cast<uint64_t*>(thread->abi.unsafe_sp));
+  if constexpr (kSafeStackAbi) {
+    // The abi.unsafe_sp slot should already be filled in.
+    CheckStack("unsafe stack", stack_size, guard_size,
+               reinterpret_cast<uint64_t*>(thread->abi.unsafe_sp));
+  } else {
+    EXPECT_EQ(storage.unsafe_sp(), nullptr);
+    EXPECT_EQ(thread->abi.unsafe_sp, 0u);
+  }
 
   CheckStack("machine stack", stack_size, guard_size, storage.machine_sp());
 

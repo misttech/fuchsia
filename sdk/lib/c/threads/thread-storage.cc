@@ -21,8 +21,8 @@ void ThreadStorage::FreeStacks() {
       ZX_ASSERT_MSG(result.is_ok(), "zx_vmar_unmap: %s", result.status_string());
     }
   };
-  unmap(machine_stack_);
-  unmap(unsafe_stack_);
+  OnStack(machine_stack_, unmap);
+  OnStack(unsafe_stack_, unmap);
   OnStack(shadow_call_stack_, unmap);
 }
 
@@ -51,7 +51,9 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) 
   };
 
   Sizes stack_sizes = infer_sizes(thread.safe_stack, thread.safe_stack_region);
+#if HAVE_UNSAFE_STACK
   assert(infer_sizes(thread.unsafe_stack, thread.unsafe_stack_region) == stack_sizes);
+#endif
 #if HAVE_SHADOW_CALL_STACK
   assert(infer_sizes(thread.shadow_call_stack, thread.shadow_call_stack_region, true) ==
          stack_sizes);
@@ -66,7 +68,9 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) 
   };
   std::tie(result.stack_size_.rounded_size_, result.guard_size_.rounded_size_) = stack_sizes;
   result.machine_stack_ = take_stack(thread.safe_stack, thread.safe_stack_region);
+#if HAVE_UNSAFE_STACK
   result.unsafe_stack_ = take_stack(thread.unsafe_stack, thread.unsafe_stack_region);
+#endif
 #if HAVE_SHADOW_CALL_STACK
   result.shadow_call_stack_ = take_stack(thread.shadow_call_stack, thread.shadow_call_stack_region);
 #endif
@@ -75,7 +79,9 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) 
 }
 
 void ThreadStorage::ToThread(Thread& thread) && {
-  auto take_stack = [this](iovec& stack, iovec& region, uintptr_t& base, bool grows_up = false) {
+  auto take_stack = [this](iovec& stack, iovec& region, SomeStack auto& from,
+                           bool grows_up = false) {
+    uintptr_t& base = from.value;
     assert(!stack.iov_base);
     assert(stack.iov_len == 0);
     assert(!region.iov_base);
@@ -97,7 +103,9 @@ void ThreadStorage::ToThread(Thread& thread) && {
   thread.tcb_region = std::move(thread_block_).TakeIovec();
 
   take_stack(thread.safe_stack, thread.safe_stack_region, machine_stack_);
+#if HAVE_UNSAFE_STACK
   take_stack(thread.unsafe_stack, thread.unsafe_stack_region, unsafe_stack_);
+#endif
 #if HAVE_SHADOW_CALL_STACK
   take_stack(thread.shadow_call_stack, thread.shadow_call_stack_region, shadow_call_stack_, true);
 #endif

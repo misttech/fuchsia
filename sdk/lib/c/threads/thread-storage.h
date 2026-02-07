@@ -8,6 +8,7 @@
 #include <lib/elfldltl/tls-layout.h>
 #include <lib/zx/result.h>
 
+#include <concepts>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -146,7 +147,6 @@ class ThreadStorage {
   // only used in implementation template code outside the class that's called
   // by method implementations.
   template <typename T>
-    requires(!std::is_function_v<T>)
   static constexpr bool StackGrowsUp(T ThreadStorage::* stack) {
     if constexpr (kShadowCallStackAbi) {
       return stack == &ThreadStorage::shadow_call_stack_;
@@ -157,13 +157,16 @@ class ThreadStorage {
  private:
   // The shadow call stack grows up with guard above, so the initial pointer is
   // just the base of the mapping.
-  static uint64_t* GrowsUp(NoStack) { return nullptr; }
-  static uint64_t* GrowsUp(uintptr_t base) { return reinterpret_cast<uint64_t*>(base); }
+  static uint64_t* GrowsUp(NoStack auto&&) { return nullptr; }
+  static uint64_t* GrowsUp(SomeStack auto&& base) {
+    return reinterpret_cast<uint64_t*>(base.value);
+  }
 
   // The other stacks grow down with guard below, so the initial pointer is at
   // the end of the whole mapping.
-  uint64_t* GrowsDown(uintptr_t base) const {
-    return reinterpret_cast<uint64_t*>(base + guard_size_.get() + stack_size_.get());
+  static uint64_t* GrowsDown(NoStack auto&&) { return nullptr; }
+  uint64_t* GrowsDown(SomeStack auto&& base) const {
+    return reinterpret_cast<uint64_t*>(base.value + guard_size_.get() + stack_size_.get());
   }
 
   // This acquires the information from the dynamic linker or from a static
@@ -185,9 +188,9 @@ class ThreadStorage {
 
   GuardedPageBlock thread_block_;
   PageRoundedSize stack_size_, guard_size_;
-  uintptr_t machine_stack_ = 0;
-  uintptr_t unsafe_stack_ = 0;
-  [[no_unique_address]] IfShadowCallStack<uintptr_t> shadow_call_stack_{};
+  [[no_unique_address]] MachineStack<uintptr_t> machine_stack_;
+  [[no_unique_address]] IfShadowCallStack<uintptr_t> shadow_call_stack_;
+  [[no_unique_address]] IfSafeStack<uintptr_t> unsafe_stack_;
 };
 static_assert(std::is_default_constructible_v<ThreadStorage>);
 static_assert(std::is_move_constructible_v<ThreadStorage>);
