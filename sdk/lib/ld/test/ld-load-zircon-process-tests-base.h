@@ -36,6 +36,11 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
 
   void set_process(zx::process process);
 
+  void CreateProcess();
+
+  const zx::vmar& root_vmar() { return root_vmar_; }
+  const zx::thread& thread() { return thread_; }
+
   void Start(TestProcessArgs* bootstrap, zx::channel bootstrap_receiver,
              std::optional<size_t> stack_size, const zx::thread& thread, uintptr_t entry,
              uintptr_t vdso_base, const zx::vmar& root_vmar);
@@ -50,6 +55,10 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
 
  private:
   zx::process process_;
+
+  // Not all subclasses use these.
+  zx::vmar root_vmar_;
+  zx::thread thread_;
 };
 
 }  // namespace ld::testing

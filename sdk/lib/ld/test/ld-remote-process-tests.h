@@ -97,8 +97,6 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
     };
   }
 
-  const zx::vmar& root_vmar() { return root_vmar_; }
-
   uintptr_t entry() const { return entry_; }
 
   void set_entry(uintptr_t entry) { entry_ = entry; }
@@ -226,8 +224,6 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
   uintptr_t vdso_base_ = 0;
   std::optional<size_t> stack_size_;
   zx::vmo stub_ld_vmo_;
-  zx::vmar root_vmar_;
-  zx::thread thread_;
   zx::channel bootstrap_sender_;
 };
 

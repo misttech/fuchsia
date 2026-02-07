@@ -16,17 +16,7 @@ void LdStartupCreateProcessTestsBase::Init(std::initializer_list<std::string_vie
   LdLoadZirconLdsvcTestsBase::Init(args, env);
 
   std::string_view name = process_name();
-  {
-    zx::process process;
-    ASSERT_EQ(zx::process::create(*zx::job::default_job(), name.data(),
-                                  static_cast<uint32_t>(name.size()), 0, &process, &root_vmar_),
-              ZX_OK);
-    set_process(std::move(process));
-  }
-
-  ASSERT_EQ(
-      zx::thread::create(process(), name.data(), static_cast<uint32_t>(name.size()), 0, &thread_),
-      ZX_OK);
+  ASSERT_NO_FATAL_FAILURE(CreateProcess());
 
   fbl::unique_fd log_fd;
   ASSERT_NO_FATAL_FAILURE(InitLog(log_fd));
@@ -34,9 +24,9 @@ void LdStartupCreateProcessTestsBase::Init(std::initializer_list<std::string_vie
   // Start packing the bootstrap message for the startup dynamic linker.
   // The packing will be completed in Run.
   ASSERT_NO_FATAL_FAILURE(  //
-      LdStartupProcArgs(bootstrap(), std::move(log_fd), root_vmar_.borrow())
+      LdStartupProcArgs(bootstrap(), std::move(log_fd), root_vmar().borrow())
           .AddProcess(process().borrow())
-          .AddThread(thread_.borrow()));
+          .AddThread(thread().borrow()));
 }
 
 void LdStartupCreateProcessTestsBase::FinishLoad(zx::vmo executable_vmo) {
@@ -56,7 +46,7 @@ void LdStartupCreateProcessTestsBase::FinishLoad(zx::vmo executable_vmo) {
 LdStartupCreateProcessTestsBase::~LdStartupCreateProcessTestsBase() = default;
 
 int64_t LdStartupCreateProcessTestsBase::Run() {
-  return LdLoadZirconProcessTestsBase::Run(&bootstrap(), {}, stack_size_, thread_, entry_,
+  return LdLoadZirconProcessTestsBase::Run(&bootstrap(), {}, stack_size_, thread(), entry_,
                                            vdso_base_, root_vmar());
 }
 

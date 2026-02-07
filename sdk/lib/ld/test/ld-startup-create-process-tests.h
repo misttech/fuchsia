@@ -41,8 +41,6 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
  protected:
   TestProcessArgs& bootstrap() { return procargs_; }
 
-  const zx::vmar& root_vmar() { return root_vmar_; }
-
   void set_entry(uintptr_t entry) { entry_ = entry; }
 
   void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
@@ -56,8 +54,6 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
   uintptr_t vdso_base_ = 0;
   std::optional<size_t> stack_size_;
   TestProcessArgs procargs_;
-  zx::vmar root_vmar_;
-  zx::thread thread_;
 };
 
 template <class Elf = elfldltl::Elf<>>

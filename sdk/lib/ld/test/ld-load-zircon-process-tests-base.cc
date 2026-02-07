@@ -6,6 +6,7 @@
 
 #include <lib/elfldltl/machine.h>
 #include <lib/ld/abi.h>
+#include <lib/zx/job.h>
 #include <zircon/processargs.h>
 
 #include <gtest/gtest.h>
@@ -19,6 +20,19 @@ const char* LdLoadZirconProcessTestsBase::process_name() const {
 void LdLoadZirconProcessTestsBase::set_process(zx::process process) {
   ASSERT_FALSE(process_);
   process_ = std::move(process);
+}
+
+void LdLoadZirconProcessTestsBase::CreateProcess() {
+  ASSERT_FALSE(process_);
+
+  std::string_view name = process_name();
+  ASSERT_EQ(zx::process::create(*zx::job::default_job(), name.data(),
+                                static_cast<uint32_t>(name.size()), 0, &process_, &root_vmar_),
+            ZX_OK);
+
+  ASSERT_EQ(zx::thread::create(this->process(), name.data(), static_cast<uint32_t>(name.size()), 0,
+                               &thread_),
+            ZX_OK);
 }
 
 int64_t LdLoadZirconProcessTestsBase::Wait() {
