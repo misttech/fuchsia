@@ -31,7 +31,7 @@ TYPED_TEST(LdLoadTests, LlvmProfdata) {
 
   ASSERT_NO_FATAL_FAILURE(this->Load("llvm-profdata"));
 
-  int64_t exit_code = this->Run();
+  auto [exit_code, bootstrap_sender] = this->RunWithCustomBootstrap();
 
   this->ExpectLog("");
 
@@ -68,7 +68,7 @@ TYPED_TEST(LdLoadTests, LlvmProfdata) {
   std::array<char, 64> buffer;
   zx::channel test_svc_server_end;
   uint32_t actual_bytes, actual_handles;
-  zx_status_t status = this->bootstrap_sender().read(
+  zx_status_t status = bootstrap_sender.read(
       0, buffer.data(), test_svc_server_end.reset_and_get_address(),
       static_cast<uint32_t>(buffer.size()), 1, &actual_bytes, &actual_handles);
   ASSERT_EQ(status, ZX_OK) << test_info->test_suite_name() << ": " << zx_status_get_string(status);

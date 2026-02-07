@@ -31,10 +31,13 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
 
   const char* process_name() const;
 
-  zx::channel& bootstrap_sender() { return procargs_.bootstrap_sender(); }
-
   // This just folds together Start() and Wait(), below.
   int64_t Run();
+
+  // Like Run(), but tells Start() not to send the standard "main" bootstrap
+  // message (only, possibly, the startup dynamic linker message).  Instead the
+  // sender side of the bootstrap channel is returned.
+  std::pair<int64_t, zx::channel> RunWithCustomBootstrap();
 
  protected:
   const zx::process& process() const { return process_; }
@@ -61,8 +64,13 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   void set_vdso_base(uintptr_t vdso_base) { vdso_base_ = vdso_base; }
   void set_stack_size(std::optional<size_t> stack_size) { stack_size_ = stack_size; }
 
-  // Start the process() using all those parameters.
-  void Start();
+  // Start the process() using all those parameters.  If bootstrap() has a
+  // pending message being built, that's completed and sent as the startup
+  // dynamic linker's message.  Then, if custom_bootstrap is false, a standard
+  // "main" (libc) message (TODO(mcgrathr): will be) sent.  Finally, the sender
+  // side of the bootstrap channel is returned in case the test wants to either
+  // send its own messages or read replies from the test module.
+  zx::channel Start(bool custom_bootstrap);
 
   // Wait for the process to die and collect its exit code.
   // This clears the process() so a new one can be installed.

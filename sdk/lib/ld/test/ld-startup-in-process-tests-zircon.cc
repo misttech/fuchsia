@@ -106,6 +106,12 @@ int64_t LdStartupInProcessTests::Run() {
   return fn(bootstrap_receiver.release(), GetVdso());
 }
 
+std::pair<int64_t, zx::channel> LdStartupInProcessTests::RunWithCustomBootstrap() {
+  // The in-process case never sends a "main" bootstrap message anyway.
+  int64_t exit_code = Run();
+  return {exit_code, std::move(bootstrap().bootstrap_sender())};
+}
+
 LdStartupInProcessTests::~LdStartupInProcessTests() {
   if (test_vmar_) {
     EXPECT_EQ(test_vmar_.destroy(), ZX_OK);

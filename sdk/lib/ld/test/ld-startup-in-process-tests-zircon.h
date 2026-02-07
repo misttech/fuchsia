@@ -42,10 +42,9 @@ class LdStartupInProcessTests
             std::optional<std::string_view> expected_config = std::nullopt);
 
   int64_t Run();
+  std::pair<int64_t, zx::channel> RunWithCustomBootstrap();
 
   ~LdStartupInProcessTests();
-
-  zx::channel& bootstrap_sender() { return procargs_.bootstrap_sender(); }
 
  private:
   TestProcessArgs& bootstrap() { return procargs_; }

@@ -334,7 +334,8 @@ TEST_F(LdRemoteTests, SecondSession) {
 
   // Start the process running now with just the primary domain in place.
   // It will block on reading from the bootstrap channel.
-  ASSERT_NO_FATAL_FAILURE(Start());
+  zx::channel bootstrap_sender = Start(true);
+  ASSERT_TRUE(bootstrap_sender);
 
   // Now do a second session using the InitModule::AlreadyLoaded main
   // executable and vDSO from the first session as implicit modules.
@@ -416,12 +417,12 @@ TEST_F(LdRemoteTests, SecondSession) {
   // The process is already running and it will block until it reads the
   // function pointer from the bootstrap channel.
   zx_status_t status =
-      bootstrap_sender().write(0, &test_start_fnptr, sizeof(test_start_fnptr), nullptr, 0);
+      bootstrap_sender.write(0, &test_start_fnptr, sizeof(test_start_fnptr), nullptr, 0);
   ASSERT_EQ(status, ZX_OK) << "zx_channel_write: " << zx_status_get_string(status);
 
   // Close our end of the channel before waiting for the process, just in case
   // that kicks it out of a block and into crashing rather than wedging.
-  bootstrap_sender().reset();
+  bootstrap_sender.reset();
 
   // The process should now call TestStart() and exit with its return value.
   EXPECT_EQ(Wait(), kReturnValue);
@@ -505,13 +506,18 @@ TEST_F(LdRemoteTests, Zygote) {
   // references just transfer from the other zygote.
   original_zygote += ld::RemoteZygote<ld::RemoteZygoteVmo::kDecodedPtr>{};
 
-  // Run the prototype process to completion.  It will have changed its segment
-  // contents, but they should not be shared with later runs.
-  EXPECT_EQ(Run(), kReturnValue);
-  ExpectLog("");
-  // Discard the channel endpoint to the defunct process.
-  // Each later Run() call will create a new channel for its new process.
-  bootstrap_sender().reset();
+  {
+    // Run the prototype process to completion.  It will have changed its segment
+    // contents, but they should not be shared with later runs.
+    auto [exit_code, bootstrap_sender] = RunWithCustomBootstrap();
+    EXPECT_EQ(exit_code, kReturnValue);
+    EXPECT_TRUE(bootstrap_sender);
+    ExpectLog("");
+
+    // Discard the channel endpoint to the defunct process.
+    // Each later Run() call will create a new channel for its new process.
+    bootstrap_sender.reset();
+  }
 
   // Move into a zygote that owns only zx::vmo and not DecodedPtr.  Splicing
   // into this from the zygote that owns DecodedPtr instead can fail.
@@ -533,12 +539,14 @@ TEST_F(LdRemoteTests, Zygote) {
 
     // Run it to completion.  It would go wrong or return the wrong value if
     // its segments had been written by an earlier run.
-    EXPECT_EQ(Run(), kReturnValue) << "zygote child " << i << " of " << kZygoteCount;
+    auto [exit_code, bootstrap_sender] = RunWithCustomBootstrap();
+    EXPECT_EQ(exit_code, kReturnValue) << "zygote child " << i << " of " << kZygoteCount;
+    EXPECT_TRUE(bootstrap_sender);
     ExpectLog("");
 
     // Discard the channel endpoint to the defunct process.
     // The next iteration will create a new channel for the next process.
-    bootstrap_sender().reset();
+    bootstrap_sender.reset();
   }
 
   // Start a new process for the secondary session test.
@@ -589,10 +597,15 @@ TEST_F(LdRemoteTests, Zygote) {
   EXPECT_EQ(secondary_result->main_entry(), entry());
   EXPECT_EQ(secondary_result->main_stack_size(), stack_size());
 
-  // Run the prototype secondary process to completion.
-  EXPECT_EQ(Run(), kSecondaryReturnValue);
-  ExpectLog("");
-  bootstrap_sender().reset();
+  {
+    // Run the prototype secondary process to completion.
+    auto [exit_code, bootstrap_sender] = RunWithCustomBootstrap();
+    EXPECT_EQ(exit_code, kSecondaryReturnValue);
+    EXPECT_TRUE(bootstrap_sender);
+    ExpectLog("");
+
+    bootstrap_sender.reset();
+  }
 
   // Test the combined zygote behaves like the secondary prototype over again.
   for (int i = 1; i <= kZygoteCount; ++i) {
@@ -601,10 +614,13 @@ TEST_F(LdRemoteTests, Zygote) {
     EXPECT_TRUE(zygote.Load(diag, root_vmar().borrow()))
         << "secondary zygote child " << i << " of " << kZygoteCount;
 
-    EXPECT_EQ(Run(), kSecondaryReturnValue)
+    auto [exit_code, bootstrap_sender] = RunWithCustomBootstrap();
+    EXPECT_EQ(exit_code, kSecondaryReturnValue)
         << "secondary zygote child " << i << " of " << kZygoteCount;
+    EXPECT_TRUE(bootstrap_sender);
     ExpectLog("");
-    bootstrap_sender().reset();
+
+    bootstrap_sender.reset();
   }
 }
 

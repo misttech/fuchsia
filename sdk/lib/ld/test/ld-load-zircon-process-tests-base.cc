@@ -53,7 +53,7 @@ int64_t LdLoadZirconProcessTestsBase::Wait() {
   return result;
 }
 
-void LdLoadZirconProcessTestsBase::Start() {
+zx::channel LdLoadZirconProcessTestsBase::Start(bool custom_bootstrap) {
   // Allocate the stack.  This is delayed until here in case the test uses
   // bootstrap() methods after Init() that affect bootstrap().GetStackSize().
   zx::vmo stack_vmo;
@@ -69,21 +69,21 @@ void LdLoadZirconProcessTestsBase::Start() {
   const size_t stack_vmo_size = (*bootstrap_stack_size + page_size - 1) & -page_size;
   const size_t stack_vmar_size = stack_vmo_size + page_size;
 
-  ASSERT_EQ(zx::vmo::create(stack_vmo_size, 0, &stack_vmo), ZX_OK);
+  EXPECT_EQ(zx::vmo::create(stack_vmo_size, 0, &stack_vmo), ZX_OK);
 
   zx::vmar stack_vmar;
   uintptr_t stack_vmar_base;
-  ASSERT_EQ(root_vmar().allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
+  EXPECT_EQ(root_vmar().allocate(ZX_VM_CAN_MAP_SPECIFIC | ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE,
                                  0, stack_vmar_size, &stack_vmar, &stack_vmar_base),
             ZX_OK);
 
   zx_vaddr_t stack_base;
-  ASSERT_EQ(stack_vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC | ZX_VM_ALLOW_FAULTS,
+  EXPECT_EQ(stack_vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC | ZX_VM_ALLOW_FAULTS,
                            page_size, stack_vmo, 0, stack_vmo_size, &stack_base),
             ZX_OK);
 
   if (!procargs_.empty()) {
-    ASSERT_NO_FATAL_FAILURE(procargs_.AddStackVmo(std::move(stack_vmo)));
+    procargs_.AddStackVmo(std::move(stack_vmo));
   }
 
   sp = elfldltl::AbiTraits<>::InitialStackPointer(stack_base, stack_vmo_size);
@@ -91,20 +91,29 @@ void LdLoadZirconProcessTestsBase::Start() {
   // Pack up the bootstrap message and start the process running.
   zx::channel bootstrap_receiver;
   if (procargs_.empty()) {
-    // There's startup dynamic linker message being sent.  Just create the
-    // channel so bootstrap_sender() can be used.
+    // There's no startup dynamic linker message being sent.  Just create the
+    // channel so the sender side can be returned.
     bootstrap_receiver = procargs_.MakeBootstrap();
   } else {
     bootstrap_receiver = procargs_.PackBootstrap();
   }
+  // TODO(mcgrathr): If !custom_bootstrap, build up and pack second message.
 
-  ASSERT_EQ(this->process().start(thread(), entry_, sp, std::move(bootstrap_receiver), vdso_base_),
+  EXPECT_EQ(this->process().start(thread(), entry_, sp, std::move(bootstrap_receiver), vdso_base_),
             ZX_OK);
+
+  return std::move(procargs_.bootstrap_sender());
 }
 
 int64_t LdLoadZirconProcessTestsBase::Run() {
-  Start();
+  Start(false);
   return ::testing::Test::HasFatalFailure() ? -1 : Wait();
+}
+
+std::pair<int64_t, zx::channel> LdLoadZirconProcessTestsBase::RunWithCustomBootstrap() {
+  zx::channel bootstrap_sender = Start(true);
+  int64_t exit_code = ::testing::Test::HasFatalFailure() ? -1 : Wait();
+  return {exit_code, std::move(bootstrap_sender)};
 }
 
 LdLoadZirconProcessTestsBase::~LdLoadZirconProcessTestsBase() {

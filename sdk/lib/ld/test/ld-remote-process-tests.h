@@ -33,6 +33,7 @@ namespace ld::testing {
 class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessTestsBase {
  public:
   using LdLoadZirconProcessTestsBase::Run;
+  using LdLoadZirconProcessTestsBase::RunWithCustomBootstrap;
   using LdLoadZirconProcessTestsBase::Start;
 
   static constexpr bool kCanCollectLog = false;

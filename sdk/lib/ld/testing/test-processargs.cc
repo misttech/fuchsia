@@ -14,6 +14,7 @@
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <functional>
@@ -163,7 +164,7 @@ void TestProcessArgs::PackBootstrap(zx::unowned_channel bootstrap_sender,
       args_size + env_size + names_size,
   };
 
-  std::copy(handle_info_.begin(), handle_info_.end(), info);
+  std::ranges::copy(handle_info_, info);
 
   on_strings([&strings](auto&&... list) mutable {
     auto add_strings = [&strings](auto&& list) {
@@ -205,10 +206,18 @@ zx::channel TestProcessArgs::MakeBootstrap() {
 }
 
 zx::channel TestProcessArgs::PackBootstrap() {
-  zx::channel bootstrap = MakeBootstrap();
-  if (bootstrap) {
+  zx::channel bootstrap;
+  if (!bootstrap_sender_) {
+    // No channel in use yet.  Make it.
+    bootstrap = MakeBootstrap();
+  }
+
+  // Pack the current message into the current channel.
+  if (bootstrap_sender_) {
     PackBootstrap(bootstrap_sender_.borrow());
   }
+
+  // Return the new channel, or none if packing again into an existing channel.
   return bootstrap;
 }
 
