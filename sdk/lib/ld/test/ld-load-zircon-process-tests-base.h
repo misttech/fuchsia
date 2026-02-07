@@ -11,8 +11,6 @@
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 
-#include <string_view>
-
 #include "ld-load-zircon-ldsvc-tests-base.h"
 
 namespace ld::testing {

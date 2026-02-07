@@ -13,26 +13,30 @@ namespace ld::testing {
 
 void LdStartupCreateProcessTestsBase::Init(std::initializer_list<std::string_view> args,
                                            std::initializer_list<std::string_view> env) {
-  std::string_view name = process_name();
-  zx::process process;
-  ASSERT_EQ(zx::process::create(*zx::job::default_job(), name.data(),
-                                static_cast<uint32_t>(name.size()), 0, &process, &root_vmar_),
-            ZX_OK);
-  set_process(std::move(process));
+  LdLoadZirconLdsvcTestsBase::Init(args, env);
 
-  ASSERT_EQ(zx::thread::create(this->process(), name.data(), static_cast<uint32_t>(name.size()), 0,
-                               &thread_),
-            ZX_OK);
+  std::string_view name = process_name();
+  {
+    zx::process process;
+    ASSERT_EQ(zx::process::create(*zx::job::default_job(), name.data(),
+                                  static_cast<uint32_t>(name.size()), 0, &process, &root_vmar_),
+              ZX_OK);
+    set_process(std::move(process));
+  }
+
+  ASSERT_EQ(
+      zx::thread::create(process(), name.data(), static_cast<uint32_t>(name.size()), 0, &thread_),
+      ZX_OK);
 
   fbl::unique_fd log_fd;
   ASSERT_NO_FATAL_FAILURE(InitLog(log_fd));
-  ASSERT_NO_FATAL_FAILURE(bootstrap()
-                              .AddProcess(this->process().borrow())
-                              .AddThread(thread_.borrow())
-                              .AddAllocationVmar(root_vmar_.borrow())
-                              .AddFd(STDERR_FILENO, std::move(log_fd))
-                              .SetArgs(args)
-                              .SetEnv(env));
+
+  // Start packing the bootstrap message for the startup dynamic linker.
+  // The packing will be completed in Run.
+  ASSERT_NO_FATAL_FAILURE(  //
+      LdStartupProcArgs(bootstrap(), std::move(log_fd), root_vmar_.borrow())
+          .AddProcess(process().borrow())
+          .AddThread(thread_.borrow()));
 }
 
 void LdStartupCreateProcessTestsBase::FinishLoad(zx::vmo executable_vmo) {

@@ -39,6 +39,8 @@ void* GetVdso() {
 
 void LdStartupInProcessTests::Init(std::initializer_list<std::string_view> args,
                                    std::initializer_list<std::string_view> env) {
+  LdLoadZirconLdsvcTestsBase::Init(args, env);
+
   zx_vaddr_t test_base;
   ASSERT_EQ(zx::vmar::root_self()->allocate(
                 ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_EXECUTE, 0, kVmarSize,
@@ -47,12 +49,12 @@ void LdStartupInProcessTests::Init(std::initializer_list<std::string_view> args,
 
   fbl::unique_fd log_fd;
   ASSERT_NO_FATAL_FAILURE(InitLog(log_fd));
-  ASSERT_NO_FATAL_FAILURE(bootstrap()  //
-                              .AddInProcessTestHandles()
-                              .AddAllocationVmar(test_vmar_.borrow())
-                              .AddFd(STDERR_FILENO, std::move(log_fd))
-                              .SetArgs(args)
-                              .SetEnv(env));
+
+  // Start packing the bootstrap message for the startup dynamic linker.
+  // The packing will be completed in Run().
+  ASSERT_NO_FATAL_FAILURE(  //
+      LdStartupProcArgs(bootstrap(), std::move(log_fd), test_vmar_.borrow())
+          .AddInProcessTestHandles());
 }
 
 void LdStartupInProcessTests::Load(std::string_view raw_executable_name,

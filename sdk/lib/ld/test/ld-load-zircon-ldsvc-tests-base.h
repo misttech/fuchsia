@@ -8,6 +8,7 @@
 #include <lib/elfldltl/soname.h>
 #include <lib/elfldltl/testing/get-test-data.h>
 #include <lib/ld/testing/mock-loader-service.h>
+#include <lib/ld/testing/test-processargs.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 
@@ -29,8 +30,6 @@ namespace ld::testing {
 // in test cases.
 class LdLoadZirconLdsvcTestsBase : public LdLoadTestsBase {
  public:
-  ~LdLoadZirconLdsvcTestsBase() = default;
-
   // Optionally expect the dynamic linker to send a Config(config) message.
   void LdsvcExpectConfig(std::optional<std::string_view> config) {
     if (config) {
@@ -79,6 +78,15 @@ class LdLoadZirconLdsvcTestsBase : public LdLoadTestsBase {
   void NeededViaLoadSet(elfldltl::Soname<> set_name, std::initializer_list<std::string_view> names);
 
  protected:
+  void Init(std::initializer_list<std::string_view> args = {},
+            std::initializer_list<std::string_view> env = {});
+
+  const std::vector<std::string>& argv() const { return args_; }
+  const std::vector<std::string>& envp() const { return env_; }
+
+  TestProcessArgs& LdStartupProcArgs(TestProcessArgs& bootstrap, fbl::unique_fd log_fd,
+                                     zx::unowned_vmar allocation_vmar);
+
   zx::vmo GetInterp(std::string_view executable_name,
                     std::optional<std::string_view> expected_config);
 
@@ -96,6 +104,7 @@ class LdLoadZirconLdsvcTestsBase : public LdLoadTestsBase {
 
  private:
   MockLoaderServiceForTest mock_;
+  std::vector<std::string> args_, env_;
 };
 
 }  // namespace ld::testing

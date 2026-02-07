@@ -45,11 +45,11 @@ class LdStartupInProcessTests
 
   ~LdStartupInProcessTests();
 
-  TestProcessArgs& bootstrap() { return procargs_; }
-
   zx::channel& bootstrap_sender() { return procargs_.bootstrap_sender(); }
 
  private:
+  TestProcessArgs& bootstrap() { return procargs_; }
+
   using Base = elfldltl::testing::LoadTests<elfldltl::testing::LocalVmarLoaderTraits>;
   using Base::Load;
 

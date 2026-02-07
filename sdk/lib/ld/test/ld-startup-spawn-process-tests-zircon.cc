@@ -103,12 +103,6 @@ class SpawnPlan {
 
 LdStartupSpawnProcessTests::~LdStartupSpawnProcessTests() = default;
 
-void LdStartupSpawnProcessTests::Init(std::initializer_list<std::string_view> args,
-                                      std::initializer_list<std::string_view> env) {
-  argv_ = std::vector<std::string>{args.begin(), args.end()};
-  envp_ = std::vector<std::string>{env.begin(), env.end()};
-}
-
 void LdStartupSpawnProcessTests::Load(std::string_view executable_name,
                                       std::optional<std::string_view> expected_config) {
   // This points GetLibVmo() to the right place.
@@ -149,7 +143,7 @@ int64_t LdStartupSpawnProcessTests::Run() {
   }
 
   // Launch the child and save the process handle.
-  set_process(spawn.Launch(std::move(executable_), argv_, envp_));
+  set_process(spawn.Launch(std::move(executable_), argv(), envp()));
   if (HasFailure()) {
     return -1;
   }

@@ -15,7 +15,6 @@
 #include <zircon/syscalls.h>
 
 #include <array>
-#include <filesystem>
 #include <functional>
 #include <numeric>
 #include <span>

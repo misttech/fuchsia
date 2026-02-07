@@ -206,7 +206,9 @@ zx::result<zx::vmo> MockLoaderServiceForTest::LoadObject(std::string_view name) 
   if (!mock_loader_->mock_server_) {
     return zx::error{ZX_ERR_INTERNAL};
   }
-  return mock_loader_->mock_server_->MockLoadObject(std::string(name));
+  auto result = mock_loader_->mock_server_->MockLoadObject(std::string(name));
+  EXPECT_TRUE(result.is_ok() || result.is_error());
+  return result;
 }
 
 }  // namespace ld::testing

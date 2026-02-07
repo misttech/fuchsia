@@ -15,6 +15,22 @@
 
 namespace ld::testing {
 
+void LdLoadZirconLdsvcTestsBase::Init(std::initializer_list<std::string_view> args,
+                                      std::initializer_list<std::string_view> env) {
+  args_ = {args.begin(), args.end()};
+  env_ = {env.begin(), env.end()};
+}
+
+TestProcessArgs& LdLoadZirconLdsvcTestsBase::LdStartupProcArgs(TestProcessArgs& bootstrap,
+                                                               fbl::unique_fd log_fd,
+                                                               zx::unowned_vmar allocation_vmar) {
+  return bootstrap  //
+      .AddAllocationVmar(std::move(allocation_vmar))
+      .AddFd(STDERR_FILENO, std::move(log_fd))
+      .SetArgs(TestProcessArgs::InterpArgs(args_))
+      .SetEnv(TestProcessArgs::InterpEnv(env_));
+}
+
 std::string LdLoadZirconLdsvcTestsBase::FindInterp(zx::unowned_vmo vmo) {
   return ld::testing::FindInterp<elfldltl::UnownedVmoFile>(std::move(vmo));
 }

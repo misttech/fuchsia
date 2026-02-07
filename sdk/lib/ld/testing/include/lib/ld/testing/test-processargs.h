@@ -12,9 +12,11 @@
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -66,19 +68,51 @@ class TestProcessArgs {
   TestProcessArgs& AddName(std::string_view name, uint32_t info, zx::channel handle);
 
   // This replaces the entire name table.
-  TestProcessArgs& SetNames(std::initializer_list<std::string_view> names) {
+  TestProcessArgs& SetNames(std::ranges::input_range auto names)
+    requires std::constructible_from<std::vector<std::string>,  //
+                                     decltype(names.begin()), decltype(names.end())>
+  {
     names_ = std::vector<std::string>{names.begin(), names.end()};
     return *this;
   }
 
-  TestProcessArgs& SetArgs(std::initializer_list<std::string_view> args) {
+  TestProcessArgs& SetArgs(std::ranges::input_range auto args)
+    requires std::constructible_from<std::vector<std::string>,  //
+                                     decltype(args.begin()), decltype(args.end())>
+  {
     args_ = std::vector<std::string>{args.begin(), args.end()};
     return *this;
   }
 
-  TestProcessArgs& SetEnv(std::initializer_list<std::string_view> env) {
+  // If the argument would be given to SetArgs for the main (libc) message, then
+  // this yields an argument to SetArgs for the dynamic linker's message.
+  static constexpr auto InterpArgs(std::ranges::input_range auto args)
+    requires std::constructible_from<std::vector<std::string>,  //
+                                     decltype(args.begin()), decltype(args.end())>
+  {
+    // The startup dynamic linker can use argv[0] in messages.
+    return std::views::take(args, 1);
+  }
+
+  TestProcessArgs& SetEnv(std::ranges::input_range auto env)
+    requires std::constructible_from<std::vector<std::string>,  //
+                                     decltype(env.begin()), decltype(env.end())>
+  {
     env_ = std::vector<std::string>{env.begin(), env.end()};
     return *this;
+  }
+
+  // If the argument would be given to SetEnv for the main (libc) message, then
+  // this yields an argument to SetEnv for the dynamic linker's message.
+  static constexpr auto InterpEnv(std::ranges::input_range auto env)
+    requires std::constructible_from<std::vector<std::string>,  //
+                                     decltype(env.begin()), decltype(env.end())>
+  {
+    using namespace std::literals;
+    constexpr auto interp_cares = [](std::string_view str) {
+      return str.starts_with("LD_DEBUG="sv);
+    };
+    return std::views::filter(env, interp_cares);
   }
 
   // This calls AddProcess and AddThread.
