@@ -59,6 +59,15 @@ impl RestrictedState {
         // SAFETY: `out_vmo_handle` is a valid handle as `zx_restricted_bind_state` returned OK.
         let state_vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(out_vmo_handle)) };
 
+        // Name the VMO so external tools (like the CPU profiler) can capture
+        // this specific VMO.
+        let name = format!(
+            "restricted_state_vmo:{}",
+            fuchsia_runtime::with_thread_self(|t| t.koid())?.raw_koid()
+        );
+        let name = zx::Name::new(&name)?;
+        state_vmo.set_name(&name)?;
+
         let state_size = state_vmo.get_size()? as usize;
         if state_size < std::mem::size_of::<zx::sys::zx_restricted_exception_t>() {
             return Err(zx::Status::INVALID_ARGS);
