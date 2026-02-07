@@ -19,12 +19,8 @@ jmp_buf.llvm_libc_function setjmp
   // no registers contain the raw manglers, so those values never leak.
   adr_global x0, LIBC_ASM_LINKAGE(gJmpBufManglers)
   ldp x1, x2, [x0, #8*JB_PC]
-  ldp x3, x4, [x0, #8*JB_FP]
-  ldr x5, [x0, #8*JB_X(18)]
-
-  // Get the thread pointer, where the unsafe SP is stored.
-  mrs x0, TPIDR_EL0
-  ldr x0, [x0, #ZX_TLS_UNSAFE_SP_OFFSET]
+  ldr x3, [x0, #8*JB_FP]
+  ldr x4, [x0, #8*JB_X(18)]
 
   // Store all the vanilla callee-saves registers.
   stp x19, x20, [x16, #8*JB_X(19)]
@@ -37,10 +33,9 @@ jmp_buf.llvm_libc_function setjmp
   stp d12, d13, [x16, #8*JB_D(12)]
   stp d14, d15, [x16, #8*JB_D(14)]
 
-  eor x5, x5, x18      // Mangled shadow call stack pointer.
-  eor x4, x4, x0       // Mangled unsafe SP.
   eor x1, x1, x30      // Mangled PC (LR).
   eor x3, x3, x29      // Mangled FP.
+  eor x4, x4, x18      // Mangled shadow call stack pointer.
   mov x0, sp
   eor x2, x2, x0       // Mangled SP.
 
@@ -48,11 +43,8 @@ jmp_buf.llvm_libc_function setjmp
 .error "JB_SP expected to follow JB_PC immediately"
 .endif
   stp x1, x2, [x16, #8*JB_PC]
-.ifne JB_USP - JB_FP - 1
-.error "JB_USP expected to follow JB_FP immediately"
-.endif
-  stp x3, x4, [x16, #8*JB_FP]
-  str x5, [x16, #8*JB_X(18)]
+  str x3, [x16, #8*JB_FP]
+  str x4, [x16, #8*JB_X(18)]
 
   mov w0, wzr
   ret

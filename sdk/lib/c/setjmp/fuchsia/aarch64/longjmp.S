@@ -74,11 +74,8 @@ jmp_buf.llvm_libc_function longjmp
 .error "JB_SP expected to follow JB_PC immediately"
 .endif
   ldp x4, x5, [x16, #8*JB_PC]
-.ifne JB_USP - JB_FP - 1
-.error "JB_USP expected to follow JB_FP immediately"
-.endif
-  ldp x6, x7, [x16, #8*JB_FP]
-  ldr x8, [x16, #8*JB_X(18)]
+  ldr x6, [x16, #8*JB_FP]
+  ldr x7, [x16, #8*JB_X(18)]
 
   // The next instruction clobbers the state of longjmp's caller.
   // So from here on, we'll use CFI that unwinds to setjmp's caller instead.
@@ -96,7 +93,6 @@ jmp_buf.llvm_libc_function longjmp
   jb_cfi_mangled 29, JB_FP
   jb_cfi_mangled 30, JB_PC
   jb_cfi_mangled 31, JB_SP
-  //jb_cfi_mangled ?, JB_USP  -- No DWARF register number for it!
   jb_cfi 64+8, JB_D(8)
   jb_cfi 64+9, JB_D(9)
   jb_cfi 64+10, JB_D(10)
@@ -113,9 +109,8 @@ jmp_buf.llvm_libc_function longjmp
   jb_cfi_mangled_reg 31, 5, 3         // sp = x3 ^ x5
   ldp x29, x2, [x0, #8*JB_FP]
   jb_cfi_mangled_reg 29, 6, 29        // x29 (FP) = x29 ^ x6
-  //jb_cfi_mangled_reg ?, 7, 2        // unsafe_sp = x2 ^ x7
-  ldr x9, [x0, #8*JB_X(18)]
-  jb_cfi_mangled_reg 18, 8, 9        // x18 = x8 ^ x9
+  ldr x18, [x0, #8*JB_X(18)]
+  jb_cfi_mangled_reg 18, 7, 18        // x18 (SCSP) = x7 ^ x18
 
   // Get the thread pointer, where the unsafe SP is stored.
   // Reuse x0 so the address of gJmpBufManglers is not leaked.
@@ -128,9 +123,7 @@ jmp_buf.llvm_libc_function longjmp
   .cfi_register sp, x3
   eor x29, x29, x6    // FP
   .cfi_same_value x29
-  eor x2, x2, x7      // Unsafe SP
-  //.cfi_register unsafe_sp, x2  -- No DWARF register number for it!
-  eor x18, x8, x9     // Shadow call stack pointer
+  eor x18, x18, x7     // Shadow call stack pointer
   .cfi_same_value x18
 
   // Restore all the vanilla callee-saves registers.
@@ -147,7 +140,6 @@ jmp_buf.llvm_libc_function longjmp
   // Restore SP last.
   // After this, our CFA is setjmp's CFA rather than longjmp's CFA.
   str x2, [x0, #ZX_TLS_UNSAFE_SP_OFFSET]
-  //.cfi_same_value unsafe_sp  -- No DWARF register number for it!
   mov sp, x3
   .cfi_same_value sp
 
