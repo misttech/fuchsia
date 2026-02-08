@@ -28,6 +28,7 @@ async fn initialize_dictionary(
     ];
     let string_keys = vec![
         "androidboot.slot_suffix".to_string(),
+        "driver.usb.peripheral".to_string(),
         "omaha_app_id".to_string(),
         "omaha_url".to_string(),
         "ota_channel".to_string(),
@@ -168,6 +169,6 @@ mod tests {
         .detach();
 
         let _dictionary = initialize_dictionary(boot_args_proxy, capabilities_proxy).await.unwrap();
-        assert_eq!(insert_count.get(), 21);
+        assert_eq!(insert_count.get(), 22);
     }
 }
