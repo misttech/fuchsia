@@ -397,14 +397,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// The cached value for `self.fsverity_state` is set either in `open_object` or on
     /// `enable_verity`. If set, translates `self.fsverity_state.descriptor` into an
     /// fio::VerificationOptions instance and a root hash. Otherwise, returns None.
-    pub fn get_descriptor(&self) -> Result<Option<(fio::VerificationOptions, Vec<u8>)>, Error> {
+    pub fn get_descriptor(&self) -> Option<(fio::VerificationOptions, Vec<u8>)> {
         let fsverity_state = self.fsverity_state.lock();
         match &*fsverity_state {
-            FsverityState::None => Ok(None),
-            FsverityState::Started | FsverityState::Pending(_) => Err(anyhow!(
-                "Enable verity has not yet completed, fsverity state: {:?}",
-                &*fsverity_state
-            )),
             FsverityState::Some(metadata) => {
                 let (options, root_hash) = match &metadata.root_digest {
                     RootDigest::Sha256(root_hash) => (
@@ -424,8 +419,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         root_hash.clone(),
                     ),
                 };
-                Ok(Some((options, root_hash)))
+                Some((options, root_hash))
             }
+            _ => None,
         }
     }
 
@@ -3013,8 +3009,7 @@ mod tests {
             })
             .await
             .expect("set verified file metadata failed");
-        let (verity_info, root_hash) =
-            object.get_descriptor().expect("Getting verity info").unwrap();
+        let (verity_info, root_hash) = object.get_descriptor().unwrap();
 
         let mut transaction = fs
             .clone()

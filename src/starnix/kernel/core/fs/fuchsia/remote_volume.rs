@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::fuchsia::{RemoteFs, RemoteNode};
+use crate::fs::fuchsia::RemoteFs;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
@@ -19,7 +19,6 @@ use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio, statfs};
 use std::sync::Arc;
-use syncio::{Zxio, zxio_node_attr_has_t, zxio_node_attributes_t};
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
 // `KEY_FILE_PATH` determines where the volume-wide keys for the Starnix volume will live in the
@@ -341,17 +340,7 @@ pub fn new_remote_vol(
 
     let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
 
-    let (client_end, server_end) = zx::Channel::create();
-    let remotefs = RemoteFs::new(root.into_channel(), server_end, rights)?;
-    let mut attrs = zxio_node_attributes_t {
-        has: zxio_node_attr_has_t { id: true, ..Default::default() },
-        ..Default::default()
-    };
-    let (remote_node, node_id) =
-        match Zxio::create_with_on_representation(client_end.into(), Some(&mut attrs)) {
-            Err(status) => return Err(from_status_like_fdio!(status)),
-            Ok(zxio) => (RemoteNode::new(zxio), attrs.id),
-        };
+    let (remotefs, root_node, node_id, _) = RemoteFs::new(root.into_channel(), rights)?;
 
     let use_remote_ids = remotefs.use_remote_ids();
     let remotevol = RemoteVolume { remotefs, exposed_dir_proxy, crypt_service };
@@ -363,10 +352,10 @@ pub fn new_remote_vol(
         options,
     )?;
     if use_remote_ids {
-        fs.create_root(node_id, remote_node);
+        fs.create_root(node_id, root_node);
     } else {
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, remote_node);
+        fs.create_root(root_ino, root_node);
     }
     Ok(fs)
 }

@@ -21,7 +21,7 @@ use crate::vfs::{
     fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, SynchronousProxy as _};
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
@@ -43,24 +43,648 @@ use starnix_uapi::{
     __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, ino_t, mode, off_t,
     statfs,
 };
-use std::mem::MaybeUninit;
+use std::ops::Range;
 use std::sync::Arc;
 use syncio::zxio::{
     ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, ZXIO_NODE_PROTOCOL_SYMLINK,
-    ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_DIR, ZXIO_OBJECT_TYPE_FILE,
-    ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET, ZXIO_OBJECT_TYPE_RAW_SOCKET,
-    ZXIO_OBJECT_TYPE_STREAM_SOCKET, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
+    ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET,
+    ZXIO_OBJECT_TYPE_RAW_SOCKET, ZXIO_OBJECT_TYPE_STREAM_SOCKET,
+    ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
 };
 use syncio::{
-    AllocateMode, DirentIterator, SelinuxContextAttr, XattrSetMode, ZXIO_ROOT_HASH_LENGTH, Zxio,
-    ZxioDirent, ZxioOpenOptions, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
+    AllocateMode, XattrSetMode, Zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
     zxio_node_attributes_t,
 };
-use zx::{Counter, HandleBased};
+use zerocopy::FromBytes;
+use zx::{Counter, HandleBased as _};
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder,
     fidl_fuchsia_unknown as funknown,
 };
+
+fn zxio_attr_from_fidl_attributes(in_attr: &fio::NodeAttributes2) -> zxio_node_attributes_t {
+    zxio_attr_from_fidl(&in_attr.mutable_attributes, &in_attr.immutable_attributes)
+}
+
+/// Converts FIDL attributes to `zxio_node_attributes_t`.
+///
+/// NOTE: This does not work for _all_ attributes e.g. fsverity options and root hash.
+fn zxio_attr_from_fidl(
+    mutable: &fio::MutableNodeAttributes,
+    immutable: &fio::ImmutableNodeAttributes,
+) -> zxio_node_attributes_t {
+    let mut out_attr = zxio_node_attributes_t::default();
+    if let Some(protocols) = immutable.protocols {
+        out_attr.protocols = protocols.bits();
+        out_attr.has.protocols = true;
+    }
+    if let Some(abilities) = immutable.abilities {
+        out_attr.abilities = abilities.bits();
+        out_attr.has.abilities = true;
+    }
+    if let Some(id) = immutable.id {
+        out_attr.id = id;
+        out_attr.has.id = true;
+    }
+    if let Some(content_size) = immutable.content_size {
+        out_attr.content_size = content_size;
+        out_attr.has.content_size = true;
+    }
+    if let Some(storage_size) = immutable.storage_size {
+        out_attr.storage_size = storage_size;
+        out_attr.has.storage_size = true;
+    }
+    if let Some(link_count) = immutable.link_count {
+        out_attr.link_count = link_count;
+        out_attr.has.link_count = true;
+    }
+    if let Some(creation_time) = mutable.creation_time {
+        out_attr.creation_time = creation_time;
+        out_attr.has.creation_time = true;
+    }
+    if let Some(modification_time) = mutable.modification_time {
+        out_attr.modification_time = modification_time;
+        out_attr.has.modification_time = true;
+    }
+    if let Some(access_time) = mutable.access_time {
+        out_attr.access_time = access_time;
+        out_attr.has.access_time = true;
+    }
+    if let Some(mode) = mutable.mode {
+        out_attr.mode = mode;
+        out_attr.has.mode = true;
+    }
+    if let Some(uid) = mutable.uid {
+        out_attr.uid = uid;
+        out_attr.has.uid = true;
+    }
+    if let Some(gid) = mutable.gid {
+        out_attr.gid = gid;
+        out_attr.has.gid = true;
+    }
+    if let Some(rdev) = mutable.rdev {
+        out_attr.rdev = rdev;
+        out_attr.has.rdev = true;
+    }
+    if let Some(change_time) = immutable.change_time {
+        out_attr.change_time = change_time;
+        out_attr.has.change_time = true;
+    }
+    if let Some(casefold) = mutable.casefold {
+        out_attr.casefold = casefold;
+        out_attr.has.casefold = true;
+    }
+    if let Some(verity_enabled) = immutable.verity_enabled {
+        out_attr.fsverity_enabled = verity_enabled;
+        out_attr.has.fsverity_enabled = true;
+    }
+    if let Some(wrapping_key_id) = mutable.wrapping_key_id {
+        out_attr.wrapping_key_id = wrapping_key_id;
+        out_attr.has.wrapping_key_id = true;
+    }
+    out_attr
+}
+
+fn create_with_on_representation(
+    proxy: fio::NodeSynchronousProxy,
+    assume_special: bool,
+) -> Result<(Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status> {
+    match proxy.wait_for_event(zx::MonotonicInstant::INFINITE) {
+        Ok(fio::NodeEvent::OnRepresentation { mut payload }) => {
+            let (ops, attrs): (Box<dyn FsNodeOps>, _) = match &mut payload {
+                fio::Representation::Node(info) => {
+                    (Box::new(RemoteNode::new(RemoteIo::new(proxy))), &mut info.attributes)
+                }
+                fio::Representation::Directory(info) => {
+                    (Box::new(RemoteNode::new(RemoteIo::new(proxy))), &mut info.attributes)
+                }
+                fio::Representation::File(info) => {
+                    if assume_special || is_special(info) {
+                        (
+                            Box::new(RemoteSpecialNode { io: RemoteIo::new(proxy) }),
+                            &mut info.attributes,
+                        )
+                    } else {
+                        (
+                            Box::new(RemoteNode::new(RemoteIo {
+                                proxy,
+                                stream: info
+                                    .stream
+                                    .take()
+                                    .unwrap_or_else(|| zx::NullableHandle::invalid().into()),
+                            })),
+                            &mut info.attributes,
+                        )
+                    }
+                }
+                fio::Representation::Symlink(info) => {
+                    let Some(target) = info.target.take() else {
+                        return Err(zx::Status::IO);
+                    };
+                    (
+                        Box::new(RemoteSymlink::new(RemoteIo::new(proxy), target)),
+                        &mut info.attributes,
+                    )
+                }
+                _ => return Err(zx::Status::NOT_SUPPORTED),
+            };
+            let (attrs, context) = attrs
+                .as_mut()
+                .map(|a| {
+                    (zxio_attr_from_fidl_attributes(a), a.mutable_attributes.selinux_context.take())
+                })
+                .unwrap_or_default();
+            Ok((ops, attrs, context))
+        }
+        Ok(_) => Err(zx::Status::IO),
+        Err(e) => Err(zx::Status::from_raw(match e {
+            fidl::Error::ClientChannelClosed { status, .. } => status.into_raw(),
+            _ => zx::sys::ZX_ERR_IO,
+        })),
+    }
+}
+
+fn is_special(file_info: &fio::FileInfo) -> bool {
+    matches!(
+        file_info,
+        fio::FileInfo {
+            attributes:
+                Some(fio::NodeAttributes2 {
+                    mutable_attributes: fio::MutableNodeAttributes { mode: Some(mode), .. },
+                    ..
+                }),
+            ..
+        } if {
+            let mode = FileMode::from_bits(*mode);
+            mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()
+        }
+    )
+}
+
+#[derive(Debug)]
+struct RemoteIo {
+    proxy: fio::NodeSynchronousProxy,
+    // NOTE: This can be invalid if the remote end did not return a stream in which case
+    // file I/O will use FIDL (slow).
+    stream: zx::Stream,
+}
+
+impl RemoteIo {
+    fn new(proxy: fio::NodeSynchronousProxy) -> Self {
+        Self { proxy, stream: zx::NullableHandle::invalid().into() }
+    }
+
+    fn fetch_remote_memory(&self, prot: ProtectionFlags) -> Result<Arc<MemoryObject>, Errno> {
+        let without_exec = self
+            .vmo_get(prot.to_vmar_flags() - zx::VmarFlags::PERM_EXECUTE)
+            .map_err(|status| from_status_like_fdio!(status))?;
+        let all_flags = if prot.contains(ProtectionFlags::EXEC) {
+            without_exec.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?
+        } else {
+            without_exec
+        };
+        Ok(Arc::new(MemoryObject::from(all_flags)))
+    }
+
+    fn cast_proxy<T: From<zx::Channel> + Into<zx::NullableHandle>>(&self) -> zx::Unowned<'_, T> {
+        zx::Unowned::new(self.proxy.as_channel())
+    }
+
+    fn attr_get(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<(fio::MutableNodeAttributes, fio::ImmutableNodeAttributes), zx::Status> {
+        self.proxy
+            .get_attributes(query, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)
+    }
+
+    fn attr_get_zxio(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<zxio_node_attributes_t, zx::Status> {
+        self.attr_get(query).map(|(m, i)| zxio_attr_from_fidl(&m, &i))
+    }
+
+    fn attr_set(&self, attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status> {
+        self.proxy
+            .update_attributes(&attributes, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn open(
+        &self,
+        path: &str,
+        flags: fio::Flags,
+        create_attributes: Option<fio::MutableNodeAttributes>,
+        query: fio::NodeAttributesQuery,
+        assume_special: bool,
+    ) -> Result<(Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status>
+    {
+        let (client_end, server_end) = zx::Channel::create();
+        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
+        dir_proxy
+            .open(
+                path,
+                flags | fio::Flags::FLAG_SEND_REPRESENTATION,
+                &fio::Options {
+                    attributes: (!query.is_empty()).then_some(query),
+                    create_attributes,
+                    ..Default::default()
+                },
+                server_end,
+            )
+            .map_err(|_| zx::Status::IO)?;
+        create_with_on_representation(client_end.into(), assume_special)
+    }
+
+    fn read_at(&self, offset: u64, buffer: &mut dyn OutputBuffer) -> Result<usize, Errno> {
+        if self.stream.is_invalid_handle() {
+            let total = buffer.available();
+            let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
+            let mut total_read = 0;
+            while total_read < total {
+                let chunk_size = std::cmp::min((total - total_read) as u64, fio::MAX_TRANSFER_SIZE);
+                let result = file_proxy
+                    .read_at(chunk_size, offset + total_read as u64, zx::MonotonicInstant::INFINITE)
+                    .map_err(|_| errno!(EIO))?
+                    .map_err(|s| from_status_like_fdio!(zx::Status::from_raw(s)))?;
+                if result.is_empty() {
+                    break;
+                }
+                let len = buffer.write(&result)?;
+                total_read += len;
+                if (len as u64) < chunk_size {
+                    break;
+                }
+            }
+            Ok(total_read)
+        } else {
+            let read_bytes = with_iovec_segments(buffer, |iovecs| {
+                // SAFETY: The iovecs are valid for writing because they come from OutputBuffer.
+                unsafe {
+                    self.stream
+                        .readv_at(zx::StreamReadOptions::empty(), offset as u64, iovecs)
+                        .map_err(map_stream_error)
+                }
+            });
+
+            match read_bytes {
+                Some(actual) => {
+                    let actual = actual?;
+                    // SAFETY: we successfully read `actual` bytes directly to the user's buffer
+                    // segments.
+                    unsafe { buffer.advance(actual) }?;
+                    Ok(actual)
+                }
+                None => {
+                    // Perform the (slower) operation by using an intermediate buffer.
+                    let total = buffer.available();
+                    let mut bytes = vec![0u8; total];
+                    // Use readv_at with a single iovec for the fallback
+                    let mut iovec = zx::sys::zx_iovec_t {
+                        buffer: bytes.as_mut_ptr() as *mut _,
+                        capacity: bytes.len(),
+                    };
+                    // SAFETY: iovec points to valid mutable buffer.
+                    let actual = unsafe {
+                        self.stream.readv_at(
+                            zx::StreamReadOptions::empty(),
+                            offset as u64,
+                            std::slice::from_mut(&mut iovec),
+                        )
+                    }
+                    .map_err(map_stream_error)?;
+                    buffer.write_all(&bytes[0..actual])
+                }
+            }
+        }
+    }
+
+    fn write_at(&self, offset: u64, buffer: &mut dyn InputBuffer) -> Result<usize, Errno> {
+        if self.stream.is_invalid_handle() {
+            let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
+            let write_bytes =
+                with_iovec_segments(buffer, |iovecs: &mut [zx::sys::zx_iovec_t]| {
+                    let mut total_written = 0;
+                    for iovec in iovecs {
+                        if iovec.capacity == 0 {
+                            continue;
+                        }
+                        // SAFETY: iovec.buffer is assumed valid and we read from it.
+                        let buf =
+                            unsafe { std::slice::from_raw_parts(iovec.buffer, iovec.capacity) };
+                        for chunk in buf.chunks(fio::MAX_TRANSFER_SIZE as usize) {
+                            let actual = file_proxy
+                                .write_at(
+                                    chunk,
+                                    offset + total_written as u64,
+                                    zx::MonotonicInstant::INFINITE,
+                                )
+                                .map_err(|_| errno!(EIO))?
+                                .map_err(|status| {
+                                    from_status_like_fdio!(zx::Status::from_raw(status))
+                                })? as usize;
+                            total_written += actual;
+                            if actual < chunk.len() {
+                                return Ok(total_written);
+                            }
+                        }
+                    }
+                    Ok(total_written)
+                });
+
+            match write_bytes {
+                Some(actual) => {
+                    let actual = actual?;
+                    buffer.advance(actual)?;
+                    Ok(actual)
+                }
+                None => {
+                    // Perform the (slower) operation by using an intermediate buffer.
+                    let total = buffer.available();
+                    let mut total_written = 0;
+                    let tx_buf_size = std::cmp::min(fio::MAX_TRANSFER_SIZE as usize, total);
+                    let mut tx_buf = Vec::with_capacity(tx_buf_size);
+                    while total_written < total {
+                        tx_buf.clear();
+                        let len = buffer.peek(&mut tx_buf.spare_capacity_mut()[..tx_buf_size])?;
+                        // SAFETY: `peek` read `len` bytes into `tx_buf`.
+                        unsafe {
+                            tx_buf.set_len(len);
+                        }
+                        let actual = file_proxy
+                            .write_at(
+                                &tx_buf,
+                                offset + total_written as u64,
+                                zx::MonotonicInstant::INFINITE,
+                            )
+                            .map_err(|_| errno!(EIO))?
+                            .map_err(|status| {
+                                from_status_like_fdio!(zx::Status::from_raw(status))
+                            })?;
+                        total_written += actual as usize;
+                        buffer.advance(actual as usize)?;
+                        if actual < fio::MAX_TRANSFER_SIZE {
+                            break;
+                        }
+                    }
+                    Ok(total_written)
+                }
+            }
+        } else {
+            let write_bytes = with_iovec_segments(buffer, |iovecs| {
+                self.stream
+                    .writev_at(zx::StreamWriteOptions::empty(), offset as u64, &iovecs)
+                    .map_err(map_stream_error)
+            });
+
+            match write_bytes {
+                Some(actual) => {
+                    let actual = actual?;
+                    buffer.advance(actual)?;
+                    Ok(actual)
+                }
+                None => {
+                    // Perform the (slower) operation by using an intermediate buffer.
+                    let bytes = buffer.peek_all()?;
+                    // Use writev_at with a single iovec for the fallback
+                    let iovec =
+                        zx::sys::zx_iovec_t { buffer: bytes.as_ptr(), capacity: bytes.len() };
+                    let actual = self
+                        .stream
+                        .writev_at(zx::StreamWriteOptions::empty(), offset as u64, &[iovec])
+                        .map_err(map_stream_error)?;
+                    buffer.advance(actual)?;
+                    Ok(actual)
+                }
+            }
+        }
+    }
+
+    fn truncate(&self, length: u64) -> Result<(), zx::Status> {
+        self.cast_proxy::<fio::FileSynchronousProxy>()
+            .resize(length, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
+        let mut fio_flags = fio::VmoFlags::empty();
+        if flags.contains(zx::VmarFlags::PERM_READ) {
+            fio_flags |= fio::VmoFlags::READ;
+        }
+        if flags.contains(zx::VmarFlags::PERM_WRITE) {
+            fio_flags |= fio::VmoFlags::WRITE;
+        }
+        if flags.contains(zx::VmarFlags::PERM_EXECUTE) {
+            fio_flags |= fio::VmoFlags::EXECUTE;
+        }
+        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
+        let vmo = file_proxy
+            .get_backing_memory(fio_flags, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(vmo)
+    }
+
+    fn sync(&self) -> Result<(), Errno> {
+        self.proxy
+            .sync(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| errno!(EIO))?
+            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
+    }
+
+    fn close_and_update_access_time(self) -> Result<(), zx::Status> {
+        let _ = self.proxy.get_attributes(
+            fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
+            zx::MonotonicInstant::INFINITE_PAST,
+        );
+        Ok(())
+    }
+
+    fn clone_proxy(&self) -> Result<fio::NodeSynchronousProxy, zx::Status> {
+        let (client_end, server_end) = zx::Channel::create();
+        self.proxy.clone(server_end.into()).map_err(|_| zx::Status::IO)?;
+        Ok(client_end.into())
+    }
+
+    fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status> {
+        let target_dir_proxy = target_dir.cast_proxy::<fio::DirectorySynchronousProxy>();
+        let (status, token) = target_dir_proxy
+            .get_token(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?;
+        zx::Status::ok(status)?;
+        let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
+
+        // Linkable::LinkInto is a separate protocol.
+        let linkable_proxy = self.cast_proxy::<fio::LinkableSynchronousProxy>();
+
+        linkable_proxy
+            .link_into(token.into(), name, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
+        let options = fio::UnlinkOptions { flags: Some(flags), ..Default::default() };
+        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
+        dir_proxy
+            .unlink(name, &options, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn rename(
+        &self,
+        old_path: &str,
+        new_directory: &Self,
+        new_path: &str,
+    ) -> Result<(), zx::Status> {
+        let new_dir_proxy = new_directory.cast_proxy::<fio::DirectorySynchronousProxy>();
+        let (status, token) =
+            new_dir_proxy.get_token(zx::MonotonicInstant::INFINITE).map_err(|_| zx::Status::IO)?;
+        zx::Status::ok(status)?;
+        let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
+        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
+        dir_proxy
+            .rename(old_path, token.into(), new_path, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn create_symlink(&self, name: &str, target: &[u8]) -> Result<RemoteIo, zx::Status> {
+        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
+        let (client_end, server_end) = zx::Channel::create();
+        dir_proxy
+            .create_symlink(name, target, Some(server_end.into()), zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(RemoteIo::new(client_end.into()))
+    }
+
+    fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
+        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
+        let options = fio::VerificationOptions {
+            hash_algorithm: Some(match descriptor.hash_algorithm {
+                1 => fio::HashAlgorithm::Sha256,
+                2 => fio::HashAlgorithm::Sha512,
+                _ => return Err(zx::Status::INVALID_ARGS),
+            }),
+            salt: Some(descriptor.salt[..descriptor.salt_size as usize].to_vec()),
+            ..Default::default()
+        };
+        file_proxy
+            .enable_verity(&options, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
+        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
+        let mut fio_mode = fio::AllocateMode::empty();
+        if mode.contains(AllocateMode::KEEP_SIZE) {
+            fio_mode |= fio::AllocateMode::KEEP_SIZE;
+        }
+        if mode.contains(AllocateMode::UNSHARE_RANGE) {
+            fio_mode |= fio::AllocateMode::UNSHARE_RANGE;
+        }
+        if mode.contains(AllocateMode::PUNCH_HOLE) {
+            fio_mode |= fio::AllocateMode::PUNCH_HOLE;
+        }
+        if mode.contains(AllocateMode::COLLAPSE_RANGE) {
+            fio_mode |= fio::AllocateMode::COLLAPSE_RANGE;
+        }
+        if mode.contains(AllocateMode::ZERO_RANGE) {
+            fio_mode |= fio::AllocateMode::ZERO_RANGE;
+        }
+        if mode.contains(AllocateMode::INSERT_RANGE) {
+            fio_mode |= fio::AllocateMode::INSERT_RANGE;
+        }
+        file_proxy
+            .allocate(offset, len, fio_mode, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn xattr_get(&self, name: &FsStr) -> Result<Vec<u8>, zx::Status> {
+        let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
+        let result = self
+            .proxy
+            .get_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        match result {
+            fio::ExtendedAttributeValue::Bytes(bytes) => Ok(bytes),
+            fio::ExtendedAttributeValue::Buffer(vmo) => {
+                let size = vmo.get_content_size()?;
+                vmo.read_to_vec(0, size)
+            }
+            _ => Err(zx::Status::NOT_SUPPORTED),
+        }
+    }
+
+    fn xattr_set(
+        &self,
+        name: &FsStr,
+        value: &FsStr,
+        mode: syncio::XattrSetMode,
+    ) -> Result<(), zx::Status> {
+        let val = fio::ExtendedAttributeValue::Bytes(value.to_vec());
+        let fidl_mode = match mode {
+            syncio::XattrSetMode::Set => fio::SetExtendedAttributeMode::Set,
+            syncio::XattrSetMode::Create => fio::SetExtendedAttributeMode::Create,
+            syncio::XattrSetMode::Replace => fio::SetExtendedAttributeMode::Replace,
+        };
+        self.proxy
+            .set_extended_attribute(name.as_bytes(), val, fidl_mode, zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn xattr_remove(&self, name: &FsStr) -> Result<(), zx::Status> {
+        let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
+        self.proxy
+            .remove_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
+            .map_err(|_| zx::Status::IO)?
+            .map_err(zx::Status::from_raw)?;
+        Ok(())
+    }
+
+    fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        let (client_end, server_end) = zx::Channel::create();
+        self.proxy.list_extended_attributes(server_end.into()).map_err(|_| zx::Status::IO)?;
+        let iterator = fio::ExtendedAttributeIteratorSynchronousProxy::new(client_end);
+        let mut all_attrs = vec![];
+        loop {
+            let (attributes, last) = iterator
+                .get_next(zx::MonotonicInstant::INFINITE)
+                .map_err(|_| zx::Status::IO)?
+                .map_err(zx::Status::from_raw)?;
+            all_attrs.extend(attributes);
+            if last {
+                break;
+            }
+        }
+        Ok(all_attrs)
+    }
+
+    fn to_handle(&self) -> Result<Option<zx::NullableHandle>, Errno> {
+        let (client_end, server_end) = zx::Channel::create();
+        self.proxy.clone(server_end.into()).map_err(|_| errno!(EIO))?;
+        Ok(Some(client_end.into_handle()))
+    }
+}
 
 pub fn new_remote_fs(
     locked: &mut Locked<Unlocked>,
@@ -229,8 +853,8 @@ impl FileSystemOps for RemoteFs {
             return error!(EXDEV);
         };
         old_parent
-            .zxio
-            .rename(get_name_str(old_name)?, &new_parent.zxio, get_name_str(new_name)?)
+            .io
+            .rename(get_name_str(old_name)?, &new_parent.io, get_name_str(new_name)?)
             .map_err(|status| from_status_like_fdio!(status))
     }
 
@@ -242,11 +866,9 @@ impl FileSystemOps for RemoteFs {
 impl RemoteFs {
     pub(super) fn new(
         root: zx::Channel,
-        server_end: zx::Channel,
         root_rights: fio::Flags,
-    ) -> Result<RemoteFs, Errno> {
-        // See if open3 works.  We assume that if open3 works on the root, it will work for all
-        // descendent nodes in this filesystem.  At the time of writing, this is true for Fxfs.
+    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, u64, Option<[u8; 16]>), Errno> {
+        let (client_end, server_end) = zx::Channel::create();
         let root_proxy = fio::DirectorySynchronousProxy::new(root);
         root_proxy
             .open(
@@ -257,7 +879,9 @@ impl RemoteFs {
                     | fio::Flags::PERM_INHERIT_EXECUTE
                     | fio::Flags::FLAG_SEND_REPRESENTATION,
                 &fio::Options {
-                    attributes: Some(fio::NodeAttributesQuery::ID),
+                    attributes: Some(
+                        fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    ),
                     ..Default::default()
                 },
                 server_end,
@@ -270,12 +894,21 @@ impl RemoteFs {
         // unique IDs, or if the remote filesystem spans multiple filesystems.
         let (status, info) =
             root_proxy.query_filesystem(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
+
         // Be tolerant of errors here; many filesystems return `ZX_ERR_NOT_SUPPORTED`.
         let use_remote_ids = status == 0
             && info
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
-        Ok(RemoteFs { use_remote_ids, root_proxy, root_rights })
+
+        let (remote_node, attrs, _) = create_with_on_representation(client_end.into(), false)
+            .map_err(|s| from_status_like_fdio!(s))?;
+        Ok((
+            RemoteFs { use_remote_ids, root_proxy, root_rights },
+            remote_node,
+            attrs.id,
+            attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
+        ))
     }
 
     pub fn new_fs<L>(
@@ -288,17 +921,7 @@ impl RemoteFs {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let (client_end, server_end) = zx::Channel::create();
-        let remotefs = RemoteFs::new(root, server_end, rights)?;
-        let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
-            ..Default::default()
-        };
-        let (remote_node, node_id) =
-            match Zxio::create_with_on_representation(client_end.into(), Some(&mut attrs)) {
-                Err(status) => return Err(from_status_like_fdio!(status)),
-                Ok(zxio) => (RemoteNode { zxio }, attrs.id),
-            };
+        let (remotefs, root_node, node_id, wrapping_key_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
             options.flags |= MountFlags::RDONLY;
@@ -312,45 +935,40 @@ impl RemoteFs {
             options,
         )?;
 
-        let mut info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
-        if attrs.has.wrapping_key_id {
-            info.wrapping_key_id = Some(attrs.wrapping_key_id);
-        }
+        let info =
+            FsNodeInfo { wrapping_key_id, ..FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root()) };
 
         if use_remote_ids {
-            fs.create_root_with_info(node_id, remote_node, info);
+            fs.create_root_with_info(node_id, root_node, info);
         } else {
             let root_ino = fs.allocate_ino();
-            fs.create_root_with_info(root_ino, remote_node, info);
+            fs.create_root_with_info(root_ino, root_node, info);
         }
 
         Ok(fs)
     }
 
-    pub fn use_remote_ids(&self) -> bool {
+    pub(super) fn use_remote_ids(&self) -> bool {
         self.use_remote_ids
     }
 }
 
-pub struct RemoteNode {
-    /// The underlying Zircon I/O object for this remote node.
-    ///
-    /// We delegate to the zxio library for actually doing I/O with remote
-    /// objects, including fuchsia.io.Directory and fuchsia.io.File objects.
-    /// This structure lets us share code with FDIO and other Fuchsia clients.
-    zxio: syncio::Zxio,
+struct RemoteNode {
+    /// The underlying I/O object for this remote node.
+    io: RemoteIo,
 }
 
 impl RemoteNode {
-    pub fn new(zxio: syncio::Zxio) -> Self {
-        Self { zxio }
+    fn new(io: RemoteIo) -> Self {
+        Self { io }
     }
 }
 
-/// Create a file handle from a zx::NullableHandle.
+/// Creates a file handle from a zx::NullableHandle.
 ///
 /// The handle must be a channel, socket, vmo or debuglog object.  If the handle is a channel, then
-/// the channel must implement the `fuchsia.unknown/Queryable` protocol.
+/// the channel must implement the `fuchsia.unknown/Queryable` protocol.  Not all protocols are
+/// supported; files and directories are, but symlinks are not.
 ///
 /// The resulting object will be owned by root, and will have permissions derived from the `flags`
 /// used to open this object. This is not the same as the permissions set if the object was created
@@ -381,9 +999,9 @@ where
     Ok(Anon::new_private_file_extended(locked, current_task, ops, flags, "[fuchsia:remote]", info))
 }
 
-// Create a FileOps from a zx::NullableHandle.
-//
-// The handle must satisfy the same requirements as `new_remote_file`.
+/// Creates a FileOps from a zx::NullableHandle.
+///
+/// The handle must satisfy the same requirements as `new_remote_file`.
 pub fn new_remote_file_ops(
     current_task: &CurrentTask,
     handle: zx::NullableHandle,
@@ -401,12 +1019,16 @@ fn remote_file_attrs_and_ops(
     let handle_type =
         handle.basic_info().map_err(|status| from_status_like_fdio!(status))?.object_type;
 
-    // Check whether the channel implements a Starnix specific protoocol.
     if handle_type == zx::ObjectType::CHANNEL {
         let channel = zx::Channel::from(handle);
         let queryable = funknown::QueryableSynchronousProxy::new(channel);
-        if let Ok(name) = queryable.query(zx::MonotonicInstant::INFINITE) {
-            if name == fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes() {
+        let protocol = queryable.query(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
+        const UNIX_DOMAIN_SOCKET_PROTOCOL: &[u8] =
+            fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes();
+        const FILE_PROTOCOL: &[u8] = fio::FileMarker::PROTOCOL_NAME.as_bytes();
+        const DIRECTORY_PROTOCOL: &[u8] = fio::DirectoryMarker::PROTOCOL_NAME.as_bytes();
+        match &protocol[..] {
+            UNIX_DOMAIN_SOCKET_PROTOCOL => {
                 let socket_ops =
                     RemoteUnixDomainSocket::new(queryable.into_channel(), remote_creds)?;
                 let socket = Socket::new_with_ops(Box::new(socket_ops))?;
@@ -418,8 +1040,34 @@ fn remote_file_attrs_and_ops(
                 };
                 return Ok((attr, file_ops));
             }
-        };
-        handle = queryable.into_channel().into_handle();
+            FILE_PROTOCOL => {
+                let file_proxy = fio::FileSynchronousProxy::from(queryable.into_channel());
+                let info =
+                    file_proxy.describe(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
+                let io = RemoteIo {
+                    proxy: file_proxy.into_channel().into(),
+                    stream: info.stream.unwrap_or_else(|| zx::NullableHandle::invalid().into()),
+                };
+                let attr = io
+                    .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                return Ok((attr, Box::new(AnonymousRemoteFileObject::new(io))));
+            }
+            DIRECTORY_PROTOCOL => {
+                let io = RemoteIo::new(queryable.into_channel().into());
+                let attr = io
+                    .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                return Ok((
+                    attr,
+                    Box::new(RemoteDirectoryObject::new(io.proxy.into_channel().into())),
+                ));
+            }
+            _ => {
+                handle = queryable.into_channel().into_handle();
+                // Fall through for zxio.
+            }
+        }
     } else if handle_type == zx::ObjectType::COUNTER {
         let attr = zxio_node_attr::default();
         let file_ops = Box::new(RemoteCounter::new(handle.into()));
@@ -427,11 +1075,13 @@ fn remote_file_attrs_and_ops(
     }
 
     // Otherwise, use zxio based objects.
+
+    // NOTE: If it's a channel, this will repeat the query, which is something we can optimize if we
+    // need to.
     let zxio = Zxio::create(handle).map_err(|status| from_status_like_fdio!(status))?;
     let mut attrs = zxio
         .attr_get(zxio_node_attr_has_t {
             protocols: true,
-            abilities: true,
             content_size: true,
             storage_size: true,
             link_count: true,
@@ -440,11 +1090,9 @@ fn remote_file_attrs_and_ops(
         })
         .map_err(|status| from_status_like_fdio!(status))?;
     let ops: Box<dyn FileOps> = match (handle_type, attrs.object_type) {
-        (_, ZXIO_OBJECT_TYPE_DIR) => Box::new(RemoteDirectoryObject::new(zxio)),
-        (zx::ObjectType::VMO, _)
-        | (zx::ObjectType::DEBUGLOG, _)
-        | (_, ZXIO_OBJECT_TYPE_FILE)
-        | (_, ZXIO_OBJECT_TYPE_NONE) => Box::new(RemoteFileObject::new(zxio)),
+        (zx::ObjectType::VMO, _) | (zx::ObjectType::DEBUGLOG, _) | (_, ZXIO_OBJECT_TYPE_NONE) => {
+            Box::new(RemoteZxioFileObject::new(zxio))
+        }
         (zx::ObjectType::SOCKET, _)
         | (_, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET)
         | (_, ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET)
@@ -475,31 +1123,33 @@ where
 }
 
 fn fetch_and_refresh_info_impl<'a>(
-    zxio: &syncio::Zxio,
+    io: &RemoteIo,
     info: &'a RwLock<FsNodeInfo>,
 ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-    let attrs = zxio
-        .attr_get(zxio_node_attr_has_t {
-            content_size: true,
-            storage_size: true,
-            link_count: true,
-            modification_time: true,
-            change_time: true,
-            access_time: true,
-            casefold: true,
-            wrapping_key_id: true,
-            pending_access_time_update: info.read().pending_time_access_update,
-            ..Default::default()
-        })
-        .map_err(|status| from_status_like_fdio!(status))?;
+    let mut query = NODE_INFO_ATTRIBUTES;
+    if info.read().pending_time_access_update {
+        query |= fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE;
+    }
+    let attrs = io.attr_get_zxio(query).map_err(|status| from_status_like_fdio!(status))?;
     let mut info = info.write();
     update_info_from_attrs(&mut info, &attrs);
     info.pending_time_access_update = false;
     Ok(RwLockWriteGuard::downgrade(info))
 }
 
-// Update info from attrs if they are set.
-pub fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_attributes_t) {
+// This only needs to include attributes that can be out of date.  There are other attributes that
+// we read when we first look up the node (see `lookup`).
+const NODE_INFO_ATTRIBUTES: fio::NodeAttributesQuery = fio::NodeAttributesQuery::CONTENT_SIZE
+    .union(fio::NodeAttributesQuery::STORAGE_SIZE)
+    .union(fio::NodeAttributesQuery::LINK_COUNT)
+    .union(fio::NodeAttributesQuery::MODIFICATION_TIME)
+    .union(fio::NodeAttributesQuery::CHANGE_TIME)
+    .union(fio::NodeAttributesQuery::ACCESS_TIME);
+
+/// Updates info from attrs if they are set.
+///
+// Keep in sync with `NODE_INFO_ATTRIBUTES`.
+pub(super) fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_attributes_t) {
     // TODO - store these in FsNodeState and convert on fstat
     if attrs.has.content_size {
         info.size = attrs.content_size.try_into().unwrap_or(std::usize::MAX);
@@ -524,11 +1174,12 @@ pub fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_attribute
     if attrs.has.access_time {
         info.time_access = UtcInstant::from_nanos(attrs.access_time.try_into().unwrap_or(i64::MAX));
     }
-    if attrs.has.wrapping_key_id {
-        info.wrapping_key_id = Some(attrs.wrapping_key_id);
-    }
 }
 
+const MODE_ATTRIBUTES: fio::NodeAttributesQuery =
+    fio::NodeAttributesQuery::PROTOCOLS.union(fio::NodeAttributesQuery::MODE);
+
+// NOTE: Keep in sync with `MODE_ATTRIBUTES`.
 fn get_mode(attrs: &zxio_node_attributes_t, rights: fio::Flags) -> FileMode {
     if attrs.protocols & ZXIO_NODE_PROTOCOL_SYMLINK != 0 {
         // We don't set the mode for symbolic links , so we synthesize it instead.
@@ -565,7 +1216,7 @@ fn get_name_str<'a>(name_bytes: &'a FsStr) -> Result<&'a str, Errno> {
     })
 }
 
-impl XattrStorage for syncio::Zxio {
+impl XattrStorage for RemoteIo {
     fn get_xattr(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -614,7 +1265,7 @@ impl XattrStorage for syncio::Zxio {
 }
 
 impl FsNodeOps for RemoteNode {
-    fs_node_impl_xattr_delegate!(self, self.zxio);
+    fs_node_impl_xattr_delegate!(self, self.io);
 
     fn create_file_ops(
         &self,
@@ -639,10 +1290,13 @@ impl FsNodeOps for RemoteNode {
                         }
                     }
                 }
-                // For directories we need to deep-clone the connection because we rely on the seek
+                // For directories we need to clone the connection because we rely on the seek
                 // offset.
                 return Ok(Box::new(RemoteDirectoryObject::new(
-                    self.zxio.deep_clone().map_err(|status| from_status_like_fdio!(status))?,
+                    self.io
+                        .clone_proxy()
+                        .map(|p| p.into_channel().into())
+                        .map_err(|status| from_status_like_fdio!(status))?,
                 )));
             }
         }
@@ -655,9 +1309,7 @@ impl FsNodeOps for RemoteNode {
             node.fsverity.lock().check_writable()?;
         }
 
-        // For files we can clone the `Zxio` because we don't rely on any per-connection state
-        // (i.e. the file offset).
-        Ok(Box::new(RemoteFileObject::new(self.zxio.clone())))
+        Ok(Box::new(RemoteFileObject::default()))
     }
 
     fn mknod(
@@ -676,53 +1328,30 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let zxio;
-        let mut node_id;
         if !(mode.is_reg() || mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()) {
             return error!(EINVAL, name);
         }
-        let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
-            ..Default::default()
-        };
-        zxio = self
-            .zxio
+        let (ops, attrs, _) = self
+            .io
             .open(
                 name,
                 fio::Flags::FLAG_MUST_CREATE
                     | fio::Flags::PROTOCOL_FILE
                     | fio::PERM_READABLE
                     | fio::PERM_WRITABLE,
-                ZxioOpenOptions::new(
-                    Some(&mut attrs),
-                    Some(zxio_node_attributes_t {
-                        mode: mode.bits(),
-                        uid: owner.uid,
-                        gid: owner.gid,
-                        rdev: dev.bits(),
-                        has: zxio_node_attr_has_t {
-                            mode: true,
-                            uid: true,
-                            gid: true,
-                            rdev: true,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-                ),
+                Some(fio::MutableNodeAttributes {
+                    mode: Some(mode.bits()),
+                    uid: Some(owner.uid),
+                    gid: Some(owner.gid),
+                    rdev: Some(dev.bits()),
+                    ..Default::default()
+                }),
+                fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                !mode.is_reg(),
             )
             .map_err(|status| from_status_like_fdio!(status, name))?;
-        node_id = attrs.id;
 
-        let ops = if mode.is_reg() {
-            Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>
-        } else {
-            Box::new(RemoteSpecialNode { zxio }) as Box<dyn FsNodeOps>
-        };
-
-        if !fs_ops.use_remote_ids {
-            node_id = fs.allocate_ino();
-        }
+        let node_id = if fs_ops.use_remote_ids { attrs.id } else { fs.allocate_ino() };
 
         let mut node_info = FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) };
         if attrs.has.wrapping_key_id {
@@ -748,40 +1377,27 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let zxio;
         let mut node_id;
-        let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, wrapping_key_id: true, ..Default::default() },
-            ..Default::default()
-        };
-        zxio = self
-            .zxio
+        let (ops, attrs, _) = self
+            .io
             .open(
                 name,
                 fio::Flags::FLAG_MUST_CREATE
                     | fio::Flags::PROTOCOL_DIRECTORY
                     | fio::PERM_READABLE
                     | fio::PERM_WRITABLE,
-                ZxioOpenOptions::new(
-                    Some(&mut attrs),
-                    Some(zxio_node_attributes_t {
-                        mode: mode.bits(),
-                        uid: owner.uid,
-                        gid: owner.gid,
-                        has: zxio_node_attr_has_t {
-                            mode: true,
-                            uid: true,
-                            gid: true,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-                ),
+                Some(fio::MutableNodeAttributes {
+                    mode: Some(mode.bits()),
+                    uid: Some(owner.uid),
+                    gid: Some(owner.gid),
+                    ..Default::default()
+                }),
+                fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                false,
             )
             .map_err(|status| from_status_like_fdio!(status, name))?;
         node_id = attrs.id;
 
-        let ops = RemoteNode { zxio };
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();
         }
@@ -807,39 +1423,23 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t {
-                protocols: true,
-                abilities: true,
-                mode: true,
-                uid: true,
-                gid: true,
-                rdev: true,
-                id: true,
-                wrapping_key_id: true,
-                fsverity_enabled: true,
-                casefold: true,
-                modification_time: true,
-                change_time: true,
-                access_time: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut options = ZxioOpenOptions::new(Some(&mut attrs), None);
-        let mut selinux_context_buffer =
-            MaybeUninit::<[u8; fio::MAX_SELINUX_CONTEXT_ATTRIBUTE_LEN as usize]>::uninit();
-        let mut cached_context = security::fs_is_xattr_labeled(node.fs())
-            .then(|| SelinuxContextAttr::new(&mut selinux_context_buffer));
-        if let Some(buffer) = &mut cached_context {
-            options = options.with_selinux_context_read(buffer).unwrap();
+        let mut query = MODE_ATTRIBUTES
+            | NODE_INFO_ATTRIBUTES
+            | fio::NodeAttributesQuery::ID
+            | fio::NodeAttributesQuery::UID
+            | fio::NodeAttributesQuery::GID
+            | fio::NodeAttributesQuery::RDEV
+            | fio::NodeAttributesQuery::WRAPPING_KEY_ID
+            | fio::NodeAttributesQuery::VERITY_ENABLED
+            | fio::NodeAttributesQuery::CASEFOLD;
+
+        if security::fs_is_xattr_labeled(node.fs()) {
+            query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
-        let zxio = self
-            .zxio
-            .open(name, fs_ops.root_rights, options)
+        let (ops, attrs, context) = self
+            .io
+            .open(name, fs_ops.root_rights, None, query, false)
             .map_err(|status| from_status_like_fdio!(status, name))?;
-        let symlink_zxio = zxio.clone();
-        let mode = get_mode(&attrs, fs_ops.root_rights);
         let node_id = if fs_ops.use_remote_ids {
             if attrs.id == fio::INO_UNKNOWN {
                 return error!(ENOTSUP);
@@ -862,18 +1462,11 @@ impl FsNodeOps for RemoteNode {
             UtcInstant::from_nanos(attrs.change_time.try_into().unwrap_or(i64::MAX));
         let time_access = UtcInstant::from_nanos(attrs.access_time.try_into().unwrap_or(i64::MAX));
 
+        let mut ops = Some(ops);
         let node = fs.get_or_create_node(node_id, || {
-            let ops = if mode.is_lnk() {
-                Box::new(RemoteSymlink { zxio: Mutex::new(zxio) }) as Box<dyn FsNodeOps>
-            } else if mode.is_reg() || mode.is_dir() {
-                Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>
-            } else {
-                Box::new(RemoteSpecialNode { zxio }) as Box<dyn FsNodeOps>
-            };
-            let wrapping_key_id = attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id);
             let child = FsNode::new_uncached(
                 node_id,
-                ops,
+                ops.take().unwrap(),
                 &fs,
                 FsNodeInfo {
                     rdev,
@@ -881,28 +1474,40 @@ impl FsNodeOps for RemoteNode {
                     time_status_change,
                     time_modify,
                     time_access,
-                    wrapping_key_id,
-                    ..FsNodeInfo::new(mode, owner)
+                    wrapping_key_id: attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
+                    ..FsNodeInfo::new(get_mode(&attrs, fs_ops.root_rights), owner)
                 },
             );
             if fsverity_enabled {
                 *child.fsverity.lock() = FsVerityState::FsVerity;
             }
-            if let Some(buffer) = cached_context.as_ref().and_then(|buffer| buffer.get()) {
-                // This is valid to fail if we're using mount point labelling or the
-                // provided context string is invalid.
+            // This is valid to fail if we're using mount point labelling or the provided context
+            // string is invalid.
+            if let Some(fio::SelinuxContext::Data(data)) = &context {
                 let _ = security::fs_node_notify_security_context(
                     current_task,
                     &child,
-                    FsStr::new(buffer),
+                    FsStr::new(&data),
                 );
             }
             Ok(child)
         })?;
-        if let Some(symlink) = node.downcast_ops::<RemoteSymlink>() {
-            let mut zxio_guard = symlink.zxio.lock();
-            *zxio_guard = symlink_zxio;
+
+        // Encrypted symlinks that use fscrypt can be read as encrypted links when no key is
+        // available.  When no key is available, directories will not cache their entries.  When,
+        // the key is subsequently provided, the next time the symlink is read, we will come through
+        // here, but since the node is cached, `get_or_create_node` will not create a new node
+        // which, if we were to do nothing, would mean we'd keep the encrypted value for the target.
+        // To address this, if no new node was created, we update the target of the existing node
+        // here.  Once the key has been provided, the entry will be cached with the directory and
+        // whilst the entry remains cached, `lookup` will not be called.
+        if let Some(ops) = ops
+            && let Some(new_symlink) = ops.as_any().downcast_ref::<RemoteSymlink>()
+            && let Some(symlink) = node.downcast_ops::<RemoteSymlink>()
+        {
+            *symlink.target.write() = std::mem::take(&mut new_symlink.target.write());
         }
+
         Ok(node)
     }
 
@@ -915,7 +1520,7 @@ impl FsNodeOps for RemoteNode {
         length: u64,
     ) -> Result<(), Errno> {
         node.fail_if_locked(current_task)?;
-        self.zxio.truncate(length).map_err(|status| from_status_like_fdio!(status))
+        self.io.truncate(length).map_err(|status| from_status_like_fdio!(status))
     }
 
     fn allocate(
@@ -931,7 +1536,7 @@ impl FsNodeOps for RemoteNode {
         match mode {
             FallocMode::Allocate { keep_size: false } => {
                 node.fail_if_locked(current_task)?;
-                self.zxio
+                self.io
                     .allocate(offset, length, AllocateMode::empty())
                     .map_err(|status| from_status_like_fdio!(status))?;
                 Ok(())
@@ -947,7 +1552,7 @@ impl FsNodeOps for RemoteNode {
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-        fetch_and_refresh_info_impl(&self.zxio, info)
+        fetch_and_refresh_info_impl(&self.io, info)
     }
 
     fn update_attributes(
@@ -958,22 +1563,20 @@ impl FsNodeOps for RemoteNode {
         has: zxio_node_attr_has_t,
     ) -> Result<(), Errno> {
         // Omit updating creation_time. By definition, there shouldn't be a change in creation_time.
-        let mut mutable_node_attributes = zxio_node_attributes_t {
-            modification_time: info.time_modify.into_nanos() as u64,
-            access_time: info.time_access.into_nanos() as u64,
-            mode: info.mode.bits(),
-            uid: info.uid,
-            gid: info.gid,
-            rdev: info.rdev.bits(),
-            casefold: info.casefold,
-            has,
-            ..Default::default()
-        };
-        if let Some(id) = info.wrapping_key_id {
-            mutable_node_attributes.wrapping_key_id = id;
-        }
-        self.zxio
-            .attr_set(&mutable_node_attributes)
+        self.io
+            .attr_set(fio::MutableNodeAttributes {
+                modification_time: has
+                    .modification_time
+                    .then_some(info.time_modify.into_nanos() as u64),
+                access_time: has.access_time.then_some(info.time_access.into_nanos() as u64),
+                mode: has.mode.then_some(info.mode.bits()),
+                uid: has.uid.then_some(info.uid),
+                gid: has.gid.then_some(info.gid),
+                rdev: has.rdev.then_some(info.rdev.bits()),
+                casefold: has.casefold.then_some(info.casefold),
+                wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
+                ..Default::default()
+            })
             .map_err(|status| from_status_like_fdio!(status))
     }
 
@@ -989,7 +1592,7 @@ impl FsNodeOps for RemoteNode {
         // children lock, so we don't have to worry about conflicts on this path, and 2. the remote
         // filesystem tracks the link counts so we don't need to update them here.
         let name = get_name_str(name)?;
-        self.zxio
+        self.io
             .unlink(name, fio::UnlinkFlags::empty())
             .map_err(|status| from_status_like_fdio!(status))
     }
@@ -1006,8 +1609,8 @@ impl FsNodeOps for RemoteNode {
         node.fail_if_locked(current_task)?;
 
         let name = get_name_str(name)?;
-        let zxio = self
-            .zxio
+        let io = self
+            .io
             .create_symlink(name, target)
             .map_err(|status| from_status_like_fdio!(status))?;
 
@@ -1015,22 +1618,22 @@ impl FsNodeOps for RemoteNode {
         let fs_ops = RemoteFs::from_fs(&fs);
 
         let node_id = if fs_ops.use_remote_ids {
-            let attrs = zxio
-                .attr_get(zxio_node_attr_has_t { id: true, ..Default::default() })
-                .map_err(|status| from_status_like_fdio!(status))?;
-            attrs.id
+            io.attr_get(fio::NodeAttributesQuery::ID)
+                .map_err(|status| from_status_like_fdio!(status))?
+                .1
+                .id
+                .unwrap_or_default()
         } else {
             fs.allocate_ino()
         };
-        let symlink = fs.create_node(
+        Ok(fs.create_node(
             node_id,
-            RemoteSymlink { zxio: Mutex::new(zxio) },
+            RemoteSymlink::new(io, target.as_bytes()),
             FsNodeInfo {
                 size: target.len(),
                 ..FsNodeInfo::new(FileMode::IFLNK | FileMode::ALLOW_ALL, owner)
             },
-        );
-        Ok(symlink)
+        ))
     }
 
     fn create_tmpfile(
@@ -1043,56 +1646,40 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let zxio;
         let mut node_id;
         if !mode.is_reg() {
             return error!(EINVAL);
         }
-        let mut attrs = zxio_node_attributes_t {
-            has: zxio_node_attr_has_t { id: true, ..Default::default() },
-            ..Default::default()
-        };
         // `create_tmpfile` is used by O_TMPFILE. Note that
         // <https://man7.org/linux/man-pages/man2/open.2.html> states that if O_EXCL is specified
         // with O_TMPFILE, the temporary file created cannot be linked into the filesystem. Although
         // there exist fuchsia flags `fio::FLAG_TEMPORARY_AS_NOT_LINKABLE`, the starnix vfs already
         // handles this case and makes sure that the created file is not linkable. There is also no
         // current way of passing the open flags to this function.
-        zxio = self
-            .zxio
+        let (ops, attrs, _) = self
+            .io
             .open(
                 ".",
                 fio::Flags::PROTOCOL_FILE
                     | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
                     | fio::PERM_READABLE
                     | fio::PERM_WRITABLE,
-                ZxioOpenOptions::new(
-                    Some(&mut attrs),
-                    Some(zxio_node_attributes_t {
-                        mode: mode.bits(),
-                        uid: owner.uid,
-                        gid: owner.gid,
-                        has: zxio_node_attr_has_t {
-                            mode: true,
-                            uid: true,
-                            gid: true,
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-                ),
+                Some(fio::MutableNodeAttributes {
+                    mode: Some(mode.bits()),
+                    uid: Some(owner.uid),
+                    gid: Some(owner.gid),
+                    ..Default::default()
+                }),
+                fio::NodeAttributesQuery::ID,
+                false,
             )
             .map_err(|status| from_status_like_fdio!(status))?;
         node_id = attrs.id;
 
-        let ops = Box::new(RemoteNode { zxio }) as Box<dyn FsNodeOps>;
-
         if !fs_ops.use_remote_ids {
             node_id = fs.allocate_ino();
         }
-        let child = fs.create_node(node_id, ops, FsNodeInfo::new(mode, owner));
-
-        Ok(child)
+        Ok(fs.create_node(node_id, ops, FsNodeInfo::new(mode, owner)))
     }
 
     fn link(
@@ -1107,17 +1694,18 @@ impl FsNodeOps for RemoteNode {
             return error!(EPERM);
         }
         let name = get_name_str(name)?;
-        let link_into = |zxio: &syncio::Zxio| {
-            zxio.link_into(&self.zxio, name).map_err(|status| match status {
+        if let Some(child) = child.downcast_ops::<RemoteNode>() {
+            child.io.link_into(&self.io, name).map_err(|status| match status {
                 zx::Status::BAD_STATE => errno!(EXDEV),
                 zx::Status::ACCESS_DENIED => errno!(ENOKEY),
                 s => from_status_like_fdio!(s),
             })
-        };
-        if let Some(child) = child.downcast_ops::<RemoteNode>() {
-            link_into(&child.zxio)
         } else if let Some(child) = child.downcast_ops::<RemoteSymlink>() {
-            link_into(&child.zxio())
+            child.io.link_into(&self.io, name).map_err(|status| match status {
+                zx::Status::BAD_STATE => errno!(EXDEV),
+                zx::Status::ACCESS_DENIED => errno!(ENOKEY),
+                s => from_status_like_fdio!(s),
+            })
         } else {
             error!(EXDEV)
         }
@@ -1131,7 +1719,7 @@ impl FsNodeOps for RemoteNode {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.zxio
+            self.io
                 .close_and_update_access_time()
                 .map_err(|status| from_status_like_fdio!(status))?;
         }
@@ -1144,47 +1732,59 @@ impl FsNodeOps for RemoteNode {
             salt_size: descriptor.salt_size,
             salt: descriptor.salt,
         };
-        self.zxio.enable_verity(&descr).map_err(|status| from_status_like_fdio!(status))
+        self.io.enable_verity(&descr).map_err(|status| from_status_like_fdio!(status))
     }
 
     fn get_fsverity_descriptor(&self, log_blocksize: u8) -> Result<fsverity_descriptor, Errno> {
-        let mut root_hash = [0; ZXIO_ROOT_HASH_LENGTH];
-        let attrs = self
-            .zxio
-            .attr_get_with_root_hash(
-                zxio_node_attr_has_t {
-                    content_size: true,
-                    fsverity_options: true,
-                    fsverity_root_hash: true,
-                    ..Default::default()
-                },
-                &mut root_hash,
+        let (_, attrs) = self
+            .io
+            .attr_get(
+                fio::NodeAttributesQuery::CONTENT_SIZE
+                    | fio::NodeAttributesQuery::OPTIONS
+                    | fio::NodeAttributesQuery::ROOT_HASH,
             )
-            .map_err(|status| match status {
-                zx::Status::INVALID_ARGS => errno!(ENODATA),
-                _ => from_status_like_fdio!(status),
-            })?;
-        return Ok(fsverity_descriptor {
+            .map_err(|status| from_status_like_fdio!(status))?;
+        let fio::ImmutableNodeAttributes {
+            content_size: Some(data_size),
+            options:
+                Some(fio::VerificationOptions {
+                    hash_algorithm: Some(hash_algorithm),
+                    salt: Some(salt),
+                    ..
+                }),
+            root_hash: Some(root_hash),
+            ..
+        } = attrs
+        else {
+            return error!(ENODATA);
+        };
+        let mut descriptor = fsverity_descriptor {
             version: 1,
-            hash_algorithm: attrs.fsverity_options.hash_alg,
+            hash_algorithm: hash_algorithm.into_primitive(),
             log_blocksize,
-            salt_size: attrs.fsverity_options.salt_size as u8,
             __reserved_0x04: 0u32,
-            data_size: attrs.content_size,
-            root_hash,
-            salt: attrs.fsverity_options.salt,
-            __reserved: [0u8; 144],
-        });
+            data_size,
+            ..Default::default()
+        };
+        if salt.len() > std::mem::size_of_val(&descriptor.salt)
+            || root_hash.len() > std::mem::size_of_val(&descriptor.root_hash)
+        {
+            return error!(EIO);
+        }
+        descriptor.salt_size = salt.len() as u8;
+        descriptor.salt[..salt.len()].copy_from_slice(&salt);
+        descriptor.root_hash[..root_hash.len()].copy_from_slice(&root_hash);
+        Ok(descriptor)
     }
 }
 
 struct RemoteSpecialNode {
-    zxio: syncio::Zxio,
+    io: RemoteIo,
 }
 
 impl FsNodeOps for RemoteSpecialNode {
     fs_node_impl_not_dir!();
-    fs_node_impl_xattr_delegate!(self, self.zxio);
+    fs_node_impl_xattr_delegate!(self, self.io);
 
     fn create_file_ops(
         &self,
@@ -1197,118 +1797,17 @@ impl FsNodeOps for RemoteSpecialNode {
     }
 }
 
-fn zxio_read_write_inner_map_error(status: zx::Status) -> Errno {
-    match status {
-        // zx::Stream may return invalid args or not found error because of
-        // invalid zx_iovec buffer pointers.
-        zx::Status::INVALID_ARGS | zx::Status::NOT_FOUND => errno!(EFAULT, ""),
-        status => from_status_like_fdio!(status),
-    }
-}
-
-fn zxio_read_inner(
-    data: &mut dyn OutputBuffer,
-    unified_read_fn: impl FnOnce(&[syncio::zxio::zx_iovec]) -> Result<usize, zx::Status>,
-    vmo_read_fn: impl FnOnce(&mut [u8]) -> Result<usize, zx::Status>,
-) -> Result<usize, Errno> {
-    let read_bytes = with_iovec_segments(data, |iovecs| {
-        unified_read_fn(&iovecs).map_err(zxio_read_write_inner_map_error)
-    });
-
-    match read_bytes {
-        Some(actual) => {
-            let actual = actual?;
-            // SAFETY: we successfully read `actual` bytes
-            // directly to the user's buffer segments.
-            unsafe { data.advance(actual) }?;
-            Ok(actual)
-        }
-        None => {
-            // Perform the (slower) operation by using an intermediate buffer.
-            let total = data.available();
-            let mut bytes = vec![0u8; total];
-            let actual =
-                vmo_read_fn(&mut bytes).map_err(|status| from_status_like_fdio!(status))?;
-            data.write_all(&bytes[0..actual])
-        }
-    }
-}
-
-fn zxio_read_at(zxio: &Zxio, offset: usize, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
-    let offset = offset as u64;
-    zxio_read_inner(
-        data,
-        |iovecs| {
-            // SAFETY: `zxio_read_inner` maps the returned error to an appropriate
-            // `Errno` for userspace to handle. `data` only points to memory that
-            // is allowed to be written to (Linux user-mode aspace or a valid
-            // Starnix owned buffer).
-            unsafe { zxio.readv_at(offset, iovecs) }
-        },
-        |bytes| zxio.read_at(offset, bytes),
-    )
-}
-
-fn zxio_write_inner(
-    data: &mut dyn InputBuffer,
-    unified_write_fn: impl FnOnce(&[syncio::zxio::zx_iovec]) -> Result<usize, zx::Status>,
-    vmo_write_fn: impl FnOnce(&[u8]) -> Result<usize, zx::Status>,
-) -> Result<usize, Errno> {
-    let write_bytes = with_iovec_segments(data, |iovecs| {
-        unified_write_fn(&iovecs).map_err(zxio_read_write_inner_map_error)
-    });
-
-    match write_bytes {
-        Some(actual) => {
-            let actual = actual?;
-            data.advance(actual)?;
-            Ok(actual)
-        }
-        None => {
-            // Perform the (slower) operation by using an intermediate buffer.
-            let bytes = data.peek_all()?;
-            let actual = vmo_write_fn(&bytes).map_err(|status| from_status_like_fdio!(status))?;
-            data.advance(actual)?;
-            Ok(actual)
-        }
-    }
-}
-
-fn zxio_write_at(
-    zxio: &Zxio,
-    _current_task: &CurrentTask,
-    offset: usize,
-    data: &mut dyn InputBuffer,
-) -> Result<usize, Errno> {
-    let offset = offset as u64;
-    zxio_write_inner(
-        data,
-        |iovecs| {
-            // SAFETY: `zxio_write_inner` maps the returned error to an appropriate
-            // `Errno` for userspace to handle.
-            unsafe { zxio.writev_at(offset, iovecs) }
-        },
-        |bytes| zxio.write_at(offset, bytes),
-    )
-}
-
-/// Helper struct to track the context necessary to iterate over dir entries.
-#[derive(Default)]
-struct RemoteDirectoryIterator<'a> {
-    iterator: Option<DirentIterator<'a>>,
-
-    /// If the last attempt to write to the sink failed, this contains the entry that is pending to
-    /// be added. This is also used to synthesize dot-dot.
-    pending_entry: Entry,
-}
-
 #[derive(Default)]
 enum Entry {
     // Indicates no more entries.
     #[default]
     None,
 
-    Some(ZxioDirent),
+    Some {
+        ino: ino_t,
+        entry_type: DirectoryEntryType,
+        name: Range<usize>,
+    },
 
     // Indicates dot-dot should be synthesized.
     DotDot,
@@ -1320,47 +1819,95 @@ impl Entry {
     }
 }
 
-impl From<Option<ZxioDirent>> for Entry {
-    fn from(value: Option<ZxioDirent>) -> Self {
-        match value {
-            None => Entry::None,
-            Some(x) => Entry::Some(x),
-        }
-    }
+struct RemoteDirectoryObject {
+    proxy: fio::DirectorySynchronousProxy,
+    state: Mutex<State>,
 }
 
-impl<'a> RemoteDirectoryIterator<'a> {
-    fn get_or_init_iterator(&mut self, zxio: &'a Zxio) -> Result<&mut DirentIterator<'a>, Errno> {
-        if self.iterator.is_none() {
-            let iterator =
-                zxio.create_dirent_iterator().map_err(|status| from_status_like_fdio!(status))?;
-            self.iterator = Some(iterator);
-        }
-        if let Some(iterator) = &mut self.iterator {
-            return Ok(iterator);
-        }
+#[derive(Default)]
+struct State {
+    /// Buffer contains the last batch of entries read from the remote end.
+    buffer: Vec<u8>,
 
-        // Should be an impossible error, because we just created the iterator above.
-        error!(EIO)
+    /// Position in the buffer for the next entry.
+    offset: usize,
+
+    /// If the last attempt to write to the sink failed, this contains the entry that is pending to
+    /// be added. This is also used to synthesize dot-dot.
+    pending_entry: Entry,
+}
+
+impl State {
+    fn name(&self, range: Range<usize>) -> &FsStr {
+        FsStr::new(&self.buffer[range])
     }
 
     /// Returns the next dir entry. If no more entries are found, returns None.  Returns an error if
-    /// the iterator fails for other reasons described by the zxio library.
-    pub fn next(&mut self, zxio: &'a Zxio) -> Result<Entry, Errno> {
+    /// the iterator fails.
+    fn next(&mut self, proxy: &fio::DirectorySynchronousProxy) -> Result<Entry, Errno> {
+        let mut next_dirent = || {
+            if self.offset >= self.buffer.len() {
+                match proxy.read_dirents(fio::MAX_BUF, zx::MonotonicInstant::INFINITE) {
+                    Ok((status, dirents)) => {
+                        zx::Status::ok(status).map_err(|s| from_status_like_fdio!(s))?;
+                        if dirents.is_empty() {
+                            return Ok(None);
+                        }
+                        self.buffer = dirents;
+                        self.offset = 0;
+                    }
+                    Err(_) => return error!(EIO),
+                }
+            }
+
+            #[repr(C, packed)]
+            #[derive(FromBytes)]
+            struct DirectoryEntry {
+                ino: u64,
+                name_len: u8,
+                entry_type: u8,
+            }
+
+            let Some((ino, name, entry_type)) =
+                DirectoryEntry::read_from_prefix(&self.buffer[self.offset..]).ok().and_then(
+                    |(DirectoryEntry { ino, name_len, entry_type }, remainder)| {
+                        let name_len = name_len as usize;
+                        let name_start = self.offset + std::mem::size_of::<DirectoryEntry>();
+                        (remainder.len() >= name_len).then_some((
+                            ino,
+                            name_start..name_start + name_len,
+                            entry_type,
+                        ))
+                    },
+                )
+            else {
+                // Truncated entry.
+                return Ok(None);
+            };
+
+            self.offset = name.end;
+
+            Ok(Some(Entry::Some {
+                ino,
+                entry_type: match entry_type {
+                    4 => DirectoryEntryType::DIR,
+                    8 => DirectoryEntryType::REG,
+                    10 => DirectoryEntryType::LNK,
+                    _ => DirectoryEntryType::UNKNOWN,
+                },
+                name,
+            }))
+        };
+
         let mut next = self.pending_entry.take();
         if let Entry::None = next {
-            next = self
-                .get_or_init_iterator(zxio)?
-                .next()
-                .transpose()
-                .map_err(|status| from_status_like_fdio!(status))?
-                .into();
+            next = next_dirent()?.unwrap_or(Entry::None);
         }
         // We only want to synthesize .. if . exists because the . and .. entries get removed if the
         // directory is unlinked, so if the remote filesystem has removed ., we know to omit the
         // .. entry.
         match &next {
-            Entry::Some(ZxioDirent { name, .. }) if name == "." => {
+            Entry::Some { name, .. } if self.name(name.clone()) == "." => {
                 self.pending_entry = Entry::DotDot;
             }
             _ => {}
@@ -1369,31 +1916,20 @@ impl<'a> RemoteDirectoryIterator<'a> {
     }
 }
 
-struct RemoteDirectoryObject {
-    iterator: Mutex<RemoteDirectoryIterator<'static>>,
-
-    // The underlying Zircon I/O object.  This *must* be dropped after `iterator` above because the
-    // iterator has references to this object.  We use some unsafe code below to erase the lifetime
-    // (hence the 'static above).
-    zxio: Zxio,
-}
-
 impl RemoteDirectoryObject {
-    pub fn new(zxio: Zxio) -> RemoteDirectoryObject {
-        RemoteDirectoryObject { zxio, iterator: Mutex::new(RemoteDirectoryIterator::default()) }
+    fn new(proxy: fio::DirectorySynchronousProxy) -> Self {
+        Self { proxy, state: Mutex::default() }
     }
 
-    /// Returns a reference to Zxio with the lifetime erased.
-    ///
-    /// # Safety
-    ///
-    /// The caller must uphold the lifetime requirements, which will be the case if this is only
-    /// used for the contained iterator (`iterator` is dropped before `zxio`).
-    unsafe fn zxio(&self) -> &'static Zxio {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            &*(&self.zxio as *const Zxio)
-        }
+    fn rewind(&self) -> Result<(), zx::Status> {
+        let mut state = self.state.lock();
+        state.pending_entry = Entry::None;
+        let status =
+            self.proxy.rewind(zx::MonotonicInstant::INFINITE).map_err(|_| zx::Status::IO)?;
+        zx::Status::ok(status)?;
+        state.buffer.clear();
+        state.offset = 0;
+        Ok(())
     }
 }
 
@@ -1408,26 +1944,21 @@ impl FileOps for RemoteDirectoryObject {
         current_offset: off_t,
         target: SeekTarget,
     ) -> Result<off_t, Errno> {
-        let mut iterator = self.iterator.lock();
         let new_offset = default_seek(current_offset, target, || error!(EINVAL))?;
         let mut iterator_position = current_offset;
 
         if new_offset < iterator_position {
             // Our iterator only goes forward, so reset it here.  Note: we *must* rewind it rather
             // than just create a new iterator because the remote end maintains the offset.
-            if let Some(iterator) = &mut iterator.iterator {
-                iterator.rewind().map_err(|status| from_status_like_fdio!(status))?;
-            }
-            iterator.pending_entry = Entry::None;
+            self.rewind().map_err(|status| from_status_like_fdio!(status))?;
             iterator_position = 0;
         }
 
         // Advance the iterator to catch up with the offset.
+        let mut state = self.state.lock();
         for i in iterator_position..new_offset {
-            // SAFETY: See the comment on the `zxio` function above.  The iterator outlives this
-            // function and the zxio object must outlive the iterator.
-            match iterator.next(unsafe { self.zxio() }) {
-                Ok(Entry::Some(_) | Entry::DotDot) => {}
+            match state.next(&self.proxy) {
+                Ok(Entry::Some { .. } | Entry::DotDot) => {}
                 Ok(Entry::None) => break, // No more entries.
                 Err(_) => {
                     // In order to keep the offset and the iterator in sync, set the new offset
@@ -1450,25 +1981,12 @@ impl FileOps for RemoteDirectoryObject {
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
     ) -> Result<(), Errno> {
-        // It is important to acquire the lock to the offset before the context, to avoid a deadlock
-        // where seek() tries to modify the context.
-        let mut iterator = self.iterator.lock();
-
+        let mut state = self.state.lock();
         loop {
-            // SAFETY: See the comment on the `zxio` function above.  The iterator outlives this
-            // function and the zxio object must outlive the iterator.
-            let entry = iterator.next(unsafe { self.zxio() })?;
+            let entry = state.next(&self.proxy)?;
             if let Err(e) = match &entry {
-                Entry::Some(entry) => {
-                    let inode_num: ino_t = entry.id.ok_or_else(|| errno!(EIO))?;
-                    let entry_type = if entry.is_dir() {
-                        DirectoryEntryType::DIR
-                    } else if entry.is_file() {
-                        DirectoryEntryType::REG
-                    } else {
-                        DirectoryEntryType::UNKNOWN
-                    };
-                    sink.add(inode_num, sink.offset() + 1, entry_type, entry.name.as_bstr())
+                Entry::Some { ino, entry_type, name } => {
+                    sink.add(*ino, sink.offset() + 1, *entry_type, state.name(name.clone()))
                 }
                 Entry::DotDot => {
                     let inode_num = if let Some(parent) = file.name.parent_within_mount() {
@@ -1481,7 +1999,7 @@ impl FileOps for RemoteDirectoryObject {
                 }
                 Entry::None => break,
             } {
-                iterator.pending_entry = entry;
+                state.pending_entry = entry;
                 return Err(e);
             }
         }
@@ -1489,16 +2007,10 @@ impl FileOps for RemoteDirectoryObject {
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        self.zxio.sync().map_err(|status| match status {
-            zx::Status::NO_RESOURCES | zx::Status::NO_MEMORY | zx::Status::NO_SPACE => {
-                errno!(ENOSPC)
-            }
-            zx::Status::INVALID_ARGS | zx::Status::NOT_FILE => errno!(EINVAL),
-            zx::Status::BAD_HANDLE => errno!(EBADFD),
-            zx::Status::NOT_SUPPORTED => errno!(ENOTSUP),
-            zx::Status::INTERRUPTED_RETRY => errno!(EINTR),
-            _ => errno!(EIO),
-        })
+        self.proxy
+            .sync(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| errno!(EIO))?
+            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
     }
 
     fn to_handle(
@@ -1506,15 +2018,193 @@ impl FileOps for RemoteDirectoryObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        self.zxio
-            .deep_clone()
-            .and_then(Zxio::release)
-            .map(Some)
-            .map_err(|status| from_status_like_fdio!(status))
+        let (client_end, server_end) = zx::Channel::create();
+        self.proxy.clone(server_end.into()).map_err(|_| errno!(EIO))?;
+        Ok(Some(client_end.into_handle()))
     }
 }
 
+#[derive(Default)]
 pub struct RemoteFileObject {
+    /// Cached read-only VMO handle.
+    read_only_memory: OnceCell<Arc<MemoryObject>>,
+
+    /// Cached read/exec VMO handle.
+    read_exec_memory: OnceCell<Arc<MemoryObject>>,
+}
+
+impl RemoteFileObject {
+    /// # Panics
+    ///
+    /// This will panic if the node's ops are not `RemoteNode`; `AnonymousRemoteFileObject` should
+    /// be used if this won't be the case.
+    fn io(file: &FileObject) -> &RemoteIo {
+        &file.node().downcast_ops::<RemoteNode>().unwrap().io
+    }
+}
+
+impl FileOps for RemoteFileObject {
+    fileops_impl_seekable!();
+
+    fn read(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        Self::io(file).read_at(offset as u64, data)
+    }
+
+    fn write(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        Self::io(file).write_at(offset as u64, data)
+    }
+
+    fn get_memory(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+        _length: Option<usize>,
+        prot: ProtectionFlags,
+    ) -> Result<Arc<MemoryObject>, Errno> {
+        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
+        let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
+            Some(&self.read_exec_memory)
+        } else if prot == ProtectionFlags::READ {
+            Some(&self.read_only_memory)
+        } else {
+            None
+        };
+
+        let io = Self::io(file);
+
+        memory_cache
+            .map(|c| c.get_or_try_init(|| io.fetch_remote_memory(prot)).cloned())
+            .unwrap_or_else(|| io.fetch_remote_memory(prot))
+    }
+
+    fn to_handle(
+        &self,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
+        Self::io(file).to_handle()
+    }
+
+    fn sync(&self, file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
+        Self::io(file).sync()
+    }
+
+    fn ioctl(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        default_ioctl(file, locked, current_task, request, arg)
+    }
+}
+
+/// A file object that is not attached to a `RemoteFs`, which means it stores its own `RemoteIo`.
+pub struct AnonymousRemoteFileObject {
+    io: RemoteIo,
+
+    /// Cached read-only VMO handle.
+    read_only_memory: OnceCell<Arc<MemoryObject>>,
+
+    /// Cached read/exec VMO handle.
+    read_exec_memory: OnceCell<Arc<MemoryObject>>,
+}
+
+impl AnonymousRemoteFileObject {
+    fn new(io: RemoteIo) -> Self {
+        Self { io, read_only_memory: Default::default(), read_exec_memory: Default::default() }
+    }
+}
+
+impl FileOps for AnonymousRemoteFileObject {
+    fileops_impl_seekable!();
+
+    fn read(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        self.io.read_at(offset as u64, data)
+    }
+
+    fn write(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        self.io.write_at(offset as u64, data)
+    }
+
+    fn get_memory(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _length: Option<usize>,
+        prot: ProtectionFlags,
+    ) -> Result<Arc<MemoryObject>, Errno> {
+        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
+        let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
+            Some(&self.read_exec_memory)
+        } else if prot == ProtectionFlags::READ {
+            Some(&self.read_only_memory)
+        } else {
+            None
+        };
+
+        memory_cache
+            .map(|c| c.get_or_try_init(|| self.io.fetch_remote_memory(prot)).cloned())
+            .unwrap_or_else(|| self.io.fetch_remote_memory(prot))
+    }
+
+    fn to_handle(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
+        self.io.to_handle()
+    }
+
+    fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
+        self.io.sync()
+    }
+
+    fn ioctl(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        default_ioctl(file, locked, current_task, request, arg)
+    }
+}
+
+pub struct RemoteZxioFileObject {
     /// The underlying Zircon I/O object.  This is shared, so we must take care not to use any
     /// stateful methods on the underlying object (reading and writing is fine).
     zxio: Zxio,
@@ -1526,9 +2216,9 @@ pub struct RemoteFileObject {
     read_exec_memory: OnceCell<Arc<MemoryObject>>,
 }
 
-impl RemoteFileObject {
-    fn new(zxio: Zxio) -> RemoteFileObject {
-        RemoteFileObject {
+impl RemoteZxioFileObject {
+    fn new(zxio: Zxio) -> RemoteZxioFileObject {
+        RemoteZxioFileObject {
             zxio,
             read_only_memory: Default::default(),
             read_exec_memory: Default::default(),
@@ -1549,7 +2239,7 @@ impl RemoteFileObject {
     }
 }
 
-impl FileOps for RemoteFileObject {
+impl FileOps for RemoteZxioFileObject {
     fileops_impl_seekable!();
 
     fn read(
@@ -1560,18 +2250,64 @@ impl FileOps for RemoteFileObject {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        zxio_read_at(&self.zxio, offset, data)
+        let offset = offset as u64;
+        let read_bytes = with_iovec_segments::<_, syncio::zxio::zx_iovec, _>(data, |iovecs| {
+            // SAFETY: The iovecs are valid for writing because they come from OutputBuffer.
+            unsafe { self.zxio.readv_at(offset, iovecs).map_err(map_stream_error) }
+        });
+
+        match read_bytes {
+            Some(actual) => {
+                let actual = actual?;
+                // SAFETY: we successfully read `actual` bytes
+                // directly to the user's buffer segments.
+                unsafe { data.advance(actual) }?;
+                Ok(actual)
+            }
+            None => {
+                // Perform the (slower) operation by using an intermediate buffer.
+                let total = data.available();
+                let mut bytes = vec![0u8; total];
+                let actual = self
+                    .zxio
+                    .read_at(offset, &mut bytes)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                data.write_all(&bytes[0..actual])
+            }
+        }
     }
 
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        zxio_write_at(&self.zxio, current_task, offset, data)
+        let offset = offset as u64;
+        let write_bytes = with_iovec_segments::<_, syncio::zxio::zx_iovec, _>(data, |iovecs| {
+            // SAFETY: The iovecs are valid for reading because they come from InputBuffer.
+            unsafe { self.zxio.writev_at(offset, iovecs).map_err(map_stream_error) }
+        });
+
+        match write_bytes {
+            Some(actual) => {
+                let actual = actual?;
+                data.advance(actual)?;
+                Ok(actual)
+            }
+            None => {
+                // Perform the (slower) operation by using an intermediate buffer.
+                let bytes = data.peek_all()?;
+                let actual = self
+                    .zxio
+                    .write_at(offset, &bytes)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                data.advance(actual)?;
+                Ok(actual)
+            }
+        }
     }
 
     fn get_memory(
@@ -1602,23 +2338,13 @@ impl FileOps for RemoteFileObject {
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.zxio
-            .deep_clone()
-            .and_then(Zxio::release)
-            .map(Some)
+            .clone_handle()
+            .map(|h| Some(h.into()))
             .map_err(|status| from_status_like_fdio!(status))
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        self.zxio.sync().map_err(|status| match status {
-            zx::Status::NO_RESOURCES | zx::Status::NO_MEMORY | zx::Status::NO_SPACE => {
-                errno!(ENOSPC)
-            }
-            zx::Status::INVALID_ARGS | zx::Status::NOT_FILE => errno!(EINVAL),
-            zx::Status::BAD_HANDLE => errno!(EBADFD),
-            zx::Status::NOT_SUPPORTED => errno!(ENOTSUP),
-            zx::Status::INTERRUPTED_RETRY => errno!(EINTR),
-            _ => errno!(EIO),
-        })
+        self.zxio.sync().map_err(map_sync_error)
     }
 
     fn ioctl(
@@ -1634,18 +2360,19 @@ impl FileOps for RemoteFileObject {
 }
 
 struct RemoteSymlink {
-    zxio: Mutex<syncio::Zxio>,
+    io: RemoteIo,
+    target: RwLock<Box<[u8]>>,
 }
 
 impl RemoteSymlink {
-    fn zxio(&self) -> syncio::Zxio {
-        self.zxio.lock().clone()
+    fn new(io: RemoteIo, target: impl Into<Box<[u8]>>) -> Self {
+        Self { io, target: RwLock::new(target.into()) }
     }
 }
 
 impl FsNodeOps for RemoteSymlink {
     fs_node_impl_symlink!();
-    fs_node_impl_xattr_delegate!(self, self.zxio());
+    fs_node_impl_xattr_delegate!(self, self.io);
 
     fn readlink(
         &self,
@@ -1653,9 +2380,7 @@ impl FsNodeOps for RemoteSymlink {
         _node: &FsNode,
         _current_task: &CurrentTask,
     ) -> Result<SymlinkTarget, Errno> {
-        Ok(SymlinkTarget::Path(
-            self.zxio().read_link().map_err(|status| from_status_like_fdio!(status))?.into(),
-        ))
+        Ok(SymlinkTarget::Path(FsString::new(self.target.read().to_vec())))
     }
 
     fn fetch_and_refresh_info<'a>(
@@ -1665,7 +2390,7 @@ impl FsNodeOps for RemoteSymlink {
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-        fetch_and_refresh_info_impl(&self.zxio(), info)
+        fetch_and_refresh_info_impl(&self.io, info)
     }
 
     fn forget(
@@ -1676,7 +2401,7 @@ impl FsNodeOps for RemoteSymlink {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.zxio()
+            self.io
                 .close_and_update_access_time()
                 .map_err(|status| from_status_like_fdio!(status))?;
         }
@@ -1749,6 +2474,30 @@ impl FileOps for RemoteCounter {
     }
 }
 
+#[track_caller]
+fn map_sync_error(status: zx::Status) -> Errno {
+    match status {
+        zx::Status::NO_RESOURCES | zx::Status::NO_MEMORY | zx::Status::NO_SPACE => {
+            errno!(ENOSPC)
+        }
+        zx::Status::INVALID_ARGS | zx::Status::NOT_FILE => errno!(EINVAL),
+        zx::Status::BAD_HANDLE => errno!(EBADFD),
+        zx::Status::NOT_SUPPORTED => errno!(ENOTSUP),
+        zx::Status::INTERRUPTED_RETRY => errno!(EINTR),
+        _ => errno!(EIO),
+    }
+}
+
+#[track_caller]
+fn map_stream_error(status: zx::Status) -> Errno {
+    match status {
+        // zx::Stream may return invalid args or not found error because of invalid zx_iovec buffer
+        // pointers.
+        zx::Status::INVALID_ARGS | zx::Status::NOT_FOUND => errno!(EFAULT),
+        status => from_status_like_fdio!(status),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1758,8 +2507,9 @@ mod test {
     use crate::vfs::socket::{SocketFile, SocketMessageFlags};
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
-    use fidl_fuchsia_io as fio;
+    use fidl::endpoints::create_request_stream;
     use flyweights::FlyByteStr;
+    use futures::StreamExt;
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
@@ -1767,6 +2517,7 @@ mod test {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use zx::HandleBased;
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
@@ -3123,5 +3874,161 @@ mod test {
         })
         .await;
         fixture.close().await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_read_at_chunking() {
+        use futures::StreamExt;
+        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let content = vec![0xAB; (fio::MAX_TRANSFER_SIZE + 100) as usize];
+        let content_clone = content.clone();
+
+        let _server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::ReadAt { count, offset, responder } => {
+                        let start = offset as usize;
+                        let end = std::cmp::min(start + count as usize, content_clone.len());
+                        let data = if start < content_clone.len() {
+                            &content_clone[start..end]
+                        } else {
+                            &[]
+                        };
+                        responder.send(Ok(data)).unwrap();
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+        });
+
+        fasync::unblock(move || {
+            let io = RemoteIo::new(client.into_channel().into());
+            let mut buffer = VecOutputBuffer::new(content.len());
+            assert_eq!(io.read_at(0, &mut buffer).expect("read_at failed"), content.len());
+            assert_eq!(buffer.data(), content.as_slice());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_write_at_chunking() {
+        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let content = vec![0xCD; (fio::MAX_TRANSFER_SIZE + 100) as usize];
+        let content2 = content.clone();
+
+        let server_task = fasync::Task::spawn(async move {
+            let mut written = vec![0; content2.len()];
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::WriteAt { offset, data, responder, .. } => {
+                        let offset = offset as usize;
+                        written[offset..offset + data.len()].copy_from_slice(&data);
+                        responder.send(Ok(data.len() as u64)).unwrap();
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+            assert_eq!(written, content2);
+        });
+
+        fasync::unblock(move || {
+            let io = RemoteIo::new(client.into_channel().into());
+            let mut buffer = VecInputBuffer::new(&content);
+            assert_eq!(io.write_at(0, &mut buffer).expect("write_at failed"), content.len());
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_large_directory() {
+        use futures::StreamExt;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (client, mut stream) = create_request_stream::<fio::DirectoryMarker>();
+        let num_entries = 2000;
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let request_count_clone = request_count.clone();
+
+        fasync::Task::spawn(async move {
+            let mut sent_count = 0;
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::DirectoryRequest::Query { responder } => {
+                        let _ = responder.send(fio::DirectoryMarker::PROTOCOL_NAME.as_bytes());
+                    }
+                    fio::DirectoryRequest::GetAttributes { query: _, responder } => {
+                        let mut mutable_attributes = fio::MutableNodeAttributes {
+                            mode: Some(mode!(IFDIR, 0o777).bits()),
+                            ..Default::default()
+                        };
+                        let mut immutable_attributes = fio::ImmutableNodeAttributes {
+                            protocols: Some(fio::NodeProtocolKinds::DIRECTORY),
+                            ..Default::default()
+                        };
+                        let _ = responder
+                            .send(Ok((&mut mutable_attributes, &mut immutable_attributes)));
+                    }
+                    fio::DirectoryRequest::ReadDirents { max_bytes, responder } => {
+                        request_count_clone.fetch_add(1, Ordering::Relaxed);
+                        let mut buffer = Vec::new();
+                        while sent_count < num_entries {
+                            let name = format!("file_{}", sent_count);
+                            let name_bytes = name.as_bytes();
+                            let entry_size = 10 + name_bytes.len();
+                            if buffer.len() + entry_size > max_bytes as usize {
+                                break;
+                            }
+                            buffer.extend_from_slice(&(sent_count as u64 + 1).to_le_bytes());
+                            buffer.push(name_bytes.len() as u8);
+                            buffer.push(fio::DirentType::File.into_primitive());
+                            buffer.extend_from_slice(name_bytes);
+                            sent_count += 1;
+                        }
+                        let _ = responder.send(0, &buffer);
+                    }
+                    fio::DirectoryRequest::Rewind { responder } => {
+                        sent_count = 0;
+                        let _ = responder.send(0);
+                    }
+                    fio::DirectoryRequest::Close { responder } => {
+                        let _ = responder.send(Ok(()));
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+        })
+        .detach();
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let file = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDONLY)
+                .expect("new_remote_file");
+            #[derive(Default)]
+            struct Sink {
+                count: usize,
+                offset: off_t,
+            }
+            impl DirentSink for Sink {
+                fn add(
+                    &mut self,
+                    _inode_num: ino_t,
+                    offset: off_t,
+                    _entry_type: DirectoryEntryType,
+                    _name: &FsStr,
+                ) -> Result<(), Errno> {
+                    self.count += 1;
+                    self.offset = offset;
+                    Ok(())
+                }
+                fn offset(&self) -> off_t {
+                    self.offset
+                }
+            }
+            let mut sink = Sink::default();
+            file.readdir(locked, &current_task, &mut sink).expect("readdir");
+            assert_eq!(sink.count, num_entries);
+            assert!(request_count.load(Ordering::Relaxed) > 1);
+        })
+        .await;
     }
 }

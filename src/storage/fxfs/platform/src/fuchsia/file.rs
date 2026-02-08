@@ -497,7 +497,7 @@ impl vfs::node::Node for FxFile {
         let (verification_options, root_hash) = if requested_attributes.intersects(
             fio::NodeAttributesQuery::OPTIONS.union(fio::NodeAttributesQuery::ROOT_HASH),
         ) {
-            self.handle.uncached_handle().get_descriptor().map_err(map_to_status)?.unzip()
+            self.handle.uncached_handle().get_descriptor().unzip()
         } else {
             (None, None)
         };

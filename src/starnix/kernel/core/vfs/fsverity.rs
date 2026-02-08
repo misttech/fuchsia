@@ -87,9 +87,7 @@ fn fsverity_measurement(descriptor: &fsverity_descriptor) -> Result<Box<[u8]>, E
             hasher.update(descriptor.as_bytes());
             Ok(Box::new(hasher.finish().bytes()))
         }
-        _ => {
-            error!(EINVAL)
-        }
+        _ => error!(EINVAL),
     }
 }
 

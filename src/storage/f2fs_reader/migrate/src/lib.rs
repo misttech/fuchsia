@@ -738,10 +738,8 @@ pub async fn verify(
                         // be done with encryption keys, so only include when checking file
                         // contents.
                         if inode.header.advise_flags.contains(AdviseFlags::Verity) {
-                            let (fxfs_descriptor, fxfs_root) = handle
-                                .get_descriptor()
-                                .expect("Requesting descriptor")
-                                .expect("fsverity on f2fs but not fxfs");
+                            let (fxfs_descriptor, fxfs_root) =
+                                handle.get_descriptor().expect("fsverity on f2fs but not fxfs");
                             let extent = inode
                                 .data_blocks()
                                 .last()

@@ -41,6 +41,12 @@ impl Iovec for syncio::zxio::zx_iovec {
     }
 }
 
+impl Iovec for zx::sys::zx_iovec_t {
+    fn create(buffer: &UserBuffer) -> Self {
+        Self { buffer: buffer.address.ptr() as *const u8, capacity: buffer.length }
+    }
+}
+
 const IOVECS_IN_HEAP_THRESHOLD: usize = 5;
 
 /// Provides access to a slice of iovecs while retaining some reference.

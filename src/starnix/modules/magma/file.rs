@@ -128,8 +128,10 @@ use magma::{
     virtio_magma_semaphore_signal_resp_t, virtmagma_buffer_set_name_wrapper,
 };
 use starnix_core::fileops_impl_nonseekable;
-use starnix_core::fs::fuchsia::RemoteFileObject;
 use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
+use starnix_core::fs::fuchsia::{
+    AnonymousRemoteFileObject, RemoteFileObject, RemoteZxioFileObject,
+};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::CurrentTask;
@@ -318,7 +320,10 @@ impl MagmaFile {
                 file.memory.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(impossible_error)?,
                 buffer,
             ))
-        } else if file.downcast_file::<RemoteFileObject>().is_some() {
+        } else if file.downcast_file::<RemoteFileObject>().is_some()
+            || file.downcast_file::<RemoteZxioFileObject>().is_some()
+            || file.downcast_file::<AnonymousRemoteFileObject>().is_some()
+        {
             // TODO: Currently this does not preserve BufferInfo::Image fields across allocation via
             // HIDL/AIDL gralloc followed by import here. If that turns out to be needed, we can add
             // to system the ability to get ImageFormatConstraints from a sysmem VMO, which could be
