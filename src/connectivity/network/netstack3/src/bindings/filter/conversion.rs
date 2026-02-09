@@ -248,6 +248,23 @@ impl TryFromFidl<fnet_filter_ext::MarkAction> for netstack3_core::filter::MarkAc
     }
 }
 
+impl TryFromFidl<fnet_filter_ext::RejectType> for netstack3_core::filter::RejectType {
+    type Error = std::convert::Infallible;
+
+    fn try_from_fidl(fidl: fnet_filter_ext::RejectType) -> Result<Self, Self::Error> {
+        match fidl {
+            fnet_filter_ext::RejectType::TcpReset => Ok(Self::TcpReset),
+            fnet_filter_ext::RejectType::NetUnreachable => Ok(Self::NetUnreachable),
+            fnet_filter_ext::RejectType::HostUnreachable => Ok(Self::HostUnreachable),
+            fnet_filter_ext::RejectType::ProtoUnreachable => Ok(Self::ProtoUnreachable),
+            fnet_filter_ext::RejectType::PortUnreachable => Ok(Self::PortUnreachable),
+            fnet_filter_ext::RejectType::RoutePolicyFail => Ok(Self::RoutePolicyFail),
+            fnet_filter_ext::RejectType::RejectRoute => Ok(Self::RejectRoute),
+            fnet_filter_ext::RejectType::AdminProhibited => Ok(Self::AdminProhibited),
+        }
+    }
+}
+
 fn convert_rules<I, F>(
     namespace: &fnet_filter_ext::NamespaceId,
     routine: &str,
@@ -316,6 +333,9 @@ where
                     }
                 }
                 fnet_filter_ext::Action::None => netstack3_core::filter::Action::None,
+                fnet_filter_ext::Action::Reject(reject_type) => {
+                    netstack3_core::filter::Action::Reject(reject_type.into_core())
+                }
             };
 
             Some(Ok(CoreRule { matcher, action, validation_info: rule_id }))

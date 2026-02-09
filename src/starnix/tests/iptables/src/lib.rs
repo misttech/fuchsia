@@ -11,9 +11,10 @@ use component_events::events::{EventStream, ExitStatus, Stopped, StoppedPayload}
 use component_events::matcher::EventMatcher;
 use fidl_fuchsia_net_filter_ext::{
     Action, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook, MarkAction,
-    Matchers, Namespace, NamespaceId, NatHook, Resource, ResourceId, Routine, RoutineId,
-    RoutineType, Rule, RuleId,
+    Matchers, Namespace, NamespaceId, NatHook, RejectType, Resource, ResourceId, Routine,
+    RoutineId, RoutineType, Rule, RuleId,
 };
+use fidl_fuchsia_net_matchers_ext::TransportProtocol;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use log::info;
@@ -460,6 +461,111 @@ fn mangle_table_with_noop_target(namespace: Namespace) -> Vec<Resource> {
     ]
 }
 
+const FILTER_TABLE_WITH_REJECT_IPV4: &[&str] = &[
+    "*filter",
+    "-A INPUT -j REJECT --reject-with icmp-net-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp-host-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp-proto-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp-port-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp-net-prohibited",
+    "-A INPUT -j REJECT --reject-with icmp-host-prohibited",
+    "-A INPUT -j REJECT --reject-with icmp-admin-prohibited",
+    "-A INPUT -p tcp -j REJECT --reject-with tcp-reset",
+    "COMMIT",
+];
+
+fn filter_table_with_reject_ipv4_resources(namespace: Namespace) -> Vec<Resource> {
+    let namespace_id = namespace.id.clone();
+    let input_routine_id =
+        RoutineId { namespace: namespace_id.clone(), name: String::from("INPUT") };
+    let mut index = 0;
+    let mut new_reject_rule = |type_| {
+        let mut matchers = Matchers::default();
+        if type_ == RejectType::TcpReset {
+            matchers.transport_protocol =
+                Some(TransportProtocol::Tcp { src_port: None, dst_port: None });
+        }
+        let r = Resource::Rule(Rule {
+            id: RuleId { routine: input_routine_id.clone(), index },
+            matchers,
+            action: Action::Reject(type_),
+        });
+        index += 1;
+        r
+    };
+    vec![
+        Resource::Namespace(namespace),
+        // INPUT built-in routine
+        Resource::Routine(Routine {
+            id: input_routine_id.clone(),
+            routine_type: RoutineType::Ip(Some(InstalledIpRoutine {
+                hook: IpHook::LocalIngress,
+                priority: 0,
+            })),
+        }),
+        new_reject_rule(RejectType::NetUnreachable),
+        new_reject_rule(RejectType::HostUnreachable),
+        new_reject_rule(RejectType::ProtoUnreachable),
+        new_reject_rule(RejectType::PortUnreachable),
+        new_reject_rule(RejectType::RoutePolicyFail),
+        new_reject_rule(RejectType::RejectRoute),
+        new_reject_rule(RejectType::AdminProhibited),
+        new_reject_rule(RejectType::TcpReset),
+    ]
+}
+
+const FILTER_TABLE_WITH_REJECT_IPV6: &[&str] = &[
+    "*filter",
+    "-A INPUT -j REJECT --reject-with icmp6-no-route",
+    "-A INPUT -j REJECT --reject-with icmp6-addr-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp6-port-unreachable",
+    "-A INPUT -j REJECT --reject-with icmp6-policy-fail",
+    "-A INPUT -j REJECT --reject-with icmp6-reject-route",
+    "-A INPUT -j REJECT --reject-with icmp6-adm-prohibited",
+    "-A INPUT -p tcp -j REJECT --reject-with tcp-reset",
+    "COMMIT",
+];
+
+fn filter_table_with_reject_ipv6_resources(namespace: Namespace) -> Vec<Resource> {
+    let namespace_id = namespace.id.clone();
+    let priority = 0;
+    let input_routine_id =
+        RoutineId { namespace: namespace_id.clone(), name: String::from("INPUT") };
+    let mut index = 0;
+    let mut new_reject_rule = |type_| {
+        let mut matchers = Matchers::default();
+        if type_ == RejectType::TcpReset {
+            matchers.transport_protocol =
+                Some(TransportProtocol::Tcp { src_port: None, dst_port: None });
+        }
+        let r = Resource::Rule(Rule {
+            id: RuleId { routine: input_routine_id.clone(), index },
+            matchers,
+            action: Action::Reject(type_),
+        });
+        index += 1;
+        r
+    };
+    vec![
+        Resource::Namespace(namespace),
+        // INPUT built-in routine
+        Resource::Routine(Routine {
+            id: input_routine_id.clone(),
+            routine_type: RoutineType::Ip(Some(InstalledIpRoutine {
+                hook: IpHook::LocalIngress,
+                priority,
+            })),
+        }),
+        new_reject_rule(RejectType::NetUnreachable),
+        new_reject_rule(RejectType::HostUnreachable),
+        new_reject_rule(RejectType::PortUnreachable),
+        new_reject_rule(RejectType::RoutePolicyFail),
+        new_reject_rule(RejectType::RejectRoute),
+        new_reject_rule(RejectType::AdminProhibited),
+        new_reject_rule(RejectType::TcpReset),
+    ]
+}
+
 enum Ip {
     V4,
     V6,
@@ -555,6 +661,20 @@ impl Ip {
     mangle_table_with_noop_target;
     "mangle chain noop ipv6"
 )]
+#[test_case(
+    Ip::V4,
+    "filter",
+    FILTER_TABLE_WITH_REJECT_IPV4,
+    filter_table_with_reject_ipv4_resources;
+    "filter chain reject ipv4"
+)]
+#[test_case(
+    Ip::V6,
+    "filter",
+    FILTER_TABLE_WITH_REJECT_IPV6,
+    filter_table_with_reject_ipv6_resources;
+    "filter chain reject ipv6"
+)]
 #[fuchsia::test]
 async fn create_chain(
     protocol: Ip,
@@ -567,9 +687,10 @@ async fn create_chain(
     let starnix = realm.fetch_starnix_filter_state().await;
 
     for expected_resource in expected_resources_fn(protocol.namespace(table_name)) {
-        let observed_resource = starnix
-            .get(&expected_resource.id())
-            .expect("expected resource {expected_resource:#?}; did not find in {starnix:#?}");
+        let observed_resource = match starnix.get(&expected_resource.id()) {
+            Some(resource) => resource,
+            None => panic!("expected resource {expected_resource:?}; did not find in {starnix:?}"),
+        };
         assert_eq!(observed_resource, &expected_resource);
     }
 }

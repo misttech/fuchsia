@@ -491,6 +491,7 @@ impl IpTablesState {
                 | CommitError::CyclicalRoutineGraph(_)
                 | CommitError::RedirectWithInvalidMatcher(_)
                 | CommitError::MasqueradeWithInvalidMatcher(_)
+                | CommitError::RejectWithInvalidMatcher(_)
                 | CommitError::ErrorOnChange(_)),
             ) => {
                 log_warn!(

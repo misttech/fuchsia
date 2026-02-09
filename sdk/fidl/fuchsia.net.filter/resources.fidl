@@ -207,6 +207,57 @@ type PortRange = struct {
     end uint16;
 };
 
+/// The type of the message to send in REJECT action. The exact type of the
+/// rejection message sent depends on IP version of the protocol being processed.
+type RejectType = flexible enum {
+    /// TCP RST packet.
+    ///
+    /// Allowed only for rules that match TCP packets.
+    TCP_RESET = 0;
+
+    /// Network unreachable.
+    ///
+    /// IPv4: ICMP Destination network unreachable (type 3, code 0).
+    /// IPv6: ICMPv6 No route to destination (type 1, code 0).
+    NET_UNREACHABLE = 1;
+
+    /// Host unreachable.
+    ///
+    /// IPv4: ICMP Host unreachable (type 3, code 1).
+    /// IPv6: ICMPv6 Address unreachable (type 1, code 3).
+    HOST_UNREACHABLE = 2;
+
+    /// Protocol unreachable.
+    ///
+    /// IPv4: ICMP Protocol unreachable (type 3, code 2).
+    /// IPv6: ICMPv6 Unrecognized Next Header type encountered (type 4, code 1).
+    PROTO_UNREACHABLE = 3;
+
+    /// Port unreachable.
+    ///
+    /// IPv4: ICMP Port unreachable (type 3, code 3).
+    /// IPv6: ICMPv6 Port unreachable (type 1, code 4).
+    PORT_UNREACHABLE = 4;
+
+    /// Route to the destination network is prohibited.
+    ///
+    /// IPv4: ICMP Network administratively prohibited (type 3, code 9).
+    /// IPv6: ICMPv6 Source address failed ingress/egress policy (type 1, code 5).
+    ROUTE_POLICY_FAIL = 5;
+
+    /// Reject route.
+    ///
+    /// IPv4: ICMP Host administratively prohibited (type 3, code 10).
+    /// IPv6: ICMPv6 Reject route to destination (type 1, code 6).
+    REJECT_ROUTE = 6;
+
+    /// Communication administratively prohibited.
+    ///
+    /// IPv4: ICMP Communication administratively prohibited (type 3, code 13).
+    /// IPv6: ICMPv6 Communication administratively prohibited (type 1, code 1).
+    ADMIN_PROHIBITED = 7;
+};
+
 /// The action to take on a packet.
 type Action = flexible union {
     /// Accept the packet.
@@ -323,11 +374,11 @@ type Action = flexible union {
     /// Applies the mark action to the given mark domain.
     ///
     /// This is a non-terminal action for both routines and hooks. This is also
-    /// only available in [`IpRoutines`] because [`NatRoutines`] only runs on
+    /// only available in [`IpRoutine`]s because [`NatRoutines`]s only runs on
     /// the first packet in a connection and it is likely a misconfiguration
     /// that packets after the first are marked differently or unmarked.
     ///
-    /// Note: If we find use cases that justify this being in [`NatRoutines`] we
+    /// Note: If we find use cases that justify this being in [`NatRoutine`]s we
     /// should relax this limitation and support it.
     ///
     /// This is analogous to the `mark` statement in Netfilter.
@@ -341,6 +392,18 @@ type Action = flexible union {
     /// A non-terminal action that does nothing. Useful to run matchers that may
     /// have side-effects, particularly eBPF matchers.
     9: none Empty;
+
+    /// Rejects the packet by dropping it and responding to the sender.
+    ///
+    /// `reject_type` defines the message sent back to the source address.
+    /// Allowed only in [`IpRoutine`]'s installed at `LOCAL_INGRESS`,
+    /// `FORWARDING` and `LOCAL_EGRESS` hooks.
+    ///
+    /// This is a terminal action.
+    10: reject @generated_name("Reject") struct {
+        /// The type of the message to send.
+        reject_type RejectType;
+    };
 };
 
 /// An action that can be applied to a mark.

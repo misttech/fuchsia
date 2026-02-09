@@ -317,6 +317,9 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
             result @ RoutineResult::Masquerade { .. } => {
                 unreachable!("SNAT not supported in INGRESS; got {result:?}")
             }
+            RoutineResult::Reject(_reject_type) => {
+                unreachable!("REJECT not supported in NAT hooks")
+            }
         }
     }
 
@@ -420,6 +423,9 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
                     dst_port,
                 ))
             }
+            RoutineResult::Reject(_) => {
+                unreachable!("REJECT not supported in NAT hooks")
+            }
         }
     }
 
@@ -480,6 +486,9 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
             }
             result @ RoutineResult::Redirect { .. } => {
                 unreachable!("DNAT not supported in LOCAL_INGRESS; got {result:?}")
+            }
+            RoutineResult::Reject(_) => {
+                unreachable!("REJECT not supported in NAT hooks")
             }
         }
     }
@@ -549,6 +558,9 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
             }
             result @ RoutineResult::Redirect { .. } => {
                 unreachable!("DNAT not supported in EGRESS; got {result:?}")
+            }
+            RoutineResult::Reject(_) => {
+                unreachable!("REJECT not supported in NAT hooks")
             }
         }
     }

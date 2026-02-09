@@ -19,7 +19,8 @@ use crate::conntrack::{Connection, FinalizeConnectionError, GetConnectionError};
 use crate::context::{FilterBindingsContext, FilterBindingsTypes, FilterIpContext};
 use crate::packets::{FilterIpExt, FilterIpPacket, MaybeTransportPacket};
 use crate::state::{
-    Action, FilterIpMetadata, FilterPacketMetadata, Hook, Routine, Rule, TransparentProxy,
+    Action, FilterIpMetadata, FilterPacketMetadata, Hook, RejectType, Routine, Rule,
+    TransparentProxy,
 };
 
 /// The final result of packet processing at a given filtering hook.
@@ -115,6 +116,7 @@ pub(crate) enum RoutineResult<I: IpExt> {
         /// If absent, the source port of the packet is not rewritten.
         src_port: Option<RangeInclusive<NonZeroU16>>,
     },
+    Reject(RejectType),
 }
 
 impl<I: IpExt> RoutineResult<I> {
@@ -124,7 +126,8 @@ impl<I: IpExt> RoutineResult<I> {
             | RoutineResult::Drop
             | RoutineResult::TransparentLocalDelivery { .. }
             | RoutineResult::Redirect { .. }
-            | RoutineResult::Masquerade { .. } => true,
+            | RoutineResult::Masquerade { .. }
+            | RoutineResult::Reject(_) => true,
             RoutineResult::Return => false,
         }
     }
@@ -208,6 +211,9 @@ where
                 Action::None => {
                     continue;
                 }
+                Action::Reject(reject_type) => {
+                    return RoutineResult::Reject(*reject_type);
+                }
             }
         }
     }
@@ -240,6 +246,10 @@ where
             result @ (RoutineResult::Redirect { .. } | RoutineResult::Masquerade { .. }) => {
                 unreachable!("NAT actions are only valid in NAT routines; got {result:?}")
             }
+            RoutineResult::Reject(_reject_type) => {
+                // TODO(https://fxbug.dev/466098884): Send reject message.
+                return Verdict::Drop;
+            }
         }
     }
     Verdict::Accept(())
@@ -268,6 +278,9 @@ where
             }
             result @ (RoutineResult::Redirect { .. } | RoutineResult::Masquerade { .. }) => {
                 unreachable!("NAT actions are only valid in NAT routines; got {result:?}")
+            }
+            RoutineResult::Reject(_reject_type) => {
+                unreachable!("Reject action is not allowed for Ingress hook")
             }
         }
     }

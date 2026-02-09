@@ -52,8 +52,8 @@ pub use packets::{
 };
 pub use state::validation::{ValidRoutines, ValidationError};
 pub use state::{
-    Action, FilterIpMetadata, FilterPacketMetadata, Hook, IpRoutines, NatRoutines, Routine,
-    Routines, Rule, State, TransparentProxy, UninstalledRoutine,
+    Action, FilterIpMetadata, FilterPacketMetadata, Hook, IpRoutines, NatRoutines, RejectType,
+    Routine, Routines, Rule, State, TransparentProxy, UninstalledRoutine,
 };
 
 /// Testing-related utilities for use by other crates.

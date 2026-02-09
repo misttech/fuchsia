@@ -186,6 +186,7 @@ mod type_names {
     pub(super) const COMMIT_RESULT: &str = "fuchsia.net.filter/CommitResult";
     pub(super) const NET_INTERFACES_PORT_CLASS: &str = "fuchsia.net.interfaces/PortClass";
     pub(super) const HARDWARE_NETWORK_PORT_CLASS: &str = "fuchsia.hardware.network/PortClass";
+    pub(super) const REJECT_TYPE: &str = "fuchsia.net.filter/RejectType";
 }
 
 /// Extension type for [`fnet_filter::NamespaceId`].
@@ -649,6 +650,7 @@ pub enum Action {
     Masquerade { src_port: Option<PortRange> },
     Mark { domain: fnet::MarkDomain, action: MarkAction },
     None,
+    Reject(RejectType),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -689,6 +691,53 @@ impl TryFrom<fnet_filter::PortRange> for PortRange {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RejectType {
+    TcpReset,
+    NetUnreachable,
+    HostUnreachable,
+    ProtoUnreachable,
+    PortUnreachable,
+    RoutePolicyFail,
+    RejectRoute,
+    AdminProhibited,
+}
+
+impl From<RejectType> for fnet_filter::RejectType {
+    fn from(value: RejectType) -> Self {
+        match value {
+            RejectType::TcpReset => fnet_filter::RejectType::TcpReset,
+            RejectType::NetUnreachable => fnet_filter::RejectType::NetUnreachable,
+            RejectType::HostUnreachable => fnet_filter::RejectType::HostUnreachable,
+            RejectType::ProtoUnreachable => fnet_filter::RejectType::ProtoUnreachable,
+            RejectType::PortUnreachable => fnet_filter::RejectType::PortUnreachable,
+            RejectType::RoutePolicyFail => fnet_filter::RejectType::RoutePolicyFail,
+            RejectType::RejectRoute => fnet_filter::RejectType::RejectRoute,
+            RejectType::AdminProhibited => fnet_filter::RejectType::AdminProhibited,
+        }
+    }
+}
+
+impl TryFrom<fnet_filter::RejectType> for RejectType {
+    type Error = FidlConversionError;
+
+    fn try_from(value: fnet_filter::RejectType) -> Result<Self, Self::Error> {
+        match value {
+            fnet_filter::RejectType::TcpReset => Ok(RejectType::TcpReset),
+            fnet_filter::RejectType::NetUnreachable => Ok(RejectType::NetUnreachable),
+            fnet_filter::RejectType::HostUnreachable => Ok(RejectType::HostUnreachable),
+            fnet_filter::RejectType::ProtoUnreachable => Ok(RejectType::ProtoUnreachable),
+            fnet_filter::RejectType::PortUnreachable => Ok(RejectType::PortUnreachable),
+            fnet_filter::RejectType::RoutePolicyFail => Ok(RejectType::RoutePolicyFail),
+            fnet_filter::RejectType::RejectRoute => Ok(RejectType::RejectRoute),
+            fnet_filter::RejectType::AdminProhibited => Ok(RejectType::AdminProhibited),
+            fnet_filter::RejectType::__SourceBreaking { .. } => {
+                Err(FidlConversionError::UnknownUnionVariant(type_names::REJECT_TYPE))
+            }
+        }
+    }
+}
+
 impl From<Action> for fnet_filter::Action {
     fn from(action: Action) -> Self {
         match action {
@@ -722,6 +771,9 @@ impl From<Action> for fnet_filter::Action {
                 Self::Mark(fnet_filter::Mark { domain, action: action.into() })
             }
             Action::None => Self::None(fnet_filter::Empty {}),
+            Action::Reject(reject_type) => {
+                Self::Reject(fnet_filter::Reject { reject_type: reject_type.into() })
+            }
         }
     }
 }
@@ -775,6 +827,9 @@ impl TryFrom<fnet_filter::Action> for Action {
                 Err(FidlConversionError::UnknownUnionVariant(type_names::ACTION))
             }
             fnet_filter::Action::None(fnet_filter::Empty {}) => Ok(Self::None),
+            fnet_filter::Action::Reject(fnet_filter::Reject { reject_type }) => {
+                Ok(Self::Reject(reject_type.try_into()?))
+            }
         }
     }
 }
@@ -1309,6 +1364,8 @@ pub enum CommitError {
         protocol matcher: {0:?}"
     )]
     MasqueradeWithInvalidMatcher(RuleId),
+    #[error("rule has a Reject action but not a valid transport protocol matcher: {0:?}")]
+    RejectWithInvalidMatcher(RuleId),
     #[error("routine forms a cycle {0:?}")]
     CyclicalRoutineGraph(RoutineId),
     #[error("invalid change was pushed: {0:?}")]
@@ -1516,6 +1573,9 @@ pub(crate) fn handle_commit_result(
         }
         fnet_filter::CommitResult::MasqueradeWithInvalidMatcher(rule_id) => {
             Err(CommitError::MasqueradeWithInvalidMatcher(rule_id.into()))
+        }
+        fnet_filter::CommitResult::RejectWithInvalidMatcher(rule_id) => {
+            Err(CommitError::RejectWithInvalidMatcher(rule_id.into()))
         }
         fnet_filter::CommitResult::CyclicalRoutineGraph(routine_id) => {
             Err(CommitError::CyclicalRoutineGraph(routine_id.into()))

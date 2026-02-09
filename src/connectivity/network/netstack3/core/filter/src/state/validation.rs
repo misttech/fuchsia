@@ -14,7 +14,7 @@ use netstack3_hashmap::hash_map::{Entry, HashMap};
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 
 use crate::{
-    Action, Hook, IpRoutines, NatRoutines, PacketMatcher, Routine, Routines, Rule,
+    Action, Hook, IpRoutines, NatRoutines, PacketMatcher, RejectType, Routine, Routines, Rule,
     TransportProtocolMatcher, UninstalledRoutine,
 };
 
@@ -43,6 +43,10 @@ pub enum ValidationError<RuleInfo> {
     /// action specifies a source port range, the rule must match on transport
     /// protocol to ensure that the packet has either a TCP or UDP header.
     MasqueradeWithInvalidMatcher(RuleInfo),
+    /// A rule has a TCP-Reset Reject action without a corresponding valid
+    /// matcher. RejectAction with TcpReset reject type is allowed only if the
+    /// rule matches TCP.
+    RejectWithInvalidMatcher(RuleInfo),
 }
 
 /// Witness type ensuring that the contained filtering state has been validated.
@@ -81,7 +85,11 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
         validate_hook(
             &ingress,
             &[UnavailableMatcher::OutInterface],
-            &[UnavailableAction::Redirect, UnavailableAction::Masquerade],
+            &[
+                UnavailableAction::Redirect,
+                UnavailableAction::Masquerade,
+                UnavailableAction::Reject,
+            ],
         )?;
         validate_hook(
             &local_ingress,
@@ -108,6 +116,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
                 UnavailableAction::TransparentProxy,
                 UnavailableAction::Redirect,
                 UnavailableAction::Masquerade,
+                UnavailableAction::Reject,
             ],
         )?;
         validate_hook(
@@ -124,7 +133,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
         validate_hook(
             &ingress,
             &[UnavailableMatcher::OutInterface],
-            &[UnavailableAction::Masquerade, UnavailableAction::Mark],
+            &[UnavailableAction::Masquerade, UnavailableAction::Mark, UnavailableAction::Reject],
         )?;
         validate_hook(
             &local_ingress,
@@ -134,6 +143,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
                 UnavailableAction::Redirect,
                 UnavailableAction::Masquerade,
                 UnavailableAction::Mark,
+                UnavailableAction::Reject,
             ],
         )?;
         validate_hook(
@@ -143,6 +153,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
                 UnavailableAction::TransparentProxy,
                 UnavailableAction::Redirect,
                 UnavailableAction::Mark,
+                UnavailableAction::Reject,
             ],
         )?;
         validate_hook(
@@ -152,6 +163,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
                 UnavailableAction::TransparentProxy,
                 UnavailableAction::Masquerade,
                 UnavailableAction::Mark,
+                UnavailableAction::Reject,
             ],
         )?;
 
@@ -191,6 +203,7 @@ enum UnavailableAction {
     Redirect,
     Masquerade,
     Mark,
+    Reject,
 }
 
 impl UnavailableAction {
@@ -203,7 +216,8 @@ impl UnavailableAction {
             (UnavailableAction::TransparentProxy, Action::TransparentProxy(_))
             | (UnavailableAction::Redirect, Action::Redirect { .. })
             | (UnavailableAction::Masquerade, Action::Masquerade { .. })
-            | (UnavailableAction::Mark, Action::Mark { .. }) => {
+            | (UnavailableAction::Mark, Action::Mark { .. })
+            | (UnavailableAction::Reject, Action::Reject(_)) => {
                 Err(ValidationError::RuleWithInvalidAction(rule.clone()))
             }
             _ => Ok(()),
@@ -246,21 +260,25 @@ fn validate_routine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
             unavailable.validate(action, validation_info)?;
         }
 
-        let has_tcp_or_udp_matcher = |matcher: &PacketMatcher<_, _>| {
+        let get_proto_matcher = |matcher: &PacketMatcher<_, _>| {
             let Some(TransportProtocolMatcher { proto, .. }) = matcher.transport_protocol else {
-                return false;
+                return None;
             };
-            I::map_ip(
+            I::map_ip_in(
                 proto,
                 |proto| match proto {
-                    Ipv4Proto::Proto(IpProto::Tcp | IpProto::Udp) => true,
-                    _ => false,
+                    Ipv4Proto::Proto(proto) => Some(proto),
+                    _ => None,
                 },
                 |proto| match proto {
-                    Ipv6Proto::Proto(IpProto::Tcp | IpProto::Udp) => true,
-                    _ => false,
+                    Ipv6Proto::Proto(proto) => Some(proto),
+                    _ => None,
                 },
             )
+        };
+
+        let has_tcp_or_udp_matcher = |matcher: &PacketMatcher<_, _>| {
+            matches!(get_proto_matcher(matcher), Some(IpProto::Tcp | IpProto::Udp))
         };
 
         match action {
@@ -301,6 +319,22 @@ fn validate_routine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
                 let UninstalledRoutine { routine, id: _ } = target;
                 validate_routine(&*routine, unavailable_matchers, unavailable_actions)?;
             }
+            Action::Reject(reject_type) => match reject_type {
+                RejectType::TcpReset => {
+                    if get_proto_matcher(matcher) != Some(IpProto::Tcp) {
+                        return Err(ValidationError::RejectWithInvalidMatcher(
+                            validation_info.clone(),
+                        ));
+                    }
+                }
+                RejectType::NetUnreachable
+                | RejectType::HostUnreachable
+                | RejectType::ProtoUnreachable
+                | RejectType::PortUnreachable
+                | RejectType::RoutePolicyFail
+                | RejectType::RejectRoute
+                | RejectType::AdminProhibited => {}
+            },
         }
     }
 
@@ -453,6 +487,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Action<I, BT, RuleInfo
                 Action::Jump(converted)
             }
             Self::None => Action::None,
+            Self::Reject(reject_type) => Action::Reject(reject_type),
         }
     }
 }

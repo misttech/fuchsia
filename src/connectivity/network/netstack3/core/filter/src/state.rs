@@ -143,6 +143,9 @@ pub enum Action<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
 
     /// No action.
     None,
+
+    /// Reject the packet.
+    Reject(RejectType),
 }
 
 /// Transparently intercept the packet and deliver it to a local socket without
@@ -173,7 +176,8 @@ impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Inspectable for Action<I, BT,
             | Self::Redirect { .. }
             | Self::Masquerade { .. }
             | Self::Mark { .. }
-            | Self::None => {
+            | Self::None
+            | Self::Reject(_) => {
                 format!("{self:?}")
             }
             Self::Jump(UninstalledRoutine { routine: _, id }) => {
@@ -182,6 +186,55 @@ impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Inspectable for Action<I, BT,
         };
         inspector.record_string("action", value);
     }
+}
+
+/// IPv4-specific reject types.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RejectType {
+    /// Send a TCP RST packet.
+    TcpReset,
+
+    /// Network unreachable.
+    ///
+    /// IPv4: ICMP Destination network unreachable (type 3, code 0).
+    /// IPv6: ICMPv6 No route to destination (type 1, code 1).
+    NetUnreachable,
+
+    /// Host unreachable.
+    ///
+    /// IPv4: ICMP Host unreachable (type 3, code 1).
+    /// IPv6: ICMPv6 Address unreachable (type 1, code 3).
+    HostUnreachable,
+
+    /// Protocol unreachable.
+    ///
+    /// IPv4: ICMP Protocol unreachable (type 3, code 2).
+    /// IPv6: ICMPv6 Unrecognized Next Header type encountered (type 4, code 1).
+    ProtoUnreachable,
+
+    /// Port unreachable.
+    ///
+    /// IPv4: ICMP Port unreachable (type 3, code 3).
+    /// IPv6: ICMPv6 Port unreachable (type 1, code 4).
+    PortUnreachable,
+
+    /// Route to the destination network is prohibited.
+    ///
+    /// IPv4: ICMP Network administratively prohibited (type 3, code 9).
+    /// IPv6: ICMPv6 Source address failed ingress/egress policy (type 1, code 5).
+    RoutePolicyFail,
+
+    /// Reject route.
+    ///
+    /// IPv4: ICMP Host administratively prohibited (type 3, code 10).
+    /// IPv6: ICMPv6 Reject route to destination (type 1, code 6).
+    RejectRoute,
+
+    /// Communication administratively prohibited.
+    ///
+    /// IPv4: ICMP Communication administratively prohibited (type 3, code 13).
+    /// IPv6: ICMPv6 Communication administratively prohibited (type 1, code 1).
+    AdminProhibited,
 }
 
 /// A handle to a [`Routine`] that is not installed in a particular hook, and

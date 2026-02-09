@@ -16,11 +16,11 @@ use starnix_uapi::{
     IPPROTO_ICMP, IPPROTO_ICMPV6, IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP, IPT_RETURN, NF_ACCEPT,
     NF_DROP, NF_IP_FORWARD, NF_IP_LOCAL_IN, NF_IP_LOCAL_OUT, NF_IP_NUMHOOKS, NF_IP_POST_ROUTING,
     NF_IP_PRE_ROUTING, NF_QUEUE, c_char, c_int, c_uchar, c_uint, in_addr, in6_addr, ip6t_entry,
-    ip6t_ip6, ip6t_replace, ipt_entry, ipt_ip, ipt_replace, nf_ip_hook_priorities_NF_IP_PRI_FILTER,
-    nf_ip_hook_priorities_NF_IP_PRI_MANGLE, nf_ip_hook_priorities_NF_IP_PRI_NAT_DST,
-    nf_ip_hook_priorities_NF_IP_PRI_NAT_SRC, nf_ip_hook_priorities_NF_IP_PRI_RAW,
-    nf_nat_ipv4_multi_range_compat, nf_nat_range, xt_bpf_info_v1,
-    xt_entry_match__bindgen_ty_1__bindgen_ty_1 as xt_entry_match,
+    ip6t_ip6, ip6t_reject_info, ip6t_replace, ipt_entry, ipt_ip, ipt_reject_info, ipt_replace,
+    nf_ip_hook_priorities_NF_IP_PRI_FILTER, nf_ip_hook_priorities_NF_IP_PRI_MANGLE,
+    nf_ip_hook_priorities_NF_IP_PRI_NAT_DST, nf_ip_hook_priorities_NF_IP_PRI_NAT_SRC,
+    nf_ip_hook_priorities_NF_IP_PRI_RAW, nf_nat_ipv4_multi_range_compat, nf_nat_range,
+    xt_bpf_info_v1, xt_entry_match__bindgen_ty_1__bindgen_ty_1 as xt_entry_match,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_mark_tginfo2, xt_tcp,
     xt_tproxy_target_info_v1, xt_udp,
 };
@@ -64,6 +64,7 @@ const TARGET_ERROR: &str = "ERROR";
 const TARGET_REDIRECT: &str = "REDIRECT";
 const TARGET_TPROXY: &str = "TPROXY";
 const TARGET_MARK: &str = "MARK";
+const TARGET_REJECT: &str = "REJECT";
 
 #[derive(Debug, Error, PartialEq)]
 pub enum IpTableParseError {
@@ -153,6 +154,10 @@ pub enum IpTableParseError {
     NoNulInEbpfProgramPath,
     #[error("Invalid eBPF program path: {path}")]
     InvalidEbpfProgramPath { path: BString },
+    #[error("Invalid reject type {raw}")]
+    InvalidRejectType { raw: u32 },
+    #[error("REJECT rule outside of a filter table")]
+    RejectRuleOutsideFilterTable,
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -475,6 +480,9 @@ pub enum Target {
 
     // Proceed to the next rule in the chain.
     Next,
+
+    // Parsed from `ipt_reject_info` and `ip6t_reject_info`.
+    Reject(fnet_filter_ext::RejectType),
 }
 
 #[derive(Debug)]
@@ -488,6 +496,54 @@ pub struct NfNatRange {
 pub struct TproxyInfo {
     address: Option<fnet::IpAddress>,
     port: Option<NonZeroU16>,
+}
+
+fn reject_type_from_raw(
+    ip: Ip,
+    raw: u32,
+) -> Result<fnet_filter_ext::RejectType, IpTableParseError> {
+    use fidl_fuchsia_net_filter_ext::RejectType;
+    use starnix_uapi::{
+        ip6t_reject_with_IP6T_ICMP6_ADDR_UNREACH as IP6T_ICMP6_ADDR_UNREACH,
+        ip6t_reject_with_IP6T_ICMP6_ADM_PROHIBITED as IP6T_ICMP6_ADM_PROHIBITED,
+        ip6t_reject_with_IP6T_ICMP6_NO_ROUTE as IP6T_ICMP6_NO_ROUTE,
+        ip6t_reject_with_IP6T_ICMP6_POLICY_FAIL as IP6T_ICMP6_POLICY_FAIL,
+        ip6t_reject_with_IP6T_ICMP6_PORT_UNREACH as IP6T_ICMP6_PORT_UNREACH,
+        ip6t_reject_with_IP6T_ICMP6_REJECT_ROUTE as IP6T_ICMP6_REJECT_ROUTE,
+        ip6t_reject_with_IP6T_TCP_RESET as IP6T_TCP_RESET,
+        ipt_reject_with_IPT_ICMP_ADMIN_PROHIBITED as IPT_ICMP_ADMIN_PROHIBITED,
+        ipt_reject_with_IPT_ICMP_HOST_PROHIBITED as IPT_ICMP_HOST_PROHIBITED,
+        ipt_reject_with_IPT_ICMP_HOST_UNREACHABLE as IPT_ICMP_HOST_UNREACHABLE,
+        ipt_reject_with_IPT_ICMP_NET_PROHIBITED as IPT_ICMP_NET_PROHIBITED,
+        ipt_reject_with_IPT_ICMP_NET_UNREACHABLE as IPT_ICMP_NET_UNREACHABLE,
+        ipt_reject_with_IPT_ICMP_PORT_UNREACHABLE as IPT_ICMP_PORT_UNREACHABLE,
+        ipt_reject_with_IPT_ICMP_PROT_UNREACHABLE as IPT_ICMP_PROT_UNREACHABLE,
+        ipt_reject_with_IPT_TCP_RESET as IPT_TCP_RESET,
+    };
+
+    match ip {
+        Ip::V4 => match raw {
+            IPT_TCP_RESET => Ok(RejectType::TcpReset),
+            IPT_ICMP_NET_UNREACHABLE => Ok(RejectType::NetUnreachable),
+            IPT_ICMP_HOST_UNREACHABLE => Ok(RejectType::HostUnreachable),
+            IPT_ICMP_PROT_UNREACHABLE => Ok(RejectType::ProtoUnreachable),
+            IPT_ICMP_PORT_UNREACHABLE => Ok(RejectType::PortUnreachable),
+            IPT_ICMP_NET_PROHIBITED => Ok(RejectType::RoutePolicyFail),
+            IPT_ICMP_HOST_PROHIBITED => Ok(RejectType::RejectRoute),
+            IPT_ICMP_ADMIN_PROHIBITED => Ok(RejectType::AdminProhibited),
+            _ => Err(IpTableParseError::InvalidRejectType { raw }),
+        },
+        Ip::V6 => match raw {
+            IP6T_TCP_RESET => Ok(RejectType::TcpReset),
+            IP6T_ICMP6_NO_ROUTE => Ok(RejectType::NetUnreachable),
+            IP6T_ICMP6_ADM_PROHIBITED => Ok(RejectType::AdminProhibited),
+            IP6T_ICMP6_ADDR_UNREACH => Ok(RejectType::HostUnreachable),
+            IP6T_ICMP6_PORT_UNREACH => Ok(RejectType::PortUnreachable),
+            IP6T_ICMP6_POLICY_FAIL => Ok(RejectType::RoutePolicyFail),
+            IP6T_ICMP6_REJECT_ROUTE => Ok(RejectType::RejectRoute),
+            _ => Err(IpTableParseError::InvalidRejectType { raw }),
+        },
+    }
 }
 
 // `xt_standard_target` without the `target` field.
@@ -918,6 +974,8 @@ impl IptReplaceParser {
 
             (TARGET_MARK, 2) => self.view_as_mark_target(remaining_size)?,
 
+            (TARGET_REJECT, 0) => self.view_as_reject_target(remaining_size)?,
+
             (target_name, revision) => {
                 track_stub!(
                     TODO("https://fxbug.dev/448203710"),
@@ -1044,6 +1102,26 @@ impl IptReplaceParser {
         let mark_target = self.view_next_bytes_as::<xt_mark_tginfo2>()?;
 
         Ok(Target::Mark { mark: mark_target.mark, mask: mark_target.mask })
+    }
+
+    fn view_as_reject_target(&self, remaining_size: usize) -> Result<Target, IpTableParseError> {
+        // `ipt_reject_info` and `ip6t_reject_info` both contain just a single u32 field.
+        assert_eq!(size_of::<ipt_reject_info>(), size_of::<ip6t_reject_info>());
+
+        if remaining_size < size_of::<ipt_reject_info>() {
+            return Err(IpTableParseError::TargetSizeMismatch {
+                size: remaining_size,
+                target_name: "reject",
+            });
+        }
+
+        if self.replace_info.table_id != TableId::Filter {
+            return Err(IpTableParseError::RejectRuleOutsideFilterTable);
+        }
+
+        let reject_info = self.view_next_bytes_as::<ipt_reject_info>()?;
+        let reject_type = reject_type_from_raw(self.protocol, reject_info.with)?;
+        Ok(Target::Reject(reject_type))
     }
 }
 
@@ -1602,6 +1680,8 @@ impl Entry {
                 domain: fnet::MarkDomain::Mark1,
                 action: fnet_filter_ext::MarkAction::SetMark { mark, clearing_mask: mask },
             })),
+
+            Target::Reject(reject_type) => Ok(Some(fnet_filter_ext::Action::Reject(reject_type))),
 
             Target::Next => Ok(Some(fnet_filter_ext::Action::None)),
         }

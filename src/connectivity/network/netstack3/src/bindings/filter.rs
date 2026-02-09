@@ -51,6 +51,7 @@ enum CommitError {
     TransparentProxyWithInvalidMatcher(fnet_filter_ext::RuleId),
     RedirectWithInvalidMatcher(fnet_filter_ext::RuleId),
     MasqueradeWithInvalidMatcher(fnet_filter_ext::RuleId),
+    RejectWithInvalidMatcher(fnet_filter_ext::RuleId),
     CyclicalRoutineGraph(fnet_filter_ext::RoutineId),
     ErrorOnChange { index: usize, error: fnet_filter::CommitError },
 }
@@ -175,6 +176,9 @@ impl UpdateDispatcherInner {
             netstack3_core::filter::ValidationError::MasqueradeWithInvalidMatcher(rule_id) => {
                 CommitError::MasqueradeWithInvalidMatcher(rule_id)
             }
+            netstack3_core::filter::ValidationError::RejectWithInvalidMatcher(rule_id) => {
+                CommitError::RejectWithInvalidMatcher(rule_id)
+            }
         })?;
 
         if !events.is_empty() {
@@ -191,6 +195,7 @@ impl UpdateDispatcherInner {
                 redirect_actions: usize,
                 masquerade_actions: usize,
                 mark_actions: usize,
+                reject_actions: usize,
             }
 
             let mut counts = Counts { namespaces: new_state.len(), ..Default::default() };
@@ -211,6 +216,7 @@ impl UpdateDispatcherInner {
                                 counts.masquerade_actions += 1
                             }
                             fnet_filter_ext::Action::Mark { .. } => counts.mark_actions += 1,
+                            fnet_filter_ext::Action::Reject(_) => counts.reject_actions += 1,
                             fnet_filter_ext::Action::Accept
                             | fnet_filter_ext::Action::Return
                             | fnet_filter_ext::Action::None => {}
@@ -712,6 +718,9 @@ async fn serve_controller(
                         }
                         CommitError::MasqueradeWithInvalidMatcher(rule) => {
                             fnet_filter::CommitResult::MasqueradeWithInvalidMatcher(rule.into())
+                        }
+                        CommitError::RejectWithInvalidMatcher(rule) => {
+                            fnet_filter::CommitResult::RejectWithInvalidMatcher(rule.into())
                         }
                         CommitError::CyclicalRoutineGraph(routine) => {
                             fnet_filter::CommitResult::CyclicalRoutineGraph(routine.into())

@@ -227,6 +227,10 @@ closed protocol NamespaceController {
         /// on transport protocol to ensure that the packet has either a TCP or
         /// UDP header.
         8: masquerade_with_invalid_matcher RuleId;
+        /// A rule has a Reject action without a corresponding valid
+        /// configuration. Reject actions with the `TcpReset` reject type
+        /// must match TCP packets.
+        9: reject_with_invalid_matcher RuleId;
     });
 };
 

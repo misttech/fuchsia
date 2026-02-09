@@ -515,7 +515,8 @@ impl Validator {
                     | fnet_filter_ext::Action::Redirect { .. }
                     | fnet_filter_ext::Action::Masquerade { .. }
                     | fnet_filter_ext::Action::Mark { .. }
-                    | fnet_filter_ext::Action::None => {}
+                    | fnet_filter_ext::Action::None
+                    | fnet_filter_ext::Action::Reject(_) => {}
                 }
 
                 let to_insert = Rule { matchers, action };

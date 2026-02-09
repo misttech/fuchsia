@@ -121,6 +121,7 @@ impl From<FilterError> for Error {
                     | CommitError::RedirectWithInvalidMatcher(_)
                     | CommitError::RuleWithInvalidAction(_)
                     | CommitError::RuleWithInvalidMatcher(_)
+                    | CommitError::RejectWithInvalidMatcher(_)
                     | CommitError::ErrorOnChange(_)
                     | CommitError::FidlConversion(_) => {
                         panic!("failed to commit: generated filtering state was invalid.")
