@@ -6,7 +6,6 @@
 """Describe or export Bazel host test artifacts to the Ninja build directory."""
 
 import argparse
-import dataclasses
 import json
 import os
 import shutil
@@ -19,6 +18,9 @@ _SCRIPT_DIR_PATH = Path(_SCRIPT_DIR)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
 import runfiles_utils
+
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../../api"))
+from script_commands import ScriptCommandBase, ScriptCommandList
 
 # The main workspace name as it appears in the runfiles directory.
 # For the Fuchsia build, which is still using Bazel 7.x and WORKSPACE
@@ -449,52 +451,75 @@ class HostTestInfo(object):
         )
 
 
-@dataclasses.dataclass
-class CommandContext(object):
-    """Common context for all script commands."""
+class ListCommand(ScriptCommandBase):
+    """Generate a tests.json file from one or more Bazel target patterns."""
 
-    args: argparse.Namespace
-    build_dir: Path
-    tests_map: dict[str, HostTestInfo]
-    bazel_launcher: build_utils.BazelLauncher
+    DESCRIPTION_RAW = _LIST_TESTS_COMMAND_HELP
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--output",
+            type=Path,
+            help="Write result to file, default goes to stdout.",
+        )
+        parser.add_argument(
+            "target_pattern", nargs="+", help="Bazel host test label patterns"
+        )
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        # Create a tests.json file corresponding to the test_info entries.
+        tests_json = []
+        for label, test_info in sorted(args.tests_map.items()):
+            tests_json.append(test_info.generate_tests_json_entry())
+
+        content = json.dumps(tests_json, indent=2)
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(content)
+        else:
+            print(content)
+
+        return 0
 
 
-def list_command(args: argparse.Namespace, context: CommandContext) -> int:
-    """Implement the `list` script command."""
-    # Create a tests.json file corresponding to the test_info entries.
-    tests_json = []
-    for label, test_info in sorted(context.tests_map.items()):
-        tests_json.append(test_info.generate_tests_json_entry())
+class ExportCommand(ScriptCommandBase):
+    """Export Bazel test artifacts to the Ninja build directory."""
 
-    content = json.dumps(tests_json, indent=2)
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(content)
-    else:
-        print(content)
+    DESCRIPTION_RAW = _EXPORT_COMMAND_HELP
 
-    return 0
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--output-dir",
+            type=Path,
+            help="Specify alternative output directory, default is Ninja build directory.",
+        )
+        parser.add_argument(
+            "target_pattern", nargs="+", help="Bazel host test label patterns"
+        )
 
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        execroot = args.bazel_cmd.get_execroot()
 
-def export_command(args: argparse.Namespace, context: CommandContext) -> int:
-    """Implement the `export` command."""
-    execroot = context.bazel_cmd.get_execroot()
+        # Build the specific targets to ensure that the runfiles manifest files that
+        # args.tests_map references do exist.
+        ret = args.bazel_launcher.run_bazel_command(
+            ["build", "--config=host"] + sorted(args.target_pattern),
+        )
+        if ret.returncode != 0:
+            return ret.returncode
 
-    # Build them, as we require the runfiles manifest file to parse it.
-    ret = context.bazel_launcher.run_bazel_command(
-        ["build", "--config=host"] + sorted(args.target_pattern),
-    )
-    if ret.returncode != 0:
-        return ret.returncode
+        build_dir = args.build_dir
+        if args.output_dir:
+            build_dir = args.output_dir
 
-    build_dir = context.build_dir
-    if args.output_dir:
-        build_dir = args.output_dir
+        for label, test_info in args.tests_map.items():
+            test_info.export_to(build_dir, execroot)
 
-    for label, test_info in context.tests_map.items():
-        test_info.export_to(build_dir, execroot)
-
-    return 0
+        return 0
 
 
 def main() -> int:
@@ -515,39 +540,10 @@ def main() -> int:
         default=_DEFAULT_EXPORT_SUBDIR,
         help=f"Set build_dir sub-directory for export (default {_DEFAULT_EXPORT_SUBDIR}).",
     )
-    subparsers = parser.add_subparsers(required=True)
 
-    parser_list = subparsers.add_parser(
-        "list",
-        help="Generate a tests.json file from one or more Bazel target patterns.",
-        formatter_class=argparse.RawTextHelpFormatter,
-        description=_LIST_TESTS_COMMAND_HELP,
-    )
-    parser_list.add_argument(
-        "--output",
-        type=Path,
-        help="Write result to file, default goes to stdout.",
-    )
-    parser_list.add_argument(
-        "target_pattern", nargs="+", help="Bazel host test label patterns"
-    )
-    parser_list.set_defaults(func=list_command)
-
-    parser_export = subparsers.add_parser(
-        "export",
-        help="Export Bazel test artifacts to the Ninja build directory.",
-        description=_EXPORT_COMMAND_HELP,
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser_export.add_argument(
-        "--output-dir",
-        type=Path,
-        help="Specify alternative output directory, default is Ninja build directory.",
-    )
-    parser_export.add_argument(
-        "target_pattern", nargs="+", help="Bazel host test label patterns"
-    )
-    parser_export.set_defaults(func=export_command)
+    commands = ScriptCommandList(parser)
+    commands.add_command(ListCommand())
+    commands.add_command(ExportCommand())
 
     args = parser.parse_args()
 
@@ -555,7 +551,8 @@ def main() -> int:
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
     # Now query each target to get its executable and runfiles_manifest path
-    # in the output base, then load the runfiles manifest.
+    # in the output base. Record the information into args.tests_map before
+    # calling each command's run() method.
     patterns = " ".join(args.target_pattern)
     ret = bazel_launcher.run_query(
         "cquery",
@@ -570,6 +567,8 @@ def main() -> int:
     if ret.returncode != 0:
         return ret.returncode
 
+    args.bazel_launcher = bazel_launcher
+
     host_info = HostInfo()
     tests_map = {}
     for line in ret.stdout.splitlines():
@@ -577,8 +576,9 @@ def main() -> int:
         test_info = HostTestInfo(test_entry, host_info, args.export_subdir)
         tests_map[test_entry["label"]] = test_info
 
-    context = CommandContext(args, bazel_paths, tests_map, bazel_launcher)
-    return args.func(args, context)
+    args.tests_map = tests_map
+
+    return commands.run(args, keep_exception=True)
 
 
 if __name__ == "__main__":
