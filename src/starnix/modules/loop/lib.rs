@@ -6,6 +6,7 @@
 
 use bitflags::bitflags;
 use starnix_core::device::DeviceMode;
+use starnix_core::device::block::canonicalize_ioctl_request;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
@@ -27,7 +28,7 @@ use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_type::{DeviceType, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::UserRef;
+use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
 use starnix_uapi::{
     __kernel_old_dev_t, BLKFLSBUF, BLKGETSIZE, BLKGETSIZE64, BLKRASET, LO_FLAGS_AUTOCLEAR,
     LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE, LOOP_CHANGE_FD,
@@ -456,14 +457,14 @@ impl FileOps for LoopDeviceFile {
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        match request {
+        match canonicalize_ioctl_request(current_task, request) {
             BLKGETSIZE => {
-                let user_size = UserRef::<u64>::from(arg);
+                let user_size = MultiArchUserRef::<u64, u32>::new(current_task, arg);
                 let state = self.device.state.lock();
                 state.check_bound()?;
                 let size = state.size_limit / (state.block_size as u64);
                 std::mem::drop(state);
-                current_task.write_object(user_size, &size)?;
+                current_task.write_multi_arch_object(user_size, size)?;
                 Ok(SUCCESS)
             }
             BLKGETSIZE64 => {
