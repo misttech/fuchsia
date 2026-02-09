@@ -31,6 +31,7 @@ use wlan_common::sequestered::Sequestered;
 use {fidl_fuchsia_wlan_common as fidl_common, fuchsia_async as fasync};
 
 pub mod bss_selection;
+pub mod fut_manager;
 pub mod network_selection;
 pub mod scoring_functions;
 

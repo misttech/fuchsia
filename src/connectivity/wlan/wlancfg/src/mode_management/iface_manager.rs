@@ -5,6 +5,10 @@
 use crate::access_point::state_machine::AccessPointApi;
 use crate::access_point::{state_machine as ap_fsm, types as ap_types};
 use crate::client::connection_selection::ConnectionSelectionRequester;
+use crate::client::connection_selection::fut_manager::{
+    ConnectionSelectionFutures, ConnectionSelectionManager, ConnectionSelectionResponse,
+    SelectionIdentifier,
+};
 use crate::client::roaming::local_roam_manager::RoamManager;
 use crate::client::{state_machine as client_fsm, types as client_types};
 use crate::config_management::SavedNetworksManagerApi;
@@ -25,28 +29,20 @@ use fuchsia_inspect_contrib::log::InspectListClosure;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_contrib::{inspect_insert, inspect_log};
 use futures::channel::{mpsc, oneshot};
-use futures::future::{LocalBoxFuture, ready};
+use futures::future::{FutureExt, LocalBoxFuture, ready};
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
-use futures::{FutureExt, StreamExt, select};
+use futures::{StreamExt, select};
 use log::{debug, error, info, warn};
 use std::convert::Infallible;
 use std::fmt::Debug;
+
 use std::sync::Arc;
 
 // Maximum allowed interval between scans when attempting to reconnect client interfaces.  This
 // value is taken from legacy state machine.
 const MAX_AUTO_CONNECT_RETRY_SECONDS: i64 = 10;
 const INSPECT_RECOVERY_INTERFACE_RECORDS: usize = 14;
-
-#[cfg_attr(test, derive(Debug))]
-enum ConnectionSelectionResponse {
-    ConnectRequest {
-        candidate: Option<client_types::ScannedCandidate>,
-        request: ConnectAttemptRequest,
-    },
-    Autoconnect(Option<client_types::ScannedCandidate>),
-}
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(test, derive(Debug))]
@@ -177,13 +173,11 @@ pub(crate) struct IfaceManagerService {
     clients: Vec<ClientIfaceContainer>,
     aps: Vec<ApIfaceContainer>,
     saved_networks: Arc<dyn SavedNetworksManagerApi>,
-    connection_selection_requester: ConnectionSelectionRequester,
+
     roam_manager: RoamManager,
     fsm_termination_futures:
         FuturesUnordered<future_with_metadata::FutureWithMetadata<(), StateMachineMetadata>>,
-    connection_selection_futures: FuturesUnordered<
-        LocalBoxFuture<'static, Result<ConnectionSelectionResponse, anyhow::Error>>,
-    >,
+    connection_selection_manager: ConnectionSelectionManager,
     telemetry_sender: TelemetrySender,
     // A sender to be cloned for state machines to report defects to the IfaceManager.
     defect_sender: mpsc::Sender<Defect>,
@@ -214,10 +208,11 @@ impl IfaceManagerService {
             clients: Vec::new(),
             aps: Vec::new(),
             saved_networks,
-            connection_selection_requester,
             roam_manager,
             fsm_termination_futures: FuturesUnordered::new(),
-            connection_selection_futures: FuturesUnordered::new(),
+            connection_selection_manager: ConnectionSelectionManager::new(
+                connection_selection_requester,
+            ),
             telemetry_sender,
             defect_sender,
             _node,
@@ -418,11 +413,11 @@ impl IfaceManagerService {
         network_id: ap_types::NetworkIdentifier,
         reason: client_types::DisconnectReason,
     ) -> LocalBoxFuture<'static, Result<(), Error>> {
-        // Cancel any ongoing network selection, since a disconnect makes it invalid.
-        if !self.connection_selection_futures.is_empty() {
-            info!("Disconnect requested, ignoring results from ongoing connection selections.");
-            self.connection_selection_futures.clear();
-        }
+        // Cancel any ongoing connection selections for the given network id and any autoconnect
+        // selections. Any targeted connection selections for different networks are unaffected.
+        self.connection_selection_manager
+            .cancel(&SelectionIdentifier::ConnectRequest(network_id.clone()));
+        self.connection_selection_manager.cancel(&SelectionIdentifier::Automatic);
 
         // Find the client interface associated with the given network config and disconnect from
         // the network.
@@ -453,10 +448,12 @@ impl IfaceManagerService {
                         None => {
                             // If there is a Configured client for this network with no client state
                             // machine, it means this disconnect came before a state machine could
-                            // be set up fully (e.g. if connection selection was still
-                            // ongoing). In this case, there will be a lingering `connecting` client
-                            // state update for the given network that we must handle here, rather
-                            // than in a client state machine.
+                            // be set up fully (e.g. if connection selection was still ongoing). In
+                            // this case, there will be a lingering `connecting` client state update
+                            // for the given network that we must handle here, rather than in a
+                            // client state machine. Note that automatic connection selections do
+                            // _not_ send an initial 'Connecting' state update, and thus aren't
+                            // handled here.
                             let networks = vec![listener::ClientNetworkState {
                                 id: network_id,
                                 state: client_types::ConnectionState::Disconnected,
@@ -518,6 +515,20 @@ impl IfaceManagerService {
             }
         }
 
+        // Cancel any ongoing connection attempts for OTHER networks.
+        for id in self.connection_selection_manager.active_selections() {
+            if id != SelectionIdentifier::ConnectRequest(connect_request.network.clone()) {
+                self.connection_selection_manager.cancel(&id);
+            }
+        }
+
+        // Check if we are already connecting to THIS network.
+        let selection_id = SelectionIdentifier::ConnectRequest(connect_request.network.clone());
+        if self.connection_selection_manager.active_selections().contains(&selection_id) {
+            info!("{} is already in progress", selection_id);
+            return Ok(());
+        }
+
         // Check if connect request has already been fulfilled.
         for client in self.clients.iter() {
             match &client.config {
@@ -532,24 +543,20 @@ impl IfaceManagerService {
         }
 
         let mut networks = vec![];
-        // Cancel any ongoing connection attempts.
-        if !self.connection_selection_futures.is_empty() {
-            info!("Connect request received, ignoring results from ongoing connection selections.");
-            self.connection_selection_futures.clear();
-            // Any clients that had been configured but don't have state machines are pending connect
-            // requests that we just cancelled. We have to add a "Disconnected" listener update for
-            // them and mark as Unconfigured.
-            for client in self.clients.iter_mut() {
-                if let ClientIfaceContainerConfig::Configured(id) = &client.config
-                    && client.client_state_machine.as_mut().is_none()
-                {
-                    networks.push(listener::ClientNetworkState {
-                        id: id.clone(),
-                        state: client_types::ConnectionState::Disconnected,
-                        status: Some(client_types::DisconnectStatus::ConnectionStopped),
-                    });
-                    client.config = ClientIfaceContainerConfig::Unconfigured;
-                }
+
+        // Any clients that had been configured but don't have state machines are pending connect
+        // requests that we just cancelled. We have to add a "Disconnected" listener update for
+        // them and mark as Unconfigured.
+        for client in self.clients.iter_mut() {
+            if let ClientIfaceContainerConfig::Configured(id) = &client.config
+                && client.client_state_machine.as_mut().is_none()
+            {
+                networks.push(listener::ClientNetworkState {
+                    id: id.clone(),
+                    state: client_types::ConnectionState::Disconnected,
+                    status: Some(client_types::DisconnectStatus::ConnectionStopped),
+                });
+                client.config = ClientIfaceContainerConfig::Unconfigured;
             }
         }
 
@@ -577,8 +584,9 @@ impl IfaceManagerService {
         ) {
             error!("failed to send state update: {:?}", e);
         }
-
-        initiate_connection_selection_for_connect_request(connect_request.clone(), self).await
+        self.connection_selection_manager
+            .initiate_connection_selection_for_connect_request(connect_request);
+        Ok(())
     }
 
     async fn connect(&mut self, selection: client_types::ConnectSelection) -> Result<(), Error> {
@@ -859,11 +867,11 @@ impl IfaceManagerService {
         self.telemetry_sender.send(TelemetryEvent::ClearEstablishConnectionStartTime);
 
         // Cancel any ongoing network selection, since a disconnect makes it invalid.
-        if !self.connection_selection_futures.is_empty() {
+        if !self.connection_selection_manager.active_selections().is_empty() {
             info!(
                 "Client connections stopping, ignoring results from ongoing connection selections."
             );
-            self.connection_selection_futures.clear();
+            self.connection_selection_manager.cancel_all();
         }
 
         let client_ifaces: Vec<ClientIfaceContainer> = self.clients.drain(..).collect();
@@ -1056,42 +1064,15 @@ impl IfaceManagerService {
 async fn initiate_automatic_connection_selection(iface_manager: &mut IfaceManagerService) {
     if !iface_manager.idle_clients().is_empty()
         && iface_manager.saved_networks.known_network_count().await > 0
-        && iface_manager.connection_selection_futures.is_empty()
+        && iface_manager.connection_selection_manager.active_selections().is_empty()
     {
         iface_manager
             .telemetry_sender
             .send(TelemetryEvent::StartEstablishConnection { reset_start_time: false });
         info!("Initiating network selection for idle client interface.");
 
-        let mut requester = iface_manager.connection_selection_requester.clone();
-        let fut = async move {
-            requester
-                .do_connection_selection(
-                    None,
-                    client_types::ConnectReason::IdleInterfaceAutoconnect,
-                )
-                .await
-                .map_err(|e| format_err!("Error sending connection selection request: {}.", e))
-                .map(ConnectionSelectionResponse::Autoconnect)
-        };
-        iface_manager.connection_selection_futures.push(fut.boxed_local());
+        iface_manager.connection_selection_manager.initiate_automatic_connection_selection();
     }
-}
-
-/// Queues a connection selection future for a connect request.
-async fn initiate_connection_selection_for_connect_request(
-    request: ConnectAttemptRequest,
-    iface_manager: &mut IfaceManagerService,
-) -> Result<(), Error> {
-    let mut requester = iface_manager.connection_selection_requester.clone();
-    let fut = async move {
-        requester
-            .do_connection_selection(Some(request.network.clone()), request.reason)
-            .await
-            .map(|candidate| ConnectionSelectionResponse::ConnectRequest { candidate, request })
-    };
-    iface_manager.connection_selection_futures.push(fut.boxed_local());
-    Ok(())
 }
 
 /// Handles results of idle interface autoconnect connection selection, including attempting to
@@ -1152,12 +1133,9 @@ async fn handle_connection_selection_for_connect_request_results(
         None => {
             if request.attempts < 3 {
                 debug!("No candidates found for connect request, queueing retrying.");
-                match initiate_connection_selection_for_connect_request(request, iface_manager)
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(e) => error!("Failed to initiate bss selection for scan retry: {:?}", e),
-                }
+                iface_manager
+                    .connection_selection_manager
+                    .initiate_connection_selection_for_connect_request(request);
             } else {
                 info!("Failed to find a candidate for the connect request");
                 // Send connection failed update.
@@ -1397,6 +1375,9 @@ async fn serve_iface_functionality(
     defect_receiver: &mut mpsc::Receiver<Defect>,
     recovery_action_receiver: &mut recovery::RecoveryActionReceiver,
 ) {
+    // Pollable wrapper for connection selection manager.
+    let mut connection_selection_futures =
+        ConnectionSelectionFutures::new(&mut iface_manager.connection_selection_manager);
     select! {
         req = requests.next() => {
             if let Some(req) = req {
@@ -1418,27 +1399,31 @@ async fn serve_iface_functionality(
                 iface_manager,
             ).await;
         },
-        connection_selection_result = iface_manager.connection_selection_futures.select_next_some() => {
-            match connection_selection_result {
-                // Automatic network selection
-                Ok(ConnectionSelectionResponse::Autoconnect(candidate)) => {
+        connection_selection_result = connection_selection_futures => {
+            let (selection_id, result) = connection_selection_result;
+            match result {
+                Ok(Some(ConnectionSelectionResponse::Autoconnect(candidate))) => {
+                    info!("{} has completed.", selection_id);
                     handle_automatic_connection_selection_results(
                         candidate,
                         iface_manager,
                         reconnect_monitor_interval,
                         connectivity_monitor_timer
-                    ).await
-                },
-                // Specific network connect request
-                Ok(ConnectionSelectionResponse::ConnectRequest {candidate, request}) => {
+                    ).await;
+                }
+                Ok(Some(ConnectionSelectionResponse::ConnectRequest {candidate, request})) => {
+                    info!("{} has completed.", selection_id);
                     handle_connection_selection_for_connect_request_results(
                         request,
                         candidate,
                         iface_manager,
                     ).await;
                 }
+                Ok(None) => {
+                    debug!("{} cancellation has been processed by iface_manager", selection_id);
+                }
                 Err(e) => {
-                    error!("Error received from connection selector: {:?}", e);
+                    error!("{} failed with error: {}", selection_id, e);
                 }
             }
         },
@@ -1518,12 +1503,11 @@ mod tests {
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async::{DurationExt, TestExecutor};
+    use fuchsia_async::TestExecutor;
     use fuchsia_inspect::reader;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
     use ieee80211::MacAddr;
-
     use std::collections::HashMap;
     use std::pin::pin;
     use std::sync::LazyLock;
@@ -2072,25 +2056,13 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_connect_request_cancels_auto_reconnect_future() {
+    fn test_connect_request_cancels_ongoing_connection_selections_for_autoconnect() {
         let mut exec = fuchsia_async::TestExecutor::new();
+        let test_values = test_setup(&mut exec);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
 
-        let mut test_values = test_setup(&mut exec);
-        let (mut iface_manager, mut _sme_stream) =
-            create_iface_manager_with_client(&test_values, false);
-
-        let scanned_candidate = generate_random_scanned_candidate();
-        let connect_selection = client_types::ConnectSelection {
-            target: scanned_candidate.clone(),
-            reason: client_types::ConnectReason::NewSavedNetworkAutoconnect,
-        };
-        let connect_request = ConnectAttemptRequest::new(
-            scanned_candidate.network.clone(),
-            scanned_candidate.credential.clone(),
-            connect_selection.reason,
-        );
-
-        // Add credentials for the test network to the saved networks.
+        // Add a saved network
+        let connect_selection = generate_connect_selection();
         let save_network_fut = test_values.saved_networks.store(
             connect_selection.target.network.clone(),
             connect_selection.target.credential.clone(),
@@ -2098,97 +2070,287 @@ mod tests {
         let mut save_network_fut = pin!(save_network_fut);
         assert_matches!(exec.run_until_stalled(&mut save_network_fut), Poll::Ready(_));
 
-        // Initiate automatic connection selection
+        // Use the public API to initiate automatic connection selection.
         {
             let mut sel_fut = pin!(initiate_automatic_connection_selection(&mut iface_manager));
             assert_matches!(exec.run_until_stalled(&mut sel_fut), Poll::Ready(()));
         }
 
-        // Request a connect through IfaceManager and respond to requests needed to complete it.
+        // Verify it is active
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::Automatic)
+        );
+
+        // Now initiate a connect request
+        let connect_request = ConnectAttemptRequest::new(
+            connect_selection.target.network.clone(),
+            connect_selection.target.credential.clone(),
+            connect_selection.reason,
+        );
+
         {
-            assert_eq!(iface_manager.connection_selection_futures.len(), 1);
-
-            let connect_fut = iface_manager.handle_connect_request(connect_request);
+            let connect_fut = iface_manager.handle_connect_request(connect_request.clone());
             let mut connect_fut = pin!(connect_fut);
-
-            // Run the future for the connect request
+            // It should return Ok(()) immediately as it spawns the future
             assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
         }
 
-        // There should be a new connection selection future for the manual connect request,
-        // and the previous one should have been removed.
-        assert_eq!(iface_manager.connection_selection_futures.len(), 1);
-
-        // Progress the connection selection future, which should make a scan request if it's
-        // the correct future and wouldn't if it's the future from the beginning of the test.
-        let (_sender, receiver) = mpsc::channel(1);
-        let serve_fut = serve_iface_manager_requests(
-            iface_manager,
-            receiver,
-            test_values.defect_receiver,
-            test_values.recovery_receiver,
+        // Verify Automatic is gone and ConnectRequest is present
+        let active_selections = iface_manager.connection_selection_manager.active_selections();
+        assert!(!active_selections.contains(&SelectionIdentifier::Automatic));
+        assert!(
+            active_selections
+                .contains(&SelectionIdentifier::ConnectRequest(connect_request.network))
         );
-        let mut serve_fut = pin!(serve_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        // Respond to the connection selection request
-        assert_matches!(test_values.connection_selection_request_receiver.try_next(), Ok(Some(request)) => {
-            assert_matches!(request, ConnectionSelectionRequest::NewConnectionSelection {network_id, reason, responder} => {
-                assert!(network_id.is_some());
-                assert_eq!(reason, client_types::ConnectReason::NewSavedNetworkAutoconnect);
-                responder.send(Some(scanned_candidate)).expect("failed to send selection");
-            });
-        });
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        // Since an AP was selected, the iface manager should request an SME handle to
-        // initialize a state machine.
-        let mut monitor_service_fut = test_values.monitor_service_stream.into_future();
-        assert_matches!(
-            poll_service_req(&mut exec, &mut monitor_service_fut),
-            Poll::Ready(fidl_fuchsia_wlan_device_service::DeviceMonitorRequest::GetClientSme {
-                iface_id: TEST_CLIENT_IFACE_ID, sme_server: _, responder
-            }) => {
-                // Send back a positive acknowledgement.
-                assert!(responder.send(Ok(())).is_ok());
-            }
-        );
-
-        // Check the connection selection futures receiver to see that connection selection
-        // wasn't initiated again.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
     }
 
     #[fuchsia::test]
-    fn test_disconnect_cancels_autoconnect_future() {
+    fn test_connect_request_cancels_ongoing_connection_selections_for_unrelated_connect_requests() {
         let mut exec = fuchsia_async::TestExecutor::new();
-
         let test_values = test_setup(&mut exec);
-        let (mut iface_manager, mut _sme_stream) =
-            create_iface_manager_with_client(&test_values, false);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
 
-        // Add a network selection future which won't complete that should be canceled by a
-        // disconnect call.
-        async fn blocking_fn() -> Result<ConnectionSelectionResponse, anyhow::Error> {
-            loop {
-                fasync::Timer::new(zx::MonotonicDuration::from_millis(1).after_now()).await
-            }
-        }
-        iface_manager.connection_selection_futures.push(blocking_fn().boxed());
-        assert!(!iface_manager.connection_selection_futures.is_empty());
-
-        // Request a disconnect through IfaceManager.
-        let disconnect_fut = iface_manager.disconnect(
-            NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa),
-            client_types::DisconnectReason::NetworkUnsaved,
+        // Initiate first connect request
+        let network_a = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_a").unwrap(),
+            SecurityType::Wpa,
         );
-        let mut disconnect_fut = pin!(disconnect_fut);
+        let request_a = ConnectAttemptRequest::new(
+            network_a.clone(),
+            Credential::None,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
 
-        // Expect that we have requested a client SME proxy.
-        assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        {
+            let connect_fut = iface_manager.handle_connect_request(request_a.clone());
+            let mut connect_fut = pin!(connect_fut);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
+        }
 
-        // Verify that the network selection future was dropped from the list.
-        assert!(iface_manager.connection_selection_futures.is_empty());
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::ConnectRequest(network_a.clone()))
+        );
+
+        // Initiate second unrelated connect request
+        let network_b = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_b").unwrap(),
+            SecurityType::Wpa,
+        );
+        let request_b = ConnectAttemptRequest::new(
+            network_b.clone(),
+            Credential::None,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
+
+        {
+            let connect_fut_b = iface_manager.handle_connect_request(request_b.clone());
+            let mut connect_fut_b = pin!(connect_fut_b);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut_b), Poll::Ready(Ok(())));
+        }
+
+        // Verify A is gone, B is present
+        let active_selections = iface_manager.connection_selection_manager.active_selections();
+        assert!(!active_selections.contains(&SelectionIdentifier::ConnectRequest(network_a)));
+        assert!(active_selections.contains(&SelectionIdentifier::ConnectRequest(network_b)));
+    }
+
+    #[fuchsia::test]
+    fn test_connect_request_dedupes_with_ongoing_connection_selections() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let mut test_values = test_setup(&mut exec);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
+
+        let network_a = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_a").unwrap(),
+            SecurityType::Wpa,
+        );
+        let request_a = ConnectAttemptRequest::new(
+            network_a.clone(),
+            Credential::None,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
+
+        // First request
+        {
+            let connect_fut = iface_manager.handle_connect_request(request_a.clone());
+            let mut connect_fut = pin!(connect_fut);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Drive the manager to ensure the request is sent
+        {
+            let next_fut = iface_manager.connection_selection_manager.get_futures().next();
+            let mut next_fut = pin!(next_fut);
+            let _ = exec.run_until_stalled(&mut next_fut);
+        }
+
+        // Consume the first request from the channel to verify it was sent
+        assert_matches!(test_values.connection_selection_request_receiver.try_next(), Ok(Some(ConnectionSelectionRequest::NewConnectionSelection { network_id: Some(id), .. })) if id == network_a);
+
+        // Second request (same network)
+        {
+            let connect_fut_2 = iface_manager.handle_connect_request(request_a.clone());
+            let mut connect_fut_2 = pin!(connect_fut_2);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut_2), Poll::Ready(Ok(())));
+        }
+
+        // Verify NO new request in channel
+        assert_matches!(test_values.connection_selection_request_receiver.try_next(), Err(_));
+
+        // Verify still valid
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::ConnectRequest(network_a))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_disconnect_cancels_ongoing_connection_selections_for_autoconnect() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let test_values = test_setup(&mut exec);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
+
+        // Add a saved network
+        let connect_selection = generate_connect_selection();
+        let save_network_fut = test_values.saved_networks.store(
+            connect_selection.target.network.clone(),
+            connect_selection.target.credential.clone(),
+        );
+        let mut save_network_fut = pin!(save_network_fut);
+        assert_matches!(exec.run_until_stalled(&mut save_network_fut), Poll::Ready(_));
+
+        // Use the public API to initiate automatic connection selection.
+        {
+            let mut sel_fut = pin!(initiate_automatic_connection_selection(&mut iface_manager));
+            assert_matches!(exec.run_until_stalled(&mut sel_fut), Poll::Ready(()));
+        }
+
+        // Verify it is active
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::Automatic)
+        );
+
+        // Disconnect
+        {
+            let disconnect_fut = iface_manager.disconnect(
+                connect_selection.target.network.clone(),
+                client_types::DisconnectReason::NetworkUnsaved,
+            );
+            let mut disconnect_fut = pin!(disconnect_fut);
+            assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Verify cancelled
+        assert!(
+            !iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::Automatic)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_disconnect_cancels_ongoing_connection_selections_for_connect_request() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let test_values = test_setup(&mut exec);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
+
+        let network_a = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_a").unwrap(),
+            SecurityType::Wpa,
+        );
+        let request_a = ConnectAttemptRequest::new(
+            network_a.clone(),
+            Credential::None,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
+
+        // Start connect request
+        {
+            let connect_fut = iface_manager.handle_connect_request(request_a.clone());
+            let mut connect_fut = pin!(connect_fut);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
+        }
+
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::ConnectRequest(network_a.clone()))
+        );
+
+        // Disconnect
+        {
+            let disconnect_fut = iface_manager
+                .disconnect(network_a.clone(), client_types::DisconnectReason::NetworkUnsaved);
+            let mut disconnect_fut = pin!(disconnect_fut);
+            assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Verify cancelled
+        assert!(
+            !iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::ConnectRequest(network_a))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_disconnect_does_not_cancel_connection_selections_for_unrelated_connect_request() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let test_values = test_setup(&mut exec);
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
+
+        let network_a = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_a").unwrap(),
+            SecurityType::Wpa,
+        );
+        let request_a = ConnectAttemptRequest::new(
+            network_a.clone(),
+            Credential::None,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
+
+        // Start connect request
+        {
+            let connect_fut = iface_manager.handle_connect_request(request_a.clone());
+            let mut connect_fut = pin!(connect_fut);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Disconnect UNRELATED network
+        let network_b = NetworkIdentifier::new(
+            client_types::Ssid::try_from("network_b").unwrap(),
+            SecurityType::Wpa,
+        );
+        {
+            let disconnect_fut = iface_manager
+                .disconnect(network_b.clone(), client_types::DisconnectReason::NetworkUnsaved);
+            let mut disconnect_fut = pin!(disconnect_fut);
+            // It might return error via ready if iface not found, or Ok if handled gracefully.
+            // The disconnect implementation returns Ok generally even if not connected, unless error in FSM.
+            assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Verify A is STILL THERE
+        assert!(
+            iface_manager
+                .connection_selection_manager
+                .active_selections()
+                .contains(&SelectionIdentifier::ConnectRequest(network_a))
+        );
     }
 
     /// Tests the case where connect is called, but no client ifaces exist.
@@ -4922,9 +5084,13 @@ mod tests {
             }
             NetworkSelectionMissingAttribute::NetworkSelectionInProgress => {
                 // Insert a future so that it looks like a scan is in progress.
-                iface_manager
-                    .connection_selection_futures
-                    .push(ready(Ok(ConnectionSelectionResponse::Autoconnect(None))).boxed());
+                iface_manager.connection_selection_manager.spawn(
+                    SelectionIdentifier::Automatic,
+                    ready(Ok::<ConnectionSelectionResponse, anyhow::Error>(
+                        ConnectionSelectionResponse::Autoconnect(None),
+                    ))
+                    .boxed(),
+                );
             }
         }
 
@@ -4952,9 +5118,11 @@ mod tests {
         match test_type {
             NetworkSelectionMissingAttribute::AllAttributesPresent => {
                 // Run forward connection selection futures to kick them off.
-                iface_manager.connection_selection_futures.iter_mut().for_each(|fut| {
-                    assert_matches!(exec.run_until_stalled(fut), Poll::Pending);
-                });
+                iface_manager.connection_selection_manager.get_futures().iter_mut().for_each(
+                    |fut| {
+                        assert_matches!(exec.run_until_stalled(fut), Poll::Pending);
+                    },
+                );
                 // Connection selector should receive request if all attributes are present.
                 assert_matches!(test_values.connection_selection_request_receiver.try_next(), Ok(Some(request)) => {
                     assert_matches!(request, ConnectionSelectionRequest::NewConnectionSelection {network_id, reason, responder} => {
@@ -4974,7 +5142,8 @@ mod tests {
         }
 
         // Run all connection_selection futures to completion.
-        for mut connection_selection_future in iface_manager.connection_selection_futures.iter_mut()
+        for mut connection_selection_future in
+            iface_manager.connection_selection_manager.get_futures().iter_mut()
         {
             assert_matches!(
                 exec.run_until_stalled(&mut connection_selection_future),
@@ -5217,7 +5386,7 @@ mod tests {
         assert!(iface_manager.idle_clients().contains(&TEST_CLIENT_IFACE_ID));
 
         // Verify that a scan has been kicked off.
-        assert!(!iface_manager.connection_selection_futures.is_empty());
+        assert!(!iface_manager.connection_selection_manager.active_selections().is_empty());
     }
 
     #[fuchsia::test]

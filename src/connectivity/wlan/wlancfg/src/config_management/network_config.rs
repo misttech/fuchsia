@@ -597,6 +597,12 @@ pub struct NetworkIdentifier {
     pub security_type: SecurityType,
 }
 
+impl fmt::Display for NetworkIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NetworkIdentifier: {}, {:?}", self.ssid, self.security_type)
+    }
+}
+
 impl NetworkIdentifier {
     pub fn new(ssid: client_types::Ssid, security_type: SecurityType) -> Self {
         NetworkIdentifier { ssid, security_type }
