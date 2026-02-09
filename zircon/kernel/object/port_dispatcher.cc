@@ -108,13 +108,11 @@ PortPacket::PortPacket(const void* handle, PortAllocator* allocator)
 }
 
 PortObserver::PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<PortDispatcher> port,
-                           Lock<CriticalMutex>* port_lock, uint64_t key, zx_signals_t signals)
+                           uint64_t key, zx_signals_t signals)
     : options_(options),
       packet_(handle, nullptr),
       port_(ktl::move(port)),
-      port_lock_(port_lock),
       dispatcher_(handle->dispatcher().get()) {
-  DEBUG_ASSERT(port_lock_ != nullptr);
   DEBUG_ASSERT(handle != nullptr);
   DEBUG_ASSERT(dispatcher_ != nullptr);
 
@@ -478,8 +476,8 @@ zx_status_t PortDispatcher::MakeObserver(uint32_t options, Handle* handle, uint6
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto observer_result = observer_allocator.Allocate(
-      options, handle, fbl::RefPtr<PortDispatcher>(this), get_lock(), key, signals);
+  auto observer_result =
+      observer_allocator.Allocate(options, handle, fbl::RefPtr<PortDispatcher>(this), key, signals);
   if (observer_result.is_error()) {
     return observer_result.error_value();
   }

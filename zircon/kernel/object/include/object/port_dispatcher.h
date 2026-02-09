@@ -170,13 +170,13 @@ class PortObserver final : public SignalObserver {
                                                  fbl::SizeOrder::Constant>;
 
   PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<PortDispatcher> port,
-               Lock<CriticalMutex>* port_lock, uint64_t key, zx_signals_t signals);
+               uint64_t key, zx_signals_t signals);
 
   ~PortObserver() final;
 
   // May only be called while holding PortDispatcher lock.
   Dispatcher* UnlinkDispatcherLocked() {
-    DEBUG_ASSERT(port_lock_->lock().IsHeld());
+    DEBUG_ASSERT(DispatcherLockIsHeld());
     Dispatcher* dispatcher = dispatcher_;
     dispatcher_ = nullptr;
     return dispatcher;
@@ -184,7 +184,7 @@ class PortObserver final : public SignalObserver {
 
   // May only be called while holding PortDispatcher lock.
   void Cancel() {
-    DEBUG_ASSERT(port_lock_->lock().IsHeld());
+    DEBUG_ASSERT(DispatcherLockIsHeld());
     packet_.Cancel();
   }
 
@@ -197,16 +197,18 @@ class PortObserver final : public SignalObserver {
   void OnCancel(zx_signals_t signals) final;
   bool MatchesKey(const void* port, uint64_t key) final;
 
+  // Defined below after PortDispatcher.
+  inline bool DispatcherLockIsHeld() const;
+
   const uint32_t options_;
   PortPacket packet_;
 
   fbl::RefPtr<PortDispatcher> const port_;
-  Lock<CriticalMutex>* const port_lock_;
 
-  // Guarded by port_lock_;
+  // Guarded by port_->get_lock();
   ListNodeState observer_list_node_state_;
 
-  // Guarded by port_lock_;
+  // Guarded by port_->get_lock();
   // This is a raw pointer as the PortObserver does not have an ownership stake in the dispatcher.
   Dispatcher* dispatcher_;
 };
@@ -289,6 +291,9 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // Init hook that sets up the cache allocators used by this dispatcher.
   static void InitializeCacheAllocators(uint32_t level);
 
+  // Returns true if the dispatcher lock |get_lock()| is currently held.
+  bool DispatcherLockIsHeld() const { return get_lock()->lock().IsHeld(); }
+
  private:
   explicit PortDispatcher(uint32_t options);
 
@@ -319,5 +324,7 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // count drops to zero.
   PortObserver::List observers_ TA_GUARDED(get_lock());
 };
+
+inline bool PortObserver::DispatcherLockIsHeld() const { return port_->DispatcherLockIsHeld(); }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_
