@@ -15,7 +15,7 @@ from honeydew.transports.ffx import types as ffx_types
 
 _LOGGER = logging.getLogger(__name__)
 
-_ELEMENT_PREFIX = "core/session-manager/session:session/elements:"
+ELEMENT_PREFIX = "core/session-manager/session:session/elements:"
 
 
 class SessionUsingFfx(session.Session):
@@ -206,8 +206,8 @@ class SessionUsingFfx(session.Session):
             res = self._ffx.run(["component", "list"])
             components = res.splitlines()
             for component in components:
-                if component.startswith(_ELEMENT_PREFIX):
-                    name = component[len(_ELEMENT_PREFIX) :]
+                if component.startswith(ELEMENT_PREFIX):
+                    name = component[len(ELEMENT_PREFIX) :]
                     # Starnix's element naming starts with main. Not sure how to remove them yet,
                     # `ffx session remove` seems not work.
                     if not name.startswith("main"):

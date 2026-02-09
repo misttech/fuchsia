@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import fidl_fuchsia_tracing as f_tracing
+from fuchsia_controller_py.wrappers import asyncmethod
 
 from honeydew.affordances import affordance
 
@@ -64,7 +65,9 @@ class Tracing(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def start(self) -> None:
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def start(self) -> None:
         """Starts tracing.
 
         Raises:
@@ -74,7 +77,9 @@ class Tracing(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def stop(self) -> None:
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def stop(self) -> None:
         """Stops the current trace.
 
         Raises:
@@ -84,11 +89,15 @@ class Tracing(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def terminate(self) -> None:
+    # pylint: disable-next=invalid-overridden-method
+    @asyncmethod
+    async def terminate(self) -> None:
         """Terminates the trace session.."""
 
     @abc.abstractmethod
-    def terminate_and_download(
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def terminate_and_download(
         self, directory: str, trace_file: str | None = None
     ) -> str:
         """Terminates the trace session and downloads the trace data to the

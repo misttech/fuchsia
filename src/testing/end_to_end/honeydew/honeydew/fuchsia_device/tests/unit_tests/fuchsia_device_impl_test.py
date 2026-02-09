@@ -491,7 +491,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             errors.NotSupportedError,
             "core/audio_recording is not available in device fuchsia-emulator",
         ):
-            self.fd_fc_obj.virtual_audio
+            self.fd_fc_obj.virtual_audio  # pylint: disable=pointless-statement
 
     @mock.patch.object(
         ffx_impl.FfxImpl,

@@ -9,9 +9,9 @@ import asyncio
 import inspect
 import logging
 import pprint
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -261,10 +261,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         await self._set_country_code(country_code)
 
     async def _set_country_code(self, country_code: CountryCode) -> None:
-        _LOGGER.info(f"Setting DUT country code to {country_code}...")
+        """Sets DUT country code."""
+        _LOGGER.info("Setting DUT country code to %s...", country_code)
         self._location.set_region(country_code)
         _LOGGER.info(
-            f"Waiting for configuration of all PHYs with country code {country_code}..."
+            "Waiting for configuration of all PHYs with country code %s...",
+            country_code,
         )
 
         phy_list = (await self._device_monitor_proxy.list_phys()).phy_list
@@ -303,7 +305,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         else:
             if country_code == CountryCode.WORLDWIDE:
                 _LOGGER.warning(
-                    f"Failed to set {CountryCode.WORLDWIDE}. Trying {CountryCode.USER_XZ}."
+                    "Failed to set %s. Trying %s.",
+                    CountryCode.WORLDWIDE,
+                    CountryCode.USER_XZ,
                 )
                 return await self._set_country_code(CountryCode.USER_XZ)
             else:
@@ -311,7 +315,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                     f"Failed to set DUT country code to {country_code}."
                 )
         _LOGGER.info(
-            f"All PHYs configured for new country code: {country_code}"
+            "All PHYs configured for new country code: %s", country_code
         )
 
     @asyncmethod

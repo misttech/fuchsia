@@ -36,7 +36,9 @@ def _custom_test_name_func(
 
 def _initialize_tracing_fake(
     *,
+    # pylint: disable-next=unused-argument
     controller: int,
+    # pylint: disable-next=unused-argument
     config: f_tracingcontroller.TraceConfig,
     output: int,
 ) -> None:
@@ -282,7 +284,7 @@ class TracingFCTests(unittest.TestCase):
             self.tracing_obj.stop()
             mock_tracingcontroller_stop.assert_called()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop().
+            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
 
     @mock.patch.object(
         f_tracingcontroller.ProvisionerClient,
@@ -318,7 +320,7 @@ class TracingFCTests(unittest.TestCase):
             with self.assertRaises(TracingError):
                 self.tracing_obj.stop()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop().
+            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
 
     @parameterized.expand(
         [
@@ -368,7 +370,7 @@ class TracingFCTests(unittest.TestCase):
         self.tracing_obj.initialize()
 
         with mock.patch.object(
-            self.tracing_obj._trace_controller_proxy,
+            self.tracing_obj._trace_controller_proxy,  # pylint: disable=protected-access
             "close_cleanly",
             new_callable=mock.Mock,
         ) as mock_wait:
@@ -461,7 +463,7 @@ class TracingFCTests(unittest.TestCase):
                 with self.assertNoLogs(level="WARNING") as lc:
                     self.tracing_obj.stop()
         finally:
-            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop().
+            self.tracing_obj._reset_state_sync()  # Joins self._drain_thread created during stop(). pylint: disable=protected-access
 
     @parameterized.expand(
         [

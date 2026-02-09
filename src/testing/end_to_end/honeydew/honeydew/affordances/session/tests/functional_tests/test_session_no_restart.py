@@ -4,7 +4,6 @@
 """Mobly test for Session affordance."""
 
 import logging
-from typing import Set
 
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -65,13 +64,13 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
         self.dut.session.add_component(_TILE_URL)
         self.dut.session.add_component(_TILE_URL)
 
-    def _elements(self) -> Set[str]:
+    def _elements(self) -> set[str]:
         """Get current components"""
         res = self.dut.ffx.run(["component", "list"])
         lines = [
             line
             for line in res.splitlines()
-            if line.startswith(session_using_ffx._ELEMENT_PREFIX)
+            if line.startswith(session_using_ffx.ELEMENT_PREFIX)
         ]
         return set(lines)
 
@@ -88,14 +87,14 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_equal(len(added_elements), 1)
         added_element = list(added_elements)[0]
 
-        _LOGGER.info(f"added element: {added_element}")
+        _LOGGER.info("added element: %s", added_element)
 
         session = self.dut.session
         session.cleanup()
 
         def element_removed() -> bool:
             elements = self._elements()
-            _LOGGER.info(f"current elements: {elements}")
+            _LOGGER.info("current elements: %s", elements)
             return added_element not in self._elements()
 
         try:
