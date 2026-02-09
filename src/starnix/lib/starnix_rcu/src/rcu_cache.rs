@@ -29,22 +29,23 @@ pub enum RcuCacheInsertionResult<V> {
 ///
 /// Entries are evicted in a FIFO manner.
 #[derive(Debug)]
-pub struct RcuCache<K, V>
+pub struct RcuCache<K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     /// The maximum number of entries in the cache.
     capacity: usize,
 
     /// The underlying hash map.
-    map: RcuRawHashMap<K, V>,
+    map: RcuRawHashMap<K, V, S>,
 
     /// A mutex to provide synchronization for writing to the map.
     mutex: Mutex<()>,
 }
 
-impl<K, V> RcuCache<K, V>
+impl<K, V> RcuCache<K, V, std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -53,7 +54,30 @@ where
     pub fn new(capacity: usize) -> Self {
         Self { capacity, map: RcuRawHashMap::with_capacity(capacity + 1), mutex: Mutex::new(()) }
     }
+}
 
+impl<K, V, S> RcuCache<K, V, S>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
+{
+    /// Creates a new `RcuCache` with the specified capacity and hasher.
+    pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
+        Self {
+            capacity,
+            map: RcuRawHashMap::with_capacity_and_hasher(capacity + 1, hash_builder),
+            mutex: Mutex::new(()),
+        }
+    }
+}
+
+impl<K, V, S> RcuCache<K, V, S>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
+{
     /// Returns the capacity with which this instance was initialized.
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -69,7 +93,7 @@ where
         self.map.get(scope, key)
     }
 
-    pub fn lock(&self) -> RcuCacheGuard<'_, K, V> {
+    pub fn lock(&self) -> RcuCacheGuard<'_, K, V, S> {
         let guard = self.mutex.lock();
         RcuCacheGuard { cache: self, _guard: guard }
     }
@@ -90,19 +114,21 @@ where
     }
 }
 
-pub struct RcuCacheGuard<'a, K, V>
+pub struct RcuCacheGuard<'a, K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
 {
-    cache: &'a RcuCache<K, V>,
+    cache: &'a RcuCache<K, V, S>,
     _guard: MutexGuard<'a, ()>,
 }
 
-impl<'a, K, V> RcuCacheGuard<'a, K, V>
+impl<'a, K, V, S> RcuCacheGuard<'a, K, V, S>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
 {
     pub fn get<'rcu>(&self, scope: &'rcu RcuReadScope, key: &K) -> Option<&'rcu V> {
         self.cache.map.get(scope, key)
