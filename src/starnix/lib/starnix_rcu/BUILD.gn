@@ -26,6 +26,7 @@ rustc_library("starnix_rcu") {
     "//src/lib/fuchsia-rcu-collections",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
+    "//third_party/rust_crates:rapidhash",
   ]
 }
 

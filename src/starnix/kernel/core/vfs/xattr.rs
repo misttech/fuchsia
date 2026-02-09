@@ -9,9 +9,15 @@ use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 
-#[derive(Default)]
 pub struct MemoryXattrStorage {
-    xattrs: RcuHashMap<FsString, FsString>,
+    // Arbitrary userspace programs can define xattr keys so we use a collision-resistant hasher.
+    xattrs: RcuHashMap<FsString, FsString, std::collections::hash_map::RandomState>,
+}
+
+impl Default for MemoryXattrStorage {
+    fn default() -> Self {
+        Self { xattrs: RcuHashMap::with_hasher(std::collections::hash_map::RandomState::new()) }
+    }
 }
 
 impl XattrStorage for MemoryXattrStorage {

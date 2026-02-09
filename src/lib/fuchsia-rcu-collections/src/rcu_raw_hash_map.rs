@@ -80,7 +80,11 @@ pub enum InsertionResult<V> {
 type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 
 /// A hash map that uses read-copy-update (RCU) to manage concurrent accesses.
-pub struct RcuRawHashMap<K, V, S = std::collections::hash_map::RandomState>
+///
+/// By default, this map uses `rapidhash::RapidBuildHasher`, which provides high performance.
+/// However, if this map holds keys which may be attacker-controlled, consider using
+/// `std::collections::hash_map::RandomState` instead.
+pub struct RcuRawHashMap<K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -99,27 +103,24 @@ where
     hash_builder: S,
 }
 
-impl<K, V> Default for RcuRawHashMap<K, V, std::collections::hash_map::RandomState>
+impl<K, V> Default for RcuRawHashMap<K, V, rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
-        Self::with_capacity_and_hasher(
-            INITIAL_CAPACITY,
-            std::collections::hash_map::RandomState::new(),
-        )
+        Self::with_capacity_and_hasher(INITIAL_CAPACITY, rapidhash::RapidBuildHasher::default())
     }
 }
 
-impl<K, V> RcuRawHashMap<K, V, std::collections::hash_map::RandomState>
+impl<K, V> RcuRawHashMap<K, V, rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
     /// Creates a new hash map with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
-        Self::with_capacity_and_hasher(capacity, std::collections::hash_map::RandomState::new())
+        Self::with_capacity_and_hasher(capacity, rapidhash::RapidBuildHasher::default())
     }
 }
 
@@ -139,6 +140,11 @@ where
             insertion_chain: Default::default(),
             hash_builder,
         }
+    }
+
+    /// Creates a new hash map with the given hasher.
+    pub fn with_hasher(hash_builder: S) -> Self {
+        Self::with_capacity_and_hasher(INITIAL_CAPACITY, hash_builder)
     }
 
     /// Returns the hash of the key as a u64.
@@ -349,7 +355,7 @@ where
 /// A cursor for traversing and modifying an `RcuRawHashMap`.
 ///
 /// See `RcuRawHashMap::cursor` for more information.
-pub struct RcuRawHashMapCursor<'a, K, V, S = std::collections::hash_map::RandomState>
+pub struct RcuRawHashMapCursor<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,

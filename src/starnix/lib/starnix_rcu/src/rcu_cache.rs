@@ -28,8 +28,12 @@ pub enum RcuCacheInsertionResult<V> {
 /// exceeds a specified capacity.
 ///
 /// Entries are evicted in a FIFO manner.
+///
+/// By default, this map uses `rapidhash::RapidBuildHasher`, which provides high performance.
+/// However, if this map holds keys which may be attacker-controlled, consider using
+/// `std::collections::hash_map::RandomState` instead.
 #[derive(Debug)]
-pub struct RcuCache<K, V, S = std::collections::hash_map::RandomState>
+pub struct RcuCache<K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -45,7 +49,7 @@ where
     mutex: Mutex<()>,
 }
 
-impl<K, V> RcuCache<K, V, std::collections::hash_map::RandomState>
+impl<K, V> RcuCache<K, V, rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -114,7 +118,7 @@ where
     }
 }
 
-pub struct RcuCacheGuard<'a, K, V, S = std::collections::hash_map::RandomState>
+pub struct RcuCacheGuard<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,

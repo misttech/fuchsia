@@ -18,6 +18,7 @@ rustc_library("fuchsia-rcu-collections") {
   deps = [
     "//src/lib/fuchsia-rcu",
     "//third_party/rust_crates:memoffset",
+    "//third_party/rust_crates:rapidhash",
   ]
 
   sources = [

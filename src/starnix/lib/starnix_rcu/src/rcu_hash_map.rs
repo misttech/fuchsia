@@ -12,7 +12,11 @@ use std::hash::{BuildHasher, Hash};
 ///
 /// This map allows concurrent readers to access entries without blocking, while writers are
 /// synchronized via a `Mutex`.
-pub struct RcuHashMap<K, V, S = std::collections::hash_map::RandomState>
+///
+/// By default, this map uses `rapidhash::RapidBuildHasher`, which provides high performance.
+/// However, if this map holds keys which may be attacker-controlled, consider using
+/// `std::collections::hash_map::RandomState` instead.
+pub struct RcuHashMap<K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -22,7 +26,7 @@ where
     mutex: Mutex<()>,
 }
 
-impl<K, V> Default for RcuHashMap<K, V, std::collections::hash_map::RandomState>
+impl<K, V> Default for RcuHashMap<K, V, rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -45,6 +49,12 @@ where
             mutex: Mutex::new(()),
         }
     }
+
+    /// Creates a new hash map with the given hasher.
+    pub fn with_hasher(hash_builder: S) -> Self {
+        Self { map: RcuRawHashMap::with_hasher(hash_builder), mutex: Mutex::new(()) }
+    }
+
     /// Returns a reference to the value associated with the given key, if it exists.
     ///
     /// The returned reference is bound to the lifetime of the `RcuReadScope`.
@@ -106,7 +116,7 @@ where
 }
 
 /// A guard that provides exclusive access to the `RcuHashMap`.
-pub struct RcuHashMapGuard<'a, K, V, S = std::collections::hash_map::RandomState>
+pub struct RcuHashMapGuard<'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -181,7 +191,7 @@ where
 }
 
 /// A view into a single entry in the map, which may either be vacant or occupied.
-pub enum Entry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
+pub enum Entry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -210,7 +220,7 @@ where
 }
 
 /// A view into an occupied entry in a `RcuHashMap`.
-pub struct OccupiedEntry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
+pub struct OccupiedEntry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -243,7 +253,7 @@ where
 }
 
 /// A view into a vacant entry in a `RcuHashMap`.
-pub struct VacantEntry<'b, 'a, K, V, S = std::collections::hash_map::RandomState>
+pub struct VacantEntry<'b, 'a, K, V, S = rapidhash::RapidBuildHasher>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,

@@ -586,11 +586,24 @@ mod tests {
         netlink_message
     }
 
-    #[derive(Default)]
     struct TestFamily {
         messages_to_server: Mutex<Vec<Vec<u8>>>,
-        multicast_message_sinks:
-            RcuHashMap<String, mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>>,
+        multicast_message_sinks: RcuHashMap<
+            String,
+            mpsc::UnboundedSender<NetlinkMessage<GenericMessage>>,
+            std::collections::hash_map::RandomState,
+        >,
+    }
+
+    impl Default for TestFamily {
+        fn default() -> Self {
+            Self {
+                messages_to_server: Mutex::default(),
+                multicast_message_sinks: RcuHashMap::with_hasher(
+                    std::collections::hash_map::RandomState::new(),
+                ),
+            }
+        }
     }
 
     #[async_trait]
