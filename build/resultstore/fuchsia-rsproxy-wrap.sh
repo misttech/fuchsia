@@ -57,6 +57,7 @@ options:
   --loas-type TYPE: {skip,auto,restricted,unrestricted}, default [$loas_type]
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
+  --log-dir DIR: rsproxy log dir
   -v | --verbose: print debug messages
 
   Unrecognized options before -- will be forwarded to rsproxy.
@@ -66,6 +67,7 @@ EOF
 # Parse options up to --, and treat the rest as the wrapped command.
 override_proxy_options=()
 got_ddash=0
+log_dir=
 prev_opt=
 for opt  # "$@"
 do
@@ -88,6 +90,8 @@ do
     -h | --help) usage; exit ;;
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
+    --log-dir=*) log_dir="$optarg" ;;
+    --log-dir) prev_opt=log_dir ;;
     -v | --verbose) verbose=1 ;;
 
     --) got_ddash=1; shift; break ;;
@@ -146,8 +150,7 @@ case "$loas_type" in
   skip) : ;;
 
   *)
-    echo "Error: unhandled LOAS type: $loas_type"
-    exit 1
+    die "Unhandled LOAS type: $loas_type"
     ;;
 esac
 
@@ -215,6 +218,11 @@ do
   esac
 done
 
+[[ -n "$subbuild_dir" ]] || {
+  die "Expected a ninja -C subdir, but found none."
+}
+readonly subbuild_base="${subbuild_dir##*/}"  # basename
+
 # Upload additional invocation artifacts, such as ninja outputs.
 # Ninja output paths are relative to $subbuild_dir.
 readonly ninja_outputs=(
@@ -229,36 +237,33 @@ do
   }
 done
 
-wrap_env=()
-wrap_options=(
+proxy_env=()
+proxy_wrap_options=(
   --rsproxy "$rsproxy"
 )
 
 # Handle log dir.
-if [[ "${FX_BUILD_LOGDIR:-NOT_SET}" != "NOT_SET" ]]
+if [[ -n "$log_dir" ]]
 then
-  [[ -n "$subbuild_dir" ]] || {
-    die "Expected a ninja -C subdir, but found none."
-  }
-  wrap_options+=( --log-dir "$FX_BUILD_LOGDIR/rsproxy_logs/$subbuild_dir"  )
+  proxy_wrap_options+=( --log-dir "$log_dir" )
+  # This will be used as a parent log dir in sub-builds.
+  proxy_env+=( RS_log_dir="$log_dir" )
 elif [[ "${RS_log_dir:-NOT_SET}" != "NOT_SET" ]]
 then
-  # Infra builds set this to a non-unique path, make it unique
-  # using the basename of the sub-build dir.
-  [[ -n "$subbuild_dir" ]] || {
-    die "Expected a ninja -C subdir, but found none."
-  }
-  readonly subbuild_base="${subbuild_dir##*/}"  # basename
+  # Preserve sub-invocation directory structure using the basename of the
+  # sub-build dir.
   # Override the environment variable, which take precedence over the flag.
-  # This effectively preserves subdirectory structure of invocations.
-  wrap_env+=( RS_log_dir="$RS_log_dir/$subbuild_base" )
+  readonly subbuild_log_dir="$RS_log_dir/$subbuild_base"
+  mkdir -p "$subbuild_log_dir"
+  proxy_wrap_options+=( --log-dir "$subbuild_log_dir" )
+  proxy_env+=( RS_log_dir="$subbuild_log_dir" )
+  # This will be visible to the wrapped command as well.
 fi
-# Otherwise, if FX_BUILD_LOGDIR isn't set, this is probably being invoked
-# outside of 'fx build', so just fallback to using some temp dir.
+# Otherwise, fallback to using some temp dir.
 
 [[ "${GCE_METADATA_HOST:-NOT_SET}" == "NOT_SET" ]] || {
   # Workaround: avoid DNS lookup of "localhost"
-  wrap_env+=( GCE_METADATA_HOST="${GCE_METADATA_HOST/localhost/127.0.0.1}" )
+  proxy_env+=( GCE_METADATA_HOST="${GCE_METADATA_HOST/localhost/127.0.0.1}" )
 }
 
 
@@ -269,9 +274,9 @@ export PATH="$py3_bindir:$PATH"
 
 full_cmd=(
   env
-  "${wrap_env[@]}"
-  "$proxy_wrap"
-  "${wrap_options[@]}"
+  "${proxy_env[@]}"
+  "${proxy_wrap}"
+  "${proxy_wrap_options[@]}"
   --rsproxy_options
   "${rsproxy_options[@]}"
   "${override_proxy_options[@]}"
