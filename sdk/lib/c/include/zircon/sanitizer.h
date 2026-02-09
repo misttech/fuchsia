@@ -198,9 +198,17 @@ __EXPORT void __sanitizer_thread_create_hook(void* hook, thrd_t thread, int erro
 // previously passed to __sanitizer_thread_create_hook.
 __EXPORT void __sanitizer_thread_start_hook(void* hook, thrd_t self);
 
-// This is called in each thread just before it dies.
-// All thread-specific destructors have been run.
-// The argument is the same one passed to __sanitizer_thread_start_hook.
+// This is called in each thread just before it dies.  All thread-specific
+// destructors have been run.  The argument is the same one passed to
+// __sanitizer_thread_start_hook.  This can also be called on the initial
+// thread, if it exits (via thrd_exit or pthread_exit) with other threads still
+// alive.  In that case, the initial thread's cleanup is just like that of
+// other threads (though it's unspecified if its stack might be preserved to
+// hold global values like argv, or if those lie elsewhere); however, the first
+// argument here will always be the null pointer for the initial thread, since
+// no __sanitizer_before_thread_create_hook call was made to provide a value.
+// If distinguishing the initial thread from other threads matters, then
+// __sanitizer_before_thread_create_hook should never return a null pointer.
 __EXPORT void __sanitizer_thread_exit_hook(void* hook, thrd_t self);
 
 // This is called with the argument to _exit and its return value
