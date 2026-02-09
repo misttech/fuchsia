@@ -28,6 +28,7 @@ idk_molecule(
     name = "cc_prebuilt_libraries",
     deps = [
         "//sdk/lib/async-default:async-default_idk",
+        "//sdk/lib/async-loop:async-loop-default_idk",
     ],
 )
 
@@ -43,6 +44,8 @@ idk_molecule(
     deps = [
         "//sdk/lib/async:async-cpp_idk",
         "//sdk/lib/async:async_idk",
+        "//sdk/lib/async-loop:async-loop-cpp_idk",
+        "//sdk/lib/async-loop:async-loop_idk",
         "//sdk/lib/fit:fit_idk",
         "//sdk/lib/fit-promise:fit-promise_idk",
         "//sdk/lib/magma_common:magma_common_idk",

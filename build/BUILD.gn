@@ -59,6 +59,7 @@ if (is_host) {
       "//sdk/fidl/fuchsia.sysmem2:verify_bazel2gn",
       "//sdk/lib/async:verify_bazel2gn",
       "//sdk/lib/async-default:verify_bazel2gn",
+      "//sdk/lib/async-loop:verify_bazel2gn",
       "//sdk/lib/fit:verify_bazel2gn",
       "//sdk/lib/fit-promise:verify_bazel2gn",
       "//sdk/lib/magma_common:verify_bazel2gn",
