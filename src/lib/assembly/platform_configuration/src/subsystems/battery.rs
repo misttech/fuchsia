@@ -13,7 +13,7 @@ impl DefineSubsystemConfiguration<BatteryConfig> for BatterySubsystemConfig {
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         if config.enabled {
-            builder.platform_bundle("battery_manager");
+            builder.platform_bundle("battery_manager")?;
         }
         Ok(())
     }

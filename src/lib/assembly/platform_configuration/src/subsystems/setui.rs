@@ -26,7 +26,7 @@ impl DefineSubsystemConfiguration<SetUiConfig> for SetUiSubsystem {
                         .context("while configuring the 'Intl' subsystem with ICU")?;
                 }
                 ICUType::Unflavored => {
-                    builder.platform_bundle(bundle_name);
+                    builder.platform_bundle(bundle_name)?;
                 }
             };
 

@@ -34,7 +34,7 @@ impl DefineSubsystemConfiguration<PlatformParavirtualizationConfig>
                     FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
                         builder.platform_bundle("vsock_service")
                     }
-                };
+                }?;
             }
         }
         Ok(())

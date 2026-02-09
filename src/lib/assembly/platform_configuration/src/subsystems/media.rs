@@ -17,40 +17,40 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
         if *context.feature_set_level == FeatureSetLevel::Standard
             && *context.build_type == BuildType::Eng
         {
-            builder.platform_bundle("audio_development_support");
+            builder.platform_bundle("audio_development_support")?;
 
             if context.board_config.provides_feature("fuchsia::video_encoders") {
-                builder.platform_bundle("video_development_support");
+                builder.platform_bundle("video_development_support")?;
             }
             if context.board_config.provides_feature("fuchsia::intel_hda") {
-                builder.platform_bundle("intel_hda");
+                builder.platform_bundle("intel_hda")?;
             }
         }
 
         match &media_config.audio {
             Some(AudioConfig::FullStack(config)) => {
-                builder.platform_bundle("audio_core_routing");
+                builder.platform_bundle("audio_core_routing")?;
                 if !context.board_config.provides_feature("fuchsia::custom_audio_core") {
-                    builder.platform_bundle("audio_core");
+                    builder.platform_bundle("audio_core")?;
                 }
                 if config.use_adc_device {
-                    builder.platform_bundle("audio_core_use_adc_device");
+                    builder.platform_bundle("audio_core_use_adc_device")?;
                 }
-                builder.platform_bundle("soundplayer");
+                builder.platform_bundle("soundplayer")?;
             }
             Some(AudioConfig::DeviceRegistry(adr_config)) => {
-                builder.platform_bundle("audio_device_registry");
+                builder.platform_bundle("audio_device_registry")?;
                 if adr_config.eager_start {
-                    builder.platform_bundle("audio_device_registry_eager");
+                    builder.platform_bundle("audio_device_registry_eager")?;
                 } else {
-                    builder.platform_bundle("audio_device_registry_demand");
+                    builder.platform_bundle("audio_device_registry_demand")?;
                 }
             }
             None => {}
         }
 
         if media_config.camera.enabled {
-            builder.platform_bundle("camera");
+            builder.platform_bundle("camera")?;
         }
 
         if let Some(url) = &media_config.multizone_leader.component_url {
@@ -75,7 +75,7 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "Codecs can only be enabled in the 'standard' feature set level."
             );
-            builder.platform_bundle("media_codecs");
+            builder.platform_bundle("media_codecs")?;
         }
 
         if media_config.enable_sessions {
@@ -87,7 +87,7 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
                 bail!("media.audio should be specified");
             }
 
-            builder.platform_bundle("media_sessions");
+            builder.platform_bundle("media_sessions")?;
         }
 
         Ok(())

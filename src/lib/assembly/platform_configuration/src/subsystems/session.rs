@@ -30,16 +30,16 @@ impl
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "The platform session manager is only supported in the default feature set level"
             );
-            builder.platform_bundle("session_manager");
+            builder.platform_bundle("session_manager")?;
             if swd_config.enable_upgradable_packages {
                 context.ensure_build_type_and_feature_set_level(
                     &[BuildType::Eng, BuildType::UserDebug],
                     &[FeatureSetLevel::Standard],
                     "Upgradable packages",
                 )?;
-                builder.platform_bundle("session_manager_enable_pkg_cache");
+                builder.platform_bundle("session_manager_enable_pkg_cache")?;
             } else {
-                builder.platform_bundle("session_manager_disable_pkg_cache");
+                builder.platform_bundle("session_manager_disable_pkg_cache")?;
             }
         }
 
@@ -103,7 +103,7 @@ impl
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "The platform element manager is only supported in the default feature set level"
             );
-            builder.platform_bundle("element_manager");
+            builder.platform_bundle("element_manager")?;
         }
 
         // Window manager configs

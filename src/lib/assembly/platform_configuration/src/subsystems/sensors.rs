@@ -21,9 +21,9 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for SensorsSubsystemCon
             // TODO(https://fxbug.dev/370576398): Remove sensors playback from UserDebug.
             if *context.build_type == BuildType::Eng || *context.build_type == BuildType::UserDebug
             {
-                builder.platform_bundle("sensors_framework_eng");
+                builder.platform_bundle("sensors_framework_eng")?;
             } else {
-                builder.platform_bundle("sensors_framework");
+                builder.platform_bundle("sensors_framework")?;
             }
         }
 

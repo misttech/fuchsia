@@ -31,13 +31,13 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             (BuildType::Eng, None) => "kernel_args_eng",
             (BuildType::UserDebug, None) => "kernel_args_userdebug",
             (BuildType::User, None) => "kernel_args_user",
-        });
+        })?;
 
         if config.include_netsvc {
             if context.build_type == &BuildType::User {
                 anyhow::bail!("netsvc can't be included in user builds");
             }
-            builder.platform_bundle("netsvc");
+            builder.platform_bundle("netsvc")?;
         };
 
         if config.enable_netsvc_netboot {
@@ -52,14 +52,14 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
         match (context.feature_set_level, context.build_type) {
             // Tracing is always enabled on standard eng.
             (FeatureSetLevel::Standard, BuildType::Eng) => {
-                builder.platform_bundle("tracing");
+                builder.platform_bundle("tracing")?;
             }
 
             // Tracing is enabled on userdebug or eng for other feature set levels
             // if the user explicitly requests it.
             (_, BuildType::UserDebug | BuildType::Eng) => {
                 if config_enabled_tracing {
-                    builder.platform_bundle("tracing");
+                    builder.platform_bundle("tracing")?;
                 }
             }
 
@@ -72,17 +72,17 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
         }
 
         if matches!(context.build_type, BuildType::Eng | BuildType::UserDebug) {
-            builder.platform_bundle("ptysvc");
-            builder.platform_bundle("kernel_debug_broker_userdebug");
+            builder.platform_bundle("ptysvc")?;
+            builder.platform_bundle("kernel_debug_broker_userdebug")?;
         } else {
-            builder.platform_bundle("kernel_debug_broker_user");
+            builder.platform_bundle("kernel_debug_broker_user")?;
         }
 
         if config.vsock_development
             && matches!(context.feature_set_level, FeatureSetLevel::Embeddable)
             && matches!(context.build_type, BuildType::Eng | BuildType::UserDebug)
         {
-            builder.platform_bundle("bootstrap_realm_vsock_development_access");
+            builder.platform_bundle("bootstrap_realm_vsock_development_access")?;
         }
 
         match (context.build_type, &config.authorized_ssh_keys_path) {
@@ -128,7 +128,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
         }
 
         if config.include_sl4f {
-            builder.platform_bundle("sl4f");
+            builder.platform_bundle("sl4f")?;
         }
 
         let is_embeddable = matches!(context.feature_set_level, FeatureSetLevel::Embeddable);
@@ -140,7 +140,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 anyhow::bail!("bin/clock cannot be provided on embeddable products");
             }
             (BuildType::Eng, _, false) | (BuildType::UserDebug, true, false) => {
-                builder.platform_bundle("clock_development_tools")
+                builder.platform_bundle("clock_development_tools")?
             }
             (_, false, _) => {}
         }
@@ -157,7 +157,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Standard],
                 "Audio driver development tools",
             )?;
-            builder.platform_bundle("audio_driver_development_tools");
+            builder.platform_bundle("audio_driver_development_tools")?;
         }
         if config.tools.audio.full_stack_tools {
             context.ensure_build_type_and_feature_set_level(
@@ -165,7 +165,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Standard],
                 "Audio full-stack development tools",
             )?;
-            builder.platform_bundle("audio_full_stack_development_tools");
+            builder.platform_bundle("audio_full_stack_development_tools")?;
         }
 
         if config.tools.connectivity.enable_networking {
@@ -174,7 +174,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
                 "Networking tools",
             )?;
-            builder.platform_bundle("development_support_tools_connectivity_networking");
+            builder.platform_bundle("development_support_tools_connectivity_networking")?;
         }
         if config.tools.connectivity.enable_wlan {
             context.ensure_build_type_and_feature_set_level(
@@ -182,7 +182,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
                 "WLAN tools",
             )?;
-            builder.platform_bundle("development_support_tools_connectivity_wlan");
+            builder.platform_bundle("development_support_tools_connectivity_wlan")?;
         }
         if config.tools.connectivity.enable_thread {
             context.ensure_build_type_and_feature_set_level(
@@ -190,7 +190,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
                 "Thread (protocol) tools",
             )?;
-            builder.platform_bundle("development_support_tools_connectivity_thread");
+            builder.platform_bundle("development_support_tools_connectivity_thread")?;
         }
 
         if config.tools.storage.enable_partitioning_tools {
@@ -199,7 +199,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Bootstrap, FeatureSetLevel::Utility, FeatureSetLevel::Standard],
                 "Partitioning tools",
             )?;
-            builder.platform_bundle("partitioning_tools");
+            builder.platform_bundle("partitioning_tools")?;
         }
 
         if config.include_bootstrap_testing_framework {
@@ -207,7 +207,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
                 &[FeatureSetLevel::Bootstrap],
                 "Bootstrap Testing Framework",
             )?;
-            builder.platform_bundle("testing_support_bootstrap");
+            builder.platform_bundle("testing_support_bootstrap")?;
         }
 
         if config.enable_userboot_next_component_manager {

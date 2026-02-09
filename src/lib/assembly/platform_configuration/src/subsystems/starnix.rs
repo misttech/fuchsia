@@ -29,13 +29,13 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                 *context.build_type != BuildType::User,
                 "Starnix is not supported on user builds."
             );
-            builder.platform_bundle("starnix_support");
+            builder.platform_bundle("starnix_support")?;
 
             let has_fullmac = context.board_config.provides_feature("fuchsia::wlan_fullmac");
             let has_softmac = context.board_config.provides_feature("fuchsia::wlan_softmac");
             let has_wifi = *enable_android_support && (has_fullmac || has_softmac);
             if has_wifi {
-                builder.platform_bundle("wlan_wlanix");
+                builder.platform_bundle("wlan_wlanix")?;
             }
             if *enable_android_support {
                 builder.set_config_capability(
@@ -45,9 +45,9 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                         (*context.build_type == BuildType::UserDebug).into(),
                     ),
                 )?;
-                builder.platform_bundle("hvdcp_opti_support");
-                builder.platform_bundle("nanohub_support");
-                builder.platform_bundle("fastrpc_support");
+                builder.platform_bundle("hvdcp_opti_support")?;
+                builder.platform_bundle("nanohub_support")?;
+                builder.platform_bundle("fastrpc_support")?;
             } else {
                 builder.set_config_capability(
                     "fuchsia.starnix.runner.EnableDataCollection",

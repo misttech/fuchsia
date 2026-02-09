@@ -30,45 +30,45 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
 
         // Include xHCI driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::xhci") {
-            builder.platform_bundle("xhci_driver");
+            builder.platform_bundle("xhci_driver")?;
         }
         if context.board_config.provides_feature("fuchsia::usb_host") {
-            builder.platform_bundle("usb_host_drivers");
+            builder.platform_bundle("usb_host_drivers")?;
         }
         if context.board_config.provides_feature("fuchsia::usb_peripheral_support") {
             for function in usb.peripheral.functions() {
                 match (function, context.feature_set_level, context.build_type) {
                     (UsbPeripheralFunction::Adb, _, _) => {
-                        builder.platform_bundle("usb_adb_function")
+                        builder.platform_bundle("usb_adb_function")?
                     }
                     (
                         UsbPeripheralFunction::Cdc,
                         FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable,
                         BuildType::UserDebug | BuildType::Eng,
                     ) => {
-                        builder.platform_bundle("usb_cdc_function_boot");
+                        builder.platform_bundle("usb_cdc_function_boot")?;
                     }
                     (
                         UsbPeripheralFunction::Cdc,
                         FeatureSetLevel::Utility | FeatureSetLevel::Standard,
                         _,
                     ) => {
-                        builder.platform_bundle("usb_cdc_function_base");
+                        builder.platform_bundle("usb_cdc_function_base")?;
                     }
                     (UsbPeripheralFunction::Fastboot, _, _) => {
-                        builder.platform_bundle("fastbootd_usb_support")
+                        builder.platform_bundle("fastbootd_usb_support")?
                     }
                     (
                         UsbPeripheralFunction::VsockBridge,
                         FeatureSetLevel::Utility | FeatureSetLevel::Standard,
                         BuildType::UserDebug | BuildType::Eng,
                     ) => {
-                        builder.platform_bundle("core_realm_development_access_rcs_usb");
+                        builder.platform_bundle("core_realm_development_access_rcs_usb")?;
                         // Dependency of ^
-                        builder.platform_bundle("vsock_service");
+                        builder.platform_bundle("vsock_service")?;
                     }
                     (UsbPeripheralFunction::Rndis, _, _) => {
-                        builder.platform_bundle("usb_rndis_function")
+                        builder.platform_bundle("usb_rndis_function")?
                     }
                     (UsbPeripheralFunction::Test, _, _) => {
                         anyhow::bail!(
@@ -76,7 +76,7 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
                         )
                     }
                     (UsbPeripheralFunction::Ums, _, _) => {
-                        builder.platform_bundle("usb_ums_function")
+                        builder.platform_bundle("usb_ums_function")?
                     }
                     _ => (),
                 }
@@ -85,10 +85,10 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
 
         match context.feature_set_level {
             FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable => {
-                builder.platform_bundle("usb_peripheral_drivers_boot");
+                builder.platform_bundle("usb_peripheral_drivers_boot")?;
             }
             FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
-                builder.platform_bundle("usb_peripheral_drivers_base");
+                builder.platform_bundle("usb_peripheral_drivers_base")?;
             }
         }
         Ok(())

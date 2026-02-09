@@ -38,7 +38,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         if *context.feature_set_level != FeatureSetLevel::Embeddable
             && !context.board_config.provides_feature("fuchsia::paver")
         {
-            builder.platform_bundle("paver_legacy");
+            builder.platform_bundle("paver_legacy")?;
         }
 
         // Include fuchsia.fshost/Recovery capabilities if this configuration supports recovery
@@ -47,9 +47,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         if recovery_config.system_recovery.is_some()
             || storage_tools_config.enable_partitioning_tools
         {
-            builder.platform_bundle("fshost_recovery");
+            builder.platform_bundle("fshost_recovery")?;
         } else {
-            builder.platform_bundle("fshost_non_recovery");
+            builder.platform_bundle("fshost_non_recovery")?;
         }
 
         // Fetch a custom gen directory for placing temporary files. We get this
@@ -103,7 +103,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         if storage_config.factory_data.enabled {
-            builder.platform_bundle("factory_data");
+            builder.platform_bundle("factory_data")?;
         }
 
         if storage_config.mutable_storage_garbage_collection {
@@ -111,7 +111,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 &[FeatureSetLevel::Standard],
                 "Mutable storage garbage collection",
             )?;
-            builder.platform_bundle("storage_cache_manager");
+            builder.platform_bundle("storage_cache_manager")?;
         }
 
         // Collect the arguments from the board.
@@ -155,16 +155,16 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let mut fxfs_blob = false;
 
         // Add all the AIBs and collect some argument values.
-        builder.platform_bundle("fshost_common");
-        builder.platform_bundle("fshost_storage");
+        builder.platform_bundle("fshost_common")?;
+        builder.platform_bundle("fshost_storage")?;
         if storage_config.storage_host_enabled {
             match &storage_config.filesystems.volume {
                 VolumeConfig::Fxfs => {
                     ensure!(gpt, "GPT required for Fxfs-based product assemblies");
                     fxfs_blob = true;
-                    builder.platform_bundle("fshost_storage_host_fxfs");
+                    builder.platform_bundle("fshost_storage_host_fxfs")?;
                     if provision_fxfs {
-                        builder.platform_bundle("fshost_provision_fxfs");
+                        builder.platform_bundle("fshost_provision_fxfs")?;
                     }
                 }
                 VolumeConfig::Fvm(FvmVolumeConfig { blob, data, .. }) => {
@@ -178,7 +178,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                                 .ensure_build_type(&[BuildType::Eng], "GPT with FVM and F2FS")?;
                             data_filesystem_format_str = "f2fs";
                             if gpt {
-                                builder.platform_bundle("fshost_storage_host_gpt_fvm_f2fs");
+                                builder.platform_bundle("fshost_storage_host_gpt_fvm_f2fs")?;
                             } else {
                                 // NOTE: There is no technical reason that this can't be supported,
                                 // but there is no need for it at this time, as no products use f2fs
@@ -195,9 +195,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                                 "Migration isn't supported in storage-host yet",
                             );
                             if gpt {
-                                builder.platform_bundle("fshost_storage_host_gpt_fvm_minfs");
+                                builder.platform_bundle("fshost_storage_host_gpt_fvm_minfs")?;
                             } else {
-                                builder.platform_bundle("fshost_storage_host_fvm_minfs");
+                                builder.platform_bundle("fshost_storage_host_fvm_minfs")?;
                             }
                         }
                     }
@@ -205,31 +205,31 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             }
         } else {
             // TODO(https://fxbug.dev/339491886): Delete the non-storage-host branch.
-            builder.platform_bundle("fshost_non_storage_host");
+            builder.platform_bundle("fshost_non_storage_host")?;
             match &storage_config.filesystems.volume {
                 VolumeConfig::Fxfs => {
                     ensure!(gpt, "GPT required for Fxfs-based product assemblies");
                     fxfs_blob = true;
-                    builder.platform_bundle("fshost_fxfs");
+                    builder.platform_bundle("fshost_fxfs")?;
                 }
                 VolumeConfig::Fvm(FvmVolumeConfig { blob, data, .. }) => {
-                    builder.platform_bundle("fshost_fvm");
+                    builder.platform_bundle("fshost_fvm")?;
                     blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
                     match data.data_filesystem_format {
                         DataFilesystemFormat::Fxfs => {
-                            builder.platform_bundle("fshost_fvm_fxfs");
+                            builder.platform_bundle("fshost_fvm_fxfs")?;
                         }
                         DataFilesystemFormat::F2fs => {
                             data_filesystem_format_str = "f2fs";
-                            builder.platform_bundle("fshost_fvm_f2fs");
+                            builder.platform_bundle("fshost_fvm_f2fs")?;
                         }
                         DataFilesystemFormat::Minfs => {
                             data_filesystem_format_str = "minfs";
                             if data.use_disk_based_minfs_migration {
                                 use_disk_migration = true;
-                                builder.platform_bundle("fshost_fvm_minfs_migration");
+                                builder.platform_bundle("fshost_fvm_minfs_migration")?;
                             } else {
-                                builder.platform_bundle("fshost_fvm_minfs");
+                                builder.platform_bundle("fshost_fvm_minfs")?;
                             }
                         }
                     }
@@ -238,9 +238,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         if context.build_type == &BuildType::Eng {
-            builder.platform_bundle("fshost_eng");
+            builder.platform_bundle("fshost_eng")?;
         } else {
-            builder.platform_bundle("fshost_non_eng");
+            builder.platform_bundle("fshost_non_eng")?;
         }
 
         let disable_automount =
@@ -318,16 +318,16 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
 
         // Include SDHCI driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::sdhci") {
-            builder.platform_bundle("sdhci_driver");
+            builder.platform_bundle("sdhci_driver")?;
         }
 
         // Include UFS driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::ufs") {
-            builder.platform_bundle("ufs_driver");
+            builder.platform_bundle("ufs_driver")?;
             // In engineering builds, include the ufsutil CLI tool when UFS device
             // support is enabled.
             if context.build_type == &BuildType::Eng {
-                builder.platform_bundle("ufsutil");
+                builder.platform_bundle("ufsutil")?;
             }
         }
 

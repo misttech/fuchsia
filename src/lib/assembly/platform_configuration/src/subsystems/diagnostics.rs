@@ -50,7 +50,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         if context.build_type == &BuildType::User {
-            builder.platform_bundle("detect_user");
+            builder.platform_bundle("detect_user")?;
         }
 
         let DiagnosticsConfig {
@@ -67,7 +67,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
 
         // Console is enabled unless specifically turned off.
         if !no_console {
-            builder.platform_bundle("console");
+            builder.platform_bundle("console")?;
         }
 
         // LINT.IfChange
@@ -228,7 +228,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             }
             FeatureSetLevel::Standard => {
                 if context.board_config.provides_feature("fuchsia::mali_gpu") {
-                    builder.platform_bundle("diagnostics_triage_detect_mali");
+                    builder.platform_bundle("diagnostics_triage_detect_mali")?;
                 }
             }
         }

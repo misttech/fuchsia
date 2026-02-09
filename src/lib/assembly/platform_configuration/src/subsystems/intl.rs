@@ -60,7 +60,7 @@ impl DefineSubsystemConfiguration<(&IntlConfig, &PlatformSessionConfig)> for Int
                 }
                 Type::None => {
                     if session_config.enabled {
-                        builder.platform_bundle("no_intl_timezones");
+                        builder.platform_bundle("no_intl_timezones")?;
                     } else {
                         // Since there's no session-manager there's no need to add the "void"
                         // route.

@@ -72,9 +72,9 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 "enable_non_hermetic_testing",
             )?;
 
-            builder.platform_bundle("power_framework_broker");
-            builder.platform_bundle("power_framework_testing_sag");
-            builder.platform_bundle("power_test_platform_drivers");
+            builder.platform_bundle("power_framework_broker")?;
+            builder.platform_bundle("power_framework_testing_sag")?;
+            builder.platform_bundle("power_test_platform_drivers")?;
         }
 
         if config.suspend_enabled {
@@ -84,7 +84,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 "suspend_enabled",
             )?;
 
-            builder.platform_bundle("power_framework_broker");
+            builder.platform_bundle("power_framework_broker")?;
 
             builder.set_config_capability(
                 "fuchsia.power.WaitForSuspendingToken",
@@ -103,7 +103,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             )?;
 
             if context.build_type == &BuildType::Eng {
-                builder.platform_bundle("topology_test_daemon");
+                builder.platform_bundle("topology_test_daemon")?;
             }
 
             match context.feature_set_level {
@@ -111,11 +111,11 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
                     // Include only when the base package set is available as
                     // these require the core realm, and base package functionality.
-                    builder.platform_bundle("power_framework_development_support");
+                    builder.platform_bundle("power_framework_development_support")?;
                 }
             }
 
-            builder.platform_bundle("power_framework_sag");
+            builder.platform_bundle("power_framework_sag")?;
         } else {
             builder.set_config_capability(
                 "fuchsia.power.WaitForSuspendingToken",
@@ -130,7 +130,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 "cpu_manager",
             )?;
 
-            builder.platform_bundle("cpu_manager");
+            builder.platform_bundle("cpu_manager")?;
             builder
                 .bootfs()
                 .file(FileEntry {
@@ -185,7 +185,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         if let (Some(config), FeatureSetLevel::Standard) =
             (&context.board_config.configuration.power_metrics_recorder, &context.feature_set_level)
         {
-            builder.platform_bundle("power_metrics_recorder");
+            builder.platform_bundle("power_metrics_recorder")?;
             builder.package("metrics-logger-standalone").config_data(FileEntry {
                 source: config.into(),
                 destination: "config.json".to_string(),
@@ -198,7 +198,7 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             if *context.feature_set_level == FeatureSetLevel::Standard
                 || *context.feature_set_level == FeatureSetLevel::Utility
             {
-                builder.platform_bundle("fake_battery_driver");
+                builder.platform_bundle("fake_battery_driver")?;
             }
         }
 
@@ -207,17 +207,17 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             && *context.feature_set_level == FeatureSetLevel::Standard
             && *context.build_type == BuildType::Eng
         {
-            builder.platform_bundle("fake_power_sensor");
+            builder.platform_bundle("fake_power_sensor")?;
         }
 
         if context.board_config.provides_feature("fuchsia::pwm") {
-            builder.platform_bundle("pwm_driver");
+            builder.platform_bundle("pwm_driver")?;
         }
         if context.board_config.provides_feature("fuchsia::power") {
-            builder.platform_bundle("power_driver");
+            builder.platform_bundle("power_driver")?;
         }
         if context.board_config.provides_feature("fuchsia::shared_registers") {
-            builder.platform_bundle("registers_driver");
+            builder.platform_bundle("registers_driver")?;
         }
 
         Ok(())

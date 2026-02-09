@@ -24,13 +24,13 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         match (&context.build_type, &kernel_config.oom.behavior) {
             (_, OOMBehavior::Reboot { timeout: OOMRebootTimeout::Normal }) => {}
             (&BuildType::Eng, OOMBehavior::Reboot { timeout: OOMRebootTimeout::Low }) => {
-                builder.platform_bundle("kernel_oom_reboot_timeout_low")
+                builder.platform_bundle("kernel_oom_reboot_timeout_low")?
             }
             (&BuildType::Eng, OOMBehavior::JobKill) => {
-                builder.platform_bundle("kernel_oom_behavior_jobkill")
+                builder.platform_bundle("kernel_oom_behavior_jobkill")?
             }
             (&BuildType::Eng, OOMBehavior::Disable) => {
-                builder.platform_bundle("kernel_oom_behavior_disable")
+                builder.platform_bundle("kernel_oom_behavior_disable")?
             }
             (&BuildType::UserDebug | &BuildType::User, _) => {
                 anyhow::bail!("'kernel.oom.behavior' can only be set on 'build_type=\"eng\"");
@@ -75,7 +75,7 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
                 builder.kernel_arg(KernelArg::Serial("none".to_string()))
             }
             (SerialMode::Legacy, &BuildType::Eng) => {
-                builder.platform_bundle("kernel_serial_legacy")
+                builder.platform_bundle("kernel_serial_legacy")?
             }
             (SerialMode::NoOutput, &BuildType::UserDebug | &BuildType::Eng) => {}
             (SerialMode::Legacy, &BuildType::UserDebug | &BuildType::User) => {}
@@ -91,10 +91,10 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             anyhow::bail!("'lru_memory_compression' can only be enabled with 'memory_compression'");
         }
         if kernel_config.memory_compression {
-            builder.platform_bundle("kernel_anonymous_memory_compression");
+            builder.platform_bundle("kernel_anonymous_memory_compression")?;
         }
         if kernel_config.lru_memory_compression {
-            builder.platform_bundle("kernel_anonymous_memory_compression_eager_lru");
+            builder.platform_bundle("kernel_anonymous_memory_compression_eager_lru")?;
         }
 
         // If the board supports the PMM checker, and this is an eng build-type
@@ -109,15 +109,15 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if context.board_config.provides_feature("fuchsia::pmm_checker")
             && context.build_type == &BuildType::Eng
         {
-            builder.platform_bundle("kernel_pmm_checker_enabled");
+            builder.platform_bundle("kernel_pmm_checker_enabled")?;
         } else if context.board_config.provides_feature("fuchsia::pmm_checker_auto")
             && context.build_type == &BuildType::Eng
         {
-            builder.platform_bundle("kernel_pmm_checker_enabled_auto");
+            builder.platform_bundle("kernel_pmm_checker_enabled_auto")?;
         }
 
         if context.board_config.kernel.contiguous_physical_pages {
-            builder.platform_bundle("kernel_contiguous_physical_pages");
+            builder.platform_bundle("kernel_contiguous_physical_pages")?;
         }
 
         if context.board_config.kernel.scheduler_prefer_little_cpus {
@@ -129,7 +129,7 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         }
 
         if !context.board_config.kernel.arm64_event_stream_enable {
-            builder.platform_bundle("kernel_arm64_event_stream_disable");
+            builder.platform_bundle("kernel_arm64_event_stream_disable")?;
         }
 
         if context.board_config.kernel.quiet_early_boot {
@@ -145,7 +145,7 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
                 // Use the kernel defaults.
             }
             MemoryReclamationStrategy::Eager => {
-                builder.platform_bundle("kernel_page_scanner_aging_fast");
+                builder.platform_bundle("kernel_page_scanner_aging_fast")?;
             }
         }
 
@@ -164,10 +164,10 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if let Some(page_scanner) = &kernel_config.page_scanner {
             match page_scanner.page_table_eviction_policy {
                 PagetableEvictionPolicy::Never => {
-                    builder.platform_bundle("kernel_page_table_eviction_never")
+                    builder.platform_bundle("kernel_page_table_eviction_never")?
                 }
                 PagetableEvictionPolicy::OnRequest => {
-                    builder.platform_bundle("kernel_page_table_eviction_on_request")
+                    builder.platform_bundle("kernel_page_table_eviction_on_request")?
                 }
                 PagetableEvictionPolicy::Always => {}
             }

@@ -19,7 +19,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         if context.board_config.provides_feature("fuchsia::input") {
-            builder.platform_bundle("input_drivers");
+            builder.platform_bundle("input_drivers")?;
         }
 
         let visual_debugging_level: u8 = ui_config.visual_debugging_level.clone().into();
@@ -33,37 +33,37 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         }
         match context.build_type {
             BuildType::Eng => {
-                builder.platform_bundle("ui");
+                builder.platform_bundle("ui")?;
                 builder.icu_platform_bundle("ui_eng")?;
                 match &ui_config.with_synthetic_device_support {
                     true => {
                         builder.platform_bundle(
                             "ui_package_eng_userdebug_with_synthetic_device_support",
-                        );
+                        )?;
                     }
                     false => {
-                        builder.platform_bundle("ui_package_eng");
+                        builder.platform_bundle("ui_package_eng")?;
                     }
                 }
             }
             BuildType::UserDebug => {
-                builder.platform_bundle("ui");
+                builder.platform_bundle("ui")?;
                 builder.icu_platform_bundle("ui_user_and_userdebug")?;
                 match &ui_config.with_synthetic_device_support {
                     true => {
                         builder.platform_bundle(
                             "ui_package_eng_userdebug_with_synthetic_device_support",
-                        );
+                        )?;
                     }
                     false => {
-                        builder.platform_bundle("ui_package_user_and_userdebug");
+                        builder.platform_bundle("ui_package_user_and_userdebug")?;
                     }
                 }
             }
             BuildType::User => {
-                builder.platform_bundle("ui");
+                builder.platform_bundle("ui")?;
                 builder.icu_platform_bundle("ui_user_and_userdebug")?;
-                builder.platform_bundle("ui_package_user_and_userdebug");
+                builder.platform_bundle("ui_package_user_and_userdebug")?;
             }
         }
 
@@ -213,7 +213,7 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         let mut power_on_display_millis = 0u16;
         let mut power_off_display_millis = 0u16;
         if let Some(brightness_manager) = &ui_config.brightness_manager {
-            builder.platform_bundle("brightness_manager");
+            builder.platform_bundle("brightness_manager")?;
             if brightness_manager.with_display_power {
                 manage_display_power = true;
                 power_on_display_millis = 35;

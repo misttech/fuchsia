@@ -25,10 +25,10 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable,
                 BuildType::UserDebug | BuildType::Eng,
             ) => {
-                builder.platform_bundle("network_drivers_boot");
+                builder.platform_bundle("network_drivers_boot")?;
             }
             (FeatureSetLevel::Utility | FeatureSetLevel::Standard, _) => {
-                builder.platform_bundle("network_drivers_base");
+                builder.platform_bundle("network_drivers_base")?;
             }
         }
 
@@ -53,7 +53,7 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             (_, _, Some(b)) => b,
         };
         if publish_fuchsia_dev_wired_service {
-            builder.platform_bundle("mdns_fuchsia_device_wired_service");
+            builder.platform_bundle("mdns_fuchsia_device_wired_service")?;
         }
         if let Some(mdns_config) = &connectivity_config.mdns.config {
             builder.package("mdns").config_data(FileEntry {
@@ -98,18 +98,19 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
 
             // The 'core_realm_networking' and 'network_realm' bundles are
             // required if networking is enabled.
-            builder.platform_bundle("core_realm_networking");
-            builder.platform_bundle("network_realm");
-            builder.platform_bundle(maybe_gub_bundle("network_realm_packages").as_ref());
+            builder.platform_bundle("core_realm_networking")?;
+            builder.platform_bundle("network_realm")?;
+            builder.platform_bundle(maybe_gub_bundle("network_realm_packages").as_ref())?;
 
             // Which specific network package is selectable by the product.
             match networking {
                 NetworkingConfig::Standard => {
-                    builder.platform_bundle("networking_with_virtualization");
+                    builder.platform_bundle("networking_with_virtualization")?;
                 }
                 NetworkingConfig::Basic => {
-                    builder.platform_bundle("networking_basic");
-                    builder.platform_bundle(maybe_gub_bundle("networking_basic_packages").as_ref());
+                    builder.platform_bundle("networking_basic")?;
+                    builder
+                        .platform_bundle(maybe_gub_bundle("networking_basic_packages").as_ref())?;
                 }
             }
 
@@ -163,8 +164,8 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 connectivity_config.network.netstack_version,
             ) {
                 (true, _) | (false, NetstackVersion::Netstack3) => {
-                    builder.platform_bundle("netstack3");
-                    builder.platform_bundle(maybe_gub_bundle("netstack3_packages").as_ref());
+                    builder.platform_bundle("netstack3")?;
+                    builder.platform_bundle(maybe_gub_bundle("netstack3_packages").as_ref())?;
                 }
                 (false, NetstackVersion::Netstack2) => {
                     if connectivity_config.network.netstack_thread_count.is_some() {
@@ -173,12 +174,13 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                         );
                     }
 
-                    builder.platform_bundle("netstack2");
+                    builder.platform_bundle("netstack2")?;
                 }
                 (false, NetstackVersion::NetstackMigration) => {
-                    builder.platform_bundle("netstack_migration");
-                    builder
-                        .platform_bundle(maybe_gub_bundle("netstack_migration_packages").as_ref());
+                    builder.platform_bundle("netstack_migration")?;
+                    builder.platform_bundle(
+                        maybe_gub_bundle("netstack_migration_packages").as_ref(),
+                    )?;
                 }
             }
 
@@ -217,7 +219,7 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 // Select the policy layer
                 match connectivity_config.wlan.policy_layer {
                     WlanPolicyLayer::Platform => {
-                        builder.platform_bundle("wlan_policy");
+                        builder.platform_bundle("wlan_policy")?;
 
                         // Add in the recovery characteristics specified by the product config.
                         let recovery_profile = match connectivity_config.wlan.recovery_profile {
@@ -265,7 +267,7 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                         )?;
                     }
                     WlanPolicyLayer::ViaWlanix => {
-                        builder.platform_bundle("wlan_wlanix");
+                        builder.platform_bundle("wlan_wlanix")?;
 
                         // Ensure we don't have invalid recovery settings
                         if connectivity_config.wlan.recovery_profile.is_some() {
@@ -314,42 +316,42 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 // Add development support on eng and userdebug systems if we have wlan.
                 match context.build_type {
                     BuildType::Eng | BuildType::UserDebug => {
-                        builder.platform_bundle("wlan_development")
+                        builder.platform_bundle("wlan_development")?
                     }
                     _ => {}
                 }
 
-                builder.platform_bundle("wlanphy_driver");
+                builder.platform_bundle("wlanphy_driver")?;
 
                 // Some products require legacy security types to be supported.
                 // Otherwise, they are disabled by default.
                 if connectivity_config.wlan.legacy_privacy_support {
-                    builder.platform_bundle("wlan_legacy_privacy_support");
+                    builder.platform_bundle("wlan_legacy_privacy_support")?;
                 } else {
-                    builder.platform_bundle("wlan_contemporary_privacy_only_support");
+                    builder.platform_bundle("wlan_contemporary_privacy_only_support")?;
                 }
 
                 if has_fullmac {
-                    builder.platform_bundle("wlan_fullmac_support");
+                    builder.platform_bundle("wlan_fullmac_support")?;
                 }
                 if has_softmac {
-                    builder.platform_bundle("wlan_softmac_support");
+                    builder.platform_bundle("wlan_softmac_support")?;
                 }
             }
 
             if connectivity_config.network.include_tun {
-                builder.platform_bundle("network_tun");
+                builder.platform_bundle("network_tun")?;
             }
 
             if connectivity_config.thread.include_lowpan {
-                builder.platform_bundle("thread_lowpan");
+                builder.platform_bundle("thread_lowpan")?;
             }
 
             if connectivity_config.netpol.include_socket_proxy {
-                builder.platform_bundle("socket-proxy-enabled");
-                builder.platform_bundle("socket_proxy_packages");
+                builder.platform_bundle("socket-proxy-enabled")?;
+                builder.platform_bundle("socket_proxy_packages")?;
             } else {
-                builder.platform_bundle("socket-proxy-disabled");
+                builder.platform_bundle("socket-proxy-disabled")?;
             }
         }
 
@@ -383,18 +385,18 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "Location services can only be enabled in the 'standard' feature set level."
             );
-            builder.platform_bundle("location_emergency");
+            builder.platform_bundle("location_emergency")?;
         }
 
         // Include realtek-8211f driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::realtek_8211f") {
             // We only need this driver feature in the utility / standard feature set levels.
-            builder.platform_bundle("realtek_8211f_driver");
+            builder.platform_bundle("realtek_8211f_driver")?;
         }
 
         // Include GNSS service through a platform AIB.
         if context.board_config.provides_feature("fuchsia::gnss") {
-            builder.platform_bundle("gnss");
+            builder.platform_bundle("gnss")?;
         }
 
         Ok(())

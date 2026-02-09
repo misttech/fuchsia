@@ -26,7 +26,7 @@ impl DefineSubsystemConfiguration<FontsConfig> for FontsSubsystem {
                     !font_collection_name.is_empty(),
                     "fonts.font_collection must not be empty",
                 );
-                builder.platform_bundle("fonts_hermetic");
+                builder.platform_bundle("fonts_hermetic")?;
 
                 builder.set_config_capability(
                     "fuchsia.fonts.VerboseLogging",
@@ -44,7 +44,7 @@ impl DefineSubsystemConfiguration<FontsConfig> for FontsSubsystem {
                     Config::new(ConfigValueType::String { max_size: 1024 }, font_manifest.into()),
                 )?;
             } else if fonts_config.enabled {
-                builder.platform_bundle("fonts");
+                builder.platform_bundle("fonts")?;
                 builder.set_config_capability(
                     "fuchsia.fonts.VerboseLogging",
                     Config::new(

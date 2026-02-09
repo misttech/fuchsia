@@ -19,7 +19,7 @@ impl DefineSubsystemConfiguration<PlatformVirtualizationConfig> for Virtualizati
                 *context.feature_set_level == FeatureSetLevel::Standard,
                 "Virtualization is only supported in the default feature set level"
             );
-            builder.platform_bundle("virtualization_support");
+            builder.platform_bundle("virtualization_support")?;
         }
         Ok(())
     }

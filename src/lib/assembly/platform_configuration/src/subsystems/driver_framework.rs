@@ -51,22 +51,22 @@ impl
         let heapdump = development_support.heapdump.driver_framework;
         match (rust_driver_manager, heapdump) {
             (true, true) => {
-                builder.platform_bundle("driver_framework_rust_with_heapdump");
+                builder.platform_bundle("driver_framework_rust_with_heapdump")?;
             }
             (true, false) => {
-                builder.platform_bundle("driver_framework_rust");
+                builder.platform_bundle("driver_framework_rust")?;
             }
             (false, true) => {
-                builder.platform_bundle("driver_framework_with_heapdump");
+                builder.platform_bundle("driver_framework_with_heapdump")?;
             }
             (false, false) => {
-                builder.platform_bundle("driver_framework_no_instrumentation");
+                builder.platform_bundle("driver_framework_no_instrumentation")?;
             }
         }
 
         let enable_ephemeral_drivers = match (context.build_type, context.feature_set_level) {
             (BuildType::Eng, FeatureSetLevel::Standard) => {
-                builder.platform_bundle("full_drivers");
+                builder.platform_bundle("full_drivers")?;
                 true
             }
             (_, _) => false,
@@ -197,20 +197,20 @@ impl
             ));
         }
         if bus_pci {
-            builder.platform_bundle("bus_pci_driver");
+            builder.platform_bundle("bus_pci_driver")?;
             // In engineering builds, include the lspci tool whenever the pci
             // bus feature is enabled.
             if context.build_type == &BuildType::Eng {
-                builder.platform_bundle("lspci");
+                builder.platform_bundle("lspci")?;
             }
         }
         if bus_kpci {
-            builder.platform_bundle("bus_kpci_driver");
+            builder.platform_bundle("bus_kpci_driver")?;
         }
 
         let interconnect = context.board_config.provides_feature("fuchsia::interconnect");
         if interconnect {
-            builder.platform_bundle("interconnect_driver");
+            builder.platform_bundle("interconnect_driver")?;
         }
 
         Ok(())

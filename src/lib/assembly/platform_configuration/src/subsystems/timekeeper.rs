@@ -48,7 +48,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
         // `serve_test_protocols` is gating this capability because historically it also was
         // used to gate persistent storage. `use_persistent_storage` is a direct setting.
         if serve_test_protocols || use_persistent_storage {
-            builder.platform_bundle("timekeeper_persistence");
+            builder.platform_bundle("timekeeper_persistence")?;
         }
 
         let has_aml_timer = context.board_config.provides_feature("fuchsia::aml-hrtimer");
@@ -71,7 +71,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
         // doing so.
         if serve_fuchsia_time_alarms {
             // For all devices.
-            builder.platform_bundle("timekeeper_wake_alarms");
+            builder.platform_bundle("timekeeper_wake_alarms")?;
         }
 
         // Always on counter is used instead of a persistent RTC on some platforms.

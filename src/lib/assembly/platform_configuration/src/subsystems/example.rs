@@ -20,7 +20,7 @@ impl DefineSubsystemConfiguration<ExampleConfig> for ExampleSubsystemConfig {
             .field("enable_foo", matches!(context.build_type, BuildType::Eng))?;
 
         if example_config.include_example_aib {
-            builder.platform_bundle("example_assembly_bundle");
+            builder.platform_bundle("example_assembly_bundle")?;
 
             // Set structured config for a component in the example AIB
             let mut component_config = builder.package("for-test").component("meta/bar.cm")?;

@@ -26,7 +26,7 @@ impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)
             return Ok(());
         }
 
-        builder.platform_bundle("trusted_execution_environment");
+        builder.platform_bundle("trusted_execution_environment")?;
 
         // Create a domain config package for all the TA configs.
         let dir = builder

@@ -111,12 +111,12 @@ fn define_global_platform_tee_configuration(
     if !tee_trusted_app_guids.is_empty() {
         create_tee_manager(tee_trusted_app_guids, context, builder)?;
         if recovery_config.has_factory_reset(*context.feature_set_level) {
-            builder.platform_bundle("factory_reset_tee");
+            builder.platform_bundle("factory_reset_tee")?;
         }
     } else {
         builder.core_shard(&context.get_resource("no_tee_manager.core_shard.cml"));
         if recovery_config.has_factory_reset(*context.feature_set_level) {
-            builder.platform_bundle("factory_reset_no_tee");
+            builder.platform_bundle("factory_reset_no_tee")?;
         }
         if session_enabled {
             builder.core_shard(&context.get_resource("no_tee_manager.session.core_shard.cml"));
@@ -143,7 +143,7 @@ fn create_tee_manager(
 
     // Pull in the tee_manager platform bundle, which gives us the tee_manager
     // binary and various CML includes, as well as the tee_manager core shard.
-    builder.platform_bundle("tee_manager");
+    builder.platform_bundle("tee_manager")?;
 
     // Write tee_manager's config-data
     let tee_manager_config_path = gendir.join("tee_manager.config");
@@ -436,7 +436,7 @@ fn define_proprietary_tee_configuration(
         builder,
     )?;
     if recovery_config.has_factory_reset(*context.feature_set_level) {
-        builder.platform_bundle("factory_reset_no_tee");
+        builder.platform_bundle("factory_reset_no_tee")?;
     }
     Ok(())
 }

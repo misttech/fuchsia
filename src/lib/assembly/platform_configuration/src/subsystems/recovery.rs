@@ -36,7 +36,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
             // If configuration is provided for the factory-reset-trigger component, include it
             // and the configuration in the build.
 
-            builder.platform_bundle("factory_reset_trigger");
+            builder.platform_bundle("factory_reset_trigger")?;
 
             let config = serde_json::json!({
                 "version": "1",
@@ -63,7 +63,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
         }
 
         if config.has_factory_reset(*context.feature_set_level) {
-            builder.platform_bundle("factory_reset");
+            builder.platform_bundle("factory_reset")?;
         }
 
         // factory_reset needs to know which mutable filesystem to use, in order to properly
@@ -86,7 +86,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                 SystemRecovery::Fdr => {
                     context
                         .ensure_feature_set_level(&[FeatureSetLevel::Utility], "System Recovery")?;
-                    builder.platform_bundle("recovery_fdr");
+                    builder.platform_bundle("recovery_fdr")?;
                     configure_platform_system_recovery(context, config, builder)?;
                 }
                 SystemRecovery::Android => {
@@ -94,7 +94,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                         &[FeatureSetLevel::Utility],
                         "Android System Recovery",
                     )?;
-                    builder.platform_bundle("recovery_android");
+                    builder.platform_bundle("recovery_android")?;
                     configure_platform_system_recovery(context, config, builder)?;
                 }
                 SystemRecovery::Bootfs(bootfs_recovery_config) => {

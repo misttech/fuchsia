@@ -154,7 +154,7 @@ pub(crate) trait ConfigurationBuilder {
 
     /// Add a platform assembly input bundle that should be included in the
     /// assembled platform.
-    fn platform_bundle(&mut self, name: &str);
+    fn platform_bundle(&mut self, name: &str) -> Result<()>;
 
     /// Add an ICU-flavored platform assembly input bundle that should
     /// be included in the assembled platform, with a specified ICU configuration.
@@ -537,14 +537,15 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl {
         }
     }
 
-    fn platform_bundle(&mut self, name: &str) {
+    fn platform_bundle(&mut self, name: &str) -> Result<()> {
         if self.auto_includable_bundles.contains(name) {
-            panic!(
+            bail!(
                 "The AIB '{}' has `auto_include_in` set, and so it cannot be manually included by a subsystem.",
                 name
             );
         }
         self.bundles.insert(name.to_string());
+        Ok(())
     }
 
     fn bootfs(&mut self) -> &mut dyn BootfsConfigBuilder {
@@ -577,7 +578,7 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl {
                 .with_context(|| format!("while resolving revision: {}", &icu_config.revision))?;
             format!("{}.icu_{}_{}", name, &revision, commit_id)
         };
-        self.platform_bundle(&bundle_name);
+        self.platform_bundle(&bundle_name)?;
         Ok(())
     }
 
@@ -1243,5 +1244,12 @@ mod tests {
             result.unwrap_err().to_string(),
             "My feature can only be enabled on the following feature sets, not 'bootstrap': [utility, standard]"
         )
+    }
+
+    #[test]
+    fn test_error_on_manual_include_of_auto_included() {
+        let mut builder = ConfigurationBuilderImpl::default();
+        builder.auto_includable_bundles.insert("foo".to_string());
+        assert!(builder.platform_bundle("foo").is_err());
     }
 }

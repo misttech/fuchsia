@@ -45,16 +45,16 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
                 &[FeatureSetLevel::Standard],
                 "heapdump",
             )?;
-            builder.platform_bundle("heapdump_global_collector");
+            builder.platform_bundle("heapdump_global_collector")?;
         }
 
         // Select the component manager bundle to use.
         if heapdump_config.component_manager {
-            builder.platform_bundle("component_manager_with_tracing_and_heapdump");
+            builder.platform_bundle("component_manager_with_tracing_and_heapdump")?;
         } else if matches!(tracing_config, TracingConfig::Enabled { component_manager: true, .. }) {
-            builder.platform_bundle("component_manager_with_tracing");
+            builder.platform_bundle("component_manager_with_tracing")?;
         } else {
-            builder.platform_bundle("component_manager");
+            builder.platform_bundle("component_manager")?;
         }
 
         // Add base policies.

@@ -41,10 +41,10 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
         let (config, session_config) = *platform_config;
 
         if config.feedback.remote_device_id_provider {
-            builder.platform_bundle("feedback_remote_device_id_provider");
+            builder.platform_bundle("feedback_remote_device_id_provider")?;
         }
         if config.feedback.include_kernel_logs_in_last_reboot_info {
-            builder.platform_bundle("kernel_logs_in_reboot_info");
+            builder.platform_bundle("kernel_logs_in_reboot_info")?;
         }
 
         if *context.build_type != BuildType::Eng
@@ -128,9 +128,9 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             )?;
 
             match context.build_type {
-                BuildType::User => builder.platform_bundle("cobalt_user_config"),
-                BuildType::UserDebug => builder.platform_bundle("cobalt_userdebug_config"),
-                BuildType::Eng => builder.platform_bundle("cobalt_default_config"),
+                BuildType::User => builder.platform_bundle("cobalt_user_config")?,
+                BuildType::UserDebug => builder.platform_bundle("cobalt_userdebug_config")?,
+                BuildType::Eng => builder.platform_bundle("cobalt_default_config")?,
             }
 
             util::add_build_type_config_data("cobalt", context, builder)?;
@@ -161,7 +161,7 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             }
             FeedbackIdComponentUrl::None => {
                 if session_config.enabled {
-                    builder.platform_bundle("no_remote_feedback_id");
+                    builder.platform_bundle("no_remote_feedback_id")?;
                 }
             }
         }

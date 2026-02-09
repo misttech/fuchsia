@@ -23,30 +23,30 @@ impl DefineSubsystemConfiguration<PlatformMemoryMonitorConfig> for MemoryMonitor
                     }
                     match context.build_type {
                         BuildType::Eng => {
-                            builder.platform_bundle("memory_monitor_with_memory_sampler");
+                            builder.platform_bundle("memory_monitor_with_memory_sampler")?;
                         }
                         BuildType::UserDebug => {
-                            builder.platform_bundle("memory_monitor_with_memory_sampler");
+                            builder.platform_bundle("memory_monitor_with_memory_sampler")?;
                             // Memory monitor looks for a file named
                             // "send_critical_pressure_crash_reports" to trigger sending crash
                             // reports when entering the critical memory pressure state.
                             // TODO: https://fxbug.dev/371555480 - Use structured configuration.
-                            builder.platform_bundle("memory_monitor_critical_reports");
+                            builder.platform_bundle("memory_monitor_critical_reports")?;
                         }
                         BuildType::User => {
-                            builder.platform_bundle("memory_monitor");
+                            builder.platform_bundle("memory_monitor")?;
                         }
                     }
                 }
                 MemoryMonitorVersion::V1 => {
-                    builder.platform_bundle("memory_monitor");
+                    builder.platform_bundle("memory_monitor")?;
                 }
                 MemoryMonitorVersion::V1WithProfiling => {
                     ensure!(*context.build_type != BuildType::User);
-                    builder.platform_bundle("memory_monitor_with_memory_sampler");
+                    builder.platform_bundle("memory_monitor_with_memory_sampler")?;
                 }
                 MemoryMonitorVersion::V2 => {
-                    builder.platform_bundle("memory_monitor2");
+                    builder.platform_bundle("memory_monitor2")?;
                 }
             }
         }

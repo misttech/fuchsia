@@ -28,13 +28,13 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
             };
 
         if enable_virtual_console {
-            builder.platform_bundle("virtcon");
+            builder.platform_bundle("virtcon")?;
         }
 
         if *context.feature_set_level == FeatureSetLevel::Standard
             && context.board_config.provides_feature("fuchsia::vulkan_gpu")
         {
-            builder.platform_bundle("vulkan_loader");
+            builder.platform_bundle("vulkan_loader")?;
         }
 
         builder.set_config_capability("fuchsia.virtcon.BootAnimation", Config::new_void())?;
@@ -102,10 +102,10 @@ impl DefineSubsystemConfiguration<GraphicsConfig> for GraphicsSubsystemConfig {
 
         match context.feature_set_level {
             FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable => {
-                builder.platform_bundle("display_drivers_boot");
+                builder.platform_bundle("display_drivers_boot")?;
             }
             FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
-                builder.platform_bundle("display_drivers_base");
+                builder.platform_bundle("display_drivers_base")?;
             }
         }
 

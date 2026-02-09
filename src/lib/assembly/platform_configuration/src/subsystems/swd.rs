@@ -76,7 +76,7 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
                     }
                     // Utility has no update checker
                     FeatureSetLevel::Utility => {
-                        builder.platform_bundle("no_update_checker");
+                        builder.platform_bundle("no_update_checker")?;
                     }
                     // Bootstrap and Embeddable have neither an update checker nor the system-update
                     // realm, so do not include `no_update_checker` AIB that requires the realm.
@@ -98,7 +98,7 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
         }
 
         if subsystem_config.include_configurator {
-            builder.platform_bundle("system_update_configurator");
+            builder.platform_bundle("system_update_configurator")?;
         }
 
         builder.set_config_capability(
@@ -168,10 +168,10 @@ impl SwdSubsystemConfig {
                     if build_type == &BuildType::User {
                         bail!("The empty_eager_config cannot be enabled on user builds");
                     }
-                    builder.platform_bundle("omaha_client_empty_eager_config");
+                    builder.platform_bundle("omaha_client_empty_eager_config")?;
                 }
 
-                builder.platform_bundle("omaha_client");
+                builder.platform_bundle("omaha_client")?;
                 builder.set_config_capability(
                     "fuchsia.omaha.PeriodicIntervalMinutes",
                     Config::new(
@@ -207,7 +207,7 @@ impl SwdSubsystemConfig {
                 }
             }
             UpdateChecker::SystemUpdateChecker => {
-                builder.platform_bundle("system_update_checker");
+                builder.platform_bundle("system_update_checker")?;
             }
         }
         Ok(())
@@ -258,7 +258,7 @@ impl SwdSubsystemConfig {
         }
 
         if policy.disable_executability_restrictions {
-            builder.platform_bundle("pkgfs_disable_executability_restrictions");
+            builder.platform_bundle("pkgfs_disable_executability_restrictions")?;
         }
 
         Ok(())

@@ -41,10 +41,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             (_, Snoop::None) => {}
             (BuildType::User, _) => return Err(format_err!("Snoop forbidden on user builds")),
             (_, Snoop::Eager) => {
-                builder.platform_bundle("bluetooth_snoop_eager");
+                builder.platform_bundle("bluetooth_snoop_eager")?;
             }
             (_, Snoop::Lazy) => {
-                builder.platform_bundle("bluetooth_snoop_lazy");
+                builder.platform_bundle("bluetooth_snoop_lazy")?;
             }
         }
 
@@ -53,7 +53,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             && (*context.feature_set_level == FeatureSetLevel::Standard
                 || *context.feature_set_level == FeatureSetLevel::Utility)
         {
-            builder.platform_bundle("bt_transport_uart_driver");
+            builder.platform_bundle("bt_transport_uart_driver")?;
         }
 
         let BluetoothConfig::Standard { profiles, core, snoop: _ } = config else {
@@ -67,7 +67,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 "Bluetooth core & profiles are forbidden on non-Standard service levels"
             ));
         }
-        builder.platform_bundle("bluetooth_core");
+        builder.platform_bundle("bluetooth_core")?;
         builder.set_config_capability(
             "fuchsia.bluetooth.LegacyPairing",
             Config::new(ConfigValueType::Bool, core.legacy_pairing_enabled.into()),
@@ -92,7 +92,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         )?;
 
         if profiles.rfcomm.enabled() {
-            builder.platform_bundle("bluetooth_rfcomm");
+            builder.platform_bundle("bluetooth_rfcomm")?;
         }
         // Bail if RFCOMM is required by any enabled profiles but is not enabled in the schema.
         if profiles.requires_rfcomm() && !profiles.rfcomm.enabled() {
@@ -100,7 +100,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         }
 
         if let A2dpConfig::Enabled(a2dp) = profiles.a2dp {
-            builder.platform_bundle("bluetooth_a2dp");
+            builder.platform_bundle("bluetooth_a2dp")?;
 
             let mut a2dp_config = builder.package("bt-a2dp").component("meta/bt-a2dp.cm")?;
             a2dp_config
@@ -113,10 +113,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 .field("source_type", get_source_type_str(&a2dp.sink_and_source))?;
         }
         if profiles.avrcp.enabled {
-            builder.platform_bundle("bluetooth_avrcp");
+            builder.platform_bundle("bluetooth_avrcp")?;
         }
         if profiles.did.enabled {
-            builder.platform_bundle("bluetooth_device_id");
+            builder.platform_bundle("bluetooth_device_id")?;
             let mut did_config =
                 builder.package("bt-device-id").component("meta/bt-device-id.cm")?;
             did_config
@@ -138,7 +138,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             profiles.hfp.codecs_supported.clone()
         };
         if let AudioGatewayConfig::Enabled(hfp_ag_features) = &profiles.hfp.audio_gateway {
-            builder.platform_bundle("bluetooth_hfp_ag");
+            builder.platform_bundle("bluetooth_hfp_ag")?;
 
             let controller_encodes = if profiles.hfp.controller_encodes.is_empty() {
                 vec![HfpCodecId::Cvsd, HfpCodecId::Msbc]
@@ -183,7 +183,7 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 .field("offload_type", offload_type)?;
         }
         if let HandsFreeConfig::Enabled(hfp_hf_features) = &profiles.hfp.hands_free {
-            builder.platform_bundle("bluetooth_hfp_hf");
+            builder.platform_bundle("bluetooth_hfp_hf")?;
 
             let mut hfp_hf_config =
                 builder.package("bt-hfp-hands-free").component("meta/bt-hfp-hands-free.cm")?;
@@ -201,19 +201,19 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 )?;
         }
         if profiles.map.mce_enabled {
-            builder.platform_bundle("bluetooth_map_mce");
+            builder.platform_bundle("bluetooth_map_mce")?;
         }
 
         if *context.feature_set_level == FeatureSetLevel::Standard
             && *context.build_type == BuildType::Eng
         {
-            builder.platform_bundle("bluetooth_affordances");
-            builder.platform_bundle("bluetooth_pandora");
+            builder.platform_bundle("bluetooth_affordances")?;
+            builder.platform_bundle("bluetooth_pandora")?;
 
             if !profiles.a2dp.enabled()
                 && matches!(media_config.audio, Some(AudioConfig::FullStack(_)))
             {
-                builder.platform_bundle("bluetooth_a2dp_with_consumer");
+                builder.platform_bundle("bluetooth_a2dp_with_consumer")?;
             }
         }
 
