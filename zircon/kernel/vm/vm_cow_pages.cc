@@ -1663,6 +1663,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   {
     VmCompression* compression = Pmm::Node().GetPageCompression();
     __UNINITIALIZED BatchPQUpdateBacklink page_backlink_updater(&hidden_parent.locked());
+    uint32_t populated_slots_removed_from_this = 0;
     zx_status_t status = page_list_.RemovePages(
         [&](VmPageOrMarker* p, uint64_t offset) {
           if (tree_has_parent_content_markers()) {
@@ -1671,6 +1672,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
             if (p->IsParentContent()) {
               // Hidden nodes do not themselves have parent content markers, as we have effectively
               // moved this to ourselves can clear this slot and continue.
+              ++populated_slots_removed_from_this;
               *p = VmPageOrMarker::Empty();
               return ZX_ERR_NEXT;
             }
@@ -1700,6 +1702,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
 
     ASSERT(status == ZX_OK);
     page_backlink_updater.Flush();
+    if (populated_slots_removed_from_this > 0) {
+      continuous_attribution_tracker_.Decrement(populated_slots_removed_from_this);
+    }
   }
 
   // Move our pagelist before adding ourselves as its child, because we cannot be added as a child

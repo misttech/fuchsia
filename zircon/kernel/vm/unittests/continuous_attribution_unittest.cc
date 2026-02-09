@@ -472,6 +472,49 @@ bool continuous_attribution_tracker_require_move_page() {
   END_TEST;
 }
 
+// Test that the populated slots count is decremented during the removal of parent content markers
+// in hidden VMOs.
+bool continuous_attribution_tracker_hidden_no_parent_content() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  // We will create a bidirectional clone chain with a 1) hidden root, 2) a hidden child of that
+  // root, and 3) a visible child of that child. When we create VMO #3, it will get a hidden parent
+  // whose parent content markers must be deleted from its page list. Ensure that it also decrements
+  // its populated slots count.
+
+  fbl::RefPtr<VmObjectPaged> vmo1;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &vmo1));
+
+  ASSERT_OK(vmo1->CommitRange(0, 2 * kPageSize));
+
+  fbl::RefPtr<VmObject> vmo2_no_paged;
+  ASSERT_OK(vmo1->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                              /*size=*/3 * kPageSize, /*copy_name=*/false, &vmo2_no_paged));
+  fbl::RefPtr<VmObjectPaged> vmo2 = DownCastVmObject<VmObjectPaged>(vmo2_no_paged);
+  ASSERT_NONNULL(vmo2);
+
+  ASSERT_OK(vmo2->CommitRange(0, kPageSize));
+
+  fbl::RefPtr<VmObject> vmo3_no_paged;
+  ASSERT_OK(vmo2->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                              /*size=*/3 * kPageSize, /*copy_name=*/false, &vmo3_no_paged));
+  fbl::RefPtr<VmObjectPaged> vmo3 = DownCastVmObject<VmObjectPaged>(vmo3_no_paged);
+  ASSERT_NONNULL(vmo3);
+
+  fbl::RefPtr<VmCowPages> parent = vmo3->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(parent);
+  auto &tracker = parent->DebugGetContinuousAttributionTracker();
+  EXPECT_EQ(1u, tracker.FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -485,6 +528,7 @@ VM_UNITTEST(continuous_attribution_tracker_zero_anonymous)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_backed)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_clone)
 VM_UNITTEST(continuous_attribution_tracker_require_move_page)
+VM_UNITTEST(continuous_attribution_tracker_hidden_no_parent_content)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 
