@@ -10,11 +10,11 @@
 
 use crate::auth::info::{AUTH_SCOPE, CLIENT_ID, CLIENT_SECRET, OAUTH_REFRESH_TOKEN_ENDPOINT};
 use crate::error::GcsError;
-use anyhow::{bail, Context, Result};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD;
+use anyhow::{Context, Result, bail};
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD;
 use hyper::{Body, Method, Request};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -23,27 +23,6 @@ use url::form_urlencoded;
 const AUTHORIZATION_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 
 const PKCE_BYTE_LENGTH: usize = 32;
-
-#[allow(dead_code)] // TODO(https://fxbug.dev/330168133)
-/// POST body to [`OAUTH_REFRESH_TOKEN_ENDPOINT`].
-#[derive(Serialize)]
-struct ExchangeAuthCodeRequest<'a> {
-    /// A value provided by GCS for fetching tokens.
-    client_id: &'a str,
-
-    /// A (normally secret) value provided by GCS for fetching tokens.
-    client_secret: &'a str,
-
-    /// A short lived authorization code used to attain an initial
-    /// `refresh_token` and `access_token`.
-    code: &'a str,
-
-    /// Will be "authorization_code" for a authorization code.
-    grant_type: &'a str,
-
-    /// A local loopback uri to receive the response (with the auth code).
-    redirect_uri: &'a str,
-}
 
 /// Response body from [`OAUTH_REFRESH_TOKEN_ENDPOINT`].
 /// 'expires_in' is intentionally omitted.
