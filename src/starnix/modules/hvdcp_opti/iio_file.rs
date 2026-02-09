@@ -10,7 +10,8 @@ use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, serialize_for_file};
-use starnix_logging::log_error;
+use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
+use starnix_logging::{bug_ref, log_error};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -100,6 +101,21 @@ pub fn build_usb_power_supply_directory(
     dir.entry("present", IioFile::new_node(proxy.clone(), "usb_present"), mode!(IFREG, 0o444));
     dir.entry("voltage_max", IioFile::new_node(proxy.clone(), "voltage_max"), mode!(IFREG, 0o444));
     dir.entry("voltage_now", IioFile::new_node(proxy.clone(), "voltage_now"), mode!(IFREG, 0o444));
+    dir.entry(
+        "capacity",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "capacity_level",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
+        "status",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
 }
 
 pub fn build_battery_power_supply_directory(
@@ -120,6 +136,11 @@ pub fn build_battery_power_supply_directory(
     );
     dir.entry("health", IioFile::new_node(proxy.clone(), "battery_health"), mode!(IFREG, 0o444));
     dir.entry("status", IioFile::new_node(proxy.clone(), "battery_status"), mode!(IFREG, 0o444));
+    dir.entry(
+        "capacity_level",
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+        mode!(IFREG, 0o444),
+    );
 }
 
 struct IioFile {

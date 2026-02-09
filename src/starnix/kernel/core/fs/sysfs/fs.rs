@@ -213,50 +213,6 @@ impl SysFs {
                     );
                 });
             });
-            dir.subdir("power_supply", dir_mode, |dir| {
-                dir.subdir("battery", dir_mode, |dir| {
-                    dir.entry(
-                        "charge_counter",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "charge_full",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "charge_full_design",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "current_now",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "resistance",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "time_to_empty_avg",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "time_to_full_now",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "voltage_now",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
             dir.subdir("powercap", dir_mode, |_dir| {});
             dir.subdir("udc", dir_mode, |_dir| {});
             // TODO(https://fxbug.dev/434255839): This provides the directory but doesn't provide the
@@ -446,41 +402,7 @@ impl SysFs {
             dir.subdir("virtual", dir_mode, |dir| {
                 dir.subdir("leds", dir_mode, |_dir| {});
                 dir.subdir("power_supply", dir_mode, |dir| {
-                    dir.subdir("battery", dir_mode, |dir| {
-                        dir.entry(
-                            "capacity",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "capacity_level",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "status",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                    });
                     dir.subdir("bms", dir_mode, |dir| {
-                        dir.entry(
-                            "capacity",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "capacity_level",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "status",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                    });
-                    dir.subdir("usb", dir_mode, |dir| {
                         dir.entry(
                             "capacity",
                             StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
