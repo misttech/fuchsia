@@ -117,6 +117,14 @@ template("_aidl_gen") {
     }
   }
 
+  # This is the base directory for android/os/PersistableBundle.aidl.
+  persistable_bundle_dir =
+      "//third_party/android/platform/frameworks/native/aidl/binder"
+  action_args += [
+    "--base",
+    rebase_path(persistable_bundle_dir, root_build_dir),
+  ]
+
   action_deps = [ aidl_gen_target ]
   if (defined(invoker.deps)) {
     foreach(dep, invoker.deps) {
