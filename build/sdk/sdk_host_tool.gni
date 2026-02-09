@@ -122,6 +122,7 @@ template("sdk_executable_host_tool") {
   assert(is_host)
 
   tool_name = target_name
+  sdk_target_name = target_name + "_sdk"
 
   executable(tool_name) {
     forward_variables_from(invoker,
@@ -132,9 +133,12 @@ template("sdk_executable_host_tool") {
                              "sdk_name",
                              "output_name",
                            ])
+    if (defined(visibility)) {
+      visibility += [ ":" + sdk_target_name ]
+    }
   }
 
-  sdk_host_tool(target_name + "_sdk") {
+  sdk_host_tool(sdk_target_name) {
     forward_variables_from(invoker, _idk_only_parameters)
     deps = [ ":${tool_name}" ]
   }
@@ -164,12 +168,16 @@ template("sdk_go_binary_host_tool") {
   assert(is_host)
 
   tool_name = target_name
+  sdk_target_name = target_name + "_sdk"
 
   go_binary(tool_name) {
     forward_variables_from(invoker, "*", _idk_only_parameters)
+    if (defined(visibility)) {
+      visibility += [ ":" + sdk_target_name ]
+    }
   }
 
-  sdk_host_tool(target_name + "_sdk") {
+  sdk_host_tool(sdk_target_name) {
     forward_variables_from(invoker, _idk_only_parameters)
     deps = [ ":${tool_name}" ]
   }
