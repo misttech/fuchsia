@@ -31,8 +31,8 @@ use netstack3_base::socket::{
 use netstack3_base::sync::{self, RwLock};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, DeviceIdContext,
-    DeviceIdentifier, EitherDeviceId, ExistsError, Inspector, InspectorDeviceExt,
-    InspectorExt as _, IpDeviceAddr, LocalAddressError, Mark, MarkDomain, Marks, NotFoundError,
+    DeviceIdentifier, EitherDeviceId, Inspector, InspectorDeviceExt, InspectorExt as _,
+    IpDeviceAddr, LocalAddressError, Mark, MarkDomain, Marks, NotFoundError,
     OwnedOrRefsBidirectionalConverter, ReferenceNotifiers, ReferenceNotifiersExt,
     RemoteAddressError, RemoveResourceResultWithContext, RngContext, SettingsContext, SocketError,
     StrongDeviceIdentifier, TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
@@ -1991,6 +1991,8 @@ struct PairedSocketMapMut<'a, I: IpExt, D: WeakDeviceIdentifier, S: DatagramSock
     other_bound: &'a mut BoundDatagramSocketMap<I::OtherVersion, D, S>,
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
 struct PairedBoundSocketIds<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     this: BoundDatagramSocketId<I, D, S>,
     other: BoundDatagramSocketId<I::OtherVersion, D, S>,
@@ -3384,6 +3386,7 @@ fn set_bound_device_single_stack<
     socket_id: &BoundDatagramSocketId<I, D, S>,
     common_ip_options: &DatagramIpAgnosticOptions,
     new_device: Option<&D::Strong>,
+    sharing: S::SharingState,
 ) -> Result<(), SocketError> {
     let (local_ip, remote_ip, old_device) = match &params {
         SetBoundDeviceParameters::Listener {
@@ -3418,20 +3421,17 @@ fn set_bound_device_single_stack<
         }
     };
 
-    match params {
-        SetBoundDeviceParameters::Listener { ip, device } => {
-            let new_device = new_device.map(|d| d.downgrade());
-            let old_addr = ListenerAddr { ip: ip.clone(), device: device.clone() };
-            let new_addr = ListenerAddr { ip: ip.clone(), device: new_device.clone() };
-            let entry = sockets
-                .listeners_mut()
-                .entry(socket_id, &old_addr)
-                .unwrap_or_else(|| panic!("invalid listener ID {:?}", socket_id));
-            let _entry = entry
-                .try_update_addr(new_addr)
-                .map_err(|(ExistsError {}, _entry)| LocalAddressError::AddressInUse)?;
-            *device = new_device
-        }
+    let new_device_strong = new_device.map(EitherDeviceId::Strong);
+    let new_device_weak = new_device.map(|d| d.downgrade());
+
+    let (old_addr, new_addr, update_state) = match params {
+        SetBoundDeviceParameters::Listener { ip, device } => (
+            AddrVec::Listen(ListenerAddr { ip: ip.clone(), device: device.clone() }),
+            AddrVec::Listen(ListenerAddr { ip: ip.clone(), device: new_device_weak.clone() }),
+            Either::Left(move || {
+                *device = new_device_weak;
+            }),
+        ),
         SetBoundDeviceParameters::Connected(ConnState {
             socket,
             addr,
@@ -3439,13 +3439,13 @@ fn set_bound_device_single_stack<
             clear_device_on_disconnect,
             extra: _,
         }) => {
-            let ConnAddr { ip, device } = addr;
-            let ConnIpAddr { local: (local_ip, _local_id), remote: (remote_ip, _remote_id) } = ip;
+            let ConnIpAddr { local: (local_ip, _local_id), remote: (remote_ip, _remote_id) } =
+                addr.ip;
             let new_socket = core_ctx
                 .new_ip_socket(
                     bindings_ctx,
                     IpSocketArgs {
-                        device: new_device.map(EitherDeviceId::Strong),
+                        device: new_device_strong,
                         local_ip: IpDeviceAddr::new_from_socket_ip_addr(local_ip.clone()),
                         remote_ip: remote_ip.clone(),
                         proto: socket.proto(),
@@ -3455,25 +3455,56 @@ fn set_bound_device_single_stack<
                 .map_err(|_: IpSockCreationError| {
                     SocketError::Remote(RemoteAddressError::NoRoute)
                 })?;
-            let new_device = new_socket.device().cloned();
-            let old_addr = ConnAddr { ip: ip.clone(), device: device.clone() };
-            let entry = sockets
-                .conns_mut()
-                .entry(socket_id, &old_addr)
-                .unwrap_or_else(|| panic!("invalid conn id {:?}", socket_id));
-            let new_addr = ConnAddr { ip: ip.clone(), device: new_device.clone() };
-            let entry = entry
-                .try_update_addr(new_addr)
-                .map_err(|(ExistsError {}, _entry)| LocalAddressError::AddressInUse)?;
-            *socket = new_socket;
-            // If this operation explicitly sets the device for the socket, it
-            // should no longer be cleared on disconnect.
-            if new_device.is_some() {
-                *clear_device_on_disconnect = false;
-            }
-            *addr = entry.get_addr().clone()
+            let new_addr = ConnAddr { ip: addr.ip.clone(), device: new_device_weak.clone() };
+            (
+                AddrVec::Conn(addr.clone()),
+                AddrVec::Conn(new_addr.clone()),
+                Either::Right(move || {
+                    *socket = new_socket;
+                    // If this operation explicitly sets the device for the socket, it
+                    // should no longer be cleared on disconnect.
+                    if new_device.is_some() {
+                        *clear_device_on_disconnect = false;
+                    }
+                    *addr = new_addr
+                }),
+            )
         }
+    };
+
+    // Remove old address from the socket map.
+    let remove_op = SingleStackRemoveOperation::<I, D, S> {
+        socket_id: socket_id.clone(),
+        sharing: sharing.clone(),
+        addr: old_addr,
+        _marker: PhantomData,
+    };
+    let reinsert_op = remove_op.apply(sockets).expect("failed to remove socket in set_device");
+
+    // Insert new address into the socket map. This operation may fail, in which case
+    // we need to reinsert the old address.
+    let insert_op = SingleStackInsertOperation::<I, D, S> {
+        socket_id: socket_id.clone(),
+        sharing: sharing,
+        addr: new_addr,
+        _marker: PhantomData,
+    };
+    match insert_op.apply(sockets) {
+        Err(e) => {
+            let _: SingleStackRemoveOperation<_, _, _> = reinsert_op
+                .apply(sockets)
+                .expect("failed to reinsert socket after failed set_device");
+            return Err(SocketError::Local(e.into()));
+        }
+        Ok(_) => {}
     }
+
+    // Update the socket after updating the socket map.
+    match update_state {
+        Either::Left(f) => f(),
+        Either::Right(f) => f(),
+    }
+
     Ok(())
 }
 
@@ -3492,67 +3523,41 @@ fn set_bound_device_listener_both_stacks<
     S: DatagramSocketSpec,
 >(
     old_device: &mut Option<D>,
-    local_id: <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier,
-    PairedSocketMapMut { bound: sockets, other_bound: other_sockets }: PairedSocketMapMut<
-        'a,
-        I,
-        D,
-        S,
-    >,
-    PairedBoundSocketIds { this: socket_id, other: other_socket_id }: PairedBoundSocketIds<I, D, S>,
+    identifier: <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier,
+    sockets: PairedSocketMapMut<'a, I, D, S>,
+    socket_ids: PairedBoundSocketIds<I, D, S>,
     new_device: Option<D>,
+    sharing: S::SharingState,
 ) -> Result<(), SocketError> {
-    fn try_update_entry<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
-        old_device: Option<D>,
-        new_device: Option<D>,
-        sockets: &mut BoundDatagramSocketMap<I, D, S>,
-        socket_id: &BoundDatagramSocketId<I, D, S>,
-        local_id: <S::AddrSpec as SocketMapAddrSpec>::LocalIdentifier,
-    ) -> Result<(), SocketError> {
-        let old_addr = ListenerAddr {
-            ip: ListenerIpAddr { addr: None, identifier: local_id },
-            device: old_device,
-        };
-        let entry = sockets
-            .listeners_mut()
-            .entry(socket_id, &old_addr)
-            .unwrap_or_else(|| panic!("invalid listener ID {:?}", socket_id));
-        let new_addr = ListenerAddr {
-            ip: ListenerIpAddr { addr: None, identifier: local_id },
-            device: new_device,
-        };
-        let _entry = entry
-            .try_update_addr(new_addr)
-            .map_err(|(ExistsError {}, _entry)| LocalAddressError::AddressInUse)?;
-        return Ok(());
-    }
+    let PairedSocketMapMut { bound: sockets, other_bound: other_sockets } = sockets;
 
-    // Try to update the entry in this stack.
-    try_update_entry::<_, _, S>(
-        old_device.clone(),
-        new_device.clone(),
-        sockets,
-        &socket_id,
-        local_id,
-    )?;
+    let remove_op = DualStackListenerRemoveOperation {
+        identifier,
+        device: old_device.clone(),
+        sharing: sharing.clone(),
+        socket_ids: socket_ids.clone(),
+        _marker: PhantomData,
+    };
+    let reinsert_op =
+        remove_op.apply(sockets, other_sockets).expect("failed to remove socket in set_device");
 
-    // Try to update the entry in the other stack.
-    let result = try_update_entry::<_, _, S>(
-        old_device.clone(),
-        new_device.clone(),
-        other_sockets,
-        &other_socket_id,
-        local_id,
-    );
+    let insert_op = DualStackListenerInsertOperation {
+        identifier,
+        device: new_device.clone(),
+        sharing,
+        socket_ids,
+        _marker: PhantomData,
+    };
+    match insert_op.apply(sockets, other_sockets) {
+        Err(e) => {
+            let _: DualStackListenerRemoveOperation<_, _, _> = reinsert_op
+                .apply(sockets, other_sockets)
+                .expect("failed to reinsert socket after failed set_device");
+            return Err(SocketError::Local(e.into()));
+        }
+        Ok(_) => {}
+    };
 
-    if let Err(e) = result {
-        // This stack was successfully updated, but the other stack failed to
-        // update; rollback this stack to the original device. This shouldn't be
-        // fallible, because both socket maps are locked.
-        try_update_entry::<_, _, S>(new_device, old_device.clone(), sockets, &socket_id, local_id)
-            .expect("failed to rollback listener in this stack to it's original device");
-        return Err(e);
-    }
     *old_device = new_device;
     return Ok(());
 }
@@ -4483,7 +4488,7 @@ where
     ) -> Result<(), SocketError> {
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_state_mut(id, |core_ctx, state| {
-            let SocketState { inner, ip_options, sharing: _ } = state;
+            let SocketState { inner, ip_options, sharing } = state;
             match inner {
                 SocketStateInner::Unbound(state) => {
                     let UnboundSocketState { device } = state;
@@ -4590,6 +4595,7 @@ where
                                         &socket_id,
                                         &ip_options.common,
                                         new_device,
+                                        sharing.clone(),
                                     )
                                 },
                             )
@@ -4605,6 +4611,7 @@ where
                                     &socket_id,
                                     &ip_options.common,
                                     new_device,
+                                    sharing.clone(),
                                 )
                             })
                         }
@@ -4620,6 +4627,7 @@ where
                                     PairedSocketMapMut { bound, other_bound },
                                     socket_id,
                                     new_device.map(|d| d.downgrade()),
+                                    sharing.clone(),
                                 )
                             })
                         }

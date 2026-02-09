@@ -29,7 +29,8 @@ use net_declare::{
 };
 use net_types::Witness as _;
 use net_types::ip::{
-    AddrSubnetEither, Ip, IpAddress as _, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
+    AddrSubnetEither, Ip, IpAddr, IpAddress as _, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6,
+    Ipv6Addr,
 };
 use netemul::{
     InterfaceConfig, RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _,
@@ -5625,4 +5626,151 @@ async fn udp_send_backpressure<N: Netstack>(name: &str) {
     // Future should unblock now that we've allowed the frames to be popped from
     // the device FIFO.
     assert_eq!(fut.await.expect("send_to error"), PAYLOAD.len());
+}
+
+fn set_socket_ipv6_only(socket: &socket2::Socket, ipv6_only: bool) -> Result {
+    let fd = socket.as_raw_fd();
+    let optval = ipv6_only as libc::c_int;
+    let optval_ptr = &optval as *const libc::c_int as *const libc::c_void;
+    let optval_size = std::mem::size_of_val(&optval) as u32;
+    // SAFETY: Calling setsockop with valid arguments.
+    let r =
+        unsafe { libc::setsockopt(fd, libc::SOL_IPV6, libc::IPV6_V6ONLY, optval_ptr, optval_size) };
+    if r != 0 {
+        return Err(anyhow!("setsockopt failed"));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+enum SocketFamily {
+    Ipv4,
+    Ipv6,
+    DualStack,
+}
+
+impl SocketFamily {
+    fn domain(&self) -> fposix_socket::Domain {
+        match self {
+            Self::Ipv4 => Ipv4::DOMAIN,
+            Self::Ipv6 | Self::DualStack => Ipv6::DOMAIN,
+        }
+    }
+
+    fn unspec_address(&self) -> IpAddr {
+        match self {
+            Self::Ipv4 => Ipv4::UNSPECIFIED_ADDRESS.to_ip_addr(),
+            Self::Ipv6 | Self::DualStack => Ipv6::UNSPECIFIED_ADDRESS.to_ip_addr(),
+        }
+    }
+
+    async fn create_socket(&self, realm: &TestRealm<'_>) -> socket2::Socket {
+        let socket = realm
+            .datagram_socket(self.domain(), fposix_socket::DatagramSocketProtocol::Udp)
+            .await
+            .expect("failed to create socket");
+        if *self == SocketFamily::Ipv6 {
+            set_socket_ipv6_only(&socket, true).expect("failed to set SO_IPV6_V6ONLY");
+        }
+        socket
+    }
+}
+
+// When multiple sockets are bound to the same address and device is updated
+// on one of them, the update should not affect the other sockets.
+// This is a regression test for https://fxrev.dev/479568320 .
+#[netstack_test]
+#[test_matrix(
+    [SocketFamily::Ipv4, SocketFamily::Ipv6, SocketFamily::DualStack]
+)]
+async fn set_so_bindtodevice_bound_socket(name: &str, socket_family: SocketFamily) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm = sandbox
+        .create_netstack_realm::<Netstack3, _>(format!("{name}_client"))
+        .expect("failed to create client realm");
+
+    const PORT: u16 = 53535;
+
+    let socket1 = socket_family.create_socket(&realm).await;
+    socket1.set_reuse_address(true).expect("failed to set reuse address");
+    let socket2 = socket_family.create_socket(&realm).await;
+    socket2.set_reuse_address(true).expect("failed to set reuse address");
+
+    // Bind both sockets to the same port.
+    let addr: socket2::SockAddr =
+        std::net::SocketAddr::from((socket_family.unspec_address(), PORT)).into();
+    socket1.bind(&addr).expect("failed to bind");
+    socket2.bind(&addr).expect("failed to bind");
+
+    // Bind `socket1` to loopback device. This should not affect `socket2`.
+    socket1.bind_device(Some("lo".as_bytes())).expect("failed to bind to device");
+
+    // Try sending a packet. It is expected to be received on `socket1`
+    // since it's bound to the device.
+    let loopback_addr = match socket_family {
+        SocketFamily::Ipv4 => Ipv4::LOOPBACK_ADDRESS.to_ip_addr(),
+        SocketFamily::Ipv6 | SocketFamily::DualStack => Ipv6::LOOPBACK_ADDRESS.to_ip_addr(),
+    };
+    let send_socket = socket_family.create_socket(&realm).await;
+    let addr: socket2::SockAddr = std::net::SocketAddr::from((loopback_addr, PORT)).into();
+    let sent = send_socket.send_to(b"hello", &addr).expect("failed to send");
+    assert_eq!(sent, 5);
+
+    let socket1 = fasync::net::UdpSocket::from_socket(socket1.into())
+        .expect("Failed to create async UDP socket");
+    let mut buf = [0; 1024];
+    let (bytes_read, _addr) = socket1
+        .recv_from(&mut buf)
+        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, || {
+            panic!("UDP packet wasn't delivered to a listening socket")
+        })
+        .await
+        .expect("failed to receive");
+    assert_eq!(bytes_read, 5);
+    assert_eq!(&buf[..bytes_read], b"hello");
+}
+
+#[netstack_test]
+#[test_matrix(
+    [SocketFamily::Ipv4, SocketFamily::Ipv6, SocketFamily::DualStack],
+    [SocketFamily::Ipv4, SocketFamily::Ipv6, SocketFamily::DualStack]
+)]
+async fn set_so_bindtodevice_conflict(
+    name: &str,
+    socket1_family: SocketFamily,
+    socket2_family: SocketFamily,
+) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let net = sandbox.create_network(format!("net0")).await.expect("failed to create network");
+    let realm = sandbox
+        .create_netstack_realm::<Netstack3, _>(format!("{name}_client"))
+        .expect("failed to create client realm");
+    let iface = realm.join_network(&net, format!("if0")).await.expect("failed to join network");
+    let if_name = iface.get_interface_name().await.expect("get_name failed");
+
+    const PORT: u16 = 53535;
+
+    let socket1 = socket1_family.create_socket(&realm).await;
+    socket1.bind_device(Some("lo".as_bytes())).expect("failed to bind to device");
+    let addr1: socket2::SockAddr =
+        std::net::SocketAddr::from((socket1_family.unspec_address(), PORT)).into();
+    socket1.bind(&addr1).expect("failed to bind");
+
+    let socket2 = socket2_family.create_socket(&realm).await;
+    socket2.bind_device(Some(if_name.as_bytes())).expect("failed to bind to device");
+    let addr2: socket2::SockAddr =
+        std::net::SocketAddr::from((socket2_family.unspec_address(), PORT)).into();
+    socket2.bind(&addr2).expect("failed to bind");
+
+    let result = socket1.bind_device(Some("".as_bytes()));
+
+    let expect_failure = socket1_family == socket2_family
+        || socket1_family == SocketFamily::DualStack
+        || socket2_family == SocketFamily::DualStack;
+    if expect_failure {
+        let error = result.expect_err("expected to fail to unbind device");
+        assert_eq!(error.raw_os_error(), Some(libc::EADDRINUSE));
+    } else {
+        result.expect("expected to succeed to unbind device");
+    }
 }
