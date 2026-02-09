@@ -26,8 +26,9 @@ use std::{ptr, thread};
 use vfs::ExecutionScope;
 use zx::HandleBased;
 use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_async as fasync,
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
+    fidl_fuchsia_process as fprocess, fidl_fuchsia_process_lifecycle as flifecycle,
+    fuchsia_async as fasync,
 };
 
 pub(super) type TerminateCallback = Box<dyn FnOnce(&str) + Send>;
@@ -67,7 +68,7 @@ struct Component {
     environ: Vec<String>,
     ns: Namespace,
     handle_infos: Vec<fprocess::HandleInfo>,
-    lifecycle_client: Option<flifecycle::LifecycleProxy>,
+    lifecycle_client: flifecycle::LifecycleProxy,
     library: Library,
     local_scope: ExecutionScope,
     control: InnerControl,
@@ -89,7 +90,9 @@ impl Component {
             .to_string();
 
         let mut start_info = StartInfo::try_from(start_info)?;
-        let config = ElfProgramConfig::parse_and_check(&start_info.program, None)?;
+        let mut config = ElfProgramConfig::parse_and_check(&start_info.program, None)?;
+        // DSO components should always use their lifecycle handle so always give them one.
+        config.notify_lifecycle_stop = true;
         let ElfComponentLaunchInfo {
             ns,
             handle_infos,
@@ -98,6 +101,7 @@ impl Component {
             outgoing_directory: _,
             local_scope,
         } = ElfComponentLaunchInfo::new(&mut start_info, &config, None)?;
+        let lifecycle_client = lifecycle_client.expect("lifecycle missing");
         let argv = runner::get_program_args_from_dict(&start_info.program)?;
         let environ = runner::get_environ(&start_info.program)?.unwrap_or_default();
         let is_async = runner::get_bool(&start_info.program, "async")?;
@@ -136,9 +140,9 @@ impl Component {
                 .map_err(|err| StartError::CreateDispatcher { name: dso_name.into(), err })?;
             let (tx, rx) = oneshot::channel();
             control = InnerControl::Async(Some(AsyncControl {
-                runtime_handle,
+                runtime_handle: Some(runtime_handle),
                 _driver: driver,
-                shutdown_done_tx: tx,
+                shutdown_done_tx: Some(tx),
             }));
             dispatcher = Some(fdf_dispatcher);
             shutdown_done_rx = Some(rx);
@@ -190,7 +194,6 @@ impl Component {
                               shared object", expected_symbol.to_string_lossy());
             zx::Status::NOT_FOUND
         })?;
-        let (exit_tx, exit_rx) = oneshot::channel();
         let c_dso_name = CString::new(dso_name).unwrap();
 
         let (mut handle, mut handle_info): (Vec<_>, Vec<_>) = handle_infos
@@ -215,6 +218,7 @@ impl Component {
             handle_info.push(info);
         }
 
+        let exit_wait;
         match &mut control {
             InnerControl::Async(None) => unreachable!("missing async control"),
             InnerControl::Async(Some(_)) => {
@@ -222,56 +226,90 @@ impl Component {
                 let dispatcher =
                     dispatcher.expect("missing dispatcher for async component").release();
                 let dispatcher2 = dispatcher.clone();
-                dispatcher
-                    .spawn(async move {
-                        let mut names: Vec<_> = names_alloc.iter().map(|n| n.as_ptr()).collect();
-                        let argv_alloc: Vec<_> =
-                            argv.into_iter().map(|s| CString::new(s).unwrap()).collect();
-                        let mut argv: Vec<_> = argv_alloc.iter().map(|s| s.as_ptr()).collect();
-                        argv.insert(0, c_dso_name.as_ptr());
+                let (exit_code_tx, exit_code_rx) = oneshot::channel();
+                let shutdown_done_rx = shutdown_done_rx.expect("missing shutdown_done_rx");
 
-                        let envp_alloc: Vec<_> =
-                            environ.into_iter().map(|s| CString::new(s).unwrap()).collect();
-                        let mut envp: Vec<_> = envp_alloc.iter().map(|s| s.as_ptr()).collect();
-                        envp.push(ptr::null_mut());
+                dispatcher.spawn(async move {
+                    let mut names: Vec<_> = names_alloc.iter().map(|n| n.as_ptr()).collect();
+                    let argv_alloc: Vec<_> =
+                        argv.into_iter().map(|s| CString::new(s).unwrap()).collect();
+                    let mut argv: Vec<_> = argv_alloc.iter().map(|s| s.as_ptr()).collect();
+                    argv.insert(0, c_dso_name.as_ptr());
 
-                        // TODO(https://fxbug.dev/403545512): Deallocate handles once the program
+                    let envp_alloc: Vec<_> =
+                        environ.into_iter().map(|s| CString::new(s).unwrap()).collect();
+                    let mut envp: Vec<_> = envp_alloc.iter().map(|s| s.as_ptr()).collect();
+                    envp.push(ptr::null_mut());
+
+                    // TODO(https://fxbug.dev/403545512): Deallocate handles once the program
+                    // terminates
+                    let handle = handle.leak();
+                    let handle_info = handle_info.leak();
+                    // SAFETY: Inputs are not freed until the dispatcher is shutdown.
+                    let code = unsafe {
+                        hooks.dso_start_async(
+                            handle,
+                            handle_info,
+                            &mut names,
+                            &mut argv,
+                            &mut envp,
+                            dispatcher2,
+                        )
+                    };
+                    if code != 0 {
+                        warn!(dso_name:%, code:%; "async component dso_start returned non-zero");
+                        _ = exit_code_tx.send(code);
+                    } else {
+                        drop(exit_code_tx);
+                        // Don't deallocate argv and envp so the program can continue using them
+                        // TODO(https://fxbug.dev/403545512): Deallocate them once the program
                         // terminates
-                        let handle = handle.leak();
-                        let handle_info = handle_info.leak();
-                        // SAFETY: Inputs are not freed until the dispatcher is shutdown.
-                        let code = unsafe {
-                            hooks.dso_start_async(
-                                handle,
-                                handle_info,
-                                &mut names,
-                                &mut argv,
-                                &mut envp,
-                                dispatcher2,
-                            )
-                        };
-                        if code != 0 {
-                            warn!(dso_name:%, code:%; "async component dso_start returned non-zero");
-                            _ = exit_tx.send(Some(code));
-                        } else {
-                            _ = exit_tx.send(None);
-                            // Don't deallocate argv and envp so the program can continue using them
-                            // TODO(https://fxbug.dev/403545512): Deallocate them once the program
-                            // terminates
-                            for name in names_alloc {
-                                _ = CString::into_raw(name);
+                        for name in names_alloc {
+                            _ = CString::into_raw(name);
+                        }
+                        for arg in argv_alloc {
+                            _ = CString::into_raw(arg);
+                        }
+                        for env in envp_alloc {
+                            _ = CString::into_raw(env);
+                        }
+                    }
+                }).unwrap();
+
+                exit_wait = async move {
+                    let mut shutdown_wait = async move {
+                        _ = shutdown_done_rx.await;
+                    }
+                    .boxed()
+                    .fuse();
+                    let mut exit_code_wait = exit_code_rx.boxed().fuse();
+                    loop {
+                        select! {
+                            _ = shutdown_wait => {
+                                return Ok(None);
                             }
-                            for arg in argv_alloc {
-                                _ = CString::into_raw(arg);
-                            }
-                            for env in envp_alloc {
-                                _ = CString::into_raw(env);
+                            res = exit_code_wait => {
+                                match res {
+                                    Ok(c) => return Ok(Some(c)),
+                                    Err(_) => {
+                                        // We end up here if dso_main_async returned 0. In that case
+                                        // no exit code will be sent so there is no more exit code
+                                        // to wait for.
+                                        exit_code_wait = async move {
+                                            std::future::pending::<()>().await;
+                                            Ok(0)
+                                        }.boxed().fuse();
+                                    }
+                                }
                             }
                         }
-                    })
-                    .unwrap();
+                    }
+                }
+                .boxed()
+                .fuse();
             }
             InnerControl::Sync(control) => {
+                let (exit_tx, exit_rx) = oneshot::channel();
                 let h = thread::Builder::new()
                     .name(dso_name.into())
                     .spawn(move || {
@@ -300,6 +338,7 @@ impl Component {
                     })
                     .expect("spawn component thread");
                 control.thread_handle = Some(h);
+                exit_wait = exit_rx.boxed().fuse();
             }
         };
 
@@ -308,20 +347,24 @@ impl Component {
             InnerControl::Async(_) => true,
             InnerControl::Sync(_) => false,
         };
+        let lifecycle_client2 = lifecycle_client.clone();
         let exit_fut = async move {
-            let mut exit_wait = exit_rx.boxed().fuse();
-            let mut shutdown_wait = if let Some(rx) = shutdown_done_rx {
+            let mut exit_wait = exit_wait;
+            let mut lifecycle_close_wait = if is_async {
                 async move {
-                    _ = rx.await;
+                    let mut event_stream = lifecycle_client2.take_event_stream();
+                    while let Some(_) = event_stream.next().await {
+                        // TODO(https://fxbug.dev/403545512): Handle lifecycle events like OnEscrow
+                    }
+                    // Lifecycle channel closed means component has exited.
                 }
                 .boxed()
             } else {
                 std::future::pending::<()>().boxed()
             }
             .fuse();
-            loop {
-                select! {
-                _ = shutdown_wait => {
+            select! {
+                _ = lifecycle_close_wait => {
                     info!(component_url:%, exit_code:% = 0, is_async:%; "Component terminated");
                     return StopInfo { termination_status: zx::Status::OK, exit_code: Some(0) };
                 }
@@ -336,13 +379,15 @@ impl Component {
                             };
                         }
                         Ok(None) | Err(_) => {
-                            // Normal exit from async main, component continues to run.
-                            exit_wait = std::future::pending::<Result<Option<i32>, oneshot::Canceled>>()
-                                .boxed()
-                                .fuse();
+                            // This case handles async dispatcher shutdown
+                            assert!(is_async);
+                            warn!(component_url:%, is_async:%; "Component terminated (killed)");
+                            return StopInfo::from_error(
+                                fcomponent::Error::InstanceDied,
+                                None,
+                            );
                         }
                     }
-                }
                 }
             }
         };
@@ -374,23 +419,31 @@ struct SyncControl {
 
 #[derive(Debug)]
 struct AsyncControl {
-    // This is only an Option so we can easily convert to and from [`fdf::DispatcherRef`]
-    runtime_handle: fdf_env::Driver<()>,
+    runtime_handle: Option<fdf_env::Driver<()>>,
     _driver: Arc<()>,
-    shutdown_done_tx: oneshot::Sender<()>,
+    shutdown_done_tx: Option<oneshot::Sender<()>>,
+}
+
+impl Drop for AsyncControl {
+    fn drop(&mut self) {
+        // We may end up here without maybe_shutdown_dispatcher if an error preempted the component
+        // from starting.
+        let Self { runtime_handle, _driver, shutdown_done_tx: _ } = self;
+        // Must be done before dropping `_driver`, otherwise it will panic.
+        runtime_handle.take().map(|r| r.shutdown(|_| {}));
+    }
 }
 
 async fn maybe_shutdown_dispatcher(ctl: Option<AsyncControl>) {
-    let Some(ctl) = ctl else {
+    let Some(mut ctl) = ctl else {
         return;
     };
-    let AsyncControl { runtime_handle, _driver, shutdown_done_tx } = ctl;
     let (tx, rx) = oneshot::channel();
-    runtime_handle.shutdown(|_| {
+    ctl.runtime_handle.take().expect("shutdown called twice").shutdown(|_| {
         _ = tx.send(());
     });
     _ = rx.await;
-    _ = shutdown_done_tx.send(());
+    _ = ctl.shutdown_done_tx.take().expect("shutdown called twice").send(());
 }
 
 #[derive(Derivative)]
@@ -402,7 +455,7 @@ struct Controller {
     _library: Library,
     _local_scope: ExecutionScope,
     control: InnerControl,
-    lifecycle_client: Option<flifecycle::LifecycleProxy>,
+    lifecycle_client: flifecycle::LifecycleProxy,
 }
 
 #[async_trait]
@@ -434,17 +487,11 @@ impl runner_component::Controllable for Controller {
     }
 
     fn stop<'a>(&mut self) -> BoxFuture<'a, ()> {
-        if let Some(lifecycle_client) = self.lifecycle_client.take() {
-            async move {
-                _ = lifecycle_client.stop();
-            }
-            .boxed()
-        } else {
-            match &mut self.control {
-                InnerControl::Async(control) => maybe_shutdown_dispatcher(control.take()).boxed(),
-                InnerControl::Sync(_) => async move {}.boxed(),
-            }
+        let lifecycle_client = self.lifecycle_client.clone();
+        async move {
+            _ = lifecycle_client.stop();
         }
+        .boxed()
     }
 }
 
@@ -487,7 +534,7 @@ mod tests {
         env: &fdf_env::Environment,
         binary: &str,
         syncness: Syncness,
-    ) -> ComponentInfo {
+    ) -> Result<ComponentInfo, StartError> {
         let scope = fasync::Scope::new();
         let (controller, controller_server) = endpoints::create_endpoints();
         let (outgoing, outgoing_server) = endpoints::create_endpoints();
@@ -528,14 +575,14 @@ mod tests {
             ..Default::default()
         };
         let (termination_routine, termination_rx) = terminate_cb();
-        start(start_info, controller_server, env, &scope, termination_routine).await.unwrap();
-        ComponentInfo {
+        start(start_info, controller_server, env, &scope, termination_routine).await?;
+        Ok(ComponentInfo {
             controller: controller.into_proxy(),
             termination_rx: Some(termination_rx),
             _scope: scope,
             _outgoing: outgoing,
             _runtime: runtime,
-        }
+        })
     }
 
     fn make_env() -> fdf_env::Environment {
@@ -556,6 +603,23 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn start_binary_not_found() {
+        let env = make_env();
+        let binary = lib_so("libdoes_not_exist.so");
+        for syncness in [Syncness::Sync, Syncness::Async] {
+            let res = start_component(&env, &binary, syncness).await;
+            assert_matches!(
+                &res,
+                Err(StartError::OpenDsoFidl { path, err: _ }) if *path == binary
+            );
+            assert_eq!(
+                zx::Status::from(&res.unwrap_err()).into_raw(),
+                fcomponent::Error::ResourceNotFound.into_primitive() as i32
+            );
+        }
+    }
+
+    #[fuchsia::test]
     async fn start_and_exit_sync() {
         fn read_run_counter() -> usize {
             simple_sync_read_run_counter() as usize
@@ -565,7 +629,7 @@ mod tests {
         let env = make_env();
         let binary = lib_so("libsimple_sync.so");
         for _ in 0..NUM_REPS {
-            let mut component = start_component(&env, &binary, Syncness::Sync).await;
+            let mut component = start_component(&env, &binary, Syncness::Sync).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
             assert_matches!(
                 event_stream.next().await,
@@ -596,7 +660,7 @@ mod tests {
         let env = make_env();
         let binary = lib_so("libsimple_async.so");
         for _ in 0..NUM_REPS {
-            let component = start_component(&env, &binary, Syncness::Async).await;
+            let component = start_component(&env, &binary, Syncness::Async).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
             assert_matches!(
                 event_stream.next().await,
@@ -619,7 +683,7 @@ mod tests {
         let env = make_env();
         let binary = lib_so("liberror_sync.so");
         for _ in 0..NUM_REPS {
-            let mut component = start_component(&env, &binary, Syncness::Sync).await;
+            let mut component = start_component(&env, &binary, Syncness::Sync).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
             assert_matches!(
                 event_stream.next().await,
@@ -644,7 +708,7 @@ mod tests {
         let env = make_env();
         let binary = lib_so("liberror_async.so");
         for _ in 0..NUM_REPS {
-            let component = start_component(&env, &binary, Syncness::Async).await;
+            let component = start_component(&env, &binary, Syncness::Async).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
             assert_matches!(
                 event_stream.next().await,
@@ -676,7 +740,7 @@ mod tests {
 
         let mut components = vec![];
         for _ in 0..NUM_REPS {
-            components.push(start_component(&env, &binary, Syncness::Sync).await);
+            components.push(start_component(&env, &binary, Syncness::Sync).await.unwrap());
         }
         while read_run_counter() < NUM_REPS {
             fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await
@@ -707,7 +771,7 @@ mod tests {
 
         let mut components = vec![];
         for _ in 0..NUM_REPS {
-            components.push(start_component(&env, &binary, Syncness::Async).await);
+            components.push(start_component(&env, &binary, Syncness::Async).await.unwrap());
         }
         while read_run_counter() < NUM_REPS {
             fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await
@@ -718,16 +782,16 @@ mod tests {
         }
         for i in 0..NUM_REPS {
             let mut event_stream = components[i].controller.take_event_stream();
-            // when the dispatcher is shutdown an ok status is returned
             assert_matches!(
                 event_stream.next().await,
                 Some(Ok(frunner::ComponentControllerEvent::OnStop {
                     payload: frunner::ComponentStopInfo {
-                        termination_status: Some(0),
-                        exit_code: Some(0),
+                        termination_status: Some(s),
+                        exit_code: None,
                         ..
                     }
                 }))
+                if s == i32::try_from(fcomponent::Error::InstanceDied.into_primitive()).unwrap()
             );
             assert_matches!(event_stream.next().await, None);
         }
