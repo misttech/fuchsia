@@ -65,6 +65,10 @@ pub struct ProfileBuilder {
 }
 
 impl ProfileBuilder {
+    pub fn process_name(&self) -> &str {
+        &self.process_name
+    }
+
     /// Remove all stack traces that are no longer referenced by any
     /// recorded allocation.
     ///

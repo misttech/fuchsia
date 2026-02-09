@@ -9,7 +9,7 @@
 use crate::crash_reporter::ProfileReport;
 use crate::profile_builder::ProfileBuilder;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_memory_sampler::{
     SamplerRecordAllocationRequest, SamplerRecordDeallocationRequest, SamplerRequest,
     SamplerRequestStream, SamplerSetProcessInfoRequest,
@@ -42,7 +42,7 @@ async fn process_sampler_request<'a>(
     request: SamplerRequest,
     index: usize,
     mut time_of_last_profile: Instant,
-) -> Result<(&'a mut ProfileBuilder, &'a mut mpsc::Sender<ProfileReport>, Instant), Error> {
+) -> Result<Option<(&'a mut ProfileBuilder, &'a mut mpsc::Sender<ProfileReport>, Instant)>, Error> {
     match request {
         SamplerRequest::RecordAllocation {
             payload: SamplerRecordAllocationRequest { address, stack_trace, size, .. },
@@ -85,8 +85,8 @@ async fn process_sampler_request<'a>(
             builder.set_process_info(process_name, module_map.into_iter().flatten());
         }
         unknown_method @ _ => {
-            log::debug!("Unknowned, unhandled method: {:?}", unknown_method);
-            return Ok((builder, tx, time_of_last_profile));
+            log::debug!("Unknown, unhandled method: {:?}", unknown_method);
+            return Ok(Some((builder, tx, time_of_last_profile)));
         }
     };
 
@@ -103,10 +103,20 @@ async fn process_sampler_request<'a>(
             >= RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD)
     {
         let profile = builder.build_partial_profile(index)?;
-        tx.send(profile).await?;
+        let res = tx.try_send(profile);
+        if let Err(ref e) = res
+            && e.is_full()
+        {
+            log::warn!(
+                "{}: Failed to send partial profile, channel is full",
+                builder.process_name()
+            );
+            return Ok(None);
+        };
+        res?;
         time_of_last_profile = now;
     }
-    Ok((builder, tx, time_of_last_profile))
+    Ok(Some((builder, tx, time_of_last_profile)))
 }
 
 /// Build a profile from a stream of profiling requests. Requests are
@@ -120,9 +130,17 @@ async fn process_sampler_requests(
         .enumerate()
         .map(|(i, request)| request.context("failed request").map(|r| (i, r)))
         .try_fold(
-            (&mut profile_builder, tx, Instant::now()),
-            |(builder, tx, time_of_last_profile), (index, request)| {
-                process_sampler_request(builder, tx, request, index, time_of_last_profile)
+            Some((&mut profile_builder, tx, Instant::now())),
+            |state, (index, request)| async move {
+                match state {
+                    Some((builder, tx, time_of_last_profile)) => {
+                        process_sampler_request(builder, tx, request, index, time_of_last_profile)
+                            .await
+                    }
+                    // We've disabled collection for this process. We should keep reading messages to
+                    // avoid the channel filling up, but we will not process them.
+                    None => Ok(None),
+                }
             },
         )
         .await?;
@@ -177,9 +195,9 @@ pub fn setup_sampler_service(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::{create_proxy_and_stream, RequestStream};
+    use fidl::endpoints::{RequestStream, create_proxy_and_stream};
     use fidl_fuchsia_memory_sampler::{ExecutableSegment, ModuleMap, SamplerMarker, StackTrace};
-    use futures::{join, StreamExt};
+    use futures::{StreamExt, join};
     use itertools::{assert_equal, sorted};
     use prost::Message;
     use zx::Vmo;
@@ -187,8 +205,9 @@ mod test {
     use crate::crash_reporter::ProfileReport;
     use crate::pprof::pproto::{Location, Mapping, Profile};
     use crate::sampler_service::{
-        process_sampler_request, process_sampler_requests, ProfileBuilder,
-        MAX_DURATION_BETWEEN_PARTIAL_PROFILES, RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD,
+        MAX_DURATION_BETWEEN_PARTIAL_PROFILES, ProfileBuilder,
+        RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD, process_sampler_request,
+        process_sampler_requests,
     };
 
     fn deserialize_profile(profile: Vmo, size: u64) -> Profile {
