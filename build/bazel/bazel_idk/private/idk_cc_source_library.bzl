@@ -16,6 +16,7 @@ load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
     "get_allowlist_target",
+    "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
@@ -188,17 +189,7 @@ def _idk_cc_source_library_impl(
     ]
 
     if stable:
-        api_path = idk_name + ".api"
-        if api_file_path:
-            # Check that `api_file_path` does not specify the default path.
-            # We must assume that absolute paths are not specifying the default
-            # path because `relativize()` fails with absolute paths and we
-            # cannot get the package path at this point.
-            if not paths.is_absolute(api_file_path):
-                if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
-                    fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
-            api_path = api_file_path
-
+        api_path = api_file_path
         api_contents_map = idk_header_files_map
     else:
         api_path = None
@@ -232,8 +223,10 @@ def _idk_cc_source_library_impl(
         visibility = get_atom_visibility(visibility),
     )
 
-idk_cc_source_library = macro(
+_idk_cc_source_library = macro(
     doc = """Defines a C++ source library that can be exported to an IDK.
+
+Use the `idk_cc_source_library()` wrapper instead.
 
 Defines a `cc_library` named `name` and an IDK atom named "{name}_idk".
 
@@ -264,7 +257,7 @@ GN equivalent: `sdk_name`""",
         ),
         "stable": attr.bool(
             doc = """Whether this source library is stabilized.
-When true, an .api file is generated. When false, the atom is marked as unstable in the final IDK.""",
+When True, a `.api` file is generated. When False, the atom is marked as unstable in the final IDK.""",
             mandatory = True,
             configurable = False,
         ),
@@ -405,17 +398,18 @@ GN note: This preserves the behavior of the GN template.""",
             default = "include",
             configurable = False,
         ),
-        "api_file_path": attr.string(
+        "api_file_path": attr.label(
             doc = """Override path for the file representing the API of this library.
 This file is used to ensure modifications to the library's API are explicitly acknowledged.
-If not specified, the path will be "<idk_name>.api".
-Only specify when the default needs to be overridden.
+Must be specified to this macro if and only if `stable` is true.
+When using the wrapper macro:
+  * If not specified, the path will be "<idk_name>.api".
+  * Only specify when the default needs to be overridden.
 When the path is not in the current directory, the file will likely need to be
 made visibile to this target using `exports_files()` in the BUILD.bazel file
 for the directory containing the .api file.
-GN equivalent: `api`
-Not allowed when `stable` is false.""",
-            default = "",
+GN equivalent: `api`""",
+            allow_single_file = True,
             configurable = False,
         ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
@@ -440,6 +434,21 @@ Not allowed when `stable` is false.""",
     },
 )
 
+def idk_cc_source_library(idk_name, stable, api_file_path = None, **kwargs):
+    """Defines a C++ source library that can be exported to an IDK.
+
+    This is a wrapper around `_idk_cc_source_library()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_source_library()` for documentation.
+    """
+    _idk_cc_source_library(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )
+
 # LINT.ThenChange(//build/cpp/sdk_source_set.gni)
 
 def _idk_cc_source_library_zx_impl(
@@ -449,13 +458,15 @@ def _idk_cc_source_library_zx_impl(
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    idk_cc_source_library(
+    _idk_cc_source_library(
         name = name,
         **kwargs
     )
 
-idk_cc_source_library_zx = macro(
-    doc = """Defines a C++ source library that can be exported to an IDK and will be a zx_library() in GN.
+_idk_cc_source_library_zx = macro(
+    doc = """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+Use the `idk_cc_source_library_zx()` wrapper instead.
 
 Bazel may create a static library as it does not have a concept of source libraries.
 
@@ -474,7 +485,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = idk_cc_source_library,
+    inherit_attrs = _idk_cc_source_library,
     implementation = _idk_cc_source_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -496,3 +507,18 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
         "include_base": None,
     },
 )
+
+def idk_cc_source_library_zx(idk_name, stable, api_file_path = None, **kwargs):
+    """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+    This is a wrapper around `_idk_cc_source_library_zx()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_source_library_zx()` for documentation.
+    """
+    _idk_cc_source_library_zx(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )

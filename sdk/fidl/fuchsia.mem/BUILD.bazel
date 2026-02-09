@@ -19,6 +19,3 @@ fidl_library(
     visibility = ["//visibility:public"],
     deps = ["//zircon/vdso/zx"],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["fuchsia.mem.api"])

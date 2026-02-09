@@ -552,23 +552,6 @@ genrule(
     ],
 )
 
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files([
-    "dependency_1.api",
-    "different_file_name.api",
-    "different_file_name_shared_library.api",
-    "different_file_name_static_library.api",
-    "platform_dependent_source_library.api",
-    "source_dependency_2.api",
-    "source_subdependency.api",
-    "tests_dependency.api",
-    "test_shared_library_zx.api",
-    "test_source_set_dependency_zx.api",
-    "test_source_set_dependency2_zx.api",
-    "test_source_set_zx.api",
-    "test_static_library_zx.api",
-])
-
 build_idk_combinations(
     name = "build_only_tests_for_combinations",
     testonly = True,

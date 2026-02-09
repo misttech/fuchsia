@@ -16,6 +16,7 @@ load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
     "get_allowlist_target",
+    "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
@@ -30,6 +31,7 @@ def _idk_cc_prebuilt_library_impl(
         prebuilt_library_type,
         idk_name,
         category,
+        stable,
         api_area,
         hdrs,
         hdrs_for_internal_use,
@@ -48,7 +50,7 @@ def _idk_cc_prebuilt_library_impl(
         friend,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
-    """Implementation for the idk_cc_prebuilt_library() macro."""
+    """Implementation for the _idk_cc_prebuilt_library() macro."""
 
     atom_type = "cc_prebuilt_library"
 
@@ -85,6 +87,9 @@ def _idk_cc_prebuilt_library_impl(
         # Other categories are only to ensure ABI compatibility and thus not
         # applicable.
         fail("Category '%s' is not supported." % category)
+
+    if api_file_path and not stable:
+        fail("Unstable targets do not require/support modification acknowledgement.")
 
     if api_file_path and no_headers:
         fail("Targets without public headers do not require/support modification acknowledgement.")
@@ -174,7 +179,7 @@ def _idk_cc_prebuilt_library_impl(
         srcs = srcs_for_bazel_library,
         # Add a deps on the allowlist to catch cases where the macro is used but
         # there is no dependency on the atom target.
-        data = [get_allowlist_target(atom_type, category, stable = True, prebuilt_library_format = prebuilt_library_type)],
+        data = [get_allowlist_target(atom_type, category, stable, prebuilt_library_format = prebuilt_library_type)],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select_for_fuchsia(fuchsia_deps),
         implementation_deps = implementation_deps,
@@ -292,18 +297,8 @@ def _idk_cc_prebuilt_library_impl(
             # create_verify_public_symbols_target()
         ]
 
-    if not no_headers:
-        api_path = idk_name + ".api"
-        if api_file_path:
-            # Check that `api_file_path` does not specify the default path.
-            # We must assume that absolute paths are not specifying the default
-            # path because `relativize()` fails with absolute paths and we
-            # cannot get the package path at this point.
-            if not paths.is_absolute(api_file_path):
-                if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
-                    fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
-            api_path = api_file_path
-
+    if stable and not no_headers:
+        api_path = api_file_path
         api_contents_map = idk_header_files_map
     else:
         api_path = None
@@ -329,7 +324,7 @@ def _idk_cc_prebuilt_library_impl(
         meta_dest = idk_root_path + "/meta.json",
         type = atom_type,
         category = category,
-        stable = True,
+        stable = stable,
         api_area = api_area,
         api_file_path = api_path,
         api_contents_map = api_contents_map,
@@ -343,7 +338,7 @@ def _idk_cc_prebuilt_library_impl(
         visibility = get_atom_visibility(visibility),
     )
 
-idk_cc_prebuilt_library = macro(
+_idk_cc_prebuilt_library = macro(
     doc = """Defines a C++ prebuilt library that can be exported to an IDK.
 
 Defines a prebuilt library of `prebuilt_library_type` named `name` and an IDK
@@ -373,6 +368,12 @@ GN equivalent: `sdk_name`""",
         "category": attr.string(
             doc = "Publication level of the library in the IDK. See _create_idk_atom().",
             values = ["partner"],
+            mandatory = True,
+            configurable = False,
+        ),
+        "stable": attr.bool(
+            doc = """Whether this source library is stabilized. Set by the wrapper macro.
+When True, a `.api` file is generated. When False, the atom is marked as unstable in the final IDK.""",
             mandatory = True,
             configurable = False,
         ),
@@ -465,16 +466,18 @@ Must be relative to the directory containing the invoking BUILD.bazel file.
             default = "include",
             configurable = False,
         ),
-        "api_file_path": attr.string(
+        "api_file_path": attr.label(
             doc = """Override path for the file representing the API of this library.
 This file is used to ensure modifications to the library's API are explicitly acknowledged.
 Not allowed when `no_headers` is True.
-If not specified, the path will be "<idk_name>.api".
-Only specify when the default needs to be overridden.
+When using the wrapper macro:
+  * If not specified, the path will be "<idk_name>.api".
+  * Only specify when the default needs to be overridden.
 When the path is not in the current directory, the file will likely need to be
 made visibile to this target using `exports_files()` in the BUILD.bazel file
 for the directory containing the .api file.
 GN equivalent: `api`""",
+            allow_single_file = True,
             configurable = False,
         ),
         "output_name": attr.string(
@@ -518,11 +521,14 @@ not have a stable ABI. Can be either "none" or "static".""",
 # LINT.ThenChange(//build/cpp/sdk_prebuilt_library_impl.gni:sdk_prebuilt_library_impl)
 
 def _idk_cc_shared_library_impl(name, **kwargs):
-    idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
+    _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
 
-idk_cc_shared_library = macro(
-    doc = """Defines a C++ prebuilt shared library that can be exported to an IDK.""",
-    inherit_attrs = idk_cc_prebuilt_library,
+_idk_cc_shared_library = macro(
+    doc = """Defines a C++ prebuilt shared library that can be exported to an IDK.
+
+Use the `idk_cc_shared_library()` wrapper instead.
+""",
+    inherit_attrs = _idk_cc_prebuilt_library,
     attrs = {
         # Do not inherit as this attribute is specified in the implementation.
         "prebuilt_library_type": None,
@@ -530,12 +536,32 @@ idk_cc_shared_library = macro(
     implementation = _idk_cc_shared_library_impl,
 )
 
-def _idk_cc_static_library_impl(name, **kwargs):
-    idk_cc_prebuilt_library(name = name, prebuilt_library_type = "static", **kwargs)
+def idk_cc_shared_library(idk_name, api_file_path = None, **kwargs):
+    """Defines a C++ prebuilt shared library that can be exported to an IDK.
 
-idk_cc_static_library = macro(
-    doc = """Defines a C++ prebuilt static library that can be exported to an IDK.""",
-    inherit_attrs = idk_cc_prebuilt_library,
+    This is a wrapper around `_idk_cc_shared_library()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_shared_library()` for documentation.
+    """
+    stable = True
+
+    _idk_cc_shared_library(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )
+
+def _idk_cc_static_library_impl(name, **kwargs):
+    _idk_cc_prebuilt_library(name = name, prebuilt_library_type = "static", **kwargs)
+
+_idk_cc_static_library = macro(
+    doc = """Defines a C++ prebuilt static library that can be exported to an IDK.
+
+Use the `idk_cc_static_library()` wrapper instead.
+""",
+    inherit_attrs = _idk_cc_prebuilt_library,
     attrs = {
         # Do not inherit as this attribute is specified in the implementation.
         "prebuilt_library_type": None,
@@ -559,20 +585,39 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
     implementation = _idk_cc_static_library_impl,
 )
 
+def idk_cc_static_library(idk_name, api_file_path = None, **kwargs):
+    """Defines a C++ prebuilt static library that can be exported to an IDK.
+
+    This is a wrapper around `_idk_cc_static_library()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_static_library()` for documentation.
+    """
+    stable = True
+
+    _idk_cc_static_library(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )
+
 def _idk_cc_shared_library_zx_impl(
         name,
         **kwargs):
-    """Implementation for the idk_cc_shared_library_zx() macro."""
+    """Implementation for the _idk_cc_shared_library_zx() macro."""
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    idk_cc_shared_library(
+    _idk_cc_shared_library(
         name = name,
         **kwargs
     )
 
-idk_cc_shared_library_zx = macro(
-    doc = """Defines a C++ shared library that can be exported to an IDK and will be a zx_library() in GN.
+_idk_cc_shared_library_zx = macro(
+    doc = """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+Use the `idk_cc_shared_library_zx()` wrapper instead.
 
 When not using a Zircon-specific toolchain:
  * Any ":headers" or ":<library>.headers" targets that appear in public
@@ -589,7 +634,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = idk_cc_shared_library,
+    inherit_attrs = _idk_cc_shared_library,
     implementation = _idk_cc_shared_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -619,20 +664,39 @@ GN equivalent: `deps`.""",
     },
 )
 
+def idk_cc_shared_library_zx(idk_name, api_file_path = None, **kwargs):
+    """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+    This is a wrapper around `_idk_cc_shared_library_zx()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_shared_library_zx()` for documentation.
+    """
+    stable = True
+
+    _idk_cc_shared_library_zx(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )
+
 def _idk_cc_static_library_zx_impl(
         name,
         **kwargs):
-    """Implementation for the idk_cc_static_library_zx() macro."""
+    """Implementation for the _idk_cc_static_library_zx() macro."""
 
     kwargs = apply_common_zx_library_modifications(kwargs)
 
-    idk_cc_static_library(
+    _idk_cc_static_library(
         name = name,
         **kwargs
     )
 
-idk_cc_static_library_zx = macro(
-    doc = """Defines a C++ static library that can be exported to an IDK and will be a zx_library() in GN.
+_idk_cc_static_library_zx = macro(
+    doc = """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+Use the `idk_cc_static_library_zx()` wrapper instead.
 
 When not using a Zircon-specific toolchain:
  * Any ":headers" or ":<library>.headers" targets that appear in public
@@ -649,7 +713,7 @@ When not using a Zircon-specific toolchain:
     will be replaced by:
         implementation_deps = [ "//zircon/system/ulib/bar" ]
 """,
-    inherit_attrs = idk_cc_static_library,
+    inherit_attrs = _idk_cc_static_library,
     implementation = _idk_cc_static_library_zx_impl,
     attrs = {
         # Override these attrs to document the differences from the GN `zx_library()` template.
@@ -678,3 +742,20 @@ GN equivalent: `deps`.""",
         "include_base": None,
     },
 )
+
+def idk_cc_static_library_zx(idk_name, api_file_path = None, **kwargs):
+    """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
+
+    This is a wrapper around `_idk_cc_static_library_zx()` that supports a
+    default value for `api_file_path`.
+
+    See `_idk_cc_static_library_zx()` for documentation.
+    """
+    stable = True
+
+    _idk_cc_static_library_zx(
+        idk_name = idk_name,
+        stable = stable,
+        api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        **kwargs
+    )

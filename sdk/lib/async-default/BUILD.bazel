@@ -18,6 +18,3 @@ idk_cc_shared_library_zx(
         "//sdk/lib/async",
     ],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["async-default.api"])

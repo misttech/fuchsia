@@ -205,7 +205,7 @@ def _create_idk_atom_impl(ctx):
         fail("IDK atom names must end with `_idk`.")
 
     if (not ctx.attr.api_file_path) != (not ctx.attr.api_contents_map):
-        fail("`api_file_path` and `api_contents_map` must be specified together.")
+        fail(ctx.attr.name + ": `api_file_path` and `api_contents_map` must be specified together.")
 
     all_deps_depset = depset(
         direct = ctx.files.files_map +
@@ -306,12 +306,12 @@ Possible values, from most restrictive to least restrictive:
                   '"Unknown" is also a valid option.',
             mandatory = True,
         ),
-        "api_file_path": attr.string(
+        "api_file_path": attr.label(
             doc = "Path to the file representing the API canonically exposed by this atom. " +
                   "This file is used to ensure modifications to the API are explicitly acknowledged. " +
                   "If this attribute is set, `api_contents_map` must be set as well. If not specified, no such modification checks are performed.",
             mandatory = False,
-            default = "",
+            allow_single_file = True,
         ),
         "api_contents_map": attr.string_keyed_label_dict(
             doc = "A dictionary of files making up the atom's API, mapping the destination path " +
@@ -378,7 +378,7 @@ def _idk_atom_impl(
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
     if (not api_file_path) != (not api_contents_map):
-        fail("`api_file_path` and `api_contents_map` must be specified together.")
+        fail(name + ": `api_file_path` and `api_contents_map` must be specified together.")
 
     is_type_not_requiring_compatibility = type in _TYPES_NOT_REQUIRING_COMPATIBILITY
     if stable and not api_file_path and not is_type_not_requiring_compatibility:
@@ -463,9 +463,9 @@ Atoms will be checked for category and API area violations when generating the I
             mandatory = True,
             configurable = False,
         ),
-        "api_file_path": attr.string(
+        "api_file_path": attr.label(
             doc = "See _create_idk_atom().",
-            default = "",
+            allow_single_file = True,
             configurable = False,
         ),
         "api_contents_map": attr.string_keyed_label_dict(

@@ -48,6 +48,3 @@ idk_cc_source_library(
         "//zircon/system/ulib/zx",
     ],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["sync_cpp.api"])

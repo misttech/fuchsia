@@ -9,6 +9,7 @@ load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",
     "get_allowlist_target",
+    "get_api_file_path",
     "get_idk_deps",
     "json_encode_dict_values",
 )
@@ -256,9 +257,6 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/454397833): Support category markers or similar.
 
-    if not library_name:
-        library_name = name
-
     fidl_gen_dir = "gen/%s" % name
     fidl_ir_json = "%s.fidl.json" % name
     json_summary = "%s.api_summary.json" % name
@@ -355,16 +353,7 @@ def _fidl_library_impl(
             idk_files_map |= {destination: src}
 
         if stable:
-            api_path = idk_name + ".api"
-            if api_file_path:
-                # Check that `api_file_path` does not specify the default path.
-                # We must assume that absolute paths are not specifying the default
-                # path because `relativize()` fails with absolute paths and we
-                # cannot get the package path at this point.
-                if not paths.is_absolute(api_file_path):
-                    if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
-                        fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
-                api_path = api_file_path
+            api_path = api_file_path
 
             # Note: Unlike other atoms, the source is not in the IDK and there
             # is no such destination in the IDK.
@@ -416,8 +405,10 @@ def _fidl_library_impl(
         visibility = visibility,
     )
 
-fidl_library = macro(
+_fidl_library = macro(
     doc = """Declares a FIDL library.
+
+Use the `fidl_library()` wrapper instead.
 
 Supported backends: Rust, C++, HLCPP, banjo_{c,cpp,rust}, bindlib, and Zither.""",
     implementation = _fidl_library_impl,
@@ -431,9 +422,10 @@ GN equivalent: `sources`""",
             configurable = False,
         ),
         "library_name": attr.string(
-            doc = """Name of the library. Defaults to `name`.
+            doc = """Name of the library.
+When using the wrapper macro: Defaults to `name`.
 GN equivalent: `name`""",
-            mandatory = False,
+            mandatory = True,
             configurable = False,
         ),
         "category": attr.string(
@@ -444,9 +436,10 @@ GN equivalent: `name`""",
         ),
         "stable": attr.bool(
             doc = """Whether this source library is stabilized.
-When true, an .api file is generated. When false, the atom is marked as unstable in the final IDK.""",
+When True, a `.api` file is generated. When False, the atom is marked as unstable in the final IDK.""",
             mandatory = False,
             configurable = False,
+            default = False,
         ),
         "api_area": attr.string(
             doc = """The API area responsible for maintaining this library.
@@ -461,17 +454,18 @@ GN equivalent: `public_deps`""",
             default = [],
             configurable = False,
         ),
-        "api_file_path": attr.string(
+        "api_file_path": attr.label(
             doc = """Override path for the file representing the API of this library.
 This file is used to ensure modifications to the library's API are explicitly acknowledged.
-If not specified, the path will be "<library_name>.api".
-Only specify when the default needs to be overridden.
+When using the wrapper macro:
+  * If not specified, the path will be "<library_name>.api".
+  * Only specify when the default needs to be overridden.
 When the path is not in the current directory, the file will likely need to be
 made visibile to this target using `exports_files()` in the BUILD.bazel file
 for the directory containing the .api file.
 GN equivalent: `api`
 Not allowed when `stable` is false.""",
-            default = "",
+            allow_single_file = True,
             configurable = False,
         ),
         "versioned": attr.string(
@@ -594,3 +588,22 @@ If not specified, appropriate values will be determined based on the target API 
         ),
     },
 )
+
+def fidl_library(name, library_name = "", stable = False, api_file_path = None, **kwargs):
+    """Declares a FIDL library.
+
+    This is a wrapper around `_fidl_library()` that supports a default value
+    for `api_file_path`.
+
+    See `_fidl_library()` for documentation.
+    """
+    if not library_name:
+        library_name = name
+
+    _fidl_library(
+        name = name,
+        library_name = library_name,
+        stable = stable,
+        api_file_path = get_api_file_path(library_name, stable, api_file_path),
+        **kwargs
+    )

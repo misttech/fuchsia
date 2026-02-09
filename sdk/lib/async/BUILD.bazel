@@ -88,9 +88,3 @@ test_suite(
     tests = ["//sdk/lib/async/test"],
     visibility = ["//visibility:public"],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files([
-    "async.api",
-    "async-cpp.api",
-])

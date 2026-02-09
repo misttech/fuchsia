@@ -33,7 +33,4 @@ idk_cc_source_library(
     ],
 )
 
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["fidl.api"])
-
 # LINT.ThenChange(BUILD.gn)

@@ -30,6 +30,3 @@ fidl_library(
         "//zircon/vdso/zx",
     ],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["fuchsia.sysmem2.api"])
