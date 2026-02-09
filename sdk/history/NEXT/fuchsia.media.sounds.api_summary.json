@@ -40,16 +40,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.media.sounds/Player.PlaySound",
-        "strictness": "strict",
-        "ordinal": "8572556525327295937",
-        "direction": "two_way",
-        "request": "fuchsia.media.sounds/PlayerPlaySoundRequest",
-        "response": "fuchsia.media.sounds/Player_PlaySound_Response",
-        "error": "fuchsia.media.sounds/PlaySoundError"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.media.sounds/Player.PlaySound2",
         "strictness": "flexible",
         "ordinal": "6802887319907187769",
@@ -135,22 +125,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.media.sounds/PlayerPlaySound2Request"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media.sounds/PlayerPlaySoundRequest.id",
-        "ordinal": "1",
-        "type": "uint32"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media.sounds/PlayerPlaySoundRequest.usage",
-        "ordinal": "2",
-        "type": "fuchsia.media/AudioRenderUsage"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.media.sounds/PlayerPlaySoundRequest"
     },
     {
         "kind": "struct/member",

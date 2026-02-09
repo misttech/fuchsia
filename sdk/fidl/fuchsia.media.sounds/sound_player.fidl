@@ -57,7 +57,7 @@ open protocol Player {
     /// be stopped using `StopPlayingSound`, in which case, this method returns
     /// `PlaySoundError.STOPPED`.
     // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioRenderUsage|
-    @deprecated("Use PlaySound2 and AudioRenderUsage2")
+    @available(deprecated=26, removed=NEXT, note="Use PlaySound2 and AudioRenderUsage2")
     strict PlaySound(struct {
         id uint32;
         usage fuchsia.media.AudioRenderUsage;
