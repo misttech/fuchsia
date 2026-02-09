@@ -45,6 +45,8 @@ def _idk_cc_prebuilt_library_impl(
         output_name,
         no_headers,
         libcxx_linkage,
+        atom_type,
+        allowlist,
         testonly,
         visibility,
         friend,  # buildifier: disable=unused-variable - For GN conversion only.
@@ -52,7 +54,10 @@ def _idk_cc_prebuilt_library_impl(
         **kwargs):
     """Implementation for the _idk_cc_prebuilt_library() macro."""
 
-    atom_type = "cc_prebuilt_library"
+    # The atom type is passed in because the wrapper macro uses it to determine
+    # `allowlist`. Verify that it is correct.
+    if atom_type != "cc_prebuilt_library":
+        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if "data" in kwargs:
         fail("Use `runtime_deps` instead of `data` for atoms that are runtime dependencies.")
@@ -179,7 +184,7 @@ def _idk_cc_prebuilt_library_impl(
         srcs = srcs_for_bazel_library,
         # Add a deps on the allowlist to catch cases where the macro is used but
         # there is no dependency on the atom target.
-        data = [get_allowlist_target(atom_type, category, stable, prebuilt_library_format = prebuilt_library_type)],
+        data = [allowlist],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select_for_fuchsia(fuchsia_deps),
         implementation_deps = implementation_deps,
@@ -334,6 +339,7 @@ def _idk_cc_prebuilt_library_impl(
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         prebuilt_library_format = prebuilt_library_type,
+        allowlist = allowlist,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )
@@ -502,6 +508,16 @@ not have a stable ABI. Can be either "none" or "static".""",
             default = "none",
             configurable = False,
         ),
+        "atom_type": attr.string(
+            doc = "The type of IDK atom. Must be 'cc_prebuilt_library'. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
+        "allowlist": attr.label(
+            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
         "friend": attr.string_list(
             doc = "Unused in Bazel, for GN conversion only.",
@@ -536,20 +552,24 @@ Use the `idk_cc_shared_library()` wrapper instead.
     implementation = _idk_cc_shared_library_impl,
 )
 
-def idk_cc_shared_library(idk_name, api_file_path = None, **kwargs):
+def idk_cc_shared_library(idk_name, category, api_file_path = None, **kwargs):
     """Defines a C++ prebuilt shared library that can be exported to an IDK.
 
     This is a wrapper around `_idk_cc_shared_library()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_shared_library()` for documentation.
     """
     stable = True
+    atom_type = "cc_prebuilt_library"
 
     _idk_cc_shared_library(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
         **kwargs
     )
 
@@ -585,20 +605,24 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
     implementation = _idk_cc_static_library_impl,
 )
 
-def idk_cc_static_library(idk_name, api_file_path = None, **kwargs):
+def idk_cc_static_library(idk_name, category, api_file_path = None, **kwargs):
     """Defines a C++ prebuilt static library that can be exported to an IDK.
 
     This is a wrapper around `_idk_cc_static_library()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_static_library()` for documentation.
     """
     stable = True
+    atom_type = "cc_prebuilt_library"
 
     _idk_cc_static_library(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "static"),
         **kwargs
     )
 
@@ -664,20 +688,24 @@ GN equivalent: `deps`.""",
     },
 )
 
-def idk_cc_shared_library_zx(idk_name, api_file_path = None, **kwargs):
+def idk_cc_shared_library_zx(idk_name, category, api_file_path = None, **kwargs):
     """Defines a C++ shared library that can be exported to an IDK and will be a `zx_library()` in GN.
 
     This is a wrapper around `_idk_cc_shared_library_zx()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_shared_library_zx()` for documentation.
     """
     stable = True
+    atom_type = "cc_prebuilt_library"
 
     _idk_cc_shared_library_zx(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
         **kwargs
     )
 
@@ -743,19 +771,23 @@ GN equivalent: `deps`.""",
     },
 )
 
-def idk_cc_static_library_zx(idk_name, api_file_path = None, **kwargs):
+def idk_cc_static_library_zx(idk_name, category, api_file_path = None, **kwargs):
     """Defines a C++ static library that can be exported to an IDK and will be a `zx_library()` in GN.
 
     This is a wrapper around `_idk_cc_static_library_zx()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_static_library_zx()` for documentation.
     """
     stable = True
+    atom_type = "cc_prebuilt_library"
 
     _idk_cc_static_library_zx(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "static"),
         **kwargs
     )

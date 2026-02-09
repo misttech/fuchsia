@@ -50,10 +50,6 @@ filegroup(
         "//sdk/fidl/fuchsia.mem:__pkg__",
         "//sdk/fidl/fuchsia.sysmem2:__pkg__",
         "//zircon/vdso/zx:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
-        "//build/bazel/rules/fidl:__pkg__",
     ],
 )
 
@@ -62,9 +58,10 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/fidl/fuchsia.hardware.spi.businfo:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
-        "//build/bazel/rules/fidl:__pkg__",
     ],
+)
+
+filegroup(
+    name = "no_category_fidl_library_allowlist",
+    visibility = ["//visibility:public"],
 )

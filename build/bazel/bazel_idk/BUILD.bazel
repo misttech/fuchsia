@@ -15,15 +15,17 @@ filegroup(
     name = "partner_idk_cc_source_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+        "//sdk/lib/async:__pkg__",
+        "//sdk/lib/fidl:__pkg__",
+        "//sdk/lib/fidl_base:__pkg__",
         "//sdk/lib/fit:__pkg__",
+        "//sdk/lib/fit-promise:__pkg__",
         "//sdk/lib/magma_common:__pkg__",
         "//sdk/lib/media/cpp:__pkg__",
         "//sdk/lib/stdcompat:__pkg__",
         "//sdk/lib/utf-utils:__pkg__",
+        "//zircon/system/ulib/sync:__pkg__",
         "//zircon/system/ulib/zx:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
     ],
 )
 
@@ -32,9 +34,6 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/memory_barriers:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
     ],
 )
 
@@ -42,9 +41,7 @@ filegroup(
     name = "partner_idk_cc_prebuilt_shared_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
+        "//sdk/lib/async-default:__pkg__",
     ],
 )
 
@@ -52,9 +49,7 @@ filegroup(
     name = "partner_idk_cc_prebuilt_static_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
+        "//zircon/system/ulib/sync:__pkg__",
     ],
 )
 
@@ -62,10 +57,6 @@ filegroup(
     name = "partner_idk_data_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-
-        # (Only) the macro's directory is needed when using a symbolic macro.
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
     ],
 )
 
@@ -75,8 +66,9 @@ filegroup(
     name = "partner_idk_host_tool_allowlist",
     visibility = [
         "//tools/fidl/fidlc:__pkg__",
-
-        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-        "//build/bazel/bazel_idk/private:__pkg__",
+        "//tools/fidl/fidlgen_cpp:__pkg__",
+        "//tools/fidl/fidlgen_hlcpp:__pkg__",
+        "//tools/fidl/fidlgen_rust:__pkg__",
+        "//tools/net/device-finder:__pkg__",
     ],
 )

@@ -50,6 +50,8 @@ def _idk_cc_source_library_impl(
         implementation_deps,
         include_base,
         api_file_path,
+        atom_type,
+        allowlist,
         testonly,
         visibility,
         build_as_static,  # buildifier: disable=unused-variable - For GN conversion only.
@@ -58,7 +60,10 @@ def _idk_cc_source_library_impl(
         **kwargs):
     """Implementation for the idk_cc_source_library() macro."""
 
-    atom_type = "cc_source_library"
+    # The atom type is passed in because the wrapper macro uses it to determine
+    # `allowlist`. Verify that it is correct.
+    if atom_type != "cc_source_library":
+        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if "data" in kwargs:
         fail("Rumtime dependencies are not supported for source libraries.")
@@ -115,7 +120,7 @@ def _idk_cc_source_library_impl(
         srcs = srcs_for_bazel_library,
         # Add a deps on the allowlist to catch cases where the macro is used but
         # there is no dependency on the atom target.
-        data = [get_allowlist_target(atom_type, category, stable)],
+        data = [allowlist],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select_for_fuchsia(fuchsia_deps),
         # TODO(https://fxbug.dev/428229472): If we must support
@@ -219,6 +224,7 @@ def _idk_cc_source_library_impl(
         idk_deps = idk_deps,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
+        allowlist = allowlist,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )
@@ -412,6 +418,16 @@ GN equivalent: `api`""",
             allow_single_file = True,
             configurable = False,
         ),
+        "atom_type": attr.string(
+            doc = "The type of IDK atom. Must be 'cc_source_library'. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
+        "allowlist": attr.label(
+            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
         # TODO(https://fxbug.dev/421888626): Use this argument if there is a
         # way to tell Bazel to not always compile the source set.
@@ -434,18 +450,23 @@ GN equivalent: `api`""",
     },
 )
 
-def idk_cc_source_library(idk_name, stable, api_file_path = None, **kwargs):
+def idk_cc_source_library(idk_name, category, stable, api_file_path = None, **kwargs):
     """Defines a C++ source library that can be exported to an IDK.
 
     This is a wrapper around `_idk_cc_source_library()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_source_library()` for documentation.
     """
+    atom_type = "cc_source_library"
+
     _idk_cc_source_library(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable),
         **kwargs
     )
 
@@ -508,17 +529,22 @@ GN note: Unlike the GN template, the "include/" part of the path must be specifi
     },
 )
 
-def idk_cc_source_library_zx(idk_name, stable, api_file_path = None, **kwargs):
+def idk_cc_source_library_zx(idk_name, category, stable, api_file_path = None, **kwargs):
     """Defines a C++ source library that can be exported to an IDK and will be a `zx_library()` in GN.
 
     This is a wrapper around `_idk_cc_source_library_zx()` that supports a
-    default value for `api_file_path`.
+    default value for `api_file_path` and sets the allowlist.
 
     See `_idk_cc_source_library_zx()` for documentation.
     """
+    atom_type = "cc_source_library"
+
     _idk_cc_source_library_zx(
         idk_name = idk_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable),
         **kwargs
     )

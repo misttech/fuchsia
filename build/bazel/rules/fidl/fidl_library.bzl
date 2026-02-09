@@ -244,9 +244,16 @@ def _fidl_library_impl(
         enable_zither,
         additional_cpp_configs,
         non_fidl_deps,  # buildifier: disable=unused-variable - For GN conversion only.
+        atom_type,
+        allowlist,
         testonly,
         visibility):
     """Implementation of the fidl_library() macro."""
+
+    # The atom type is passed in because the wrapper macro uses it to determine
+    # `allowlist`. Verify that it is correct.
+    if atom_type != "fidl_library":
+        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if available and not testonly:
         fail("`available` is only allowed for `testonly` libraries.")
@@ -384,6 +391,7 @@ def _fidl_library_impl(
             # TODO(https://fxbug.dev/428285014): Add validation, etc. targets.
             atom_build_deps = [name],
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
+            allowlist = allowlist,
             testonly = testonly,
             visibility = visibility,
         )
@@ -400,7 +408,7 @@ def _fidl_library_impl(
         # For libraries in a category, add a deps on the allowlist to catch
         # cases where the macro is used but there is no dependency on the atom
         # target.
-        data = [get_allowlist_target(atom_type, category, stable)] if category else [],
+        data = [allowlist],
         testonly = testonly,
         visibility = visibility,
     )
@@ -586,24 +594,39 @@ If not specified, appropriate values will be determined based on the target API 
             default = [],
             configurable = False,
         ),
+        "atom_type": attr.string(
+            doc = "The type of IDK atom. Must be 'fidl_library'. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
+        "allowlist": attr.label(
+            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
+            mandatory = True,
+            configurable = False,
+        ),
     },
 )
 
-def fidl_library(name, library_name = "", stable = False, api_file_path = None, **kwargs):
+def fidl_library(name, library_name = "", category = "", stable = False, api_file_path = None, **kwargs):
     """Declares a FIDL library.
 
     This is a wrapper around `_fidl_library()` that supports a default value
-    for `api_file_path`.
+    for `api_file_path` and sets the allowlist.
 
     See `_fidl_library()` for documentation.
     """
     if not library_name:
         library_name = name
 
+    atom_type = "fidl_library"
+
     _fidl_library(
         name = name,
         library_name = library_name,
+        category = category,
         stable = stable,
         api_file_path = get_api_file_path(library_name, stable, api_file_path),
+        atom_type = atom_type,
+        allowlist = get_allowlist_target(atom_type, category, stable),
         **kwargs
     )

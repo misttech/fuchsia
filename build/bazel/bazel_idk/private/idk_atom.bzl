@@ -372,8 +372,16 @@ def _idk_atom_impl(
         atom_build_deps,
         api_file_path,
         api_contents_map,
+        allowlist,
         prebuilt_library_format,
         **kwargs):
+    # The allowlist must be passed as a label attribute due to
+    # https://fxbug.dev/446911800. Verify that the correct allowlist is passed.
+    allowlist_string = "//%s:%s" % (allowlist.package, allowlist.name)
+    expected_allowlist = get_allowlist_target(type, category, stable, prebuilt_library_format)
+    if allowlist_string != expected_allowlist:
+        fail("`allowlist` must be `%s`, but was `%s`." % (expected_allowlist, allowlist_string))
+
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
@@ -387,7 +395,7 @@ def _idk_atom_impl(
     # Ensure the atom is in the appropriate allowlist.
     # The attribute is immutable, so create a mutable copy.
     atom_build_deps = list(atom_build_deps)
-    atom_build_deps.append(get_allowlist_target(type, category, stable, prebuilt_library_format))
+    atom_build_deps.append(allowlist)
 
     _verify_api = bool(api_file_path)
     if _verify_api:
@@ -472,6 +480,12 @@ Atoms will be checked for category and API area violations when generating the I
             doc = "See _create_idk_atom().",
             allow_files = True,
             default = {},
+            configurable = False,
+        ),
+        # Non-inherited attributes.
+        "allowlist": attr.label(
+            doc = "The allowlist to check for this target configuration. Set by a wrapper macro.",
+            mandatory = True,
             configurable = False,
         ),
         "prebuilt_library_format": attr.string(
