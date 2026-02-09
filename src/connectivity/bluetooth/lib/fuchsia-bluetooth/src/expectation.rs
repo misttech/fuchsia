@@ -12,9 +12,6 @@ pub mod asynchronous;
 pub mod host_driver;
 /// Expectations for remote peers
 pub mod peer;
-/// Useful convenience methods and macros for working with expectations
-#[macro_use]
-pub mod prelude;
 /// Tests for the expectation module
 #[cfg(test)]
 pub mod test;
