@@ -172,7 +172,7 @@ class PortObserver final : public SignalObserver {
   PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<PortDispatcher> port,
                Lock<CriticalMutex>* port_lock, uint64_t key, zx_signals_t signals);
 
-  ~PortObserver() final = default;
+  ~PortObserver() final;
 
   // May only be called while holding PortDispatcher lock.
   Dispatcher* UnlinkDispatcherLocked() {

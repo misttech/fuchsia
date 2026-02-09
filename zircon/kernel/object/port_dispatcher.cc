@@ -38,6 +38,9 @@ static_assert(sizeof(zx_packet_page_request_t) == 32,
 KCOUNTER(port_ephemeral_packet_live, "port.ephemeral_packet.live")
 KCOUNTER(port_ephemeral_packet_allocated, "port.ephemeral_packet.allocated")
 KCOUNTER(port_ephemeral_packet_freed, "port.ephemeral_packet.freed")
+KCOUNTER(port_observer_live, "port.observer.live")
+KCOUNTER(port_observer_allocated, "port.observer.allocated")
+KCOUNTER(port_observer_freed, "port.observer.freed")
 KCOUNTER(port_full_count, "port.full.count")
 KCOUNTER(port_dequeue_count, "port.dequeue.count")
 KCOUNTER(port_dequeue_spurious_count, "port.dequeue.spurious.count")
@@ -120,6 +123,14 @@ PortObserver::PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<P
   packet.key = key;
   packet.type = ZX_PKT_TYPE_SIGNAL_ONE;
   packet.signal.trigger = signals;
+
+  kcounter_add(port_observer_live, 1);
+  kcounter_add(port_observer_allocated, 1);
+}
+
+PortObserver::~PortObserver() {
+  kcounter_add(port_observer_live, -1);
+  kcounter_add(port_observer_freed, 1);
 }
 
 void PortObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
