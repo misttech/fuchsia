@@ -639,9 +639,6 @@ func TestCCConversion(t *testing.T) {
 		configs += [
 			"//build/config:Wno-implicit-fallthrough",
 		]
-	} else {
-		configs += [
-		]
 	}
 }`,
 		},

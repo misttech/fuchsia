@@ -105,9 +105,19 @@ func selectToGN(attrName string, op string, expr *syntax.CallExpr, transformers 
 
 		// key.Raw is quoted, so unquote to get the string value.
 		selectCondition := key.Raw[1 : len(key.Raw)-1]
+
+		valueInGN, err := exprToGN(e.Value, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting dictionary value in select to GN: %v", err)
+		}
+
 		if selectCondition == defaultBazelSelectCondition {
 			if len(ret) == 0 {
 				return nil, fmt.Errorf("default select condition %q found with no other matching cases", selectCondition)
+			}
+			if op == "+=" && len(valueInGN) == 2 && valueInGN[0] == "[" && valueInGN[1] == "]" {
+				// The default case is just adding an empty list, so skip it.
+				continue
 			}
 			ret[len(ret)-1] += " else {"
 		} else {
@@ -122,10 +132,6 @@ func selectToGN(attrName string, op string, expr *syntax.CallExpr, transformers 
 			}
 		}
 
-		valueInGN, err := exprToGN(e.Value, transformers)
-		if err != nil {
-			return nil, fmt.Errorf("converting dictionary value in select to GN: %v", err)
-		}
 		ret = append(ret, indent(
 			[]string{fmt.Sprintf("%s %s %s", attrName, op, valueInGN[0])},
 			1,

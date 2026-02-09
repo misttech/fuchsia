@@ -149,8 +149,6 @@ rustc_library("fuchsia-async") {
   ]
   if (is_fuchsia) {
     test_deps += [ "//third_party/rust_crates:rand" ]
-  } else {
-    test_deps += []
   }
   with_unit_tests = true
   deps = []
