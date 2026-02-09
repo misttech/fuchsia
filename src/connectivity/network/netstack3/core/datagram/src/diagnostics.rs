@@ -97,8 +97,7 @@ where
         &self,
         iface: &netstack3_base::BoundInterfaceMatcher<S::DeviceClass>,
     ) -> bool {
-        let (_, device) = self.state.get_options_device(self.ctx);
-        let device = device.as_ref().and_then(|weak| weak.upgrade());
+        let device = self.state.get_device(self.ctx).as_ref().and_then(|weak| weak.upgrade());
         iface.matches(&device.as_ref())
     }
 

@@ -1598,7 +1598,7 @@ fn try_deliver<
                 socket_type,
                 original_bound_addr: _,
             }) => match socket_type {
-                DatagramBoundSocketStateType::Connected { state, sharing: _ } => {
+                DatagramBoundSocketStateType::Connected(state) => {
                     match BoundStateContext::dual_stack_context_mut(core_ctx) {
                         MaybeDualStack::DualStack(dual_stack) => {
                             match dual_stack.ds_converter().convert(state) {
@@ -1611,7 +1611,7 @@ fn try_deliver<
                         }
                     }
                 }
-                DatagramBoundSocketStateType::Listener { state: _, sharing: _ } => true,
+                DatagramBoundSocketStateType::Listener(_) => true,
             },
             DatagramSocketStateInner::Unbound(_) => true,
         };
@@ -1620,13 +1620,10 @@ fn try_deliver<
             return None;
         }
 
-        if require_transparent {
-            let (ip_options, _device) = state.get_options_device(core_ctx);
-            // This packet has been transparently proxied, and such packets are only
-            // delivered to transparent sockets.
-            if !ip_options.transparent() {
-                return None;
-            }
+        // Transparently proxied packets are only delivered to transparent
+        // sockets.
+        if require_transparent && !state.options().transparent() {
+            return None;
         }
 
         let [ip_prefix, ip_options] = header_info.as_bytes();
