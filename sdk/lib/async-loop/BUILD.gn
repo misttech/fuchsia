@@ -43,7 +43,7 @@ zx_library("async-loop-default") {
     # <lib/async-loop/default.h> has #include <lib/async-loop/loop.h>.
     ":async-loop",
   ]
-  runtime_deps = [ "//sdk/lib/async-default:async-default_sdk" ]
+  runtime_deps = [ "//sdk/lib/async-default" ]
 }
 
 group("tests") {

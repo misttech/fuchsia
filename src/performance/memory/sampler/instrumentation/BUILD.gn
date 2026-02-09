@@ -50,7 +50,7 @@ sdk_shared_library("instrumentation") {
   libcxx_linkage = "static"
 
   runtime_deps = [
-    "//sdk/lib/fdio:fdio_sdk",
-    "//zircon/system/ulib/trace-engine:trace-engine_sdk",
+    "//sdk/lib/fdio",
+    "//zircon/system/ulib/trace-engine",
   ]
 }

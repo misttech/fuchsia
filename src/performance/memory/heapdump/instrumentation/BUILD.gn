@@ -68,7 +68,7 @@ sdk_shared_library("instrumentation") {
     "//src/zircon/lib/zircon",
   ]
 
-  runtime_deps = [ "//sdk/lib/fdio:fdio_sdk" ]
+  runtime_deps = [ "//sdk/lib/fdio" ]
   libcxx_linkage = "static"
 
   # For each symbol that we want to export, tell the linker that:

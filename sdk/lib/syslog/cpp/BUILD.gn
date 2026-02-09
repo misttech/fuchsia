@@ -77,8 +77,8 @@ sdk_shared_library("backend_fuchsia_globals") {
   ]
 
   runtime_deps = [
-    "//sdk/lib/async-default:async-default_sdk",
-    "//sdk/lib/fdio:fdio_sdk",
+    "//sdk/lib/async-default",
+    "//sdk/lib/fdio",
   ]
 
   public_configs = [ ":include" ]

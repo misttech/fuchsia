@@ -101,7 +101,7 @@ trace_provider_library("trace-provider-so") {
   enable_fdio_support = true
   defines = [ "SHARED_LIBRARY" ]
   public_deps = [ "//zircon/system/ulib/trace-engine" ]
-  runtime_deps = [ "//sdk/lib/fdio:fdio_sdk" ]
+  runtime_deps = [ "//sdk/lib/fdio" ]
 }
 
 # We produce a static library version of tracing for (currently) one special case: magma.

@@ -66,8 +66,8 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     List of labels representing the library's runtime dependencies. This is
 #     only needed for runtime dependencies inherited from private dependencies
 #     (`deps` or indirect dependencies not through an IDK atom's `public_deps`).
-#     See the technical note below. These labels must represent SDK targets
-#     (end in `_sdk`). Only IDK shared objects should be specified.
+#     See the technical note below. These labels must have associated IDK
+#     targets (end in "_sdk"). Only IDK shared objects should be specified.
 #     When specified, `deps` must be defined and non-empty.
 #
 #   sdk_headers_for_internal_use (optional)
@@ -127,13 +127,13 @@ import("//build/sdk/sdk_atom_alias.gni")
 # exported dir that will not include a prebuilt for libbar.so, even though
 # it is needed at runtime by libfoo.so.
 #
-# To fix this, set 'runtime_deps' to point to the SDK atom target for bar,
+# To fix this, set 'runtime_deps' to point to bar,
 # as in:
 #
 #    sdk_shared_library("foo") {
 #      ...
 #      deps = [ ":bar" ]
-#      runtime_deps = [ ":bar_sdk" ]
+#      runtime_deps = [ ":bar" ]
 #    }
 #
 #    sdk_shared_library("bar") {
@@ -184,7 +184,7 @@ import("//build/sdk/sdk_atom_alias.gni")
 #    sdk_shared_library("foo") {
 #      ...
 #      deps = [ ":baz" ]
-#      runtime_deps = [ ":bar_sdk" ]
+#      runtime_deps = [ ":bar" ]
 #    }
 #
 #
@@ -208,13 +208,23 @@ template("sdk_prebuilt_library_impl") {
         defined(invoker.deps) && invoker.deps != [],
         "Runtime dependencies are only applicable if there are private dependencies.")
 
-    # Unlike other deps, `runtime_deps` entries must end in `_sdk`.
-    # Append ### and use string_replace to mimic behavior of has_suffix, for
-    # lack of such a function in GN.
+    # Ensure `runtime_deps` entries do not end in "_sdk".
+    _new_runtime_deps = []
     foreach(dep, invoker.runtime_deps) {
-      assert(string_replace("${dep}###", "_sdk###", "") != "${dep}###",
-             "Runtime dependency `${dep}` must end in `_sdk`.")
+      # Handle targets in third-party repos that still specify the "_sdk" target.
+      if (dep == "//sdk/lib/fdio:fdio_sdk") {
+        dep = "//sdk/lib/fdio:fdio"
+      } else if (dep == "//zircon/system/ulib/trace-engine:trace-engine_sdk") {
+        dep = "//zircon/system/ulib/trace-engine:trace-engine"
+      }
+
+      # Guard against specifying "_sdk" targets, which used to be required.
+      assert(string_replace("${dep}###", "_sdk###", "") == "${dep}###",
+             "Runtime dependency `${dep}` must not end in '_sdk'.")
+      _new_runtime_deps += [ dep ]
     }
+    invoker.runtime_deps = []
+    invoker.runtime_deps = _new_runtime_deps
   }
 
   valid_categories = [
@@ -317,10 +327,9 @@ template("sdk_prebuilt_library_impl") {
       _new_deps = []
       foreach(dep, invoker.deps) {
         _dep_label = get_label_info(dep, "label_no_toolchain")
-        _dep_sdk_label = _dep_label + "_sdk"
-        if (invoker.runtime_deps + [ _dep_sdk_label ] - [ _dep_sdk_label ] !=
+        if (invoker.runtime_deps + [ _dep_label ] - [ _dep_label ] !=
             invoker.runtime_deps) {
-          # The atom (`_sdk` target) for the private dep is in runtime_deps.
+          # The label for the private dep is also in runtime_deps.
           # Ensure there is no variant redirect.
           dep = _dep_label + "(${shlib_toolchain_no_default_variant_redirect})"
         }
@@ -434,9 +443,12 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 
-  # Runtime deps are already SDK targets.
   if (defined(invoker.runtime_deps)) {
-    sdk_deps += invoker.runtime_deps
+    foreach(dep, invoker.runtime_deps) {
+      full_label = get_label_info(dep, "label_no_toolchain")
+      sdk_dep = "${full_label}_sdk"
+      sdk_deps += [ sdk_dep ]
+    }
   }
 
   # Process headers.
