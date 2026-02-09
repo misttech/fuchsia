@@ -43,7 +43,9 @@ TEST(TimerFD, AlarmCancelOnSet) {
 
     // When the UTC timeline changes, we should get an event, and reading
     // the timer must give us ECANCELED. This is the TFD_TIMER_CANCEL_ON_SET way.
+    printf("test_thread: entering epoll_wait\n");
     int ev_count = epoll_wait(epoll_fd, events, sizeof(events), -1);
+    printf("test_thread: epoll_wait returned ev_count=%d (errno %s)\n", ev_count, strerror(errno));
     ASSERT_GT(ev_count, 0) << strerror(errno);
 
     uint64_t unused;
@@ -52,6 +54,17 @@ TEST(TimerFD, AlarmCancelOnSet) {
     // line will unblock only once that syscall is complete.
     ASSERT_EQ(errno, ECANCELED);
   });
+
+  // We must ensure that there is an active epoll_wait monitoring for timeline change before
+  // we attempt to change the UTC timeline. Otherwise the change would have happened
+  // "before" the poll, and the poll will not see it.
+  //
+  // Sleeping is flaky, but there seems to be no other closed-box mechanism to ensure that this
+  // happens deterministically. Since infra timings can be very generous, we sleep for a
+  // *long* time to reduce the chance that epoll_wait doesn't happen.
+  printf("main_thread: wait here to ensure test_thread entered epoll_wait\n");
+  sleep(5);
+  printf("main_thread: ending wait, on to changing the timeline\n");
 
   // Now, rejigger the UTC timeline. This should cause epoll_wait above to unblock.
   struct timeval tv = {};
@@ -62,7 +75,9 @@ TEST(TimerFD, AlarmCancelOnSet) {
   // Force a UTC timeline update by winding time into the future. The ability to
   // do this in syscall tests requires a special test fixture.
   tv.tv_sec += 100000;
+  printf("main_thread: entering settimeofday syscall to force timeline change\n");
   ASSERT_EQ(0, syscall(__NR_settimeofday, &tv, nullptr)) << "strerror: " << strerror(errno);
+  printf("main_thread: settimeofday syscall returned\n");
 
   test_thread.join();
 
