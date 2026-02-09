@@ -556,6 +556,18 @@ fn example_cml_integration_test() {
     };
     fancy_assert_eq(&cm_decl.config.as_ref(), &Some(&config));
 
+    // Coverage bots apply a merge to the source.
+    if let Some(di) = &mut cm_decl.debug_info {
+        if let Some(ms) = &mut di.manifest_sources {
+            if let Some(entry) = ms.get_mut(0) {
+                *entry = entry.replace(
+                    "obj/tools/cmc/example_component_manifest_merge_merge.cml",
+                    "tools/cmc/meta/example.cml",
+                );
+            }
+        }
+    }
+
     // Assert equality of any missing fields.
     let expected_decl = Component {
         program: Some(program),
