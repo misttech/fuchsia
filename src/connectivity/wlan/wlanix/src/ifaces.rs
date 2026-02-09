@@ -875,6 +875,7 @@ pub mod test_utils {
         scan_end_receiver: Mutex<Option<oneshot::Receiver<Result<ScanEnd, Error>>>>,
         pub calls: Arc<Mutex<Vec<ClientIfaceCall>>>,
         pub connect_success: Mutex<bool>,
+        pub scan_results: Mutex<Vec<fidl_sme::ScanResult>>,
     }
 
     impl TestClientIface {
@@ -884,6 +885,7 @@ pub mod test_utils {
                 scan_end_receiver: Mutex::new(None),
                 calls: Arc::new(Mutex::new(vec![])),
                 connect_success: Mutex::new(true),
+                scan_results: Mutex::new(vec![fake_scan_result()]),
             }
         }
     }
@@ -916,7 +918,7 @@ pub mod test_utils {
         }
         fn get_last_scan_results(&self) -> Vec<fidl_sme::ScanResult> {
             self.calls.lock().push(ClientIfaceCall::GetLastScanResults);
-            vec![fake_scan_result()]
+            self.scan_results.lock().clone()
         }
         async fn connect_to_network(
             &self,

@@ -201,6 +201,11 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nl80211Attr {
                 .map(Self::ScanSsids)
                 .context("Invalid NL80211_ATTR_SCAN_SSIDS value")?,
             NL80211_ATTR_FRAME => Self::Frame(payload.to_vec()),
+            NL80211_ATTR_BSS => NlasIterator::new(payload)
+                .map(|nla| nla.map_err(DecodeError::from).and_then(|v| Nl80211BssAttr::parse(&v)))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::Bss)
+                .context("Invalid NL80211_ATTR_BSS value")?,
             NL80211_ATTR_STATUS_CODE => Self::StatusCode(
                 parse_u16(payload).context("Invalid NL80211_ATTR_STATUS_CODE value")?,
             ),

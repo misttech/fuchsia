@@ -1692,13 +1692,18 @@ async fn handle_nl80211_message<I: IfaceManager>(
                     for result in results {
                         let is_associated = connected_bssid
                             .is_some_and(|bssid| *bssid.as_array() == result.bss_description.bssid);
-                        resp.push(build_nl80211_message(
-                            Nl80211Cmd::NewScanResults,
-                            vec![
-                                Nl80211Attr::IfaceIndex(iface_id),
-                                convert_scan_result(result, is_associated),
-                            ],
-                        ));
+
+                        match convert_scan_result(result, is_associated) {
+                            Ok(scan_result) => {
+                                resp.push(build_nl80211_message(
+                                    Nl80211Cmd::NewScanResults,
+                                    vec![Nl80211Attr::IfaceIndex(iface_id), scan_result],
+                                ));
+                            }
+                            Err(e) => {
+                                error!("Skipping scan result that failed to convert: {}", e);
+                            }
+                        }
                     }
                     resp.push(build_nl80211_done());
                     responder.take().send(Ok(resp)).context("Failed to send scan results")?;
@@ -1778,10 +1783,19 @@ impl DefaultDrop for fidl_wlanix::Nl80211MessageV2Responder {
 // If the device is associated to the BSS in this scan result, pass `is_associated = true`,
 // otherwise, pass `false`. The |is_associated| flag is used to compute the BSS status attribute
 // value within the nl80211 attribute returned by this function.
-fn convert_scan_result(result: fidl_sme::ScanResult, is_associated: bool) -> Nl80211Attr {
+// Returns an error if there is an issue getting the center frequency of the channel.
+fn convert_scan_result(
+    result: fidl_sme::ScanResult,
+    is_associated: bool,
+) -> Result<Nl80211Attr, Error> {
     use crate::nl80211::{ChainSignalAttr, Nl80211BssAttr, Nl80211BssStatus};
     let channel = Channel::new(result.bss_description.channel.primary, Cbw::Cbw20);
-    let center_freq = channel.get_center_freq().expect("Failed to get center freq").into();
+    let center_freq = match channel.get_center_freq() {
+        Ok(freq) => freq.into(),
+        Err(e) => {
+            return Err(format_err!("Failed to get center frequency for scan result: {}", e));
+        }
+    };
     // If the device is connected to this BSS, upstream expects the associated status to be
     // indicated in the scan result. Otherwise it won't signal poll. See b/473850388#comment10
     let bss_status = if is_associated {
@@ -1789,7 +1803,7 @@ fn convert_scan_result(result: fidl_sme::ScanResult, is_associated: bool) -> Nl8
     } else {
         Nl80211BssStatus::NotAuthenticated
     };
-    Nl80211Attr::Bss(vec![
+    Ok(Nl80211Attr::Bss(vec![
         Nl80211BssAttr::Bssid(result.bss_description.bssid),
         Nl80211BssAttr::Frequency(center_freq),
         Nl80211BssAttr::InformationElement(result.bss_description.ies),
@@ -1802,7 +1816,7 @@ fn convert_scan_result(result: fidl_sme::ScanResult, is_associated: bool) -> Nl8
             id: 0,
             rssi: result.bss_description.rssi_dbm,
         }]),
-    ])
+    ]))
 }
 
 fn find_phy_id(attrs: &[Nl80211Attr]) -> Option<u32> {
@@ -4427,6 +4441,49 @@ mod tests {
             Poll::Ready(Ok(Ok(r))) => r));
         assert_eq!(responses.len(), 2);
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Message(_));
+        assert_matches!(responses[1], fidl_wlanix::Nl80211Message::Done(_));
+    }
+
+    #[fuchsia::test]
+    fn get_scan_results_with_invalid_channel() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.get_client_iface();
+
+        let mut valid_scan = ifaces::test_utils::fake_scan_result();
+        let valid_bssid = [1, 1, 1, 1, 1, 1];
+        valid_scan.bss_description.bssid = valid_bssid;
+        valid_scan.bss_description.channel.primary = 1;
+
+        let mut invalid_scan = ifaces::test_utils::fake_scan_result();
+        invalid_scan.bss_description.bssid = [2, 2, 2, 2, 2, 2];
+        // Channel 197 is invalid but could be a valid channel one day.
+        invalid_scan.bss_description.channel.primary = 197;
+
+        *client_iface.scan_results.lock() = vec![valid_scan, invalid_scan];
+
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let get_scan_message = build_nl80211_message(
+            Nl80211Cmd::GetScan,
+            vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
+        );
+        let get_scan_fut = test_values.nl80211_proxy.message_v2(&get_scan_message);
+
+        let mut get_scan_fut = pin!(get_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut get_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+
+        // We expect only the valid result and the "Done" message. One "NewScanResults" message is
+        // sent for each scan result.
+        assert_eq!(responses.len(), 2);
+        let message = expect_nl80211_message(&responses[0]);
+        assert_eq!(message.payload.cmd, Nl80211Cmd::NewScanResults);
+        assert!(message.payload.attrs.iter().any(|attr| matches!(attr, Nl80211Attr::Bss(bss_attrs)
+            if bss_attrs.iter().any(|bss_attr| matches!(bss_attr, crate::nl80211::Nl80211BssAttr::Bssid(bssid) if *bssid == valid_bssid))
+        )));
         assert_matches!(responses[1], fidl_wlanix::Nl80211Message::Done(_));
     }
 

@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use netlink_packet_utils::Emitable;
+use anyhow::Context;
 use netlink_packet_utils::byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::Nla;
-use std::mem::size_of_val;
+use netlink_packet_utils::nla::{Nla, NlaBuffer, NlasIterator};
+use netlink_packet_utils::{DecodeError, Emitable, Parseable};
+use std::mem::{size_of, size_of_val};
 
 use crate::nl80211::constants::*;
 
@@ -65,6 +66,54 @@ impl Nla for Nl80211BssAttr {
     }
 }
 
+impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nl80211BssAttr {
+    type Error = DecodeError;
+    fn parse(buf: &NlaBuffer<&'a T>) -> Result<Self, DecodeError> {
+        use netlink_packet_utils::parsers::{parse_mac, parse_u16, parse_u32};
+        let payload = buf.value();
+        Ok(match buf.kind() {
+            NL80211_BSS_BSSID => Self::Bssid(parse_mac(payload).context("Invalid BSSID")?),
+            NL80211_BSS_FREQUENCY => {
+                Self::Frequency(parse_u32(payload).context("Invalid frequency")?)
+            }
+            NL80211_BSS_INFORMATION_ELEMENTS => Self::InformationElement(payload.to_vec()),
+            NL80211_BSS_LAST_SEEN_BOOTTIME => {
+                if payload.len() != 8 {
+                    return Err(DecodeError::from(format!(
+                        "Invalid last seen boottime length: {}",
+                        payload.len()
+                    )));
+                }
+                Self::LastSeenBoottime(NativeEndian::read_u64(payload))
+            }
+            NL80211_BSS_SIGNAL_MBM => {
+                if payload.len() != 4 {
+                    return Err(DecodeError::from(format!(
+                        "Invalid signal mbm length: {}",
+                        payload.len()
+                    )));
+                }
+                Self::SignalMbm(NativeEndian::read_i32(payload))
+            }
+            NL80211_BSS_CAPABILITY => {
+                Self::Capability(parse_u16(payload).context("Invalid capability")?)
+            }
+            NL80211_BSS_STATUS => {
+                Self::Status(parse_u32(payload).context("Invalid status")?.into())
+            }
+            NL80211_BSS_CHAIN_SIGNAL => {
+                let mut chain_signals = Vec::new();
+                for nla in NlasIterator::new(payload) {
+                    let nla = nla.map_err(DecodeError::from)?;
+                    chain_signals.push(ChainSignalAttr::parse(&nla)?);
+                }
+                Self::ChainSignal(chain_signals)
+            }
+            other => return Err(DecodeError::from(format!("Unhandled BSS attribute: {}", other))),
+        })
+    }
+}
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Nl80211BssStatus {
     NotAuthenticated,
@@ -79,6 +128,16 @@ impl From<&Nl80211BssStatus> for u32 {
             NotAuthenticated => 0,
             Authenticated => NL80211_BSS_STATUS_AUTHENTICATED,
             Associated => NL80211_BSS_STATUS_ASSOCIATED,
+        }
+    }
+}
+
+impl From<u32> for Nl80211BssStatus {
+    fn from(val: u32) -> Self {
+        match val {
+            NL80211_BSS_STATUS_AUTHENTICATED => Self::Authenticated,
+            NL80211_BSS_STATUS_ASSOCIATED => Self::Associated,
+            _ => Self::NotAuthenticated,
         }
     }
 }
@@ -100,6 +159,17 @@ impl Nla for ChainSignalAttr {
 
     fn emit_value(&self, buffer: &mut [u8]) {
         buffer[0] = self.rssi as u8;
+    }
+}
+
+impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for ChainSignalAttr {
+    type Error = DecodeError;
+    fn parse(buf: &NlaBuffer<&'a T>) -> Result<Self, DecodeError> {
+        let payload = buf.value();
+        if payload.is_empty() {
+            return Err(DecodeError::from("ChainSignalAttr payload is empty".to_string()));
+        }
+        Ok(Self { id: buf.kind(), rssi: payload[0] as i8 })
     }
 }
 
