@@ -52,10 +52,3 @@ idk_cc_static_library_zx(
         ":async-loop",
     ],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files([
-    "async-loop.api",
-    "async-loop-cpp.api",
-    "async-loop-default.api",
-])

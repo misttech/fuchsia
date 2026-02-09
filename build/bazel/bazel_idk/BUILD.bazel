@@ -16,6 +16,7 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/async:__pkg__",
+        "//sdk/lib/async-loop:__pkg__",
         "//sdk/lib/fidl:__pkg__",
         "//sdk/lib/fidl_base:__pkg__",
         "//sdk/lib/fit:__pkg__",
@@ -49,6 +50,7 @@ filegroup(
     name = "partner_idk_cc_prebuilt_static_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+        "//sdk/lib/async-loop:__pkg__",
         "//zircon/system/ulib/sync:__pkg__",
     ],
 )

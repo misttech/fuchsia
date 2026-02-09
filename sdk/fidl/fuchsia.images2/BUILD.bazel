@@ -18,6 +18,3 @@ fidl_library(
     visibility = ["//visibility:public"],
     deps = ["//sdk/fidl/fuchsia.math"],
 )
-
-# TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
-exports_files(["fuchsia.images2.api"])
