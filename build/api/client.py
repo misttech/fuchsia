@@ -23,8 +23,10 @@ from typing import Optional
 
 _SCRIPT_FILE = Path(__file__)
 _SCRIPT_DIR = _SCRIPT_FILE.parent
-_FUCHSIA_DIR = (_SCRIPT_DIR / ".." / "..").resolve()
 sys.path.insert(0, str(_SCRIPT_DIR))
+from script_commands import ScriptCommandBase, ScriptCommandList
+
+_FUCHSIA_DIR = (_SCRIPT_DIR / ".." / "..").resolve()
 
 
 def _get_host_platform() -> str:
@@ -235,51 +237,6 @@ class OutputsDatabase(object):
         return self._database.is_valid_target_name(target)
 
 
-class CommandBase(object):
-    """A base class for all objects modeling a given //build/api/client command.
-
-    Derived classes should provide their own definitions for PARSER_KWARGS,
-    add_arguments() and run().
-    """
-
-    # CommandFoo.PARSER_KWARGS is a keyword dictionary passed
-    # to subparsers.add_parser() to create a new parser object.
-    PARSER_KWARGS: dict[str, T.Any] = {}
-
-    @staticmethod
-    def add_arguments(parser: argparse.ArgumentParser) -> None:
-        """Add command-specific arguments to the parser.
-
-        Default implementation does nothing, but derived classes can override
-        this method to call parser.add_argument() for their own specific
-        needs.
-        """
-
-    @staticmethod
-    def run(args: argparse.Namespace) -> int:
-        """Run the command. Derived classes *must* override this method."""
-        raise NotImplementedError
-        return 0
-
-
-class CommandList(object):
-    # A global list of CommandBase instances.
-    def __init__(self, parser: argparse.ArgumentParser) -> None:
-        self._subparsers = parser.add_subparsers(
-            required=True, help="sub-command help."
-        )
-        self._parsers: list[argparse.ArgumentParser] = []
-
-    @property
-    def subparsers(self) -> T.Any:
-        return self._subparsers
-
-    def add_command(self, command: CommandBase) -> None:
-        cmd_parser = self._subparsers.add_parser(**command.PARSER_KWARGS)
-        command.add_arguments(cmd_parser)
-        cmd_parser.set_defaults(func=command.run)
-
-
 class LastBuildApiFilter(object):
     """Filter one or more build API modules based on last build artifacts."""
 
@@ -344,11 +301,8 @@ class LastBuildApiFilter(object):
 #####
 
 
-class ListCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "list",
-        "help": "List all available build API module names.",
-    }
+class ListCommand(ScriptCommandBase):
+    """List all available build API module names."""
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
@@ -365,15 +319,13 @@ class ListCommand(CommandBase):
 #####
 
 
-class PrintCommand(CommandBase):
-    """Implement the 'print' command."""
+class PrintCommand(ScriptCommandBase):
+    """Print build API module content."""
 
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "print",
-        "help": "Print build API module content.",
-        "description": "Print the content of a given build API module, given its name. "
-        + "Use the 'list' command to print the list of all available names.",
-    }
+    DESCRIPTION = """
+Print the content of a given build API module, given its name.
+Use the 'list' command to print the list of all available names.
+"""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -419,13 +371,8 @@ class PrintCommand(CommandBase):
 #####
 
 
-class PrintAllCommand(CommandBase):
-    """Implement the 'print_all' command."""
-
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "print_all",
-        "help": "Print single JSON containing the content of all build API modules.",
-    }
+class PrintAllCommand(ScriptCommandBase):
+    """Print single JSON containing the content of all build API modules."""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -545,13 +492,10 @@ class DebugSymbolCommandState(object):
         return self._debug_parser.entries
 
 
-class PrintDebugSymbolsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "print_debug_symbols",
-        "help": "Print flattened debug symbol entries",
-        "description": "Print the content of debug_symbols.json and all the files it includes "
-        "as a single JSON list of entries.",
-    }
+class PrintDebugSymbolsCommand(ScriptCommandBase):
+    """Print flattened debug symbol entries."""
+
+    DESCRIPTION = "Print the content of debug_symbols.json and all the files it includes as a single JSON list of entries."
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -607,12 +551,10 @@ class PrintDebugSymbolsCommand(CommandBase):
         return 0
 
 
-class ExportLastBuildDebugSymbolsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "export_last_build_debug_symbols",
-        "help": "Export debug symbols from last build.",
-        "description": "Export debug symbols from last build to a directory.",
-    }
+class ExportLastBuildDebugSymbolsCommand(ScriptCommandBase):
+    """Export debug symbols from last build."""
+
+    DESCRIPTION = "Export debug symbols from last build to a directory."
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -747,11 +689,8 @@ class ExportLastBuildDebugSymbolsCommand(CommandBase):
 #####
 
 
-class LastNinjaArtifactsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "last_ninja_artifacts",
-        "help": "Print the list of Ninja artifacts matching the last build invocation.",
-    }
+class LastNinjaArtifactsCommand(ScriptCommandBase):
+    """Print the list of Ninja artifacts matching the last build invocation."""
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
@@ -773,11 +712,8 @@ class LastNinjaArtifactsCommand(CommandBase):
 #####
 
 
-class NinjaPathToGnLabelCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "ninja_path_to_gn_label",
-        "help": "Print the GN label of a each input Ninja output path.",
-    }
+class NinjaPathToGnLabelCommand(ScriptCommandBase):
+    """Print the GN label of a each input Ninja output path."""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -883,12 +819,10 @@ def resolve_gn_labels_to_ninja_paths(
     return ("", all_paths)
 
 
-class GnLabelToNinjaPathsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "gn_label_to_ninja_paths",
-        "help": "Print the Ninja output paths of one or more GN labels.",
-        "description": "Print the Ninja output paths of one or more GN labels.",
-    }
+class GnLabelToNinjaPathsCommand(ScriptCommandBase):
+    """Print the Ninja output paths of one or more GN labels."""
+
+    DESCRIPTION = "Print the Ninja output paths of one or more GN labels."
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -920,11 +854,8 @@ class GnLabelToNinjaPathsCommand(CommandBase):
 #####
 
 
-class FxBuildArgsToLabelsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "fx_build_args_to_labels",
-        "help": "Convert fx build arguments to fully-qualified GN labels.",
-    }
+class FxBuildArgsToLabelsCommand(ScriptCommandBase):
+    """Convert fx build arguments to fully-qualified GN labels."""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1005,20 +936,21 @@ class FxBuildArgsToLabelsCommand(CommandBase):
 #####
 
 
-class ShouldFileChangesTriggerBuildCommand(CommandBase):
-    PARSER_KWARGS = {
-        "name": "should_file_changes_trigger_build",
-        "help": "detect whether a list of changed files should require a new build.",
-        "description": "Take as input a list of paths to source files that have changed since the last build, "
-        + "to determine if they should require re-running the build (based on current build configuration). "
-        + "If no change is necessary, return 0 after printing 'NO' to stdout. "
-        + "If a change is necessary, return 0 after printing 'YES: <reason>' to stdout. "
-        + "An error status indicates a problem when running the tool."
-        + "\n"
-        + "Note that results will corresponds to the top-level targets of the previous build, and "
-        + "their transitive dependencies. Running this command in a clean checkout will not return "
-        + "correct results, as depfile dependencies will be missing.",
-    }
+class ShouldFileChangesTriggerBuildCommand(ScriptCommandBase):
+    """Detect whether a list of changed files should require a new build."""
+
+    DESCRIPTION_RAW = """
+Take as input a list of paths to source files that have changed since the last build, to determine
+if they should require re-running the build (based on the current build configuration).
+
+If no change is necessary, return 0 after printing 'NO' to stdout.
+If a change is necessary, return 0 after printing 'YES: <reason>' to stdout. "
+An error status indicates a problem when running the tool.
+
+Note that results will corresponds to the top-level targets of the previous build,
+and their transitive dependencies. Running this command in a clean checkout will not
+return correct results, as depfile dependencies will be missing.
+"""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1093,14 +1025,14 @@ class ShouldFileChangesTriggerBuildCommand(CommandBase):
 #####
 
 
-class AffectedTestsCommand(CommandBase):
-    PARSER_KWARGS = {
-        "name": "affected_tests",
-        "help": "compute the list of tests affected by a set of changed files",
-        "description": "Determine the set of tests that should be run after "
-        + "the last build, based on a list of changed source file paths."
-        + "On success, print a list of test labels.",
-    }
+class AffectedTestsCommand(ScriptCommandBase):
+    """Compute the list of tests affected by a set of changed files."""
+
+    DESCRIPTION = """
+Determine the set of tests that should be run after the last build,
+based on a list of changed source file paths. On success, print a list
+of test labels.
+"""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1194,11 +1126,8 @@ class FileToTestPackageCache(object):
             self.dirty = False
 
 
-class FileToTestPackageCommand(CommandBase):
-    PARSER_KWARGS = {
-        "name": "file_to_test_package",
-        "help": "Find the fuchsia_test_package(s) that depend on a given source file.",
-    }
+class FileToTestPackageCommand(ScriptCommandBase):
+    """Find the fuchsia_test_packages(s) that depend on a given source file."""
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1297,7 +1226,7 @@ def main(main_args: T.Sequence[str]) -> int:
         # since the //build/api/client wrapper script will always set this option.
     )
 
-    commands = CommandList(parser)
+    commands = ScriptCommandList(parser)
     commands.add_command(ListCommand())
     commands.add_command(PrintCommand())
     commands.add_command(PrintAllCommand())
@@ -1330,7 +1259,7 @@ def main(main_args: T.Sequence[str]) -> int:
             f"Missing input file, did you run `fx gen` or `fx set`?: {args.modules.list_path}"
         )
 
-    return args.func(args)
+    return commands.run(args, keep_exception=True)
 
 
 if __name__ == "__main__":

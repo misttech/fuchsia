@@ -11,10 +11,11 @@ if (is_host) {
       "build_api_filter_test.py",
       "client_test.py",
       "debug_symbols_test.py",
+      "file_to_test_package_test.py",
       "gn_labels_test.py",
       "gn_ninja_outputs_test.py",
       "ninja_artifacts_test.py",
-      "file_to_test_package_test.py",
+      "script_commands_test.py",
     ]
     inputs = [
       "affected_tests.py",
@@ -22,10 +23,11 @@ if (is_host) {
       "client",
       "client.py",
       "debug_symbols.py",
+      "file_to_test_package.py",
       "gn_labels.py",
       "gn_ninja_outputs.py",
       "ninja_artifacts.py",
-      "file_to_test_package.py",
+      "script_commands.py",
 
       # Ninja is accessed implicitly by the test now.
       "//prebuilt/third_party/ninja/${host_os}-${host_cpu}/ninja",
