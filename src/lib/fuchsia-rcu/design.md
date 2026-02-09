@@ -275,3 +275,94 @@ Therefore, the pointer to `o` stored in the `AtomicPtr` is replaced with another
 value before being loaded by the reader, which means the reader does not
 actually read from `o`. The callback runs after all the reads from `o` because
 there are no reads from `o`.
+
+## RSEQ Backend
+
+When the `rseq_backend` feature is enabled, the RCU implementation uses
+Restartable Sequences (RSEQ) and membarriers to optimize the read-side critical
+path. This approach avoids atomic read-modify-write operations on shared cache
+lines, which significantly improves scalability on many-core systems.
+
+### RSEQ Primitives
+
+RSEQ allows us to perform per-CPU operations atomically with respect to other
+threads on the same CPU. We use this to maintain per-CPU read counters.
+
+The per-CPU state consists of two pairs of counters (one pair for each
+generation):
+
+- `begin`: Incremented when entering a read-side critical section.
+- `end`: Incremented when exiting a read-side critical section.
+
+A given read-side critical section might begin on one CPU and end on a different
+CPU. In that case, the `begin` counter will be incremented on the first CPU, and
+the `end` counter will be incremented on the second CPU. For this reason, the
+absolute value of the `begin` and `end` counters is not meaningful, only the
+difference between the `begin` and `end` counters for a given generation is
+meaningful.
+
+To determine if there are any active readers for a given generation, we sum the
+negated `end` counter and the `begin` counter over all CPUs. If the sum is
+zero, then there are no active readers.
+
+### Barrier Pairing
+
+1.  **Read-Side**: `rcu_read_lock()` and `rcu_read_unlock()` issue a
+    `compiler_fence(Ordering::SeqCst)`. This barrier prevents the compiler from
+    reordering the critical section outside the counter increments.
+
+2.  **Writer-Side**: `rcu_synchronize()` (specifically `has_active_readers`)
+    issues an RSEQ barrier.
+
+The pairing works as follows:
+
+-   `rcu_read_lock()`:
+    1.  Increment `begin` (RSEQ).
+    2.  `CompilerBarrier`.
+    3.  Critical Section.
+
+-   `rcu_read_unlock()`:
+    1.  Critical Section.
+    2.  `CompilerBarrier`.
+    3.  Increment `end` (RSEQ).
+
+-   `rcu_synchronize()` (checking for quiescence):
+    1.  Sum all `end` counters (negated).
+    2.  RSEQ barrier.
+    3.  Sum all `begin` counters (positive).
+
+If `Sum(begin) - Sum(end) == 0`, then all readers that started before the RSEQ
+barrier have completed.
+
+The critical ordering is reading `end` *before* the barrier and `begin` *after*
+the barrier. There are four cases to consider:
+
+ 1. The advancer observes the increment to `begin` but not to `end`. This
+    observation implies that there is an active reader and the advancer will
+    continue to wait.
+ 2. The advancer observes the increment to both `begin` and `end`. This
+    observation implies the read critical section is complete and the advancer
+    can proceed.
+ 3. The advancer observes the increment to neither `begin` nor `end`. This
+    observation implies that the read critical section belongs to the next
+    generation and the advancer can proceed.
+ 4. The advancer observes the increment to `end` but not to `begin`. This
+    observation would be problematic because the advancer would incorrectly
+    think there were fewer active readers than there actually were.
+
+The correctness of this barrier pairing relies on the total order `S` of memory
+operations guarantees by the memory model. Specifically, the
+`compiler_fence(Ordering::SeqCst)` in `rcu_read_lock()` ensures that the
+increment to `begin` is _sequenced-before_ the critical section, and the
+critical section is _sequenced-before_ the increment to `end`.
+
+The `zx_barrier()` in `has_active_readers` ensures that if the advancer
+observes the increment to `end` (at step 1), it must also observe the
+increment to `begin` (at step 3). This is because the store to `begin`
+_happens-before_ the store to `end` in the reader thread (due to program order
+and the compiler fence). When `zx_barrier()` acts as a memory barrier, it
+ensures that all stores sequenced-before the barrier interruption point in the
+reader are visible to the advancer after the barrier. Since `begin` is
+sequenced-before `end`, if `end` is visible, `begin` must also be visible.
+Therefore, Case 4 is impossible: the advancer will never underestimate the
+number of active readers.

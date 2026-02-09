@@ -9,6 +9,7 @@ mod rcu_option_arc;
 mod rcu_option_cell;
 mod rcu_ptr;
 mod rcu_read_scope;
+mod read_counters;
 mod state_machine;
 
 pub use rcu_arc::RcuArc;

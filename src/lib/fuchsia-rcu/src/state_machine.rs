@@ -8,6 +8,9 @@ use std::cell::Cell;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::thread_local;
 
+#[cfg(feature = "rseq_backend")]
+use crate::read_counters::RcuReadCounters;
+
 type RcuCallback = Box<dyn FnOnce() + Send + Sync + 'static>;
 
 /// The length of the queue of waiting callbacks.
@@ -66,7 +69,11 @@ struct RcuControlBlock {
     /// Readers increment the counter for the generation that they are reading from. For example,
     /// if the `generation` is even, then readers increment the counter for the `read_counters[0]`.
     /// If the `generation` is odd, then readers increment the counter for the `read_counters[1]`.
+    #[cfg(not(feature = "rseq_backend"))]
     read_counters: [AtomicUsize; 2],
+
+    #[cfg(feature = "rseq_backend")]
+    read_counters: RcuReadCounters,
 
     /// The chain of callbacks that are waiting to be run.
     ///
@@ -91,9 +98,15 @@ const ADVANCER_WAITING: i32 = 1;
 impl RcuControlBlock {
     /// Create a new control block for the RCU state machine.
     const fn new() -> Self {
+        #[cfg(feature = "rseq_backend")]
+        let read_counters = RcuReadCounters::new();
+
+        #[cfg(not(feature = "rseq_backend"))]
+        let read_counters = [AtomicUsize::new(0), AtomicUsize::new(0)];
+
         Self {
             generation: AtomicUsize::new(0),
-            read_counters: [AtomicUsize::new(0), AtomicUsize::new(0)],
+            read_counters,
             callback_chain: AtomicStack::new(),
             advancer: zx::Futex::new(ADVANCER_IDLE),
             waiting_callbacks: Mutex::new(CallbackQueue::new()),
@@ -140,20 +153,32 @@ thread_local! {
 ///
 /// Must be balanced by a call to `rcu_read_unlock` on the same thread.
 pub(crate) fn rcu_read_lock() {
-    RCU_THREAD_BLOCK.with(|block| {
-        let nesting_level = block.nesting_level.get();
+    RCU_THREAD_BLOCK.with(|thread_block| {
+        let nesting_level = thread_block.nesting_level.get();
         if nesting_level > 0 {
             // If this thread already has a read lock, increment the nesting level instead of the
             // incrementing the read counter. This approach is a performance optimization to reduce
             // the number of atomic operations that need to be performed.
-            block.nesting_level.set(nesting_level + 1);
+            thread_block.nesting_level.set(nesting_level + 1);
         } else {
             // This is the outermost read lock. Increment the read counter.
-            let index = RCU_CONTROL_BLOCK.generation.load(Ordering::Relaxed) & 1;
-            // Synchronization point [A] (see design.md)
-            RCU_CONTROL_BLOCK.read_counters[index].fetch_add(1, Ordering::SeqCst);
-            block.counter_index.set(index as u8);
-            block.nesting_level.set(1);
+            let control_block = &RCU_CONTROL_BLOCK;
+            let index = control_block.generation.load(Ordering::Relaxed) & 1;
+
+            #[cfg(feature = "rseq_backend")]
+            {
+                control_block.read_counters.begin(index);
+                std::sync::atomic::compiler_fence(Ordering::SeqCst);
+            }
+
+            #[cfg(not(feature = "rseq_backend"))]
+            {
+                // Synchronization point [A] (see design.md)
+                control_block.read_counters[index].fetch_add(1, Ordering::SeqCst);
+            }
+
+            thread_block.counter_index.set(index as u8);
+            thread_block.nesting_level.set(1);
         }
     });
 }
@@ -163,23 +188,41 @@ pub(crate) fn rcu_read_lock() {
 /// This function is used to release a read lock on the RCU state machine. See `rcu_read_lock` for
 /// more details.
 pub(crate) fn rcu_read_unlock() {
-    RCU_THREAD_BLOCK.with(|block| {
-        let nesting_level = block.nesting_level.get();
+    RCU_THREAD_BLOCK.with(|thread_block| {
+        let nesting_level = thread_block.nesting_level.get();
         if nesting_level > 1 {
             // If the nesting level is greater than 1, this is not the outermost read lock.
             // Decrement the nesting level instead of the read counter.
-            block.nesting_level.set(nesting_level - 1);
+            thread_block.nesting_level.set(nesting_level - 1);
         } else {
             // This is the outermost read lock. Decrement the read counter.
-            let index = block.counter_index.get() as usize;
-            // Synchronization point [B] (see design.md)
-            let previous_count =
-                RCU_CONTROL_BLOCK.read_counters[index].fetch_sub(1, Ordering::SeqCst);
-            if previous_count == 1 {
+            let index = thread_block.counter_index.get() as usize;
+            let control_block = &RCU_CONTROL_BLOCK;
+
+            #[cfg(feature = "rseq_backend")]
+            {
+                std::sync::atomic::compiler_fence(Ordering::SeqCst);
+                control_block.read_counters.end(index);
+
+                // We cannot tell if this thread is the last thread to exit its read lock, so we
+                // always wake the advancer. The advancer will check if there are any active
+                // readers and will only advance the state machine if there are no active
+                // readers.
                 rcu_advancer_wake_all();
             }
-            block.nesting_level.set(0);
-            block.counter_index.set(u8::MAX);
+
+            #[cfg(not(feature = "rseq_backend"))]
+            {
+                // Synchronization point [B] (see design.md)
+                let previous_count =
+                    control_block.read_counters[index].fetch_sub(1, Ordering::SeqCst);
+                if previous_count == 1 {
+                    rcu_advancer_wake_all();
+                }
+            }
+
+            thread_block.nesting_level.set(0);
+            thread_block.counter_index.set(u8::MAX);
         }
     });
 }
@@ -242,9 +285,18 @@ pub fn rcu_drop<T: Send + Sync + 'static>(value: T) {
 
 /// Check if there are any active readers for the given generation.
 fn has_active_readers(generation: usize) -> bool {
-    let i = generation & 1;
-    // Synchronization point [C] (see design.md)
-    RCU_CONTROL_BLOCK.read_counters[i].load(Ordering::SeqCst) > 0
+    let index = generation & 1;
+
+    #[cfg(feature = "rseq_backend")]
+    {
+        return RCU_CONTROL_BLOCK.read_counters.has_active(index);
+    }
+
+    #[cfg(not(feature = "rseq_backend"))]
+    {
+        // Synchronization point [C] (see design.md)
+        RCU_CONTROL_BLOCK.read_counters[index].load(Ordering::SeqCst) > 0
+    }
 }
 
 /// Wake up all the threads that are waiting to advance the state machine.
