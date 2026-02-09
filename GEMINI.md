@@ -226,6 +226,9 @@ correctly.
 `ffx component explore` will let you run shell commands inside of a component's
 sandbox.
 
+`fx cmc` runs the Component Manifest Compiler that can among other things expand
+include directives and debug print a compiled manifest.
+
 ### Diagnostics
 
 `ffx log dump` will dump the system log from the target.
