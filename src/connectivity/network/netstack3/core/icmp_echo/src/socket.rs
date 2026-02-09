@@ -518,8 +518,7 @@ impl SocketMapAddrSpec for IcmpAddrSpec {
     type LocalIdentifier = NonZeroU16;
 }
 
-type IcmpBoundSockets<I, D, BT> =
-    datagram::BoundSockets<I, D, IcmpAddrSpec, IcmpSocketMapStateSpec<I, D, BT>>;
+type IcmpBoundSockets<I, D, BT> = datagram::BoundDatagramSocketMap<I, D, Icmp<BT>>;
 
 struct IcmpPortAlloc<'a, I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes>(
     &'a IcmpBoundSockets<I, D, BT>,

@@ -2144,7 +2144,7 @@ where
     let _inserted = socketmap
         .listeners_mut()
         .try_insert(addr.clone(), sharing, demux_socket_id)
-        .map_err(|_: (InsertError, ListenerSharingState)| LocalAddressError::AddressInUse)?;
+        .map_err(Into::<LocalAddressError>::into)?;
 
     Ok(addr)
 }
@@ -5463,7 +5463,7 @@ where
             let _entry = socketmap
                 .conns_mut()
                 .try_insert(conn_addr.clone(), sharing, demux_id.clone())
-                .map_err(|(err, _sharing)| match err {
+                .map_err(|err| match err {
                     // The connection will conflict with an existing one.
                     InsertError::Exists | InsertError::ShadowerExists => {
                         ConnectError::ConnectionExists

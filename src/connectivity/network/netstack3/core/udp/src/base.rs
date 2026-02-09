@@ -37,15 +37,15 @@ use netstack3_base::{
     SettingsContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_datagram::{
-    self as datagram, BoundSocketState as DatagramBoundSocketState,
-    BoundSocketStateType as DatagramBoundSocketStateType, BoundSockets as DatagramBoundSockets,
-    ConnInfo, ConnectError, DatagramApi, DatagramBindingsTypes, DatagramBoundStateContext,
-    DatagramFlowId, DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet,
-    DatagramSocketSpec, DatagramSpecBoundStateContext, DatagramSpecStateContext,
-    DatagramStateContext, DualStackBaseIpExt, DualStackConnState, DualStackConverter,
-    DualStackDatagramBoundStateContext, DualStackDatagramSpecBoundStateContext, DualStackIpExt,
-    EitherIpSocket, ExpectedConnError, ExpectedUnboundError, InUseError, IpExt, IpOptions,
-    ListenerInfo, MulticastMembershipInterfaceSelector, NonDualStackConverter,
+    self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
+    BoundSocketStateType as DatagramBoundSocketStateType, ConnInfo, ConnectError, DatagramApi,
+    DatagramBindingsTypes, DatagramBoundStateContext, DatagramFlowId,
+    DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet, DatagramSocketSpec,
+    DatagramSpecBoundStateContext, DatagramSpecStateContext, DatagramStateContext,
+    DualStackBaseIpExt, DualStackConnState, DualStackConverter, DualStackDatagramBoundStateContext,
+    DualStackDatagramSpecBoundStateContext, DualStackIpExt, EitherIpSocket, ExpectedConnError,
+    ExpectedUnboundError, InUseError, IpExt, IpOptions, ListenerInfo,
+    MulticastMembershipInterfaceSelector, NonDualStackConverter,
     NonDualStackDatagramBoundStateContext, NonDualStackDatagramSpecBoundStateContext,
     SendError as DatagramSendError, SetMulticastMembershipError, SocketInfo,
     SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
@@ -74,8 +74,7 @@ use crate::internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostic
 use crate::internal::settings::UdpSettings;
 
 /// Convenience alias to make names shorter.
-pub(crate) type UdpBoundSocketMap<I, D, BT> =
-    DatagramBoundSockets<I, D, UdpAddrSpec, UdpSocketMapStateSpec<I, D, BT>>;
+pub(crate) type UdpBoundSocketMap<I, D, BT> = BoundDatagramSocketMap<I, D, Udp<BT>>;
 /// Tx metadata sent by UDP sockets.
 pub type UdpSocketTxMetadata<I, D, BT> = datagram::TxMetadata<I, D, Udp<BT>>;
 
@@ -854,7 +853,7 @@ impl<T> AddrState<T> {
 /// should receive a matching incoming packet. The returned iterator may
 /// yield 0, 1, or multiple sockets.
 fn lookup<'s, I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
-    bound: &'s DatagramBoundSockets<I, D, UdpAddrSpec, UdpSocketMapStateSpec<I, D, BT>>,
+    bound: &'s UdpBoundSocketMap<I, D, BT>,
     (src_ip, src_port): (Option<SocketIpAddr<I::Addr>>, Option<NonZeroU16>),
     (dst_ip, dst_port): (SocketIpAddr<I::Addr>, NonZeroU16),
     device: D,
@@ -2816,41 +2815,22 @@ impl<
 {
     type IpSocketsCtx<'a> = CC::IpSocketsCtx<'a>;
 
-    fn with_bound_sockets<
-        O,
-        F: FnOnce(
-            &mut Self::IpSocketsCtx<'_>,
-            &DatagramBoundSockets<
-                I,
-                CC::WeakDeviceId,
-                UdpAddrSpec,
-                UdpSocketMapStateSpec<I, CC::WeakDeviceId, BC>,
-            >,
-        ) -> O,
-    >(
-        core_ctx: &mut CC,
-        cb: F,
-    ) -> O {
+    fn with_bound_sockets<O, F>(core_ctx: &mut CC, cb: F) -> O
+    where
+        F: FnOnce(&mut Self::IpSocketsCtx<'_>, &UdpBoundSocketMap<I, CC::WeakDeviceId, BC>) -> O,
+    {
         core_ctx.with_bound_sockets(|core_ctx, BoundSockets { bound_sockets }| {
             cb(core_ctx, bound_sockets)
         })
     }
 
-    fn with_bound_sockets_mut<
-        O,
+    fn with_bound_sockets_mut<O, F>(core_ctx: &mut CC, cb: F) -> O
+    where
         F: FnOnce(
             &mut Self::IpSocketsCtx<'_>,
-            &mut DatagramBoundSockets<
-                I,
-                CC::WeakDeviceId,
-                UdpAddrSpec,
-                UdpSocketMapStateSpec<I, CC::WeakDeviceId, BC>,
-            >,
+            &mut UdpBoundSocketMap<I, CC::WeakDeviceId, BC>,
         ) -> O,
-    >(
-        core_ctx: &mut CC,
-        cb: F,
-    ) -> O {
+    {
         core_ctx.with_bound_sockets_mut(|core_ctx, BoundSockets { bound_sockets }| {
             cb(core_ctx, bound_sockets)
         })
@@ -2870,10 +2850,10 @@ impl<
         BoundStateContext::dual_stack_context(core_ctx)
     }
 
-    fn with_transport_context<O, F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O>(
-        core_ctx: &mut CC,
-        cb: F,
-    ) -> O {
+    fn with_transport_context<O, F>(core_ctx: &mut CC, cb: F) -> O
+    where
+        F: FnOnce(&mut Self::IpSocketsCtx<'_>) -> O,
+    {
         core_ctx.with_transport_context(cb)
     }
 }
@@ -2910,17 +2890,14 @@ impl<
         EitherIpSocket::V6(id.clone())
     }
 
-    fn with_both_bound_sockets_mut<
-        O,
+    fn with_both_bound_sockets_mut<O, F>(core_ctx: &mut CC, cb: F) -> O
+    where
         F: FnOnce(
             &mut Self::IpSocketsCtx<'_>,
             &mut UdpBoundSocketMap<Ipv6, CC::WeakDeviceId, BC>,
             &mut UdpBoundSocketMap<Ipv4, CC::WeakDeviceId, BC>,
         ) -> O,
-    >(
-        core_ctx: &mut CC,
-        cb: F,
-    ) -> O {
+    {
         core_ctx.with_both_bound_sockets_mut(
             |core_ctx,
              BoundSockets { bound_sockets: bound_first },
@@ -7634,13 +7611,11 @@ mod tests {
             AddrVec::Conn(c) => map
                 .conns_mut()
                 .try_insert(c, options, EitherIpSocket::V4(create_socket()))
-                .map(|_| ())
-                .map_err(|(e, _)| e),
+                .map(|_| ()),
             AddrVec::Listen(l) => map
                 .listeners_mut()
                 .try_insert(l, options, EitherIpSocket::V4(create_socket()))
-                .map(|_| ())
-                .map_err(|(e, _)| e),
+                .map(|_| ()),
         };
         let last = loop {
             let one_spec = spec.next().expect("empty list of test cases");

@@ -29,16 +29,16 @@ mod internal {
 }
 
 pub use internal::datagram::{
-    BoundSocketState, BoundSocketStateType, BoundSockets, ConnInfo, ConnState, ConnectError,
-    DatagramApi, DatagramBindingsContext, DatagramBindingsTypes, DatagramBoundStateContext,
-    DatagramFlowId, DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSet,
-    DatagramSocketSpec, DatagramStateContext, DualStackBaseIpExt, DualStackConnState,
-    DualStackConverter, DualStackDatagramBoundStateContext, DualStackIpExt, EitherIpSocket,
-    ExpectedConnError, ExpectedUnboundError, InUseError, IpExt, IpOptions, ListenerInfo,
-    MulticastInterfaceSelector, MulticastMembershipInterfaceSelector, NonDualStackConverter,
-    NonDualStackDatagramBoundStateContext, ReferenceState, SendError, SendToError,
-    SetMulticastMembershipError, SocketInfo, SocketState, SocketStateInner, StrongRc, WeakRc,
-    WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
+    BoundDatagramSocketMap, BoundSocketState, BoundSocketStateType, ConnInfo, ConnState,
+    ConnectError, DatagramApi, DatagramBindingsContext, DatagramBindingsTypes,
+    DatagramBoundStateContext, DatagramFlowId, DatagramIpSpecificSocketOptions,
+    DatagramSocketMapSpec, DatagramSocketSet, DatagramSocketSpec, DatagramStateContext,
+    DualStackBaseIpExt, DualStackConnState, DualStackConverter, DualStackDatagramBoundStateContext,
+    DualStackIpExt, EitherIpSocket, ExpectedConnError, ExpectedUnboundError, InUseError, IpExt,
+    IpOptions, ListenerInfo, MulticastInterfaceSelector, MulticastMembershipInterfaceSelector,
+    NonDualStackConverter, NonDualStackDatagramBoundStateContext, ReferenceState, SendError,
+    SendToError, SetMulticastMembershipError, SocketInfo, SocketState, SocketStateInner, StrongRc,
+    WeakRc, WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 pub use internal::diagnostics::{DatagramSocketDiagnosticsSpec, SocketStateForMatching};
 pub use internal::settings::DatagramSettings;

@@ -1161,7 +1161,7 @@ where
                     accept_queue.push_pending(id);
                     Some(primary)
                 }
-                Err((e, _sharing_state)) => {
+                Err(e) => {
                     // The only error we accept here is if the entry exists
                     // fully, any indirect conflicts are unexpected because we
                     // know the listener is still alive and installed in the

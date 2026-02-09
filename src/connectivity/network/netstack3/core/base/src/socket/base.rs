@@ -18,6 +18,7 @@ use net_types::{
 };
 use thiserror::Error;
 
+use crate::LocalAddressError;
 use crate::data_structures::socketmap::{
     Entry, IterShadows, OccupiedEntry as SocketMapOccupiedEntry, SocketMap, Tagged,
 };
@@ -833,8 +834,7 @@ where
         socket_addr: SocketType::Addr,
         tag_state: SocketType::SharingState,
         id: SocketType::Id,
-    ) -> Result<SocketStateEntry<'a, I, D, A, S, SocketType>, (InsertError, SocketType::SharingState)>
-    {
+    ) -> Result<SocketStateEntry<'a, I, D, A, S, SocketType>, InsertError> {
         self.try_insert_with(socket_addr, tag_state, |_addr, _sharing| (id, ()))
             .map(|(entry, ())| entry)
     }
@@ -848,15 +848,9 @@ where
         socket_addr: SocketType::Addr,
         tag_state: SocketType::SharingState,
         make_id: impl FnOnce(SocketType::Addr, SocketType::SharingState) -> (SocketType::Id, R),
-    ) -> Result<
-        (SocketStateEntry<'a, I, D, A, S, SocketType>, R),
-        (InsertError, SocketType::SharingState),
-    > {
+    ) -> Result<(SocketStateEntry<'a, I, D, A, S, SocketType>, R), InsertError> {
         let Self(addr_to_state, _) = self;
-        match S::check_insert_conflicts(&tag_state, &socket_addr, &addr_to_state) {
-            Err(e) => return Err((e, tag_state)),
-            Ok(()) => (),
-        };
+        S::check_insert_conflicts(&tag_state, &socket_addr, &addr_to_state)?;
 
         let addr = SocketType::to_addr_vec(&socket_addr);
 
@@ -875,7 +869,7 @@ where
                             v.insert(id.clone());
                             Ok((SocketType::to_socket_id(id), ret))
                         }
-                        Err(IncompatibleError) => Err((InsertError::Exists, tag_state)),
+                        Err(IncompatibleError) => Err(InsertError::Exists),
                     }
                 })?;
                 Ok((SocketStateEntry { id, addr_entry: o, _marker: Default::default() }, ret))
@@ -1237,6 +1231,17 @@ pub enum InsertError {
     ShadowerExists,
     /// An indirect conflict was detected.
     IndirectConflict,
+}
+
+impl From<InsertError> for LocalAddressError {
+    fn from(value: InsertError) -> Self {
+        match value {
+            InsertError::ShadowAddrExists
+            | InsertError::Exists
+            | InsertError::IndirectConflict
+            | InsertError::ShadowerExists => LocalAddressError::AddressInUse,
+        }
+    }
 }
 
 /// Helper trait for converting between [`AddrVec`] and [`Bound`] and their
@@ -1819,7 +1824,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 is_never_called
             ),
-            Err((InsertError::Exists, SharingState { .. }))
+            Err(InsertError::Exists)
         );
         assert_matches!(
             bound.listeners_mut().try_insert_with(
@@ -1827,7 +1832,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 is_never_called
             ),
-            Err((InsertError::ShadowAddrExists, _))
+            Err(InsertError::ShadowAddrExists)
         );
         assert_matches!(
             bound.conns_mut().try_insert_with(
@@ -1841,7 +1846,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 is_never_called,
             ),
-            Err((InsertError::ShadowAddrExists, _))
+            Err(InsertError::ShadowAddrExists)
         );
     }
 
@@ -1863,7 +1868,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 Listener(fake_id_gen.next())
             ),
-            Err((InsertError::Exists, SharingState { tag: 'b', .. }))
+            Err(InsertError::Exists)
         );
     }
 
@@ -1889,7 +1894,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 Listener(fake_id_gen.next())
             ),
-            Err((InsertError::ShadowAddrExists, SharingState { tag: 'b', .. }))
+            Err(InsertError::ShadowAddrExists)
         );
     }
 
@@ -1918,7 +1923,7 @@ mod tests {
                 SharingState::exclusive('b'),
                 Conn(fake_id_gen.next())
             ),
-            Err((InsertError::ShadowAddrExists, SharingState { tag: 'b', .. }))
+            Err(InsertError::ShadowAddrExists)
         );
     }
 

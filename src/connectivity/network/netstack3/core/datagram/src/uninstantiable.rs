@@ -7,7 +7,7 @@ use netstack3_base::socket::MaybeDualStack;
 use netstack3_base::{Uninstantiable, UninstantiableWrapper};
 
 use crate::internal::datagram::{
-    BoundSockets, DatagramBindingsTypes, DatagramBoundStateContext,
+    BoundDatagramSocketMap, DatagramBindingsTypes, DatagramBoundStateContext,
     DatagramIpSpecificSocketOptions, DatagramSocketMapSpec, DatagramSocketSpec, DualStackConverter,
     IpExt, IpOptions, NonDualStackConverter,
 };
@@ -38,15 +38,7 @@ impl<
     }
     fn with_bound_sockets<
         O,
-        F: FnOnce(
-            &mut Self::IpSocketsCtx<'_>,
-            &BoundSockets<
-                I,
-                P::WeakDeviceId,
-                <S as DatagramSocketSpec>::AddrSpec,
-                <S as DatagramSocketSpec>::SocketMapSpec<I, P::WeakDeviceId>,
-            >,
-        ) -> O,
+        F: FnOnce(&mut Self::IpSocketsCtx<'_>, &BoundDatagramSocketMap<I, P::WeakDeviceId, S>) -> O,
     >(
         core_ctx: &mut UninstantiableWrapper<P>,
         _cb: F,
@@ -57,12 +49,7 @@ impl<
         O,
         F: FnOnce(
             &mut Self::IpSocketsCtx<'_>,
-            &mut BoundSockets<
-                I,
-                P::WeakDeviceId,
-                <S as DatagramSocketSpec>::AddrSpec,
-                <S as DatagramSocketSpec>::SocketMapSpec<I, P::WeakDeviceId>,
-            >,
+            &mut BoundDatagramSocketMap<I, P::WeakDeviceId, S>,
         ) -> O,
     >(
         core_ctx: &mut UninstantiableWrapper<P>,
@@ -136,13 +123,8 @@ impl<
         O,
         F: FnOnce(
             &mut Self::IpSocketsCtx<'_>,
-            &mut BoundSockets<I, P::WeakDeviceId, S::AddrSpec, S::SocketMapSpec<I, P::WeakDeviceId>>,
-            &mut BoundSockets<
-                I::OtherVersion,
-                P::WeakDeviceId,
-                S::AddrSpec,
-                S::SocketMapSpec<I::OtherVersion, P::WeakDeviceId>,
-            >,
+            &mut BoundDatagramSocketMap<I, P::WeakDeviceId, S>,
+            &mut BoundDatagramSocketMap<I::OtherVersion, P::WeakDeviceId, S>,
         ) -> O,
     >(
         core_ctx: &mut UninstantiableWrapper<P>,
@@ -155,12 +137,7 @@ impl<
         O,
         F: FnOnce(
             &mut Self::IpSocketsCtx<'_>,
-            &mut BoundSockets<
-                I::OtherVersion,
-                P::WeakDeviceId,
-                S::AddrSpec,
-                S::SocketMapSpec<<I>::OtherVersion, P::WeakDeviceId>,
-            >,
+            &mut BoundDatagramSocketMap<I::OtherVersion, P::WeakDeviceId, S>,
         ) -> O,
     >(
         core_ctx: &mut UninstantiableWrapper<P>,
