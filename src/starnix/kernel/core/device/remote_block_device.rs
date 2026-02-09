@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::device::DeviceMode;
-use crate::device::block::canonicalize_ioctl_request;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::mm::MemoryAccessorExt;
@@ -24,7 +23,7 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::{BLOCK_EXTENDED_MAJOR, DeviceType};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
+use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64, errno, from_status_like_fdio, off_t};
 use std::collections::btree_map::BTreeMap;
 use std::sync::Arc;
@@ -354,11 +353,11 @@ impl FileOps for RemoteBlockDeviceFile {
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        match canonicalize_ioctl_request(current_task, request) {
+        match request {
             BLKGETSIZE => {
-                let user_size = MultiArchUserRef::<u64, u32>::new(current_task, arg);
+                let user_size = UserRef::<u64>::from(arg);
                 let size = self.block_client.block_count();
-                current_task.write_multi_arch_object(user_size, size)?;
+                current_task.write_object(user_size, &size)?;
                 Ok(SUCCESS)
             }
             BLKGETSIZE64 => {
