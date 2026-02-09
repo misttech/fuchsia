@@ -374,6 +374,55 @@ bool continuous_attribution_tracker_zero_pager_backed() {
   END_TEST;
 }
 
+// Test that zeroing a child of a pager-backed VMO correctly updates the populated bytes count.
+bool continuous_attribution_tracker_zero_pager_clone() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/2, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, nullptr, &vmo));
+
+  fbl::RefPtr<VmObject> child_vmo_no_paged;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Modified, /*offset=*/0,
+                             /*size=*/3 * kPageSize, /*copy_name=*/false, &child_vmo_no_paged));
+
+  fbl::RefPtr<VmObjectPaged> child = DownCastVmObject<VmObjectPaged>(child_vmo_no_paged);
+  ASSERT_NONNULL(child);
+
+  fbl::RefPtr<VmCowPages> child_cow_pages = child->DebugGetCowPages();
+  auto &child_tracker = child_cow_pages->DebugGetContinuousAttributionTracker();
+
+  EXPECT_EQ(0u, child_tracker.FetchCurrent());
+
+  ASSERT_OK(child->CommitRange(0, 2 * kPageSize));
+
+  EXPECT_EQ(2u, child_tracker.FetchCurrent());
+
+  // Clear out one page, so that afterwards the VMO will only have one populated page.
+  {
+    __UNINITIALIZED MultiPageRequest page_request;
+    VmCowPages::DeferredOps deferred(child_cow_pages.get());
+    Guard<CriticalMutex> guard{child_cow_pages->lock()};
+    VmCowRange range(0, kPageSize);
+    // Directly call the lower-level interface, as opposed to the method on VmObject. The
+    // attribution for the higher-level method is incomplete.
+    auto [status, zeroed_bytes] =
+        child_cow_pages->ZeroPagesLocked(range, /*dirty_track=*/false, deferred, &page_request);
+    EXPECT_EQ(kPageSize, zeroed_bytes);
+    EXPECT_OK(status);
+  }
+
+  EXPECT_EQ(1u, child_tracker.FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -385,6 +434,7 @@ VM_UNITTEST(continuous_attribution_tracker_unidirectional_child)
 VM_UNITTEST(continuous_attribution_tracker_bidirectional_child)
 VM_UNITTEST(continuous_attribution_tracker_zero_anonymous)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_backed)
+VM_UNITTEST(continuous_attribution_tracker_zero_pager_clone)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 
