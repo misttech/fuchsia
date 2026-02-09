@@ -1627,9 +1627,10 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // will eventually become our page_list_, but not until we've updated the backlinks and moved it
   // into the hidden parent.
   VmPageList temp_list;
-  // TODO(ethanws): Keep temp_list_tracker up-to-date with temp_list.
   AttributionTracker temp_list_tracker;
   if (tree_has_parent_content_markers()) {
+    // How many parent content markers are in the new page list
+    uint32_t temp_list_populated_slots_count = 0;
     zx_status_t status = page_list_.ForEveryPage([&](const VmPageOrMarker* p, uint64_t offset) {
       // If a tree is using parent content markers then, since we are a leaf node, we know that
       // there can be no markers and no intervals, hence this is either content, or a parent
@@ -1643,6 +1644,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
       if (!slot) {
         return ZX_ERR_NO_MEMORY;
       }
+      ++temp_list_populated_slots_count;
       *slot = VmPageOrMarker::ParentContent();
 
       return ZX_ERR_NEXT;
@@ -1652,6 +1654,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
       // Only reason for failure should be out of memory.
       ASSERT(status == ZX_ERR_NO_MEMORY);
       return zx::error(status);
+    }
+    if (temp_list_populated_slots_count > 0) {
+      temp_list_tracker.Increment(temp_list_populated_slots_count);
     }
   }
 
@@ -1896,8 +1901,6 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
   // content we are able to see is possibly determined by content markers in *this* node, even if we
   // will be able to mechanically hang the new node higher up.
   VmPageList page_list;
-  // TODO(ethanws): Keep page_list_tracker up-to-date with page_list.
-  AttributionTracker page_list_tracker;
 
   // To account for any errors that result in needing to roll back we remember the range we have
   // processed the share counts for.
@@ -1925,35 +1928,44 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
     DEBUG_ASSERT(status == ZX_OK);
   });
 
-  // Update any share counts for content the clone will be able to see, and populate a temporary
-  // page list with any parent content markers if needed.
-  zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
-      [&](const VmPageOrMarker* p, VmCowPages* owner, uint64_t cow_clone_offset,
-          uint64_t owner_offset) {
-        if (tree_has_parent_content_markers() && p->IsPageOrRef()) {
-          const uint64_t off = cow_clone_offset - range.offset;
-          auto [slot, _] =
-              page_list.LookupOrAllocate(off, VmPageList::IntervalHandling::NoIntervals);
-          if (!slot) {
-            return ZX_ERR_NO_MEMORY;
+  // Tracks parent content markers in the new page list
+  AttributionTracker page_list_tracker;
+  {
+    uint32_t page_list_populated_slots_count = 0;
+    // Update any share counts for content the clone will be able to see, and populate a temporary
+    // page list with any parent content markers if needed.
+    zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
+        [&](const VmPageOrMarker* p, VmCowPages* owner, uint64_t cow_clone_offset,
+            uint64_t owner_offset) {
+          if (tree_has_parent_content_markers() && p->IsPageOrRef()) {
+            const uint64_t off = cow_clone_offset - range.offset;
+            auto [slot, _] =
+                page_list.LookupOrAllocate(off, VmPageList::IntervalHandling::NoIntervals);
+            if (!slot) {
+              return ZX_ERR_NO_MEMORY;
+            }
+            ++page_list_populated_slots_count;
+            *slot = VmPageOrMarker::ParentContent();
           }
-          *slot = VmPageOrMarker::ParentContent();
-        }
-        if (p->IsPage()) {
-          p->Page()->object.share_count++;
-        } else if (p->IsReference()) {
-          VmPageOrMarker::ReferenceValue ref = p->Reference();
-          compression->SetMetadata(ref, compression->GetMetadata(ref) + 1);
-        }
-        shared_end = owner_offset + kPageSize;
+          if (p->IsPage()) {
+            p->Page()->object.share_count++;
+          } else if (p->IsReference()) {
+            VmPageOrMarker::ReferenceValue ref = p->Reference();
+            compression->SetMetadata(ref, compression->GetMetadata(ref) + 1);
+          }
+          shared_end = owner_offset + kPageSize;
 
-        return ZX_ERR_NEXT;
-      },
-      range.offset, range.len, LockedPtr());
+          return ZX_ERR_NEXT;
+        },
+        range.offset, range.len, LockedPtr());
 
-  if (status != ZX_OK) {
-    // However far we got is recorded in |shared_end|, and |rollback| will clean it up.
-    return zx::error(status);
+    if (status != ZX_OK) {
+      // However far we got is recorded in |shared_end|, and |rollback| will clean it up.
+      return zx::error(status);
+    }
+    if (page_list_populated_slots_count > 0) {
+      page_list_tracker.Increment(page_list_populated_slots_count);
+    }
   }
 
   ParentAndRange child_range = FindParentAndRangeForCloneLocked(range.offset, range.len, true);

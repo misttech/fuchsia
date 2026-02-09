@@ -218,8 +218,7 @@ bool continuous_attribution_tracker_unidirectional_child() {
 
     auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
 
-    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
-    // should not be zero.
+    // There are no parent content markers in this hierarchy to track, as intended.
     EXPECT_EQ(0u, tracker.FetchCurrent());
   }
 
@@ -262,9 +261,7 @@ bool continuous_attribution_tracker_bidirectional_child() {
 
     auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
 
-    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
-    // should not be zero.
-    EXPECT_EQ(0u, tracker.FetchCurrent());
+    EXPECT_EQ(2u, tracker.FetchCurrent());
   }
 
   {
@@ -275,9 +272,7 @@ bool continuous_attribution_tracker_bidirectional_child() {
 
     auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
 
-    // TODO(ethanws): Installation of the parent content markers is currently not tracked. This
-    // should not be zero.
-    EXPECT_EQ(0u, tracker.FetchCurrent());
+    EXPECT_EQ(2u, tracker.FetchCurrent());
   }
 
   auto &tracker = hidden_parent->DebugGetContinuousAttributionTracker();
