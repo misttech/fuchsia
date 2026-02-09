@@ -271,6 +271,21 @@ impl From<keyboard_binding::KeyboardDeviceDescriptor> for InputDeviceDescriptor 
     }
 }
 
+impl InputDeviceDescriptor {
+    pub fn device_id(&self) -> u32 {
+        match self {
+            InputDeviceDescriptor::Keyboard(b) => b.device_id,
+            InputDeviceDescriptor::LightSensor(b) => b.device_id,
+            InputDeviceDescriptor::ConsumerControls(b) => b.device_id,
+            InputDeviceDescriptor::Mouse(b) => b.device_id,
+            InputDeviceDescriptor::TouchScreen(b) => b.device_id,
+            InputDeviceDescriptor::Touchpad(b) => b.device_id,
+            #[cfg(test)]
+            InputDeviceDescriptor::Fake => 0,
+        }
+    }
+}
+
 // Whether the event is consumed by an [`InputHandler`].
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Handled {

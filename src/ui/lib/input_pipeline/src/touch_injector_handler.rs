@@ -101,13 +101,43 @@ impl BatchInputHandler for TouchInjectorHandler {
         self: Rc<Self>,
         events: Vec<input_device::InputEvent>,
     ) -> Vec<input_device::InputEvent> {
+        if events.is_empty() {
+            return events;
+        }
+
         fuchsia_trace::duration!("input", "touch_injector_handler");
 
         let mut result: Vec<input_device::InputEvent> = Vec::new();
+        let mut pending_scenic_events: Vec<pointerinjector::Event> = Vec::new();
+
+        let device_id = events[0].device_descriptor.device_id();
+        let has_different_device_events =
+            events.iter().any(|e| e.device_descriptor.device_id() != device_id);
+        if has_different_device_events {
+            // TODO: b/478249522 - add metrics logger, this should never happen because the batching is from drivers.
+            log::warn!("TouchInjectorHandler: Received events from different devices");
+            return events;
+        }
 
         for event in events {
-            let out_events = self.clone().handle_single_input_event(event).await;
+            let (out_events, scenic_events) = self.clone().handle_single_input_event(event).await;
             result.extend(out_events);
+            pending_scenic_events.extend(scenic_events);
+        }
+
+        if !pending_scenic_events.is_empty() {
+            if let input_device::InputDeviceDescriptor::TouchScreen(ref touch_device_descriptor) =
+                result[0].device_descriptor
+            {
+                if let Err(e) =
+                    self.inject_pointer_events(pending_scenic_events, touch_device_descriptor)
+                {
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
+                        std::format!("inject_pointer_events failed: {}", e),
+                    );
+                }
+            }
         }
 
         result
@@ -246,7 +276,7 @@ impl TouchInjectorHandler {
     async fn handle_single_input_event(
         self: Rc<Self>,
         mut input_event: input_device::InputEvent,
-    ) -> Vec<input_device::InputEvent> {
+    ) -> (Vec<input_device::InputEvent>, Vec<pointerinjector::Event>) {
         match input_event {
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
@@ -261,6 +291,8 @@ impl TouchInjectorHandler {
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_end!("input", "event_in_input_pipeline", trace_id.into());
                 }
+
+                let mut scenic_events = vec![];
                 if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
                     let mut touch_buttons_event = Self::create_touch_buttons_event(
                         touch_event,
@@ -284,19 +316,16 @@ impl TouchInjectorHandler {
                     }
 
                     // Handle the event.
-                    if let Err(e) = self
-                        .send_event_to_scenic(touch_event, &touch_device_descriptor, event_time)
-                        .await
-                    {
-                        self.metrics_logger.log_error(
-                        InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
-                        std::format!("send_event_to_scenic failed: {}", e));
-                    }
+                    scenic_events = self.create_pointer_events(
+                        touch_event,
+                        &touch_device_descriptor,
+                        event_time,
+                    );
                 }
 
                 // Consume the input event.
                 self.inspect_status.count_handled_event();
-                vec![input_event.into_handled()]
+                (vec![input_event.into_handled()], scenic_events)
             }
             input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::TouchScreen(_),
@@ -304,11 +333,11 @@ impl TouchInjectorHandler {
                 ..
             } => {
                 // If a touch event is handled but reached to TouchInjectorHandler, it's expected.
-                vec![input_event]
+                (vec![input_event], vec![])
             }
             _ => {
                 log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
-                vec![input_event]
+                (vec![input_event], vec![])
             }
         }
     }
@@ -366,30 +395,23 @@ impl TouchInjectorHandler {
         Ok(())
     }
 
-    /// Sends the given event to Scenic.
+    /// Converts the given touch event into a list of Scenic events.
     ///
     /// # Parameters
     /// - `touch_event`: The touch event to send to Scenic.
     /// - `touch_descriptor`: The descriptor for the device that sent the touch event.
     /// - `event_time`: The time when the event was first recorded.
-    async fn send_event_to_scenic(
+    fn create_pointer_events(
         &self,
         touch_event: &mut touch_binding::TouchScreenEvent,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
         event_time: zx::MonotonicInstant,
-    ) -> Result<(), anyhow::Error> {
-        // The order in which events are sent to clients.
+    ) -> Vec<pointerinjector::Event> {
         let ordered_phases = vec![
             pointerinjector::EventPhase::Add,
             pointerinjector::EventPhase::Change,
             pointerinjector::EventPhase::Remove,
         ];
-
-        // Make the trace duration end on the call to injector.inject, not the call's return.
-        // The duration should start before the flow_begin is minted in
-        // create_pointer_sample_event, and it should not include the injector.inject() call's
-        // return from await.
-        fuchsia_trace::duration_begin!("input", "touch-inject-into-scenic");
 
         let mut events: Vec<pointerinjector::Event> = vec![];
         for phase in ordered_phases {
@@ -410,15 +432,27 @@ impl TouchInjectorHandler {
             events.extend(new_events);
         }
 
+        events
+    }
+
+    /// Injects the given events into Scenic.
+    ///
+    /// # Parameters
+    /// - `events`: The events to inject.
+    /// - `touch_descriptor`: The descriptor for the device that sent the touch event.
+    fn inject_pointer_events(
+        &self,
+        events: Vec<pointerinjector::Event>,
+        touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
+    ) -> Result<(), anyhow::Error> {
+        fuchsia_trace::duration!("input", "touch-inject-into-scenic");
+
         let injector =
             self.mutable_state.borrow().injectors.get(&touch_descriptor.device_id).cloned();
         if let Some(injector) = injector {
-            // This trace duration ends before calling inject_events.
-            fuchsia_trace::duration_end!("input", "touch-inject-into-scenic");
             let _ = injector.inject_events(events);
             Ok(())
         } else {
-            fuchsia_trace::duration_end!("input", "touch-inject-into-scenic");
             Err(anyhow::format_err!(
                 "No injector found for touch device {}.",
                 touch_descriptor.device_id
@@ -1374,5 +1408,115 @@ mod tests {
         assert_eq!(event.pressed_buttons, cloned_event.pressed_buttons);
         assert!(event.wake_lease.is_none());
         assert!(cloned_event.wake_lease.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn handle_input_events_batches_events() {
+        let mut fixtures = TestFixtures::new().await;
+
+        // Add an injector.
+        let (injector_device_proxy, mut injector_device_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+        fixtures
+            .touch_handler
+            .mutable_state
+            .borrow_mut()
+            .injectors
+            .insert(1, injector_device_proxy);
+
+        // Request a viewport update.
+        let _watch_viewport_task =
+            fasync::Task::local(fixtures.touch_handler.clone().watch_viewport());
+
+        // Send a viewport update.
+        match fixtures.configuration_request_stream.next().await {
+            Some(Ok(pointerinjector_config::SetupRequest::WatchViewport { responder, .. })) => {
+                responder.send(&create_viewport(0.0, 100.0)).expect("Failed to send viewport.");
+            }
+            other => panic!("Received unexpected value: {:?}", other),
+        };
+
+        // Check that the injector received an updated viewport
+        match injector_device_request_stream.next().await {
+            Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
+                assert_eq!(events.len(), 1);
+                assert!(events[0].data.is_some());
+                assert_eq!(
+                    events[0].data,
+                    Some(pointerinjector::Data::Viewport(create_viewport(0.0, 100.0)))
+                );
+            }
+            other => panic!("Received unexpected value: {:?}", other),
+        }
+
+        // Create two touch events to be batched.
+        let event_time1 = zx::MonotonicInstant::get();
+        let contact1 = create_touch_contact(TOUCH_ID, Position { x: 20.0, y: 40.0 });
+        let descriptor = get_touch_screen_device_descriptor();
+        let input_event1 = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
+            hashmap! {
+                fidl_ui_input::PointerEventPhase::Add
+                    => vec![contact1.clone()],
+            },
+            event_time1,
+            &descriptor,
+        ))
+        .unwrap();
+
+        let event_time2 = event_time1 + zx::MonotonicDuration::from_millis(10);
+        let contact2 = create_touch_contact(TOUCH_ID, Position { x: 25.0, y: 45.0 });
+        let input_event2 = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
+            hashmap! {
+                fidl_ui_input::PointerEventPhase::Move
+                    => vec![contact2.clone()],
+            },
+            event_time2,
+            &descriptor,
+        ))
+        .unwrap();
+
+        // Handle events.
+        let handle_event_fut = fixtures
+            .touch_handler
+            .clone()
+            .handle_input_events(vec![input_event1.into(), input_event2.into()]);
+
+        // Declare expected events.
+        let expected_event1 = create_touch_pointer_sample_event(
+            pointerinjector::EventPhase::Add,
+            &contact1,
+            Position { x: 20.0, y: 40.0 },
+            event_time1,
+        );
+        let expected_event2 = create_touch_pointer_sample_event(
+            pointerinjector::EventPhase::Change,
+            &contact2,
+            Position { x: 25.0, y: 45.0 },
+            event_time2,
+        );
+
+        let device_fut = async move {
+            match injector_device_request_stream.next().await {
+                Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
+                    assert_eq!(events.len(), 2);
+                    assert_eq!(events[0].timestamp, expected_event1.timestamp);
+                    assert_eq!(events[0].data, expected_event1.data);
+                    assert_eq!(events[1].timestamp, expected_event2.timestamp);
+                    assert_eq!(events[1].data, expected_event2.data);
+                }
+                other => panic!("Received unexpected value: {:?}", other),
+            }
+        };
+
+        let (handle_result, _) = futures::future::join(handle_event_fut, device_fut).await;
+
+        // Verify events were marked handled.
+        assert_matches!(
+            handle_result.as_slice(),
+            [
+                input_device::InputEvent { handled: input_device::Handled::Yes, .. },
+                input_device::InputEvent { handled: input_device::Handled::Yes, .. }
+            ]
+        );
     }
 }
