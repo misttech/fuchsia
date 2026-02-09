@@ -418,6 +418,60 @@ bool continuous_attribution_tracker_zero_pager_clone() {
   END_TEST;
 }
 
+// Test that removing a page from a hidden parent decrements populated bytes count.
+bool continuous_attribution_tracker_require_move_page() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  // Set up a hidden parent with two pages and children with no content.
+
+  fbl::RefPtr<VmObjectPaged> child1;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &child1));
+
+  // Write a non-zero value to the first two pages.
+  fbl::AllocChecker ac;
+  fbl::Vector<uint8_t> a;
+  a.resize(2 * kPageSize, 42, &ac);
+  ASSERT_TRUE(ac.check());
+  EXPECT_EQ(ZX_OK, child1->Write(a.data(), 0, a.size()));
+
+  // Create a bidirectional clone.
+  fbl::RefPtr<VmObject> child2;
+  ASSERT_OK(child1->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                                /*size=*/3 * kPageSize, /*copy_name=*/false, &child2));
+  VmObjectPaged *child_paged = DownCastVmObject<VmObjectPaged>(child2.get());
+  ASSERT_NONNULL(child_paged);
+  fbl::RefPtr<VmCowPages> child2_cow = child_paged->DebugGetCowPages();
+
+  // Assert there is a hidden parent (true bidirectional)
+  fbl::RefPtr<VmCowPages> hidden_parent_cow = child2_cow->DebugGetParent();
+  ASSERT_NONNULL(hidden_parent_cow);
+
+  // Decrement the share count for the first page by making child1 copy-on-write the first page.
+  child1->CommitRange(0, kPageSize);
+
+  // Now the share count for the first page is just one in the hidden parent.
+
+  // The content is attributed to both the parent and the child because the pages are resident in
+  // the hidden parent and the child has parent content markers.
+  EXPECT_EQ(2u, hidden_parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, child2_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  child2->CommitRange(0, kPageSize);
+
+  // The hidden parent's attribution count is decremented because it no longer has the page resident
+  // (it has been moved to the child).
+  EXPECT_EQ(1u, hidden_parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, child2_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -430,6 +484,7 @@ VM_UNITTEST(continuous_attribution_tracker_bidirectional_child)
 VM_UNITTEST(continuous_attribution_tracker_zero_anonymous)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_backed)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_clone)
+VM_UNITTEST(continuous_attribution_tracker_require_move_page)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

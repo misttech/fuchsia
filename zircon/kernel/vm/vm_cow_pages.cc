@@ -2639,6 +2639,7 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   } else {
     // Remove the page from the owner.
     VmPageOrMarker removed = page_owner->page_list_.RemoveContent(owner_offset);
+    page_owner->continuous_attribution_tracker_.Decrement(1);
     vm_page* removed_page = removed.ReleasePage();
     DEBUG_ASSERT(removed_page == page);
     // TODO: This could be optimized to a ChangeObjectOffset instead of doing a Remove here and an
