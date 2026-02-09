@@ -90,6 +90,9 @@ fi
 # This path is relative to the the ninja -C dir ($FUCHSIA_BUILD_DIR).
 readonly NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
 
+# Record the set if inputs that triggered some build actions.
+readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
+
 # This wrapper script collects system CPU/mem/IO info while
 # another process is running.
 readonly profile_wrap="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
@@ -1269,6 +1272,7 @@ EOF
       )
       local -a post_build_uploads=(
         "$NINJA_BUILD_TRACE_FILE"
+        "$NINJA_DIRTY_SOURCES_FILE"
       )
       for f in "${pre_build_uploads[@]}"
       do rsproxy_options+=(--pre_build_uploads "$FUCHSIA_BUILD_DIR/$f")
