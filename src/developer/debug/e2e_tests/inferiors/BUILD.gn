@@ -156,6 +156,16 @@ starnix_linux_executable("starnix_proc_exception_bin") {
   sources = [ "starnix_proc_exception.cc" ]
 }
 
+starnix_linux_arch32_executable("starnix_proc_exception32_bin") {
+  output_name = "starnix_proc_exception32"
+  sources = [ "starnix_proc_exception32.cc" ]
+  cflags = [
+    # Ensure .ARM.exidx is generated. Without this, the section exists but only
+    # contains a single "CantUnwind" entry, which is not useful for us.
+    "-funwind-tables",
+  ]
+}
+
 fuchsia_component("starnix_proc") {
   manifest = "starnix_proc.cml"
   deps = [ ":starnix_proc_bin" ]
@@ -164,6 +174,11 @@ fuchsia_component("starnix_proc") {
 fuchsia_component("starnix_proc_exception") {
   manifest = "starnix_proc_exception.cml"
   deps = [ ":starnix_proc_exception_bin" ]
+}
+
+fuchsia_component("starnix_proc_exception32") {
+  manifest = "starnix_proc_exception32.cml"
+  deps = [ ":starnix_proc_exception32_bin" ]
 }
 
 fuchsia_package("zxdb_e2e_inferiors") {
@@ -189,6 +204,11 @@ fuchsia_package("zxdb_e2e_inferiors") {
     ":starnix_proc",
     ":starnix_proc_exception",
   ]
+
+  if (target_linux_arch32_toolchain != "") {
+    deps += [ ":starnix_proc_exception32" ]
+  }
+
   subpackages = starnix_test_subpackages +
                 [ "//src/starnix/containers/debian:debian_package" ]
 }
