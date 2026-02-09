@@ -80,7 +80,6 @@ pub enum InsertionResult<V> {
 type Bucket<K, V> = RcuList<Entry<K, V>, CollisionAdapter>;
 
 /// A hash map that uses read-copy-update (RCU) to manage concurrent accesses.
-#[derive(Debug)]
 pub struct RcuRawHashMap<K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
@@ -327,6 +326,23 @@ where
     /// Returns an iterator over the keys in the map.
     pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
         self.insertion_chain.iter(scope).map(|entry| &entry.key)
+    }
+}
+
+// TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
+impl<K, V, S> std::fmt::Debug for RcuRawHashMap<K, V, S>
+where
+    K: Eq + Hash + Clone + Send + Sync + 'static + std::fmt::Debug,
+    V: Clone + Send + Sync + 'static + std::fmt::Debug,
+    S: std::hash::BuildHasher + Send + Sync + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RcuRawHashMap")
+            .field("table", &self.table)
+            .field("num_entries", &self.num_entries)
+            .field("insertion_chain", &self.insertion_chain)
+            .field("hash_builder", &std::any::type_name::<S>())
+            .finish_non_exhaustive()
     }
 }
 

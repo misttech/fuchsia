@@ -12,7 +12,6 @@ use std::hash::{BuildHasher, Hash};
 ///
 /// This map allows concurrent readers to access entries without blocking, while writers are
 /// synchronized via a `Mutex`.
-#[derive(Debug)]
 pub struct RcuHashMap<K, V, S = std::collections::hash_map::RandomState>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
@@ -91,6 +90,18 @@ where
     /// Returns an iterator over the map's keys.
     pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
         self.iter(scope).map(|(k, _)| k)
+    }
+}
+
+// TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
+impl<K, V, S> std::fmt::Debug for RcuHashMap<K, V, S>
+where
+    K: Eq + Hash + std::fmt::Debug + Clone + Send + Sync + 'static,
+    V: std::fmt::Debug + Clone + Send + Sync + 'static,
+    S: BuildHasher + Send + Sync + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RcuHashMap").field("map", &self.map).finish()
     }
 }
 
