@@ -111,7 +111,6 @@ if (is_host && has_board) {
     if (target_cpu == "arm64") {
       sources += [
         "scripts/starnix_proc_exception.script",
-        "scripts/starnix_proc_exception32.script",
         "scripts/starnix_proc_hardware_breakpoint.script",
       ]
     } else {
