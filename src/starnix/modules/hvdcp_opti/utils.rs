@@ -46,7 +46,8 @@ impl ReadWriteBytesFile {
 
 impl BytesFileOps for ReadWriteBytesFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        Ok(self.data.lock().clone().into())
+        let data: Vec<u8> = std::mem::take(self.data.lock().as_mut());
+        Ok(data.into())
     }
 
     fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
