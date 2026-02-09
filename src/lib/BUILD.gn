@@ -51,6 +51,7 @@ group("tests") {
     "fuchsia-lockfile:tests",
     "fuchsia-rcu:tests",
     "fuchsia-rcu-collections:tests",
+    "fuchsia-rseq:tests",
     "fuchsia-runtime:tests",
     "fuchsia-sync:tests",
     "fuchsia-url:tests",

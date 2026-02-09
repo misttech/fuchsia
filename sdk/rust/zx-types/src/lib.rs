@@ -2974,3 +2974,16 @@ mod test {
         assert_eq!(format!("{:?}", test_struct), expectation);
     }
 }
+
+#[repr(C, align(32))]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_rseq_t {
+    pub cpu_id: u32,
+    pub reserved: u32,
+    pub start_ip: u64,
+    pub post_commit_offset: u64,
+    pub abort_ip: u64,
+}
+
+pub const ZX_INFO_INVALID_CPU: u32 = 0xFFFFFFFF;
