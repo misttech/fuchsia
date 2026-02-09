@@ -79,7 +79,7 @@ rust_proc_macro(
         "//third_party/rust_crates/vendor/mockall_derive-0.14.0:build_script_build",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.42:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.113:syn",
+        "//third_party/rust_crates/vendor/syn-2.0.114:syn",
     ],
 )
 
