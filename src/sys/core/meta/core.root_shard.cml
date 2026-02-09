@@ -242,6 +242,7 @@
                 "fuchsia.kernel.Counter",
                 "fuchsia.kernel.DebugBroker",
                 "fuchsia.power.cpu.manager.Boost",
+                "fuchsia.storage.blobfs.OverwriteConfiguration",
             ],
             from: "#bootstrap",
             to: "#core",

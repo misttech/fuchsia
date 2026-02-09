@@ -137,6 +137,11 @@
             availability: "same_as_target",
         },
         {
+            protocol: "fuchsia.storage.blobfs.OverwriteConfiguration",
+            from: "void",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.fxfs.FileBackedVolumeProvider",
             from: "self",
         },

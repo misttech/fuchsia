@@ -280,6 +280,7 @@
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.cpu.DomainController",
                 "fuchsia.power.cpu.manager.Boost",
+                "fuchsia.storage.blobfs.OverwriteConfiguration",
             ],
             from: "parent",
             to: "#session-manager",

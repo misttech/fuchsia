@@ -181,6 +181,7 @@
                 "fuchsia.settings.Privacy",
                 "fuchsia.settings.Setup",
                 "fuchsia.starnix.runner.Manager",
+                "fuchsia.storage.blobfs.OverwriteConfiguration",
                 "fuchsia.thermal.ClientStateConnector",
                 "fuchsia.thermal.SensorManager",
                 "fuchsia.time.alarms.WakeAlarms",

@@ -187,6 +187,11 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.storage.blobfs.OverwriteConfiguration",
+            from: "#fshost",
+            availability: "same_as_target",
+        },
+        {
             service: "fuchsia.storage.partitions.PartitionService",
             from: "#fshost",
             availability: "optional",
