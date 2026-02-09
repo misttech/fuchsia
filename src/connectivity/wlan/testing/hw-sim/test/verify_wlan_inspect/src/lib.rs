@@ -131,7 +131,6 @@ async fn verify_wlan_inspect() {
                         rssi_dbm: AnyProperty,
                         snr_db: AnyProperty,
                         wsc: {
-                            device_name: "ASUS Router",
                             manufacturer: "ASUSTek Computer Inc.",
                             model_name: "RT-AC58U",
                             model_number: "123",
@@ -158,7 +157,6 @@ async fn verify_wlan_inspect() {
                                 bssid: BSSID.to_string(),
                                 ssid: AP_SSID.to_string(),
                                 wsc: {
-                                    device_name: "ASUS Router",
                                     manufacturer: "ASUSTek Computer Inc.",
                                     model_name: "RT-AC58U",
                                     model_number: "123",
@@ -227,7 +225,6 @@ async fn verify_wlan_inspect() {
                                 bssid: BSSID.to_string(),
                                 ssid: AP_SSID.to_string(),
                                 wsc: {
-                                    device_name: "ASUS Router",
                                     manufacturer: "ASUSTek Computer Inc.",
                                     model_name: "RT-AC58U",
                                     model_number: "123",

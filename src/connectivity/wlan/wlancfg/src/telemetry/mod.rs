@@ -699,7 +699,6 @@ fn inspect_record_connection_status(inspect_node: &InspectNode, telemetry_sender
                     ht_cap?: ap_state.original().raw_ht_cap().map(|cap| InspectBytes(cap.bytes)),
                     vht_cap?: ap_state.original().raw_vht_cap().map(|cap| InspectBytes(cap.bytes)),
                     wsc?: ap_state.original().probe_resp_wsc().as_ref().map(|wsc| make_inspect_loggable!(
-                            device_name: String::from_utf8_lossy(&wsc.device_name[..]).to_string(),
                             manufacturer: String::from_utf8_lossy(&wsc.manufacturer[..]).to_string(),
                             model_name: String::from_utf8_lossy(&wsc.model_name[..]).to_string(),
                             model_number: String::from_utf8_lossy(&wsc.model_number[..]).to_string(),
@@ -739,7 +738,6 @@ fn inspect_record_external_data(
                     rssi_dbm: ap_state.tracked.signal.rssi_dbm,
                     snr_db: ap_state.tracked.signal.snr_db,
                     wsc?: ap_state.original().probe_resp_wsc().as_ref().map(|wsc| make_inspect_loggable!(
-                            device_name: String::from_utf8_lossy(&wsc.device_name[..]).to_string(),
                             manufacturer: String::from_utf8_lossy(&wsc.manufacturer[..]).to_string(),
                             model_name: String::from_utf8_lossy(&wsc.model_name[..]).to_string(),
                             model_number: String::from_utf8_lossy(&wsc.model_number[..]).to_string(),
@@ -1709,7 +1707,6 @@ impl Telemetry {
                 ht_cap?: info.ap_state.original().raw_ht_cap().map(|cap| InspectBytes(cap.bytes)),
                 vht_cap?: info.ap_state.original().raw_vht_cap().map(|cap| InspectBytes(cap.bytes)),
                 wsc?: info.ap_state.original().probe_resp_wsc().as_ref().map(|wsc| make_inspect_loggable!(
-                        device_name: String::from_utf8_lossy(&wsc.device_name[..]).to_string(),
                         manufacturer: String::from_utf8_lossy(&wsc.manufacturer[..]).to_string(),
                         model_name: String::from_utf8_lossy(&wsc.model_name[..]).to_string(),
                         model_number: String::from_utf8_lossy(&wsc.model_number[..]).to_string(),

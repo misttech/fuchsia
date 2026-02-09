@@ -478,7 +478,6 @@ pub struct BssWscNode {
     manufacturer: StringProperty,
     model_name: StringProperty,
     model_number: StringProperty,
-    device_name: StringProperty,
 }
 
 impl BssWscNode {
@@ -489,17 +488,14 @@ impl BssWscNode {
             node.create_string("model_name", String::from_utf8_lossy(&wsc.model_name[..]));
         let model_number =
             node.create_string("model_number", String::from_utf8_lossy(&wsc.model_number[..]));
-        let device_name =
-            node.create_string("device_name", String::from_utf8_lossy(&wsc.device_name[..]));
 
-        Self { _node: node, manufacturer, model_name, model_number, device_name }
+        Self { _node: node, manufacturer, model_name, model_number }
     }
 
     fn update(&mut self, wsc: &wsc::ProbeRespWsc) {
         self.manufacturer.set(&String::from_utf8_lossy(&wsc.manufacturer[..]));
         self.model_name.set(&String::from_utf8_lossy(&wsc.model_name[..]));
         self.model_number.set(&String::from_utf8_lossy(&wsc.model_number[..]));
-        self.device_name.set(&String::from_utf8_lossy(&wsc.device_name[..]));
     }
 }
 
