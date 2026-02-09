@@ -5,11 +5,14 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_FRAME_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_FRAME_H_
 
+#include <memory>
+
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/register_id.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/symbols/arch.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/mock_source_file_provider.h"
 #include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 
@@ -53,6 +56,10 @@ class MockFrame : public Frame {
   // Use GetLocation() to retrieve the location.
   void set_location(Location l) { location_ = std::move(l); }
 
+  void set_source_file_provider(std::unique_ptr<MockSourceFileProvider> provider) {
+    source_file_provider_ = std::move(provider);
+  }
+
   // Overrides all IPs with a new address, but doesn't change anything else about the location
   // including the stack or symbols.
   void SetAddress(uint64_t address);
@@ -65,6 +72,7 @@ class MockFrame : public Frame {
   void set_is_ambiguous_inline(bool ambiguous) { is_ambiguous_inline_ = ambiguous; }
 
   MockSymbolDataProvider* GetMockSymbolDataProvider();
+  std::unique_ptr<SourceFileProvider> GetSourceFileProvider() const override;
 
   // Frame implementation.
   Thread* GetThread() const override;
@@ -92,6 +100,7 @@ class MockFrame : public Frame {
   void MakeLocation(TargetPointer ip, const std::string& function_name, FileLine file_line,
                     const std::vector<std::string>& namespace_strings);
   Thread* thread_;
+  std::unique_ptr<MockSourceFileProvider> source_file_provider_;
 
   uint64_t sp_;
   uint64_t cfa_;

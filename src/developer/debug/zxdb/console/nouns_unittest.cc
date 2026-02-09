@@ -6,18 +6,19 @@
 
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
-#include "src/developer/debug/zxdb/client/mock_remote_api.h"
+#include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/system.h"
+#include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
+#include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/mock_source_file_provider.h"
 
 namespace zxdb {
 
 namespace {
 
 class NounsTest : public RemoteAPITest {};
-
-}  // namespace
 
 TEST_F(NounsTest, BreakpointList) {
   MockConsole console(&session());
@@ -126,4 +127,77 @@ TEST_F(NounsTest, FilterTest) {
       event.output.AsString());
 }
 
+class NounTestWithThread : public ConsoleTest {};
+
+// Let NounTestWithThread initialize the thread for further stack injection.
+TEST_F(NounTestWithThread, FrameNoun) {
+  std::vector<std::unique_ptr<Frame>> frames;
+
+  constexpr uint64_t kAddress0 = 0x1234;
+  constexpr uint64_t kAddress1 = 0x5678;
+
+  {
+    const char kFileName[] = "file0.cc";
+    FileLine file_line(kFileName, 1);
+    auto source_file_provider = std::make_unique<MockSourceFileProvider>();
+    source_file_provider->SetFileData(
+        kFileName, SourceFileProvider::FileData("writing\na\nunittest\n", kFileName, 0));
+    Location loc(kAddress0, file_line, 0, SymbolContext::ForRelativeAddresses(), nullptr);
+    auto frame = std::make_unique<MockFrame>(&session(), thread(), loc, 0x2000);
+    frame->set_source_file_provider(std::move(source_file_provider));
+    frames.push_back(std::move(frame));
+  }
+
+  {
+    const char kFileName[] = "file1.cc";
+    FileLine file_line(kFileName, 2);
+    auto source_file_provider = std::make_unique<MockSourceFileProvider>();
+    source_file_provider->SetFileData(
+        kFileName, SourceFileProvider::FileData("is\nnot\nhard\n", kFileName, 0));
+    Location loc(kAddress1, file_line, 0, SymbolContext::ForRelativeAddresses(), nullptr);
+    auto frame = std::make_unique<MockFrame>(&session(), thread(), loc, 0x2000);
+    frame->set_source_file_provider(std::move(source_file_provider));
+    frames.push_back(std::move(frame));
+  }
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), /*has_all_frames=*/true);
+
+  loop().RunUntilNoTasks();
+  console().FlushOutputEvents();
+
+  // It should show all frames with filenames.
+  console().ProcessInputLine("frame");
+  loop().RunUntilNoTasks();
+  std::string output = console().GetOutputEvent().output.AsString();
+  EXPECT_TRUE(output.find("▶ 0") != std::string::npos &&
+              output.find("file0.cc") != std::string::npos);
+  EXPECT_TRUE(output.find('1') != std::string::npos &&
+              output.find("file1.cc") != std::string::npos);
+
+  console().ProcessInputLine("frame 0");
+  loop().RunUntilNoTasks();
+  output = "";
+  while (console().HasOutputEvent()) {
+    output += console().GetOutputEvent().output.AsString();
+  }
+
+  EXPECT_TRUE(output.find("file0.cc") != std::string::npos);
+  EXPECT_TRUE(output.find("▶ 1 writing") != std::string::npos);
+  EXPECT_TRUE(output.find("2 a") != std::string::npos);
+  EXPECT_TRUE(output.find("3 unittest") != std::string::npos);
+
+  console().ProcessInputLine("frame 1");
+  loop().RunUntilNoTasks();
+  output = "";
+  while (console().HasOutputEvent()) {
+    output += console().GetOutputEvent().output.AsString();
+  }
+  EXPECT_TRUE(output.find("file1.cc") != std::string::npos);
+  EXPECT_TRUE(output.find("1 is") != std::string::npos);
+  EXPECT_TRUE(output.find("▶ 2 not") != std::string::npos);
+  EXPECT_TRUE(output.find("3 hard") != std::string::npos);
+}
+
+}  // namespace
 }  // namespace zxdb

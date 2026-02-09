@@ -187,10 +187,9 @@ bool HandleFrameNoun(ConsoleContext* console_context, const Command& cmd,
   // don't want to print source code when I'm using other verbs
   // e.g. frame 2 print <variable>
   if (cmd.verb() == Verb::kNone) {
-    Err err = OutputSourceContext(
-        cmd.target()->GetProcess(),
-        std::make_unique<SourceFileProviderImpl>(cmd.target()->settings()),
-        cmd.frame()->GetLocation(), console_context->GetSourceAffinityForThread(cmd.thread()));
+    Err err = OutputSourceContext(cmd.target()->GetProcess(), cmd.frame()->GetSourceFileProvider(),
+                                  cmd.frame()->GetLocation(),
+                                  console_context->GetSourceAffinityForThread(cmd.thread()));
     if (err.has_error()) {
       cmd_context->ReportError(err);
     }

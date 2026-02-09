@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <memory>
 #include <optional>
 
 #include "lib/fit/function.h"
@@ -15,6 +16,7 @@
 #include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/shared/register_value.h"
 #include "src/developer/debug/zxdb/client/client_object.h"
+#include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 #include "src/developer/debug/zxdb/symbols/symbol_data_provider.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -34,6 +36,8 @@ class Frame : public ClientObject {
   virtual ~Frame();
 
   fxl::WeakPtr<Frame> GetWeakPtr();
+
+  virtual std::unique_ptr<SourceFileProvider> GetSourceFileProvider() const = 0;
 
   // Guaranteed non-null.
   virtual Thread* GetThread() const = 0;

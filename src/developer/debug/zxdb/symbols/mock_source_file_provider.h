@@ -17,6 +17,8 @@ namespace zxdb {
 // exactly.
 class MockSourceFileProvider : public SourceFileProvider {
  public:
+  MockSourceFileProvider() = default;
+  MockSourceFileProvider(const MockSourceFileProvider&) = default;
   // Sets the expected contents for the given file.
   void SetFileData(const std::string& file_name, FileData data);
 

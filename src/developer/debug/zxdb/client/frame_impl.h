@@ -12,6 +12,7 @@
 #include "src/developer/debug/shared/register_id.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
@@ -49,6 +50,7 @@ class FrameImpl final : public Frame {
   fxl::RefPtr<SymbolDataProvider> GetSymbolDataProvider() const override;
   fxl::RefPtr<EvalContext> GetEvalContext() const override;
   bool IsAmbiguousInlineLocation() const override;
+  std::unique_ptr<SourceFileProvider> GetSourceFileProvider() const override;
 
  private:
   // Returns true if this is in the topmsot physical frame. This includes all inline frames

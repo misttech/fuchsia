@@ -15,6 +15,8 @@
 #include "src/developer/debug/zxdb/client/frame_fingerprint.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
+#include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/expr/abi.h"
@@ -37,6 +39,10 @@ class InlineFrame final : public Frame {
       : Frame(physical_frame->session()), physical_frame_(physical_frame), location_(loc) {}
   ~InlineFrame() override = default;
 
+  std::unique_ptr<SourceFileProvider> GetSourceFileProvider() const override {
+    return std::make_unique<SourceFileProviderImpl>(
+        GetThread()->GetProcess()->GetTarget()->settings());
+  }
   // Frame implementation.
   Thread* GetThread() const override { return physical_frame_->GetThread(); }
   bool IsInline() const override { return true; }

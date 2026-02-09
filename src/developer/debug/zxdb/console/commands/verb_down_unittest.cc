@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/debug/zxdb/console/commands/verb_up.h"
-
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
+#include "src/developer/debug/zxdb/console/commands/verb_up.h"
+#include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/console_test.h"
 #include "src/developer/debug/zxdb/console/mock_console.h"
 #include "src/developer/debug/zxdb/symbols/file_line.h"
@@ -20,27 +20,23 @@ namespace zxdb {
 
 namespace {
 
-class VerbUp : public ConsoleTest {};
+class VerbDownTest : public ConsoleTest {};
 
 }  // namespace
 
-TEST_F(VerbUp, Up) {
+TEST_F(VerbDownTest, Down) {
   std::vector<std::unique_ptr<Frame>> frames;
   constexpr uint64_t kAddress0 = 0x12471253;
   constexpr uint64_t kSP0 = 0x2000;
   frames.push_back(std::make_unique<MockFrame>(
       &session(), thread(), Location(Location::State::kSymbolized, kAddress0), kSP0));
 
-  // Inject a partial stack for an exception the "up" command will have to request more frames.
   InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
                            std::move(frames), false);
 
-  // Don't care about the stop notification.
   loop().RunUntilNoTasks();
   console().FlushOutputEvents();
 
-  // This is the reply with the full stack it will get asynchronously. We add three stack
-  // frames.
   debug_ipc::ThreadStatusReply thread_status;
   thread_status.record.id = {.process = kProcessKoid, .thread = kThreadKoid};
   thread_status.record.state = debug_ipc::ThreadRecord::State::kBlocked;
@@ -52,22 +48,25 @@ TEST_F(VerbUp, Up) {
 
   mock_remote_api()->set_thread_status_reply(thread_status);
 
-  // This will be at frame "0" initially. Going up should take us to from 2, but it will have to
-  // request the frames before these can complete which we respond to asynchronously after.
-  console().ProcessInputLine("up");
-  console().ProcessInputLine("up");
+  // need to setActiveFrameIdForThread() later, thus here we call frames to trigger the syncFrames
+  console().ProcessInputLine("frame");
+  loop().RunUntilNoTasks();
+  console().FlushOutputEvents();
 
+  // now we can do the down w/o fetching the frames from the remote_api
+  console().context().SetActiveFrameIdForThread(thread(), 2);
+  console().ProcessInputLine("down");
+  console().ProcessInputLine("down");
   loop().RunUntilNoTasks();
 
   auto event = console().GetOutputEvent();
   EXPECT_EQ("Frame 1 0x12471263", event.output.AsString());
   event = console().GetOutputEvent();
-  EXPECT_EQ("Frame 2 0x12471273", event.output.AsString());
+  EXPECT_EQ("Frame 0 0x12471253", event.output.AsString());
 }
 
-TEST_F(VerbUp, UpWithSource) {
+TEST_F(VerbDownTest, DownWithSource) {
   std::vector<std::unique_ptr<Frame>> frames;
-  frames.push_back(std::make_unique<MockFrame>(&session(), thread(), Location(), 0x1000));
 
   const char kFileName[] = "file.cc";
   FileLine file_line(kFileName, 2);
@@ -75,14 +74,20 @@ TEST_F(VerbUp, UpWithSource) {
   source_file_provider->SetFileData(
       kFileName, SourceFileProvider::FileData("line1\nline2\nline3\nline4", kFileName, 0));
   Location loc(0x1000, file_line, 0, SymbolContext::ForRelativeAddresses(), nullptr);
-  auto frame1 = std::make_unique<MockFrame>(&session(), thread(), loc, 0x1000);
-  frame1->set_source_file_provider(std::move(source_file_provider));
-  frames.push_back(std::move(frame1));
+  auto frame0 = std::make_unique<MockFrame>(&session(), thread(), loc, 0x1000);
+  frame0->set_source_file_provider(std::move(source_file_provider));
+  frames.push_back(std::move(frame0));
+
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread(), Location(), 0x1000));
 
   InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
                            std::move(frames), /*has_all_frames=*/true);
 
-  console().ProcessInputLine("up");
+  // initially set the active frame to 1
+  console().context().SetActiveFrameIdForThread(thread(), 1);
+
+  // now down to frame 0
+  console().ProcessInputLine("down");
   loop().RunUntilNoTasks();
 
   std::string output;
@@ -90,7 +95,7 @@ TEST_F(VerbUp, UpWithSource) {
     output += console().GetOutputEvent().output.AsString();
   }
 
-  EXPECT_NE(std::string::npos, output.find("Frame 1"));
+  EXPECT_NE(std::string::npos, output.find("Frame 0"));
   EXPECT_NE(std::string::npos, output.find("▶ 2 line2"));
 }
 

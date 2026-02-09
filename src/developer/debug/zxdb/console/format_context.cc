@@ -274,6 +274,7 @@ void FormatSourceOpts::SetLanguageFromFileName(const std::string& file_name) {
 
 Err OutputSourceContext(Process* process, std::unique_ptr<SourceFileProvider> file_provider,
                         const Location& location, SourceAffinity source_affinity) {
+  FX_DCHECK(file_provider);
   if (source_affinity != SourceAffinity::kAssembly && location.file_line().is_valid()) {
     ContextLines context = GetContextLinesSettings(process->session()->system().settings());
     // Synchronous source output.

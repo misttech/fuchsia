@@ -4,6 +4,7 @@
 
 #include "src/developer/debug/zxdb/console/commands/verb_list.h"
 
+#include <memory>
 #include <set>
 
 #include "src/developer/debug/zxdb/client/frame.h"
@@ -22,6 +23,7 @@
 #include "src/developer/debug/zxdb/console/verbs.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
+#include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 #include "src/developer/debug/zxdb/symbols/target_symbols.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -253,15 +255,20 @@ void RunVerbList(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
   // When there is a current frame (it's executing), mark the current frame's location so the user
   // can see where things are. This may be different than the symbol looked up which will be
   // highlighted.
+
+  // for MockFrame to mock the source file provider
+  std::unique_ptr<SourceFileProvider> source_file_provider;
   if (cmd.frame()) {
+    source_file_provider = cmd.frame()->GetSourceFileProvider();
     const FileLine& active_file_line = cmd.frame()->GetLocation().file_line();
     if (active_file_line.file() == file_line.file())
       opts.active_line = active_file_line.line();
   }
 
   OutputBuffer out;
-  err = FormatSourceFileContext(file_line, SourceFileProviderImpl(cmd.target()->settings()), opts,
-                                &out);
+  if (source_file_provider) {
+    err = FormatSourceFileContext(file_line, *source_file_provider, opts, &out);
+  }
   if (err.has_error())
     return cmd_context->ReportError(err);
 

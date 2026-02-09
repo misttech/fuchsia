@@ -7,13 +7,17 @@
 #include "gtest/gtest.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/client/arch_info.h"
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
+#include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/expr/eval_context_impl.h"
 #include "src/developer/debug/zxdb/expr/expr_parser.h"
 #include "src/developer/debug/zxdb/expr/parsed_identifier.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_data_provider.h"
 #include "src/developer/debug/zxdb/symbols/namespace.h"
+#include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 
 namespace zxdb {
 
@@ -73,6 +77,17 @@ void MockFrame::SetFileLine(const FileLine& file_line) {
 MockSymbolDataProvider* MockFrame::GetMockSymbolDataProvider() {
   GetSymbolDataProvider();  // Force creation.
   return symbol_data_provider_.get();
+}
+
+std::unique_ptr<SourceFileProvider> MockFrame::GetSourceFileProvider() const {
+  if (source_file_provider_)
+    return std::make_unique<MockSourceFileProvider>(*source_file_provider_);
+  // Don't return nullptr here as existing or future tests that use MockFrame may not
+  // always provide mock source files, which could lead to nullptr dereferences.
+  // Handling the fallback here prevents client code from becoming bloated with
+  // redundant fallback logic.
+  return std::make_unique<SourceFileProviderImpl>(
+      GetThread()->GetProcess()->GetTarget()->settings());
 }
 
 Thread* MockFrame::GetThread() const { return thread_; }

@@ -14,6 +14,7 @@
 #include "src/developer/debug/zxdb/client/remote_api.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_expr_eval.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
@@ -285,6 +286,10 @@ void FrameImpl::SaveRegisterUpdates(std::vector<debug::RegisterValue> regs) {
   // This function replaces entire categories so we want to clear old registers as we go.
   for (auto& [cat, update] : categorized)
     registers_[static_cast<size_t>(cat)] = std::move(update);
+}
+
+std::unique_ptr<SourceFileProvider> FrameImpl::GetSourceFileProvider() const {
+  return std::make_unique<SourceFileProviderImpl>(thread_->GetProcess()->GetTarget()->settings());
 }
 
 }  // namespace zxdb

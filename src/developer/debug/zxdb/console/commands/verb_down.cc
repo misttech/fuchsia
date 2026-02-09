@@ -4,6 +4,8 @@
 
 #include "src/developer/debug/zxdb/console/commands/verb_down.h"
 
+#include <memory>
+
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
@@ -16,6 +18,7 @@
 #include "src/developer/debug/zxdb/console/format_frame.h"
 #include "src/developer/debug/zxdb/console/output_buffer.h"
 #include "src/developer/debug/zxdb/console/verbs.h"
+#include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 
 namespace zxdb {
 
@@ -83,10 +86,7 @@ void OutputFrameInfoForChange(CommandContext* cmd_context, const Frame* frame, i
 
   // Shows the source code when changing the frame
   Err err = OutputSourceContext(
-      frame->GetThread()->GetProcess(),
-      std::make_unique<SourceFileProviderImpl>(
-          frame->GetThread()->GetProcess()->GetTarget()->settings()),
-      frame->GetLocation(),
+      frame->GetThread()->GetProcess(), frame->GetSourceFileProvider(), frame->GetLocation(),
       cmd_context->GetConsoleContext()->GetSourceAffinityForThread(frame->GetThread()));
   if (err.has_error()) {
     cmd_context->ReportError(err);
