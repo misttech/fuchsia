@@ -63,6 +63,12 @@
         },
         {
             protocol: [
+                // System crash reporting.
+                "fuchsia.feedback.CrashReporter",
+
+                // System reboot control.
+                "fuchsia.hardware.power.statecontrol.Admin",
+
                 // System power level controls.
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.system.ActivityGovernor",
