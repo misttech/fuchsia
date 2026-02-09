@@ -177,7 +177,7 @@ p256 = { version = "0.11.1", features = ["pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
 pem = "0.8.3"
-percent-encoding = "2.1"
+percent-encoding = "2.3"
 pest = "2.8.3"
 pest_derive = "2.8.3"
 phf = { version = "0.13.1", default-features = false, features = ["macros"] }
