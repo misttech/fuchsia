@@ -44,6 +44,9 @@ enum class DecimalPrefix {
 // factory functions.
 class Units {
  public:
+  static Units AmpHours(std::optional<DecimalPrefix> prefix = std::nullopt) {
+    return Units(BaseUnit::AmpHours, prefix);
+  }
   static Units Amps(std::optional<DecimalPrefix> prefix = std::nullopt) {
     return Units(BaseUnit::Amps, prefix);
   }
@@ -71,6 +74,7 @@ class Units {
 
  private:
   enum class BaseUnit {
+    AmpHours,
     Amps,
     Hertz,
     Joules,

@@ -36,6 +36,8 @@ std::string ToString(DecimalPrefix prefix) {
 
 std::string Units::ToString(BaseUnit base) {
   switch (base) {
+    case BaseUnit::AmpHours:
+      return "Ah";
     case BaseUnit::Amps:
       return "A";
     case BaseUnit::Hertz:
