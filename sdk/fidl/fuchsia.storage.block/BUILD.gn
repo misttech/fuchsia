@@ -13,4 +13,7 @@ fidl("fuchsia.storage.block") {
   ]
 
   enable_hlcpp = true
+  sdk_category = "partner"
+  stable = false
+  sdk_area = "Storage"
 }

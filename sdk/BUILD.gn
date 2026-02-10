@@ -598,6 +598,7 @@ sdk_molecule("core_bindlib") {
     "//src/devices/bind/fuchsia.amlogic.platform.meson:fuchsia.amlogic.platform.meson_sdk",
     "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_sdk",
     "//src/devices/bind/fuchsia.block:fuchsia.block_sdk",
+    "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_sdk",
     "//src/devices/bind/fuchsia.broadcom.platform:fuchsia.broadcom.platform_sdk",
     "//src/devices/bind/fuchsia.broadcom.platform.sdio:fuchsia.broadcom.platform.sdio_sdk",
     "//src/devices/bind/fuchsia.clock:fuchsia.clock_sdk",

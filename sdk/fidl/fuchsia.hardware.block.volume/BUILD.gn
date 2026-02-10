@@ -17,4 +17,8 @@ fidl("fuchsia.hardware.block.volume") {
   public_deps += [ "//sdk/fidl/fuchsia.unknown" ]
 
   enable_hlcpp = true
+
+  sdk_category = "partner"
+  stable = false
+  sdk_area = "Storage"
 }

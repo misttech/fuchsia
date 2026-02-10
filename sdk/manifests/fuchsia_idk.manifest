@@ -7,6 +7,7 @@ bind_library://bind/fuchsia.amlogic.platform.a311d
 bind_library://bind/fuchsia.amlogic.platform.meson
 bind_library://bind/fuchsia.arm.platform
 bind_library://bind/fuchsia.block
+bind_library://bind/fuchsia.block.gpt
 bind_library://bind/fuchsia.broadcom.platform
 bind_library://bind/fuchsia.broadcom.platform.sdio
 bind_library://bind/fuchsia.clock
@@ -221,6 +222,7 @@ fidl_library://fidl/fuchsia.hardware.adcimpl (unstable)
 fidl_library://fidl/fuchsia.hardware.amlogic.metadata (unstable)
 fidl_library://fidl/fuchsia.hardware.audio
 fidl_library://fidl/fuchsia.hardware.audio.signalprocessing
+fidl_library://fidl/fuchsia.hardware.block.volume (unstable)
 fidl_library://fidl/fuchsia.hardware.bluetooth
 fidl_library://fidl/fuchsia.hardware.clock
 fidl_library://fidl/fuchsia.hardware.clockimpl
@@ -337,6 +339,7 @@ fidl_library://fidl/fuchsia.session
 fidl_library://fidl/fuchsia.settings
 fidl_library://fidl/fuchsia.settings.policy
 fidl_library://fidl/fuchsia.storage.blobfs
+fidl_library://fidl/fuchsia.storage.block (unstable)
 fidl_library://fidl/fuchsia.storage.ftl
 fidl_library://fidl/fuchsia.sysinfo
 fidl_library://fidl/fuchsia.sysmem

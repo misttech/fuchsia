@@ -7,4 +7,5 @@ import("//build/bind/bind.gni")
 bind_library("fuchsia.block.gpt") {
   sdk_category = "partner"
   source = "fuchsia.block.gpt.bind"
+  sdk_area = "Driver SDK"
 }
