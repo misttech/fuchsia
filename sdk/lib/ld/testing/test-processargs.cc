@@ -52,6 +52,12 @@ TestProcessArgs& TestProcessArgs::AddFd(int test_fd, fbl::unique_fd local_fd) {
   return AddFd(test_fd, zx::handle{handle});
 }
 
+TestProcessArgs& TestProcessArgs::AddClonedFd(int test_fd, int local_fd) {
+  zx_handle_t handle = ZX_HANDLE_INVALID;
+  EXPECT_EQ(fdio_fd_clone(local_fd, &handle), ZX_OK);
+  return AddFd(test_fd, zx::handle{handle});
+}
+
 TestProcessArgs& TestProcessArgs::AddName(std::string_view name, uint32_t info,
                                           zx::channel handle) {
   return AddHandle(PA_HND(info, static_cast<uint16_t>(next_name())), std::move(handle))
@@ -223,8 +229,7 @@ zx::channel TestProcessArgs::PackBootstrap() {
 
 bool TestProcessArgs::empty() const {
   assert(handles_.size() == handle_info_.size());
-  return !bootstrap_sender_ &&  // PackBootstrap() never called.
-         handles_.empty() && args_.empty() && env_.empty() && names_.empty();
+  return handles_.empty() && args_.empty() && env_.empty() && names_.empty();
 }
 
 }  // namespace ld::testing

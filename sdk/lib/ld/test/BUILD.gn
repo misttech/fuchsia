@@ -8,6 +8,7 @@ import("//build/test.gni")
 import("//build/testing/golden_files.gni")
 import("//build/toolchain/zircon/user_basic_redirect.gni")
 import("//build/zircon/c_utils.gni")
+import("//sdk/lib/ld/distribution_manifest_prefix.gni")
 import("//sdk/lib/ld/remote_perfect_symbol_filter.gni")
 import("//sdk/lib/ld/testing/test_elf_object.gni")
 
@@ -99,10 +100,12 @@ source_set("load-tests") {
       "ld-startup-spawn-process-tests-zircon.cc",
       "ld-startup-spawn-process-tests-zircon.h",
       "load-tests-ldsvc.cc",
+      "load-tests-libc.cc",
       "load-tests-llvm-profdata.cc",
       "remote-tests.cc",
     ]
     deps += [
+      ":load-tests-libc-needed",
       ":remote-perfect-symbol-filter-test",
       "..:fuchsia-debugdata",
       "..:remote",
@@ -111,7 +114,10 @@ source_set("load-tests") {
       "//zircon/system/ulib/zx",
     ]
 
-    data_deps += [ ":remote-tests.test-data" ]
+    data_deps += [
+      ":libc-tests.test-data",
+      ":remote-tests.test-data",
+    ]
   } else {
     sources += [
       "ld-load-tests-posix-base.cc",
@@ -219,7 +225,94 @@ user_basic_redirect("load-tests.load-sets.basic") {
   }
 }
 
+config("gen-includes.config") {
+  visibility = [ ":*" ]
+  include_dirs = [ target_gen_dir ]
+}
+
 if (is_fuchsia) {
+  group("libc-tests.test-data") {
+    visibility = [ ":*" ]
+    testonly = true
+    deps = [ ":libc-noop-test.test-data" ]
+  }
+
+  # This generates a file that is used via #include to fill in the initializer
+  # list between { and } in a load-tests-libc.cc Needed() call.
+  generated_file("libc-noop-test-needed.inc") {
+    visibility = [ ":*" ]
+    testonly = true
+    outputs = [ "$target_gen_dir/$target_name" ]
+    output_conversion = "list lines"
+    data_keys = [ "ld_load_tests_needed" ]
+    data_deps = [ ":libc-noop-test" ]
+  }
+
+  source_set("load-tests-libc-needed") {
+    visibility = [ ":*" ]
+    testonly = true
+    public_configs = [ ":gen-includes.config" ]
+    deps = [ ":libc-noop-test-needed.inc" ]
+  }
+
+  # This collects the production libc's noop-test along with the production
+  # libc / dynamic linker within the test sandbox tree for this test case.
+  distribution_manifest_prefix("libc-noop-test.test-data") {
+    testonly = true
+    prefix = "lib/test/libc-noop-test"
+    deps = [ ":libc-noop-test" ]
+  }
+
+  fdio_config = [ "//build/config/fuchsia:fdio_config" ]
+
+  # This is the same as //sdk/lib/c/test:noop-test but placed in bin/ instead
+  # of test/, so ld::testing::GetExecutableVmo will find it.
+  executable("libc-noop-test") {
+    testonly = true
+    configs += fdio_config
+    configs -= fdio_config
+    deps = [
+      ":libc-needed",
+      "//sdk/lib/c/test:noop-test.common",
+    ]
+  }
+
+  # This just delivers a ld_load_tests_needed list in metadata.  Each entry
+  # gives a quoted string in a comma-separated list of expected DT_NEEDED
+  # strings for a Needed call in a load-tests-libc.cc test case.
+  group("libc-needed") {
+    visibility = [ ":*" ]
+    testonly = true
+    libc_needed = []
+    foreach(tag, toolchain_variant.tags) {
+      if (tag == "hwasan" && libc_needed == []) {
+        libc_needed = [
+          "libclang_rt.hwasan.so",
+          "libunwind.so.1",
+          "libc++abi.so.1",
+        ]
+      } else if (tag == "asan" && libc_needed == []) {
+        libc_needed = [
+          "libclang_rt.asan.so",
+          "libunwind.so.1",
+          "libc++abi.so.1",
+        ]
+      } else if (tag == "ubsan" && libc_needed == []) {
+        libc_needed = [
+          "libclang_rt.ubsan_standalone.so",
+          "libunwind.so.1",
+          "libc++abi.so.1",
+        ]
+      }
+    }
+    metadata = {
+      ld_load_tests_needed = []
+      foreach(soname, libc_needed) {
+        ld_load_tests_needed += [ "\"$soname\"," ]
+      }
+    }
+  }
+
   resource("remote-tests.test-data") {
     visibility = [
       ":*",

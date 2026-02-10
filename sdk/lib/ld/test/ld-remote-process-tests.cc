@@ -26,10 +26,6 @@ void LdRemoteProcessTests::Init(std::initializer_list<std::string_view> args,
                                 std::initializer_list<std::string_view> env) {
   LdLoadZirconLdsvcTestsBase::Init(args, env);
   ASSERT_NO_FATAL_FAILURE(CreateProcess());
-
-  // Initialize a log to pass ExpectLog statements in load-tests.cc.
-  fbl::unique_fd log_fd;
-  ASSERT_NO_FATAL_FAILURE(InitLog(log_fd));
 }
 
 }  // namespace ld::testing

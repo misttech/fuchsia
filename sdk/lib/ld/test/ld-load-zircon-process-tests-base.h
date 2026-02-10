@@ -39,6 +39,18 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // sender side of the bootstrap channel is returned.
   std::pair<int64_t, zx::channel> RunWithCustomBootstrap();
 
+  // This drops references that won't be used if neither Start() nor Run() is
+  // ever called.
+  void NeverStart();
+
+  // Assert that root_vmar() is valid and not destroyed.
+  void CheckVmar();
+
+  // Assert that the process is valid and not terminated.
+  void CheckProcess();
+
+  void LegacyAddressSpaceReservation();
+
  protected:
   const zx::process& process() const { return process_; }
 
@@ -51,6 +63,10 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // These are set by CreateProcess() and used by Start() and Run().
   const zx::vmar& root_vmar() { return root_vmar_; }
   const zx::thread& thread() { return thread_; }
+
+  // This is set by CreateProcess() and ultimately consumed by Start(false),
+  // but left intact by Start(true).
+  fbl::unique_fd& process_log_fd() { return process_log_fd_; }
 
   // This is used by Start() and Run().  If it's not empty() when they're
   // called, its pending startup dynamic linker message gets packed and sent.
@@ -67,9 +83,9 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // Start the process() using all those parameters.  If bootstrap() has a
   // pending message being built, that's completed and sent as the startup
   // dynamic linker's message.  Then, if custom_bootstrap is false, a standard
-  // "main" (libc) message (TODO(mcgrathr): will be) sent.  Finally, the sender
-  // side of the bootstrap channel is returned in case the test wants to either
-  // send its own messages or read replies from the test module.
+  // "main" (libc) message is sent.  Finally, the sender side of the bootstrap
+  // channel is returned in case the test wants to either send its own messages
+  // or read replies from the test module.
   zx::channel Start(bool custom_bootstrap);
 
   // Wait for the process to die and collect its exit code.
@@ -77,10 +93,14 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   int64_t Wait();
 
  private:
+  void ClearLegacyAddressSpaceReservation();
+
   zx::process process_;
 
   // Not all subclasses use these.
+  fbl::unique_fd process_log_fd_;
   zx::vmar root_vmar_;
+  zx::vmar legacy_reserve_vmar_;
   zx::thread thread_;
   TestProcessArgs procargs_;
   uintptr_t entry_ = 0;

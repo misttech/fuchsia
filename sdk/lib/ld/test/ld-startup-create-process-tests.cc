@@ -18,15 +18,13 @@ void LdStartupCreateProcessTestsBase::Init(std::initializer_list<std::string_vie
   std::string_view name = process_name();
   ASSERT_NO_FATAL_FAILURE(CreateProcess());
 
-  fbl::unique_fd log_fd;
-  ASSERT_NO_FATAL_FAILURE(InitLog(log_fd));
-
   // Start packing the bootstrap message for the startup dynamic linker.
   // The packing will be completed in Run.
   ASSERT_NO_FATAL_FAILURE(  //
-      LdStartupProcArgs(bootstrap(), std::move(log_fd), root_vmar().borrow())
+      LdStartupProcArgs(bootstrap(), root_vmar().borrow())
           .AddProcess(process().borrow())
-          .AddThread(thread().borrow()));
+          .AddThread(thread().borrow())
+          .AddClonedFd(STDERR_FILENO, process_log_fd().get()));
 }
 
 void LdStartupCreateProcessTestsBase::FinishLoad(zx::vmo executable_vmo) {

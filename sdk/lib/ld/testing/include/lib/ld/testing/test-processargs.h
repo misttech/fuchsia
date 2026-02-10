@@ -54,6 +54,10 @@ class TestProcessArgs {
 
   TestProcessArgs& AddFd(int test_fd, fbl::unique_fd local_fd);
 
+  // This doesn't consume the fd, but immediately clones it.  It's about
+  // equivalent to `AddFd(test_fd, fbl::unique_fd{dup(local_fd)})`.
+  TestProcessArgs& AddClonedFd(int test_fd, int local_fd);
+
   // This returns the index of the entry the next AddName call will append.
   size_t next_name() const { return names_.size(); }
 
@@ -154,7 +158,9 @@ class TestProcessArgs {
   // raises a gtest fatal failure.
   zx::channel PackBootstrap();
 
-  // Access the sender channel if one was created by PackBootstrap.
+  // Access the sender channel if one was created by MakeBootstrap() or
+  // PackBootstrap().  Once no more PackBootstrap() calls will be made, this
+  // can be moved-from or reset to close or take ownership of the channel end.
   zx::channel& bootstrap_sender() { return bootstrap_sender_; }
 
   // This returns the stack size to use for the initial thread,
@@ -165,7 +171,8 @@ class TestProcessArgs {
   // bootstrap_sender(), without packing anything into it.
   zx::channel MakeBootstrap();
 
-  // This returns true if the object is still it default-constructed state.
+  // This returns true if the object has no pending data or handles added since
+  // construction or the last PackBootstrap() call.
   bool empty() const;
 
  private:

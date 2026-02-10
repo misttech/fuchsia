@@ -58,6 +58,7 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
 
   template <class... Reports>
   void LoadAndFail(std::string_view name, elfldltl::testing::ExpectedErrorList<Reports...> diag) {
+    ASSERT_NO_FATAL_FAILURE(NeverStart());
     ASSERT_NO_FATAL_FAILURE(Load(diag, name, std::nullopt, true));
     ASSERT_NO_FATAL_FAILURE(ExpectLog(""));
   }
@@ -79,12 +80,13 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
     return [this, page_size, &diag](const Module::Soname& soname) -> Linker::GetDepResult {
       typename Module::Decoded::Ptr decoded;
       auto vmo = mock().LoadObject(soname.str());
+      EXPECT_TRUE(vmo.is_ok() || vmo.is_error());
       if (vmo.is_ok()) [[likely]] {
         // If it returned fit::ok(zx::vmo{}), keep going without this module.
         if (*vmo) [[likely]] {
           decoded = Module::Decoded::Create(diag, *std::move(vmo), page_size);
         }
-      } else if (vmo.error_value() == ZX_ERR_NOT_FOUND
+      } else if (!vmo.is_error() || vmo.error_value() == ZX_ERR_NOT_FOUND
                      ? !diag.MissingDependency(soname.str())
                      : !diag.SystemError("cannot open dependency ", soname.str(), ": ",
                                          elfldltl::ZirconError{vmo.error_value()})) {

@@ -64,6 +64,8 @@ source_set("safe-zero-construction") {
   public_deps = [ "//zircon/system/ulib/zxtest:zxtest-streams" ]
 }
 
+fdio_config = [ "//build/config/fuchsia:fdio_config" ]
+
 # noop-test is a basic test that verifies that C library initialization
 # and process startup work correctly. Same as "hello world" without
 # a printed output.
@@ -72,12 +74,19 @@ source_set("safe-zero-construction") {
 # (i.e. all runtime dependencies are installed and loaded properly).
 libc_component_tests += [ ":noop-test" ]
 test("noop-test") {
+  configs += fdio_config
+  configs -= fdio_config
   deps = [ ":noop-test.common" ]
 }
 
 source_set("noop-test.common") {
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//sdk/lib/ld/test/*",
+  ]
   testonly = true
+  configs += fdio_config
+  configs -= fdio_config
   sources = [ "noop-test.cc" ]
   deps = [ "//src/sys/testing/elftest" ]
 }
@@ -85,7 +94,8 @@ source_set("noop-test.common") {
 # The same code but built as a static PIE to exercise the static libc.a case.
 libc_component_tests += [ ":static-pie-noop-test" ]
 test("static-pie-noop-test") {
-  configs -= [ "//build/config/fuchsia:fdio_config" ]
+  configs += fdio_config
+  configs -= fdio_config
   configs += [ "//build/config:standalone" ]
   ldflags = [ "-Wl,-z,stack-size=0x40000" ]
   deps = [
@@ -114,10 +124,8 @@ foreach(case, default_stack_size_cases) {
   libc_component_tests += [ ":default-stack-size-${case.name}" ]
   test("default-stack-size-${case.name}") {
     if (is_fuchsia) {
-      fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-      if (configs + fdio_config - fdio_config != configs) {
-        configs -= fdio_config
-      }
+      configs += fdio_config
+      configs -= fdio_config
     }
     sources = [ "default-stack-size-test.cc" ]
     deps = [
@@ -137,7 +145,8 @@ foreach(case, default_stack_size_cases) {
 executable("static-pie-custom-startup-test") {
   testonly = true
 
-  configs -= [ "//build/config/fuchsia:fdio_config" ]
+  configs += fdio_config
+  configs -= fdio_config
   configs += [
     "//build/config:standalone",
     "//build/config/sanitizers:no_sanitizers",
@@ -188,10 +197,8 @@ executable("debugdata-test-helper") {
   exclude_toolchain_tags = [ "debugdata" ]
 
   if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
+    configs += fdio_config
+    configs -= fdio_config
   }
 }
 
@@ -211,10 +218,8 @@ test("cdebugdata-test") {
 libc_component_tests += [ ":posix-clocks-test" ]
 test("posix-clocks-test") {
   if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
+    configs += fdio_config
+    configs -= fdio_config
   }
   sources = [ "posix-clocks.cc" ]
   deps = [
@@ -228,10 +233,8 @@ test("posix-clocks-test") {
 libc_component_tests += [ ":pthread-detach-idempotent-test" ]
 test("pthread-detach-idempotent-test") {
   if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
+    configs += fdio_config
+    configs -= fdio_config
   }
   sources = [ "pthread_detach_idempotent.cc" ]
   deps = [
@@ -248,10 +251,8 @@ test("atexit-test") {
     configs += [ "//build/config:all_source" ]
   }
   if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
+    configs += fdio_config
+    configs -= fdio_config
   }
   sources = [ "atexit.cc" ]
   deps = [

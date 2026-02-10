@@ -53,8 +53,9 @@ void LdStartupInProcessTests::Init(std::initializer_list<std::string_view> args,
   // Start packing the bootstrap message for the startup dynamic linker.
   // The packing will be completed in Run().
   ASSERT_NO_FATAL_FAILURE(  //
-      LdStartupProcArgs(bootstrap(), std::move(log_fd), test_vmar_.borrow())
-          .AddInProcessTestHandles());
+      LdStartupProcArgs(bootstrap(), test_vmar_.borrow())
+          .AddInProcessTestHandles()
+          .AddFd(STDERR_FILENO, std::move(log_fd)));
 }
 
 void LdStartupInProcessTests::Load(std::string_view raw_executable_name,

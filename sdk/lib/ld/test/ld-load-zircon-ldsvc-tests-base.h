@@ -84,8 +84,7 @@ class LdLoadZirconLdsvcTestsBase : public LdLoadTestsBase {
   const std::vector<std::string>& argv() const { return args_; }
   const std::vector<std::string>& envp() const { return env_; }
 
-  TestProcessArgs& LdStartupProcArgs(TestProcessArgs& bootstrap, fbl::unique_fd log_fd,
-                                     zx::unowned_vmar allocation_vmar);
+  TestProcessArgs& LdStartupProcArgs(TestProcessArgs& bootstrap, zx::unowned_vmar allocation_vmar);
 
   zx::vmo GetInterp(std::string_view executable_name,
                     std::optional<std::string_view> expected_config);

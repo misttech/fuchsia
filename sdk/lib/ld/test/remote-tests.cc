@@ -267,11 +267,13 @@ TEST_F(LdRemoteTests, SecondSession) {
 
   LdsvcPathPrefix("second-session");
 
-  auto diag = elfldltl::testing::ExpectOkDiagnostics();
-
   // The ld::RemoteAbiStub only needs to be set up once for all sessions.
-  ld::RemoteAbiStub<>::Ptr abi_stub = ld::RemoteAbiStub<>::Create(diag, TakeStubLdVmo(), kPageSize);
-  ASSERT_TRUE(abi_stub);
+  ld::RemoteAbiStub<>::Ptr abi_stub;
+  {
+    auto diag = elfldltl::testing::ExpectOkDiagnostics();
+    abi_stub = ld::RemoteAbiStub<>::Create(diag, TakeStubLdVmo(), kPageSize);
+    ASSERT_TRUE(abi_stub);
+  }
 
   zx::vmo exec_vmo = ld::testing::GetExecutableVmo("second-session");
   ASSERT_TRUE(exec_vmo);
@@ -291,6 +293,7 @@ TEST_F(LdRemoteTests, SecondSession) {
     Linker linker;
     linker.set_abi_stub(abi_stub);
 
+    auto diag = elfldltl::testing::ExpectOkDiagnostics();
     Linker::Module::DecodedPtr decoded_executable =
         Linker::Module::Decoded::Create(diag, std::move(exec_vmo), kPageSize);
     EXPECT_TRUE(decoded_executable);
@@ -335,7 +338,14 @@ TEST_F(LdRemoteTests, SecondSession) {
   // Start the process running now with just the primary domain in place.
   // It will block on reading from the bootstrap channel.
   zx::channel bootstrap_sender = Start(true);
+  ASSERT_TRUE(bootstrap().empty());
   ASSERT_TRUE(bootstrap_sender);
+
+  // The other end was never actually used, so don't keep it alive.
+  process_log_fd().reset();
+
+  ASSERT_NO_FATAL_FAILURE(CheckProcess());
+  ASSERT_NO_FATAL_FAILURE(CheckVmar());
 
   // Now do a second session using the InitModule::AlreadyLoaded main
   // executable and vDSO from the first session as implicit modules.
@@ -356,9 +366,12 @@ TEST_F(LdRemoteTests, SecondSession) {
     ASSERT_NO_FATAL_FAILURE(module_vmo = GetLibVmo(kRootModule.str()));
 
     // Decode the root module.
-    Linker::Module::DecodedPtr decoded_module =
-        Linker::Module::Decoded::Create(diag, std::move(module_vmo), kPageSize);
-    EXPECT_TRUE(decoded_module);
+    Linker::Module::DecodedPtr decoded_module;
+    {
+      auto diag = elfldltl::testing::ExpectOkDiagnostics();
+      decoded_module = Linker::Module::Decoded::Create(diag, std::move(module_vmo), kPageSize);
+      EXPECT_TRUE(decoded_module);
+    }
 
     // Add in the root module with the implicit modules from the first session.
     initial_modules.emplace_back(Linker::RootModule(decoded_module, kRootModule));
@@ -372,7 +385,9 @@ TEST_F(LdRemoteTests, SecondSession) {
 
     // Now resolve dependencies, including the preloaded implicit modules as
     // well as that Needed list, modules newly opened via the get_dep callback.
-    auto init_result = second_linker.Init(diag, std::move(initial_modules), GetDepFunction(diag));
+    auto init_diag = elfldltl::testing::ExpectOkDiagnostics();
+    auto init_result =
+        second_linker.Init(init_diag, std::move(initial_modules), GetDepFunction(init_diag));
     ASSERT_TRUE(init_result);
     ASSERT_EQ(init_result->size(), 3u);
 
@@ -396,14 +411,25 @@ TEST_F(LdRemoteTests, SecondSession) {
     ASSERT_NO_FATAL_FAILURE(VerifyAndClearNeeded());
 
     // Allocate should place the root module and leave preloaded ones alone.
-    EXPECT_TRUE(second_linker.Allocate(diag, root_vmar().borrow()));
-    EXPECT_TRUE(init_result->front()->preloaded());
-    EXPECT_TRUE(init_result->at(1)->preloaded());
-    EXPECT_FALSE(init_result->back()->preloaded());
+    ASSERT_NO_FATAL_FAILURE(CheckProcess());
+    ASSERT_NO_FATAL_FAILURE(CheckVmar());
+    {
+      auto diag = elfldltl::testing::ExpectOkDiagnostics();
+      EXPECT_TRUE(second_linker.Allocate(diag, root_vmar().borrow()));
+      EXPECT_TRUE(init_result->front()->preloaded());
+      EXPECT_TRUE(init_result->at(1)->preloaded());
+      EXPECT_FALSE(init_result->back()->preloaded());
+    }
 
     // Finish dynamic linking.
-    EXPECT_TRUE(second_linker.Relocate(diag));
-    ASSERT_TRUE(second_linker.Load(diag));
+    {
+      auto diag = elfldltl::testing::ExpectOkDiagnostics();
+      EXPECT_TRUE(second_linker.Relocate(diag));
+    }
+    {
+      auto diag = elfldltl::testing::ExpectOkDiagnostics();
+      ASSERT_TRUE(second_linker.Load(diag));
+    }
     second_linker.Commit();
 
     // Look up the module's entry-point symbol.
@@ -984,6 +1010,11 @@ TEST_F(LdRemoteTests, ForeignMachine) {
   // provides its root VMAR.  The modules understand only a 32-bit address
   // space, so they must go into the low 4GiB of the test process.
   ASSERT_NO_FATAL_FAILURE(Init());
+
+  // Reset anything that will never be used since the process never starts.
+  // This drops references held to be transferred in a bootstrap message,
+  // which can keep things alive longer than they should be.
+  ASSERT_NO_FATAL_FAILURE(NeverStart());
 
   // The kernel reserves the lowest part of the address space, so the root VMAR
   // doesn't start at zero.  The VMAR for the 32-bit address space will not be

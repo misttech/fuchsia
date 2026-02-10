@@ -33,16 +33,28 @@ void LdLoadZirconProcessTestsBase::CreateProcess() {
   ASSERT_EQ(zx::thread::create(this->process(), name.data(), static_cast<uint32_t>(name.size()), 0,
                                &thread_),
             ZX_OK);
+
+  // Set up the log pipe and stash the send side to be passed to process().
+  ASSERT_NO_FATAL_FAILURE(InitLog(process_log_fd_));
 }
 
 int64_t LdLoadZirconProcessTestsBase::Wait() {
   int64_t result = -1;
   auto wait_for_termination = [process = std::exchange(process_, {}), &result]() {
     ASSERT_TRUE(process) << "Wait() called before Init()?";
-    zx_signals_t signals;
-    ASSERT_EQ(process.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), &signals), ZX_OK);
-    ASSERT_TRUE(signals & ZX_PROCESS_TERMINATED);
+    zx_info_handle_basic_t basic_info;
+    ASSERT_EQ(
+        process.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr),
+        ZX_OK);
     zx_info_process_t info;
+    ASSERT_EQ(process.get_info(ZX_INFO_PROCESS, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+    ASSERT_TRUE(info.flags & ZX_INFO_PROCESS_FLAG_STARTED)
+        << "process " << basic_info.koid << " not started";
+    zx_signals_t signals;
+    zx_status_t status = process.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), &signals);
+    ASSERT_EQ(status, ZX_OK) << "process " << basic_info.koid
+                             << " wait: " << zx_status_get_string(status);
+    ASSERT_TRUE(signals & ZX_PROCESS_TERMINATED) << "process " << basic_info.koid;
     ASSERT_EQ(process.get_info(ZX_INFO_PROCESS, &info, sizeof(info), nullptr, nullptr), ZX_OK);
     ASSERT_TRUE(info.flags & ZX_INFO_PROCESS_FLAG_STARTED);
     ASSERT_TRUE(info.flags & ZX_INFO_PROCESS_FLAG_EXITED);
@@ -82,27 +94,86 @@ zx::channel LdLoadZirconProcessTestsBase::Start(bool custom_bootstrap) {
                            page_size, stack_vmo, 0, stack_vmo_size, &stack_base),
             ZX_OK);
 
-  if (!procargs_.empty()) {
-    procargs_.AddStackVmo(std::move(stack_vmo));
-  }
-
   sp = elfldltl::AbiTraits<>::InitialStackPointer(stack_base, stack_vmo_size);
 
-  // Pack up the bootstrap message and start the process running.
-  zx::channel bootstrap_receiver;
-  if (procargs_.empty()) {
-    // There's no startup dynamic linker message being sent.  Just create the
-    // channel so the sender side can be returned.
-    bootstrap_receiver = procargs_.MakeBootstrap();
-  } else {
-    bootstrap_receiver = procargs_.PackBootstrap();
+  // Now that all the allocations are done, clear the address space
+  // reservation so there's no such VMAR when the process starts.
+  ClearLegacyAddressSpaceReservation();
+
+  // Pack up the bootstrap message(s) and start the process running.
+  zx::channel bootstrap_receiver = procargs_.MakeBootstrap();
+  EXPECT_TRUE(bootstrap_receiver);
+  if (!procargs_.empty()) {
+    // Complete the pending message for the startup dynamic linker.  This
+    // resets the procargs_ object so it can be used for the second message.
+    procargs_.PackBootstrap();
   }
-  // TODO(mcgrathr): If !custom_bootstrap, build up and pack second message.
+  if (!custom_bootstrap) {
+    // The log fd must be consumed here so as not to keep the TestPipeReader
+    // alive from the other end after the process dies or otherwise drops it.
+    EXPECT_TRUE(process_log_fd_);
+    procargs_  //
+        .AddProcess(process().borrow())
+        .AddThread(thread().borrow())
+        .AddAllocationVmar(root_vmar().borrow())
+        .AddStackVmo(std::move(stack_vmo))
+        .AddFd(STDERR_FILENO, std::move(process_log_fd_))
+        .SetArgs(argv())
+        .SetEnv(envp())
+        .PackBootstrap();
+  }
 
   EXPECT_EQ(this->process().start(thread(), entry_, sp, std::move(bootstrap_receiver), vdso_base_),
             ZX_OK);
 
   return std::move(procargs_.bootstrap_sender());
+}
+
+void LdLoadZirconProcessTestsBase::NeverStart() {
+  process_log_fd_.reset();  // Never used when no bootstrap message (Start).
+  thread_.reset();          // Never used when the process is never started.
+
+  // The root_vmar_ and process_ are still used just to populate and examine
+  // the unstarted process with no threads in it.
+  EXPECT_TRUE(process_);
+  ASSERT_TRUE(root_vmar_);
+  CheckVmar();
+
+  // Remove this before examination as before start.
+  ClearLegacyAddressSpaceReservation();
+}
+
+void LdLoadZirconProcessTestsBase::ClearLegacyAddressSpaceReservation() {
+  if (zx::vmar vmar = std::exchange(legacy_reserve_vmar_, {})) {
+    zx_status_t status = vmar.destroy();
+    ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  }
+}
+
+void LdLoadZirconProcessTestsBase::LegacyAddressSpaceReservation() {
+  ASSERT_FALSE(legacy_reserve_vmar_) << "called twice??";
+
+  // This is only called after CreateProcess(), via some subclass Init().
+  // But it's before anything has used the root VMAR for anything.
+  ASSERT_TRUE(root_vmar_);
+
+  zx_info_vmar_t info;
+  zx_status_t status = root_vmar_.get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr);
+  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+
+  // TODO(https://fxbug.dev/42099306): Match the system program loader
+  // (//src/lib/process_builder) legacy behavior: reserve the lower half of the
+  // full address space, not just half of the VMAR length; (base+len)
+  // represents the full address space.
+  const uint64_t page_size = zx_system_get_page_size();
+  const uint64_t size = ((((info.base + info.len) / 2) + page_size - 1) & -page_size) - info.base;
+  uintptr_t reserve_base;
+  status = root_vmar_.allocate(ZX_VM_SPECIFIC, 0, size, &legacy_reserve_vmar_, &reserve_base);
+  ASSERT_EQ(status, ZX_OK) << "zx_vmar_allocate " << std::hex << std::showbase << size << " at 0 "
+                           << zx_status_get_string(status) << " vs root base=" << info.base
+                           << " len=" << info.len;
+  ASSERT_TRUE(legacy_reserve_vmar_);
+  ASSERT_EQ(reserve_base, info.base);
 }
 
 int64_t LdLoadZirconProcessTestsBase::Run() {
@@ -111,6 +182,9 @@ int64_t LdLoadZirconProcessTestsBase::Run() {
 }
 
 std::pair<int64_t, zx::channel> LdLoadZirconProcessTestsBase::RunWithCustomBootstrap() {
+  // Don't keep the TestPipeReader alive from the other end.
+  process_log_fd().reset();
+
   zx::channel bootstrap_sender = Start(true);
   int64_t exit_code = ::testing::Test::HasFatalFailure() ? -1 : Wait();
   return {exit_code, std::move(bootstrap_sender)};
@@ -119,6 +193,27 @@ std::pair<int64_t, zx::channel> LdLoadZirconProcessTestsBase::RunWithCustomBoots
 LdLoadZirconProcessTestsBase::~LdLoadZirconProcessTestsBase() {
   if (process_) {
     EXPECT_EQ(process_.kill(), ZX_OK);
+  }
+}
+
+void LdLoadZirconProcessTestsBase::CheckProcess() {
+  ASSERT_TRUE(process_);
+  zx_signals_t pending = 0;
+  zx_status_t status =
+      process_.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite_past(), &pending);
+  if (status == ZX_OK) {
+    if (pending & ZX_PROCESS_TERMINATED) {
+      ADD_FAILURE() << "process died with exit_code " << Wait();
+    }
+  } else {
+    ASSERT_EQ(status, ZX_ERR_TIMED_OUT) << zx_status_get_string(status);
+  }
+}
+
+void LdLoadZirconProcessTestsBase::CheckVmar() {
+  zx_status_t status = root_vmar_.get_info(ZX_INFO_VMAR_MAPS, nullptr, 0, nullptr, nullptr);
+  if (status != ZX_ERR_BUFFER_TOO_SMALL) {
+    ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
   }
 }
 

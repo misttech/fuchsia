@@ -30,6 +30,9 @@ class LdStartupSpawnProcessTests : public ::testing::Test, public LdLoadZirconPr
  public:
   using LdLoadZirconLdsvcTestsBase::Init;
 
+  // The FIDL service always does the legacy behavior anyway.
+  void LegacyAddressSpaceReservation() {}
+
   void Load(std::string_view executable_name,
             std::optional<std::string_view> expected_config = std::nullopt);
 

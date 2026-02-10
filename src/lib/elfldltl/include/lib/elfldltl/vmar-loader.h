@@ -148,7 +148,7 @@ class VmarLoader {
     if (zx_status_t status =
             AllocateVmar(load_info.vaddr_size(), load_info.vaddr_start(), vmar_offset);
         status != ZX_OK) [[unlikely]] {
-      return diag.SystemError("Failed to allocate address space", ZirconError{status});
+      return diag.SystemError("Failed to allocate address space: ", ZirconError{status});
     }
     return true;
   }
@@ -331,10 +331,9 @@ class VmarLoader {
 
       // First map data from the file, if any.
       if (map_size > 0) {
-        zx_status_t status =
-            MapWritable < PartialPage ==
-            PartialPagePolicy::kZeroInVmo > (vmar_offset, map_vmo->borrow(), map_cow, base_name,
-                                             map_offset, map_size, num_data_segments);
+        zx_status_t status = MapWritable<PartialPage == PartialPagePolicy::kZeroInVmo>(
+            vmar_offset, map_vmo->borrow(), map_cow, base_name, map_offset, map_size,
+            num_data_segments);
         if (status != ZX_OK) [[unlikely]] {
           diag.SystemError("cannot map writable segment", FileAddress{segment.vaddr()},
                            " from file", FileOffset{map_offset}, ": ", ZirconError{status});

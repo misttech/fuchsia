@@ -22,11 +22,9 @@ void LdLoadZirconLdsvcTestsBase::Init(std::initializer_list<std::string_view> ar
 }
 
 TestProcessArgs& LdLoadZirconLdsvcTestsBase::LdStartupProcArgs(TestProcessArgs& bootstrap,
-                                                               fbl::unique_fd log_fd,
                                                                zx::unowned_vmar allocation_vmar) {
   return bootstrap  //
       .AddAllocationVmar(std::move(allocation_vmar))
-      .AddFd(STDERR_FILENO, std::move(log_fd))
       .SetArgs(TestProcessArgs::InterpArgs(args_))
       .SetEnv(TestProcessArgs::InterpEnv(env_));
 }
