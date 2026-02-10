@@ -147,7 +147,7 @@ pub mod route {
     use crate::messaging::{MessageWithPermission, Permission};
     use crate::neighbors::{GetNeighborArgs, NeighborRequestArgs};
     use crate::netlink_packet::errno::Errno;
-    use crate::netlink_packet::{self};
+    use crate::netlink_packet::{self, NetlinkRequestType};
     use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
     use crate::{SysctlError, SysctlInterfaceSelector, interfaces, neighbors, routes};
@@ -716,6 +716,55 @@ pub mod route {
         Ok(routes::RouteRequestArgs::Del(routes::DelRouteArgs::Unicast(
             routes::UnicastDelRouteArgs { subnet, outbound_interface, next_hop, priority, table },
         )))
+    }
+
+    impl From<&RouteNetlinkMessage> for NetlinkRequestType {
+        fn from(message: &RouteNetlinkMessage) -> NetlinkRequestType {
+            match message {
+                RouteNetlinkMessage::GetLink(_)
+                | RouteNetlinkMessage::GetAddress(_)
+                | RouteNetlinkMessage::GetNeighbour(_)
+                | RouteNetlinkMessage::GetNeighbourTable(_)
+                | RouteNetlinkMessage::GetRoute(_)
+                | RouteNetlinkMessage::GetQueueDiscipline(_)
+                | RouteNetlinkMessage::GetTrafficClass(_)
+                | RouteNetlinkMessage::GetTrafficFilter(_)
+                | RouteNetlinkMessage::GetTrafficChain(_)
+                | RouteNetlinkMessage::GetNsId(_)
+                | RouteNetlinkMessage::GetRule(_) => Self::Get,
+
+                RouteNetlinkMessage::NewLink(_)
+                | RouteNetlinkMessage::NewLinkProp(_)
+                | RouteNetlinkMessage::NewAddress(_)
+                | RouteNetlinkMessage::NewNeighbour(_)
+                | RouteNetlinkMessage::NewNeighbourTable(_)
+                | RouteNetlinkMessage::NewNeighbourDiscoveryUserOption(_)
+                | RouteNetlinkMessage::NewRoute(_)
+                | RouteNetlinkMessage::NewPrefix(_)
+                | RouteNetlinkMessage::NewQueueDiscipline(_)
+                | RouteNetlinkMessage::NewTrafficClass(_)
+                | RouteNetlinkMessage::NewTrafficFilter(_)
+                | RouteNetlinkMessage::NewTrafficChain(_)
+                | RouteNetlinkMessage::NewNsId(_)
+                | RouteNetlinkMessage::NewRule(_) => Self::New,
+
+                RouteNetlinkMessage::SetLink(_) | RouteNetlinkMessage::SetNeighbourTable(_) => {
+                    Self::Set
+                }
+
+                RouteNetlinkMessage::DelLink(_)
+                | RouteNetlinkMessage::DelLinkProp(_)
+                | RouteNetlinkMessage::DelAddress(_)
+                | RouteNetlinkMessage::DelNeighbour(_)
+                | RouteNetlinkMessage::DelRoute(_)
+                | RouteNetlinkMessage::DelQueueDiscipline(_)
+                | RouteNetlinkMessage::DelTrafficClass(_)
+                | RouteNetlinkMessage::DelTrafficFilter(_)
+                | RouteNetlinkMessage::DelTrafficChain(_)
+                | RouteNetlinkMessage::DelNsId(_)
+                | RouteNetlinkMessage::DelRule(_) => Self::Del,
+            }
+        }
     }
 
     #[async_trait]
@@ -1294,15 +1343,24 @@ pub mod route {
                 | NewLinkProp(_)
                 | DelLinkProp(_)
                 | NewNeighbourTable(_)
+                | GetNeighbourTable(_)
                 | SetNeighbourTable(_)
                 | NewTrafficClass(_)
+                | GetTrafficClass(_)
                 | DelTrafficClass(_)
                 | NewTrafficFilter(_)
+                | GetTrafficFilter(_)
                 | DelTrafficFilter(_)
                 | NewTrafficChain(_)
+                | GetTrafficChain(_)
                 | DelTrafficChain(_)
                 | NewNsId(_)
+                | GetNsId(_)
                 | DelNsId(_)
+                // TODO(https://issues.fuchsia.dev/278565021): Implement GetAddress.
+                | GetAddress(_)
+                // Non-dump GetRoute is not currently necessary for our use.
+                | GetRoute(_)
                 | NewNeighbourDiscoveryUserOption(_)
                 | NewPrefix(_)
                 // TODO(https://issues.fuchsia.dev/285127790): Implement NewNeighbour.
@@ -1311,51 +1369,23 @@ pub mod route {
                 | DelNeighbour(_)
                 // TODO(https://issues.fuchsia.dev/283137907): Implement NewQueueDiscipline.
                 | NewQueueDiscipline(_)
+                // TODO(https://issues.fuchsia.dev/283137907): Implement GetQueueDiscipline.
+                | GetQueueDiscipline(_)
                 // TODO(https://issues.fuchsia.dev/283137907): Implement DelQueueDiscipline.
                 | DelQueueDiscipline(_) => {
-                    if expects_ack {
-                        log_warn!(
-                            "Received unsupported NETLINK_ROUTE request; responding with an Ack: {:?}",
-                            req,
-                        );
-                        client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                    } else {
-                        log_warn!(
-                            "Received unsupported NETLINK_ROUTE request that does not expect an Ack: {:?}",
-                            req,
-                        )
+                    let req_type = (&req).into();
+                    let nl_flags_dbg =
+                        netlink_packet::netlink_flags_debug_string(req_header.flags, req_type);
+                    log_warn!(
+                        "Received unsupported NETLINK_ROUTE {req_type:?} request: \
+                        {req:?} with flags {nl_flags_dbg}"
+                    );
+                    if is_dump && req_type == NetlinkRequestType::Get {
+                        client.send_unicast(netlink_packet::new_done(req_header));
+                    } else if expects_ack {
+                        client.send_unicast(netlink_packet::new_error(Ok(()), req_header));
                     }
                 }
-                GetNeighbourTable(_)
-                | GetTrafficClass(_)
-                | GetTrafficFilter(_)
-                | GetTrafficChain(_)
-                | GetNsId(_)
-                // TODO(https://issues.fuchsia.dev/278565021): Implement GetAddress.
-                | GetAddress(_)
-                // Non-dump GetRoute is not currently necessary for our use.
-                | GetRoute(_)
-                // TODO(https://issues.fuchsia.dev/283137907): Implement GetQueueDiscipline.
-                | GetQueueDiscipline(_) => {
-                    if is_dump {
-                        log_warn!(
-                            "Received unsupported NETLINK_ROUTE DUMP request; responding with Done: {:?}",
-                            req
-                        );
-                        client.send_unicast(netlink_packet::new_done(req_header))
-                    } else if expects_ack {
-                        log_warn!(
-                            "Received unsupported NETLINK_ROUTE GET request: responding with Ack {:?}",
-                            req
-                        );
-                        client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                    } else {
-                        log_warn!(
-                            "Received unsupported NETLINK_ROUTE GET request that does not expect an Ack {:?}",
-                            req
-                        )
-                    }
-                },
             }
         }
     }

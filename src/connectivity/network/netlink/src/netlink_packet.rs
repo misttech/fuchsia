@@ -9,7 +9,10 @@ use std::num::NonZeroI32;
 use log::warn;
 use net_types::ip::{Ip, Ipv4Addr, Ipv6Addr};
 use netlink_packet_core::buffer::NETLINK_HEADER_LEN;
-use netlink_packet_core::constants::NLM_F_MULTIPART;
+use netlink_packet_core::constants::{
+    NLM_F_ACK, NLM_F_APPEND, NLM_F_ATOMIC, NLM_F_CREATE, NLM_F_DUMP, NLM_F_ECHO, NLM_F_EXCL,
+    NLM_F_MATCH, NLM_F_MULTIPART, NLM_F_REPLACE, NLM_F_REQUEST, NLM_F_ROOT,
+};
 use netlink_packet_core::{
     DoneMessage, ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };
@@ -156,6 +159,73 @@ pub(crate) fn new_error<T: NetlinkSerializable>(
     message
 }
 
+/// Broad categories of Netlink requests.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum NetlinkRequestType {
+    /// RTM_NEW*.
+    New,
+    /// RTM_GET*.
+    Get,
+    /// RTM_SET*.
+    Set,
+    /// RTM_DEL*.
+    Del,
+}
+
+/// Produces a debug string indicating the Netlink flags set on a request.
+///
+/// See https://man7.org/linux/man-pages/man7/netlink.7.html (section starting
+/// with "Standard flag bits ...").
+pub(crate) fn netlink_flags_debug_string(flags: u16, request_type: NetlinkRequestType) -> String {
+    let mut flags_dbg = vec![];
+    if (flags & NLM_F_REQUEST) == NLM_F_REQUEST {
+        flags_dbg.push("REQUEST");
+    }
+    if (flags & NLM_F_MULTIPART) == NLM_F_MULTIPART {
+        flags_dbg.push("MULTI");
+    }
+    if (flags & NLM_F_ACK) == NLM_F_ACK {
+        flags_dbg.push("ACK");
+    }
+    if (flags & NLM_F_ECHO) == NLM_F_ECHO {
+        flags_dbg.push("ECHO");
+    }
+    match request_type {
+        NetlinkRequestType::Get => {
+            if (flags & NLM_F_DUMP) == NLM_F_DUMP {
+                flags_dbg.push("DUMP");
+            } else {
+                // NLM_F_DUMP is a convenience macro for NLM_F_ROOT|NLM_F_MATCH.
+                if (flags & NLM_F_ROOT) == NLM_F_ROOT {
+                    flags_dbg.push("ROOT");
+                }
+                if (flags & NLM_F_MATCH) == NLM_F_MATCH {
+                    flags_dbg.push("MATCH");
+                }
+            }
+            if (flags & NLM_F_ATOMIC) == NLM_F_ATOMIC {
+                flags_dbg.push("ATOMIC");
+            }
+        }
+        NetlinkRequestType::New => {
+            if (flags & NLM_F_REPLACE) == NLM_F_REPLACE {
+                flags_dbg.push("REPLACE");
+            }
+            if (flags & NLM_F_EXCL) == NLM_F_EXCL {
+                flags_dbg.push("EXCL");
+            }
+            if (flags & NLM_F_CREATE) == NLM_F_CREATE {
+                flags_dbg.push("CREATE");
+            }
+            if (flags & NLM_F_APPEND) == NLM_F_APPEND {
+                flags_dbg.push("APPEND");
+            }
+        }
+        NetlinkRequestType::Set | NetlinkRequestType::Del => {}
+    }
+    flags_dbg.join("|")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +298,50 @@ mod tests {
                 assert_eq!(extended_ack, Vec::<u8>::new());
             }
         );
+    }
+
+    #[test_case(
+        0,
+        NetlinkRequestType::Get => "";
+        "no flags"
+    )]
+    #[test_case(
+        NLM_F_REQUEST,
+        NetlinkRequestType::Get => "REQUEST";
+        "request only"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_MULTIPART|NLM_F_ACK|NLM_F_ECHO,
+        NetlinkRequestType::Get => "REQUEST|MULTI|ACK|ECHO";
+        "all generic flags"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_DUMP,
+        NetlinkRequestType::Get => "REQUEST|DUMP";
+        "dump request"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_MATCH|NLM_F_ROOT,
+        NetlinkRequestType::Get => "REQUEST|DUMP";
+        "dump is alias for match|root"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_ATOMIC,
+        NetlinkRequestType::Get => "REQUEST|ATOMIC";
+        "other Get flags"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_REPLACE|NLM_F_EXCL|NLM_F_CREATE|NLM_F_APPEND,
+        NetlinkRequestType::New
+        => "REQUEST|REPLACE|EXCL|CREATE|APPEND";
+        "New flags"
+    )]
+    #[test_case(
+        NLM_F_REQUEST|NLM_F_REPLACE|NLM_F_EXCL|NLM_F_CREATE|NLM_F_APPEND,
+        NetlinkRequestType::Del => "REQUEST";
+        "type-inappropriate flags ignored"
+    )]
+    fn netlink_flags_debug_string_tests(flags: u16, request_type: NetlinkRequestType) -> String {
+        netlink_flags_debug_string(flags, request_type)
     }
 }
