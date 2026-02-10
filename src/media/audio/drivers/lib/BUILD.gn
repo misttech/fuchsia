@@ -7,5 +7,6 @@ group("tests") {
     "audio-proto-utils:tests",
     "inspect:tests",
     "intel-hda:tests",
+    "unique-id:tests",
   ]
 }
