@@ -716,7 +716,10 @@ zx_status_t VmObjectPaged::CreateChildReferenceCommon(uint32_t options, VmCowRan
     paged_owner->reference_list_.push_back(vmo.get());
 
     if (copy_name) {
-      vmo->name_ = name_;
+      // There's no way good way to convince the static analysis that the vmo->lock() that we hold
+      // is also the VmObject::lock() in vmo and so we disable analysis to set the name;
+      [&vmo, &name = name_]() TA_REQ(vmo->lock()) TA_REQ(lock())
+          TA_NO_THREAD_SAFETY_ANALYSIS { vmo->name_ = name; }();
     }
   }
 
@@ -808,7 +811,10 @@ zx_status_t VmObjectPaged::CreateClone(Resizability resizable, SnapshotType type
     }
 
     if (copy_name) {
-      vmo->name_ = name_;
+      // There's no way good way to convince the static analysis that the vmo->lock() that we hold
+      // is also the VmObject::lock() in vmo and so we disable analysis to set the name;
+      [&vmo, &name = name_]() TA_REQ(vmo->lock()) TA_REQ(lock())
+          TA_NO_THREAD_SAFETY_ANALYSIS { vmo->name_ = name; }();
     }
   }
 
@@ -842,7 +848,7 @@ void VmObjectPaged::DumpLocked(uint depth, bool verbose) const {
          ref_count_debug(), parent, parent_id);
 
   char name[ZX_MAX_NAME_LEN];
-  get_name(name, sizeof(name));
+  self_locked()->get_name_locked(name, sizeof(name));
   if (strlen(name) > 0) {
     for (uint i = 0; i < depth + 1; ++i) {
       printf("  ");

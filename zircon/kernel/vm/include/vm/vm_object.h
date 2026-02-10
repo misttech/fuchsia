@@ -510,11 +510,12 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   // Returns a null-terminated name, or the empty string if set_name() has not
   // been called.
-  void get_name(char* out_name, size_t len) const;
+  void get_name(char* out_name, size_t len) const TA_EXCL(lock());
+  void get_name_locked(char* out_name, size_t len) const TA_REQ(lock());
 
   // Sets the name of the object. May truncate internally. |len| is the size
   // of the buffer pointed to by |name|.
-  zx_status_t set_name(const char* name, size_t len);
+  zx_status_t set_name(const char* name, size_t len) TA_EXCL(lock());
 
   // Returns a user ID associated with this VMO, or zero.
   // Used to hold a zircon koid for Dispatcher-wrapped VMOs.
@@ -786,7 +787,7 @@ class VmObject : public fbl::ContainableBaseClasses<
 
   // The user-friendly VMO name. For debug purposes only. That
   // is, there is no mechanism to get access to a VMO via this name.
-  fbl::Name<ZX_MAX_NAME_LEN> name_;
+  fbl::Name<ZX_MAX_NAME_LEN> name_ TA_GUARDED(lock());
 
   static constexpr uint64_t MAX_SIZE = VmPageList::MAX_SIZE;
   // Ensure that MAX_SIZE + kPageSize doesn't overflow so no VmObjects
