@@ -703,7 +703,11 @@ impl Validate for [Elf64ProgramHeader] {
                             "Overlap in virtual addresses",
                         ));
                     }
-                    vaddr_high = hdr.vaddr + hdr.memsz as usize;
+                    vaddr_high = hdr.vaddr.checked_add(hdr.memsz as usize).ok_or({
+                        ElfParseError::InvalidProgramHeader(
+                            "load segment overflow the 64-bit memory space",
+                        )
+                    })?;
 
                     // Segment alignment should be a multiple of the system page size.
                     if hdr.align % page_size as u64 != 0 {
@@ -1123,6 +1127,76 @@ mod tests {
             headers.validate(),
             Err(ElfParseError::InvalidProgramHeader(
                 "Virtual address and offset in file are not at same offset in page"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_program_header_overflow() {
+        let page_size = zx::system_get_page_size() as usize;
+        let headers = [
+            Elf64ProgramHeader {
+                segment_type: SegmentType::Load as u32,
+                flags: (SegmentFlags::READ | SegmentFlags::EXECUTE).bits(),
+                align: page_size as u64,
+                offset: 0x1000,
+                // Near the end of the address space, will overflow when adding memsz
+                vaddr: usize::MAX - 0xfff,
+                paddr: usize::MAX - 0xfff,
+                filesz: 0x2000,
+                memsz: 0x2000,
+            },
+            Elf64ProgramHeader {
+                segment_type: SegmentType::Load as u32,
+                flags: (SegmentFlags::READ | SegmentFlags::EXECUTE).bits(),
+                align: page_size as u64,
+                offset: 0x3000,
+                vaddr: 0x1000,
+                paddr: 0x1000,
+                filesz: 0x1000,
+                memsz: 0x1000,
+            },
+        ];
+
+        assert_matches!(
+            headers.validate(),
+            Err(ElfParseError::InvalidProgramHeader(
+                "load segment overflow the 64-bit memory space"
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_program_header_overflow_32() {
+        let page_size = zx::system_get_page_size() as u32;
+        let headers = [
+            Elf32ProgramHeader {
+                segment_type: SegmentType::Load as u32,
+                flags: (SegmentFlags::READ | SegmentFlags::EXECUTE).bits(),
+                align: page_size,
+                offset: 0x1000,
+                // Near the end of the address space, will overflow when adding memsz
+                vaddr: u32::MAX - 0xfff,
+                paddr: u32::MAX - 0xfff,
+                filesz: 0x2000,
+                memsz: 0x2000,
+            },
+            Elf32ProgramHeader {
+                segment_type: SegmentType::Load as u32,
+                flags: (SegmentFlags::READ | SegmentFlags::EXECUTE).bits(),
+                align: page_size,
+                offset: 0x3000,
+                vaddr: 0x1000,
+                paddr: 0x1000,
+                filesz: 0x1000,
+                memsz: 0x1000,
+            },
+        ];
+
+        assert_matches!(
+            headers.validate(),
+            Err(ElfParseError::InvalidProgramHeader(
+                "load segment overflow the 32-bit memory space"
             ))
         );
     }
