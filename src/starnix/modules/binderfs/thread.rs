@@ -700,7 +700,8 @@ struct CommandTraceGuardInner {
 
 impl CommandTraceGuard {
     fn begin(command: &Command) -> Self {
-        if !starnix_logging::regular_trace_category_enabled(TRACE_CATEGORY) {
+        static CACHE: fuchsia_trace::trace_site_t = fuchsia_trace::trace_site_t::new(0);
+        if fuchsia_trace::TraceCategoryContext::acquire_cached(TRACE_CATEGORY, &CACHE).is_none() {
             return Self(None);
         }
         let kind = match command {
