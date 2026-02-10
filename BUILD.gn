@@ -2159,6 +2159,10 @@ build_api_module("nuc11_fastboot_images_location") {
 #     - Required: flag indicating whether the IDK/SDK is required to build the target.
 #     - Type: boolean
 #
+#   is_host
+#     - Required: flag indicating whether the target is built for the host.
+#     - Type: boolean
+#
 #   gn_targets_dir
 #     - Required: Path to @gn_targets directory for gn_label, relative to Ninja build directory.
 #     - Type: string
