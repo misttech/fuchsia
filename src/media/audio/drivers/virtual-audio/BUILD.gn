@@ -22,6 +22,10 @@ source_set("common") {
   sources = [
     "virtual-audio-composite.cc",
     "virtual-audio-composite.h",
+    "virtual-audio-packet-stream.cc",
+    "virtual-audio-packet-stream.h",
+    "virtual-audio-ring-buffer.cc",
+    "virtual-audio-ring-buffer.h",
     "virtual-audio.cc",
     "virtual-audio.h",
   ]

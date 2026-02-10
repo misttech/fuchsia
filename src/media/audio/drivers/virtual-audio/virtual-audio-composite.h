@@ -10,13 +10,15 @@
 #include <lib/driver/node/cpp/add_child.h>
 #include <lib/fzl/vmo-mapper.h>
 
+#include "src/media/audio/drivers/virtual-audio/virtual-audio-packet-stream.h"
+#include "src/media/audio/drivers/virtual-audio/virtual-audio-ring-buffer.h"
+
 namespace virtual_audio {
 
 class VirtualAudioComposite
     : public fidl::Server<fuchsia_virtualaudio::Device>,
       public fidl::Server<fuchsia_hardware_audio::Composite>,
-      public fidl::Server<fuchsia_hardware_audio_signalprocessing::SignalProcessing>,
-      public fidl::Server<fuchsia_hardware_audio::RingBuffer> {
+      public fidl::Server<fuchsia_hardware_audio_signalprocessing::SignalProcessing> {
  public:
   using InstanceId = uint64_t;
   using OnDeviceBindingClosed = fit::callback<void(fidl::UnbindInfo)>;
@@ -43,14 +45,15 @@ class VirtualAudioComposite
   zx::result<> Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
 
  private:
-  static constexpr size_t kNumberOfElements = 4;
+  static constexpr size_t kNumberOfElements = 5;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kRingBufferId = 123;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kGainId = 321;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kDaiId = 456;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kSingleDaiId = 555;
+  static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kPacketStreamId = 444;
 
   static constexpr size_t kNumberOfTopologies = 3;
-  // This topology is RingBuffer (123) -> Gain (321) -> Dai        (456)
+  // This topology is RingBuffer(123) -> Gain(321) -> Dai(456) and PacketStream(444) -> Dai(456)
   static constexpr fuchsia_hardware_audio_signalprocessing::TopologyId kPlaybackTopologyId = 789;
   // This topology is Dai        (456) -> Gain (321) -> RingBuffer (123)
   static constexpr fuchsia_hardware_audio_signalprocessing::TopologyId kCaptureTopologyId = 987;
@@ -92,21 +95,6 @@ class VirtualAudioComposite
       fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  // fuchsia.hardware.audio.RingBuffer implementation.
-  void GetProperties(fidl::Server<fuchsia_hardware_audio::RingBuffer>::GetPropertiesCompleter::Sync&
-                         completer) override;
-  void GetVmo(GetVmoRequest& request, GetVmoCompleter::Sync& completer) override;
-  void Start(StartCompleter::Sync& completer) override;
-  void Stop(StopCompleter::Sync& completer) override;
-  void WatchClockRecoveryPositionInfo(
-      WatchClockRecoveryPositionInfoCompleter::Sync& completer) override;
-  void WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) override;
-  void SetActiveChannels(SetActiveChannelsRequest& request,
-                         SetActiveChannelsCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_hardware_audio::RingBuffer> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override;
-
   // fuchsia.hardware.audio.signalprocessing implementation (SignalProcessing and Reader).
   void GetElements(GetElementsCompleter::Sync& completer) override;
   void GetTopologies(GetTopologiesCompleter::Sync& completer) override;
@@ -130,7 +118,6 @@ class VirtualAudioComposite
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_audio::Composite> server);
   void ResetRingBuffer();
-  void OnRingBufferClosed(fidl::UnbindInfo info);
   void OnSignalProcessingClosed(fidl::UnbindInfo info);
   fuchsia_virtualaudio::RingBuffer& GetRingBuffer(uint64_t id);
   fuchsia_virtualaudio::Composite& composite_config() {
@@ -139,34 +126,18 @@ class VirtualAudioComposite
 
   std::optional<fidl::ServerBinding<fuchsia_hardware_audio::Composite>> composite_binding_;
 
-  // This driver exposes only one ring buffer element.
-  bool ring_buffer_is_outgoing_;
-  fzl::VmoMapper ring_buffer_mapper_;
-  uint32_t notifications_per_ring_ = 0;
-  uint32_t num_ring_buffer_frames_ = 0;
-  uint32_t frame_size_ = 4;
-  zx::vmo ring_buffer_vmo_;
-
-  // ring-buffer state
-  bool ring_buffer_vmo_fetched_ = false;
-  bool ring_buffer_started_ = false;
-  std::optional<fuchsia_hardware_audio::Format2> ring_buffer_format_;
-  uint64_t ring_buffer_active_channel_mask_;
-  zx::time active_channel_set_time_;
-
-  // ring-buffer hanging gets
-  bool should_reply_to_delay_request_ = true;
-  std::optional<WatchDelayInfoCompleter::Async> delay_info_completer_;
-  bool should_reply_to_position_request_ = true;
-  std::optional<WatchClockRecoveryPositionInfoCompleter::Async> position_info_completer_;
-
   // This driver exposes only one DAI element.
   std::optional<fuchsia_hardware_audio::DaiFormat> dai_format_;
 
   fuchsia_virtualaudio::Configuration config_;
-  std::optional<fidl::ServerBinding<fuchsia_hardware_audio::RingBuffer>> ring_buffer_;
   std::optional<fidl::ServerBinding<fuchsia_hardware_audio_signalprocessing::SignalProcessing>>
       signal_;
+
+  // RingBuffer impl
+  std::unique_ptr<VirtualAudioRingBuffer> ring_buffer_;
+
+  // PacketStreams
+  std::vector<std::unique_ptr<VirtualAudioPacketStream>> packet_streams_;
 
   std::vector<fuchsia_hardware_audio_signalprocessing::Element> elements_;
   std::unordered_map<fuchsia_hardware_audio_signalprocessing::ElementId,

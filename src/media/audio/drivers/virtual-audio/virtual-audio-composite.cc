@@ -14,9 +14,10 @@
 namespace virtual_audio {
 
 fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
-  constexpr fuchsia_hardware_audio::ElementId kDefaultRingBufferId = 123;
-  constexpr fuchsia_hardware_audio::ElementId kDefaultDaiId = 456;
-  constexpr fuchsia_hardware_audio::TopologyId kDefaultTopologyId = 789;
+  constexpr fuchsia_hardware_audio::ElementId kDefaultRingBufferId = kRingBufferId;
+  constexpr fuchsia_hardware_audio::ElementId kDefaultDaiId = kDaiId;
+  constexpr fuchsia_hardware_audio::ElementId kDefaultPacketStreamId = kPacketStreamId;
+  constexpr fuchsia_hardware_audio::TopologyId kDefaultTopologyId = kPlaybackTopologyId;
 
   fuchsia_virtualaudio::Configuration config;
   config.device_name("Virtual Audio Composite Device");
@@ -89,16 +90,36 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
   composite_dai_interconnects.push_back(std::move(composite_single_dai_interconnect));
   composite.dai_interconnects(std::move(composite_dai_interconnects));
 
-  // Topology with one ring buffer into one DAI interconnect.
+  // Topology with one ring buffer (through Gain) and one packet stream into one DAI interconnect.
   fuchsia_hardware_audio_signalprocessing::Topology topology;
   topology.id(kDefaultTopologyId);
-  fuchsia_hardware_audio_signalprocessing::EdgePair edge;
+  fuchsia_hardware_audio_signalprocessing::EdgePair edge_rb_to_gain;
+  fuchsia_hardware_audio_signalprocessing::EdgePair edge_gain_to_dai;
+  fuchsia_hardware_audio_signalprocessing::EdgePair edge_ps_to_dai;
 
-  edge.processing_element_id_from(kDefaultRingBufferId).processing_element_id_to(kDefaultDaiId);
-  topology.processing_elements_edge_pairs(std::vector({std::move(edge)}));
+  edge_rb_to_gain.processing_element_id_from(kDefaultRingBufferId)
+      .processing_element_id_to(kGainId);
+  edge_gain_to_dai.processing_element_id_from(kGainId).processing_element_id_to(kDefaultDaiId);
+  edge_ps_to_dai.processing_element_id_from(kDefaultPacketStreamId)
+      .processing_element_id_to(kDefaultDaiId);
+  topology.processing_elements_edge_pairs(std::vector(
+      {std::move(edge_rb_to_gain), std::move(edge_gain_to_dai), std::move(edge_ps_to_dai)}));
   composite.topologies(
       std::optional<std::vector<fuchsia_hardware_audio_signalprocessing::Topology>>{
           std::in_place, {std::move(topology)}});
+
+  fuchsia_virtualaudio::CompositePacketStream composite_packet_stream = {};
+  fuchsia_virtualaudio::PacketStream packet_stream = {};
+  packet_stream.supported_buffer_types(fuchsia_hardware_audio::BufferType::kClientOwned |
+                                       fuchsia_hardware_audio::BufferType::kDriverOwned);
+  packet_stream.needs_cache_flush_or_invalidate(true);
+
+  composite_packet_stream.id(kDefaultPacketStreamId);
+  composite_packet_stream.packet_stream(std::move(packet_stream));
+
+  std::vector<fuchsia_virtualaudio::CompositePacketStream> composite_packet_streams = {};
+  composite_packet_streams.push_back(std::move(composite_packet_stream));
+  composite.packet_streams(std::move(composite_packet_streams));
 
   // Clock properties with no rate_adjustment_ppm specified (defaults to 0).
   fuchsia_virtualaudio::ClockProperties clock_properties = {};
@@ -159,13 +180,13 @@ fuchsia_virtualaudio::RingBuffer& VirtualAudioComposite::GetRingBuffer(uint64_t 
 }
 
 void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
-  if (!ring_buffer_format_.has_value() || !ring_buffer_format_->pcm_format().has_value()) {
+  if (!ring_buffer_ || !ring_buffer_->format().pcm_format().has_value()) {
     fdf::warn("Ring buffer not initialized");
     completer.Reply(fit::error(fuchsia_virtualaudio::Error::kNoRingBuffer));
     return;
   }
 
-  auto pcm_format = ring_buffer_format_->pcm_format();
+  auto pcm_format = ring_buffer_->format().pcm_format();
   auto& ring_buffer = GetRingBuffer(kRingBufferId);
   int64_t external_delay = 0;
   if (ring_buffer.external_delay().has_value()) {
@@ -183,25 +204,23 @@ void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
 }
 
 void VirtualAudioComposite::GetBuffer(GetBufferCompleter::Sync& completer) {
-  if (!ring_buffer_vmo_.is_valid()) {
+  if (!ring_buffer_) {
     fdf::warn("Ring buffer not initialized");
     completer.Reply(fit::error(fuchsia_virtualaudio::Error::kNoRingBuffer));
     return;
   }
 
-  zx::vmo dup_vmo;
-  zx_status_t status = ring_buffer_vmo_.duplicate(
-      ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP, &dup_vmo);
-  if (status != ZX_OK) {
-    fdf::error("Failed to create ring buffer: {}", zx_status_get_string(status));
+  auto dup_result = ring_buffer_->DuplicateVmo();
+  if (dup_result.is_error()) {
+    fdf::error("Failed to duplicate ring buffer VMO: {}", dup_result.status_string());
     completer.Reply(fit::error(fuchsia_virtualaudio::Error::kNoRingBuffer));
     return;
   }
 
   fuchsia_virtualaudio::DeviceGetBufferResponse response{{
-      .ring_buffer = std::move(dup_vmo),
-      .num_ring_buffer_frames = num_ring_buffer_frames_,
-      .notifications_per_ring = notifications_per_ring_,
+      .ring_buffer = std::move(dup_result.value()),
+      .num_ring_buffer_frames = ring_buffer_->num_frames(),
+      .notifications_per_ring = ring_buffer_->notifications_per_ring(),
   }};
   completer.Reply(fit::ok(std::move(response)));
 }
@@ -425,14 +444,6 @@ void VirtualAudioComposite::GetRingBufferFormats(GetRingBufferFormatsRequest& re
   completer.Reply(zx::ok(std::move(all_formats)));
 }
 
-void VirtualAudioComposite::OnRingBufferClosed(fidl::UnbindInfo info) {
-  // Do not log canceled cases; these happen particularly frequently in certain test cases.
-  if (info.status() != ZX_ERR_CANCELED && !info.is_peer_closed() && !info.is_user_initiated()) {
-    fdf::info("Ring buffer channel closing: {}", info.FormatDescription().c_str());
-  }
-  ResetRingBuffer();
-}
-
 void VirtualAudioComposite::CreateRingBuffer(CreateRingBufferRequest& request,
                                              CreateRingBufferCompleter::Sync& completer) {
   // One ring buffer is supported by this driver.
@@ -443,220 +454,156 @@ void VirtualAudioComposite::CreateRingBuffer(CreateRingBufferRequest& request,
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
-  if (request.format().Which() != fuchsia_hardware_audio::Format2::Tag::kPcmFormat) {
-    fdf::error("CreateRingBuffer: non-PCM formats not supported");
-    completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+  if (!request.format().pcm_format().has_value()) {
+    fdf::error("RingBuffer format must be PCM");
+    completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
-  ring_buffer_format_.emplace(request.format());
-  ring_buffer_active_channel_mask_ =
-      (1 << ring_buffer_format_->pcm_format()->number_of_channels()) - 1;
-  active_channel_set_time_ = zx::clock::get_monotonic();
-  ring_buffer_.emplace(dispatcher_, std::move(request.ring_buffer()), this,
-                       std::mem_fn(&VirtualAudioComposite::OnRingBufferClosed));
+
+  // Create and bind the RingBuffer.
+  // We don't support multiple RingBuffers yet, so we just overwrite the existing one if any.
+  auto& ring_buffer_config = GetRingBuffer(request.processing_element_id());
+
+  ring_buffer_.reset(new VirtualAudioRingBuffer(
+      request.format(), ring_buffer_config, (current_topology_id_ == kPlaybackTopologyId),
+      dispatcher_, std::move(request.ring_buffer()),
+      [this](zx::vmo vmo, uint32_t num_frames, uint32_t notifications) {
+        fidl::Status result = fidl::WireSendEvent(device_binding_)
+                                  ->OnBufferCreated(std::move(vmo), num_frames, notifications);
+        if (result.status() != ZX_OK) {
+          fdf::warn("Failed to send OnBufferCreated event: {}", result);
+        }
+      },
+      [this](zx_time_t start_time) {
+        fidl::Status result = fidl::WireSendEvent(device_binding_)->OnStart(start_time);
+        if (result.status() != ZX_OK) {
+          fdf::warn("Failed to send OnStart event: {}", result);
+        }
+      },
+      [this](zx_time_t stop_time, uint32_t position) {
+        fidl::Status result = fidl::WireSendEvent(device_binding_)->OnStop(stop_time, position);
+        if (result.status() != ZX_OK) {
+          fdf::warn("Failed to send OnStop event: {}", result);
+        }
+      },
+      [this](VirtualAudioRingBuffer* stream, fidl::UnbindInfo info) {
+        fdf::info("RingBuffer unbound: {}", info.status_string());
+        if (ring_buffer_.get() == stream) {
+          ring_buffer_.reset();
+        }
+      }));
+
   completer.Reply(zx::ok());
 }
 
-void VirtualAudioComposite::ResetRingBuffer() {
-  ring_buffer_vmo_fetched_ = false;
-  ring_buffer_started_ = false;
-  notifications_per_ring_ = 0;
-  should_reply_to_position_request_ = true;
-  position_info_completer_.reset();
-  should_reply_to_delay_request_ = true;
-  delay_info_completer_.reset();
-  // We don't reset ring_buffer_format_ and dai_format_ to allow for retrieval for observability.
-}
+void VirtualAudioComposite::ResetRingBuffer() { ring_buffer_.reset(); }
 
 void VirtualAudioComposite::GetPacketStreamFormats(
     GetPacketStreamFormatsRequest& request, GetPacketStreamFormatsCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/468151981): Implement PacketStream support.
-  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
+  if (request.processing_element_id() != kPacketStreamId) {
+    fdf::error("GetPacketStreamFormats({}) bad element_id", request.processing_element_id());
+    completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
+    return;
+  }
+
+  std::vector<fuchsia_hardware_audio::SupportedFormats2> all_formats;
+
+  fuchsia_hardware_audio::PcmSupportedFormats pcm_formats;
+
+  // PCM formats.
+  {
+    fuchsia_hardware_audio::ChannelSet channel_set;
+    std::vector<fuchsia_hardware_audio::ChannelAttributes> attributes(2);
+    attributes[0].min_frequency() = 20;
+    attributes[0].max_frequency() = 20000;
+    attributes[1].min_frequency() = 20;
+    attributes[1].max_frequency() = 20000;
+    channel_set.attributes(std::move(attributes));
+
+    std::vector<fuchsia_hardware_audio::ChannelSet> channel_sets;
+    channel_sets.push_back(std::move(channel_set));
+    pcm_formats.channel_sets(std::move(channel_sets));
+
+    pcm_formats.frame_rates(std::vector<uint32_t>{48000});
+    pcm_formats.bytes_per_sample(std::vector<uint8_t>{2});
+    pcm_formats.valid_bits_per_sample(std::vector<uint8_t>{16});
+
+    pcm_formats.sample_formats(std::vector<fuchsia_hardware_audio::SampleFormat>{
+        fuchsia_hardware_audio::SampleFormat::kPcmSigned});
+
+    all_formats.push_back(
+        fuchsia_hardware_audio::SupportedFormats2::WithPcmSupportedFormats(std::move(pcm_formats)));
+  }
+
+  // Encoded formats.
+  {
+    fuchsia_hardware_audio::SupportedEncodings encoded_formats;
+
+    fuchsia_hardware_audio::ChannelSet channel_set;
+    std::vector<fuchsia_hardware_audio::ChannelAttributes> attributes(2);
+    attributes[0].min_frequency() = 20;
+    attributes[0].max_frequency() = 20000;
+    attributes[1].min_frequency() = 20;
+    attributes[1].max_frequency() = 20000;
+    channel_set.attributes(std::move(attributes));
+
+    std::vector<fuchsia_hardware_audio::ChannelSet> channel_sets;
+    channel_sets.push_back(std::move(channel_set));
+    encoded_formats.decoded_channel_sets(std::move(channel_sets));
+
+    encoded_formats.decoded_frame_rates(std::vector<uint32_t>{48000});
+    encoded_formats.encoding_types(std::vector<fuchsia_hardware_audio::EncodingType>{
+        fuchsia_hardware_audio::EncodingType::kAac});
+
+    all_formats.push_back(fuchsia_hardware_audio::SupportedFormats2::WithSupportedEncodings(
+        std::move(encoded_formats)));
+  }
+
+  completer.Reply(zx::ok(std::move(all_formats)));
 }
 
 void VirtualAudioComposite::CreatePacketStream(CreatePacketStreamRequest& request,
                                                CreatePacketStreamCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/468151981): Implement PacketStream support.
-  completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kNotSupported));
-}
-
-// RingBuffer implementation
-//
-void VirtualAudioComposite::GetProperties(
-    fidl::Server<fuchsia_hardware_audio::RingBuffer>::GetPropertiesCompleter::Sync& completer) {
-  fuchsia_hardware_audio::RingBufferProperties properties;
-  auto& ring_buffer = GetRingBuffer(kRingBufferId);
-  properties.needs_cache_flush_or_invalidate(false).driver_transfer_bytes(
-      ring_buffer.driver_transfer_bytes());
-  completer.Reply(std::move(properties));
-}
-
-void VirtualAudioComposite::GetVmo(GetVmoRequest& request, GetVmoCompleter::Sync& completer) {
-  if (ring_buffer_mapper_.start() != nullptr) {
-    ring_buffer_mapper_.Unmap();
-  }
-
-  uint32_t min_frames = 0;
-  uint32_t modulo_frames = 1;
-  auto& ring_buffer = GetRingBuffer(kRingBufferId);
-  if (ring_buffer.ring_buffer_constraints().has_value()) {
-    min_frames = ring_buffer.ring_buffer_constraints()->min_frames();
-    modulo_frames = ring_buffer.ring_buffer_constraints()->modulo_frames();
-  }
-  // The ring buffer must be at least min_frames + fifo_frames.
-  num_ring_buffer_frames_ =
-      request.min_frames() +
-      (ring_buffer.driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_;
-
-  num_ring_buffer_frames_ = std::max(
-      min_frames, fbl::round_up<uint32_t, uint32_t>(num_ring_buffer_frames_, modulo_frames));
-
-  zx_status_t status = ring_buffer_mapper_.CreateAndMap(
-      static_cast<uint64_t>(num_ring_buffer_frames_) * frame_size_,
-      ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &ring_buffer_vmo_,
-      ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP | ZX_RIGHT_DUPLICATE | ZX_RIGHT_TRANSFER);
-
-  ZX_ASSERT_MSG(status == ZX_OK, "failed to create ring buffer VMO: %s",
-                zx_status_get_string(status));
-
-  zx::vmo out_vmo;
-  zx_rights_t required_rights = ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_MAP;
-  if (ring_buffer_is_outgoing_) {
-    required_rights |= ZX_RIGHT_WRITE;
-  }
-  status = ring_buffer_vmo_.duplicate(required_rights, &out_vmo);
-  ZX_ASSERT_MSG(status == ZX_OK, "failed to duplicate VMO handle for out param: %s",
-                zx_status_get_string(status));
-
-  notifications_per_ring_ = request.clock_recovery_notifications_per_ring();
-
-  zx::vmo duplicate_vmo_for_va;
-  status = ring_buffer_vmo_.duplicate(
-      ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP, &duplicate_vmo_for_va);
-  ZX_ASSERT_MSG(status == ZX_OK, "failed to duplicate VMO handle for VA client: %s",
-                zx_status_get_string(status));
-
-  fidl::Status result = fidl::WireSendEvent(device_binding_)
-                            ->OnBufferCreated(std::move(duplicate_vmo_for_va),
-                                              num_ring_buffer_frames_, notifications_per_ring_);
-  if (result.status() != ZX_OK) {
-    fdf::warn("Failed to send OnBufferCreated event: {}", result);
-  }
-
-  fuchsia_hardware_audio::RingBufferGetVmoResponse response;
-  response.num_frames(num_ring_buffer_frames_);
-  response.ring_buffer(std::move(out_vmo));
-  completer.Reply(zx::ok(std::move(response)));
-  ring_buffer_vmo_fetched_ = true;
-}
-
-void VirtualAudioComposite::Start(StartCompleter::Sync& completer) {
-  if (!ring_buffer_vmo_fetched_) {
-    fdf::error("Cannot start the ring buffer before retrieving the VMO");
-    completer.Close(ZX_ERR_BAD_STATE);
-    return;
-  }
-  if (ring_buffer_started_) {
-    fdf::error("Cannot start the ring buffer if already started");
-    completer.Close(ZX_ERR_BAD_STATE);
+  if (request.processing_element_id() != kPacketStreamId) {
+    fdf::error("CreatePacketStream({}) bad element_id", request.processing_element_id());
+    completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
-  zx_time_t now = zx::clock::get_monotonic().get();
+  // Find the PacketStream config for this element ID.
+  // We assume only one exists for now, and it matches kPacketStreamId.
+  ZX_ASSERT(composite_config().packet_streams().has_value());
+  auto& packet_streams = composite_config().packet_streams().value();
+  ZX_ASSERT(!packet_streams.empty());
 
-  fidl::Status result = fidl::WireSendEvent(device_binding_)->OnStart(now);
-  if (result.status() != ZX_OK) {
-    fdf::warn("Failed to send OnStart event: {}", result);
-  }
+  // Assuming the first and only packet stream config is for this ID.
+  // In a multi-stream world, we would iterate to find the matching ID.
+  ZX_ASSERT(packet_streams[0].id() == kPacketStreamId);
+  auto& composite_packet_stream = packet_streams[0];
 
-  ring_buffer_started_ = true;
-  completer.Reply(now);
+  bool is_outgoing = true;  // kPacketStreamId is outgoing.
+  auto on_close = [this](VirtualAudioPacketStream* stream, fidl::UnbindInfo info) {
+    if (info.is_user_initiated()) {
+      fdf::warn("PacketStream client closed channel");
+    } else if (info.is_peer_closed()) {
+      fdf::warn("PacketStream peer closed channel");
+    } else {
+      fdf::error("PacketStream channel closed: {}", info.status_string());
+    }
+    // Remove the stream from the list.
+    std::erase_if(packet_streams_, [stream](const auto& p) { return p.get() == stream; });
+  };
+
+  auto packet_stream = std::make_unique<VirtualAudioPacketStream>(
+      is_outgoing, std::move(request.format()), *composite_packet_stream.packet_stream(),
+      dispatcher_, std::move(request.packet_stream_control()), std::move(on_close));
+
+  packet_streams_.push_back(std::move(packet_stream));
+
+  completer.Reply(zx::ok());
 }
 
-void VirtualAudioComposite::Stop(StopCompleter::Sync& completer) {
-  if (!ring_buffer_vmo_fetched_) {
-    fdf::error("Cannot start the ring buffer before retrieving the VMO");
-    completer.Close(ZX_ERR_BAD_STATE);
-    return;
-  }
-  if (!ring_buffer_started_) {
-    fdf::info("Stop called while stopped; doing nothing");
-    completer.Reply();
-    return;
-  }
-  zx_time_t now = zx::clock::get_monotonic().get();
-  // TODO(https://fxbug.dev/42075676): Add support for 'stop' position, now we always report 0.
-  fidl::Status result = fidl::WireSendEvent(device_binding_)->OnStop(now, 0);
-  if (result.status() != ZX_OK) {
-    fdf::warn("Failed to send OnStop event: {}", result);
-  }
-
-  ring_buffer_started_ = false;
-  completer.Reply();
-}
-
-void VirtualAudioComposite::WatchClockRecoveryPositionInfo(
-    WatchClockRecoveryPositionInfoCompleter::Sync& completer) {
-  if (should_reply_to_position_request_ && ring_buffer_started_ && notifications_per_ring_ > 0) {
-    fuchsia_hardware_audio::RingBufferPositionInfo position_info;
-    position_info.timestamp(zx::clock::get_monotonic().get());
-    // TODO(https://fxbug.dev/42075676): Add support for current position; now we always report 0.
-    position_info.position(0);
-    should_reply_to_position_request_ = false;
-    completer.Reply(std::move(position_info));
-    return;
-  }
-
-  if (position_info_completer_.has_value()) {
-    // The client called WatchClockRecoveryPositionInfo when another hanging get was pending.
-    fdf::error("WatchClockRecoveryPositionInfo called while previous call was pending. Unbinding");
-    should_reply_to_position_request_ = true;
-    position_info_completer_.reset();
-    completer.Close(ZX_ERR_BAD_STATE);
-    return;
-  }
-
-  position_info_completer_.emplace(completer.ToAsync());
-}
-
-void VirtualAudioComposite::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) {
-  if (should_reply_to_delay_request_) {
-    auto& ring_buffer = GetRingBuffer(kRingBufferId);
-    fuchsia_hardware_audio::DelayInfo delay_info;
-    delay_info.internal_delay(ring_buffer.internal_delay());
-    delay_info.external_delay(ring_buffer.external_delay());
-    should_reply_to_delay_request_ = false;
-    completer.Reply(std::move(delay_info));
-  } else if (!delay_info_completer_.has_value()) {
-    delay_info_completer_.emplace(completer.ToAsync());
-  } else {
-    // The client called WatchDelayInfo when another hanging get was pending.
-    fdf::error("WatchDelayInfo called while previous call was pending. Unbinding");
-    should_reply_to_delay_request_ = true;
-    delay_info_completer_.reset();
-    completer.Close(ZX_ERR_BAD_STATE);
-  }
-}
-
-void VirtualAudioComposite::SetActiveChannels(
-    fuchsia_hardware_audio::RingBufferSetActiveChannelsRequest& request,
-    SetActiveChannelsCompleter::Sync& completer) {
-  ZX_ASSERT(ring_buffer_format_);  // A RingBuffer must exist, for this FIDL method to be called.
-
-  const uint64_t max_channel_bitmask =
-      (1 << ring_buffer_format_->pcm_format()->number_of_channels()) - 1;
-  if (request.active_channels_bitmask() > max_channel_bitmask) {
-    fdf::warn("SetActiveChannels({:#016x}) is out-of-range", request.active_channels_bitmask());
-    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
-    return;
-  }
-
-  if (ring_buffer_active_channel_mask_ != request.active_channels_bitmask()) {
-    active_channel_set_time_ = zx::clock::get_monotonic();
-    ring_buffer_active_channel_mask_ = request.active_channels_bitmask();
-  }
-  completer.Reply(zx::ok(active_channel_set_time_.get()));
-}
+// RingBuffer implementation methods removed (moved to VirtualAudioRingBuffer).
 
 // signalprocessing
 //
@@ -699,7 +646,8 @@ void VirtualAudioComposite::SetupSignalProcessing() {
 
 // signalprocessing Element handling
 //
-// This driver is limited to a ring buffer, a DAI interconnect and a gain element.
+// This driver is limited to a ring buffer, a packet stream, a DAI interconnect and a gain
+// element.
 // TODO(https://fxbug.dev/42075676): Add support for more elements provided by the driver
 // (additional processing element types), enabling configuration and observability via the
 // virtual_audio FIDL API.
@@ -747,7 +695,12 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
       .can_stop(false)
       .can_bypass(false);
 
-  elements_ = {{ring_buffer, dai, gain, single_dai}};
+  fuchsia_hardware_audio_signalprocessing::Element packet_stream;
+  packet_stream.id(kPacketStreamId)
+      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream)
+      .description("Packet Stream Endpoint");
+
+  elements_ = {{ring_buffer, dai, gain, single_dai, packet_stream}};
   for (auto& el : elements_) {
     element_map_.insert({*el.id(), &el});
   }
@@ -759,35 +712,49 @@ void VirtualAudioComposite::GetElements(GetElementsCompleter::Sync& completer) {
 
 // signalprocessing Topology handling
 //
-// We expose two topologies: { Rb -> Gain -> Dai } and { Dai -> Gain -> Rb }.
+// We expose three topologies:
+// - kPlaybackTopologyId: { Rb -> Gain -> Dai } and { PacketStream -> Dai }
+// - kCaptureTopologyId: { Dai -> Gain -> Rb }
+// - kSingleElementTopologyId: { SingleDai -> SingleDai }
 // TODO(https://fxbug.dev/42075676): Add more complex topologies, including elements that are only
 // in some topologies (not all). Include signalprocessing configuration/observability in the
 // virtual_audio FIDL API.
 void VirtualAudioComposite::SetupSignalProcessingTopologies() {
   topologies_.clear();
-  fuchsia_hardware_audio_signalprocessing::Topology topology1, topology2, topology3;
-  fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2;
 
-  topology1.id(kPlaybackTopologyId);
-  edge1.processing_element_id_from(kRingBufferId).processing_element_id_to(kGainId);
-  edge2.processing_element_id_from(kGainId).processing_element_id_to(kDaiId);
-  topology1.processing_elements_edge_pairs(std::vector({std::move(edge1), std::move(edge2)}));
+  {
+    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    topology.id(kPlaybackTopologyId);
+    fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2, edge3;
+    edge1.processing_element_id_from(kRingBufferId).processing_element_id_to(kGainId);
+    edge2.processing_element_id_from(kGainId).processing_element_id_to(kDaiId);
+    edge3.processing_element_id_from(kPacketStreamId).processing_element_id_to(kDaiId);
+    topology.processing_elements_edge_pairs(
+        std::vector({std::move(edge1), std::move(edge2), std::move(edge3)}));
 
-  topology2.id(kCaptureTopologyId);
-  edge1.processing_element_id_from(kDaiId).processing_element_id_to(kGainId);
-  edge2.processing_element_id_from(kGainId).processing_element_id_to(kRingBufferId);
-  topology2.processing_elements_edge_pairs(std::vector({std::move(edge1), std::move(edge2)}));
+    // By default (in the topology of kPlaybackTopologyId), our ring buffer will be an outgoing one.
+    current_topology_id_ = kPlaybackTopologyId;
+    topologies_.emplace_back(std::move(topology));
+  }
 
-  topology3.id(kSingleElementTopologyId);
-  edge1.processing_element_id_from(kSingleDaiId).processing_element_id_to(kSingleDaiId);
-  topology3.processing_elements_edge_pairs(std::vector({std::move(edge1)}));
+  {
+    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    topology.id(kCaptureTopologyId);
+    fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2;
+    edge1.processing_element_id_from(kDaiId).processing_element_id_to(kGainId);
+    edge2.processing_element_id_from(kGainId).processing_element_id_to(kRingBufferId);
+    topology.processing_elements_edge_pairs(std::vector({std::move(edge1), std::move(edge2)}));
+    topologies_.emplace_back(std::move(topology));
+  }
 
-  // By default (in the topology of kPlaybackTopologyId), our ring buffer will be an outgoing one.
-  ring_buffer_is_outgoing_ = true;
-  current_topology_id_ = kPlaybackTopologyId;
-  topologies_.emplace_back(std::move(topology1));
-  topologies_.emplace_back(std::move(topology2));
-  topologies_.emplace_back(std::move(topology3));
+  {
+    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    topology.id(kSingleElementTopologyId);
+    fuchsia_hardware_audio_signalprocessing::EdgePair edge1;
+    edge1.processing_element_id_from(kSingleDaiId).processing_element_id_to(kSingleDaiId);
+    topology.processing_elements_edge_pairs(std::vector({std::move(edge1)}));
+    topologies_.emplace_back(std::move(topology));
+  }
 }
 
 void VirtualAudioComposite::GetTopologies(GetTopologiesCompleter::Sync& completer) {
@@ -803,7 +770,6 @@ void VirtualAudioComposite::SetTopology(SetTopologyRequest& request,
     return;
   }
 
-  ring_buffer_is_outgoing_ = (request.topology_id() == kPlaybackTopologyId);
   current_topology_id_ = request.topology_id();
   completer.Reply(zx::ok());
   MaybeCompleteWatchTopology();
@@ -870,6 +836,12 @@ void VirtualAudioComposite::SetupSignalProcessingElementStates() {
   gain_snapshot.completer.reset();
   element_states_.insert({kGainId, std::move(gain_snapshot)});
 
+  ElementSnapshot ps_snapshot;
+  ps_snapshot.current.started(true).bypassed(false).processing_delay(0);
+  ps_snapshot.last_notified.reset();
+  ps_snapshot.completer.reset();
+  element_states_.insert({kPacketStreamId, std::move(ps_snapshot)});
+
   fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState single_dai_state;
   fuchsia_hardware_audio_signalprocessing::PlugState single_dai_plug_state;
   single_dai_plug_state.plugged(true).plug_state_time(0);
@@ -925,6 +897,10 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
     return;
   }
   switch (element_id) {
+    case kPacketStreamId:
+      // PACKET_STREAM elements contain no type-specific state.
+      // TypeSpecificElementState contains no variant for the PACKET_STREAM type.
+      __FALLTHROUGH;
     case kRingBufferId:
       // RING_BUFFER elements contain no type-specific state.
       // TypeSpecificElementState contains no variant for the RING_BUFFER type.
@@ -1046,15 +1022,6 @@ void VirtualAudioComposite::MaybeCompleteWatchElementState(
   element_states_.at(element_id).completer.reset();
   element_states_.at(element_id).last_notified = element_states_.at(element_id).current;
   completer->Reply(element_states_.at(element_id).current);
-}
-
-// Driver doesn't support a new RingBuffer method. Complain loudly but don't disconnect, since
-// this test fixture might be used with a client that is built with a newer SDK version.
-void VirtualAudioComposite::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_hardware_audio::RingBuffer> metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::error("VirtualAudioComposite::handle_unknown_method (RingBuffer) ordinal {}",
-             metadata.method_ordinal);
 }
 
 // Driver doesn't support a new SignalProcessing method. Complain loudly but don't disconnect, since
