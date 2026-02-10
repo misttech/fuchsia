@@ -238,11 +238,11 @@ pub enum ManageSshControlMasterError {
     ControlMasterDirNotSpecified,
     #[error("ssh ControlMaster path was not specified")]
     ControlMasterPathNotSpecified,
-    #[error("Error parsing ssh ControlMaster mode")]
+    #[error("Error parsing ssh ControlMaster mode: {0}")]
     ParseError(#[from] ParseControlMasterModeError),
-    #[error("Error reading configuration")]
+    #[error("Error reading configuration: {0}")]
     ConfigError(#[from] ffx_config::ConfigError),
-    #[error("Error spawning ssh")]
+    #[error("Error spawning ssh control master: {0}")]
     SpawnError(#[from] SpawnControlMasterError),
 }
 
@@ -250,14 +250,14 @@ const MAX_SOCKET_LEN: usize = 100;
 
 #[derive(Error, Debug)]
 pub enum SpawnControlMasterError {
-    #[error("Error parsing ssh configuration")]
+    #[error("parsing ssh configuration: {0}")]
     ParseSshConfig(#[from] ParseSshConfigError),
     #[error("Socket path \"{path}\" is too long. Maximum is {max_allowed}")]
     SocketPathTooLong { path: PathBuf, max_allowed: usize },
-    #[error("ssh ControlMaster failed to start.")]
+    #[error("failed to start: {0}")]
     ControlMasterStartError(#[source] SshError),
-    #[error("Error spawning ssh")]
-    SpawnError(#[from] std::io::Error),
+    #[error("io error: {0}")]
+    IOError(#[from] std::io::Error),
 }
 
 impl TryFrom<String> for ControlMasterMode {
