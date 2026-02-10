@@ -116,10 +116,6 @@ zx_status_t KTrace::Allocate() {
 zx::result<KTrace::Reservation> KTrace::Reserve(uint64_t header) {
   DEBUG_ASSERT(arch_ints_disabled());
 
-  // Compute the number of bytes we need to reserve from the provided fxt header.
-  const uint32_t num_words = fxt::RecordFields::RecordSize::Get<uint32_t>(header);
-  const uint32_t num_bytes = num_words * sizeof(uint64_t);
-
   // If writes are disabled, then return an error. We return ZX_ERR_BAD_STATE, because this means
   // that tracing was disabled.
   //
@@ -134,13 +130,7 @@ zx::result<KTrace::Reservation> KTrace::Reserve(uint64_t header) {
   // Check which CPU we're running on and Reserve a slot in the appropriate SPSC buffer.
   const cpu_num_t cpu_num = arch_curr_cpu_num();
   DEBUG_ASSERT(percpu_buffers_ != nullptr);
-  zx::result<percpu_writer::Buffer::Reservation> result =
-      percpu_buffers_[cpu_num].Reserve(num_bytes);
-  if (result.is_error()) {
-    return result.take_error();
-  }
-  Reservation res(ktl::move(result.value()), header);
-  return zx::ok(ktl::move(res));
+  return percpu_buffers_[cpu_num].Reserve(header);
 }
 
 void KTrace::ReportMetadata() {

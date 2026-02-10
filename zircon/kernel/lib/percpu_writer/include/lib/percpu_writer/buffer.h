@@ -16,6 +16,7 @@
 
 #include <ktl/optional.h>
 
+#include "arch/ops.h"
 #include "kernel_aspace_allocator.h"
 #include "platform/timer.h"
 
@@ -25,7 +26,75 @@ using fxt::operator""_intern;
 // percpu_writer::Buffer wraps an SpscBuffer and adds functionality to track dropped trace records.
 class Buffer {
  public:
-  using Reservation = SpscBuffer<KernelAspaceAllocator, const char*>::Reservation;
+  using BufferImpl = SpscBuffer<KernelAspaceAllocator, const char*>;
+  // Reservation encapsulates a pending write to the buffer.
+  //
+  // This class implements the fxt::Writer::Reservation trait, which is required by the FXT
+  // serializer.
+  //
+  // It is absolutely imperative that interrupts remain disabled for the lifetime of this class.
+  // Enabling interrupts at any point during the lifetime of this class will break the
+  // single-writer invariant of each per-CPU buffer and lead to subtle concurrency bugs that may
+  // manifest as corrupt trace data. Unfortunately, there is no way for us to programmatically
+  // ensure this, so we do our best by asserting that interrupts are disabled in every method of
+  // this class. It is therefore up to the caller to ensure that interrupts are disabled for the
+  // lifetime of this object.
+  class Reservation {
+   public:
+    ~Reservation() { DEBUG_ASSERT(arch_ints_disabled()); }
+
+    // Disallow copies and move assignment, but allow moves.
+    // Disallowing move assignment allows the saved interrupt state to be const.
+    Reservation(const Reservation&) = delete;
+    Reservation& operator=(const Reservation&) = delete;
+    Reservation& operator=(Reservation&&) = delete;
+    Reservation(Reservation&& other) : reservation_(ktl::move(other.reservation_)) {
+      DEBUG_ASSERT(arch_ints_disabled());
+    }
+
+    void WriteWord(uint64_t word) {
+      DEBUG_ASSERT(arch_ints_disabled());
+      reservation_.Write(ktl::span<ktl::byte>(reinterpret_cast<ktl::byte*>(&word), sizeof(word)));
+    }
+
+    void WriteBytes(const void* bytes, size_t num_bytes) {
+      DEBUG_ASSERT(arch_ints_disabled());
+      // Write the data provided.
+      reservation_.Write(
+          ktl::span<const ktl::byte>(static_cast<const ktl::byte*>(bytes), num_bytes));
+
+      // Write any padding bytes necessary.
+      constexpr ktl::byte kZero[8]{};
+      const size_t aligned_bytes = ROUNDUP(num_bytes, 8);
+      const size_t num_zeros_to_write = aligned_bytes - num_bytes;
+      if (num_zeros_to_write != 0) {
+        reservation_.Write(ktl::span<const ktl::byte>(kZero, num_zeros_to_write));
+      }
+    }
+
+    void Commit() {
+      DEBUG_ASSERT(arch_ints_disabled());
+      reservation_.Commit();
+    }
+
+    static zx::result<Reservation> FromSpscReservation(
+        zx::result<BufferImpl::Reservation> reservation, uint64_t header) {
+      if (reservation.is_error()) {
+        return reservation.take_error();
+      }
+      return zx::ok(Reservation(ktl::move(reservation.value()), header));
+    }
+
+   private:
+    friend class Buffer;
+    Reservation(BufferImpl::Reservation reservation, uint64_t header)
+        : reservation_(ktl::move(reservation)) {
+      DEBUG_ASSERT(arch_ints_disabled());
+      WriteWord(header);
+    }
+
+    BufferImpl::Reservation reservation_;
+  };
 
   // Initializes the underlying SpscBuffer and metadata.
   zx_status_t Init(uint32_t size, const char* buffer_name,
@@ -46,7 +115,12 @@ class Buffer {
 
   // We interpose ourselves in the Reserve path to ensure that we can emit a record containing
   // the dropped records statistics if we need to.
-  zx::result<Reservation> Reserve(uint32_t size) {
+  zx::result<Reservation> Reserve(uint64_t header) {
+    DEBUG_ASSERT(arch_ints_disabled());
+    // Compute the number of bytes we need to reserve from the provided fxt header.
+    const uint32_t num_words = fxt::RecordFields::RecordSize::Get<uint32_t>(header);
+    const uint32_t size = num_words * sizeof(uint64_t);
+
     // If first_dropped_ is set to a value, then we are currently tracking a run of dropped trace
     // records, so we need to emit a duration record containing that information. We could emit
     // this record independently (with its own call to SpscBuffer::Reserve), but this could lead
@@ -60,8 +134,7 @@ class Buffer {
       total_size += sizeof(DroppedRecordDurationEvent);
     }
 
-    // Pass the Reserve call on to the SpscBuffer.
-    zx::result<Reservation> res = buffer_.Reserve(total_size);
+    zx::result<BufferImpl::Reservation> res = buffer_.Reserve(total_size);
     if (res.is_error()) {
       // If the reservation failed, then we did not have enough space in this buffer, and the
       // record we were attempting to write will be dropped. Add the "size" to the dropped record
@@ -79,12 +152,13 @@ class Buffer {
       // We've successfully written out the dropped record stats, so reset them for the next run.
       ResetDropStats();
     }
-    return res;
+    return Reservation::FromSpscReservation(ktl::move(res), header);
   }
 
   // Emit the dropped record stats to the trace buffer.
   // If we're not tracking a run of dropped records, this is a no-op.
   zx_status_t EmitDropStats() {
+    DEBUG_ASSERT(arch_ints_disabled());
     if (!first_dropped_.has_value()) {
       DEBUG_ASSERT(!last_dropped_.has_value());
       return ZX_OK;
@@ -92,11 +166,11 @@ class Buffer {
 
     // Try to reserve a slot for the duration record. This will fail if there still isn't enough
     // space in buffer to store the statistics.
-    zx::result<Reservation> res = buffer_.Reserve(sizeof(DroppedRecordDurationEvent));
+    zx::result<BufferImpl::Reservation> res = buffer_.Reserve(sizeof(DroppedRecordDurationEvent));
     if (res.is_error()) {
       return res.status_value();
     }
-    DroppedRecordDurationEvent record = SerializeDropStats();
+    const DroppedRecordDurationEvent record = SerializeDropStats();
 
     ktl::span bytes =
         ktl::span<const ktl::byte>(reinterpret_cast<const ktl::byte*>(&record), sizeof(record));
@@ -136,10 +210,10 @@ class Buffer {
     uint64_t bytes_dropped_arg;
     zx_instant_boot_ticks_t end;
   };
-  static_assert(std::is_standard_layout_v<DroppedRecordDurationEvent>);
+  static_assert(ktl::is_standard_layout_v<DroppedRecordDurationEvent>);
 
   // Serializes the dropped record statistics into a DroppedRecordDurationEvent.
-  DroppedRecordDurationEvent SerializeDropStats() {
+  DroppedRecordDurationEvent SerializeDropStats() const {
     // This method should only be called if we are currently tracking a run of dropped records.
     DEBUG_ASSERT(first_dropped_.has_value());
     DEBUG_ASSERT(last_dropped_.has_value());
@@ -182,7 +256,7 @@ class Buffer {
   }
 
   // The underlying SpscBuffer.
-  SpscBuffer<KernelAspaceAllocator, const char*> buffer_;
+  BufferImpl buffer_;
 
   // This class keeps track of the duration, number, and size of trace records dropped when the
   // buffer is full. These statistics are emitted to the trace buffer as a duration as soon as

@@ -649,68 +649,7 @@ void ktrace_report_live_processes();
 
 class KTrace {
  public:
-  // Reservation encapsulates a pending write to the KTrace buffer.
-  //
-  // This class implements the fxt::Writer::Reservation trait, which is required by the FXT
-  // serializer.
-  //
-  // It is absolutely imperative that interrupts remain disabled for the lifetime of this class.
-  // Enabling interrupts at any point during the lifetime of this class will break the
-  // single-writer invariant of each per-CPU buffer and lead to subtle concurrency bugs that may
-  // manifest as corrupt trace data. Unfortunately, there is no way for us to programmatically
-  // ensure this, so we do our best by asserting that interrupts are disabled in every method of
-  // this class. It is therefore up to the caller to ensure that interrupts are disabled for the
-  // lifetime of this object.
-  class Reservation {
-   public:
-    ~Reservation() { DEBUG_ASSERT(arch_ints_disabled()); }
-
-    // Disallow copies and move assignment, but allow moves.
-    // Disallowing move assignment allows the saved interrupt state to be const.
-    Reservation(const Reservation&) = delete;
-    Reservation& operator=(const Reservation&) = delete;
-    Reservation& operator=(Reservation&&) = delete;
-    Reservation(Reservation&& other) : reservation_(ktl::move(other.reservation_)) {
-      DEBUG_ASSERT(arch_ints_disabled());
-    }
-
-    void WriteWord(uint64_t word) {
-      DEBUG_ASSERT(arch_ints_disabled());
-      reservation_.Write(ktl::span<ktl::byte>(reinterpret_cast<ktl::byte*>(&word), sizeof(word)));
-    }
-
-    void WriteBytes(const void* bytes, size_t num_bytes) {
-      DEBUG_ASSERT(arch_ints_disabled());
-      // Write the data provided.
-      reservation_.Write(
-          ktl::span<const ktl::byte>(static_cast<const ktl::byte*>(bytes), num_bytes));
-
-      // Write any padding bytes necessary.
-      constexpr uint8_t kZero[8]{};
-      const size_t aligned_bytes = ROUNDUP(num_bytes, 8);
-      const size_t num_zeros_to_write = aligned_bytes - num_bytes;
-      if (num_zeros_to_write != 0) {
-        reservation_.Write(ktl::span<const ktl::byte>(reinterpret_cast<const ktl::byte*>(kZero),
-                                                      num_zeros_to_write));
-      }
-    }
-
-    void Commit() {
-      DEBUG_ASSERT(arch_ints_disabled());
-      reservation_.Commit();
-    }
-
-   private:
-    friend class KTrace;
-    Reservation(percpu_writer::Buffer::Reservation reservation, uint64_t header)
-        : reservation_(ktl::move(reservation)) {
-      DEBUG_ASSERT(arch_ints_disabled());
-      WriteWord(header);
-    }
-
-    percpu_writer::Buffer::Reservation reservation_;
-  };
-
+  using Reservation = percpu_writer::Buffer::Reservation;
   // Control is responsible for starting, stopping, or rewinding the ktrace buffer.
   //
   // The meaning of the options changes based on the action. If the action is to start tracing,
