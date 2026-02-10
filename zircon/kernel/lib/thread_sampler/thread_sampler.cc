@@ -55,55 +55,8 @@ zx::result<> sampler::ThreadSamplerDispatcher::CreateImpl(
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  IoBufferDispatcher::RegionArray configs{&ac, num_cpus};
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-  for (size_t i = 0; i < configs.size(); i++) {
-    configs[i] =
-        zx_iob_region_t{.type = ZX_IOB_REGION_TYPE_PRIVATE,
-                        .access = ZX_IOB_ACCESS_EP0_CAN_MAP_READ | ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
-                        .size = config.buffer_size,
-                        .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
-                        .private_region = zx_iob_region_private_t{
-                            .options = 0,
-                        }};
-  }
-
-  {
-    Guard<CriticalMutex> guard{&shared_regions->state_lock};
-
-    zx::result<fbl::Array<IobRegionVariant>> regions = CreateRegions(
-        configs, write_dispatcher.dispatcher().get(), read_dispatcher.dispatcher().get());
-    if (regions.is_error()) {
-      return regions.take_error();
-    }
-
-    shared_regions->regions = ktl::move(*regions);
-  }
-
   read_dispatcher.dispatcher()->InitPeer(write_dispatcher.dispatcher());
   write_dispatcher.dispatcher()->InitPeer(read_dispatcher.dispatcher());
-
-  // In addition to the work done a la IoBufferDispatcher::Create, we also need to map and pin
-  // each of the buffers so that the kernel can safely write to them.
-  fbl::Array<PinnedVmObject> pinned_buffers = fbl::MakeArray<PinnedVmObject>(&ac, num_cpus);
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  // Allocate and pin each buffer so the kernel can write to it
-  for (unsigned i = 0; i < num_cpus; i++) {
-    fbl::RefPtr vmo = write_dispatcher.dispatcher()->GetVmo(i);
-    const uint64_t vmo_offset = 0;
-    const size_t size = config.buffer_size;
-    if (zx_status_t status =
-            PinnedVmObject::Create(vmo, vmo_offset, size, true, &pinned_buffers[i]);
-        status != ZX_OK) {
-      dprintf(INFO, "Failed to make pin: %d\n", status);
-      return zx::error(status);
-    }
-  }
 
   write_dispatcher.dispatcher()->per_cpu_state_ =
       fbl::MakeArray<internal::PerCpuState>(&ac, num_cpus);
@@ -115,8 +68,8 @@ zx::result<> sampler::ThreadSamplerDispatcher::CreateImpl(
   // When we start sampling, we call mp_sync_exec which will synchronize the written
   // per_cpu_states.
   for (unsigned i = 0; i < num_cpus; i++) {
-    if (zx::result<> setup_result = write_dispatcher.dispatcher()->per_cpu_state_[i].SetUp(
-            config, ktl::move(pinned_buffers[i]), i);
+    if (zx::result<> setup_result =
+            write_dispatcher.dispatcher()->per_cpu_state_[i].SetUp(config, i);
         setup_result.is_error()) {
       return setup_result.take_error();
     }
@@ -533,24 +486,18 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUserImpl(
   // We can't be holding any locks.
   lockdep::AssertNoLocksHeld();
 
-  const size_t num_buffers = RegionCount();
-
-  // If the per-CPU buffers have not been initialized, there's nothing to do, so return early.
-  if (num_buffers == 0) {
-    return {ZX_OK, 0};
-  }
-
-  // Once we're initialized, the underlying data allocations (num_buffers) and the views into them
-  // (per_cpu_state_) better agree on the number of regions we have, or something has gone terribly
-  // wrong.
-  DEBUG_ASSERT(per_cpu_state_.size() == num_buffers);
-
+  const size_t num_buffers = per_cpu_state_.size();
   // All buffers are the same size.
-  const size_t buffer_size = GetRegion(0).size;
+  const size_t buffer_size = per_cpu_state_[0].BufferSize();
 
   // The caller can query the required buffer size by passing in a nulltpr.
   if (!ptr) {
     return {ZX_OK, buffer_size * num_buffers};
+  }
+
+  // If the per-CPU buffers have not been initialized, there's nothing to do, so return early.
+  if (!per_cpu_state_) {
+    return {ZX_OK, 0};
   }
 
   // Eventually, this should support users passing in buffers smaller than the sum of the size of
@@ -561,19 +508,28 @@ ktl::pair<zx_status_t, size_t> sampler::ThreadSamplerDispatcher::ReadUserImpl(
 
   // Iterate through each per-CPU buffer and read its contents.
   size_t bytes_read = 0;
-  user_out_ptr<char> byte_ptr = ptr.reinterpret<char>();
+  user_out_ptr<ktl::byte> byte_ptr = ptr.reinterpret<ktl::byte>();
+
+  auto copy_fn = [&](uint32_t byte_offset, ktl::span<ktl::byte> src) {
+    // This is safe to do while holding the lock_ because the KTrace lock is a leaf lock that is
+    // not acquired during the course of a page fault.
+    zx_status_t status = ZX_ERR_BAD_STATE;
+    // Compute the destination address for this segment.
+    user_out_ptr out_ptr = byte_ptr.byte_offset(bytes_read + byte_offset);
+
+    // Copy the trace data to the user segment.
+    status = out_ptr.copy_array_to_user(src.data(), src.size());
+    return status;
+  };
 
   for (uint32_t i = 0; i < num_buffers; i++) {
-    const fbl::RefPtr<VmObject>& buffer = GetVmo(i);
-    size_t available_bytes = per_cpu_state_[i].AvailableBytes();
-    auto [status, copied] = buffer->ReadUser(byte_ptr.byte_offset(bytes_read), 0, available_bytes,
-                                             VmObjectReadWriteOptions::None);
-    if (status != ZX_OK) {
+    const zx::result<size_t> result = per_cpu_state_[i].Read(copy_fn, static_cast<uint32_t>(len));
+    if (result.is_error()) {
       // If we copied some data from a previous buffer, we have to return the fact that we did so
       // here. Otherwise, that data will be lost.
-      return {status, bytes_read};
+      return {result.status_value(), bytes_read};
     }
-    bytes_read += copied;
+    bytes_read += result.value();
   }
   return {ZX_OK, bytes_read};
 }

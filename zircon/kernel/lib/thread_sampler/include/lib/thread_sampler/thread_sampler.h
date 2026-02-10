@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_THREAD_SAMPLER_H_
 
 #include <arch.h>
-#include <lib/thread_sampler/buffer_writer.h>
 #include <lib/thread_sampler/per_cpu_state.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
@@ -76,6 +75,8 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
     Guard<CriticalMutex> guard(get_lock());
     return state_;
   }
+
+  zx::result<size_t> ReadUser(user_out_ptr<void> ptr, uint32_t offset, size_t len);
 
   static zx::result<KernelHandle<ThreadSamplerDispatcher>> Create(
       const zx_sampler_config_t& config);

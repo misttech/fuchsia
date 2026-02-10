@@ -18,7 +18,6 @@ static_library("thread_sampler") {
   public_deps = [ ":headers" ]
 
   sources = [
-    "buffer_writer.cc",
     "per_cpu_state.cc",
     "thread_sampler.cc",
   ]

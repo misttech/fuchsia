@@ -113,7 +113,8 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
       // We should now be able to read the records
       size_t num_cpus = arch_max_num_cpus();
       for (unsigned i = 0; i < num_cpus; ++i) {
-        auto vmo = test_state->GetVmo(i);
+        auto& s = test_state->GetPerCpuState(i);
+
         // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
         // tid + 1 blob size = 70
         constexpr size_t num_words = 70;
@@ -122,7 +123,16 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
             fxt::MakeLargeHeader(fxt::LargeRecordType::kBlob, fxt::WordSize(num_words));
         fxt::LargeBlobFields::BlobFormat::Make(ToUnderlyingType(fxt::LargeBlobFormat::kMetadata));
         uint64_t record[71];
-        ASSERT_OK(vmo->Read(record, 0, 71 * sizeof(uint64_t)));
+        auto copy_fn = [&record](uint32_t offset,
+                                 ktl::span<ktl::byte> data) mutable -> zx_status_t {
+          ktl::ranges::copy(data, reinterpret_cast<ktl::byte*>(record) + offset);
+          return ZX_OK;
+        };
+        zx::result<size_t> read_result = s.Read(copy_fn, sizeof(record));
+        ASSERT_TRUE(read_result.is_ok());
+        // We should only get the bytes of the record we wrote.
+        ASSERT_EQ(*read_result, size_t{70 * sizeof(uint64_t)});
+
         EXPECT_EQ(large_blob_header, record[0]);
         // 0 arguments, inline thread ref, and empty name/category
         EXPECT_EQ(uint64_t{0}, record[1]);
@@ -140,8 +150,6 @@ class TestThreadSampler : public sampler::ThreadSamplerDispatcher {
         for (unsigned frame = 0; frame < 64; frame++) {
           EXPECT_EQ(record[6 + frame], frame);
         }
-        // This should be one past our record should have been 0 allocated
-        EXPECT_EQ(record[70], uint64_t{0});
       }
     }
 

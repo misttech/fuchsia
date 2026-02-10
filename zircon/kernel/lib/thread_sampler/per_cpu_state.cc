@@ -5,33 +5,12 @@
 #include <lib/thread_sampler/per_cpu_state.h>
 
 namespace sampler::internal {
-zx::result<> PerCpuState::SetUp(const zx_sampler_config_t& config, PinnedVmObject pinned_memory,
-                                cpu_num_t cpu_number) {
-  const char* name = "sampler_buffer";
-
-  auto mapping_result = VmAspace::kernel_aspace()->RootVmar()->CreateVmMapping(
-      0 /* ignored */, pinned_memory.size(), 0 /* align pow2 */,
-      VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING, pinned_memory.vmo(), pinned_memory.offset(),
-      ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE, name);
-
-  if (mapping_result.is_error()) {
-    dprintf(INFO, "Failed to map in aspace\n");
-    return mapping_result.take_error();
+zx::result<> PerCpuState::SetUp(const zx_sampler_config_t& config, cpu_num_t cpu_number) {
+  zx_status_t init_res = writer.Init(static_cast<uint32_t>(config.buffer_size), "sampler",
+                                     fxt::ThreadRef{fxt::Koid{0}, fxt::Koid{cpu_number}});
+  if (init_res != ZX_OK) {
+    return zx::error(init_res);
   }
-
-  if (zx_status_t status =
-          mapping_result->mapping->MapRange(pinned_memory.offset(), pinned_memory.size(), true);
-      status != ZX_OK) {
-    dprintf(INFO, "Failed to map range\n");
-    return zx::error(status);
-  }
-
-  vaddr_t base = mapping_result->base;
-  vaddr_t end = base + config.buffer_size;
-  vaddr_t ptr = base;
-
-  writer = internal::BufferWriter{ptr, end, ktl::move(mapping_result->mapping),
-                                  ktl::move(pinned_memory)};
   period_ = config.period;
   cpu_number_ = cpu_number;
   return zx::ok();

@@ -66,7 +66,7 @@ class Buffer {
       // Write any padding bytes necessary.
       constexpr ktl::byte kZero[8]{};
       const size_t aligned_bytes = ROUNDUP(num_bytes, 8);
-      const size_t num_zeros_to_write = aligned_bytes - num_bytes;
+      const uint8_t num_zeros_to_write = static_cast<uint8_t>(aligned_bytes - num_bytes);
       if (num_zeros_to_write != 0) {
         reservation_.Write(ktl::span<const ktl::byte>(kZero, num_zeros_to_write));
       }
@@ -101,6 +101,7 @@ class Buffer {
                    fxt::ThreadRef<fxt::RefType::kInline> assigned_cpu_ref) {
     // Allocate the KOIDs used to annotate CPU trace records.
     cpu_ref_ = assigned_cpu_ref;
+    size_ = size;
     return buffer_.Init(size, buffer_name);
   }
 
@@ -118,7 +119,9 @@ class Buffer {
   zx::result<Reservation> Reserve(uint64_t header) {
     DEBUG_ASSERT(arch_ints_disabled());
     // Compute the number of bytes we need to reserve from the provided fxt header.
-    const uint32_t num_words = fxt::RecordFields::RecordSize::Get<uint32_t>(header);
+    const uint32_t num_words = fxt::RecordFields::Type::Get<uint32_t>(header) == 15
+                                   ? fxt::LargeRecordFields::RecordSize::Get<uint32_t>(header)
+                                   : fxt::RecordFields::RecordSize::Get<uint32_t>(header);
     const uint32_t size = num_words * sizeof(uint64_t);
 
     // If first_dropped_ is set to a value, then we are currently tracking a run of dropped trace
@@ -191,6 +194,8 @@ class Buffer {
     num_dropped_ = 0;
     bytes_dropped_ = 0;
   }
+
+  uint32_t Size() const { return size_; }
 
   // This is the structure of the FXT duration event that will store dropped record metadata in
   // the trace buffer. Normally, we would use the FXT serialization functions to build this record
@@ -269,6 +274,7 @@ class Buffer {
   // be stored in a single 64-bit word in the FXT record we emit when space is available.
   uint32_t num_dropped_{0};
   uint32_t bytes_dropped_{0};
+  uint32_t size_{0};
   fxt::ThreadRef<fxt::RefType::kInline> cpu_ref_{0, 0};
 };
 

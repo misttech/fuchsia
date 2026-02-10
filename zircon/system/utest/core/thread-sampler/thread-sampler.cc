@@ -437,7 +437,7 @@ TEST(ThreadSampler, HighFrequency) {
 
   // We use a larger buffer size than the other tests. We need enough buffer room that the buffers
   // don't immediately fill up and sampling stops.
-  size_t buffer_size = 1000 * zx_system_get_page_size();
+  size_t buffer_size = size_t{1024} * zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::usec(50).get(),
       .buffer_size = buffer_size,
