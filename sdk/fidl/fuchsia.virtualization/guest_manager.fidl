@@ -134,6 +134,11 @@ closed protocol ZirconGuestManager {
 };
 
 @discoverable
+closed protocol AndroidGuestManager {
+    compose GuestManager;
+};
+
+@discoverable
 closed protocol DebianGuestManager {
     compose GuestManager;
 };

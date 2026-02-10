@@ -5,6 +5,7 @@
 group("all_guests") {
   testonly = true
   deps = [
+    ":android",
     ":debian",
     ":termina",
     ":zircon",
@@ -17,6 +18,15 @@ group("termina") {
     "//src/virtualization/bin/guest",
     "//src/virtualization/bin/termina_guest_manager",
     "//src/virtualization/packages/termina_guest",
+  ]
+}
+
+group("android") {
+  testonly = true
+  deps = [
+    "//src/virtualization/bin/guest",
+    "//src/virtualization/bin/guest_manager:android_guest_manager",
+    "//src/virtualization/packages/android_guest",
   ]
 }
 
