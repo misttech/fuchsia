@@ -1476,8 +1476,6 @@ impl MemoryManagerState {
                 let shadow_mapping = match current_task.kernel().features.mlock_pin_flavor {
                     // Pin the memory by mapping the backing memory into the high priority vmar.
                     MlockPinFlavor::ShadowProcess => {
-                        // Keep different shadow processes distinct for accounting purposes.
-                        struct MlockShadowProcess(memory_pinning::ShadowProcess);
                         let shadow_process =
                             current_task.kernel().expando.get_or_try_init(|| {
                                 memory_pinning::ShadowProcess::new(zx::Name::new_lossy(
@@ -2502,6 +2500,12 @@ impl MemoryManagerState {
         Ok(())
     }
 }
+
+/// The memory pinning shadow process used for mlock().
+///
+/// Uses its own distinct shadow process so that it doesn't interfere with other uses of memory
+/// pinning.
+pub struct MlockShadowProcess(memory_pinning::ShadowProcess);
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
     let (vmar, ptr) = vmar.allocate(

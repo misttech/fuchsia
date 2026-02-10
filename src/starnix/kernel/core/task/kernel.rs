@@ -610,7 +610,8 @@ impl Kernel {
 
         // Step 4: Clean up any structures that can keep non-Linux processes live in our job.
         log_info!("cleaning up pinned memory");
-        self.expando.remove::<memory_pinning::ShadowProcess>();
+        self.expando.remove::<crate::mm::InfoCacheShadowProcess>();
+        self.expando.remove::<crate::mm::MlockShadowProcess>();
 
         // Step 5: Make sure this is the only process running in the job. We already should have
         // cleared up all processes other than the system task at this point, but wait on any that

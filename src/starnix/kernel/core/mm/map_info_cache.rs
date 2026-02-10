@@ -24,9 +24,6 @@ const ZIRCON_NAME: zx::Name = zx::Name::new_lossy("starnix_zx_map_info_cache");
 
 impl MapInfoCache {
     pub fn get_or_init(current_task: &CurrentTask) -> Result<Arc<Self>, Errno> {
-        // Keep different shadow processes distinct for accounting purposes.
-        struct InfoCacheShadowProcess(memory_pinning::ShadowProcess);
-
         let kernel = current_task.kernel();
         kernel.expando.get_or_try_init(|| {
             let pinned_shadow_process = kernel.expando.get_or_try_init(|| {
@@ -71,6 +68,12 @@ impl MapInfoCache {
         }
     }
 }
+
+/// The memory pinning shadow process used for zx::MapInfo buffers.
+///
+/// Uses its own distinct shadow process so that it doesn't interfere with other uses of memory
+/// pinning.
+pub struct InfoCacheShadowProcess(ShadowProcess);
 
 #[cfg(test)]
 mod tests {
