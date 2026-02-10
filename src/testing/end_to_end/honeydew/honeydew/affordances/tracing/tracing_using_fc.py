@@ -85,17 +85,15 @@ class TracingUsingFc(AsyncAdapter, tracing.Tracing):
         self._name: str = device_name
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
 
-        self._trace_controller_proxy: f_tracingcontroller.SessionClient | None
-
-        self._trace_socket: AsyncSocket | None
-        self._session_initialized: bool
-        self._tracing_active: bool
         self._drain_task: asyncio.Task[None] | None = None
-        self._trace_buffer: bytearray | None
+        self._trace_buffer: bytearray | None = None
+        self._trace_socket: AsyncSocket | None = None
+        self._trace_controller_proxy: f_tracingcontroller.SessionClient | None = (
+            None
+        )
+        self._session_initialized: bool = False
+        self._tracing_active: bool = False
 
-        # `_reset_state` needs to be called on initialization, and thereafter on
-        # every device bootup.
-        self.loop().run_until_complete(self._reset_state())
         reboot_affordance.register_for_on_device_boot(fn=self.reboot_handler)
         self.verify_supported()
 
