@@ -71,6 +71,7 @@ source_set("paver-core") {
     "//src/lib/uuid",
     "//src/storage/fvm",
     "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/block_client/cpp:remote_rebindable_block_device",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]

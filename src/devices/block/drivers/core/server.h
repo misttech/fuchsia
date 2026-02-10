@@ -26,10 +26,10 @@
 #include <fbl/mutex.h>
 #include <fbl/ref_ptr.h>
 
-#include "block-fifo.h"
 #include "iobuffer.h"
 #include "message-group.h"
 #include "message.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 // Remaps the dev_offset of block requests based on an internal map.
 class OffsetMap {

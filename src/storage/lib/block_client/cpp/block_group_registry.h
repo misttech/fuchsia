@@ -5,17 +5,15 @@
 #ifndef SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_BLOCK_GROUP_REGISTRY_H_
 #define SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_BLOCK_GROUP_REGISTRY_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <pthread.h>
 #include <zircon/compiler.h>
 
 #include <array>
+#include <mutex>
 #include <optional>
 #include <thread>
 
-#include <fbl/mutex.h>
-
-#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace block_client {
 
@@ -29,7 +27,7 @@ class BlockGroupRegistry {
   groupid_t GroupID();
 
  private:
-  fbl::Mutex lock_;
+  std::mutex lock_;
   std::array<std::optional<pthread_t>, MAX_TXN_GROUP_COUNT> threads_ __TA_GUARDED(lock_) = {};
 };
 

@@ -133,7 +133,7 @@ class BcacheMapper : public storage::VmoidRegistry {
   // |vmoid_tree_| is a map between the virtual vmoid seen by F2FS and the vmoid actually registered
   // on the underlying device.
   std::map<vmoid_t, std::vector<storage::Vmoid>> vmoid_tree_;
-  vmoid_t last_id_ = BLOCK_VMOID_INVALID + 1;
+  vmoid_t last_id_ = fuchsia_storage_block::kVmoidInvalid + 1;
 
   std::mutex buffer_mutex_;
   // |buffer_| and |buffer_mutex_| are used in the "Readblk/Writeblk" methods.

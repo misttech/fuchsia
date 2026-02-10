@@ -34,7 +34,6 @@
 #include <storage/buffer/vmo_buffer.h>
 #include <storage/operation/operation.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_creator.h"
@@ -51,6 +50,7 @@
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"

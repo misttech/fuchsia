@@ -5,7 +5,6 @@
 #ifndef STORAGE_BUFFER_OWNED_VMOID_H_
 #define STORAGE_BUFFER_OWNED_VMOID_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <zircon/types.h>
 
 #include <utility>

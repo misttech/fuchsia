@@ -45,9 +45,9 @@
 #include <storage/operation/operation.h>
 #include <storage/operation/unbuffered_operation.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 #include "src/storage/lib/vfs/cpp/journal/format.h"
 #include "src/storage/lib/vfs/cpp/journal/initializer.h"
 #include "src/storage/lib/vfs/cpp/journal/journal_writer.h"

@@ -6,8 +6,6 @@
 
 #include <lib/fzl/owned-vmo-mapper.h>
 
-#include <fbl/auto_lock.h>
-
 namespace storage {
 namespace internal {
 
@@ -24,12 +22,12 @@ zx_status_t BlockingRingBufferImpl::Reserve(uint64_t blocks, BlockingRingBufferR
 
   {
     zx_status_t status = ZX_ERR_NO_SPACE;
-    fbl::AutoLock lock(&lock_);
+    std::unique_lock lock(lock_);
     do {
       status = buffer_->Reserve(blocks, &reservation);
       if (status == ZX_ERR_NO_SPACE) {
         // Case 1: We cannot reserve space. Block until it is available.
-        cvar_.Wait(&lock_);
+        cvar_.wait(lock);
       } else if (status != ZX_OK) {
         // Case 2: We cannot reserve space, but don't expect it to become available.
         return status;
@@ -43,8 +41,8 @@ zx_status_t BlockingRingBufferImpl::Reserve(uint64_t blocks, BlockingRingBufferR
 }
 
 void BlockingRingBufferImpl::Wake() {
-  fbl::AutoLock lock(&lock_);
-  cvar_.Broadcast();
+  std::lock_guard lock(lock_);
+  cvar_.notify_all();
 }
 
 }  // namespace internal
@@ -52,8 +50,7 @@ void BlockingRingBufferImpl::Wake() {
 BlockingRingBuffer::BlockingRingBuffer(std::unique_ptr<RingBuffer> buffer)
     : buffer_(internal::BlockingRingBufferImpl(std::move(buffer))) {}
 
-zx_status_t BlockingRingBuffer::Create(storage::VmoidRegistry* vmoid_registry,
-                                       const size_t blocks,
+zx_status_t BlockingRingBuffer::Create(storage::VmoidRegistry* vmoid_registry, const size_t blocks,
                                        uint32_t block_size, const char* label,
                                        std::unique_ptr<BlockingRingBuffer>* out) {
   std::unique_ptr<RingBuffer> buffer;

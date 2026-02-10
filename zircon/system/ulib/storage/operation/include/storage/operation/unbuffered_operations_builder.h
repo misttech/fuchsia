@@ -9,14 +9,12 @@
 #error Fuchsia-only Header
 #endif
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 
 #include <utility>
 #include <vector>
 
-#include <fbl/macros.h>
 #include <storage/operation/unbuffered_operation.h>
 
 namespace storage {

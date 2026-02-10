@@ -110,6 +110,7 @@ source_set("shared") {
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddk",
     "//src/lib/ddktl",
+    "//src/storage/lib/block_protocol:block_fifo",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
@@ -123,6 +124,7 @@ source_set("shared") {
     "//sdk/banjo/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//src/devices/lib/dev-operation",
   ]

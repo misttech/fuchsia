@@ -22,7 +22,7 @@
 #include <gpt/gpt.h>
 #include <gpt/guid.h>
 
-#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/block_client/cpp/remote_rebindable_block_device.h"
 
 using gpt::GptDevice;
 using gpt::GuidProperties;
@@ -146,8 +146,8 @@ zx::result<std::unique_ptr<GptDevice>> Init(const char* dev) {
     return controller.take_error();
   }
 
-  zx::result device = block_client::RemoteBlockDevice::Create(std::move(block.value()),
-                                                              std::move(controller.value()));
+  zx::result device = block_client::RemoteRebindableBlockDevice::Create(
+      std::move(block.value()), std::move(controller.value()));
   if (device.is_error()) {
     fprintf(stderr, "Failed to create block client: %s\n", device.status_string());
     return device.take_error();

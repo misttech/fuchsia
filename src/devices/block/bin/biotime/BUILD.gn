@@ -12,10 +12,11 @@ executable("biotime") {
   testonly = true
   sources = [ "biotime.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit",
+    "//src/storage/lib/block_protocol:block_fifo",
     "//zircon/system/ulib/perftest",
     "//zircon/system/ulib/zircon-internal",
   ]
@@ -32,6 +33,7 @@ test("biotime-test") {
   deps = [
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//src/storage/lib/block_protocol:block_fifo",
     "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",

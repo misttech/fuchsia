@@ -5,7 +5,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>

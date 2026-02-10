@@ -5,7 +5,6 @@
 #include <assert.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/fdio/directory.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/zircon-internal/xorshiftrand.h>

@@ -22,6 +22,7 @@ test("gpt-unit-test") {
     "//sdk/lib/fdio",
     "//src/storage/gpt",
     "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/block_client/cpp:remote_rebindable_block_device",
     "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/testing:storage_driver_test_realm",
     "//zircon/system/ulib/fbl",

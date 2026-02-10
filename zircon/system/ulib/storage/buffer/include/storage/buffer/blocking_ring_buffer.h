@@ -6,10 +6,9 @@
 #define STORAGE_BUFFER_BLOCKING_RING_BUFFER_H_
 
 #include <memory>
+#include <mutex>
 #include <utility>
 
-#include <fbl/condition_variable.h>
-#include <fbl/mutex.h>
 #include <storage/buffer/ring_buffer.h>
 
 namespace storage {
@@ -27,7 +26,8 @@ class BlockingRingBufferImpl {
   BlockingRingBufferImpl& operator=(BlockingRingBufferImpl&& other) = delete;
   ~BlockingRingBufferImpl() = default;
 
-  zx_status_t Reserve(uint64_t blocks, BlockingRingBufferReservation* out);
+  zx_status_t Reserve(uint64_t blocks,
+                      BlockingRingBufferReservation* out) __TA_NO_THREAD_SAFETY_ANALYSIS;
 
   // Identifies that a RingBufferReservation is going out of scope, implying that there may be
   // additional space in |buffer_| now that the reservation has reset or destroyed. Signals to
@@ -39,9 +39,9 @@ class BlockingRingBufferImpl {
 
  private:
   std::unique_ptr<RingBuffer> buffer_;
-  fbl::Mutex lock_;
+  std::mutex lock_;
   // Protect this condition variable with the lock itself to avoid missing notifications.
-  fbl::ConditionVariable cvar_ __TA_GUARDED(lock_);
+  std::condition_variable cvar_ __TA_GUARDED(lock_);
 };
 
 }  // namespace internal

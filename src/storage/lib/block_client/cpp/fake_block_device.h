@@ -14,8 +14,6 @@
 #include <map>
 #include <optional>
 
-#include <fbl/condition_variable.h>
-#include <fbl/mutex.h>
 #include <range/range.h>
 
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
@@ -115,7 +113,8 @@ class FakeBlockDevice : public BlockDevice {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t FifoTransaction(BlockFifoRequest* requests, size_t count) override;
+  zx_status_t FifoTransaction(BlockFifoRequest* requests,
+                              size_t count) override __TA_NO_THREAD_SAFETY_ANALYSIS;
   zx_status_t BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const override;
   zx_status_t BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out_vmoid) final;
 
@@ -126,13 +125,10 @@ class FakeBlockDevice : public BlockDevice {
  private:
   void AdjustBlockDeviceSizeLocked(uint64_t new_size) __TA_REQUIRES(lock_);
 
-  // Waits, blocking the current thread, until execution is not paused.
-  void WaitOnPaused() const __TA_REQUIRES(lock_);
-
-  mutable fbl::Mutex lock_ = {};
+  mutable std::mutex lock_;
 
   // For handling paused_ waiters. Use BlockOnPaused() to wait on this.
-  mutable fbl::ConditionVariable pause_condition_;
+  mutable std::condition_variable pause_condition_;
 
   bool paused_ __TA_GUARDED(lock_) = false;
 
@@ -169,7 +165,7 @@ class FakeFVMBlockDevice : public FakeBlockDevice {
   zx_status_t VolumeShrink(uint64_t offset, uint64_t length) final;
 
  private:
-  mutable fbl::Mutex fvm_lock_ = {};
+  mutable std::mutex fvm_lock_;
 
   fuchsia_storage_block::wire::VolumeManagerInfo manager_info_ __TA_GUARDED(fvm_lock_) = {};
   fuchsia_storage_block::wire::VolumeInfo volume_info_ __TA_GUARDED(fvm_lock_) = {};

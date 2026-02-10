@@ -4,16 +4,14 @@
 
 #include "src/storage/lib/block_client/cpp/client.h"
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/zx/fifo.h>
 #include <stdlib.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
-#include <fbl/macros.h>
 #include <storage/buffer/owned_vmoid.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace block_client {
 

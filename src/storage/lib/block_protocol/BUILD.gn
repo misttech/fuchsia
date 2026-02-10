@@ -15,3 +15,8 @@ rustc_library("block_protocol") {
     "//third_party/rust_crates:zerocopy",
   ]
 }
+
+source_set("block_fifo") {
+  sources = [ "block-fifo.h" ]
+  public_deps = [ "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp" ]
+}

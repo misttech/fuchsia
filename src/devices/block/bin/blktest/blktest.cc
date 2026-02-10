@@ -6,7 +6,6 @@
 
 #include <errno.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/zx/fifo.h>

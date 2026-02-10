@@ -20,6 +20,8 @@ source_set("interface") {
     "reader_writer.h",
   ]
   public_deps = [
+    "//src/storage/lib/block_protocol:block_fifo",
+
     # For storage/buffer/...
     "//zircon/system/ulib/storage/buffer",
 
@@ -51,9 +53,7 @@ static_library("cpp") {
 
   public_deps = [
     ":interface",
-
-    # fake_block_device.h has #include <range/range.h>.
-    "//zircon/system/ulib/range",
+    "//src/storage/lib/block_protocol:block_fifo",
 
     # client.h has #include <storage/buffer/vmoid_registry.h>.
     "//zircon/system/ulib/storage/buffer",
@@ -62,18 +62,25 @@ static_library("cpp") {
     "//zircon/system/ulib/zx",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+    "//sdk/lib/fdio",
+    "//zircon/system/ulib/zx",
+    "//zircon/third_party/ulib/safemath",
+  ]
+}
+
+static_library("remote_rebindable_block_device") {
+  public = [ "remote_rebindable_block_device.h" ]
+  sources = [ "remote_rebindable_block_device.cc" ]
+
+  public_deps = [ ":cpp" ]
+  deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
-    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//src/lib/ddk",
-    "//src/storage/lib/vfs/cpp",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
-    "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
-    "//zircon/third_party/ulib/safemath",
   ]
 }
 

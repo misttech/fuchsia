@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.hardware.skipblock/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/service.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>

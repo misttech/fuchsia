@@ -5,15 +5,13 @@
 #ifndef STORAGE_BUFFER_BLOCK_BUFFER_H_
 #define STORAGE_BUFFER_BLOCK_BUFFER_H_
 
-#ifdef __Fuchsia__
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#endif
-
 #include <zircon/types.h>
 
 #include <cstdint>
 
 namespace storage {
+
+using vmoid_t = uint16_t;
 
 // Interface for a block-aligned buffer.
 //

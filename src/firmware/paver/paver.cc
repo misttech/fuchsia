@@ -6,7 +6,6 @@
 
 #include <dirent.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/abr/data.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/directory.h>

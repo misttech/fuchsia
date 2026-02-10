@@ -4,7 +4,6 @@
 
 #include "storage/buffer/owned_vmoid.h"
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
 

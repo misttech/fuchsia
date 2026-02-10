@@ -12,10 +12,9 @@
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 
+#include <mutex>
 #include <vector>
 
-#include <fbl/mutex.h>
-#include <fbl/vector.h>
 #include <storage/buffer/block_buffer_view.h>
 #include <storage/buffer/vmo_buffer.h>
 #include <storage/operation/unbuffered_operation.h>
@@ -95,13 +94,12 @@ class RingBufferState {
   // Although this lock guards some fields of |RingBuffer| explicitly, access to the
   // buffer data ("who can access the region at [start, start + length)?") is implicit
   // via the RingBufferReservation objects.
-  fbl::Mutex lock_;
+  std::mutex lock_;
 
   // The units of all the following are "filesystem blocks".
   size_t reserved_start_ __TA_GUARDED(lock_) = 0;
   size_t reserved_length_ __TA_GUARDED(lock_) = 0;
-  // TODO(https://fxbug.dev/42109057): Replace fbl::Vector with a friendlier std container when possible.
-  fbl::Vector<Range> pending_free_ __TA_GUARDED(lock_);
+  std::vector<Range> pending_free_ __TA_GUARDED(lock_);
 };
 
 }  // namespace internal

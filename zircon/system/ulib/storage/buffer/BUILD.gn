@@ -17,6 +17,7 @@ zx_library("buffer") {
     "array_buffer.cc",
     "block_buffer.cc",
   ]
+  public_deps = [ "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp" ]
   deps = [ "//zircon/third_party/ulib/safemath" ]
 
   if (is_fuchsia) {
@@ -33,23 +34,12 @@ zx_library("buffer") {
       "ring_buffer.cc",
       "vmo_buffer.cc",
     ]
-    public_deps = [
-      "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-      "//zircon/system/ulib/fbl",
+    public_deps += [
       "//zircon/system/ulib/fzl",
       "//zircon/system/ulib/storage/operation",
       "//zircon/system/ulib/zx",
     ]
-    deps += [
-      "//sdk/lib/fdio",
-      "//zircon/system/ulib/fbl",
-
-      # TODO(https://fxbug.dev/42113969): Clean up any remaining 'fs' dependencies. Only for fs/trace
-      "//src/storage/lib/vfs/cpp",
-      "//zircon/system/ulib/fzl",
-      "//zircon/system/ulib/storage/operation",
-      "//zircon/system/ulib/zx",
-    ]
+    deps += [ "//sdk/lib/fdio" ]
   }
 }
 

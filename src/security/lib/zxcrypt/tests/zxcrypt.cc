@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <errno.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

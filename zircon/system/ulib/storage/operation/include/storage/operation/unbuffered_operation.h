@@ -5,7 +5,6 @@
 #ifndef STORAGE_OPERATION_UNBUFFERED_OPERATION_H_
 #define STORAGE_OPERATION_UNBUFFERED_OPERATION_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/vmo.h>
 

@@ -5,12 +5,14 @@
 #ifndef STORAGE_BUFFER_VMOID_REGISTRY_H_
 #define STORAGE_BUFFER_VMOID_REGISTRY_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
 
 namespace storage {
+
+using vmoid_t = uint16_t;
 
 // A thin wrapper around a vmoid_t that will assert if you forget to detach it.
 class Vmoid {
@@ -24,27 +26,27 @@ class Vmoid {
 
   Vmoid(Vmoid&& other) noexcept {
     vmoid_ = other.vmoid_;
-    other.vmoid_ = BLOCK_VMOID_INVALID;
+    other.vmoid_ = fuchsia_storage_block::kVmoidInvalid;
   }
   Vmoid& operator=(Vmoid&& other) noexcept {
-    ZX_DEBUG_ASSERT(vmoid_ == BLOCK_VMOID_INVALID);
+    ZX_DEBUG_ASSERT(vmoid_ == fuchsia_storage_block::kVmoidInvalid);
     vmoid_ = other.vmoid_;
     other.vmoid_ = 0;
     return *this;
   }
 
-  ~Vmoid() { ZX_DEBUG_ASSERT_MSG(vmoid_ == BLOCK_VMOID_INVALID, " (%u)", vmoid_); }
+  ~Vmoid() { ZX_DEBUG_ASSERT_MSG(vmoid_ == fuchsia_storage_block::kVmoidInvalid, " (%u)", vmoid_); }
 
   vmoid_t get() const { return vmoid_; }
-  bool IsAttached() const { return vmoid_ != BLOCK_VMOID_INVALID; }
+  bool IsAttached() const { return vmoid_ != fuchsia_storage_block::kVmoidInvalid; }
   [[nodiscard]] vmoid_t TakeId() {
     vmoid_t id = vmoid_;
-    vmoid_ = BLOCK_VMOID_INVALID;
+    vmoid_ = fuchsia_storage_block::kVmoidInvalid;
     return id;
   }
 
  private:
-  vmoid_t vmoid_ = BLOCK_VMOID_INVALID;
+  vmoid_t vmoid_ = fuchsia_storage_block::kVmoidInvalid;
 };
 
 // An interface which controls attaching and detaching VMOs with the underlying device.

@@ -5,6 +5,8 @@
 #ifndef STORAGE_BUFFER_ARRAY_BUFFER_H_
 #define STORAGE_BUFFER_ARRAY_BUFFER_H_
 
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
+
 #include <vector>
 
 #include <storage/buffer/block_buffer.h>
@@ -25,7 +27,7 @@ class ArrayBuffer : public BlockBuffer {
   size_t capacity() const final { return buffer_.size() / block_size_; }
   uint32_t BlockSize() const final { return block_size_; }
 #ifdef __Fuchsia__
-  vmoid_t vmoid() const final { return BLOCK_VMOID_INVALID; }
+  vmoid_t vmoid() const final { return fuchsia_storage_block::kVmoidInvalid; }
   zx_handle_t Vmo() const final { return ZX_HANDLE_INVALID; }
 #endif
   void* Data(size_t index) final;

@@ -10,7 +10,6 @@
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -35,6 +34,7 @@
 #include <fbl/string_printf.h>
 #include <fbl/unique_fd.h>
 
+#include "fidl/fuchsia.storage.block/cpp/natural_types.h"
 #include "src/lib/fxl/strings/concatenate.h"
 #include "src/storage/fvm/fvm.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
@@ -304,9 +304,9 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartition(
     fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags) {
   fuchsia_storage_block::wire::Guid type_fidl;
-  memcpy(type_fidl.value.data(), type_guid.bytes(), BLOCK_GUID_LEN);
+  memcpy(type_fidl.value.data(), type_guid.bytes(), fuchsia_storage_block::kGuidLength);
   fuchsia_storage_block::wire::Guid instance_fidl;
-  memcpy(instance_fidl.value.data(), instance_guid.bytes(), BLOCK_GUID_LEN);
+  memcpy(instance_fidl.value.data(), instance_guid.bytes(), fuchsia_storage_block::kGuidLength);
   fidl::StringView name_fidl = fidl::StringView::FromExternal(name);
 
   auto response = fidl::WireCall(fvm)->AllocatePartition(slice_count, type_fidl, instance_fidl,
@@ -330,9 +330,9 @@ zx::result<fidl::ClientEnd<fuchsia_device::Controller>> FvmAllocatePartitionWith
     fidl::UnownedClientEnd<fuchsia_storage_block::VolumeManager> fvm, uint64_t slice_count,
     uuid::Uuid type_guid, uuid::Uuid instance_guid, std::string_view name, uint32_t flags) {
   fuchsia_storage_block::wire::Guid type_fidl;
-  memcpy(type_fidl.value.data(), type_guid.bytes(), BLOCK_GUID_LEN);
+  memcpy(type_fidl.value.data(), type_guid.bytes(), fuchsia_storage_block::kGuidLength);
   fuchsia_storage_block::wire::Guid instance_fidl;
-  memcpy(instance_fidl.value.data(), instance_guid.bytes(), BLOCK_GUID_LEN);
+  memcpy(instance_fidl.value.data(), instance_guid.bytes(), fuchsia_storage_block::kGuidLength);
   fidl::StringView name_fidl = fidl::StringView::FromExternal(name);
 
   auto response = fidl::WireCall(fvm)->AllocatePartition(slice_count, type_fidl, instance_fidl,

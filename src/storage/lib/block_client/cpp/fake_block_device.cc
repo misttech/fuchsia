@@ -10,8 +10,7 @@
 
 #include <vector>
 
-#include <fbl/auto_lock.h>
-
+#include "fidl/fuchsia.storage.block/cpp/wire_types.h"
 #include "sdk/lib/syslog/cpp/macros.h"
 #include "src/storage/fvm/format.h"
 
@@ -30,7 +29,7 @@ FakeBlockDevice::FakeBlockDevice(const FakeBlockDevice::Config& config)
 }
 
 zx::result<zx::vmo> FakeBlockDevice::VmoChildReference() const {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   zx::vmo vmo;
   if (zx_status_t status = block_device_.create_child(ZX_VMO_CHILD_REFERENCE, 0, 0, &vmo);
       status != ZX_OK) {
@@ -40,60 +39,60 @@ zx::result<zx::vmo> FakeBlockDevice::VmoChildReference() const {
 }
 
 void FakeBlockDevice::Pause() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   paused_ = true;
 }
 
 void FakeBlockDevice::Resume() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   paused_ = false;
-  pause_condition_.Broadcast();
+  pause_condition_.notify_all();
 }
 
 void FakeBlockDevice::SetWriteBlockLimit(uint64_t limit) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   write_block_limit_ = limit;
 }
 
 void FakeBlockDevice::ResetWriteBlockLimit() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   write_block_limit_ = std::nullopt;
 }
 
 uint64_t FakeBlockDevice::GetWriteBlockCount() const {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   return write_block_count_;
 }
 
 void FakeBlockDevice::ResetBlockCounts() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   write_block_count_ = 0;
 }
 
 void FakeBlockDevice::SetInfoFlags(fuchsia_storage_block::wire::DeviceFlag flags) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   block_info_flags_ = flags;
 }
 
 void FakeBlockDevice::SetBlockCount(uint64_t block_count) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   block_count_ = block_count;
   AdjustBlockDeviceSizeLocked(block_count_ * block_size_);
 }
 
 void FakeBlockDevice::SetBlockSize(uint32_t block_size) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   block_size_ = block_size;
   AdjustBlockDeviceSizeLocked(block_count_ * block_size_);
 }
 
 bool FakeBlockDevice::IsRegistered(vmoid_t vmoid) const {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   return vmos_.find(vmoid) != vmos_.end();
 }
 
 void FakeBlockDevice::ResizeDeviceToAtLeast(uint64_t new_size) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   uint64_t size;
   ZX_ASSERT(block_device_.get_size(&size) == ZX_OK);
   if (size < new_size) {
@@ -105,19 +104,14 @@ void FakeBlockDevice::AdjustBlockDeviceSizeLocked(uint64_t new_size) {
   ZX_ASSERT(block_device_.set_size(new_size) == ZX_OK);
 }
 
-void FakeBlockDevice::WaitOnPaused() const __TA_REQUIRES(lock_) {
-  while (paused_)
-    pause_condition_.Wait(&lock_);
-}
-
 zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
-  fbl::AutoLock lock(&lock_);
+  std::unique_lock lock(lock_);
   const uint32_t block_size = block_size_;
   for (size_t i = 0; i < count; i++) {
     // Allow pauses to take effect between each issued operation. This will potentially allow other
     // threads to issue transactions since it releases the lock, just as the actual implementation
     // does.
-    WaitOnPaused();
+    pause_condition_.wait(lock, [&]() __TA_NO_THREAD_SAFETY_ANALYSIS { return !paused_; });
 
     if (hook_) {
       auto iter = vmos_.find(requests[i].vmoid);
@@ -127,8 +121,9 @@ zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t 
       }
     }
 
-    switch (requests[i].command.opcode) {
-      case BLOCK_OPCODE_READ: {
+    using fuchsia_storage_block::wire::BlockOpcode;
+    switch (static_cast<BlockOpcode>(requests[i].command.opcode)) {
+      case BlockOpcode::kRead: {
         vmoid_t vmoid = requests[i].vmoid;
         zx::vmo& target_vmoid = vmos_.at(vmoid);
         auto buffer = std::make_unique<uint8_t[]>(block_size);
@@ -151,7 +146,7 @@ zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t 
         }
         break;
       }
-      case BLOCK_OPCODE_WRITE: {
+      case BlockOpcode::kWrite: {
         vmoid_t vmoid = requests[i].vmoid;
         zx::vmo& target_vmoid = vmos_.at(vmoid);
         auto buffer = std::make_unique<uint8_t[]>(block_size);
@@ -180,20 +175,20 @@ zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t 
         }
         break;
       }
-      case BLOCK_OPCODE_TRIM:
+      case BlockOpcode::kTrim:
         if (!(block_info_flags_ & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport)) {
           return ZX_ERR_NOT_SUPPORTED;
         }
-        if (requests[i].vmoid != BLOCK_VMOID_INVALID) {
+        if (requests[i].vmoid != fuchsia_storage_block::wire::kVmoidInvalid) {
           return ZX_ERR_INVALID_ARGS;
         }
         if (requests[i].dev_offset + requests[i].length > block_count_) {
           return ZX_ERR_OUT_OF_RANGE;
         }
         break;
-      case BLOCK_OPCODE_FLUSH:
+      case BlockOpcode::kFlush:
         continue;
-      case BLOCK_OPCODE_CLOSE_VMO:
+      case BlockOpcode::kCloseVmo:
         ZX_ASSERT(vmos_.erase(requests[i].vmoid) == 1);
         break;
       default:
@@ -204,7 +199,7 @@ zx_status_t FakeBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t 
 }
 
 zx_status_t FakeBlockDevice::BlockGetInfo(fuchsia_storage_block::wire::BlockInfo* out_info) const {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   out_info->block_count = block_count_;
   out_info->block_size = block_size_;
   out_info->flags = block_info_flags_;
@@ -213,7 +208,7 @@ zx_status_t FakeBlockDevice::BlockGetInfo(fuchsia_storage_block::wire::BlockInfo
 }
 
 void FakeBlockDevice::Wipe() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   ZX_ASSERT(block_device_.op_range(ZX_VMO_OP_ZERO, 0, block_count_ * block_size_, nullptr, 0) ==
             ZX_OK);
 }
@@ -225,7 +220,7 @@ zx_status_t FakeBlockDevice::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* 
     return status;
   }
 
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   // Find a free vmoid.
   vmoid_t vmoid = 1;
   for (const auto& [used_vmoid, vmo] : vmos_) {
@@ -243,7 +238,7 @@ zx_status_t FakeBlockDevice::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* 
 FakeFVMBlockDevice::FakeFVMBlockDevice(uint64_t block_count, uint32_t block_size,
                                        uint64_t slice_size, uint64_t slice_capacity)
     : FakeBlockDevice(block_count, block_size) {
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   manager_info_.slice_size = slice_size;
   manager_info_.slice_count = slice_capacity;
   manager_info_.assigned_slice_count = 1;
@@ -257,7 +252,7 @@ FakeFVMBlockDevice::FakeFVMBlockDevice(uint64_t block_count, uint32_t block_size
 }
 
 zx_status_t FakeFVMBlockDevice::FifoTransaction(BlockFifoRequest* requests, size_t count) {
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   // Don't need WaitOnPaused() here because this code just validates the input. The actual
   // requests will be excuted by the FakeBlockDevice::FifoTransaction() call at the bottom which
   // handles the pause requests.
@@ -274,12 +269,13 @@ zx_status_t FakeFVMBlockDevice::FifoTransaction(BlockFifoRequest* requests, size
   // Validate that the operation acts on valid slices before sending it to the underlying
   // mock device.
   for (size_t i = 0; i < count; i++) {
-    switch (requests[i].command.opcode) {
-      case BLOCK_OPCODE_READ:
+    using fuchsia_storage_block::wire::BlockOpcode;
+    switch (static_cast<BlockOpcode>(requests[i].command.opcode)) {
+      case BlockOpcode::kRead:
         break;
-      case BLOCK_OPCODE_WRITE:
+      case BlockOpcode::kWrite:
         break;
-      case BLOCK_OPCODE_TRIM:
+      case BlockOpcode::kTrim:
         break;
       default:
         continue;
@@ -307,7 +303,7 @@ zx_status_t FakeFVMBlockDevice::FifoTransaction(BlockFifoRequest* requests, size
 zx_status_t FakeFVMBlockDevice::VolumeGetInfo(
     fuchsia_storage_block::wire::VolumeManagerInfo* out_manager_info,
     fuchsia_storage_block::wire::VolumeInfo* out_volume_info) const {
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   *out_manager_info = manager_info_;
   *out_volume_info = volume_info_;
   return ZX_OK;
@@ -317,7 +313,7 @@ zx_status_t FakeFVMBlockDevice::VolumeQuerySlices(
     const uint64_t* slices, size_t slices_count,
     fuchsia_storage_block::wire::VsliceRange* out_ranges, size_t* out_ranges_count) const {
   *out_ranges_count = 0;
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   for (size_t i = 0; i < slices_count; i++) {
     uint64_t slice_start = slices[i];
     if (slice_start >= manager_info_.max_virtual_slice) {
@@ -351,7 +347,7 @@ zx_status_t FakeFVMBlockDevice::VolumeQuerySlices(
 }
 
 zx_status_t FakeFVMBlockDevice::VolumeExtend(uint64_t offset, uint64_t length) {
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   if (offset + length > manager_info_.max_virtual_slice) {
     return ZX_ERR_OUT_OF_RANGE;
   }
@@ -394,7 +390,7 @@ zx_status_t FakeFVMBlockDevice::VolumeExtend(uint64_t offset, uint64_t length) {
 }
 
 zx_status_t FakeFVMBlockDevice::VolumeShrink(uint64_t offset, uint64_t length) {
-  fbl::AutoLock lock(&fvm_lock_);
+  std::lock_guard lock(fvm_lock_);
   if (offset + length > manager_info_.max_virtual_slice) {
     return ZX_ERR_OUT_OF_RANGE;
   }

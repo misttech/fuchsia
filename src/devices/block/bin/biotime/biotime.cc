@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/xorshiftrand.h>
@@ -21,7 +20,7 @@
 
 #include <perftest/results.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace {
 

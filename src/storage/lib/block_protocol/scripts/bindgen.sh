@@ -19,7 +19,7 @@ readonly BINDGEN="${PREBUILT_RUST_BINDGEN_DIR}/bindgen"
 readonly ZEROCOPY_SYMS_REGEX="BlockFifo(Command|Request|Response)"
 
 readonly target_file="$FUCHSIA_DIR/src/storage/lib/block_protocol/src/fifo.rs"
-readonly source_file_within_tree="src/devices/block/drivers/core/block-fifo.h"
+readonly source_file_within_tree="src/storage/lib/block_protocol/block-fifo.h"
 readonly source_file="$FUCHSIA_DIR/$source_file_within_tree"
 
 readonly copyright_line=$(grep -E "^// Copyright [0-9]+" "${source_file}" || \

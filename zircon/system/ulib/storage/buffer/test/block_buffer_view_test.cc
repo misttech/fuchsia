@@ -39,7 +39,7 @@ TEST(BlockBufferViewTest, EmptyView) {
   BlockBufferView view;
   EXPECT_EQ(view.start(), 0ul);
   EXPECT_EQ(view.length(), 0ul);
-  EXPECT_EQ(BLOCK_VMOID_INVALID, view.vmoid());
+  EXPECT_EQ(fuchsia_storage_block::kVmoidInvalid, view.vmoid());
   EXPECT_EQ(view.BlockSize(), 0ul);
 }
 

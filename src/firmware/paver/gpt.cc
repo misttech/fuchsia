@@ -26,7 +26,7 @@
 #include "src/firmware/paver/block-devices.h"
 #include "src/firmware/paver/pave-logging.h"
 #include "src/firmware/paver/utils.h"
-#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/block_client/cpp/remote_rebindable_block_device.h"
 #include "zircon/status.h"
 
 namespace paver {
@@ -102,8 +102,8 @@ zx::result<std::unique_ptr<GptDevice>> CreateGptConnection(
   }
   const fuchsia_storage_block::wire::BlockInfo& info = response.value()->info;
 
-  zx::result remote_device =
-      block_client::RemoteBlockDevice::Create(std::move(volume), std::move(controller_clone));
+  zx::result remote_device = block_client::RemoteRebindableBlockDevice::Create(
+      std::move(volume), std::move(controller_clone));
   if (!remote_device.is_ok()) {
     return remote_device.take_error();
   }

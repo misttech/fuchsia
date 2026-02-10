@@ -7,12 +7,10 @@
 #include <pthread.h>
 #include <zircon/assert.h>
 
-#include <fbl/auto_lock.h>
-
 namespace block_client {
 
 groupid_t BlockGroupRegistry::GroupID() {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   auto tid = pthread_self();
   for (groupid_t i = 0; i < threads_.size(); i++) {
     if (threads_[i]) {

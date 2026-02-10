@@ -4,6 +4,7 @@
 
 #include "storage/buffer/vmo_buffer.h"
 
+#include <fidl/fuchsia.storage.block/cpp/natural_types.h>
 #include <lib/zx/vmo.h>
 
 #include <gtest/gtest.h>
@@ -39,7 +40,7 @@ class MockVmoidRegistry : public VmoidRegistry {
 TEST(VmoBufferTest, EmptyTest) {
   VmoBuffer buffer;
   EXPECT_EQ(buffer.capacity(), 0ul);
-  EXPECT_EQ(BLOCK_VMOID_INVALID, buffer.vmoid());
+  EXPECT_EQ(fuchsia_storage_block::kVmoidInvalid, buffer.vmoid());
 }
 
 TEST(VmoBufferTest, TestLabel) {

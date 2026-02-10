@@ -5,6 +5,7 @@
 #ifndef STORAGE_BUFFER_BLOCK_BUFFER_VIEW_H_
 #define STORAGE_BUFFER_BLOCK_BUFFER_VIEW_H_
 
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <zircon/assert.h>
 
 #include <storage/buffer/block_buffer.h>
@@ -41,7 +42,9 @@ class BlockBufferView {
   size_t start() const { return start_; }
   // Returns the length of the view, in blocks.
   size_t length() const { return length_; }
-  vmoid_t vmoid() const { return buffer_ ? buffer_->vmoid() : BLOCK_VMOID_INVALID; }
+  vmoid_t vmoid() const {
+    return buffer_ ? buffer_->vmoid() : fuchsia_storage_block::kVmoidInvalid;
+  }
 
   // Returns one block of data starting at block |index| within this view.
   void* Data(size_t index) {

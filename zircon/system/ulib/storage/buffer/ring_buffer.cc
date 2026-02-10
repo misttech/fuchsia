@@ -10,8 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include <fbl/auto_lock.h>
-
 namespace storage {
 
 zx_status_t internal::RingBufferState::Reserve(uint64_t blocks, RingBufferReservation* out) {
@@ -20,7 +18,7 @@ zx_status_t internal::RingBufferState::Reserve(uint64_t blocks, RingBufferReserv
   }
   size_t destination_offset = 0;
   {
-    fbl::AutoLock lock(&lock_);
+    std::lock_guard lock(lock_);
     if (!IsSpaceAvailableLocked(blocks)) {
       return ZX_ERR_NO_SPACE;
     }
@@ -32,7 +30,7 @@ zx_status_t internal::RingBufferState::Reserve(uint64_t blocks, RingBufferReserv
 }
 
 void internal::RingBufferState::Free(const RingBufferReservation& reservation) {
-  fbl::AutoLock lock(&lock_);
+  std::lock_guard lock(lock_);
   ZX_DEBUG_ASSERT_MSG(reservation.length() <= reserved_length_,
                       "Attempting to free more blocks than available");
 
@@ -52,22 +50,23 @@ void internal::RingBufferState::Free(const RingBufferReservation& reservation) {
     // Freeing reservation out-of-order.
     //
     // Ensure "pending_free_" stays sorted by releasing order.
-    for (size_t i = 0; i < pending_free_.size(); i++) {
+    for (auto it = pending_free_.begin(); it != pending_free_.end(); ++it) {
       // Underflow here is OK, so long as results are unsigned.
-      static_assert(std::is_unsigned<decltype(reservation.start() - reserved_start_)>::value &&
-                    std::is_unsigned<decltype(pending_free_[i].start - reserved_start_)>::value);
-      if (reservation.start() - reserved_start_ < pending_free_[i].start - reserved_start_) {
-        pending_free_.insert(i, Range{reservation.start(), reservation.length()});
+      static_assert(std::is_unsigned_v<decltype(reservation.start() - reserved_start_)> &&
+                    std::is_unsigned_v<decltype(it->start - reserved_start_)>);
+      if (reservation.start() - reserved_start_ < it->start - reserved_start_) {
+        pending_free_.insert(it,
+                             Range{.start = reservation.start(), .length = reservation.length()});
         return;
       }
     }
-    pending_free_.push_back(Range{reservation.start(), reservation.length()});
+    pending_free_.push_back(Range{.start = reservation.start(), .length = reservation.length()});
     return;
   }
 
   CompleteFreeLocked(reservation.start(), reservation.length());
 
-  while (!pending_free_.is_empty()) {
+  while (!pending_free_.empty()) {
     // We have already ensured "pending_free_" is sorted by start index.
     //
     // This means that we can try releasing previously freed operations
@@ -76,7 +75,7 @@ void internal::RingBufferState::Free(const RingBufferReservation& reservation) {
       return;
     }
     CompleteFreeLocked(pending_free_[0].start, pending_free_[0].length);
-    pending_free_.erase(0);
+    pending_free_.erase(pending_free_.begin());
   }
 }
 
@@ -107,7 +106,7 @@ RingBufferReservation::RingBufferReservation(internal::RingBufferState* buffer, 
     : buffer_(buffer), view_(buffer->buffer(), start, length) {}
 
 RingBufferReservation::RingBufferReservation(RingBufferReservation&& other)
-    : buffer_(other.buffer_), view_(std::move(other.view_)) {
+    : buffer_(other.buffer_), view_(other.view_) {
   other.buffer_ = nullptr;
   other.Reset();
   ZX_DEBUG_ASSERT(!other.Reserved());
@@ -119,7 +118,7 @@ RingBufferReservation& RingBufferReservation::operator=(RingBufferReservation&& 
   }
   Reset();
   buffer_ = other.buffer_;
-  view_ = std::move(other.view_);
+  view_ = other.view_;
   other.buffer_ = nullptr;
   other.Reset();
   ZX_DEBUG_ASSERT(!other.Reserved());
@@ -153,13 +152,13 @@ zx::result<size_t> RingBufferReservation::CopyRequests(
   size_t ring_buffer_offset = (start() + reservation_offset) % capacity;
   size_t done = 0;
 
-  for (size_t i = 0; i < in_operations.size(); i++) {
+  for (const auto& in_operation : in_operations) {
     // Read parameters of the current request.
-    ZX_DEBUG_ASSERT_MSG(in_operations[i].op.type == storage::OperationType::kWrite,
+    ZX_DEBUG_ASSERT_MSG(in_operation.op.type == storage::OperationType::kWrite,
                         "RingBuffer only accepts write requests");
-    size_t vmo_offset = in_operations[i].op.vmo_offset;
-    size_t dev_offset = in_operations[i].op.dev_offset;
-    const size_t vmo_len = in_operations[i].op.length;
+    size_t vmo_offset = in_operation.op.vmo_offset;
+    size_t dev_offset = in_operation.op.dev_offset;
+    const size_t vmo_len = in_operation.op.length;
     ZX_DEBUG_ASSERT_MSG(vmo_len > 0, "Attempting to buffer empty request");
 
     // Calculate the offset/length we will need to write into the buffer.
@@ -172,8 +171,8 @@ zx::result<size_t> RingBufferReservation::CopyRequests(
     // Write data from the vmo into the buffer.
     void* ptr = Data(reservation_offset);
 
-    const uint8_t* data = static_cast<const uint8_t*>(in_operations[i].data);
-    const zx::unowned_vmo& vmo = in_operations[i].vmo;
+    const uint8_t* data = static_cast<const uint8_t*>(in_operation.data);
+    const zx::unowned_vmo& vmo = in_operation.vmo;
 
     if (data != nullptr) {
       data += vmo_offset * buffer_->BlockSize();
@@ -189,11 +188,11 @@ zx::result<size_t> RingBufferReservation::CopyRequests(
 
     storage::BufferedOperation out_op;
     out_op.vmoid = vmoid();
-    out_op.op.type = in_operations[i].op.type;
+    out_op.op.type = in_operation.op.type;
     out_op.op.vmo_offset = ring_buffer_offset;
     out_op.op.dev_offset = dev_offset;
     out_op.op.length = buf_len;
-    out_op.op.trace_flow_id = in_operations[i].op.trace_flow_id;
+    out_op.op.trace_flow_id = in_operation.op.trace_flow_id;
     out_operations->push_back(out_op);
 
     ring_buffer_offset = (ring_buffer_offset + buf_len) % capacity;
@@ -224,11 +223,11 @@ zx::result<size_t> RingBufferReservation::CopyRequests(
       // Insert the "new" request, which is the latter half of the last request
       storage::BufferedOperation out_op;
       out_op.vmoid = vmoid();
-      out_op.op.type = in_operations[i].op.type;
+      out_op.op.type = in_operation.op.type;
       out_op.op.vmo_offset = 0;
       out_op.op.dev_offset = dev_offset;
       out_op.op.length = buf_len;
-      out_op.op.trace_flow_id = in_operations[i].op.trace_flow_id;
+      out_op.op.trace_flow_id = in_operation.op.trace_flow_id;
       out_operations->push_back(out_op);
     }
 

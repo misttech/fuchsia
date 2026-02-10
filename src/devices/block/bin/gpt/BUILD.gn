@@ -13,6 +13,7 @@ executable("gpt") {
     "//sdk/lib/component/incoming/cpp",
     "//src/storage/gpt",
     "//src/storage/lib/block_client/cpp",
+    "//src/storage/lib/block_client/cpp:remote_rebindable_block_device",
     "//zircon/system/ulib/zx",
   ]
 

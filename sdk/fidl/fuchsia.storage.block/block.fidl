@@ -19,6 +19,64 @@ const VMOID_INVALID uint16 = 0;
 /// operations.
 const MAX_DECOMPRESSED_BYTES uint64 = 134217728;
 
+/// Multiple block I/O operations may be sent at once before a response is
+/// actually sent back. Block I/O ops may be sent concurrently to different
+/// vmoids, and they also may be sent to different groups at any point in time.
+///
+/// `MAX_TXN_GROUP_COUNT` "groups" are pre-allocated lanes separated on the
+/// block server.  Using a group allows multiple message to be buffered at once
+/// on a single communication channel before receiving a response.
+///
+/// Usage of groups is identified by the `GROUP_ITEM` flag, and is optional.
+///
+/// These groups may be referred to with a "groupid", in the range [0,
+/// `MAX_TXN_GROUP_COUNT`).
+///
+/// The protocol to communicate with a single group is as follows:
+/// 1) SEND [N - 1] messages with an allocated groupid for any value of 1 <= N.
+///    The `GROUP_ITEM` flag is set for these messages.
+/// 2) SEND a final Nth message with the same groupid. The `GROUP_ITEM
+///    | GROUP_LAST` flags are set for this message.
+/// 3) RECEIVE a single response from the Block I/O server after all N requests
+///    have completed. This response is sent once all operations either complete
+///    or a single operation fails. At this point, step (1) may begin again for
+///    the same groupid.
+///
+/// For `READ` and `WRITE`, N may be greater than 1. Otherwise,
+/// N == 1 (skipping step (1) in the protocol above).
+///
+/// Notes:
+/// - groupids may operate on any number of vmoids at once.
+/// - If additional requests are sent on the same groupid before step (3) has
+///   completed, then the additional request will not be processed. If
+///   `GROUP_LAST` is set, an error will be returned. Otherwise, the
+///   request will be silently dropped.
+/// - Messages within a group are not guaranteed to be processed in any order
+///   relative to each other.
+/// - All requests receive responses, except for ones with `GROUP_ITEM`
+///   that do not have `GROUP_LAST` set.
+///
+/// For example, the following is a valid sequence of transactions:
+///
+///   -> (groupid = 1, vmoid = 1, OP = Write | GroupItem,             reqid = 1)
+///   -> (groupid = 1, vmoid = 2, OP = Write | GroupItem,             reqid = 2)
+///   -> (groupid = 2, vmoid = 3, OP = Write | GroupItem | GroupLast, reqid = 0)
+///   <- Response sent to groupid = 2, reqid = 0
+///   -> (groupid = 1, vmoid = 1, OP = Read | GroupItem | GroupLast,  reqid = 3)
+///   <- Response sent to groupid = 1, reqid = 3
+///   -> (groupid = 3, vmoid = 1, OP = Write | GroupItem,             reqid = 4)
+///   -> (groupid = don't care, vmoid = 1, OP = Read, reqid = 5)
+///   <- Response sent to reqid = 5
+///   -> (groupid = 3, vmoid = 1, OP = Read | GroupItem | GroupLast,  reqid = 6)
+///   <- Response sent to groupid = 3, reqid = 6
+///
+/// Each transaction reads or writes up to `length` blocks from the device,
+/// starting at `dev_offset` blocks, into the VMO associated with `vmoid`,
+/// starting at `vmo_offset` blocks.  If the transaction is out of range, for
+/// example if `length` is too large or if `dev_offset` is beyond the end of the
+/// device, `ZX_ERR_OUT_OF_RANGE` is returned.
+const MAX_TXN_GROUP_COUNT uint32 = 8;
+
 /// The opcode used in FIFO requests.
 type BlockOpcode = strict enum : uint8 {
     /// Performs a regular data read or write from the device. The operation may

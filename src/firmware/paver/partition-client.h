@@ -23,10 +23,10 @@
 #include <storage/buffer/owned_vmoid.h>
 
 #include "lib/fidl/cpp/wire/internal/transport_channel.h"
-#include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/firmware/paver/block-devices.h"
 #include "src/lib/uuid/uuid.h"
 #include "src/storage/lib/block_client/cpp/client.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace paver {
 

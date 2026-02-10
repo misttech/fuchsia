@@ -16,7 +16,7 @@
 
 #include <storage/operation/operation.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 #include "src/storage/lib/trace/trace.h"
 
 namespace fs {

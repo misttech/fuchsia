@@ -31,7 +31,6 @@
 #include <gtest/gtest.h>
 #include <storage/buffer/vmo_buffer.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/node-digest.h"
 #include "src/lib/testing/predicates/status.h"
@@ -46,6 +45,7 @@
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace blobfs {
 

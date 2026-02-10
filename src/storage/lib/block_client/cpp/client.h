@@ -6,7 +6,6 @@
 #define SRC_STORAGE_LIB_BLOCK_CLIENT_CPP_CLIENT_H_
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -18,7 +17,7 @@
 #include <storage/buffer/owned_vmoid.h>
 #include <storage/buffer/vmoid_registry.h>
 
-#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/lib/block_protocol/block-fifo.h"
 
 namespace block_client {
 

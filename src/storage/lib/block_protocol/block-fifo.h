@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_
-#define SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_
+#ifndef SRC_STORAGE_LIB_BLOCK_PROTOCOL_BLOCK_FIFO_H_
+#define SRC_STORAGE_LIB_BLOCK_PROTOCOL_BLOCK_FIFO_H_
 
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <stdint.h>
 #include <zircon/types.h>
 
@@ -12,6 +13,32 @@
 using reqid_t = uint32_t;
 using groupid_t = uint16_t;
 using vmoid_t = uint16_t;
+
+#ifndef BLOCK_VMOID_INVALID
+const vmoid_t BLOCK_VMOID_INVALID = fuchsia_storage_block::kVmoidInvalid;
+
+const vmoid_t MAX_TXN_GROUP_COUNT = fuchsia_storage_block::kMaxTxnGroupCount;
+
+const uint32_t BLOCK_IO_FLAG_GROUP_ITEM =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kGroupItem);
+const uint32_t BLOCK_IO_FLAG_GROUP_LAST =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kGroupLast);
+const uint32_t BLOCK_IO_FLAG_FORCE_ACCESS =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kForceAccess);
+const uint32_t BLOCK_IO_FLAG_PRE_BARRIER =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kPreBarrier);
+const uint32_t BLOCK_IO_FLAG_DECOMPRESS_WITH_ZSTD =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kDecompressWithZstd);
+const uint32_t BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED =
+    static_cast<uint32_t>(fuchsia_storage_block::BlockIoFlag::kInlineEncryptionEnabled);
+
+const uint8_t BLOCK_OPCODE_TRIM = static_cast<uint8_t>(fuchsia_storage_block::BlockOpcode::kTrim);
+const uint8_t BLOCK_OPCODE_FLUSH = static_cast<uint8_t>(fuchsia_storage_block::BlockOpcode::kFlush);
+const uint8_t BLOCK_OPCODE_READ = static_cast<uint8_t>(fuchsia_storage_block::BlockOpcode::kRead);
+const uint8_t BLOCK_OPCODE_WRITE = static_cast<uint8_t>(fuchsia_storage_block::BlockOpcode::kWrite);
+const uint8_t BLOCK_OPCODE_CLOSE_VMO =
+    static_cast<uint8_t>(fuchsia_storage_block::BlockOpcode::kCloseVmo);
+#endif
 
 struct BlockFifoCommand {
   uint8_t opcode;
@@ -86,4 +113,4 @@ struct BlockFifoResponse {
 // TODO(https://fxbug.dev/42153476): Remove lint when no longer necessary.
 // LINT.ThenChange(//src/storage/lib/block_protocol/src/fifo.rs)
 
-#endif  // SRC_DEVICES_BLOCK_DRIVERS_CORE_BLOCK_FIFO_H_
+#endif  // SRC_STORAGE_LIB_BLOCK_PROTOCOL_BLOCK_FIFO_H_

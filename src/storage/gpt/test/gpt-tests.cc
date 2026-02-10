@@ -22,7 +22,7 @@
 #include "src/storage/gpt/gpt.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
-#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+#include "src/storage/lib/block_client/cpp/remote_rebindable_block_device.h"
 
 extern bool gUseRamDisk;
 extern char gDevPath[PATH_MAX];
@@ -351,7 +351,7 @@ class LibGptTest {
     std::string controller_path = std::string(disk_path_).append("/device_controller");
     zx::result controller = component::Connect<fuchsia_device::Controller>(controller_path);
     ASSERT_OK(controller);
-    zx::result remote_device = block_client::RemoteBlockDevice::Create(
+    zx::result remote_device = block_client::RemoteRebindableBlockDevice::Create(
         std::move(device.value()), std::move(controller.value()));
     ASSERT_OK(remote_device);
     zx::result gpt_result =
@@ -495,7 +495,7 @@ class LibGptTest {
     zx::result controller = component::Connect<fuchsia_device::Controller>(controller_path);
     ASSERT_OK(controller);
 
-    zx::result remote_device = block_client::RemoteBlockDevice::Create(
+    zx::result remote_device = block_client::RemoteRebindableBlockDevice::Create(
         std::move(device.value()), std::move(controller.value()));
     ASSERT_OK(remote_device);
     zx::result gpt_result =

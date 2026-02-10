@@ -4,6 +4,8 @@
 
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
 
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+
 #include <safemath/checked_math.h>
 
 namespace block_client {
@@ -83,9 +85,10 @@ zx_status_t ReaderWriter::DoIo(uint64_t offset, size_t count, vmoid_t vmoid, uin
     if (buf && write) {
       memcpy(buffer_.start(), *buf, amount);
     }
-    uint8_t opcode = write ? BLOCK_OPCODE_WRITE : BLOCK_OPCODE_READ;
+    using fuchsia_storage_block::wire::BlockOpcode;
+    auto opcode = write ? BlockOpcode::kWrite : BlockOpcode::kRead;
     BlockFifoRequest request = {
-        .command = {.opcode = opcode, .flags = 0},
+        .command = {.opcode = static_cast<uint8_t>(opcode), .flags = 0},
         .vmoid = vmoid,
         .length = safemath::checked_cast<uint32_t>(amount / block_size_),
         .vmo_offset = vmo_offset / block_size_,
