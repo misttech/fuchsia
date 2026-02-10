@@ -545,6 +545,76 @@ idk_cc_source_library_zx(
 	}
 }`,
 		},
+		{
+			name: "Fuchsia and non-Fuchsia source files",
+			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+
+idk_cc_source_library(
+	name = "foo",
+	api_area = "Developer",
+	category = "partner",
+	idk_name = "foobar",
+	stable = True,
+	srcs = ["source.cc"],
+	fuchsia_srcs = ["source_fuchsia.cc"],
+	non_fuchsia_srcs = ["source_host.cc"],
+	hdrs = ["include/lib/foobar/foobar.h"],
+	fuchsia_hdrs = ["include/lib/foobar/foobar_fuchsia.h"],
+	hdrs_for_internal_use = ["include/lib/foobar/internal/internal.h"],
+	fuchsia_hdrs_for_internal_use = ["include/lib/foobar/internal/internal_fuchsia.h"],
+	non_fuchsia_hdrs_for_internal_use = ["include/lib/foobar/internal/internal_host.h"],
+)
+`,
+			wantGN: `sdk_source_set("foo") {
+	sdk_area = "Developer"
+	category = "partner"
+	sdk_name = "foobar"
+	stable = true
+	sources = [
+		"source.cc",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"source_fuchsia.cc",
+		]
+	}
+	if (!is_fuchsia) {
+		sources += [
+			"source_host.cc",
+		]
+	}
+	public = [
+		"include/lib/foobar/foobar.h",
+	]
+	if (is_fuchsia) {
+		public += [
+			"include/lib/foobar/foobar_fuchsia.h",
+		]
+	}
+	sdk_headers_for_internal_use = [
+		"include/lib/foobar/internal/internal.h",
+	]
+	public += [
+		"include/lib/foobar/internal/internal.h",
+	]
+	if (is_fuchsia) {
+		sdk_headers_for_internal_use += [
+			"include/lib/foobar/internal/internal_fuchsia.h",
+		]
+		public += [
+			"include/lib/foobar/internal/internal_fuchsia.h",
+		]
+	}
+	if (!is_fuchsia) {
+		sdk_headers_for_internal_use += [
+			"include/lib/foobar/internal/internal_host.h",
+		]
+		public += [
+			"include/lib/foobar/internal/internal_host.h",
+		]
+	}
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

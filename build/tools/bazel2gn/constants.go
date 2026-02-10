@@ -159,17 +159,36 @@ var idkAttrMap = map[string]string{
 	"api_file_path": "api",
 	"idk_name":      "sdk_name",
 
-	// This renames the variable, but it must be made a `+=` inside a
-	// conditional block in `attrAssignmentToGN()`. `deps` must be specified
-	// before it in the `BUILD.bazel` file. This requires using
+	// This renames the variables, but they must be made a `+=` inside a
+	// conditional block in `attrAssignmentToGN()`. The default
+	// platform-independent variable must be specified before these variables
+	// in the `BUILD.bazel` file. This may require using
 	// `# buildifier: leave-alone` above the macro.
-	"fuchsia_deps": "public_deps",
+	"fuchsia_deps":                      "public_deps",
+	"fuchsia_hdrs":                      "public",
+	"fuchsia_hdrs_for_internal_use":     "sdk_headers_for_internal_use", // See below.
+	"fuchsia_srcs":                      "sources",
+	"non_fuchsia_hdrs_for_internal_use": "sdk_headers_for_internal_use", // See below.
+	"non_fuchsia_srcs":                  "sources",
 
 	// These are not identical because files in `hdrs_for_internal_use` need
 	// to be added to GN's `public` as well. This takes care of populating
 	// `sdk_headers_for_internal_use`, and `attrAssignmentToGN()` adds the files
 	// to `public`.
 	"hdrs_for_internal_use": "sdk_headers_for_internal_use",
+}
+
+// Lists of attribute names that are specific to Fuchsia and non-Fuchsia builds.
+// These are used to add appropriate conditions in the GN file.
+var idkFuchsiaSpecificAttrs = map[string]bool{
+	"fuchsia_deps":                  true,
+	"fuchsia_hdrs":                  true,
+	"fuchsia_hdrs_for_internal_use": true,
+	"fuchsia_srcs":                  true,
+}
+var idkNonFuchsiaSpecificAttrs = map[string]bool{
+	"non_fuchsia_hdrs_for_internal_use": true,
+	"non_fuchsia_srcs":                  true,
 }
 
 // Maps from attribute name in Bazel IDK rules to GN `zx_library()` parameter

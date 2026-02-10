@@ -345,7 +345,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		op = "="
 	}
 
-	if lhs.Name == "fuchsia_deps" {
+	if idkFuchsiaSpecificAttrs[lhs.Name] || idkNonFuchsiaSpecificAttrs[lhs.Name] {
 		op = "+="
 	}
 
@@ -414,8 +414,12 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 
 	// Wrap the entire assignment in a condition if appropriate.
 	// This should be the last thing before returning the result.
-	if lhs.Name == "fuchsia_deps" {
+	switch {
+	case idkFuchsiaSpecificAttrs[lhs.Name]:
 		ret = append([]string{"if (is_fuchsia) {"}, indent(ret, 1)...)
+		ret = append(ret, "}")
+	case idkNonFuchsiaSpecificAttrs[lhs.Name]:
+		ret = append([]string{"if (!is_fuchsia) {"}, indent(ret, 1)...)
 		ret = append(ret, "}")
 	}
 
