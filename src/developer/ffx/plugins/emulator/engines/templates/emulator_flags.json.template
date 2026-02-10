@@ -26,14 +26,18 @@
         "{{device.memory.quantity}}{{ua device.memory.units}}",
         "-smp",
         {{! These should probably be predicated on the host CPU. }}
-        {{#if (eq device.cpu.architecture "x64")}}
-            {{#if (eq device.cpu.count 1)}}
-                "{{device.cpu.count}}",
-            {{else}}
-                "{{device.cpu.count}},threads=2",
-            {{/if}}
+        {{#if runtime.smp}}
+            "{{runtime.smp}}",
         {{else}}
-            "{{device.cpu.count}}",
+            {{#if (eq device.cpu.architecture "x64")}}
+                {{#if (eq device.cpu.count 1)}}
+                    "{{device.cpu.count}}",
+                {{else}}
+                    "{{device.cpu.count}},threads=2",
+                {{/if}}
+            {{else}}
+                "{{device.cpu.count}}",
+            {{/if}}
         {{/if}}
         {{#if guest.disk_image}}
             {{#if (eq device.cpu.architecture "riscv64")}}

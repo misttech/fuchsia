@@ -68,6 +68,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "smp"
+        }
+      },
+      "optionality": "optional",
+      "long": "--smp",
+      "short": null,
+      "description": "specify a custom smp (symmetric multiprocessing) configuration. This will override the default values from the product bundle or emulator flags template. Often takes the form of a single integer (e.g. \"4\") or a more complex string (e.g. \"16,threads=2\").",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "device"
         }
       },

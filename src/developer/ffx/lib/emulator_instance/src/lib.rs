@@ -356,6 +356,10 @@ pub struct RuntimeConfig {
     /// control to the user.
     pub startup_timeout: Duration,
 
+    /// Specify a custom smp (symmetric multiprocessing) configuration.
+    #[serde(default)]
+    pub smp: Option<String>,
+
     /// Path to an enumeration flags template file, which contains a Handlebars-renderable
     /// set of arguments to be passed to the Command which starts the emulator.
     /// If this is None, the internal emulator_flags.json.template is used.

@@ -67,6 +67,12 @@ pub struct StartCommand {
     #[argh(switch)]
     pub debugger: bool,
 
+    /// specify a custom smp (symmetric multiprocessing) configuration. This will override the
+    /// default values from the product bundle or emulator flags template. Often takes the form
+    /// of a single integer (e.g. "4") or a more complex string (e.g. "16,threads=2").
+    #[argh(option)]
+    pub smp: Option<String>,
+
     /// the virtual device specification used to configure the emulator. This can be the name of a
     /// device listed in the product bundle, or the path to a custom virtual device file. A default
     /// for this flag can be set by running `ffx config set emu.device <type>`. If --device is not

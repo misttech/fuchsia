@@ -233,6 +233,7 @@ async fn apply_command_line_options(
     emu_config.runtime.debugger = cmd.debugger;
     emu_config.runtime.headless = cmd.headless;
     emu_config.runtime.startup_timeout = Duration::from_secs(cmd.startup_timeout(ctx)?);
+    emu_config.runtime.smp = cmd.smp.clone();
     emu_config.runtime.hidpi_scaling = cmd.hidpi_scaling;
     emu_config.runtime.addl_kernel_args = cmd.kernel_args.clone();
     emu_config.runtime.name = cmd.name(ctx)?;
