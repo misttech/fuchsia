@@ -47,6 +47,7 @@ def _idk_cc_source_library_impl(
         non_fuchsia_srcs,
         deps,
         fuchsia_deps,
+        non_fuchsia_deps,
         implementation_deps,
         include_base,
         api_file_path,
@@ -122,7 +123,7 @@ def _idk_cc_source_library_impl(
         # there is no dependency on the atom target.
         data = [allowlist],
         hdrs = hdrs_for_bazel_library,
-        deps = deps + select_for_fuchsia(fuchsia_deps),
+        deps = deps + select_for_fuchsia(fuchsia_deps, non_fuchsia_deps),
         # TODO(https://fxbug.dev/428229472): If we must support
         # `non_idk_implementation_deps`, include it below.
         implementation_deps = implementation_deps,
@@ -384,6 +385,14 @@ GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement
 GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps.
 This may require adding `# buildifier: leave-alone` above the target definition to
 disable reordering by the formatter.""",
+            default = [],
+            configurable = False,
+        ),
+        "non_fuchsia_deps": attr.label_list(
+            doc = """List of labels for other IDK elements this element publicly depends on at
+build time only when not targeting Fuchsia.
+These labels do not need to point to targets with corresponding `_create_idk_atom()` targets.
+GN equivalent: `public_deps +=` inside an `if (!is_fuchsia) {}` statement""",
             default = [],
             configurable = False,
         ),

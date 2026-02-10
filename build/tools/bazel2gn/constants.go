@@ -168,6 +168,7 @@ var idkAttrMap = map[string]string{
 	"fuchsia_hdrs":                      "public",
 	"fuchsia_hdrs_for_internal_use":     "sdk_headers_for_internal_use", // See below.
 	"fuchsia_srcs":                      "sources",
+	"non_fuchsia_deps":                  "public_deps",
 	"non_fuchsia_hdrs_for_internal_use": "sdk_headers_for_internal_use", // See below.
 	"non_fuchsia_srcs":                  "sources",
 
@@ -187,6 +188,7 @@ var idkFuchsiaSpecificAttrs = map[string]bool{
 	"fuchsia_srcs":                  true,
 }
 var idkNonFuchsiaSpecificAttrs = map[string]bool{
+	"non_fuchsia_deps":                  true,
 	"non_fuchsia_hdrs_for_internal_use": true,
 	"non_fuchsia_srcs":                  true,
 }
