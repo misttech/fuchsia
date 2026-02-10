@@ -1283,7 +1283,7 @@ EOF
   fi
 
   local resultstore_wrapper=()
-  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
+  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]] && [[ "$command_type" == "ninja" ]] ; then
     local -r rsproxy_wrap="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
     if [[ -x "${rsproxy_wrap}" ]]; then
       # Select the right rsproxy configuration, depending on the LOAS cert type.

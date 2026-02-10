@@ -5,6 +5,8 @@
 
 # fuchsia-rsproxy-wrap.sh invokes rsclient's rsproxy-wrap.sh, but
 # with fuchsia-specific configurations and features.
+# This is only intended for use when the directly wrapped command is
+# ninja or ninja-like.
 
 set -euo pipefail
 
