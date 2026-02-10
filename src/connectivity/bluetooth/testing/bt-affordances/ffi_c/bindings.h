@@ -44,7 +44,7 @@ using LeScanCallback = void (*)(void *context, const LePeer *peer);
 struct DiscoveredService {
   uint64_t handle;
   uint32_t kind;
-  char uuid[37];
+  int8_t uuid[37];
   uint64_t characteristic_handles[MAX_NUM_CHARACTERISTICS];
 };
 

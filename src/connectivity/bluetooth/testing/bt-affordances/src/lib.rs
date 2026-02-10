@@ -636,7 +636,7 @@ pub const MAX_NUM_CHARACTERISTICS: usize = 43;
 pub struct DiscoveredService {
     pub handle: u64,
     pub kind: u32,
-    pub uuid: [core::ffi::c_char; 37],
+    pub uuid: [i8; 37],
     pub characteristic_handles: [u64; MAX_NUM_CHARACTERISTICS],
 }
 
