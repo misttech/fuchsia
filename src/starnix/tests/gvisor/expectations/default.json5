@@ -479,6 +479,7 @@
                 "MountTest.MountProc",
                 "MountTest.MountTmpfsMagicValIgnored",
                 "MountTest.MountWithStrictAtime",
+                "MountTest.OverlayfsSgidBitIsCopiedUp",
                 "MountTest.PropagateChildUmountEvent",
                 "MountTest.ReuseGroupIDs",
                 "MountTest.SlaveMaster",
@@ -701,6 +702,8 @@
                 "AbstractUnixSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
                 "AbstractUnixSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AbstractUnixSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
+                "AbstractUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
+                "AbstractUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
                 // socket_bind_to_device_sequence_test
                 "BindToDeviceTest/BindToDeviceSequenceTest.BindTwiceWithDeviceFails/*",
@@ -734,6 +737,8 @@
                 "FilesystemUnixSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
                 "FilesystemUnixSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "FilesystemUnixSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
+                "FilesystemUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
+                "FilesystemUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
                 // socket_inet_loopback_nogotsan_test
                 "AllFamilies/SocketMultiProtocolInetLoopbackTest.UDPBindMayBindOtherBoundPortsReuseAddr/UDP",
@@ -795,6 +800,8 @@
                 // socket_unix_pair_test - https://fxbug.dev/42159641
                 "AllUnixDomainSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AllUnixDomainSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
+                "AllUnixDomainSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
+                "AllUnixDomainSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
                 // socket_unix_seqpacket_local_test
                 "SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.Sendto/*",
@@ -1237,15 +1244,6 @@
                 "MsgqueueTest.MsgOpReceiveMax",
                 "TruncateTest.TruncateNonWriteable",
                 "XattrTest.TrustedNamespaceWithCapSysAdminInNewUserns",
-
-                // TODO(mariagl): Skip for the roller
-                "MountTest.OverlayfsSgidBitIsCopiedUp",
-                "AbstractUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
-                "FilesystemUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
-                "AllUnixDomainSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
-                "AbstractUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
-                "FilesystemUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
-                "AllUnixDomainSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
             ],
         },
     ],
