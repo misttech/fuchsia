@@ -305,7 +305,7 @@ TEST_F(BlobfsOverwriteStatusTest, ChangeOverwriteConfig) {
   ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
 }
 
-TEST_F(BlobfsOverwriteStatusTest, AlwaysReturnsFalseForUnfinishedBlob) {
+TEST_F(BlobfsOverwriteStatusTest, AlwaysReturnsNotFoundForUnfinishedBlob) {
   ASSERT_OK(CreateFormatMount(1024, kBlobfsBlockSize));
 
   auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
@@ -332,22 +332,22 @@ TEST_F(BlobfsOverwriteStatusTest, AlwaysReturnsFalseForUnfinishedBlob) {
   ASSERT_OK(writer_vmo->write(blob.data().data(), 0, blob.data().size() - 1));
   ASSERT_OK(writer->BytesReady(blob.data().size() - 1));
 
-  // Should be false regardless of overwrite config.
-  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+  // Should be NOT_FOUND regardless of overwrite config.
+  ASSERT_EQ(creator.NeedsOverwrite(blob.digest()).error_value(), ZX_ERR_NOT_FOUND);
 
   {
     auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToCompact);
     ASSERT_OK(result.status());
     ASSERT_TRUE(result->is_ok());
   }
-  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+  ASSERT_EQ(creator.NeedsOverwrite(blob.digest()).error_value(), ZX_ERR_NOT_FOUND);
 
   {
     auto result = client->Set(fuchsia_storage_blobfs::wire::OverwriteFormat::kOverwriteToPadded);
     ASSERT_OK(result.status());
     ASSERT_TRUE(result->is_ok());
   }
-  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+  ASSERT_EQ(creator.NeedsOverwrite(blob.digest()).error_value(), ZX_ERR_NOT_FOUND);
 }
 
 TEST_F(BlobfsTest, GetNodeWithAnInvalidNodeIndexIsAnError) {

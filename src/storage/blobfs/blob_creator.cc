@@ -293,17 +293,18 @@ void BlobCreator::NeedsOverwrite(fuchsia_fxfs::wire::BlobCreatorNeedsOverwriteRe
   if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &found); status != ZX_OK) {
     completer.ReplyError(status);
   } else {
-    BlobOverwriteConfig config = blobfs_.OverwriteConfig();
-    if (config == BlobOverwriteConfig::kNoOverwrite) {
-      completer.ReplySuccess(false);
-      return;
-    }
     auto blob = fbl::RefPtr<Blob>::Downcast(std::move(found));
     // Check Readable. Until it is marked readable there is no valid ino number yet, and no format
     // layout has been committed to disk.
     if (!blob->IsReadable()) {
       // If it is in the process of being written, but it is not readable yet,
-      // then don't request overwrite.
+      // then it should be considered to not exist. This will make it match the blob listing and the
+      // behaviour of `GetVmo`.
+      completer.ReplyError(ZX_ERR_NOT_FOUND);
+      return;
+    }
+    BlobOverwriteConfig config = blobfs_.OverwriteConfig();
+    if (config == BlobOverwriteConfig::kNoOverwrite) {
       completer.ReplySuccess(false);
       return;
     }

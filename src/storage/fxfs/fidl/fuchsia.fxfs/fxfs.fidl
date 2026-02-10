@@ -235,7 +235,8 @@ closed protocol BlobCreator {
     }) error CreateBlobError;
 
     /// Given the hash of a blob, returns true if it should be overwritten using Create with
-    /// `allow_existing` set to true.
+    /// `allow_existing` set to true. Must respond the same as `BlobReader.GetVmo` in terms of
+    /// existence checks, responding ZX_ERR_NOT_FOUND under the same conditions.
     strict NeedsOverwrite(struct {
         blob_hash array<uint8, 32>;
     }) -> (struct {
