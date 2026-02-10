@@ -494,7 +494,7 @@ mod tests {
                         );
                     }
                 };
-                None::<(ExtensibleBitmap, PolicyCursor)>
+                None
             }
         );
 
@@ -598,7 +598,7 @@ mod tests {
                         );
                     }
                 };
-                None::<(ExtensibleBitmap, PolicyCursor)>
+                None
             }
         );
     }
