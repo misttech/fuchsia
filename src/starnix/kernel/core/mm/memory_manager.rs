@@ -4204,7 +4204,7 @@ impl DynamicFileSource for ProcSmapsFile {
             return Ok(());
         };
         let state = mm.state.read();
-        state.with_zx_mappings(current_task, |zx_mappings| {
+        let committed_bytes_vec = state.with_zx_mappings(current_task, |zx_mappings| {
             let mut zx_memory_info = RangeMap::<UserAddress, usize>::default();
             for idx in 0..zx_mappings.len() {
                 let zx_mapping = zx_mappings[idx];
@@ -4216,6 +4216,7 @@ impl DynamicFileSource for ProcSmapsFile {
                 );
             }
 
+            let mut committed_bytes_vec = Vec::new();
             for (mm_range, mm_mapping) in state.mappings.iter() {
                 let mut committed_bytes = 0;
 
@@ -4250,63 +4251,70 @@ impl DynamicFileSource for ProcSmapsFile {
                         "MemoryManager and Zircon must agree on which VMO is mapped in this range",
                     );
                 }
-
-                write_map(&task, sink, &state, mm_range, mm_mapping)?;
-
-                let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
-                writeln!(sink, "Size:           {size_kb:>8} kB",)?;
-                let share_count = match state.get_mapping_backing(mm_mapping) {
-                    MappingBacking::Memory(backing) => {
-                        let memory = backing.memory();
-                        if memory.is_clock() {
-                            // Clock memory mappings are not shared in a meaningful way.
-                            1
-                        } else {
-                            let memory_info = backing.memory().info()?;
-                            memory_info.share_count as u64
-                        }
-                    }
-                    MappingBacking::PrivateAnonymous => {
-                        1 // Private mapping
-                    }
-                };
-
-                let rss_kb = committed_bytes / 1024;
-                writeln!(sink, "Rss:            {rss_kb:>8} kB")?;
-
-                let pss_kb = if mm_mapping.flags().contains(MappingFlags::SHARED) {
-                    rss_kb / share_count
-                } else {
-                    rss_kb
-                };
-                writeln!(sink, "Pss:            {pss_kb:>8} kB")?;
-
-                track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
-                let (shared_dirty_kb, private_dirty_kb) = (0, 0);
-
-                let is_shared = share_count > 1;
-                let shared_clean_kb = if is_shared { rss_kb } else { 0 };
-                writeln!(sink, "Shared_Clean:   {shared_clean_kb:>8} kB")?;
-                writeln!(sink, "Shared_Dirty:   {shared_dirty_kb:>8} kB")?;
-
-                let private_clean_kb = if is_shared { 0 } else { rss_kb };
-                writeln!(sink, "Private_Clean:  {private_clean_kb:>8} kB")?;
-                writeln!(sink, "Private_Dirty:  {private_dirty_kb:>8} kB")?;
-
-                let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
-                writeln!(sink, "Anonymous:      {anonymous_kb:>8} kB")?;
-                writeln!(sink, "KernelPageSize: {page_size_kb:>8} kB")?;
-                writeln!(sink, "MMUPageSize:    {page_size_kb:>8} kB")?;
-
-                let locked_kb =
-                    if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
-                writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
-                writeln!(sink, "VmFlags: {}", mm_mapping.vm_flags())?;
-
-                track_stub!(TODO("https://fxbug.dev/297444691"), "optional smaps fields");
+                committed_bytes_vec.push(committed_bytes);
             }
-            Ok(())
-        })
+            Ok(committed_bytes_vec)
+        })?;
+
+        for ((mm_range, mm_mapping), committed_bytes) in
+            state.mappings.iter().zip(committed_bytes_vec.into_iter())
+        {
+            write_map(&task, sink, &state, mm_range, mm_mapping)?;
+
+            let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
+            writeln!(sink, "Size:           {size_kb:>8} kB",)?;
+            let share_count = match state.get_mapping_backing(mm_mapping) {
+                MappingBacking::Memory(backing) => {
+                    let memory = backing.memory();
+                    if memory.is_clock() {
+                        // Clock memory mappings are not shared in a meaningful way.
+                        1
+                    } else {
+                        let memory_info = backing.memory().info()?;
+                        memory_info.share_count as u64
+                    }
+                }
+                MappingBacking::PrivateAnonymous => {
+                    1 // Private mapping
+                }
+            };
+
+            let rss_kb = committed_bytes / 1024;
+            writeln!(sink, "Rss:            {rss_kb:>8} kB")?;
+
+            let pss_kb = if mm_mapping.flags().contains(MappingFlags::SHARED) {
+                rss_kb / share_count
+            } else {
+                rss_kb
+            };
+            writeln!(sink, "Pss:            {pss_kb:>8} kB")?;
+
+            track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
+            let (shared_dirty_kb, private_dirty_kb) = (0, 0);
+
+            let is_shared = share_count > 1;
+            let shared_clean_kb = if is_shared { rss_kb } else { 0 };
+            writeln!(sink, "Shared_Clean:   {shared_clean_kb:>8} kB")?;
+            writeln!(sink, "Shared_Dirty:   {shared_dirty_kb:>8} kB")?;
+
+            let private_clean_kb = if is_shared { 0 } else { rss_kb };
+            writeln!(sink, "Private_Clean:  {private_clean_kb:>8} kB")?;
+            writeln!(sink, "Private_Dirty:  {private_dirty_kb:>8} kB")?;
+
+            let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
+            writeln!(sink, "Anonymous:      {anonymous_kb:>8} kB")?;
+            writeln!(sink, "KernelPageSize: {page_size_kb:>8} kB")?;
+            writeln!(sink, "MMUPageSize:    {page_size_kb:>8} kB")?;
+
+            let locked_kb =
+                if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
+            writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
+            writeln!(sink, "VmFlags: {}", mm_mapping.vm_flags())?;
+
+            track_stub!(TODO("https://fxbug.dev/297444691"), "optional smaps fields");
+        }
+
+        Ok(())
     }
 }
 
