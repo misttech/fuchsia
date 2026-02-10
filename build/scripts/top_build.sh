@@ -19,9 +19,6 @@ readonly SCRIPT_DIR="${BASH_SOURCE[0]%/*}"  # dirname
 readonly FUCHSIA_DIR="$(readlink -f "$SCRIPT_DIR/../..")"
 source "${FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
 
-# Currently uses ninja to build, but could eventually be bazel.
-readonly build_tool="$PREBUILT_NINJA"
-readonly jq="$PREBUILT_JQ"
 readonly profile_wrapper="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
 readonly reproxy_wrapper="${FUCHSIA_DIR}/build/rbe/fuchsia-reproxy-wrap.sh"
 readonly rsproxy_wrapper="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
@@ -38,7 +35,7 @@ function error() {
 
 function usage() {
   cat <<EOF
-usage: $SCRIPT_NAME [options] ...
+usage: $SCRIPT_NAME [options] -- build-command...
 
 options:
   -h | --help : print help and exit
@@ -61,7 +58,7 @@ options:
   --pre-build-uploads : configure-time invocation artifacts to upload
   --post-build-uploads : end-of-build invocation artifacts to upload
 
-  All unrecognized options are forwarded directly to $build_tool.
+  The wrapped build command follows --.
 EOF
 }
 
@@ -78,7 +75,7 @@ loas_type=
 reproxy_cfgs=()
 pre_build_uploads=()
 post_build_uploads=()
-build_tool_args=()
+build_tool_args=()  # The wrapped command
 prev_opt=
 prev_opt_append=
 for opt  # "$@"
@@ -135,9 +132,6 @@ do
 
     # Stop option processing.
     --) shift; break ;;
-
-    # Forward unknown options to $build_tool.
-    *) build_tool_args+=( "$opt" ) ;;
   esac
   shift
 done
@@ -150,26 +144,25 @@ done
 }
 
 build_tool_args+=( "$@" )
+[[ "${#build_tool_args[@]}" -ge 1 ]] || {
+  die "Missing wrapped command after --."
+}
 
 [[ -n "$build_dir" ]] || {
-  case "$build_tool" in
-    *ninja*)
-      # Assume build_dir from ninja -C DIR.
+  # Try to infer the build_dir from the build tool args.
+  prev_opt=
+  for "$opt" in "${build_tool_args[@]}"
+  do
+    if [[ -n "$prev_opt" ]]
+    then
+      eval "$prev_opt"=\$opt
       prev_opt=
-      for "$opt" in "${build_tool_args[@]}"
-      do
-        if [[ -n "$prev_opt" ]]
-        then
-          eval "$prev_opt"=\$opt
-          prev_opt=
-          continue
-        fi
-        case "$opt" in
-          -C) prev_opt=build_dir ;;
-        esac
-      done
-      ;;
-  esac
+      continue
+    fi
+    case "$opt" in
+      -C) prev_opt=build_dir ;;  # ninja option
+    esac
+  done
   debug "Inferred build-dir: $build_dir"
 }
 [[ -n "$build_dir" ]] || error "Missing required --build-dir option."
@@ -201,8 +194,9 @@ if [[ "$collect_system_profile" == 1 ]]
 then
   debug "Profiling enabled."
   readonly profile_log_dir="$log_dir/build_profile"
-  readonly vmstat_log="${profile_dir}/vmstat.log"
-  readonly ifconfig_log="${profile_dir}/ifconfig.log"
+  mkdir -p "$profile_log_dir"
+  readonly vmstat_log="${profile_log_dir}/vmstat.log"
+  readonly ifconfig_log="${profile_log_dir}/ifconfig.log"
   maybe_profile_wrap=(
     "$profile_wrapper"
     --vmstat-log "$vmstat_log"
@@ -221,10 +215,12 @@ if [[ "$needs_reproxy_rbe" == 1 ]]
 then
   debug "RBE enabled."
   readonly reproxy_logdir="$log_dir/reproxy_logs"
+  mkdir -p "$reproxy_logdir"
   # reproxy works best when it uses a temp dir on the same physical device
   # as the build dir.
   # Reuse the timestamp-based part of $log_dir.
   readonly reproxy_tmpdir="$build_dir/.reproxy_tmpdirs/${log_dir##*/}"
+  mkdir -p "$reproxy_tmpdir"
 
   reproxy_cfg_args=()
   for f in "${reproxy_cfgs[@]}"
@@ -288,7 +284,7 @@ readonly full_cmd=(
   "${maybe_resultstore_wrap[@]}"
   "${maybe_profile_wrap[@]}"
   "${maybe_rbe_wrap[@]}"
-  "$build_tool"
+
   "${build_tool_args[@]}"
 )
 
