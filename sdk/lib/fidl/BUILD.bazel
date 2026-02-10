@@ -4,8 +4,6 @@
 
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
 
-# LINT.IfChange
-
 # "fidl" is used in low-level contexts such as early system
 # boot, hence cannot depend on the C++ standard library, and must only introduce
 # minimal symbols into dependent targets. As such, these libraries need to be
@@ -25,6 +23,7 @@ idk_cc_source_library(
     build_as_static = True,
     category = "partner",
     idk_name = "fidl",
+    public_configs = [":fidl.headers"],  # For bazel2gn.
     stable = True,
     visibility = ["//visibility:public"],
     deps = [
@@ -32,5 +31,3 @@ idk_cc_source_library(
         "//src/zircon/lib/zircon",
     ],
 )
-
-# LINT.ThenChange(BUILD.gn)
