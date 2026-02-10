@@ -61,6 +61,7 @@ all_libs = [
   "object_cache",
   "page_cache",
   "perfmon",
+  "percpu_writer",
   "persistent-debuglog",
   "pow2_range_allocator",
   "power-management",

@@ -24,9 +24,9 @@ concept CopyOutFunction = requires(F func, uint32_t offset, ktl::span<ktl::byte>
 
 // The AllocatorType concept sets up a concept that the SpscBuffer uses to allocate and free its
 // underlying storage.
-template <typename T>
-concept AllocatorType = requires(T, uint32_t size, ktl::byte* ptr) {
-  { T::Allocate(size) } -> std::same_as<ktl::byte*>;
+template <typename T, typename... Args>
+concept AllocatorType = requires(T, uint32_t size, ktl::byte* ptr, Args&&... args) {
+  { T::Allocate(size, args...) } -> std::same_as<ktl::byte*>;
   { T::Free(ptr) } -> std::same_as<void>;
 };
 
@@ -39,7 +39,8 @@ concept AllocatorType = requires(T, uint32_t size, ktl::byte* ptr) {
 // data. A span pointing to this buffer must be provided to the Init method before Read/Reserve can
 // be called. Note that this backing buffer must have a size that is a power of two for correct
 // functionality.
-template <AllocatorType Allocator>
+template <typename Allocator, typename... Args>
+  requires AllocatorType<Allocator, Args...>
 class SpscBuffer {
  public:
   SpscBuffer() = default;
@@ -52,7 +53,7 @@ class SpscBuffer {
   SpscBuffer operator=(SpscBuffer&&) = delete;
 
   // Initializes a buffer of the given size.
-  zx_status_t Init(uint32_t size) {
+  zx_status_t Init(uint32_t size, Args... args) {
     // Assert that the provided buffer meets our requirements for the storage buffer.
     // See the comments around storage_ for more information about these requirements.
     if (size > kMaxStorageSize) {
@@ -67,7 +68,7 @@ class SpscBuffer {
       return ZX_ERR_BAD_STATE;
     }
 
-    ktl::byte* ptr = Allocator::Allocate(size);
+    ktl::byte* ptr = Allocator::Allocate(size, ktl::forward<Args>(args)...);
     if (ptr == nullptr) {
       return ZX_ERR_NO_MEMORY;
     }

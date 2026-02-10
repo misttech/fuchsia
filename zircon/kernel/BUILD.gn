@@ -119,6 +119,9 @@ if (current_toolchain == default_toolchain) {
         # <lib/ktrace.h> has #include <lib/fxt/*.h>.
         "//src/performance/lib/fxt:headers.config",
 
+        # <lib/ktrace.h> has #include <lib/percpu_writer/percpu_buffer.h>.
+        "//zircon/kernel/lib/percpu_writer:headers.config",
+
         # <lib/fxt/section_symbols.h> has #include <lib/special-sections/special-sections.h>.
         "//zircon/kernel/lib/special-sections:headers.config",
 

@@ -79,25 +79,6 @@ void SetupCategoryBits() {
 
 KTrace KTrace::instance_;
 
-ktl::byte* KTrace::KernelAspaceAllocator::Allocate(uint32_t size) {
-  VmAspace* kaspace = VmAspace::kernel_aspace();
-  char name[32] = "ktrace-percpu-buffer";
-  void* ptr;
-  const zx_status_t status = kaspace->Alloc(name, size, &ptr, 0, VmAspace::VMM_FLAG_COMMIT,
-                                            ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
-  if (status != ZX_OK) {
-    return nullptr;
-  }
-  return static_cast<ktl::byte*>(ptr);
-}
-
-void KTrace::KernelAspaceAllocator::Free(ktl::byte* ptr) {
-  if (ptr != nullptr) {
-    VmAspace* kaspace = VmAspace::kernel_aspace();
-    kaspace->FreeRegion(reinterpret_cast<vaddr_t>(ptr));
-  }
-}
-
 zx_status_t KTrace::Allocate() {
   if (percpu_buffers_) {
     return ZX_OK;
@@ -111,14 +92,15 @@ zx_status_t KTrace::Allocate() {
   // Initially, store the unique pointer in a local variable. This will ensure that the buffers are
   // destructed upon initialization below.
   fbl::AllocChecker ac;
-  ktl::unique_ptr buffers = ktl::make_unique<PerCpuBuffer[]>(&ac, num_buffers_);
+  ktl::unique_ptr buffers = ktl::make_unique<percpu_writer::Buffer[]>(&ac, num_buffers_);
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
   // Initialize each per-CPU buffer by allocating the storage used to back it.
   for (uint32_t i = 0; i < num_buffers_; i++) {
-    const zx_status_t status = buffers[i].Init(buffer_size_);
+    const zx_status_t status =
+        buffers[i].Init(buffer_size_, "ktrace", cpu_context_map_.GetCpuRef(i));
     if (status != ZX_OK) {
       // Any allocated buffers will be destructed when we return.
       DiagsPrintf(INFO, "ktrace: cannot alloc buffer %u: %d\n", i, status);
@@ -152,7 +134,8 @@ zx::result<KTrace::Reservation> KTrace::Reserve(uint64_t header) {
   // Check which CPU we're running on and Reserve a slot in the appropriate SPSC buffer.
   const cpu_num_t cpu_num = arch_curr_cpu_num();
   DEBUG_ASSERT(percpu_buffers_ != nullptr);
-  zx::result<PerCpuBuffer::Reservation> result = percpu_buffers_[cpu_num].Reserve(num_bytes);
+  zx::result<percpu_writer::Buffer::Reservation> result =
+      percpu_buffers_[cpu_num].Reserve(num_bytes);
   if (result.is_error()) {
     return result.take_error();
   }
@@ -274,8 +257,8 @@ zx_status_t KTrace::Stop() {
   // after processing the IPI.
   auto emit_drop_stats = [](void* arg) {
     const cpu_num_t curr_cpu = arch_curr_cpu_num();
-    PerCpuBuffer* percpu_buffers = static_cast<PerCpuBuffer*>(arg);
-    PerCpuBuffer& curr_cpu_buffer = percpu_buffers[curr_cpu];
+    percpu_writer::Buffer* percpu_buffers = static_cast<percpu_writer::Buffer*>(arg);
+    percpu_writer::Buffer& curr_cpu_buffer = percpu_buffers[curr_cpu];
 
     // We do not require that this call succeeds. If the trace buffer still doesn't have enough
     // space to contain the dropped record statistics, this will fail, but there's not much we can
@@ -305,8 +288,8 @@ zx_status_t KTrace::Rewind() {
 
   auto run_drain = [](void* arg) {
     const cpu_num_t curr_cpu = arch_curr_cpu_num();
-    PerCpuBuffer* percpu_buffers = static_cast<PerCpuBuffer*>(arg);
-    PerCpuBuffer& curr_cpu_buffer = percpu_buffers[curr_cpu];
+    percpu_writer::Buffer* percpu_buffers = static_cast<percpu_writer::Buffer*>(arg);
+    percpu_writer::Buffer& curr_cpu_buffer = percpu_buffers[curr_cpu];
     curr_cpu_buffer.Drain();
     curr_cpu_buffer.ResetDropStats();
   };
