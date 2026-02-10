@@ -4,7 +4,7 @@
 
 use crate::util::maur::{self, TaskWritable};
 use fdio::service_connect;
-use kgsl_libmagma::{Device, QueryOutput, initialize_logging};
+use kgsl_libmagma::{Connection, Device, QueryOutput, Semaphore, initialize_logging};
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
@@ -13,14 +13,16 @@ use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::{log_error, log_info, log_warn, track_stub};
-use starnix_sync::{Locked, Unlocked};
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error, uapi};
+use std::collections::HashMap;
 use std::sync::Once;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(feature = "starnix-kgsl-debug")]
 #[macro_export]
@@ -41,7 +43,11 @@ pub struct KgslFile {
     // instead of an underscore prefix so that field init shorthand still works.
     #[expect(dead_code)]
     device: Device,
+    connection: Connection,
     adreno_kgsl_params: AdrenoKgslParams,
+    // TODO(b/481419355): transition to id-map container once available
+    syncsources: Mutex<HashMap<u32, Semaphore>>,
+    next_syncsource_id: AtomicU32,
 }
 
 impl KgslFile {
@@ -106,7 +112,14 @@ impl KgslFile {
         let adreno_kgsl_params = adreno_kgsl_params_vmo
             .read_to_object::<AdrenoKgslParams>(0)
             .map_err(|_| errno!(ENXIO))?;
-        Ok(Box::new(Self { device, adreno_kgsl_params }))
+        let connection = device.create_connection().map_err(|_| errno!(ENXIO))?;
+        Ok(Box::new(Self {
+            device,
+            connection,
+            adreno_kgsl_params,
+            syncsources: Mutex::new(HashMap::new()),
+            next_syncsource_id: AtomicU32::new(1),
+        }))
     }
 
     fn kgsl_device_getproperty(
@@ -116,6 +129,8 @@ impl KgslFile {
     ) -> Result<SyscallResult, Errno> {
         let params_ref = maur::kgsl_device_getproperty::new(current_task, arg);
         let params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_device_getproperty {:?}", params);
+
         let params_size: usize = params.sizebytes.try_into().map_err(|_| errno!(EINVAL))?;
         // TODO(b/393160668): check params_size against all property types
 
@@ -251,6 +266,47 @@ impl KgslFile {
             }
         }
     }
+
+    fn kgsl_syncsource_create(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_syncsource_create::new(current_task, arg);
+        let mut params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_syncsource_create {:?}", params);
+
+        let semaphore = self.connection.create_semaphore().map_err(|_| errno!(ENOMEM))?;
+        let id = self.next_syncsource_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            // fetch_add wraps to zero on overflow. Transitioning to id-map container
+            // will avoid this issue.
+            log_error!("kgsl: ids exhausted");
+            return error!(ENOMEM);
+        }
+        self.syncsources.lock().insert(id, semaphore);
+
+        params.id = id;
+
+        current_task.write_multi_arch_object(params_ref, params)?;
+        Ok(SUCCESS)
+    }
+
+    fn kgsl_syncsource_destroy(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_syncsource_destroy::new(current_task, arg);
+        let params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_syncsource_destroy {:?}", params);
+
+        if self.syncsources.lock().remove(&params.id).is_some() {
+            Ok(SUCCESS)
+        } else {
+            error!(EINVAL)
+        }
+    }
 }
 
 impl Drop for KgslFile {
@@ -282,6 +338,8 @@ impl FileOps for KgslFile {
         }
         match crate::util::canonicalize_ioctl_request(current_task, request) {
             uapi::IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
+            uapi::IOCTL_KGSL_SYNCSOURCE_CREATE => self.kgsl_syncsource_create(current_task, arg),
+            uapi::IOCTL_KGSL_SYNCSOURCE_DESTROY => self.kgsl_syncsource_destroy(current_task, arg),
             _ => {
                 track_stub!(TODO("https://fxbug.dev/393160668"), "kgsl ioctl", request);
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));

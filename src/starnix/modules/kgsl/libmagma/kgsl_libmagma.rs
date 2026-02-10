@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use magma::{
-    MAGMA_STATUS_OK, magma_connection_create_context2, magma_connection_release,
-    magma_connection_release_context, magma_connection_t, magma_device_create_connection,
-    magma_device_import, magma_device_query, magma_device_release, magma_device_t, magma_handle_t,
-    magma_initialize_logging, magma_priority_t, magma_query_t, magma_status_t,
+    MAGMA_STATUS_OK, magma_connection_create_context2, magma_connection_create_semaphore,
+    magma_connection_release, magma_connection_release_context, magma_connection_release_semaphore,
+    magma_connection_t, magma_device_create_connection, magma_device_import, magma_device_query,
+    magma_device_release, magma_device_t, magma_handle_t, magma_initialize_logging,
+    magma_priority_t, magma_query_t, magma_semaphore_id_t, magma_semaphore_reset,
+    magma_semaphore_signal, magma_semaphore_t, magma_status_t,
 };
 use starnix_logging::log_error;
 use std::panic::Location;
@@ -136,14 +138,37 @@ impl Connection {
         };
         magma_result(result).kgsl_log_error()?;
         Ok(Context {
-            _inner: Arc::new(ContextInternal { connection: self.inner.clone(), magma_context_id }),
+            inner: Arc::new(ContextInternal { connection: self.inner.clone(), magma_context_id }),
+        })
+    }
+
+    pub fn create_semaphore(&self) -> Result<Semaphore, magma_status_t> {
+        let mut magma_semaphore: magma_semaphore_t = 0;
+        let mut magma_semaphore_id: magma_semaphore_id_t = 0;
+        // Safety: magma_connection_create_semaphore borrows the connection handle and
+        // returns a semaphore handle.
+        let result = unsafe {
+            magma_connection_create_semaphore(
+                self.inner.magma_connection,
+                &mut magma_semaphore,
+                &mut magma_semaphore_id,
+            )
+        };
+        magma_result(result).kgsl_log_error()?;
+        Ok(Semaphore {
+            inner: Arc::new(SemaphoreInternal {
+                connection: self.inner.clone(),
+                magma_semaphore,
+                magma_semaphore_id,
+            }),
         })
     }
 }
 
 #[derive(Debug)]
 pub struct Context {
-    _inner: Arc<ContextInternal>,
+    #[expect(dead_code)]
+    inner: Arc<ContextInternal>,
 }
 
 #[derive(Debug)]
@@ -160,6 +185,47 @@ impl Drop for ContextInternal {
             magma_connection_release_context(
                 self.connection.magma_connection,
                 self.magma_context_id,
+            )
+        };
+    }
+}
+
+#[derive(Debug)]
+pub struct Semaphore {
+    inner: Arc<SemaphoreInternal>,
+}
+
+impl Semaphore {
+    pub fn id(&self) -> magma_semaphore_id_t {
+        self.inner.magma_semaphore_id
+    }
+
+    pub fn signal(&self) {
+        // Safety: magma_semaphore_signal borrows the semaphore handle.
+        unsafe { magma_semaphore_signal(self.inner.magma_semaphore) }
+    }
+
+    pub fn reset(&self) {
+        // Safety: magma_semaphore_reset borrows the semaphore handle.
+        unsafe { magma_semaphore_reset(self.inner.magma_semaphore) }
+    }
+}
+
+#[derive(Debug)]
+struct SemaphoreInternal {
+    connection: Arc<ConnectionInternal>,
+    magma_semaphore: magma_semaphore_t,
+    magma_semaphore_id: magma_semaphore_id_t,
+}
+
+impl Drop for SemaphoreInternal {
+    fn drop(&mut self) {
+        // Safety: magma_connection_release_semaphore borrows the connection handle and
+        // takes ownership of the semaphore handle.
+        unsafe {
+            magma_connection_release_semaphore(
+                self.connection.magma_connection,
+                self.magma_semaphore,
             )
         };
     }

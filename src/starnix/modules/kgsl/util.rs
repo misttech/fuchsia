@@ -137,6 +137,8 @@ pub mod maur {
         kgsl_device_getproperty,
         kgsl_ucode_version,
         kgsl_qdss_stm_prop,
-        kgsl_qtimer_prop
+        kgsl_qtimer_prop,
+        kgsl_syncsource_create,
+        kgsl_syncsource_destroy
     );
 }
