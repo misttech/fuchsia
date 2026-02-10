@@ -11,6 +11,7 @@ test("example-visitor-test") {
   # functionality of the example visitor.
   sources = [ "test.cc" ]
   deps = [
+    "//sdk/lib/driver/component/cpp:node",
     "//sdk/lib/driver/logging/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",

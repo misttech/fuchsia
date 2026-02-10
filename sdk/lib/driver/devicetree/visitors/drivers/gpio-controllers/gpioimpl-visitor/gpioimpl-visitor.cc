@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.pinimpl/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>

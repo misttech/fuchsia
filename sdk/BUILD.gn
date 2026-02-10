@@ -720,6 +720,7 @@ sdk_molecule("core_cc_source_libraries") {
     "//sdk/lib/component/incoming/cpp:cpp_sdk",
     "//sdk/lib/component/outgoing/cpp:cpp_sdk",
     "//sdk/lib/driver/component/cpp:cpp_sdk",
+    "//sdk/lib/driver/component/cpp:node_sdk",
     "//sdk/lib/driver/devfs/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-bti/cpp:cpp_sdk",
     "//sdk/lib/driver/fake-clock/cpp:cpp_sdk",

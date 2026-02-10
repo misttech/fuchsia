@@ -47,7 +47,10 @@ source_set("ddktl") {
     "//src/lib/ddk",
   ]
 
-  deps = [ "//src/lib/ddk" ]
+  deps = [
+    "//sdk/lib/driver/runtime:driver_runtime_cpp",
+    "//src/lib/ddk",
+  ]
 
   if (is_fuchsia) {
     public_deps += [
@@ -72,7 +75,6 @@ source_set("ddktl") {
     ]
 
     deps += [
-      "//sdk/lib/driver/runtime:driver_runtime_cpp",
       "//zircon/system/ulib/sync",
       "//zircon/system/ulib/zx",
     ]

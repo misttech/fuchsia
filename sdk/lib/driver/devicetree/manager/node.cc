@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 

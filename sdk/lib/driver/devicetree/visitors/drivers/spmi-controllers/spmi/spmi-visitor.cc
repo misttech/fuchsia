@@ -4,7 +4,7 @@
 
 #include "spmi-visitor.h"
 
-#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <stdlib.h>

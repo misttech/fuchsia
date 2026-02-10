@@ -5,7 +5,7 @@
 #include "../registers-visitor.h"
 
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/testing/visitor-test-helper.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
 #include <lib/driver/devicetree/visitors/default/mmio/mmio.h>

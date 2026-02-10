@@ -34,10 +34,10 @@ bind_library://bind/fuchsia.sdmmc
 bind_library://bind/fuchsia.serial
 bind_library://bind/fuchsia.spmi
 bind_library://bind/fuchsia.sysmem
-bind_library://bind/fuchsia.usb.phy
 bind_library://bind/fuchsia.test
 bind_library://bind/fuchsia.test.platform
 bind_library://bind/fuchsia.ti.platform
+bind_library://bind/fuchsia.usb.phy
 bind_library://bind/fuchsia.verisilicon.platform
 cc_prebuilt_library://pkg/async-default
 cc_prebuilt_library://pkg/async-loop-default
@@ -55,7 +55,6 @@ cc_prebuilt_library://pkg/trace-provider-so
 cc_prebuilt_library://pkg/trace-vthread
 cc_prebuilt_library://pkg/vfs_internal
 cc_prebuilt_library://pkg/vulkan
-cc_source_library://pkg/async
 cc_source_library://pkg/async-cpp
 cc_source_library://pkg/async-loop
 cc_source_library://pkg/async-loop-cpp
@@ -66,6 +65,7 @@ cc_source_library://pkg/async_patterns_testing_cpp
 cc_source_library://pkg/component_incoming_cpp
 cc_source_library://pkg/component_outgoing_cpp
 cc_source_library://pkg/driver_component_cpp
+cc_source_library://pkg/driver_component_node
 cc_source_library://pkg/driver_devfs_cpp
 cc_source_library://pkg/driver_fake_bti_cpp
 cc_source_library://pkg/driver_fake_clock_cpp (unstable)
@@ -108,8 +108,6 @@ cc_source_library://pkg/fidl_cpp_wire
 cc_source_library://pkg/fidl_driver
 cc_source_library://pkg/fidl_driver_natural
 cc_source_library://pkg/fidl_driver_transport
-cc_source_library://pkg/fit
-cc_source_library://pkg/fit-promise
 cc_source_library://pkg/hwreg
 cc_source_library://pkg/images_cpp
 cc_source_library://pkg/input_report_reader
@@ -124,7 +122,6 @@ cc_source_library://pkg/mock_mmio_cpp
 cc_source_library://pkg/power_state_recorder_cpp (unstable)
 cc_source_library://pkg/scenic_cpp
 cc_source_library://pkg/scenic_cpp_testing
-cc_source_library://pkg/stdcompat
 cc_source_library://pkg/sync_cpp
 cc_source_library://pkg/sys_component_cpp_testing
 cc_source_library://pkg/sys_cpp
@@ -133,7 +130,6 @@ cc_source_library://pkg/sys_service_cpp
 cc_source_library://pkg/syslog_cpp
 cc_source_library://pkg/syslog_structured_backend
 cc_source_library://pkg/trace
-cc_source_library://pkg/trace-engine-headersonly
 cc_source_library://pkg/trace-headersonly
 cc_source_library://pkg/trace-vthread-headersonly
 cc_source_library://pkg/utf-utils
