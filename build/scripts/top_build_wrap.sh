@@ -3,10 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This is a standalone script that works like 'fx build'.
-# Much of the logic in 'fx build' around invoking the build
-# tools like ninja will be moved here.
-# It is assumed that configuration steps like GN have already completed.
+# This is a wrapper script that orchestrates multiple feature-enabling
+# wrappers for running builds.
+# Features:
+#   --rbe : enable RBE using reproxy
+#   --resultstore : enable uploading build metadata to ResultStore service
+#   --profile : enable system profiling during build
 
 set -euo pipefail
 
