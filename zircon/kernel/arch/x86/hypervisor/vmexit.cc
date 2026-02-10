@@ -174,11 +174,25 @@ zx::result<> handle_cpuid(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState&
           // Disable the THERM_CONTROL_MSR bit.
           guest_state.rdx &= ~(1u << X86_FEATURE_ACPI.bit);
           break;
+        // Modern CPUs (2018+) support a newer extended topology leaf (leaf 0x1f). However,
+        // reporting it breaks Linux guests. We can get away with reporting only the older topology,
+        // since software should fallback to it. From Intel Volume 1, Section 21.3: "CPUID.1FH is a
+        // preferred superset to leaf 0BH. Intel recommends first checking for the existence of
+        // leaf 1FH before using leaf 0BH."
         case X86_CPUID_TOPOLOGY:
-          guest_state.rax = 0;
-          guest_state.rbx = 0;
-          guest_state.rcx = 0;
-          guest_state.rdx = vmcs.Read(VmcsField16::VPID) - 1;
+          if (subleaf == 0) {
+            guest_state.rax = 0;
+            guest_state.rbx = X86_FEATURE_TOPOLOGY_SINGLE_PROCESSOR.bit;
+            // Bits [07-00] are the index (0), bits [15-08] are the subleaf identifier.
+            guest_state.rcx = 0u | (1u << X86_FEATURE_TOPOLOGY_LOGICAL_PROCESSOR.bit);
+            guest_state.rdx = vmcs.Read(VmcsField16::VPID) - 1;
+          } else {
+            // No need to report further subleafs.
+            guest_state.rax = 0;
+            guest_state.rbx = 0;
+            guest_state.rcx = 0;
+            guest_state.rdx = 0;
+          }
           break;
         case X86_CPUID_XSAVE:
           if (subleaf == 0) {
