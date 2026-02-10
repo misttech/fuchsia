@@ -26,7 +26,6 @@ use zerocopy::SplitByteSlice;
 /// Default mDNS port
 pub const MDNS_PORT: u16 = 5353;
 
-pub const MDNS_ONESHOT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(1);
 pub const MDNS_BROADCAST_INTERVAL: Duration = Duration::from_secs(10);
 pub const MDNS_INTERFACE_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
 pub const MDNS_TTL: u32 = 255;
@@ -54,12 +53,7 @@ impl CachedTarget {
 
 impl Hash for CachedTarget {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        #[allow(clippy::or_fun_call)] // TODO(https://fxbug.dev/379717780)
-        self.target
-            .nodename
-            .as_ref()
-            .unwrap_or(&target_errors::UNKNOWN_TARGET_NAME.to_string())
-            .hash(state);
+        self.target.nodename.as_deref().unwrap_or(target_errors::UNKNOWN_TARGET_NAME).hash(state);
     }
 }
 
@@ -761,12 +755,11 @@ async fn recv_loop(
         }
 
         if let Some(mdns_protocol) = mdns_protocol.upgrade() {
-            #[allow(clippy::or_fun_call)] // TODO(https://fxbug.dev/379717780)
             if let Some((t, ttl)) = make_target(addr, msg) {
                 log::trace!(
                     "packet from {} ({}) on {}",
                     addr,
-                    t.nodename.as_ref().unwrap_or(&target_errors::UNKNOWN_TARGET_NAME.to_string()),
+                    t.nodename.as_deref().unwrap_or(target_errors::UNKNOWN_TARGET_NAME),
                     sock.local_addr().unwrap()
                 );
                 mdns_protocol.handle_target(t, ttl).await;
