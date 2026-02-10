@@ -595,7 +595,7 @@
              path="third_party/zlib"
              remote="https://fuchsia.googlesource.com/third_party/zlib"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="05aa62c1ba0aa0e3f35673ef251bd3269fa1ff12"/>
+             revision="270412940ecb3f1796deec45d594f4e69e165c89"/>
     <project name="third_party/zstd"
              path="third_party/zstd/src"
              remote="https://fuchsia.googlesource.com/third_party/zstd"

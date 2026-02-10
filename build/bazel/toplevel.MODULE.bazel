@@ -29,6 +29,12 @@ local_path_override(
     path = "third_party/protobuf",
 )
 
+bazel_dep(name = "zlib", version = "")
+local_path_override(
+    module_name = "zlib",
+    path = "third_party/zlib",
+)
+
 bazel_dep(name = "abseil-cpp", version = "head")
 local_path_override(
     module_name = "abseil-cpp",
