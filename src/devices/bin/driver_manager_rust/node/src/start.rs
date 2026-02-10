@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::{Node, NodeInner};
+use crate::node::Node;
 use crate::types::{DriverComponent, DriverState, NodeState};
 use driver_manager_driver_host::{DriverLoadArgs, DriverStartArgs};
 use driver_manager_types::{ShutdownState, StartRequestReceiver};
 use fidl::endpoints::{ServerEnd, create_endpoints};
 use futures::StreamExt;
 use log::{debug, error, warn};
-use std::cell::RefCell;
 use std::rc::Rc;
 use zx::HandleBased;
 use {
@@ -20,33 +19,15 @@ use {
 
 impl Node {
     pub async fn send_start_request(&self) -> Result<(), zx::Status> {
-        let handles = self
-            .inner
-            .borrow()
-            .start_handles
-            .as_ref()
-            .expect("handles")
-            .iter()
-            .map(|h| fidl_fuchsia_process::HandleInfo {
-                handle: h
-                    .handle
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("duplicate handle"),
-                id: h.id,
-            })
-            .collect::<Vec<_>>();
+        let (handles, proxy) = {
+            let handles = self.take_start_handles_for_start();
+            let proxy = self.component_controller_proxy().expect("component");
+            (handles, proxy)
+        };
 
         let start_child_args =
             fcomponent::StartChildArgs { numbered_handles: Some(handles), ..Default::default() };
         let (_, server_end) = fidl::endpoints::create_endpoints();
-        let proxy = self
-            .inner
-            .borrow()
-            .component_controller
-            .as_ref()
-            .expect("component_controller_proxy")
-            .component_controller_proxy
-            .clone();
 
         proxy
             .start(start_child_args, server_end)
@@ -55,7 +36,7 @@ impl Node {
                 error!("Failed to start driver for node {}: {}", self.name(), e);
                 zx::Status::INTERNAL
             })?
-            .map_err(|e| {
+            .map_err(|e: fcomponent::Error| {
                 error!("Failed to start driver for node {}: {:?}", self.name(), e);
                 zx::Status::INTERNAL
             })?;
@@ -70,21 +51,20 @@ impl Node {
     > {
         struct ReleaseStartRequestReceiverGuard<'a> {
             receiver: Option<StartRequestReceiver>,
-            inner: &'a RefCell<NodeInner>,
+            node: &'a Node,
         }
 
         impl<'a> Drop for ReleaseStartRequestReceiverGuard<'a> {
             fn drop(&mut self) {
                 if let Some(rx) = self.receiver.take() {
-                    self.inner.borrow_mut().start_request_receiver = Some(rx);
+                    self.node.set_start_request_receiver(rx);
                 }
             }
         }
 
-        let mut guard = ReleaseStartRequestReceiverGuard {
-            receiver: self.inner.borrow_mut().start_request_receiver.take(),
-            inner: &self.inner,
-        };
+        let receiver = self.take_start_request_receiver().ok_or(zx::Status::BAD_STATE)?;
+
+        let mut guard = ReleaseStartRequestReceiverGuard { receiver: Some(receiver), node: self };
 
         let start_request =
             guard.receiver.as_mut().unwrap().next().await.ok_or(zx::Status::TIMED_OUT)??;
@@ -98,11 +78,11 @@ impl Node {
         mut start_info: frunner::ComponentStartInfo,
         controller: ServerEnd<frunner::ComponentControllerMarker>,
     ) -> Result<(), zx::Status> {
-        if *self.node_shutdown_coordinator.borrow().node_state() == ShutdownState::Stopped {
+        if self.shutdown_state() == ShutdownState::Stopped {
             self.node_shutdown_coordinator.borrow_mut().reset_shutdown();
         }
         let url = start_info.resolved_url.clone().ok_or(zx::Status::INVALID_ARGS)?;
-        self.inner.borrow_mut().state = NodeState::Starting { driver_url: url.clone() };
+        self.set_state(NodeState::Starting { driver_url: url.clone() });
 
         let program = start_info.program.as_ref();
         let get_prog_val = |key: &str| -> Option<String> {
@@ -132,9 +112,9 @@ impl Node {
             );
             return Err(zx::Status::INVALID_ARGS);
         }
-        self.inner.borrow_mut().host_restart_on_crash = host_restart_on_crash;
+        self.set_restart_on_crash(host_restart_on_crash);
 
-        let driver_host = self.inner.borrow().driver_host.clone();
+        let driver_host = self.host();
         let mut found_driver_host = colocate;
         let driver_host = if found_driver_host {
             match driver_host {
@@ -148,11 +128,11 @@ impl Node {
                 }
             }
         } else {
-            let driver_host_name = self.inner.borrow().driver_host_name_for_colocation.clone();
+            let driver_host_name = self.driver_host_name_for_colocation();
             match self.node_manager.get_driver_host(&driver_host_name) {
                 Some(dh) => {
                     found_driver_host = true;
-                    self.inner.borrow_mut().driver_host = Some(dh.clone());
+                    self.set_host(dh.clone());
                     dh
                 }
                 None => {
@@ -161,7 +141,7 @@ impl Node {
                             .node_manager
                             .create_driver_host_dynamic_linker(driver_host_name)
                             .await?;
-                        self.inner.borrow_mut().driver_host = Some(driver_host.clone());
+                        self.set_host(driver_host.clone());
                         driver_host
                     } else {
                         debug!(
@@ -177,7 +157,7 @@ impl Node {
                                 error!("Failed to start driver '{url}': {e:?}");
                                 zx::Status::INTERNAL
                             })?;
-                        self.inner.borrow_mut().driver_host = Some(driver_host.clone());
+                        self.set_host(driver_host.clone());
                         driver_host
                     }
                 }
@@ -217,7 +197,7 @@ impl Node {
         let driver = driver_client.into_proxy();
         let driver_client_binding = self.serve_driver_host_client(driver);
 
-        self.inner.borrow_mut().state = NodeState::DriverComponent(DriverComponent::new(
+        self.set_state(NodeState::DriverComponent(DriverComponent::new(
             url.clone(),
             node_token_dup,
             node_token.koid().unwrap(),
@@ -225,10 +205,10 @@ impl Node {
             Some(node_server_binding),
             Some(driver_client_binding),
             DriverState::Binding,
-        ));
+        )));
 
-        let symbols = if colocate { Some(self.inner.borrow().symbols.clone()) } else { None };
-        let offers: Vec<fdf::Offer> = self.inner.borrow().offers.iter().map(|f| f.into()).collect();
+        let symbols = if colocate { Some(self.symbols()) } else { None };
+        let offers: Vec<fdf::Offer> = self.offers().iter().map(|f| f.into()).collect();
         let properties = self.get_node_property_dict();
 
         let load_args = if use_dynamic_linker {
@@ -261,17 +241,5 @@ impl Node {
         })?;
 
         Ok(())
-    }
-
-    fn get_node_property_dict(&self) -> fdf::NodePropertyDictionary2 {
-        let inner = self.inner.borrow();
-        inner
-            .properties
-            .iter()
-            .map(|entry| fdf::NodePropertyEntry2 {
-                name: entry.name.clone(),
-                properties: entry.properties.clone().into_iter().map(|p| p.into()).collect(),
-            })
-            .collect()
     }
 }

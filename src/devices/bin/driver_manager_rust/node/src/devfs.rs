@@ -196,11 +196,13 @@ impl ControllerAllowlistPassthrough {
 
 impl Node {
     pub fn setup_devfs_for_root_node(&self, root: TopologicalDevnode) {
-        self.inner.borrow_mut().devfs_device.topological = Some(root);
+        let mut device = self.device();
+        device.topological = Some(root);
+        self.set_device(device);
     }
 
     pub(crate) fn connect_to_device_fidl(&self, server: zx::Channel) {
-        if let Some(connector) = self.inner.borrow().protocol_connector.as_ref()
+        if let Some(connector) = self.protocol_connector()
             && let Err(e) = connector.connect(server)
         {
             error!("Failed to connect to device fidl: {}", e);
@@ -208,7 +210,7 @@ impl Node {
     }
 
     pub(crate) fn connect_to_controller(&self, server_end: ServerEnd<fdevice::ControllerMarker>) {
-        if let Some(ref passthrough) = self.inner.borrow().controller_allowlist_passthrough {
+        if let Some(passthrough) = self.controller_allowlist_passthrough() {
             let _ = passthrough.serve(server_end);
         } else {
             warn!(
@@ -228,21 +230,19 @@ impl Node {
         allow_controller_connection: bool,
         class_name: String,
     ) -> Connector {
-        {
-            let mut inner = self.inner.borrow_mut();
-            if allow_controller_connection {
-                let passthrough = ControllerAllowlistPassthrough::new(
-                    self.weak_from_this(),
-                    class_name,
-                    controller_connector,
-                    self.scope.as_handle(),
-                );
-                inner.controller_allowlist_passthrough = Some(passthrough);
-            }
-            inner.protocol_connector =
-                protocol_connector.map(|c: ClientEnd<fdevfs::ConnectorMarker>| c.into_proxy());
+        if allow_controller_connection {
+            let passthrough = ControllerAllowlistPassthrough::new(
+                self.weak_self.clone(),
+                class_name,
+                controller_connector,
+                self.scope.as_handle(),
+            );
+            self.set_controller_allowlist_passthrough(passthrough);
         }
-        let weak_node = self.weak_from_this();
+        if let Some(c) = protocol_connector {
+            self.set_protocol_connector(c.into_proxy());
+        }
+        let weak_node = self.weak_self.clone();
         let node_name = self.name().to_string();
         let (tx, mut rx) = mpsc::unbounded::<ConnectorMsg>();
         self.scope.spawn_local(async move {

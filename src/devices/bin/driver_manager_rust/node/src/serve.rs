@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::node::Node;
-use crate::types::{DriverState, NodeState};
+use crate::node::{Node, NodeComponent};
 use driver_manager_shutdown::RemovalSet;
 use driver_manager_types::{ShutdownState, StartRequestReceiver};
 use fidl::endpoints::{ControlHandle, ServerEnd};
@@ -178,15 +177,15 @@ impl Node {
                 // There is no specific event in this stream, we just want to know when it is closed.
                 stream.for_each(|_| async {}).await;
                 if let Some(node) = weak_node.upgrade() {
-                    node.inner.borrow_mut().component_controller.take();
+                    node.take_component();
                     node.on_component_controller_closed();
                 }
             }));
-            let mut inner = self_clone.inner.borrow_mut();
-            inner.component_controller =
-                Some(ComponentControllerClientBinding::new(proxy, close_listener_task));
-            inner.start_handles = Some(vec![handle_info]);
-            inner.start_request_receiver = Some(receiver);
+            self_clone.set_component(NodeComponent {
+                controller: ComponentControllerClientBinding::new(proxy, close_listener_task),
+                start_handles: Some(vec![handle_info]),
+                start_request_receiver: Some(receiver),
+            });
             sender.send(()).unwrap();
         });
         local_receiver.await.unwrap();
@@ -239,7 +238,7 @@ impl Node {
         let close_listener_task = Some(fasync::Task::local(async move {
             let _ = control_handle_clone.on_closed().await;
             if let Some(this) = weak_self.upgrade() {
-                this.inner.borrow_mut().node_controller_server_binding.take();
+                this.take_node_controller();
             }
         }));
 
@@ -299,7 +298,7 @@ impl Node {
         let close_listener_task = Some(fasync::Task::local(async move {
             let _ = control_handle_clone.on_closed().await;
             if let Some(this) = weak_self.upgrade() {
-                this.inner.borrow_mut().node_controller_server_binding.take();
+                this.take_node_controller();
                 this.on_runner_component_controller_closed();
             }
         }));
@@ -367,14 +366,14 @@ impl Node {
 
             let moniker = this.make_component_moniker();
 
-            let shutdown_state = *this.get_shutdown_coordinator().node_state();
+            let shutdown_state = this.shutdown_state();
             if shutdown_state == ShutdownState::WaitingOnDriver {
                 debug!("Node: {moniker}: driver channel had expected shutdown.");
                 this.node_shutdown_coordinator.borrow_mut().check_node_state();
                 return;
             }
 
-            if this.inner.borrow().host_restart_on_crash {
+            if this.host_restart_on_crash() {
                 warn!("Restarting node {moniker} because of unexpected driver channel shutdown.");
                 this.restart_node();
                 return;
@@ -401,20 +400,16 @@ impl Node {
         }
 
         // If the driver fails to bind to the node, don't remove the node.
-        if let NodeState::DriverComponent(driver_component) = &self.inner.borrow().state
-            && driver_component.state == DriverState::Binding
-        {
+        if self.is_pending_bind() {
             warn!("The driver for node {} failed to bind.", self.name());
             return;
         }
 
-        let inner = self.inner.borrow();
-        if *self.node_shutdown_coordinator.borrow().node_state() == ShutdownState::Running {
+        if self.shutdown_state() == ShutdownState::Running {
             // If the node is running but this node closure has happened, then we want to restart
             // the node if it has the host_restart_on_crash_ enabled on it.
-            if inner.host_restart_on_crash {
+            if self.host_restart_on_crash() {
                 warn!("Restarting node {} due to node closure while running.", self.name());
-                drop(inner);
                 self.restart_node();
                 return;
             }
@@ -448,24 +443,21 @@ impl Node {
     }
 
     fn on_runner_component_controller_closed(self: &Rc<Self>) {
-        let node_state = *self.node_shutdown_coordinator.borrow().node_state();
-        let mut inner = self.inner.borrow_mut();
-        if let NodeState::DriverComponent(ref mut driver_component) = inner.state {
+        let node_state = self.shutdown_state();
+        if self.has_driver_component() {
             if node_state == ShutdownState::WaitingOnDriverComponent {
                 debug!(
                     "Node '{}': runner component controller channel had expected close",
                     self.make_component_moniker()
                 );
-                driver_component.state = DriverState::Stopped;
-                drop(inner);
+                self.set_driver_stopped();
                 self.node_shutdown_coordinator.borrow_mut().check_node_state();
             } else {
                 warn!(
                     "Node '{}': runner component controller channel had unexpected close",
                     self.make_component_moniker()
                 );
-                driver_component.state = DriverState::Stopped;
-                drop(inner);
+                self.set_driver_stopped();
                 self.remove(RemovalSet::All, None);
             }
         }

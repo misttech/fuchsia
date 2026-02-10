@@ -352,6 +352,7 @@ impl GetEntryInfo for DevnodeVnode {
     }
 }
 
+#[derive(Clone)]
 pub struct RootDevnode {
     children: Arc<Simple>,
     devfs: Weak<Devfs>,
@@ -403,6 +404,7 @@ impl RootDevnode {
     }
 }
 
+#[derive(Clone)]
 pub enum TopologicalDevnode {
     Root(RootDevnode),
     Devnode(Arc<Devnode>),
@@ -422,6 +424,7 @@ impl TopologicalDevnode {
     }
 }
 
+#[derive(Clone)]
 pub struct DevfsDevice {
     pub topological: Option<TopologicalDevnode>,
     pub protocol: Option<Arc<Devnode>>,

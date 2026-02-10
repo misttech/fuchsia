@@ -58,8 +58,7 @@ impl Node {
                 (self.make_component_moniker(), self.collection())
             };
 
-            let mut child_inner = child.inner.borrow_mut();
-            child_inner.offers.reserve(offers.len());
+            child.reserve_offers(offers.len());
 
             for offer in offers {
                 if matches!(offer, fdf::Offer::DictionaryOffer(_)) {
@@ -72,7 +71,7 @@ impl Node {
                     &source_name,
                 ) {
                     Ok((processed_offer, property)) => {
-                        child_inner.offers.push(processed_offer);
+                        child.push_offer(processed_offer);
                         properties.push(property);
                     }
                     Err(e) => return Err(e),
@@ -83,7 +82,7 @@ impl Node {
         child.set_non_composite_properties(properties);
 
         if let Some(driver_host) = args.driver_host {
-            child.inner.borrow_mut().driver_host_name_for_colocation = driver_host;
+            child.set_driver_host_name_for_colocation(&driver_host);
         }
 
         if let Some(symbols) = args.symbols {
@@ -99,21 +98,23 @@ impl Node {
                     return Err(fdf::NodeError::SymbolAlreadyExists);
                 }
             }
-            child.inner.borrow_mut().symbols = symbols;
+            child.set_symbols(symbols);
         }
 
         if let Some(bus_info) = args.bus_info {
-            child.inner.borrow_mut().bus_info = Some(bus_info);
+            child.set_bus_info(bus_info);
         }
 
         // Copy the subtree dictionary of a parent node down to the child.
-        if let NodeDictionary::Subtree(d) = self.inner.borrow().dictionary {
+        if let NodeDictionary::Subtree(d) = self.dictionary() {
             if has_dictionary_offer {
                 panic!("Cannot use dictionary offers on node");
             }
 
-            child.inner.borrow_mut().dictionary = NodeDictionary::Subtree(d);
+            child.set_dictionary(NodeDictionary::Subtree(d));
         }
+
+        let devfs_class_path = args.devfs_args.as_ref().and_then(|args| args.class_name.clone());
 
         let devfs_connector = if let Some(ref mut devfs_args) = args.devfs_args {
             let allow_controller = match devfs_args.connector_supports {
@@ -136,13 +137,11 @@ impl Node {
             child.create_devfs_passthrough(None, None, false, "Unknown_Class_name".to_string())
         };
 
-        let devfs_class_path = args.devfs_args.map(|args| args.class_name).unwrap_or(None);
-
         let devfs_device = {
-            let inner = self.inner.borrow();
-            let Some(ref topological) = inner.devfs_device.topological else {
-                panic!("Missing topological devfs node: {}", self.make_topological_path(false));
-            };
+            let device = self.device();
+            let topological = device.topological.as_ref().unwrap_or_else(|| {
+                panic!("Missing topological devfs node: {}", self.make_topological_path(false))
+            });
 
             topological
                 .add_child(child.name(), devfs_class_path.as_deref(), devfs_connector)
@@ -151,11 +150,11 @@ impl Node {
                 })
         };
         assert!(devfs_device.topological.is_some());
-        child.inner.borrow_mut().devfs_device = devfs_device;
+        child.set_device(devfs_device);
 
         if let Some(controller) = controller {
             let control_handle = child.serve_node_controller(controller);
-            child.inner.borrow_mut().node_controller_server_binding = Some(control_handle);
+            child.set_node_controller(control_handle);
         }
 
         if has_dictionary_offer && args.offers_dictionary.is_none() {
@@ -181,9 +180,7 @@ impl Node {
                 })?;
 
             let dictionary_offer_services = child
-                .inner
-                .borrow()
-                .offers
+                .offers()
                 .iter()
                 .filter(|offer| matches!(offer.transport, OfferTransport::Dictionary))
                 .map(|offer| offer.service_name.clone())
@@ -198,10 +195,8 @@ impl Node {
                         fdf::NodeError::Internal
                     })?;
 
-                child
-                    .inner
-                    .borrow_mut()
-                    .offers
+                let mut offers = child.offers();
+                offers
                     .iter_mut()
                     .find(|offer| {
                         matches!(offer.transport, OfferTransport::Dictionary)
@@ -209,13 +204,15 @@ impl Node {
                     })
                     .unwrap()
                     .dir_connector = Rc::new(RefCell::new(Some(dir_connector)));
+                child.set_offers(offers);
             }
         }
 
         if let Some(node) = node {
             let node_server_binding = child.serve_node(node);
-            child.inner.borrow_mut().state =
-                NodeState::OwnedByParent { node_server_binding: Some(node_server_binding) };
+            child.set_state(NodeState::OwnedByParent {
+                node_server_binding: Some(node_server_binding),
+            });
         } else {
             // Use a silent bind tracker to avoid tracking binds.
             let tracker = child.create_bind_result_tracker(true);
@@ -230,22 +227,12 @@ impl Node {
     async fn wait_for_child_to_exit(&self, name: &str) -> Result<(), fdf::NodeError> {
         let (sender, receiver) = oneshot::channel();
         {
-            let inner = self.inner.borrow();
-            let child = inner.children.iter().find(|c| c.name() == name);
+            let child = self.children().into_iter().find(|c| c.name() == name);
             if let Some(child) = child {
-                let mut child_inner = child.inner.borrow_mut();
                 if !child.node_shutdown_coordinator.borrow().is_shutting_down() {
                     return Err(fdf::NodeError::NameAlreadyExists);
                 }
-                if child_inner.remove_complete_callback.is_some() {
-                    error!(
-                        "Failed to add Node '{}': Node with name already exists and is marked to be replaced.",
-                        name
-                    );
-                    return Err(fdf::NodeError::NameAlreadyExists);
-                }
-                child_inner.remove_complete_callback = Some(sender);
-                drop(child_inner);
+                child.set_remove_complete_callback(sender);
                 child.node_shutdown_coordinator.borrow_mut().check_node_state();
             } else {
                 return Ok(());
@@ -337,9 +324,8 @@ impl Node {
     }
 
     fn set_non_composite_properties(&self, properties: Vec<fdf::NodeProperty2>) {
-        let mut inner = self.inner.borrow_mut();
-        inner.properties.clear();
-        inner.properties.push(NodePropertyEntry {
+        self.clear_properties();
+        self.push_property(NodePropertyEntry {
             name: "default".to_string(),
             properties: properties.into_iter().map(|p| p.into()).collect(),
         });

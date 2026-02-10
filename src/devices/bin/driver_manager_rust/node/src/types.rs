@@ -105,6 +105,7 @@ pub enum NodeState {
     Quarantined { driver_url: String },
 }
 
+#[derive(Clone)]
 pub enum NodeDictionary {
     None,
 
