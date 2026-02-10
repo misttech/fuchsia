@@ -1258,6 +1258,30 @@ EOF
     )
   fi
 
+  if [[ "$command_type" == "ninja" ]]; then
+    # Inject a ninja option to save the dirty-sources log to a
+    # per-invocation log dir.
+    # For now, we only do this for the top-level ninja invocation,
+    # and not worry about sub-invocations.
+    # We implement this here instead of fx-run-ninja(), which is unaware
+    # of $build_log_dir.
+    local -r ninja_log_dir="${build_log_dir}/ninja_logs"
+    # This log dir is suitable for per-invocation ninja artifacts
+    # like trace files.
+    mkdir -p "$ninja_log_dir"
+    local -r dirty_sources_abspath="$ninja_log_dir/$NINJA_DIRTY_SOURCES_FILE"
+    local -a auto_ninja_args=(
+      --dirty_sources_list "$dirty_sources_abspath"
+    )
+    build_command=(
+      # ninja or equivalent drop-in replacement
+      "${build_command[@]:0:1}"
+      # injecting here guarantees it precedes any -- before positional args
+      "${auto_ninja_args[@]}"
+      "${build_command[@]:1}"
+    )
+  fi
+
   local resultstore_wrapper=()
   if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
     local -r rsproxy_wrap="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
@@ -1267,18 +1291,14 @@ EOF
       local loas_type
       loas_type="$(fx-command-run rbe _check_loas_type)"
       local -r rsproxy_log_dir="${build_log_dir}/rsproxy_logs"
+      local -a rsproxy_options=()
       local -a pre_build_uploads=(
         args.gn
       )
-      local -a post_build_uploads=(
-        "$NINJA_BUILD_TRACE_FILE"
-        "$NINJA_DIRTY_SOURCES_FILE"
-      )
+      # The $rsproxy_wrap script automatically detects extra ninja artifacts
+      # specified as args (e.g. trace file, dirty sources log) to upload.
       for f in "${pre_build_uploads[@]}"
-      do rsproxy_options+=(--pre_build_uploads "$FUCHSIA_BUILD_DIR/$f")
-      done
-      for f in "${post_build_uploads[@]}"
-      do rsproxy_options+=(--post_build_uploads "$FUCHSIA_BUILD_DIR/$f")
+      do rsproxy_options+=( --pre_build_uploads "$FUCHSIA_BUILD_DIR/$f" )
       done
       if fx-rbe-enabled
       then

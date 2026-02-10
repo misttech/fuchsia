@@ -233,7 +233,10 @@ readonly ninja_outputs=(
 for f in "${ninja_outputs[@]}"
 do
   [[ -z "$f" ]] || {
-    rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
+    case "$f" in
+      /*) rsproxy_options+=( --post_build_uploads="$f" ) ;;  # absolute path
+      *) rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
+    esac
   }
 done
 
