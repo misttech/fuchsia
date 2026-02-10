@@ -304,6 +304,14 @@ function cmd_rebase() {
     )
   fi
 
+  if [[ -e $checkout/mise.local.toml ]]; then
+    (
+      if ! cmp --quiet "$checkout/mise.local.toml" "$checkout.new/mise.local.toml"; then
+        cp "$checkout/mise.local.toml" "$checkout.new/mise.local.toml"
+      fi
+    )
+  fi
+
   (cd "$WORKDIR" && fixup_absolute_paths "checkouts/$checkout_name.new" "checkouts/$checkout_name")
 
   # Update the checkout's remotes/origin/main.
