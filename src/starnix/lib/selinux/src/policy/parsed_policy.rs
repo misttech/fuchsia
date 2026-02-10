@@ -543,7 +543,7 @@ impl ParsedPolicy {
 
     fn reparse_attribute_map(&self, offset: U24) -> ExtensibleBitmap {
         let (attribute_map, _) =
-            ExtensibleBitmap::parse(PolicyCursor::new_at(self.data.clone(), u32::from(offset)))
+            ExtensibleBitmap::parse(PolicyCursor::new_at(&self.data, u32::from(offset)))
                 .expect("This parsed earlier; why not now?");
         attribute_map
     }
@@ -553,7 +553,6 @@ impl ParsedPolicy {
     /// Parses the binary policy stored in `bytes`. It is an error for `bytes` to have trailing
     /// bytes after policy parsing completes.
     pub(super) fn parse(data: PolicyData) -> Result<Self, anyhow::Error> {
-        let cursor = PolicyCursor::new(data.clone());
         let policy_size = data.len();
         if MAXIMUM_POLICY_SIZE <= policy_size {
             return Err(anyhow::Error::from(ParseError::UnsupportedlyLarge {
@@ -561,8 +560,7 @@ impl ParsedPolicy {
                 limit: MAXIMUM_POLICY_SIZE,
             }));
         }
-        let (policy, tail) = parse_policy_internal(cursor, data)?;
-        let excess_bytes = policy_size - tail.offset() as usize;
+        let (policy, excess_bytes) = parse_policy_internal(data)?;
         if excess_bytes > 0 {
             return Err(anyhow::Error::from(ParseError::TrailingBytes { num_bytes: excess_bytes }));
         }
@@ -571,11 +569,8 @@ impl ParsedPolicy {
 }
 
 /// Parses an entire binary policy.
-fn parse_policy_internal(
-    bytes: PolicyCursor,
-    data: PolicyData,
-) -> Result<(ParsedPolicy, PolicyCursor), anyhow::Error> {
-    let tail = bytes;
+fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), anyhow::Error> {
+    let tail = PolicyCursor::new(&data);
 
     let (magic, tail) = PolicyCursor::parse::<Magic>(tail).context("parsing magic")?;
 
@@ -724,6 +719,8 @@ fn parse_policy_internal(
         tail = next_tail;
     }
 
+    let excess_bytes = data.len() - tail.offset() as usize;
+
     Ok((
         ParsedPolicy {
             data,
@@ -760,7 +757,7 @@ fn parse_policy_internal(
             range_transitions,
             attribute_maps,
         },
-        tail,
+        excess_bytes,
     ))
 }
 

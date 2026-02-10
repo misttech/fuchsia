@@ -128,7 +128,7 @@ impl Config {
 impl Parse for Config {
     type Error = ParseError;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let (config, tail) = PolicyCursor::parse::<le::U32>(bytes)?;
 
         let found_config = config.get();
@@ -202,7 +202,7 @@ mod tests {
                 $check_impl
             }
 
-            let (by_value_parsed, _tail) = $parse_output::parse(PolicyCursor::new(data.clone()))
+            let (by_value_parsed, _tail) = $parse_output::parse(PolicyCursor::new(&data))
                 .expect("successful parse for validate test");
             let by_value_result = by_value_parsed.validate(&mut context);
             check_by_value(by_value_result);
@@ -222,7 +222,7 @@ mod tests {
                 type_size: 4,
                 num_bytes: 3
             }),
-            PolicyCursor::parse::<Magic>(PolicyCursor::new(data)),
+            PolicyCursor::parse::<Magic>(PolicyCursor::new(&data)),
         );
     }
 
@@ -237,8 +237,7 @@ mod tests {
 
         let data = Arc::new(bytes);
         let mut context = PolicyValidationContext { data: data.clone() };
-        let (magic, tail) =
-            PolicyCursor::parse::<Magic>(PolicyCursor::new(data.clone())).expect("magic");
+        let (magic, tail) = PolicyCursor::parse::<Magic>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidMagic { found_magic: expected_invalid_magic }),
@@ -268,7 +267,8 @@ mod tests {
     #[test]
     fn missing_signature() {
         let bytes = [(1 as u32).to_le_bytes().as_slice()].concat();
-        match Signature::parse(PolicyCursor::new(Arc::new(bytes))).err().map(as_parse_error) {
+        let data = Arc::new(bytes);
+        match Signature::parse(PolicyCursor::new(&data)).err().map(as_parse_error) {
             Some(ParseError::MissingData { type_name: "u8", type_size: 1, num_bytes: 0 }) => {}
             parse_err => {
                 assert!(false, "Expected Some(MissingData...), but got {:?}", parse_err);
@@ -300,7 +300,7 @@ mod tests {
         let data = Arc::new(bytes);
         let mut context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
-            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
+            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidPolicyVersion {
@@ -313,7 +313,7 @@ mod tests {
         let data = Arc::new(bytes);
         let mut context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
-            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(data.clone())).expect("magic");
+            PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidPolicyVersion {
@@ -326,7 +326,8 @@ mod tests {
     #[test]
     fn config_missing_mls_flag() {
         let bytes = [(!CONFIG_MLS_FLAG).to_le_bytes().as_slice()].concat();
-        match Config::parse(PolicyCursor::new(Arc::new(bytes))).err() {
+        let data = Arc::new(bytes);
+        match Config::parse(PolicyCursor::new(&data)).err() {
             Some(ParseError::ConfigMissingMlsFlag { .. }) => {}
             parse_err => {
                 assert!(false, "Expected Some(ConfigMissingMlsFlag...), but got {:?}", parse_err);
@@ -342,11 +343,12 @@ mod tests {
             .to_le_bytes()
             .as_slice()]
         .concat();
+        let data = Arc::new(bytes);
         assert_eq!(
             Some(ParseError::InvalidHandleUnknownConfigurationBits {
                 masked_bits: CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG | CONFIG_HANDLE_UNKNOWN_REJECT_FLAG
             }),
-            Config::parse(PolicyCursor::new(Arc::new(bytes))).err()
+            Config::parse(PolicyCursor::new(&data)).err()
         );
     }
 }

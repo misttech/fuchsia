@@ -301,14 +301,14 @@ mod tests {
     macro_rules! parse_test {
         ($parse_output:ident, $data:expr, $result:tt, $policy_data:tt, $check_impl:block) => {{
             let data = Arc::new($data);
-            fn check_by_value(
-                $result: Result<($parse_output, PolicyCursor), <$parse_output as Parse>::Error>,
+            fn check_by_value<'a>(
+                $result: Result<($parse_output, PolicyCursor<'a>), <$parse_output as Parse>::Error>,
                 $policy_data: &PolicyData,
-            ) -> Option<($parse_output, PolicyCursor)> {
+            ) -> Option<($parse_output, PolicyCursor<'a>)> {
                 $check_impl
             }
 
-            let by_value_result = $parse_output::parse(PolicyCursor::new(data.clone()));
+            let by_value_result = $parse_output::parse(PolicyCursor::new(&data));
             let _ = check_by_value(by_value_result, &data);
         }};
     }

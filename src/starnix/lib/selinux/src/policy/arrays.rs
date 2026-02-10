@@ -169,7 +169,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (items, tail) = ConditionalNodeItems::parse(tail)
@@ -312,7 +312,7 @@ impl HasMetadata for AccessVectorRule {
 impl Parse for AccessVectorRule {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = PolicyCursor::parse::<AccessVectorRuleMetadata>(tail)?;
@@ -643,7 +643,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
@@ -686,7 +686,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (stypes, tail) = ExtensibleBitmap::parse(tail)
@@ -744,7 +744,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (filename, tail) = SimpleArray::<Vec<u8>>::parse(tail)
@@ -804,7 +804,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (id, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -847,7 +847,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) =
@@ -897,7 +897,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (name, tail) = SimpleArray::parse(tail)
@@ -939,7 +939,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) =
@@ -985,7 +985,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (address, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -1049,7 +1049,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (behavior_and_name, tail) = Array::<FsUseMetadata, Vec<u8>>::parse(tail)
@@ -1135,7 +1135,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (address, tail) = PolicyCursor::parse::<[le::U32; 4]>(tail)?;
@@ -1174,7 +1174,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (low, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -1222,7 +1222,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (port_and_name, tail) = Array::<InfinitiBandEndPortMetadata, Vec<u8>>::parse(tail)
@@ -1288,7 +1288,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (fs_type, tail) = SimpleArray::<Vec<u8>>::parse(tail)
@@ -1339,7 +1339,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (partial_path, tail) = SimpleArray::<Vec<u8>>::parse(tail)
@@ -1402,7 +1402,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = PolicyCursor::parse::<RangeTransitionMetadata>(tail)

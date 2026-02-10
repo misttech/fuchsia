@@ -167,7 +167,7 @@ impl<T> Deref for SymbolList<T> {
 impl<T: Parse> Parse for SymbolList<T> {
     type Error = <Array<Metadata, Vec<T>> as Parse>::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let (array, tail) = Array::<Metadata, Vec<T>>::parse(bytes)?;
         Ok((Self(array), tail))
     }
@@ -437,7 +437,7 @@ impl Constraint {
 impl Parse for Constraint {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (access_vector, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -526,7 +526,7 @@ pub(super) type ConstraintTerms = Vec<ConstraintTerm>;
 impl Parse for ConstraintTerm {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = PolicyCursor::parse::<ConstraintTermMetadata>(tail)
@@ -627,7 +627,7 @@ pub(super) struct TypeSet {
 impl Parse for TypeSet {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (types, tail) = ExtensibleBitmap::parse(tail)
@@ -740,7 +740,7 @@ impl Class {
 impl Parse for Class {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (constraints, tail) = ClassConstraints::parse(tail)
@@ -1086,7 +1086,7 @@ impl Role {
 impl Parse for Role {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = RoleMetadata::parse(tail)
@@ -1278,7 +1278,7 @@ impl User {
 impl Parse for User {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (user_data, tail) = UserData::parse(tail)
@@ -1353,7 +1353,7 @@ impl MlsLevel {
 impl Parse for MlsLevel {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (sensitivity, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -1398,7 +1398,7 @@ impl MlsRange {
 impl Parse for MlsRange {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (count, tail) = PolicyCursor::parse::<le::U32>(tail)?;
@@ -1528,7 +1528,7 @@ impl Sensitivity {
 impl Parse for Sensitivity {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = SensitivityMetadata::parse(tail)

@@ -106,7 +106,7 @@ impl<T: Parse> View<T> {
     ///
     /// If the object has a fixed size, prefer [`View::read`] instead.
     pub fn parse(&self, policy_data: &PolicyData) -> T {
-        let cursor = PolicyCursor::new_at(policy_data.clone(), self.start);
+        let cursor = PolicyCursor::new_at(policy_data, self.start);
         let (object, _) =
             T::parse(cursor).map_err(Into::<anyhow::Error>::into).expect("policy should be valid");
         object
@@ -213,10 +213,10 @@ impl<M: Sized, D> ArrayView<M, D> {
     }
 }
 
-fn parse_array_data<D: Parse>(
-    cursor: PolicyCursor,
+fn parse_array_data<'a, D: Parse>(
+    cursor: PolicyCursor<'a>,
     count: u32,
-) -> Result<PolicyCursor, anyhow::Error> {
+) -> Result<PolicyCursor<'a>, anyhow::Error> {
     let mut tail = cursor;
     for _ in 0..count {
         let (_, next) = D::parse(tail).map_err(Into::<anyhow::Error>::into)?;
@@ -230,7 +230,7 @@ impl<M: Counted + Parse + Sized, D: Parse> Parse for ArrayView<M, D> {
     /// types. Unify error return type via [`anyhow::Error`].
     type Error = anyhow::Error;
 
-    fn parse(cursor: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let start = cursor.offset();
         let (metadata, cursor) = M::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
         let count = metadata.count();
@@ -400,7 +400,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn parse(cursor: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let (array_view, cursor) = SimpleArrayView::<D>::parse(cursor)?;
 
         // Allocate a hash table sized appropriately for the array size.

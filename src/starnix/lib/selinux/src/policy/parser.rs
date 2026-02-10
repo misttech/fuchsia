@@ -12,19 +12,19 @@ pub type PolicyData = Arc<Vec<u8>>;
 pub type PolicyOffset = u32;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PolicyCursor {
-    data: PolicyData,
+pub struct PolicyCursor<'a> {
+    data: &'a PolicyData,
     offset: PolicyOffset,
 }
 
-impl PolicyCursor {
+impl<'a> PolicyCursor<'a> {
     /// Returns a new [`PolicyCursor`] that wraps `data` in a [`Cursor`] for parsing.
-    pub fn new(data: PolicyData) -> Self {
+    pub fn new(data: &'a PolicyData) -> Self {
         Self { data, offset: 0 }
     }
 
     /// Returns a new [`PolicyCursor`] that wraps `data` in a [`Cursor`] for parsing at `offset`.
-    pub fn new_at(data: PolicyData, offset: PolicyOffset) -> Self {
+    pub fn new_at(data: &'a PolicyData, offset: PolicyOffset) -> Self {
         Self { data, offset }
     }
 
@@ -47,7 +47,7 @@ impl PolicyCursor {
         self.offset
     }
 
-    pub fn data(&self) -> &PolicyData {
+    pub fn data(&self) -> &'a PolicyData {
         &self.data
     }
 }
@@ -71,7 +71,7 @@ mod tests {
         let bytes: Vec<u8> = (0..8).collect();
         let data = Arc::new(bytes);
 
-        let tail = PolicyCursor::new(data);
+        let tail = PolicyCursor::new(&data);
         let (some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
 
         assert_eq!(0, some_numbers.a);
@@ -87,7 +87,7 @@ mod tests {
         let bytes: Vec<u8> = (0..40).collect();
         let data = Arc::new(bytes);
 
-        let tail = PolicyCursor::new_at(data, 8);
+        let tail = PolicyCursor::new_at(&data, 8);
         let (first_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
         let (second_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
         let (third_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");

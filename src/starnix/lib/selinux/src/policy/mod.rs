@@ -557,7 +557,7 @@ pub trait Parse: Sized {
 
     /// Parses a `Self` from `bytes`, returning the `Self` and trailing bytes, or an error if
     /// bytes corresponding to a `Self` are malformed.
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error>;
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error>;
 }
 
 /// Parse a data as a slice of inner data structures from a prefix of a [`ByteSlice`].
@@ -568,7 +568,10 @@ pub(super) trait ParseSlice: Sized {
 
     /// Parses a `Self` as `count` of internal itemsfrom `bytes`, returning the `Self` and trailing
     /// bytes, or an error if bytes corresponding to a `Self` are malformed.
-    fn parse_slice(bytes: PolicyCursor, count: usize) -> Result<(Self, PolicyCursor), Self::Error>;
+    fn parse_slice<'a>(
+        bytes: PolicyCursor<'a>,
+        count: usize,
+    ) -> Result<(Self, PolicyCursor<'a>), Self::Error>;
 }
 
 /// Context for validating a parsed policy.
@@ -676,7 +679,7 @@ impl<M: Counted + Parse, D: ParseSlice> Parse for Array<M, D> {
     type Error = anyhow::Error;
 
     /// Parses [`Array`] by parsing *and validating* `metadata`, `data`, and `self`.
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let tail = bytes;
 
         let (metadata, tail) = M::parse(tail).map_err(Into::<anyhow::Error>::into)?;
@@ -693,7 +696,7 @@ impl<M: Counted + Parse, D: ParseSlice> Parse for Array<M, D> {
 impl<T: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unaligned> Parse for T {
     type Error = anyhow::Error;
 
-    fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         bytes.parse::<T>().map_err(anyhow::Error::from)
     }
 }
@@ -725,7 +728,7 @@ macro_rules! array_type {
         {
             type Error = <Array<$metadata_type, $data_type> as super::Parse>::Error;
 
-            fn parse(bytes: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+            fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
                 let (array, tail) = Array::<$metadata_type, $data_type>::parse(bytes)?;
                 Ok((Self(array), tail))
             }
@@ -831,7 +834,10 @@ impl<T: Parse> ParseSlice for Vec<T> {
     type Error = anyhow::Error;
 
     /// Parses `Vec<T>` by parsing individual `T` instances, then validating them.
-    fn parse_slice(bytes: PolicyCursor, count: usize) -> Result<(Self, PolicyCursor), Self::Error> {
+    fn parse_slice<'a>(
+        bytes: PolicyCursor<'a>,
+        count: usize,
+    ) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let mut slice = Vec::with_capacity(count);
         let mut tail = bytes;
 
