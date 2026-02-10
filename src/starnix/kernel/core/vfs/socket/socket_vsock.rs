@@ -304,7 +304,7 @@ impl VsockSocket {
                     SocketDomain::Vsock,
                     SocketType::Stream,
                     SocketProtocol::default(),
-                    /* kernel_private = */ false,
+                    /* kernel_private = */ true,
                 )?;
                 downcast_socket_to_vsock(&remote_socket).lock().state =
                     VsockSocketState::Connected {
