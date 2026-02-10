@@ -249,6 +249,10 @@ config("netstack3_debug_configs") {
       # closer to zero-cost.
       "//build/config:optimize_debug",
     ]
+
+    # Enable ThinLTO to allow cross-crate optimization, as netstack3 is distributed across
+    # multiple crates.
+    configs += [ "//build/config/lto:thinlto-if-compatible" ]
   }
 }
 
