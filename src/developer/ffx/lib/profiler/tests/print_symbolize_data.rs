@@ -66,13 +66,13 @@ fn generate_markup_module_mapping_data(modules_with_mapping_list: Vec<Module>) -
     let mut module_id: u16 = 0;
     for module in modules_with_mapping_list {
         mark_up_data.push_str(&generate_module_mark_up_data(module_id, &module));
+        mark_up_data.push_str(&generate_mapping_mark_up_data(module_id, module.mappings));
         module_id += 1;
-        mark_up_data.push_str(&generate_mapping_mark_up_data(module.mappings));
     }
     mark_up_data
 }
 
-fn generate_mapping_mark_up_data(mapping_list: Vec<Mapping>) -> String {
+fn generate_mapping_mark_up_data(module_id: u16, mapping_list: Vec<Mapping>) -> String {
     let mut mark_up_data = String::new();
     for mapping in mapping_list {
         // example data: {{{mmap:0x7acba69d5000:0x5a000:load:1:rx:0x1000}}}
@@ -81,7 +81,7 @@ fn generate_mapping_mark_up_data(mapping_list: Vec<Mapping>) -> String {
         mmap_data.push_str(&format!("0x{:x}", mapping.start_addr));
         mmap_data.push_str(":");
         mmap_data.push_str(&format!("0x{:x}", mapping.size));
-        mmap_data.push_str(":load:1:");
+        mmap_data.push_str(&format!(":load:{}:", module_id));
         if mapping.readable {
             mmap_data.push_str("r");
         }
