@@ -515,6 +515,99 @@ bool continuous_attribution_tracker_hidden_no_parent_content() {
   END_TEST;
 }
 
+// Test that the populated slots count is decremented when pages are evicted from VmCowPages.
+bool continuous_attribution_tracker_reclaim_page() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  vm_page_t *committed_page;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/1, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, &committed_page, &vmo));
+
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  ASSERT_TRUE(vmo->DebugGetCowPages()
+                  ->ReclaimPageForEviction(committed_page, 0, VmCowPages::EvictionAction::Require)
+                  .is_ok());
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
+// Test that the populated slots count is decremented when compression clears a slot after finding a
+// zero page.
+bool continuous_attribution_tracker_zero_page_compression() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &vmo));
+
+  ASSERT_OK(vmo->CommitRange(0, kPageSize));
+
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  vm_page_t *page = vmo->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+
+  auto compression = Pmm::Node().GetPageCompression();
+  if (!compression) {
+    END_TEST;
+  }
+
+  auto compressor = compression->AcquireCompressor();
+  ASSERT_OK(compressor.get().Arm());
+
+  ASSERT_TRUE(vmo->DebugGetCowPages()
+                  ->ReclaimPage(page, 0, VmCowPages::EvictionAction::Require, &compressor.get())
+                  .is_ok());
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
+// Test that the populated slots count is decremented when zero page deduplication finds and removes
+// a zero page.
+bool continuous_attribution_tracker_zero_page_deduplication() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &vmo));
+
+  ASSERT_OK(vmo->CommitRange(0, kPageSize));
+
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  vm_page_t *page = vmo->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+
+  ASSERT_TRUE(vmo->DebugGetCowPages()->DedupZeroPage(page, 0));
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -529,6 +622,9 @@ VM_UNITTEST(continuous_attribution_tracker_zero_pager_backed)
 VM_UNITTEST(continuous_attribution_tracker_zero_pager_clone)
 VM_UNITTEST(continuous_attribution_tracker_require_move_page)
 VM_UNITTEST(continuous_attribution_tracker_hidden_no_parent_content)
+VM_UNITTEST(continuous_attribution_tracker_reclaim_page)
+VM_UNITTEST(continuous_attribution_tracker_zero_page_compression)
+VM_UNITTEST(continuous_attribution_tracker_zero_page_deduplication)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

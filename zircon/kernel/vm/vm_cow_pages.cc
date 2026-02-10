@@ -1397,6 +1397,9 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
       // parents above us.
       RangeChangeUpdateLocked(VmCowRange(offset, kPageSize), RangeChangeOp::Unmap, &deferred);
       old_page = page_list_.RemoveContent(offset);
+      // This branch directly modifies the page_list_, so we do the accounting here. The next branch
+      // does the modification through CompleteAddPageLocked, which does its own accounting.
+      continuous_attribution_tracker_.Decrement(1);
     } else {
       // Replace the slot with a marker.
       __UNINITIALIZED auto result =
@@ -6983,6 +6986,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   // Use RemovePage over just writing to page_or_marker so that the page list has the opportunity
   // to release any now empty intermediate nodes.
   vm_page_t* p = page_list_.RemoveContent(offset).ReleasePage();
+  continuous_attribution_tracker_.Decrement(1);
   DEBUG_ASSERT(p == page);
   const bool loaned = page->is_loaned();
   RemovePageLocked(page, deferred);
@@ -7120,6 +7124,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       } else {
         ASSERT(ktl::holds_alternative<VmCompressor::ZeroTag>(compression_result));
         old_ref = slot->ReleaseReference();
+        continuous_attribution_tracker_.Decrement(1);
         // Check if we can clear the slot, or if we need to insert a marker. Unlike the full zero
         // pages this simply needs to check if there's any visible content above us, and then if
         // there isn't if the root is immutable or not (i.e. if it has a page source).
