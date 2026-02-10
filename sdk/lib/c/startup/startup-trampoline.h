@@ -32,10 +32,9 @@ namespace LIBC_NAMESPACE_DECL {
 // It can't be checked by CFI.  Even if it were assumed in the given libc build
 // that every user's main function will necessarily have been compiled with CFI
 // instrumentation, there are three different valid signatures the user might
-// have used; but CFI will require that it match the single one declared here.
-using MainFunction
-    // TODO(https://fxbug.dev/432080124): [[clang::cfi_unchecked_callee]]
-    = int(int argc, char** argv, char** envp);
+// have used; but CFI would require that it match the single one declared here.
+using MainFunction =  //
+    int(int argc, char** argv, char** envp) [[clang::cfi_unchecked_callee]];
 
 // This is the ABI between the _start (Scrt1.o) code linked into each
 // executable and libc, whether libc is linked in statically or dynamically.

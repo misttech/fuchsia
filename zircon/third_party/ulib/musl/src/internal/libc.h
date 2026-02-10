@@ -88,9 +88,6 @@ size_t _dl_stack_size(void) ATTR_LIBC_VISIBILITY;
 void __libc_startup_handles_init(uint32_t nhandles, zx_handle_t handles[],
                                  uint32_t handle_info[]) ATTR_LIBC_VISIBILITY;
 
-_Noreturn void __libc_start_main(zx_handle_t bootstrap, const void* vdso,
-                                 zx_handle_t svc_server_end, int (*main)(int, char**, char**));
-
 // Hook for extension libraries to init. Extensions must zero out
 // handle[i] and handle_info[i] for any handles they claim.
 void __libc_extensions_init(uint32_t handle_count, zx_handle_t handle[], uint32_t handle_info[],

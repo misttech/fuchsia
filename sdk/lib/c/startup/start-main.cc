@@ -138,11 +138,11 @@ void SetStartHandles(zx::process process_self, zx::vmar allocation_vmar, zx::thr
   self->process_handle = __zircon_process_self;
 }
 
-// This is called on the proper final machine stack.  The call to main doesn't
-// necessarily match its actual signature as defined in the user's program
-// exactly, since any of three signatures are traditionally supported (zero,
-// two, or three arguments).  So `-fsanitize=function` must be suppressed.
-[[clang::no_sanitize("function")]] void __libc_start_main(  //
+// This is called on the proper final machine stack.  The MainFunction type
+// includes the attribute saying that the actual signature of the callee need
+// not exactly match the type used here, since any of the three signatures is
+// equally valid in the user's definition.
+void __libc_start_main(  //
     void* hook, zx_handle_t svc_server_end, MainFunction* main) {
   zx_startup_arguments_t args = PreMain(hook, svc_server_end);
   exit((*main)(args.argc, args.argv, __environ));
