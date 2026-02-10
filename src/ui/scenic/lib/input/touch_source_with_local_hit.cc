@@ -25,7 +25,11 @@ TouchSourceWithLocalHit::TouchSourceWithLocalHit(
       binding_(this, std::move(request)),
       error_handler_(std::move(error_handler)),
       get_local_hit_(std::move(get_local_hit)) {
-  binding_.set_error_handler([this](zx_status_t) { error_handler_(); });
+  binding_.set_error_handler([this](zx_status_t status) {
+    FX_LOGS(ERROR) << "TouchSourceWithLocalHit fidl channel closed: "
+                   << zx_status_get_string(status);
+    error_handler_();
+  });
 }
 
 void TouchSourceWithLocalHit::Watch(std::vector<fuchsia::ui::pointer::TouchResponse> responses,
