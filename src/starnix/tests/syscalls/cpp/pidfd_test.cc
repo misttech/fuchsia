@@ -43,14 +43,16 @@ pid_t ForkUsingClone3(const clone_args* cl_args, size_t size) {
 }
 
 // Our Linux sysroot doesn't seem to have pidfd_open() and gettid().
-int DoPidFdOpen(pid_t pid) { return static_cast<int>(syscall(SYS_pidfd_open, pid, 0u)); }
+fbl::unique_fd DoPidFdOpen(pid_t pid) {
+  return fbl::unique_fd(static_cast<int>(syscall(SYS_pidfd_open, pid, 0u)));
+}
 pid_t DoGetTid() { return static_cast<pid_t>(syscall(SYS_gettid)); }
 
 // Returns (readable_end, writable_end).
-std::pair<int, int> CreatePipe() {
+std::pair<fbl::unique_fd, fbl::unique_fd> CreatePipe() {
   int pipe_fds[2];
   SAFE_SYSCALL(pipe(pipe_fds));
-  return {pipe_fds[0], pipe_fds[1]};
+  return {fbl::unique_fd(pipe_fds[0]), fbl::unique_fd(pipe_fds[1])};
 }
 
 // Waits until the given process' main thread becomes a zombie.
@@ -74,15 +76,14 @@ void WaitUntilMainThreadIsZombie(pid_t pid) {
 }
 
 TEST(PidFdTest, ProcessCanBeOpened) {
-  int pid_fd = DoPidFdOpen(getpid());
-  ASSERT_GE(pid_fd, 0);
-  close(pid_fd);
+  auto pid_fd = DoPidFdOpen(getpid());
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 }
 
 TEST(PidFdTest, ThreadCannotBeOpened) {
   std::thread([] {
-    int pid_fd = DoPidFdOpen(DoGetTid());
-    ASSERT_EQ(pid_fd, -1);
+    auto pid_fd = DoPidFdOpen(DoGetTid());
+    ASSERT_FALSE(pid_fd.is_valid());
     EXPECT_EQ(errno, EINVAL);
   }).join();
 }
@@ -92,22 +93,23 @@ TEST(PidFdTest, CanPollProcessExit) {
   auto [r_fd, w_fd] = CreatePipe();
 
   test_helper::ForkHelper helper;
-  pid_t pid = helper.RunInForkedProcess([r_fd = r_fd, w_fd = w_fd] {
-    close(w_fd);
+  pid_t pid = helper.RunInForkedProcess([&r_fd, &w_fd] {
+    w_fd.reset();
 
     // Wait for the readable end to signal the end of the stream.
     char buf;
-    read(r_fd, &buf, 1);
+    read(r_fd.get(), &buf, 1);
 
     _exit(0);
   });
 
-  close(r_fd);
+  r_fd.reset();
 
-  int pid_fd = SAFE_SYSCALL(DoPidFdOpen(pid));
+  auto pid_fd = DoPidFdOpen(pid);
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 
   // Verify that poll does not return POLLIN while the process is running.
-  pollfd pfd = {.fd = pid_fd, .events = POLLIN};
+  pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
   ASSERT_EQ(poll(&pfd, 1, 0), 0);
 
   // Verify that poll returns POLLIN when the process stops running.
@@ -117,16 +119,16 @@ TEST(PidFdTest, CanPollProcessExit) {
     signal_mask_helper.blockSignal(SIGCHLD);
     auto restorer = fit::defer([&]() { signal_mask_helper.restoreSigmask(); });
 
-    close(w_fd);
+    w_fd.reset();
     ASSERT_EQ(poll(&pfd, 1, -1), 1);
     EXPECT_EQ(pfd.revents, POLLIN);
   }
 
   // Verify that poll returns POLLIN even if the wait starts after the process has exited.
-  ASSERT_EQ(poll(&pfd, 1, -1), 1);
+  ASSERT_EQ(HANDLE_EINTR(poll(&pfd, 1, -1)), 1);
   EXPECT_EQ(pfd.revents, POLLIN);
 
-  close(pid_fd);
+  pid_fd.reset();
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
@@ -135,46 +137,39 @@ TEST(PidFdTest, PollWaitsForSecondaryThreadsToo) {
   auto [r_fd, w_fd] = CreatePipe();
 
   test_helper::ForkHelper helper;
-  pid_t pid = helper.RunInForkedProcess([r_fd = r_fd, w_fd = w_fd] {
-    close(w_fd);
+  pid_t pid = helper.RunInForkedProcess([&r_fd, &w_fd] {
+    w_fd.reset();
 
-    std::thread([r_fd] {
+    std::thread([&r_fd] {
       // Wait for the readable end to signal the end of the stream.
       char buf;
-      read(r_fd, &buf, 1);
+      read(r_fd.get(), &buf, 1);
     }).detach();
 
     // Immediately exit the main thread, leaving the secondary thread running.
     syscall(SYS_exit, 0);
   });
 
-  close(r_fd);
+  r_fd.reset();
 
   // Wait for the main thread to exit.
   ASSERT_NO_FATAL_FAILURE(WaitUntilMainThreadIsZombie(pid));
 
   // Open a pidfd using the main thread's pid.
-  int pid_fd = DoPidFdOpen(pid);
-  ASSERT_GE(pid_fd, 0);
+  auto pid_fd = DoPidFdOpen(pid);
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 
   // Verify that poll does not return POLLIN even after the main thread exited,
   // if a secondary thread is still running.
-  pollfd pfd = {.fd = pid_fd, .events = POLLIN};
+  pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
   ASSERT_EQ(poll(&pfd, 1, 500), 0);
 
   // Verify that poll returns POLLIN when the secondary thread stops running.
-  {
-    // Do not let SIGCHLD interrupt our poll() call.
-    test_helper::SignalMaskHelper signal_mask_helper;
-    signal_mask_helper.blockSignal(SIGCHLD);
-    auto restorer = fit::defer([&]() { signal_mask_helper.restoreSigmask(); });
+  w_fd.reset();
+  ASSERT_EQ(HANDLE_EINTR(poll(&pfd, 1, -1)), 1);
+  EXPECT_EQ(pfd.revents, POLLIN);
 
-    close(w_fd);
-    ASSERT_EQ(poll(&pfd, 1, -1), 1);
-    EXPECT_EQ(pfd.revents, POLLIN);
-  }
-
-  close(pid_fd);
+  pid_fd.reset();
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
@@ -198,24 +193,24 @@ TEST(PidFdTest, PidFdOpenAfterZombification) {
 
     // Use the `pid_fd` to wait for the child to exit, becoming a zombie.
     pollfd pfd{.fd = pid_fd.get(), .events = POLLIN};
-    ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceedsWithValue(1));
+    ASSERT_THAT(HANDLE_EINTR(poll(&pfd, 1, -1)), SyscallSucceedsWithValue(1));
 
     // Connect a new PID-FD, which should be immediately in the signalled state.
-    auto new_pid_fd = fbl::unique_fd(DoPidFdOpen(child_pid));
+    auto new_pid_fd = DoPidFdOpen(child_pid);
     ASSERT_TRUE(new_pid_fd.is_valid()) << strerror(errno);
     pfd = {.fd = new_pid_fd.get(), .events = POLLIN};
-    EXPECT_THAT(poll(&pfd, 1, 0), SyscallSucceedsWithValue(1));
+    EXPECT_THAT(HANDLE_EINTR(poll(&pfd, 1, 0)), SyscallSucceedsWithValue(1));
 
     // Now reap the zombie child process.
     int wait_status = 0;
-    pid_t wait_result = waitpid(child_pid, &wait_status, 0);
+    pid_t wait_result = HANDLE_EINTR(waitpid(child_pid, &wait_status, 0));
     EXPECT_THAT(wait_result, SyscallSucceedsWithValue(child_pid));
   }
 }
 
 TEST(PidFdTest, PidFdSendSignal) {
   fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
-  ASSERT_TRUE(pid_fd.is_valid());
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 
   sigset_t mask;
   sigemptyset(&mask);
@@ -235,7 +230,7 @@ TEST(PidFdTest, PidFdSendSignal) {
 
 TEST(PidFdTest, PidFdSendSiginfo) {
   fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
-  ASSERT_TRUE(pid_fd.is_valid());
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 
   sigset_t mask;
   sigemptyset(&mask);
@@ -259,7 +254,7 @@ TEST(PidFdTest, PidFdSendSiginfo) {
 
 TEST(PidFdTest, PidFdSendSiginfoMismatchedSignoFails) {
   fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
-  ASSERT_TRUE(pid_fd.is_valid());
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
 
   siginfo_t info_send = {};
   info_send.si_signo = SIGUSR1;  // signo is different from the signal number passed to the syscall
