@@ -116,13 +116,13 @@
     },
     {
         "package": "fuchsia/go/linux-amd64",
-        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
-        "instance_id": "anBm5-dIzGUm-vMGnCvRv4ziBYGUsqpYR2anWze1Re4C"
+        "version": "git_revision:4e4dd43dc83e6aab6fedc61bdb4a9f6a8508640d",
+        "instance_id": "olsSsw1L0XS7uj-T0FtsR91RcW6-OBujNmihHFkkjZoC"
     },
     {
         "package": "fuchsia/go/linux-arm64",
-        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
-        "instance_id": "UBbwrfBkhGU7sbAput6Z_V6p12mCoyzhLx7bJfy7O2QC"
+        "version": "git_revision:4e4dd43dc83e6aab6fedc61bdb4a9f6a8508640d",
+        "instance_id": "Oh-oEWDCPJUhrMG5boo3OroshMxHvLN4UFoIJ4NSEVEC"
     },
     {
         "package": "fuchsia/gui_tools/fuchsia_devtools/linux-amd64",
