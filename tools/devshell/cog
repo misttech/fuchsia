@@ -50,6 +50,14 @@ for file in ${added_or_modified_files[@]}; do
   fi
 done
 
+# Delete files in CartFS
+deleted_files=$(${GIT_CITC_PATH} cli.diff ${base_commit_hash} @ | grep '^\[D\]' | awk '{print $2}')
+for file in ${deleted_files[@]}; do
+  if [[ -f "${cartfs_dir}/fuchsia/${file}" ]]; then
+    rm "${cartfs_dir}/fuchsia/${file}"
+  fi
+done
+
 (
   cd "${cartfs_dir}/fuchsia"
   .jiri_root/bin/fx "$@"
