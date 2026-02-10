@@ -608,6 +608,53 @@ bool continuous_attribution_tracker_zero_page_deduplication() {
   END_TEST;
 }
 
+// Test that content removed from a hidden parent due to 0 share count is reflected in the populated
+// slots count.
+bool continuous_attribution_tracker_release_hidden() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+
+  ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+
+  fbl::RefPtr<VmObject> child;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                             /*size=*/2 * kPageSize, /*copy_name=*/false, &child));
+
+  // Commit the pages in the child to remove its share count of the content.
+  ASSERT_OK(child->CommitRange(0, 2 * kPageSize));
+
+  fbl::RefPtr<VmCowPages> parent_cow = vmo->DebugGetCowPages()->DebugGetParent();
+  EXPECT_EQ(2u, parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  // Remove the remaining share count for the first page, which will trigger the hidden parent to
+  // remove the content from its local page list.
+  {
+    fbl::RefPtr<VmCowPages> vmo_cow = vmo->DebugGetCowPages();
+    __UNINITIALIZED MultiPageRequest page_request;
+    VmCowPages::DeferredOps deferred(vmo_cow.get());
+    Guard<CriticalMutex> guard{vmo_cow->lock()};
+    VmCowRange range(0, kPageSize);
+    // ZeroPagesLocked calls DecrementCowContentShareCount, which is what we're interested in
+    // tracking.
+    auto [status, zeroed_bytes] =
+        vmo_cow->ZeroPagesLocked(range, /*dirty_track=*/false, deferred, &page_request);
+    EXPECT_EQ(kPageSize, zeroed_bytes);
+    EXPECT_OK(status);
+  }
+
+  EXPECT_EQ(1u, parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -625,6 +672,7 @@ VM_UNITTEST(continuous_attribution_tracker_hidden_no_parent_content)
 VM_UNITTEST(continuous_attribution_tracker_reclaim_page)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_compression)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_deduplication)
+VM_UNITTEST(continuous_attribution_tracker_release_hidden)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

@@ -2689,6 +2689,7 @@ void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, ui
       // Remove the page from the owner.
       VmPageOrMarker removed = page_list_.RemoveContent(offset);
       vm_page* removed_page = removed.ReleasePage();
+      continuous_attribution_tracker_.Decrement(1);
       DEBUG_ASSERT(removed_page == page);
       Pmm::Node().GetPageQueues()->Remove(removed_page);
       DEBUG_ASSERT(!page->is_loaned());
@@ -2703,6 +2704,7 @@ void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, ui
     } else {
       VmPageOrMarker removed = page_list_.RemoveContent(offset);
       compression->Free(removed.ReleaseReference());
+      continuous_attribution_tracker_.Decrement(1);
     }
   }
 }
