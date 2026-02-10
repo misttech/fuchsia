@@ -30,20 +30,7 @@
   arch::InvalidateInstructionCacheRange(static_cast<uintptr_t>(KernelLoadAddress()),
                                         KernelLoadSize());
 
-  // If this code is running in the context of a ZBI or Linux kernel (e.g., a
-  // boot shim), then this isn't strictly necessary as we have protocol
-  // guarantees that we were loaded with this instruction memory clean (and
-  // we weren't likely to have modified ourselves). But better to be maximally
-  // defensive when it comes to cache coherency.
-  {
-    uint64_t start, size;
-    __asm__ volatile(
-        "adr %[start], .L.ZbiBoot.mmu_possibly_off\n"
-        "mov %[size], #.L.ZbiBoot.end - .L.ZbiBoot.mmu_possibly_off"
-        : [start] "=r"(start), [size] "=r"(size));
-    arch::CleanDataCacheRange(start, size);
-  }
-
+  // Precalculate the SCTLR_ELx value that will be installed in assembly below.
   uint64_t is_el1 = arch::ArmCurrentEl::Read().el() == 1 ? 1 : 0;
   uint64_t sctlr;  // Disable the MMU, and the instruction and data caches.
   if (is_el1) {
@@ -51,38 +38,58 @@
   } else {
     sctlr = arch::ArmSctlrEl2::Read().set_m(false).set_i(false).set_c(false).reg_value();
   }
-  uint64_t tmp;
+
+  // Before turning off the caches with the SCTLR_ELx change, make sure the
+  // code right at the PC here is fully cleaned to main memory.  If this code
+  // is running in the context of a ZBI or Linux kernel (e.g., a boot shim),
+  // then this isn't strictly necessary as we have protocol guarantees that we
+  // were loaded with this instruction memory clean (and we weren't likely to
+  // have modified ourselves).  But better to be maximally defensive when it
+  // comes to cache coherency.  arch::CleanDataCacheRange() has to be called in
+  // the same assembly block since the compiler can always decide to duplicate
+  // the code and it must materialize the local PC range for cache cleaning.
+  //
+  // Before handing off, clear the stack and frame pointers and the link
+  // register so no misleading breadcrumbs are left.
   __asm__ volatile(
       R"""(
-  cbnz  %[is_el1], .L.ZbiBoot.disable_el1
-.L.ZbiBoot.disable_el2:
-  msr   sctlr_el2, %[sctlr]
-.L.ZbiBoot.mmu_possibly_off:
-  b  .L.ZbiBoot.mmu_off
-.L.ZbiBoot.disable_el1:
-  msr  sctlr_el1, %[sctlr]
-.L.ZbiBoot.mmu_off:
-  isb
+        adr x0, .L.ZbiBoot.%=.mmu_possibly_off
+        mov x1, #.L.ZbiBoot.%=.end - .L.ZbiBoot.%=.mmu_possibly_off
+        bl CleanDataCacheRange
 
-  // Clear the stack and frame pointers and the link register so no misleading
-  // breadcrumbs are left.
-  mov x29, xzr
-  mov x30, xzr
-  mov sp, x29
+        cbnz %[is_el1], .L.ZbiBoot.%=.disable_el1
+      .L.ZbiBoot.%=.disable_el2:
+        msr sctlr_el2, %[sctlr]
+      .L.ZbiBoot.%=.mmu_possibly_off:
+        b .L.ZbiBoot.%=.mmu_off
+      .L.ZbiBoot.%=.disable_el1:
+        msr sctlr_el1, %[sctlr]
+      .L.ZbiBoot.%=.mmu_off:
+        isb
 
-  mov x0, %[zbi]
-  br %[entry]
-.L.ZbiBoot.end:
+        mov x29, xzr
+        mov x30, xzr
+        mov sp, x29
+
+        mov x0, %[zbi]
+        br %[entry]
+      .L.ZbiBoot.%=.end:
       )"""
-      : [tmp] "=&r"(tmp)       //
+      :
       : [entry] "r"(entry),    //
         [is_el1] "r"(is_el1),  //
         [sctlr] "r"(sctlr),    //
-        [zbi] "r"(data)        //
-      // The compiler gets unhappy if x29 (fp) is a clobber.  It's never going
-      // to be the register used for %[entry] anyway.  The memory clobber is
-      // probably unnecessary, but it expresses that this constitutes access to
-      // the memory kernel and zbi point to.
-      : "x0", "x30", "memory");
+        [zbi] "r"(data)
+
+      // CleanDataCacheRange is in assembly and only uses a few registers.
+      // But just to keep it simple, mark all the call-clobbered registers
+      // as clobbered anyway so it doesn't matter how it's implemented.
+      : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",  //
+        "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17",
+        // The compiler gets unhappy if x29 (fp) is a clobber.  It's never
+        // going to be the register used for %[entry] anyway.  The memory
+        // clobber is probably unnecessary, but it expresses that this
+        // constitutes access to the memory kernel and zbi point to.
+        "x30", "memory");
   __builtin_unreachable();
 }
