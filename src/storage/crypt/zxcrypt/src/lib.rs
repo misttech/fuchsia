@@ -34,6 +34,7 @@ async fn unwrap_zxcrypt_key(policy: Policy, wrapped_key: &[u8]) -> Result<Vec<u8
 
     let (header, _) = ZxcryptHeader::read_from_prefix(wrapped_key).unwrap();
 
+    let mut last_err = None;
     for source in sources {
         let key = match source {
             KeySource::Null(null) => null.get_key(KeyConsumer::Zxcrypt),
@@ -49,16 +50,15 @@ async fn unwrap_zxcrypt_key(policy: Policy, wrapped_key: &[u8]) -> Result<Vec<u8
 
         let header_size = std::mem::size_of::<ZxcryptHeader>();
 
-        if let Ok(unwrapped) = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&wrap_key))
-            .decrypt(
-                &Nonce::from_slice(&wrap_iv),
-                Payload { msg: &wrapped_key[header_size..], aad: &wrapped_key[..header_size] },
-            )
-        {
-            return Ok(unwrapped);
+        match Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&wrap_key)).decrypt(
+            &Nonce::from_slice(&wrap_iv),
+            Payload { msg: &wrapped_key[header_size..], aad: &wrapped_key[..header_size] },
+        ) {
+            Ok(unwrapped) => return Ok(unwrapped),
+            Err(e) => last_err = Some(e),
         }
     }
-    log::warn!("Failed to unwrap zxcrypt key!");
+    log::warn!(last_err:?, policy:%; "Failed to unwrap zxcrypt key!");
     Err(zx::Status::IO_DATA_INTEGRITY)
 }
 
