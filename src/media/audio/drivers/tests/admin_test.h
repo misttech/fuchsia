@@ -30,9 +30,9 @@ class AdminTest : public TestBase {
   explicit AdminTest(const DeviceEntry& dev_entry) : TestBase(dev_entry) {}
 
  protected:
-  static constexpr zx_rights_t kRightsVmoIncoming =
+  static constexpr zx_rights_t kRightsVmoReadOnly =
       ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_TRANSFER;
-  static constexpr zx_rights_t kRightsVmoOutgoing = kRightsVmoIncoming | ZX_RIGHT_WRITE;
+  static constexpr zx_rights_t kRightsVmoReadWrite = kRightsVmoReadOnly | ZX_RIGHT_WRITE;
 
   void TearDown() override;
   void DropSignalProcessing();
@@ -60,6 +60,7 @@ class AdminTest : public TestBase {
 
   void RetrieveRingBufferFormats() override;
   void RetrieveDaiFormats() override;
+  void RetrievePacketStreamFormats();
 
   zx::time RequestRingBufferStart();
   void RequestRingBufferStartAndExpectCallback();
@@ -69,6 +70,33 @@ class AdminTest : public TestBase {
   void RequestRingBufferStopAndExpectCallback();
   void RequestRingBufferStopAndExpectNoPositionNotifications();
   void RequestRingBufferStopAndExpectDisconnect(zx_status_t expected_error);
+
+  void RequestPacketStreamChannel();
+  void RequestPacketStreamChannelWithMinPcmFormat();
+  void RequestPacketStreamChannelWithMaxPcmFormat();
+  // This allows us to specify a single entry from `packet_stream_supported_encodings_`.
+  void RequestPacketStreamChannelWithEncoding(
+      fuchsia::hardware::audio::SupportedEncodings encoding_set);
+  zx::time RequestPacketStreamStart();
+  void RequestPacketStreamStartAndExpectCallback();
+  void RequestPacketStreamStopAndExpectCallback();
+
+  void RequestPacketStreamProperties();
+  void RegisterPacketStreamVmos(uint32_t vmo_count, uint64_t vmo_size);
+  void UnregisterPacketStreamVmos();
+  void AllocatePacketStreamVmos(uint32_t vmo_count, uint64_t vmo_size);
+  void DeallocatePacketStreamVmos();
+
+  void RequestPacketStreamSink();
+  void PacketStreamPutPacket();
+  void PacketStreamFlushPackets();
+
+  void RequestPacketStreamStartAndExpectError(zx_status_t expected_error);
+  void RequestPacketStreamStopAndExpectError(zx_status_t expected_error);
+  void RequestPacketStreamSinkAndExpectError(zx_status_t expected_error);
+  void PacketStreamPutPacketAndExpectError(
+      fuchsia::hardware::audio::PacketStreamSinkPutPacketRequest request,
+      zx_status_t expected_error);
 
   void RequestPositionNotification();
   virtual void PositionNotificationCallback(
@@ -139,15 +167,30 @@ class AdminTest : public TestBase {
     ring_buffer_is_incoming_ = is_incoming;
   }
   bool ElementIsRingBuffer(fuchsia::hardware::audio::ElementId element_id);
-  bool RingBufferElementIsIncoming(fuchsia::hardware::audio::ElementId element_id);
+  bool ElementIsPacketStream(fuchsia::hardware::audio::ElementId element_id);
   std::optional<bool> ElementIsIncoming(
-      std::optional<fuchsia::hardware::audio::ElementId> ring_buffer_element_id);
+      std::optional<fuchsia::hardware::audio::ElementId> element_id);
 
   uint32_t notifications_per_ring() const { return notifications_per_ring_; }
   const zx::time& start_time() const { return start_time_; }
   uint16_t frame_size() const { return frame_size_; }
 
   std::optional<uint64_t>& ring_buffer_id() { return ring_buffer_id_; }
+  std::optional<uint64_t>& packet_stream_id() { return packet_stream_id_; }
+  std::optional<uint64_t>& dai_id() { return dai_id_; }
+
+  std::optional<fuchsia::hardware::audio::PacketStreamProperties>& packet_stream_props() {
+    return packet_stream_props_;
+  }
+  std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& packet_stream_pcm_formats() {
+    return packet_stream_pcm_formats_;
+  }
+  std::vector<fuchsia::hardware::audio::SupportedEncodings>& packet_stream_supported_encodings() {
+    return packet_stream_supported_encodings_;
+  }
+  fidl::InterfacePtr<fuchsia::hardware::audio::PacketStreamControl>& packet_stream() {
+    return packet_stream_;
+  }
 
   fidl::InterfacePtr<fuchsia::hardware::audio::signalprocessing::SignalProcessing>&
   signal_processing() {
@@ -161,6 +204,11 @@ class AdminTest : public TestBase {
   }
 
  private:
+  static fuchsia::hardware::audio::PcmFormat GetPcmFormat(
+      const fuchsia::hardware::audio::PcmSupportedFormats& format_set);
+  static fuchsia::hardware::audio::Encoding GetEncoding(
+      const fuchsia::hardware::audio::SupportedEncodings& format_set);
+
   void RequestRingBufferChannel();
 
   static void ValidateElement(const fuchsia::hardware::audio::signalprocessing::Element& element);
@@ -193,6 +241,9 @@ class AdminTest : public TestBase {
   static void ValidateVendorSpecificElementState(
       const fuchsia::hardware::audio::signalprocessing::Element& element,
       const fuchsia::hardware::audio::signalprocessing::ElementState& state);
+
+  static void ValidateSupportedEncodings(
+      const std::vector<fuchsia::hardware::audio::SupportedEncodings>& supported_encodings);
 
   void TestSetElementState(
       const fuchsia::hardware::audio::signalprocessing::Element& element,
@@ -245,8 +296,20 @@ class AdminTest : public TestBase {
            fuchsia::hardware::audio::signalprocessing::ElementState>
       initial_element_states_;
 
-  std::optional<uint64_t> ring_buffer_id_;  // Ring buffer process element id.
-  std::optional<uint64_t> dai_id_;          // DAI interconnect process element id.
+  std::optional<fuchsia::hardware::audio::signalprocessing::ElementId> ring_buffer_id_ =
+      std::nullopt;
+  std::optional<fuchsia::hardware::audio::signalprocessing::ElementId> packet_stream_id_ =
+      std::nullopt;
+  std::optional<fuchsia::hardware::audio::signalprocessing::ElementId> dai_id_ = std::nullopt;
+
+  fidl::InterfacePtr<fuchsia::hardware::audio::PacketStreamControl> packet_stream_;
+  fidl::InterfacePtr<fuchsia::hardware::audio::PacketStreamSink> packet_stream_sink_;
+  std::optional<fuchsia::hardware::audio::PacketStreamProperties> packet_stream_props_;
+  std::vector<fuchsia::hardware::audio::PcmSupportedFormats> packet_stream_pcm_formats_;
+  std::vector<fuchsia::hardware::audio::SupportedEncodings> packet_stream_supported_encodings_;
+  std::optional<fuchsia::hardware::audio::Format2> packet_stream_format_;
+  std::vector<zx::vmo> packet_stream_vmos_;
+  bool packet_stream_started_ = false;
 };
 
 }  // namespace media::audio::drivers::test

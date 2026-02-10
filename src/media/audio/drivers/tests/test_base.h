@@ -153,18 +153,20 @@ class TestBase : public media::audio::test::TestFixture {
   static void ValidateDaiFormat(const fuchsia::hardware::audio::DaiFormat& dai_format);
   static void LogDaiFormat(const fuchsia::hardware::audio::DaiFormat& format,
                            const std::string& tag = {});
-  void GetMinDaiFormat(fuchsia::hardware::audio::DaiFormat& min_dai_format_out);
-  void GetMaxDaiFormat(fuchsia::hardware::audio::DaiFormat& max_dai_format_out);
+  static fuchsia::hardware::audio::DaiFormat GetMinDaiFormat(
+      const std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_format_sets);
+  static fuchsia::hardware::audio::DaiFormat GetMaxDaiFormat(
+      const std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_format_sets);
   const std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_formats() const;
 
   virtual void RetrieveRingBufferFormats();
-  static void ValidateRingBufferFormatSets(
-      const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& rb_format_sets);
-  static void ValidateRingBufferFormat(const fuchsia::hardware::audio::PcmFormat& rb_format);
-  static void LogRingBufferFormat(const fuchsia::hardware::audio::PcmFormat& format,
-                                  const std::string& tag = {});
-  const fuchsia::hardware::audio::PcmFormat& min_ring_buffer_format() const;
-  const fuchsia::hardware::audio::PcmFormat& max_ring_buffer_format() const;
+  static void ValidatePcmSupportedFormats(
+      const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets);
+  void LogPcmFormat(const fuchsia::hardware::audio::PcmFormat& format, const std::string& tag);
+  static fuchsia::hardware::audio::PcmFormat GetMinPcmFormat(
+      const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets);
+  static fuchsia::hardware::audio::PcmFormat GetMaxPcmFormat(
+      const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets);
   const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& ring_buffer_pcm_formats()
       const {
     return ring_buffer_pcm_formats_;
@@ -176,9 +178,6 @@ class TestBase : public media::audio::test::TestFixture {
 
   std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_formats() { return dai_formats_; }
 
-  void SetMinMaxRingBufferFormats();
-  void SetMinMaxDaiFormats();
-
   fidl::InterfacePtr<fuchsia::hardware::audio::Codec>& codec() { return codec_; }
   fidl::InterfacePtr<fuchsia::hardware::audio::Composite>& composite() { return composite_; }
   fidl::InterfacePtr<fuchsia::hardware::audio::Dai>& dai() { return dai_; }
@@ -186,6 +185,15 @@ class TestBase : public media::audio::test::TestFixture {
     return stream_config_;
   }
 
+  // Verifies that the driver channel remains healthy and responsive.
+  //
+  // Usage hints:
+  // - Use this to ensure the driver hasn't disconnected after "fire-and-forget"
+  //   commands (requests without a completion callback).
+  // - Generally NOT needed if the previous step already waits for a response
+  //   (e.g. ExpectCallbacks), as that implicitly verifies channel health.
+  // - Can be used to flush pipelined requests or pending callbacks when no
+  //   explicit response is expected.
   void WaitForError(zx::duration wait_duration = kWaitForErrorDuration) {
     // Instead of just polling for disconnect, we proactively confirm with a basic call & response.
     RequestHealthAndExpectHealthy();
@@ -227,11 +235,6 @@ class TestBase : public media::audio::test::TestFixture {
 
   std::vector<fuchsia::hardware::audio::PcmSupportedFormats> ring_buffer_pcm_formats_;
   std::vector<fuchsia::hardware::audio::DaiSupportedFormats> dai_formats_;
-
-  fuchsia::hardware::audio::PcmFormat min_ring_buffer_format_{};
-  fuchsia::hardware::audio::PcmFormat max_ring_buffer_format_{};
-  std::optional<fuchsia::hardware::audio::DaiFormat> min_dai_format_;
-  std::optional<fuchsia::hardware::audio::DaiFormat> max_dai_format_;
 };
 
 // ostream formatting for DriverType

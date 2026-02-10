@@ -39,7 +39,8 @@ void DisplayElements(const std::vector<fhasp::Element>& elements) {
   for (const auto& element : elements) {
     ss << "        [" << element_idx++ << "] ID " << element.id() << ", type " << element.type()
        << (element.type() == fhasp::ElementType::DAI_INTERCONNECT ? " (DAI)" : "")
-       << (element.type() == fhasp::ElementType::RING_BUFFER ? " (RING_BUFFER)" : "") << '\n';
+       << (element.type() == fhasp::ElementType::RING_BUFFER ? " (RING_BUFFER)" : "")
+       << (element.type() == fhasp::ElementType::PACKET_STREAM ? " (PACKET_STREAM)" : "") << '\n';
   }
   printf("%s", ss.str().c_str());
 }
@@ -120,24 +121,34 @@ bool AdminTest::ElementIsRingBuffer(fuchsia::hardware::audio::ElementId element_
            element.type() == fhasp::ElementType::RING_BUFFER;
   });
 }
+// Is this ID a PacketStream element?
+bool AdminTest::ElementIsPacketStream(fuchsia::hardware::audio::ElementId element_id) {
+  return std::ranges::any_of(elements_, [element_id](const fhasp::Element& element) {
+    return element.has_id() && element.id() == element_id && element.has_type() &&
+           element.type() == fhasp::ElementType::PACKET_STREAM;
+  });
+}
 
-// Is this RingBuffer element Incoming (its contents are READ-ONLY) or Outgoing (also WRITABLE)?
+// Is this element Incoming (its contents are READ-ONLY) or Outgoing (also WRITABLE)?
 // We walk the signalprocessing topologies. If (across all the topologies) this element ever has
-// any incoming edges, then it is not itself an outgoing RingBuffer. If this element ever has any
-// outgoing edges, then it is not itself an incoming RingBuffer.
+// any incoming edges, then it is not itself an outgoing element. If this element ever has any
+// outgoing edges, then it is not itself an incoming element.
+// Note: This method is intended only for RingBuffer and PacketStream
+// elements, not DAIs (which can also be terminal elements and thus
+// could potentially be considered "outgoing" or "incoming").
 std::optional<bool> AdminTest::ElementIsIncoming(
-    std::optional<fuchsia::hardware::audio::ElementId> ring_buffer_element_id) {
+    std::optional<fuchsia::hardware::audio::ElementId> element_id) {
   if (!device_entry().isComposite()) {
     return TestBase::IsIncoming();
   }
 
-  if (!ring_buffer_element_id.has_value()) {
-    ADD_FAILURE() << "ring_buffer_element_id is not set";
+  if (!element_id.has_value()) {
+    ADD_FAILURE() << "element_id is not set";
     return std::nullopt;
   }
 
-  if (!ElementIsRingBuffer(*ring_buffer_element_id)) {
-    ADD_FAILURE() << "element_id " << *ring_buffer_element_id << " is not a RingBuffer element";
+  if (!ElementIsRingBuffer(*element_id) && !ElementIsPacketStream(*element_id)) {
+    ADD_FAILURE() << "element_id " << *element_id << " is not a RingBuffer or PacketStream element";
     return std::nullopt;
   }
 
@@ -157,13 +168,13 @@ std::optional<bool> AdminTest::ElementIsIncoming(
     ADD_FAILURE() << "could not find edge_pairs for current_topology_id " << *current_topology_id_;
     return std::nullopt;
   }
-  bool has_outgoing = std::ranges::any_of(
-      edge_pairs, [element_id = *ring_buffer_element_id](const fhasp::EdgePair& edge_pair) {
-        return (edge_pair.processing_element_id_from == element_id);
+  bool has_outgoing =
+      std::ranges::any_of(edge_pairs, [id = *element_id](const fhasp::EdgePair& edge_pair) {
+        return (edge_pair.processing_element_id_from == id);
       });
-  bool has_incoming = std::ranges::any_of(
-      edge_pairs, [element_id = *ring_buffer_element_id](const fhasp::EdgePair& edge_pair) {
-        return (edge_pair.processing_element_id_to == element_id);
+  bool has_incoming =
+      std::ranges::any_of(edge_pairs, [id = *element_id](const fhasp::EdgePair& edge_pair) {
+        return (edge_pair.processing_element_id_to == id);
       });
 
   if (has_outgoing && !has_incoming) {
@@ -173,8 +184,8 @@ std::optional<bool> AdminTest::ElementIsIncoming(
     return true;
   }
 
-  ADD_FAILURE() << "For RingBuffer element " << *ring_buffer_element_id
-                << ", has_outgoing and has_incoming are both " << (has_outgoing ? "TRUE" : "FALSE");
+  ADD_FAILURE() << "For element " << *element_id << ", has_outgoing and has_incoming are both "
+                << (has_outgoing ? "TRUE" : "FALSE");
   return std::nullopt;
 }
 
@@ -251,9 +262,14 @@ void AdminTest::RequestRingBufferChannelWithMinFormat() {
   }
   ASSERT_GT(ring_buffer_pcm_formats().size(), 0u);
 
-  ring_buffer_pcm_format_ = min_ring_buffer_format();
-  if (device_entry().isComposite() || device_entry().isDai()) {
-    GetMinDaiFormat(dai_format_);
+  ring_buffer_pcm_format_ = GetMinPcmFormat(ring_buffer_pcm_formats());
+  if (device_entry().isDai() || device_entry().isComposite()) {
+    if (dai_formats().empty()) {
+      ASSERT_NO_FAILURE_OR_SKIP(RetrieveDaiFormats());
+    }
+    if (!dai_formats().empty()) {
+      dai_format_ = GetMinDaiFormat(dai_formats());
+    }
   }
   RequestRingBufferChannel();
 }
@@ -269,11 +285,86 @@ void AdminTest::RequestRingBufferChannelWithMaxFormat() {
   }
   ASSERT_GT(ring_buffer_pcm_formats().size(), 0u);
 
-  ring_buffer_pcm_format_ = max_ring_buffer_format();
-  if (device_entry().isComposite() || device_entry().isDai()) {
-    GetMaxDaiFormat(dai_format_);
+  ring_buffer_pcm_format_ = GetMaxPcmFormat(ring_buffer_pcm_formats());
+  if (device_entry().isDai() || device_entry().isComposite()) {
+    if (dai_formats().empty()) {
+      ASSERT_NO_FAILURE_OR_SKIP(RetrieveDaiFormats());
+    }
+    if (!dai_formats().empty()) {
+      dai_format_ = GetMaxDaiFormat(dai_formats());
+    }
   }
   RequestRingBufferChannel();
+}
+
+// Construct an arbitrary PcmFormat from the first supported values.
+fuchsia::hardware::audio::PcmFormat AdminTest::GetPcmFormat(
+    const fuchsia::hardware::audio::PcmSupportedFormats& format_set) {
+  fuchsia::hardware::audio::PcmFormat pcm_format;
+  pcm_format.number_of_channels =
+      static_cast<uint8_t>(format_set.channel_sets()[0].attributes().size());
+  pcm_format.sample_format = format_set.sample_formats()[0];
+  pcm_format.bytes_per_sample = format_set.bytes_per_sample()[0];
+  pcm_format.valid_bits_per_sample = format_set.valid_bits_per_sample()[0];
+  pcm_format.frame_rate = format_set.frame_rates()[0];
+  return pcm_format;
+}
+
+fuchsia::hardware::audio::Encoding AdminTest::GetEncoding(
+    const fuchsia::hardware::audio::SupportedEncodings& format_set) {
+  fuchsia::hardware::audio::Encoding encoding;
+  encoding.set_encoding_type(format_set.encoding_types()[0]);
+  encoding.set_decoded_channel_count(
+      static_cast<uint32_t>(format_set.decoded_channel_sets()[0].attributes().size()));
+
+  uint32_t bitrate = 128000;
+  if (format_set.has_min_encoding_bitrate()) {
+    bitrate = std::max(bitrate, format_set.min_encoding_bitrate());
+  }
+  if (format_set.has_max_encoding_bitrate()) {
+    bitrate = std::min(bitrate, format_set.max_encoding_bitrate());
+  }
+  encoding.set_average_encoding_bitrate(bitrate);
+  return encoding;
+}
+
+void AdminTest::RequestPacketStreamChannelWithMinPcmFormat() {
+  ASSERT_TRUE(device_entry().isComposite());
+
+  if (packet_stream_pcm_formats().empty()) {
+    GTEST_SKIP()
+        << "*** this audio device returns no packet_stream_formats. Skipping this test. ***";
+    __UNREACHABLE;
+  }
+
+  packet_stream_format_ = fuchsia::hardware::audio::Format2();
+  packet_stream_format_->set_pcm_format(fidl::Clone(GetMinPcmFormat(packet_stream_pcm_formats())));
+  RequestPacketStreamChannel();
+}
+
+void AdminTest::RequestPacketStreamChannelWithMaxPcmFormat() {
+  ASSERT_TRUE(device_entry().isComposite());
+
+  if (packet_stream_pcm_formats().empty()) {
+    GTEST_SKIP()
+        << "*** this audio device returns no packet_stream_formats. Skipping this test. ***";
+    __UNREACHABLE;
+  }
+
+  packet_stream_format_ = fuchsia::hardware::audio::Format2();
+  packet_stream_format_->set_pcm_format(fidl::Clone(GetMaxPcmFormat(packet_stream_pcm_formats())));
+  RequestPacketStreamChannel();
+}
+
+void AdminTest::RequestPacketStreamChannelWithEncoding(
+    fuchsia::hardware::audio::SupportedEncodings encoding_set) {
+  ASSERT_TRUE(device_entry().isComposite());
+
+  fuchsia::hardware::audio::Format2 format;
+  format.set_encoding(GetEncoding(encoding_set));
+
+  packet_stream_format_ = std::move(format);
+  RequestPacketStreamChannel();
 }
 
 // Ring-buffer channel requests
@@ -349,7 +440,7 @@ void AdminTest::RequestBuffer(uint32_t min_ring_buffer_frames,
   ASSERT_EQ(status, ZX_OK) << "vmo.get_info returned error";
 
   const zx_rights_t required_rights =
-      ring_buffer_is_incoming_.value_or(true) ? kRightsVmoIncoming : kRightsVmoOutgoing;
+      ring_buffer_is_incoming_.value_or(true) ? kRightsVmoReadOnly : kRightsVmoReadWrite;
   EXPECT_EQ((info.rights & required_rights), required_rights)
       << "VMO rights 0x" << std::hex << info.rights << " are insufficient (0x" << required_rights
       << " are required)";
@@ -430,9 +521,54 @@ void AdminTest::RetrieveRingBufferFormats() {
                   }));
   ExpectCallbacks();
 
-  ValidateRingBufferFormatSets(ring_buffer_pcm_formats());
-  if (!HasFailure()) {
-    SetMinMaxRingBufferFormats();
+  ValidatePcmSupportedFormats(ring_buffer_pcm_formats());
+}
+
+void AdminTest::RetrievePacketStreamFormats() {
+  if (!device_entry().isComposite()) {
+    return;
+  }
+  RequestTopologies();
+  RetrieveInitialTopology();
+
+  if (!packet_stream_id_.has_value()) {
+    GTEST_SKIP() << "PacketStream element not found. Skipping this test.";
+    return;
+  }
+
+  packet_stream_pcm_formats().clear();
+  packet_stream_supported_encodings().clear();
+
+  composite()->GetPacketStreamFormats(
+      *packet_stream_id_,
+      AddCallback("GetPacketStreamFormats",
+                  [this](fuchsia::hardware::audio::Composite_GetPacketStreamFormats_Result result) {
+                    ASSERT_FALSE(result.is_err()) << static_cast<int32_t>(result.err());
+                    auto& supported_formats = result.response().packet_stream_formats;
+                    EXPECT_FALSE(supported_formats.empty());
+
+                    for (size_t i = 0; i < supported_formats.size(); ++i) {
+                      SCOPED_TRACE(testing::Message()
+                                   << "Composite packet_stream_formats[" << i << "]");
+                      if (supported_formats[i].is_pcm_supported_formats()) {
+                        auto& format_set = supported_formats[i].pcm_supported_formats();
+                        packet_stream_pcm_formats().push_back(std::move(format_set));
+                      } else if (supported_formats[i].is_supported_encodings()) {
+                        auto& encoding_set = supported_formats[i].supported_encodings();
+                        packet_stream_supported_encodings().push_back(std::move(encoding_set));
+                      } else {
+                        FAIL() << "Unknown format type";
+                      }
+                    }
+                  }));
+  ExpectCallbacks();
+
+  if (!packet_stream_pcm_formats().empty()) {
+    ValidatePcmSupportedFormats(packet_stream_pcm_formats());
+  }
+
+  if (!packet_stream_supported_encodings().empty()) {
+    ValidateSupportedEncodings(packet_stream_supported_encodings());
   }
 }
 
@@ -470,9 +606,322 @@ void AdminTest::RetrieveDaiFormats() {
   ExpectCallbacks();
 
   ValidateDaiFormatSets(dai_formats());
-  if (!HasFailure()) {
-    SetMinMaxDaiFormats();
+}
+
+void AdminTest::ValidateSupportedEncodings(
+    const std::vector<fuchsia::hardware::audio::SupportedEncodings>& supported_encodings) {
+  // We've already ensured `supported_encodings` is not empty, in `RetrievePacketStreamFormats()`.
+  for (size_t i = 0; i < supported_encodings.size(); ++i) {
+    SCOPED_TRACE(testing::Message() << "encoding[" << i << "]");
+    auto& format_set = supported_encodings[i];
+
+    ASSERT_TRUE(format_set.has_decoded_channel_sets());
+    ASSERT_TRUE(format_set.has_encoding_types());
+
+    ASSERT_FALSE(format_set.decoded_channel_sets().empty());
+    ASSERT_FALSE(format_set.encoding_types().empty());
+
+    // Ensure `decoded_channel_sets` are valid and listed in ascending order of channel count.
+    for (size_t j = 0; j < format_set.decoded_channel_sets().size(); ++j) {
+      SCOPED_TRACE(testing::Message() << "channel_set[" << j << "]");
+      auto& channel_set = format_set.decoded_channel_sets()[j];
+
+      ASSERT_TRUE(channel_set.has_attributes());
+      ASSERT_FALSE(channel_set.attributes().empty());
+
+      if (j > 0) {
+        size_t prev_count = format_set.decoded_channel_sets()[j - 1].attributes().size();
+        size_t curr_count = channel_set.attributes().size();
+        EXPECT_GT(curr_count, prev_count)
+            << "decoded_channel_sets[" << j << "] (" << curr_count << " channels) "
+            << "must have more channels than decoded_channel_sets[" << j - 1 << "] (" << prev_count
+            << " channels)";
+      }
+    }
+
+    // Ensure frame_rates are unique and listed in ascending order.
+    if (format_set.has_decoded_frame_rates()) {
+      for (size_t j = 0; j < format_set.decoded_frame_rates().size(); ++j) {
+        if (j > 0) {
+          EXPECT_GT(format_set.decoded_frame_rates()[j], format_set.decoded_frame_rates()[j - 1])
+              << "decoded_frame_rates[" << j << "] (" << format_set.decoded_frame_rates()[j]
+              << ") must exceed decoded_frame_rates[" << j - 1 << "] ("
+              << format_set.decoded_frame_rates()[j - 1] << ")";
+        }
+      }
+    }
+
+    // Ensure encoding_types are unique.
+    for (size_t j = 0; j < format_set.encoding_types().size(); ++j) {
+      for (size_t k = j + 1; k < format_set.encoding_types().size(); ++k) {
+        EXPECT_NE(format_set.encoding_types()[j], format_set.encoding_types()[k])
+            << "encoding_types[" << j << "] must not equal encoding_types[" << k << "]";
+      }
+    }
   }
+}
+
+void AdminTest::RequestPacketStreamChannel() {
+  if (!device_entry().isComposite()) {
+    // Only Composite supports PacketStream for now in this test suite context.
+    return;
+  }
+  RequestTopologies();
+  RetrieveInitialTopology();
+
+  if (!packet_stream_id_.has_value()) {
+    GTEST_SKIP() << "PacketStream element not found. Skipping this test.";
+    return;
+  }
+
+  // If the test hasn't already specified one, select an arbitrary format.
+  if (!packet_stream_format_.has_value()) {
+    packet_stream_format_ = fuchsia::hardware::audio::Format2();
+
+    if (!packet_stream_supported_encodings().empty()) {
+      packet_stream_format_->set_encoding(GetEncoding(packet_stream_supported_encodings()[0]));
+    } else if (!packet_stream_pcm_formats().empty()) {
+      packet_stream_format_->set_pcm_format(GetPcmFormat(packet_stream_pcm_formats()[0]));
+    } else {
+      FAIL() << "No supported formats available for PacketStream";
+    }
+  }
+
+  // Clone the format to pass to CreatePacketStream, keeping the member variable for test
+  // verification.
+  fuchsia::hardware::audio::Format2 format_to_use;
+  packet_stream_format_->Clone(&format_to_use);
+
+  fidl::InterfaceHandle<fuchsia::hardware::audio::PacketStreamControl> stream_handle;
+  composite()->CreatePacketStream(
+      *packet_stream_id_, std::move(format_to_use), stream_handle.NewRequest(),
+      AddCallbackUnordered(
+          "CreatePacketStream",
+          [](fuchsia::hardware::audio::Composite_CreatePacketStream_Result result) {
+            EXPECT_FALSE(result.is_err()) << result.err();
+          }));
+
+  packet_stream() = stream_handle.Bind();
+  AddErrorHandler(packet_stream(), "PacketStreamControl");
+}
+
+void AdminTest::RequestPacketStreamProperties() {
+  packet_stream()->GetProperties(AddCallback(
+      "GetProperties",
+      [this](fuchsia::hardware::audio::PacketStreamControl_GetProperties_Result result) {
+        ASSERT_TRUE(result.is_response());
+        packet_stream_props() = std::move(result.response().properties);
+      }));
+  ExpectCallbacks();
+  ASSERT_TRUE(packet_stream_props().has_value());
+  EXPECT_TRUE(packet_stream_props()->has_supported_buffer_types());
+  EXPECT_TRUE(packet_stream_props()->has_needs_cache_flush_or_invalidate());
+}
+
+void AdminTest::RegisterPacketStreamVmos(uint32_t vmo_count, uint64_t vmo_size) {
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  // With `RegisterVmos()`, the client creates VMOs for the driver.
+  for (uint32_t i = 0; i < vmo_count; ++i) {
+    zx::vmo vmo;
+    ASSERT_EQ(zx::vmo::create(vmo_size, 0, &vmo), ZX_OK);
+    fuchsia::hardware::audio::VmoInfo info;
+    info.set_id(i);  // simple ID
+    zx::vmo dup;
+    // The registered VMO handle must include ZX_RIGHT_TRANSFER, ZX_RIGHT_READ and ZX_RIGHT_MAP.
+    // If the packet stream is an input stream, then the handle must also include ZX_RIGHT_WRITE.
+    // (Note: 'Input' here means 'Input to the system' (Capture).
+    //  If Capture, driver writes to VMO. We (Client) are registering VMO for Driver.
+    //  So Driver needs ZX_RIGHT_WRITE. We give Driver 'kRightsVmoReadWrite'.
+    //  If Playback, driver reads from VMO. We give Driver 'kRightsVmoReadOnly').
+    //
+    // Note: kRightsVmoReadOnly = READ | MAP | TRANSFER
+    //       kRightsVmoReadWrite = READ | MAP | TRANSFER | WRITE
+    ASSERT_TRUE(packet_stream_id_.has_value()) << "PacketStream element ID is not set";
+    std::optional<bool> is_incoming = ElementIsIncoming(packet_stream_id_);
+    ASSERT_TRUE(is_incoming.has_value())
+        << "PacketStream element " << *packet_stream_id_ << " is not terminal";
+    bool is_input = *is_incoming;
+    zx_rights_t rights = is_input ? kRightsVmoReadWrite : kRightsVmoReadOnly;
+    ASSERT_EQ(vmo.duplicate(rights, &dup), ZX_OK);
+    info.set_vmo(std::move(dup));
+    infos.push_back(std::move(info));
+    packet_stream_vmos_.push_back(std::move(vmo));
+  }
+  config.set_vmo_infos(std::move(infos));
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    EXPECT_FALSE(result.is_err());
+                  }));
+  ExpectCallbacks();
+}
+
+void AdminTest::UnregisterPacketStreamVmos() {
+  packet_stream()->UnregisterVmos(AddCallback(
+      "UnregisterVmos",
+      [this](fuchsia::hardware::audio::PacketStreamControl_UnregisterVmos_Result result) {
+        EXPECT_FALSE(result.is_err());
+        packet_stream_vmos_.clear();
+      }));
+  ExpectCallbacks();
+}
+
+void AdminTest::AllocatePacketStreamVmos(uint32_t vmo_count, uint64_t vmo_size) {
+  ASSERT_TRUE(packet_stream_id_.has_value()) << "PacketStream element ID is not set";
+  std::optional<bool> is_incoming = ElementIsIncoming(packet_stream_id_);
+  ASSERT_TRUE(is_incoming.has_value())
+      << "PacketStream element " << *packet_stream_id_ << " is not terminal";
+  const zx_rights_t required_rights = *is_incoming ? kRightsVmoReadOnly : kRightsVmoReadWrite;
+
+  fuchsia::hardware::audio::AllocateVmosConfig config;
+  config.set_vmo_count(vmo_count);
+  config.set_min_vmo_size(vmo_size);
+
+  // With `AllocateVmos()`, the driver creates VMOs for the client.
+  packet_stream()->AllocateVmos(
+      std::move(config),
+      AddCallback("AllocateVmos",
+                  [this, vmo_count, vmo_size, required_rights](
+                      fuchsia::hardware::audio::PacketStreamControl_AllocateVmos_Result result) {
+                    ASSERT_FALSE(result.is_err());
+                    ASSERT_EQ(result.response().vmos.size(), vmo_count);
+
+                    for (auto& info : result.response().vmos) {
+                      zx_info_handle_basic_t basic_info;
+                      ASSERT_EQ(info.mutable_vmo()->get_info(ZX_INFO_HANDLE_BASIC, &basic_info,
+                                                             sizeof(basic_info), nullptr, nullptr),
+                                ZX_OK);
+                      EXPECT_EQ((basic_info.rights & required_rights), required_rights)
+                          << "VMO rights 0x" << std::hex << basic_info.rights
+                          << " are insufficient (0x" << required_rights << " are required)";
+
+                      uint64_t actual_size;
+                      ASSERT_EQ(info.mutable_vmo()->get_size(&actual_size), ZX_OK);
+                      EXPECT_GE(actual_size, vmo_size);
+
+                      packet_stream_vmos_.push_back(std::move(*info.mutable_vmo()));
+                    }
+                  }));
+  ExpectCallbacks();
+}
+
+void AdminTest::DeallocatePacketStreamVmos() {
+  packet_stream()->DeallocateVmos(AddCallback(
+      "DeallocateVmos",
+      [this](fuchsia::hardware::audio::PacketStreamControl_DeallocateVmos_Result result) {
+        EXPECT_FALSE(result.is_err());
+        packet_stream_vmos_.clear();
+      }));
+  ExpectCallbacks();
+}
+
+void AdminTest::RequestPacketStreamSink() {
+  packet_stream()->GetPacketStreamSink(AddCallback(
+      "GetPacketStreamSink",
+      [this](fuchsia::hardware::audio::PacketStreamControl_GetPacketStreamSink_Result result) {
+        ASSERT_FALSE(result.is_err()) << result.err();
+        ASSERT_TRUE(result.response().has_stream());
+        packet_stream_sink_ = result.response().mutable_stream()->Bind();
+      }));
+  ExpectCallbacks();
+}
+
+void AdminTest::RequestPacketStreamSinkAndExpectError(zx_status_t expected_error) {
+  packet_stream()->GetPacketStreamSink(AddCallback(
+      "GetPacketStreamSink",
+      [expected_error](
+          fuchsia::hardware::audio::PacketStreamControl_GetPacketStreamSink_Result result) {
+        ASSERT_TRUE(result.is_err());
+        EXPECT_EQ(result.err(), expected_error);
+      }));
+  ExpectCallbacks();
+}
+
+zx::time AdminTest::RequestPacketStreamStart() {
+  auto send_time = zx::clock::get_monotonic();
+  packet_stream()->Start(
+      AddCallback("Start", [](fuchsia::hardware::audio::PacketStreamControl_Start_Result result) {
+        EXPECT_FALSE(result.is_err()) << result.err();
+      }));
+  return send_time;
+}
+
+void AdminTest::RequestPacketStreamStartAndExpectCallback() {
+  RequestPacketStreamStart();
+  ExpectCallbacks();
+  packet_stream_started_ = true;
+}
+
+void AdminTest::RequestPacketStreamStartAndExpectError(zx_status_t expected_error) {
+  packet_stream()->Start(AddCallback(
+      "Start", [expected_error](fuchsia::hardware::audio::PacketStreamControl_Start_Result result) {
+        ASSERT_TRUE(result.is_err());
+        EXPECT_EQ(result.err(), expected_error);
+      }));
+  ExpectCallbacks();
+}
+
+void AdminTest::RequestPacketStreamStopAndExpectCallback() {
+  packet_stream()->Stop(
+      AddCallback("Stop", [](fuchsia::hardware::audio::PacketStreamControl_Stop_Result result) {
+        EXPECT_FALSE(result.is_err()) << result.err();
+      }));
+  ExpectCallbacks();
+  packet_stream_started_ = false;
+}
+
+void AdminTest::RequestPacketStreamStopAndExpectError(zx_status_t expected_error) {
+  packet_stream()->Stop(AddCallback(
+      "Stop", [expected_error](fuchsia::hardware::audio::PacketStreamControl_Stop_Result result) {
+        ASSERT_TRUE(result.is_err());
+        EXPECT_EQ(result.err(), expected_error);
+      }));
+  ExpectCallbacks();
+}
+
+void AdminTest::PacketStreamPutPacket() {
+  if (!packet_stream_sink_ || packet_stream_vmos_.empty())
+    return;
+  fuchsia::hardware::audio::PacketStreamSinkPutPacketRequest request;
+  fuchsia::hardware::audio::VmoTransfer transfer;
+  transfer.set_vmo_id(0);
+  transfer.set_vmo_offset(0);
+  transfer.set_payload_size(10);  // arbitrary small size
+  fuchsia::hardware::audio::DataTransfer payload;
+  payload.set_vmo_transfer(std::move(transfer));
+  request.set_payload(std::move(payload));
+
+  packet_stream_sink_->PutPacket(
+      std::move(request),
+      AddCallback("PutPacket",
+                  [](fuchsia::hardware::audio::PacketStreamSink_PutPacket_Result result) {
+                    EXPECT_FALSE(result.is_err()) << result.err();
+                  }));
+  ExpectCallbacks();
+}
+
+void AdminTest::PacketStreamPutPacketAndExpectError(
+    fuchsia::hardware::audio::PacketStreamSinkPutPacketRequest request,
+    zx_status_t expected_error) {
+  packet_stream_sink_->PutPacket(
+      std::move(request),
+      AddCallback(
+          "PutPacket",
+          [expected_error](fuchsia::hardware::audio::PacketStreamSink_PutPacket_Result result) {
+            ASSERT_TRUE(result.is_err());
+            EXPECT_EQ(result.err(), expected_error);
+          }));
+  ExpectCallbacks();
+}
+
+void AdminTest::PacketStreamFlushPackets() {
+  packet_stream_sink_->FlushPackets(AddCallback(
+      "FlushPackets", [](fuchsia::hardware::audio::PacketStreamSink_FlushPackets_Result result) {
+        EXPECT_FALSE(result.is_err()) << result.err();
+      }));
+  ExpectCallbacks();
 }
 
 // Request that the driver start the ring buffer engine, responding with the start_time.
@@ -694,6 +1143,8 @@ void AdminTest::RequestElements() {
       ring_buffer_id_.emplace(element.id());  // Override any previous.
     } else if (element.type() == fhasp::ElementType::DAI_INTERCONNECT) {
       dai_id_.emplace(element.id());  // Override any previous.
+    } else if (element.type() == fhasp::ElementType::PACKET_STREAM) {
+      packet_stream_id_.emplace(element.id());  // Override any previous.
     }
 
     // No element ID may be a duplicate.
@@ -1205,6 +1656,9 @@ void AdminTest::ValidateElementTopologyClosure() {
         ASSERT_NE(source_element_type, fhasp::ElementType::RING_BUFFER)
             << "Element " << source_id << " is not an endpoint in topology " << topology.id()
             << ", but is RING_BUFFER";
+        ASSERT_NE(source_element_type, fhasp::ElementType::PACKET_STREAM)
+            << "Element " << source_id << " is not an endpoint in topology " << topology.id()
+            << ", but is PACKET_STREAM";
         edge_dest_id_counts[source_id] -= 1;
         if (edge_dest_id_counts[source_id] == 0) {
           edge_dest_id_counts.erase(source_id);
@@ -2840,7 +3294,7 @@ DEFINE_ADMIN_TEST_CLASS(GetRingBufferProperties, {
 });
 
 // Verify valid responses: get ring buffer VMO.
-DEFINE_ADMIN_TEST_CLASS(GetBuffer, {
+DEFINE_ADMIN_TEST_CLASS(GetRingBufferVmo, {
   ASSERT_NO_FAILURE_OR_SKIP(RetrieveProperties());
   ASSERT_NO_FAILURE_OR_SKIP(RetrieveRingBufferFormats());
   ASSERT_NO_FAILURE_OR_SKIP(RequestRingBufferChannelWithMinFormat());
@@ -3176,6 +3630,703 @@ DEFINE_ADMIN_TEST_CLASS(SetActiveChannelsAfterDroppingFirstRingBuffer, {
       nullptr, DevNameForEntry(DEVICE).c_str(), __FILE__, __LINE__,                            \
       [&]() -> AdminTest* { return new CLASS_NAME(DEVICE); })
 
+// Verify PacketStream properties.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamGetProperties, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+
+  RequestPacketStreamProperties();
+});
+
+// Verify PacketStream formats.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamGetFormats, { RetrievePacketStreamFormats(); });
+
+// Verify PacketStream Create with min format.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamCreateWithMinFormat, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  RequestPacketStreamChannelWithMinPcmFormat();
+  WaitForError();
+});
+
+// Verify PacketStream Create with max format.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamCreateWithMaxFormat, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  RequestPacketStreamChannelWithMaxPcmFormat();
+  WaitForError();
+});
+
+// Verify PacketStream Create with encoding formats.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamCreateWithEncoding, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+
+  if (packet_stream_supported_encodings().empty()) {
+    GTEST_SKIP() << "Driver does not support any encoding formats";
+  }
+
+  for (const auto& encoding_set : packet_stream_supported_encodings()) {
+    RequestPacketStreamChannelWithEncoding(fidl::Clone(encoding_set));
+    WaitForError();
+    ASSERT_NO_FAILURE_OR_SKIP(packet_stream().Unbind());
+  }
+});
+
+// Verify PacketStream AllocateVmos.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamAllocateVmos, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  AllocatePacketStreamVmos(1, 4096);
+});
+
+// Verify PacketStream AllocateVmos after RegisterVmos should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamAllocateAfterRegisterShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+
+  fuchsia::hardware::audio::AllocateVmosConfig config;
+  config.set_vmo_count(1);
+  config.set_min_vmo_size(4096);
+  packet_stream()->AllocateVmos(
+      std::move(config),
+      AddCallback("AllocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_AllocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream AllocateVmos with zero VMO count should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamAllocateVmosZeroCountShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::AllocateVmosConfig config;
+  config.set_vmo_count(0);  // INVALID
+  config.set_min_vmo_size(4096);
+  packet_stream()->AllocateVmos(
+      std::move(config),
+      AddCallback("AllocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_AllocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream AllocateVmos with zero VMO size should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamAllocateVmosZeroSizeShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::AllocateVmosConfig config;
+  config.set_vmo_count(1);
+  config.set_min_vmo_size(0);  // INVALID
+  packet_stream()->AllocateVmos(
+      std::move(config),
+      AddCallback("AllocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_AllocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream AllocateVmos when DRIVER_OWNED not supported should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamAllocateVmosNoDriverOwnedSupportShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if ((packet_stream_props()->supported_buffer_types() &
+       fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver SUPPORTS DRIVER_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::AllocateVmosConfig config;
+  config.set_vmo_count(1);
+  config.set_min_vmo_size(4096);
+  packet_stream()->AllocateVmos(
+      std::move(config),
+      AddCallback("AllocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_AllocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_NOT_SUPPORTED);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmos, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  RegisterPacketStreamVmos(1, 4096);
+});
+
+// Verify PacketStream RegisterVmos with duplicate IDs should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmosDuplicateIdsShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  for (int i = 0; i < 2; ++i) {
+    zx::vmo vmo;
+    ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+    fuchsia::hardware::audio::VmoInfo info;
+    info.set_id(123);  // DUPLICATE ID
+    info.set_vmo(std::move(vmo));
+    infos.push_back(std::move(info));
+  }
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos with invalid VMO handle should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmosInvalidHandleShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  fuchsia::hardware::audio::VmoInfo info;
+  info.set_id(1);
+  // No VMO set -> invalid handle
+  infos.push_back(std::move(info));
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos with insufficient rights should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmosInsufficientRightsShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+
+  // Remove READ right
+  zx::vmo limited_vmo;
+  ASSERT_EQ(vmo.replace(ZX_RIGHT_TRANSFER | ZX_RIGHT_MAP, &limited_vmo), ZX_OK);
+
+  fuchsia::hardware::audio::VmoInfo info;
+  info.set_id(1);
+  info.set_vmo(std::move(limited_vmo));
+  infos.push_back(std::move(info));
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_ACCESS_DENIED);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos after AllocateVmos should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterAfterAllocateShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  fuchsia::hardware::audio::VmoInfo info;
+  info.set_id(99);
+  info.set_vmo(std::move(vmo));
+  infos.push_back(std::move(info));
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos with zero size VMO should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmosZeroSizeShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(0, 0, &vmo), ZX_OK);
+
+  fuchsia::hardware::audio::VmoInfo info;
+  info.set_id(1);
+  info.set_vmo(std::move(vmo));
+  infos.push_back(std::move(info));
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream RegisterVmos when CLIENT_OWNED not supported should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamRegisterVmosNoClientOwnedSupportShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if ((packet_stream_props()->supported_buffer_types() &
+       fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver SUPPORTS CLIENT_OWNED buffers";
+  }
+
+  fuchsia::hardware::audio::RegisterVmosConfig config;
+  std::vector<fuchsia::hardware::audio::VmoInfo> infos;
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  fuchsia::hardware::audio::VmoInfo info;
+  info.set_id(1);
+  info.set_vmo(std::move(vmo));
+  infos.push_back(std::move(info));
+  config.set_vmo_infos(std::move(infos));
+
+  packet_stream()->RegisterVmos(
+      std::move(config),
+      AddCallback("RegisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_RegisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_NOT_SUPPORTED);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream DeallocateVmos while not allocated should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamDeallocateVmosBeforeAllocateShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  packet_stream()->DeallocateVmos(
+      AddCallback("DeallocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_DeallocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream DeallocateVmos while started should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamDeallocateVmosWhileStartedShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::DRIVER_OWNED)) {
+    GTEST_SKIP() << "Driver does not support DRIVER_OWNED buffers";
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  packet_stream()->DeallocateVmos(
+      AddCallback("DeallocateVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_DeallocateVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream UnregisterVmos while not registered should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamUnregisterVmosBeforeRegisterShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+
+  packet_stream()->UnregisterVmos(
+      AddCallback("UnregisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_UnregisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream UnregisterVmos while started should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamUnregisterVmosWhileStartedShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        fuchsia::hardware::audio::BufferType::CLIENT_OWNED)) {
+    GTEST_SKIP() << "Driver does not support CLIENT_OWNED buffers";
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  packet_stream()->UnregisterVmos(
+      AddCallback("UnregisterVmos",
+                  [](fuchsia::hardware::audio::PacketStreamControl_UnregisterVmos_Result result) {
+                    ASSERT_TRUE(result.is_err());
+                    EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+                  }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream Start without buffers should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamStartBeforeBuffersShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::INLINE) {
+    GTEST_SKIP() << "Driver supports INLINE buffers, Start might be permitted";
+  }
+
+  packet_stream()->Start(
+      AddCallback("Start", [](fuchsia::hardware::audio::PacketStreamControl_Start_Result result) {
+        ASSERT_TRUE(result.is_err());
+        EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+      }));
+  ExpectCallbacks();
+});
+
+// Verify Start() errors if the driver receives it before responding to a previous Start().
+DEFINE_ADMIN_TEST_CLASS(PacketStreamStartWhileStartingShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  } else if (packet_stream_props()->supported_buffer_types() &
+             fuchsia::hardware::audio::BufferType::DRIVER_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  } else if (!(packet_stream_props()->supported_buffer_types() &
+               fuchsia::hardware::audio::BufferType::INLINE)) {
+    GTEST_SKIP() << "Driver supports no buffer types?";
+  }
+
+  // Don't wait for the callback...
+  auto _ = RequestPacketStreamStart();
+  // ...just immediately call again.
+  RequestPacketStreamStartAndExpectError(ZX_ERR_BAD_STATE);
+});
+
+// Verify PacketStream Start while started should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamStartWhileStartedShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  } else if (packet_stream_props()->supported_buffer_types() &
+             fuchsia::hardware::audio::BufferType::DRIVER_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  } else if (!(packet_stream_props()->supported_buffer_types() &
+               fuchsia::hardware::audio::BufferType::INLINE)) {
+    GTEST_SKIP() << "Driver supports no buffer types?";
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  RequestPacketStreamStartAndExpectError(ZX_ERR_BAD_STATE);
+});
+
+// Verify PacketStream Stop while stopped should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamStopWhileStoppedShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+
+  packet_stream()->Stop(
+      AddCallback("Stop", [](fuchsia::hardware::audio::PacketStreamControl_Stop_Result result) {
+        ASSERT_TRUE(result.is_err());
+        EXPECT_EQ(result.err(), ZX_ERR_BAD_STATE);
+      }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStream GetPacketStreamSink for input stream should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamGetSinkForInputShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+
+  std::optional<bool> is_incoming = ElementIsIncoming(packet_stream_id());
+  ASSERT_TRUE(is_incoming.has_value());
+  if (!*is_incoming) {
+    GTEST_SKIP() << "This is an output stream, skipping negative test for input";
+  }
+
+  RequestPacketStreamSinkAndExpectError(ZX_ERR_NOT_SUPPORTED);
+  WaitForError();
+});
+
+// Verify PacketStream SetPacketStreamSink for output stream should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamSetSinkForOutputShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+
+  std::optional<bool> is_incoming = ElementIsIncoming(packet_stream_id());
+  ASSERT_TRUE(is_incoming.has_value());
+  if (*is_incoming) {
+    GTEST_SKIP() << "This is an input stream, skipping negative test for output";
+  }
+
+  fidl::InterfaceHandle<fuchsia::hardware::audio::PacketStreamSink> sink_handle;
+  auto sink_request = sink_handle.NewRequest();
+  fuchsia::hardware::audio::PacketStreamControlSetPacketStreamSinkRequest request;
+  request.set_stream(std::move(sink_handle));
+
+  packet_stream()->SetPacketStreamSink(
+      std::move(request),
+      AddCallback(
+          "SetPacketStreamSink",
+          [](fuchsia::hardware::audio::PacketStreamControl_SetPacketStreamSink_Result result) {
+            ASSERT_TRUE(result.is_err());
+            EXPECT_EQ(result.err(), ZX_ERR_NOT_SUPPORTED);
+          }));
+  ExpectCallbacks();
+});
+
+// Verify PacketStreamPutPacket with invalid VMO ID should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamPutPacketInvalidVmoIdShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        (fuchsia::hardware::audio::BufferType::CLIENT_OWNED |
+         fuchsia::hardware::audio::BufferType::DRIVER_OWNED))) {
+    GTEST_SKIP() << "Driver does not support VMO buffers";
+  }
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  } else {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamSink());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  fuchsia::hardware::audio::PacketStreamSinkPutPacketRequest request;
+  fuchsia::hardware::audio::VmoTransfer transfer;
+  transfer.set_vmo_id(999);  // invalid ID
+  transfer.set_vmo_offset(0);
+  transfer.set_payload_size(10);
+  fuchsia::hardware::audio::DataTransfer payload;
+  payload.set_vmo_transfer(std::move(transfer));
+  request.set_payload(std::move(payload));
+
+  PacketStreamPutPacketAndExpectError(std::move(request), ZX_ERR_INVALID_ARGS);
+  WaitForError();
+});
+
+// Verify PacketStreamPutPacket with out of bounds VMO offset/size should error.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamPutPacketOutOfBoundsShouldError, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (!(packet_stream_props()->supported_buffer_types() &
+        (fuchsia::hardware::audio::BufferType::CLIENT_OWNED |
+         fuchsia::hardware::audio::BufferType::DRIVER_OWNED))) {
+    GTEST_SKIP() << "Driver does not support VMO buffers";
+  }
+
+  const uint64_t kVmoSize = 4096;
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, kVmoSize));
+  } else {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, kVmoSize));
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamSink());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  fuchsia::hardware::audio::PacketStreamSinkPutPacketRequest request;
+  fuchsia::hardware::audio::VmoTransfer transfer;
+  transfer.set_vmo_id(0);
+  transfer.set_vmo_offset(kVmoSize - 5);
+  transfer.set_payload_size(10);  // 5 bytes out of bounds
+  fuchsia::hardware::audio::DataTransfer payload;
+  payload.set_vmo_transfer(std::move(transfer));
+  request.set_payload(std::move(payload));
+
+  PacketStreamPutPacketAndExpectError(std::move(request), ZX_ERR_INVALID_ARGS);
+  WaitForError();
+});
+
+// Verify PacketStream FlushPackets.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamFlushPacketsTest, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  } else if (packet_stream_props()->supported_buffer_types() &
+             fuchsia::hardware::audio::BufferType::DRIVER_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamSink());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  PacketStreamFlushPackets();
+  WaitForError();
+});
+
+// Create a PacketStream, drop it, recreate it, then interact with it in any way (e.g.
+// GetProperties).
+DEFINE_ADMIN_TEST_CLASS(PacketStreamGetPropertiesAfterDroppingFirstPacketStream, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  packet_stream().Unbind();
+  packet_stream() = nullptr;
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  RequestPacketStreamProperties();
+  WaitForError();
+});
+
+// Verify PacketStream basic flow: Channel, Properties, VMOs, Sink, Start, Output, Stop.
+DEFINE_ADMIN_TEST_CLASS(PacketStreamOutputBasic, {
+  ASSERT_NO_FAILURE_OR_SKIP(RetrievePacketStreamFormats());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamChannel());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamProperties());
+
+  std::optional<bool> is_incoming = ElementIsIncoming(packet_stream_id());
+  ASSERT_TRUE(is_incoming.has_value());
+  if (*is_incoming) {
+    GTEST_SKIP() << "Driver supports input only";
+  }
+
+  if (packet_stream_props()->supported_buffer_types() &
+      fuchsia::hardware::audio::BufferType::CLIENT_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(RegisterPacketStreamVmos(1, 4096));
+  } else if (packet_stream_props()->supported_buffer_types() &
+             fuchsia::hardware::audio::BufferType::DRIVER_OWNED) {
+    ASSERT_NO_FAILURE_OR_SKIP(AllocatePacketStreamVmos(1, 4096));
+  }
+
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamSink());
+  ASSERT_NO_FAILURE_OR_SKIP(RequestPacketStreamStartAndExpectCallback());
+
+  ASSERT_NO_FAILURE_OR_SKIP(PacketStreamPutPacket());
+
+  RequestPacketStreamStopAndExpectCallback();
+});
+
 void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
   if (device_entry.isCodec()) {
     REGISTER_ADMIN_TEST(Reset, device_entry);
@@ -3248,7 +4399,7 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     //
     // TODO(https://fxbug.dev/42075676): Add Composite testing (all RingBuffers, not just first).
     REGISTER_ADMIN_TEST(GetRingBufferProperties, device_entry);
-    REGISTER_ADMIN_TEST(GetBuffer, device_entry);
+    REGISTER_ADMIN_TEST(GetRingBufferVmo, device_entry);
     REGISTER_ADMIN_TEST(DriverReservesRingBufferSpace, device_entry);
 
     REGISTER_ADMIN_TEST(InternalDelayIsValid, device_entry);
@@ -3277,9 +4428,54 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     REGISTER_ADMIN_TEST(GetDelayInfoAfterDroppingFirstRingBuffer, device_entry);
     REGISTER_ADMIN_TEST(SetActiveChannelsAfterDroppingFirstRingBuffer, device_entry);
 
+    // PacketStream test cases
+    REGISTER_ADMIN_TEST(PacketStreamGetProperties, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamGetFormats, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamCreateWithMinFormat, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamCreateWithMaxFormat, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamCreateWithEncoding, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamAllocateVmos, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamAllocateAfterRegisterShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamAllocateVmosZeroCountShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamAllocateVmosZeroSizeShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamAllocateVmosNoDriverOwnedSupportShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmos, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmosDuplicateIdsShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmosInvalidHandleShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmosInsufficientRightsShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterAfterAllocateShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmosZeroSizeShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamRegisterVmosNoClientOwnedSupportShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamDeallocateVmosBeforeAllocateShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamDeallocateVmosWhileStartedShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamUnregisterVmosBeforeRegisterShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamUnregisterVmosWhileStartedShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamStartBeforeBuffersShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamStartWhileStartingShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamStartWhileStartedShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamStopWhileStoppedShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamGetSinkForInputShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamSetSinkForOutputShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamPutPacketInvalidVmoIdShouldError, device_entry);
+    REGISTER_ADMIN_TEST(PacketStreamPutPacketOutOfBoundsShouldError, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamFlushPacketsTest, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamGetPropertiesAfterDroppingFirstPacketStream, device_entry);
+
+    REGISTER_ADMIN_TEST(PacketStreamOutputBasic, device_entry);
   } else if (device_entry.isDai()) {
     REGISTER_ADMIN_TEST(GetRingBufferProperties, device_entry);
-    REGISTER_ADMIN_TEST(GetBuffer, device_entry);
+    REGISTER_ADMIN_TEST(GetRingBufferVmo, device_entry);
     REGISTER_ADMIN_TEST(DriverReservesRingBufferSpace, device_entry);
 
     REGISTER_ADMIN_TEST(InternalDelayIsValid, device_entry);
@@ -3311,7 +4507,7 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
     // TODO(https://fxbug.dev/445731230): reenable once `core.vim3-vg-hwasan` timing issue is fixed
     if (!device_entry.isVirtual()) {
       REGISTER_ADMIN_TEST(GetRingBufferProperties, device_entry);
-      REGISTER_ADMIN_TEST(GetBuffer, device_entry);
+      REGISTER_ADMIN_TEST(GetRingBufferVmo, device_entry);
       REGISTER_ADMIN_TEST(DriverReservesRingBufferSpace, device_entry);
 
       REGISTER_ADMIN_TEST(InternalDelayIsValid, device_entry);
@@ -3379,5 +4575,7 @@ void RegisterAdminTestsForDevice(const DeviceEntry& device_entry) {
 // SetElementStateReconfigured
 //    First invalidate the SignalProcessing configuration, then retrieve new elements/topologies.
 //    SetElementState returns callback (does not fail or close channel).
+
+// TODO(https://fxbug.dev/481768946): Add remaining exhaustive testing for PacketStream methods.
 
 }  // namespace media::audio::drivers::test

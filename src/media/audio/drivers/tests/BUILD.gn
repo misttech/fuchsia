@@ -107,6 +107,7 @@ cc_test_executable("audio_driver_tests_bin") {
     "test_base.h",
   ]
 
+  # TODO(https://fxbug.dev/483395274): Move fidl dependencies from HLCPP to Natural bindings.
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_hlcpp",

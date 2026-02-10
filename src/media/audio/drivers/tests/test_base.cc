@@ -489,9 +489,6 @@ void TestBase::RetrieveDaiFormats() {
   ExpectCallbacks();
 
   ValidateDaiFormatSets(dai_formats());
-  if (!HasFailure()) {
-    SetMinMaxDaiFormats();
-  }
 }
 
 // Fail if the returned formats are not complete, unique and within ranges.
@@ -669,9 +666,12 @@ void TestBase::LogDaiFormatSets(
   }
 }
 
-void TestBase::SetMinMaxDaiFormats() {
-  for (size_t i = 0; i < dai_formats_.size(); ++i) {
-    auto& format_set = dai_formats_[i];
+fuchsia::hardware::audio::DaiFormat TestBase::GetMinDaiFormat(
+    const std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_format_sets) {
+  std::optional<fuchsia::hardware::audio::DaiFormat> min_dai_format;
+
+  for (size_t i = 0; i < dai_format_sets.size(); ++i) {
+    auto& format_set = dai_format_sets[i];
     fuchsia::hardware::audio::DaiSampleFormat sample_format = format_set.sample_formats[0];
     fuchsia::hardware::audio::DaiFrameFormat frame_format;
     if (format_set.frame_formats[0].is_frame_format_standard()) {
@@ -680,36 +680,32 @@ void TestBase::SetMinMaxDaiFormats() {
       frame_format.set_frame_format_custom(format_set.frame_formats[0].frame_format_custom());
     }
 
-    uint32_t min_number_of_channels = ~0, max_number_of_channels = 0;
+    uint32_t min_number_of_channels = ~0;
     for (auto& number_of_channels : format_set.number_of_channels) {
       min_number_of_channels = std::min(number_of_channels, min_number_of_channels);
-      max_number_of_channels = std::max(number_of_channels, max_number_of_channels);
     }
 
-    uint8_t min_bits_per_slot = ~0, max_bits_per_slot = 0;
+    uint8_t min_bits_per_slot = ~0;
     for (auto& bits_per_slot : format_set.bits_per_slot) {
       min_bits_per_slot = std::min(bits_per_slot, min_bits_per_slot);
-      max_bits_per_slot = std::max(bits_per_slot, max_bits_per_slot);
     }
 
-    uint8_t min_bits_per_sample = ~0, max_bits_per_sample = 0;
+    uint8_t min_bits_per_sample = ~0;
     for (auto& bits_per_sample : format_set.bits_per_sample) {
       min_bits_per_sample = std::min(bits_per_sample, min_bits_per_sample);
-      max_bits_per_sample = std::max(bits_per_sample, max_bits_per_sample);
     }
 
-    uint32_t min_frame_rate = ~0, max_frame_rate = 0;
+    uint32_t min_frame_rate = ~0;
     for (auto& frame_rate : format_set.frame_rates) {
       min_frame_rate = std::min(frame_rate, min_frame_rate);
-      max_frame_rate = std::max(frame_rate, max_frame_rate);
     }
 
     // Save, if less than min.
     auto bit_rate = min_number_of_channels * min_bits_per_sample * min_frame_rate;
-    if (i == 0 || !min_dai_format_.has_value() ||
-        (bit_rate < min_dai_format_->number_of_channels * min_dai_format_->bits_per_sample *
-                        min_dai_format_->frame_rate)) {
-      min_dai_format_ = fuchsia::hardware::audio::DaiFormat{
+    if (i == 0 || !min_dai_format.has_value() ||
+        (bit_rate < min_dai_format->number_of_channels * min_dai_format->bits_per_sample *
+                        min_dai_format->frame_rate)) {
+      min_dai_format = fuchsia::hardware::audio::DaiFormat{
           .number_of_channels = min_number_of_channels,
           .channels_to_use_bitmask = (1u << min_number_of_channels) - 1u,
           .sample_format = sample_format,
@@ -719,12 +715,50 @@ void TestBase::SetMinMaxDaiFormats() {
           .bits_per_sample = min_bits_per_sample,
       };
     }
+  }
+  return std::move(*min_dai_format);
+}
+
+fuchsia::hardware::audio::DaiFormat TestBase::GetMaxDaiFormat(
+    const std::vector<fuchsia::hardware::audio::DaiSupportedFormats>& dai_format_sets) {
+  std::optional<fuchsia::hardware::audio::DaiFormat> max_dai_format;
+
+  for (size_t i = 0; i < dai_format_sets.size(); ++i) {
+    auto& format_set = dai_format_sets[i];
+    fuchsia::hardware::audio::DaiSampleFormat sample_format = format_set.sample_formats[0];
+    fuchsia::hardware::audio::DaiFrameFormat frame_format;
+    if (format_set.frame_formats[0].is_frame_format_standard()) {
+      frame_format.set_frame_format_standard(format_set.frame_formats[0].frame_format_standard());
+    } else {
+      frame_format.set_frame_format_custom(format_set.frame_formats[0].frame_format_custom());
+    }
+
+    uint32_t max_number_of_channels = 0;
+    for (auto& number_of_channels : format_set.number_of_channels) {
+      max_number_of_channels = std::max(number_of_channels, max_number_of_channels);
+    }
+
+    uint8_t max_bits_per_slot = 0;
+    for (auto& bits_per_slot : format_set.bits_per_slot) {
+      max_bits_per_slot = std::max(bits_per_slot, max_bits_per_slot);
+    }
+
+    uint8_t max_bits_per_sample = 0;
+    for (auto& bits_per_sample : format_set.bits_per_sample) {
+      max_bits_per_sample = std::max(bits_per_sample, max_bits_per_sample);
+    }
+
+    uint32_t max_frame_rate = 0;
+    for (auto& frame_rate : format_set.frame_rates) {
+      max_frame_rate = std::max(frame_rate, max_frame_rate);
+    }
+
     // Save, if more than max.
-    bit_rate = max_number_of_channels * max_bits_per_sample * max_frame_rate;
-    if (i == 0 || !max_dai_format_.has_value() ||
-        (bit_rate > max_dai_format_->number_of_channels * max_dai_format_->bits_per_sample *
-                        max_dai_format_->frame_rate)) {
-      max_dai_format_ = fuchsia::hardware::audio::DaiFormat{
+    auto bit_rate = max_number_of_channels * max_bits_per_sample * max_frame_rate;
+    if (i == 0 || !max_dai_format.has_value() ||
+        (bit_rate > max_dai_format->number_of_channels * max_dai_format->bits_per_sample *
+                        max_dai_format->frame_rate)) {
+      max_dai_format = fuchsia::hardware::audio::DaiFormat{
           .number_of_channels = max_number_of_channels,
           .channels_to_use_bitmask = (1u << max_number_of_channels) - 1u,
           .sample_format = sample_format,
@@ -735,34 +769,7 @@ void TestBase::SetMinMaxDaiFormats() {
       };
     }
   }
-}
-
-void TestBase::GetMinDaiFormat(fuchsia::hardware::audio::DaiFormat& min_dai_format_out) {
-  if (!min_dai_format_.has_value()) {
-    RetrieveDaiFormats();
-  }
-
-  if (dai_formats_.empty()) {
-    GTEST_SKIP() << "*** this audio device returns no DaiFormats. Skipping this test. ***";
-    __UNREACHABLE;
-  }
-
-  ASSERT_TRUE(min_dai_format_.has_value());
-  EXPECT_EQ(fuchsia::hardware::audio::Clone(*min_dai_format_, &min_dai_format_out), ZX_OK);
-}
-
-void TestBase::GetMaxDaiFormat(fuchsia::hardware::audio::DaiFormat& max_dai_format_out) {
-  if (!max_dai_format_.has_value()) {
-    RetrieveDaiFormats();
-  }
-
-  if (dai_formats_.empty()) {
-    GTEST_SKIP() << "*** this audio device returns no DaiFormats. Skipping this test. ***";
-    __UNREACHABLE;
-  }
-
-  ASSERT_TRUE(max_dai_format_.has_value());
-  EXPECT_EQ(fuchsia::hardware::audio::Clone(*max_dai_format_, &max_dai_format_out), ZX_OK);
+  return std::move(*max_dai_format);
 }
 
 void TestBase::ValidateDaiFormat(const fuchsia::hardware::audio::DaiFormat& dai_format) {
@@ -844,18 +851,16 @@ void TestBase::RetrieveRingBufferFormats() {
   }
   ExpectCallbacks();
 
-  ValidateRingBufferFormatSets(ring_buffer_pcm_formats());
-  if (!HasFailure()) {
-    SetMinMaxRingBufferFormats();
-  }
+  ValidatePcmSupportedFormats(ring_buffer_pcm_formats());
 }
 
 // Fail if the returned formats are not complete, unique and within ranges.
-void TestBase::ValidateRingBufferFormatSets(
-    const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& rb_format_sets) {
-  for (size_t i = 0; i < rb_format_sets.size(); ++i) {
-    SCOPED_TRACE(testing::Message() << "ring_buffer_pcm_format[" << i << "]");
-    auto& format_set = rb_format_sets[i];
+void TestBase::ValidatePcmSupportedFormats(
+    const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets) {
+  // We've already ensured pcm_format_sets is not empty, and that it contains something valid.
+  for (size_t i = 0; i < pcm_format_sets.size(); ++i) {
+    SCOPED_TRACE(testing::Message() << "pcm_format[" << i << "]");
+    auto& format_set = pcm_format_sets[i];
 
     ASSERT_TRUE(format_set.has_channel_sets());
     ASSERT_TRUE(format_set.has_sample_formats());
@@ -981,43 +986,42 @@ void TestBase::ValidateRingBufferFormatSets(
   }
 }
 
-void TestBase::SetMinMaxRingBufferFormats() {
-  for (size_t i = 0; i < ring_buffer_pcm_formats_.size(); ++i) {
-    SCOPED_TRACE(testing::Message() << "pcm_format[" << i << "]");
-    size_t min_chans = ~0, max_chans = 0;
-    uint8_t min_bytes_per_sample = ~0, max_bytes_per_sample = 0;
-    uint8_t min_valid_bits_per_sample = ~0, max_valid_bits_per_sample = 0;
-    uint32_t min_frame_rate = ~0, max_frame_rate = 0;
+fuchsia::hardware::audio::PcmFormat TestBase::GetMinPcmFormat(
+    const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets) {
+  fuchsia::hardware::audio::PcmFormat min_ring_buffer_format{};
 
-    auto& format_set = ring_buffer_pcm_formats_[i];
+  for (size_t i = 0; i < pcm_format_sets.size(); ++i) {
+    SCOPED_TRACE(testing::Message() << "pcm_format[" << i << "]");
+    size_t min_chans = ~0;
+    uint8_t min_bytes_per_sample = ~0;
+    uint8_t min_valid_bits_per_sample = ~0;
+    uint32_t min_frame_rate = ~0;
+
+    auto& format_set = pcm_format_sets[i];
     fuchsia::hardware::audio::SampleFormat sample_format = format_set.sample_formats()[0];
 
     for (auto& channel_set : format_set.channel_sets()) {
       min_chans = std::min(channel_set.attributes().size(), min_chans);
-      max_chans = std::max(channel_set.attributes().size(), max_chans);
     }
 
     for (auto& bytes_per_sample : format_set.bytes_per_sample()) {
       min_bytes_per_sample = std::min(bytes_per_sample, min_bytes_per_sample);
-      max_bytes_per_sample = std::max(bytes_per_sample, max_bytes_per_sample);
     }
 
     for (auto& valid_bits : format_set.valid_bits_per_sample()) {
       min_valid_bits_per_sample = std::min(valid_bits, min_valid_bits_per_sample);
-      max_valid_bits_per_sample = std::max(valid_bits, max_valid_bits_per_sample);
     }
 
     for (auto& frame_rate : format_set.frame_rates()) {
       min_frame_rate = std::min(frame_rate, min_frame_rate);
-      max_frame_rate = std::max(frame_rate, max_frame_rate);
     }
 
     // Save, if less than min.
     auto bit_rate = min_chans * min_bytes_per_sample * min_frame_rate;
-    if (i == 0 || bit_rate < static_cast<size_t>(min_ring_buffer_format_.number_of_channels) *
-                                 min_ring_buffer_format_.bytes_per_sample *
-                                 min_ring_buffer_format_.frame_rate) {
-      min_ring_buffer_format_ = {
+    if (i == 0 || bit_rate < static_cast<size_t>(min_ring_buffer_format.number_of_channels) *
+                                 min_ring_buffer_format.bytes_per_sample *
+                                 min_ring_buffer_format.frame_rate) {
+      min_ring_buffer_format = {
           .number_of_channels = static_cast<uint8_t>(min_chans),
           .sample_format = sample_format,
           .bytes_per_sample = min_bytes_per_sample,
@@ -1025,13 +1029,46 @@ void TestBase::SetMinMaxRingBufferFormats() {
           .frame_rate = min_frame_rate,
       };
     }
+  }
+  return min_ring_buffer_format;
+}
+
+fuchsia::hardware::audio::PcmFormat TestBase::GetMaxPcmFormat(
+    const std::vector<fuchsia::hardware::audio::PcmSupportedFormats>& pcm_format_sets) {
+  fuchsia::hardware::audio::PcmFormat max_ring_buffer_format{};
+
+  for (size_t i = 0; i < pcm_format_sets.size(); ++i) {
+    SCOPED_TRACE(testing::Message() << "pcm_format[" << i << "]");
+    size_t max_chans = 0;
+    uint8_t max_bytes_per_sample = 0;
+    uint8_t max_valid_bits_per_sample = 0;
+    uint32_t max_frame_rate = 0;
+
+    auto& format_set = pcm_format_sets[i];
+    fuchsia::hardware::audio::SampleFormat sample_format = format_set.sample_formats()[0];
+
+    for (auto& channel_set : format_set.channel_sets()) {
+      max_chans = std::max(channel_set.attributes().size(), max_chans);
+    }
+
+    for (auto& bytes_per_sample : format_set.bytes_per_sample()) {
+      max_bytes_per_sample = std::max(bytes_per_sample, max_bytes_per_sample);
+    }
+
+    for (auto& valid_bits : format_set.valid_bits_per_sample()) {
+      max_valid_bits_per_sample = std::max(valid_bits, max_valid_bits_per_sample);
+    }
+
+    for (auto& frame_rate : format_set.frame_rates()) {
+      max_frame_rate = std::max(frame_rate, max_frame_rate);
+    }
 
     // Save, if more than max.
-    bit_rate = max_chans * max_bytes_per_sample * max_frame_rate;
-    if (i == 0 || bit_rate > static_cast<size_t>(max_ring_buffer_format_.number_of_channels) *
-                                 max_ring_buffer_format_.bytes_per_sample *
-                                 max_ring_buffer_format_.frame_rate) {
-      max_ring_buffer_format_ = {
+    auto bit_rate = max_chans * max_bytes_per_sample * max_frame_rate;
+    if (i == 0 || bit_rate > static_cast<size_t>(max_ring_buffer_format.number_of_channels) *
+                                 max_ring_buffer_format.bytes_per_sample *
+                                 max_ring_buffer_format.frame_rate) {
+      max_ring_buffer_format = {
           .number_of_channels = static_cast<uint8_t>(max_chans),
           .sample_format = sample_format,
           .bytes_per_sample = max_bytes_per_sample,
@@ -1040,35 +1077,16 @@ void TestBase::SetMinMaxRingBufferFormats() {
       };
     }
   }
+  return max_ring_buffer_format;
 }
 
-void TestBase::ValidateRingBufferFormat(const fuchsia::hardware::audio::PcmFormat& rb_format) {
-  EXPECT_GT(rb_format.bytes_per_sample, 0u);
-  EXPECT_LE(rb_format.bytes_per_sample, sizeof(double));
-  EXPECT_GT(rb_format.frame_rate, fuchsia::media::MIN_PCM_FRAMES_PER_SECOND);
-  EXPECT_LE(rb_format.frame_rate, fuchsia::media::MAX_PCM_FRAMES_PER_SECOND);
-  EXPECT_GT(rb_format.number_of_channels, 0u);
-  EXPECT_LE(rb_format.number_of_channels,
-            fuchsia::hardware::audio::MAX_COUNT_CHANNELS_IN_RING_BUFFER);
-  EXPECT_GT(rb_format.valid_bits_per_sample, 0u);
-  EXPECT_LE(rb_format.valid_bits_per_sample, sizeof(double) * 8u);
-}
-
-void TestBase::LogRingBufferFormat(const fuchsia::hardware::audio::PcmFormat& format,
-                                   const std::string& tag) {
+void TestBase::LogPcmFormat(const fuchsia::hardware::audio::PcmFormat& format,
+                            const std::string& tag) {
   FX_LOGS(INFO) << tag << ": " << format.frame_rate << ", smp_fmt "
                 << static_cast<int>(format.sample_format) << ", "
                 << static_cast<uint16_t>(format.valid_bits_per_sample) << "-in-"
                 << format.bytes_per_sample * 8u << ", "
                 << static_cast<uint16_t>(format.number_of_channels) << "-chan";
-}
-
-const fuchsia::hardware::audio::PcmFormat& TestBase::min_ring_buffer_format() const {
-  return min_ring_buffer_format_;
-}
-
-const fuchsia::hardware::audio::PcmFormat& TestBase::max_ring_buffer_format() const {
-  return max_ring_buffer_format_;
 }
 
 }  // namespace media::audio::drivers::test
