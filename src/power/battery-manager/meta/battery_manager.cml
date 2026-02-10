@@ -41,6 +41,10 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.feedback.CrashReporter",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.power.SuspendEnabled",
             key: "suspend_enabled",
             type: "bool",

@@ -43,5 +43,11 @@
             from: "parent",
             to: [ "#battery_manager" ],
         },
+        {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "void",
+            to: [ "#battery_manager" ],
+            availability: "optional",
+        },
     ],
 }

@@ -21,6 +21,7 @@ rustc_binary("bin") {
 
   deps = [
     ":battery-manager-config",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",

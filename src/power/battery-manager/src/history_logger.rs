@@ -4,10 +4,11 @@
 
 use anyhow::Error;
 use fidl_fuchsia_power_battery::ChargeStatus;
-use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use log::{error, warn};
+use futures::StreamExt;
+use futures::channel::mpsc;
+use log::{error, info, warn};
 use state_recorder::{
     EnumStateRecorder, NumericStateRecorder, PersistenceOptions, RecordableNumericType,
     RecorderOptions, Units, units,
@@ -20,6 +21,7 @@ use std::io::Write as OtherWrite;
 use std::rc::Rc;
 use std::str::FromStr;
 use strum_macros::{Display, EnumIter, FromRepr};
+use {fidl_fuchsia_feedback as fidl_feedback, fuchsia_async as fasync};
 
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
@@ -253,10 +255,19 @@ pub struct BatteryInfoRecorders {
     present_current: RefCell<NumericStateRecorder<i32>>,
     average_current: RefCell<NumericStateRecorder<i32>>,
     fault_detector: Rc<FaultDetector>,
+    crash_reporter: Rc<CrashReporter>,
 }
+
+const CRASH_REPORT_THRESHOLD: u8 = 10;
+const CRASH_REPORT_SIGNATURE_LOW_BATTERY: &str = "fuchsia-low-battery-10-percent";
 
 impl BatteryInfoRecorders {
     pub fn new(config: RecorderConfig) -> Self {
+        let crash_reporter = CrashReporter::new(Box::new(default_get_proxy_fn));
+        Self::new_with_reporter(config, crash_reporter)
+    }
+
+    pub fn new_with_reporter(config: RecorderConfig, crash_reporter: Rc<CrashReporter>) -> Self {
         let mut raw_level_percent_opts = PersistenceOptions::new("raw_level_percent".to_string());
         let mut level_percent_opts = PersistenceOptions::new("level_percent".to_string());
         let mut present_voltage_opts = PersistenceOptions::new("present_voltage".to_string());
@@ -329,6 +340,7 @@ impl BatteryInfoRecorders {
             present_current: RefCell::new(present_current_recorder),
             average_current: RefCell::new(average_current_recorder),
             fault_detector,
+            crash_reporter,
         }
     }
 
@@ -343,11 +355,24 @@ impl BatteryInfoRecorders {
         }
     }
 
-    pub fn record_level_on_change(&self, level: Option<f32>) {
-        if let Some(level_to_publish) = level {
+    pub fn record_level_on_change(&self, info: &fidl_fuchsia_power_battery::BatteryInfo) {
+        if let Some(level_to_publish) = info.level_percent {
             let val = level_to_publish.round() as u8;
             let mut previous_level = self.previous_level.borrow_mut();
             if Some(val) != *previous_level {
+                // File crash report when level drops to 10% and discharging.
+                if let Some(prev) = *previous_level {
+                    let is_discharging = info.charge_status == Some(ChargeStatus::Discharging);
+                    if prev > CRASH_REPORT_THRESHOLD
+                        && val <= CRASH_REPORT_THRESHOLD
+                        && is_discharging
+                    {
+                        info!("Triggering crash report for {}", CRASH_REPORT_SIGNATURE_LOW_BATTERY);
+                        self.crash_reporter.handle_file_crash_report(
+                            CRASH_REPORT_SIGNATURE_LOW_BATTERY.to_string(),
+                        );
+                    }
+                }
                 *previous_level = Some(val);
                 self.level_percent.borrow_mut().record(val);
             }
@@ -740,12 +765,106 @@ fn parse_line<T: FromStr>(line: &str) -> Option<(zx::BootInstant, T)> {
     return None;
 }
 
+pub type GetProxyFn = Box<dyn Fn() -> Result<fidl_feedback::CrashReporterProxy, Error>>;
+
+pub fn default_get_proxy_fn() -> Result<fidl_feedback::CrashReporterProxy, Error> {
+    fuchsia_component::client::connect_to_protocol::<fidl_feedback::CrashReporterMarker>()
+        .map_err(Into::into)
+}
+
+pub struct CrashReporter {
+    sender: RefCell<mpsc::Sender<String>>,
+}
+
+impl CrashReporter {
+    pub const DEFAULT_PROGRAM_NAME: &'static str = "device";
+
+    pub fn new(get_proxy_fn: GetProxyFn) -> Rc<Self> {
+        let (sender, receiver) = mpsc::channel(5);
+        let reporter = Rc::new(Self { sender: RefCell::new(sender) });
+        Self::start_sender_task(get_proxy_fn, receiver);
+        reporter
+    }
+
+    fn start_sender_task(get_proxy_fn: GetProxyFn, mut receiver: mpsc::Receiver<String>) {
+        fasync::Task::local(async move {
+            info!("CrashReporter task started");
+            while let Some(signature) = receiver.next().await {
+                info!("CrashReporter received signature: {}", signature);
+                if let Err(e) = Self::send_crash_report(&get_proxy_fn, signature).await {
+                    error!("Failed to file crash report: {:?}", e);
+                } else {
+                    info!("CrashReport filed successfully");
+                }
+            }
+            info!("CrashReporter task ended");
+        })
+        .detach();
+    }
+
+    async fn send_crash_report(
+        get_proxy_fn: &GetProxyFn,
+        signature: String,
+    ) -> Result<fidl_feedback::FileReportResults, Error> {
+        let report = fidl_feedback::CrashReport {
+            program_name: Some(Self::DEFAULT_PROGRAM_NAME.to_string()),
+            crash_signature: Some(signature),
+            is_fatal: Some(false),
+            ..Default::default()
+        };
+        let proxy =
+            get_proxy_fn().map_err(|e| anyhow::format_err!("Failed to get proxy: {}", e))?;
+        proxy
+            .file_report(report)
+            .await
+            .map_err(|e| anyhow::format_err!("IPC error: {}", e))?
+            .map_err(|e| anyhow::format_err!("Service error: {:?}", e))
+    }
+
+    pub fn handle_file_crash_report(&self, signature: String) {
+        match self.sender.borrow_mut().try_send(signature) {
+            Ok(_) => info!("Crash report successfully queued"),
+            Err(e) if e.is_full() => warn!("Pending crash reports exceeds max"),
+            Err(e) => error!("Failed to queue crash report: {:?}", e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
+    use futures::TryStreamExt;
     use std::fs::write;
     use tempfile::{TempDir, tempdir};
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_crash_report_content() {
+        let crash_report_signature = "TestCrashReportSignature";
+
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_feedback::CrashReporterMarker>();
+
+        let crash_reporter = CrashReporter::new(Box::new(move || Ok(proxy.clone())));
+
+        crash_reporter.handle_file_crash_report(crash_report_signature.to_string());
+
+        if let Ok(Some(fidl_feedback::CrashReporterRequest::FileReport { responder: _, report })) =
+            stream.try_next().await
+        {
+            assert_eq!(
+                report,
+                fidl_feedback::CrashReport {
+                    program_name: Some(CrashReporter::DEFAULT_PROGRAM_NAME.to_string()),
+                    crash_signature: Some(crash_report_signature.to_string()),
+                    is_fatal: Some(false),
+                    ..Default::default()
+                }
+            );
+        } else {
+            panic!("Did not receive a crash report");
+        }
+    }
 
     // Helper to check if the detector is currently in a fault state
     fn get_fault_state(detector: &FaultDetector) -> FaultState {
@@ -1399,5 +1518,72 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_crash_report_thresholds() {
+        use tempfile::tempdir;
+
+        let (proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_feedback::CrashReporterMarker>();
+        let fake_reporter = CrashReporter::new(Box::new(move || Ok(proxy.clone())));
+        let mut stream = stream.fuse();
+
+        // Setup RecorderConfig with temp dirs
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("storage");
+        let volatile_path = dir.path().join("volatile");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let storage_dir = storage_path.to_str().unwrap().to_string();
+        let volatile_dir = volatile_path.to_str().unwrap().to_string();
+
+        let config = RecorderConfig {
+            persistence_dirs: Some(PersistenceDirs { storage_dir, volatile_dir }),
+        };
+
+        let recorders = BatteryInfoRecorders::new_with_reporter(config, fake_reporter);
+
+        let mut info = fidl_fuchsia_power_battery::BatteryInfo::default();
+        info.charge_status = Some(ChargeStatus::Discharging);
+        info.level_percent = Some(15.0);
+        recorders.record_level_on_change(&info);
+        info.level_percent = Some(11.0);
+        recorders.record_level_on_change(&info);
+
+        // This should NOT trigger a report because it's charging
+        info.level_percent = Some(10.0);
+        info.charge_status = Some(ChargeStatus::Charging);
+        recorders.record_level_on_change(&info);
+
+        info.level_percent = Some(11.0);
+        info.charge_status = Some(ChargeStatus::Discharging);
+        recorders.record_level_on_change(&info);
+
+        info.level_percent = Some(10.0);
+        recorders.record_level_on_change(&info);
+
+        // Expect report
+        if let Ok(Some(fidl_feedback::CrashReporterRequest::FileReport { responder, report })) =
+            stream.try_next().await
+        {
+            assert_eq!(
+                report.crash_signature,
+                Some(CRASH_REPORT_SIGNATURE_LOW_BATTERY.to_string())
+            );
+            let _ = responder.send(Ok(&Default::default()));
+        } else {
+            panic!("Expected crash report for drop from 11% to 10% range");
+        }
+
+        info.level_percent = Some(10.0);
+        recorders.record_level_on_change(&info);
+        info.level_percent = Some(5.5);
+        recorders.record_level_on_change(&info);
+
+        // Verify NO report
+        drop(recorders);
+        assert!(matches!(stream.next().await, None));
     }
 }

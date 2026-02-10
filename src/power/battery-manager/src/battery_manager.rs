@@ -258,7 +258,7 @@ impl BatteryManager {
         self.publish_battery_level_on_change(info.level_percent);
         self.publish_charge_status(info.charge_status);
 
-        self.info_recorders.record_level_on_change(info.level_percent);
+        self.info_recorders.record_level_on_change(info);
         self.info_recorders.record_present_voltage(info.present_voltage_mv);
         self.info_recorders.record_remaining_capacity(info.remaining_capacity_uah);
         self.info_recorders.record_present_current(info.present_charging_current_ua);
