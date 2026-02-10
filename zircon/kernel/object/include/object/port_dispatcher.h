@@ -200,7 +200,6 @@ class PortObserver final : public SignalObserver {
   // Defined below after PortDispatcher.
   inline bool DispatcherLockIsHeld() const;
 
-  const uint32_t options_;
   PortPacket packet_;
 
   fbl::RefPtr<PortDispatcher> const port_;

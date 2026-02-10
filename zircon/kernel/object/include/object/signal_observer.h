@@ -22,6 +22,7 @@ class OwnedWaitQueue;
 class SignalObserver : public fbl::DoublyLinkedListable<SignalObserver*> {
  public:
   SignalObserver() = default;
+  explicit SignalObserver(uint32_t options) : options_(options) {}
 
   // Called when the set of active signals matches an expected set.
   //
@@ -51,10 +52,15 @@ class SignalObserver : public fbl::DoublyLinkedListable<SignalObserver*> {
  protected:
   virtual ~SignalObserver() = default;
 
+  // Intended for use by derived types like PortObserver that may require
+  // per-observer options.
+  uint32_t options() const { return options_; }
+
  private:
   // Dispatcher state, guarded by Dispatcher's lock.
   friend class Dispatcher;
   zx_signals_t triggering_signals_;
+  const uint32_t options_{};
   const void* handle_;
 };
 

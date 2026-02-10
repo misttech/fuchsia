@@ -109,7 +109,7 @@ PortPacket::PortPacket(const void* handle, PortAllocator* allocator)
 
 PortObserver::PortObserver(uint32_t options, const Handle* handle, fbl::RefPtr<PortDispatcher> port,
                            uint64_t key, zx_signals_t signals)
-    : options_(options),
+    : SignalObserver(options),
       packet_(handle, nullptr),
       port_(ktl::move(port)),
       dispatcher_(handle->dispatcher().get()) {
@@ -132,10 +132,10 @@ PortObserver::~PortObserver() {
 }
 
 void PortObserver::OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) {
-  if (options_ & ZX_WAIT_ASYNC_TIMESTAMP) {
+  if (options() & ZX_WAIT_ASYNC_TIMESTAMP) {
     // Getting the current time can be somewhat expensive.
     packet_.packet.signal.timestamp = current_mono_time();
-  } else if (options_ & ZX_WAIT_ASYNC_BOOT_TIMESTAMP) {
+  } else if (options() & ZX_WAIT_ASYNC_BOOT_TIMESTAMP) {
     packet_.packet.signal.timestamp = current_boot_time();
   }
 
