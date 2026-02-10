@@ -344,7 +344,7 @@ if (current_os == "fuchsia") {
 }
 
 group("flate2") {
-  public_deps = [ ":flate2-v1_1_5" ]
+  public_deps = [ ":flate2-v1_1_9" ]
 }
 
 group("flyweights") {
@@ -6740,18 +6740,18 @@ rustc_library("flagset-v0_4_7") {
   applicable_licenses = [ ":flagset-v0_4_7.license" ]
 }
 
-license("flate2-v1_1_5.license") {
+license("flate2-v1_1_9.license") {
   public_package_name = "flate2"
   license_files = [
-    "//third_party/rust_crates/vendor/flate2-1.1.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/flate2-1.1.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/flate2-1.1.9/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/flate2-1.1.9/LICENSE-MIT",
   ]
 }
 
-rustc_library("flate2-v1_1_5") {
+rustc_library("flate2-v1_1_9") {
   crate_name = "flate2"
-  source_root = "//third_party/rust_crates/vendor/flate2-1.1.5/src/lib.rs"
-  output_name = "flate2-bd587ce1b518291c"
+  source_root = "//third_party/rust_crates/vendor/flate2-1.1.9/src/lib.rs"
+  output_name = "flate2-d4dc429cabf4e8bd"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -6768,8 +6768,8 @@ rustc_library("flate2-v1_1_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bd587ce1b518291c",
-    "-Cextra-filename=-bd587ce1b518291c",
+    "-Cmetadata=d4dc429cabf4e8bd",
+    "-Cextra-filename=-d4dc429cabf4e8bd",
     "--cfg=feature=\"any_impl\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"miniz_oxide\"",
@@ -6778,7 +6778,7 @@ rustc_library("flate2-v1_1_5") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":flate2-v1_1_5.license" ]
+  applicable_licenses = [ ":flate2-v1_1_9.license" ]
 }
 
 license("flyweights-v0_1_5.license") {
@@ -12940,7 +12940,7 @@ rustc_library("png-v0_17_16") {
   deps += [ ":bitflags-v1_3_2" ]
   deps += [ ":crc32fast-v1_2_0" ]
   deps += [ ":fdeflate-v0_3_7" ]
-  deps += [ ":flate2-v1_1_5" ]
+  deps += [ ":flate2-v1_1_9" ]
   deps += [ ":miniz_oxide-v0_8_9" ]
 
   rustenv = []
@@ -21817,7 +21817,7 @@ rustc_library("zip-v0_5_5") {
 
   deps = []
   deps += [ ":crc32fast-v1_2_0" ]
-  deps += [ ":flate2-v1_1_5" ]
+  deps += [ ":flate2-v1_1_9" ]
   deps += [ ":podio-v0_1_6" ]
 
   rustenv = []

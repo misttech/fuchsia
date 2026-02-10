@@ -76,7 +76,7 @@ rust_library(
     version = "0.5.5",
     deps = [
         "//third_party/rust_crates/vendor/crc32fast-1.2.0:crc32fast",
-        "//third_party/rust_crates/vendor/flate2-1.1.5:flate2",
+        "//third_party/rust_crates/vendor/flate2-1.1.9:flate2",
         "//third_party/rust_crates/vendor/podio-0.1.6:podio",
     ],
 )
