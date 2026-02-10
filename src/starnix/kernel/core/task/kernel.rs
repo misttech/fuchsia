@@ -563,7 +563,7 @@ impl Kernel {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            log_debug!("Additional thread tried to initiate shutdown while already in-progress.");
+            log_info!("Additional thread tried to initiate shutdown while already in-progress.");
             return;
         }
 
@@ -582,11 +582,11 @@ impl Kernel {
                     .collect::<Vec<_>>()
             };
             if tgs.is_empty() {
-                log_debug!("pid table is empty except init and system task");
+                log_info!("pid table is empty except init and system task");
                 break;
             }
 
-            log_debug!(tgs:?; "shutting down thread groups");
+            log_info!(tgs:?; "shutting down thread groups");
             let mut tasks = vec![];
             for tg in tgs {
                 let task = fasync::Task::local(ThreadGroup::shut_down(Arc::downgrade(&tg)));
@@ -602,14 +602,14 @@ impl Kernel {
             self.pids.read().get_thread_group(1).map(|tg| Arc::downgrade(&tg))
         };
         if let Some(init) = maybe_init {
-            log_debug!("shutting down init");
+            log_info!("shutting down init");
             ThreadGroup::shut_down(init).await;
         } else {
-            log_debug!("init already terminated");
+            log_info!("init already terminated");
         }
 
         // Step 4: Clean up any structures that can keep non-Linux processes live in our job.
-        log_debug!("cleaning up pinned memory");
+        log_info!("cleaning up pinned memory");
         self.expando.remove::<memory_pinning::ShadowProcess>();
 
         // Step 5: Make sure this is the only process running in the job. We already should have
@@ -622,7 +622,7 @@ impl Kernel {
         assert_eq!(kernel_job.children().unwrap(), &[], "starnix does not create any child jobs");
         let own_koid = fuchsia_runtime::process_self().koid().unwrap();
 
-        log_debug!("waiting for this to be the only process in the job");
+        log_info!("waiting for this to be the only process in the job");
         loop {
             let mut remaining_processes = kernel_job
                 .processes()
@@ -632,7 +632,7 @@ impl Kernel {
                 .filter(|pid| pid != &own_koid)
                 .peekable();
             if remaining_processes.peek().is_none() {
-                log_debug!("No stray Zircon processes.");
+                log_info!("No stray Zircon processes.");
                 break;
             }
 
@@ -643,11 +643,11 @@ impl Kernel {
                 {
                     Ok(h) => h,
                     Err(e) => {
-                        log_debug!(pid:?, e:?; "failed to get child process from job");
+                        log_info!(pid:?, e:?; "failed to get child process from job");
                         continue;
                     }
                 };
-                log_debug!(
+                log_info!(
                     pid:?,
                     name:? = handle.get_name();
                     "waiting on process terminated signal"
@@ -655,18 +655,18 @@ impl Kernel {
                 terminated_signals
                     .push(fuchsia_async::OnSignals::new(handle, zx::Signals::PROCESS_TERMINATED));
             }
-            log_debug!("waiting on process terminated signals");
+            log_info!("waiting on process terminated signals");
             futures::future::join_all(terminated_signals).await;
         }
 
         // Step 6: Forcibly unmounts the mounts' FileSystems.
-        log_debug!("clearing mounts");
+        log_info!("clearing mounts");
         self.mounts.clear();
 
         // Step 7: Tell CF the container stopped.
-        log_debug!("all non-root processes killed, notifying CF container is stopped");
+        log_info!("all non-root processes killed, notifying CF container is stopped");
         if let Some(control_handle) = self.container_control_handle.lock().take() {
-            log_debug!("Notifying CF that the container has stopped.");
+            log_info!("Notifying CF that the container has stopped.");
             control_handle
                 .send_on_stop(ComponentStopInfo {
                     termination_status: Some(zx::Status::OK.into_raw()),
