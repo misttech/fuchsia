@@ -14,6 +14,7 @@ if (is_host && has_board) {
   # Directory to store debug symbols, which are required for the e2e test to run.
   # The path is relative to the $root_out_dir, where zxdb_e2e_tests binary lives.
   symbol_dir = "test_data/zxdb_e2e_tests/build-id"
+  scripts_dir = "test_data/zxdb_e2e_tests/scripts"
 
   test("zxdb_e2e_tests") {
     sources = [
@@ -71,8 +72,7 @@ if (is_host && has_board) {
     defines = [
       "ZXDB_E2E_TESTS_BUILD_TYPE=\"" + build_type + "\"",
       "ZXDB_E2E_TESTS_SYMBOL_DIR=\"" + symbol_dir + "\"",
-      "ZXDB_E2E_TESTS_SCRIPTS_DIR=\"" + rebase_path("scripts", root_out_dir) +
-          "\"",
+      "ZXDB_E2E_TESTS_SCRIPTS_DIR=\"" + scripts_dir + "\"",
       "ZXDB_E2E_TESTS_FFX_TEST_DATA=\"" + _ffx_test_data_path + "\"",
     ]
 
@@ -104,21 +104,50 @@ if (is_host && has_board) {
   }
 
   host_test_data("zxdb_e2e_test_data") {
-    sources = []
+    # These tests are reliable on all architectures.
+    sources = [
+      "scripts/starnix_proc_exception.script",
+      "scripts/starnix_proc_hardware_breakpoint.script",
+      "scripts/status.script",
+    ]
 
-    # TODO(https://fxbug.dev/42109154): Enable software breakpoint tests on ARM64
-    # once they are stable.
     if (target_cpu == "arm64") {
       sources += [
-        "scripts/starnix_proc_exception.script",
-        "scripts/starnix_proc_hardware_breakpoint.script",
+        # This test requires a 32 bit ARM binary which is only built when we're building for an arm
+        # target.
+        "scripts/starnix_proc_exception32.script",
       ]
     } else {
+      # TODO(https://fxbug.dev/42109154): Enable software breakpoint tests on ARM64
+      # once they are stable.
       sources += [
-        # TODO(jruthe): List test scripts invididually here once they are deflaked.
-        "scripts",
+        "scripts/async_backtrace.script",
+        "scripts/async_backtrace_any_thread.script",
+        "scripts/bitfield.script",
+        "scripts/break_dl_start.script",
+        "scripts/conditional_breakpoint.script",
+        "scripts/cpp_fn_arguments.script",
+        "scripts/cpp_fn_call.script",
+        "scripts/cpp_fn_return_values.script",
+        "scripts/inlined_frames.script",
+        "scripts/pretty_types.script",
+        "scripts/pretty_types_rust.script",
+        "scripts/rust_fn_arguments.script",
+        "scripts/rust_fn_call.script",
+        "scripts/rust_fn_return_values.script",
+        "scripts/rust_pretty_stack.script",
+        "scripts/simple_breakpoint.script",
+        "scripts/simple_template_names.script",
+        "scripts/starnix_proc.script",
+        "scripts/step_plt.script",
+        "scripts/template_functions.script",
+        "scripts/unwind_plt.script",
       ]
     }
+
+    outputs = [
+      "$root_out_dir/test_data/zxdb_e2e_tests/scripts/{{source_file_part}}",
+    ]
   }
 
   symbols_dir_test_data("zxdb_e2e_symbols") {
