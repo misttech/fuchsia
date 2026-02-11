@@ -35,20 +35,24 @@ pub(crate) async fn create_media_buttons_proxy() -> Result<futinput::MediaButton
     }
 }
 
-pub(crate) async fn wakeup_send_power_button(
+pub(crate) async fn schedule_wakeup_power_button(
     media_button_proxy: &futinput::MediaButtonsDeviceProxy,
+    delay: zx::Duration<zx::BootTimeline>,
 ) {
-    log_info!("WakeupTestDevice::wakeup_send_power_button called.");
+    log_info!("WakeupTestDevice::wakeup_schedule_power_button called with time: {:?}", delay);
 
     if let Err(e) = media_button_proxy
-        .simulate_button_press(&futinput::MediaButtonsDeviceSimulateButtonPressRequest {
-            button: Some(fidl_fuchsia_input_report::ConsumerControlButton::Power),
-            ..Default::default()
-        })
+        .schedule_simulate_button_press(
+            &futinput::MediaButtonsDeviceScheduleSimulateButtonPressRequest {
+                button: Some(fidl_fuchsia_input_report::ConsumerControlButton::Power),
+                delay: Some(delay.into_nanos()),
+                ..Default::default()
+            },
+        )
         .await
     {
-        log_error!("failed to send power press event: {:?}", e);
+        log_error!("failed to schedule power press event: {:?}", e);
     } else {
-        log_info!("successfully sent power press event");
+        log_info!("successfully scheduled power press event");
     }
 }

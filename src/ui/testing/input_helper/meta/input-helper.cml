@@ -19,8 +19,13 @@
         {
             protocol: [
                 "fuchsia.input.injection.InputDeviceRegistry",
+                "fuchsia.time.alarms.WakeAlarms",
                 "fuchsia.ui.display.singleton.Info",
             ],
+        },
+        {
+            protocol: [ "fuchsia.power.system.ActivityGovernor" ],
+            availability: "optional",
         },
     ],
     expose: [

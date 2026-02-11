@@ -5,15 +5,15 @@
 use crate::input_reports_reader::InputReportsReader;
 use anyhow::{Context as _, Error};
 use async_utils::event::Event as AsyncEvent;
-use fidl::endpoints::ServerEnd;
 use fidl::Error as FidlError;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_input_report::{
     DeviceDescriptor, FeatureReport, InputDeviceRequest, InputDeviceRequestStream, InputReport,
     InputReportsReaderMarker,
 };
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
-use futures::{future, pin_mut, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt, future, pin_mut};
 
 pub type DeviceId = u32;
 
@@ -65,6 +65,17 @@ impl InputDevice {
         ));
 
         Self { report_sender, _input_device_task: input_device_task, device_id: 0 }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(
+        report_sender: futures::channel::mpsc::UnboundedSender<InputReport>,
+    ) -> Self {
+        Self {
+            report_sender,
+            _input_device_task: fasync::Task::local(futures::future::ready(())),
+            device_id: 0,
+        }
     }
 
     /// Enqueues an input report, to be read by the input reports reader.
@@ -665,8 +676,8 @@ mod tests {
         /// # Returns
         /// A tuple of the proxy and struct. The struct is `Box`-ed so that the caller
         /// can easily invoke `flush()`.
-        pub(super) fn make_input_device_proxy_and_struct(
-        ) -> (InputDeviceProxy, Box<InputDevice>, AsyncEvent) {
+        pub(super) fn make_input_device_proxy_and_struct()
+        -> (InputDeviceProxy, Box<InputDevice>, AsyncEvent) {
             let (input_device_proxy, input_device_request_stream) =
                 endpoints::create_proxy_and_stream::<InputDeviceMarker>();
             let got_input_reports_reader = AsyncEvent::new();

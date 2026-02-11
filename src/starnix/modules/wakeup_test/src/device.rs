@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input::{create_media_buttons_proxy, wakeup_send_power_button};
+use crate::input::{create_media_buttons_proxy, schedule_wakeup_power_button};
 use crate::ioctl::{CommandCode, WakeupMethod, WakeupTestType, WakeupTimerInfo};
 use crate::tracing;
 use anyhow::{Result, anyhow};
-use fuchsia_component::client::connect_to_protocol;
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::perf::TraceEventQueue;
@@ -21,7 +20,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{device_type, error};
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_time_alarms as fta, fidl_fuchsia_ui_test_input as futinput, zx};
+use zx;
 
 #[derive(Clone)]
 pub struct WakeupTestDevice {
@@ -61,21 +60,12 @@ struct Commands {
 }
 
 impl Commands {
-    fn set_alarm(&self, alarm_id: String, time_ns: i64, timer_info: WakeupTimerInfo) -> Result<()> {
-        log_info!(
-            "WakeupTestDevice::set_alarm creating async task for alarm_id: {alarm_id}, time_ns: {time_ns}"
-        );
+    fn schedule_wakeup(&self, time_ns: i64) -> Result<()> {
+        log_info!("WakeupTestDevice::schedule_wakeup creating async task for time_ns: {time_ns}");
         let kernel = self.kernel.upgrade().expect("kernel should exist");
 
         kernel.kthreads.spawn_future(
             move || async move {
-                let alarm_proxy = match connect_to_protocol::<fta::WakeAlarmsMarker>() {
-                    Ok(proxy) => proxy,
-                    Err(e) => {
-                        log_error!("Failed to connect to WakeAlarms protocol: {:?}", e);
-                        return;
-                    }
-                };
                 let media_button_proxy = match create_media_buttons_proxy().await {
                     Ok(proxy) => proxy,
                     Err(e) => {
@@ -83,22 +73,23 @@ impl Commands {
                         return;
                     }
                 };
-                let timer_handler =
-                    WakeupTimerHandler::new(alarm_id, time_ns, timer_info, media_button_proxy);
+                schedule_wakeup_power_button(
+                    &media_button_proxy,
+                    zx::Duration::from_nanos(time_ns),
+                )
+                .await;
+                // Keep the device around until the timer goes off.
+                // Since this is called from via ioctl, it is not feasible to return an EventPair or
+                // some other handle that could be used to make the lifetime more event driven.
+                // This may be something to revisit if the test is flaky because of the media_button_proxy
+                // being dropped before the timer is goes off and the input sent.
 
-                let deadline = zx::BootInstant::after(zx::Duration::from_nanos(time_ns));
-                let (_lease, peer) = zx::EventPair::create();
-                match alarm_proxy
-                    .set_and_wait(deadline, fta::SetMode::KeepAlive(peer), &timer_handler.alarm_id)
-                    .await
-                {
-                    Ok(Ok(_)) => {
-                        log_info!("Wakeup alarm set and triggered successfully!");
-                        timer_handler.on_timer().await
-                    }
-                    Ok(Err(e)) => log_error!("Failed to set wakeup alarm: {:?}", e),
-                    Err(e) => log_error!("FIDL error: {:?}", e),
-                }
+                // Sleep for 5 seconds plus the timer duration to ensure the event is sent before the proxy is dropped.
+                let deadline = fuchsia_async::MonotonicInstant::after(
+                    zx::Duration::from_seconds(5) + zx::Duration::from_nanos(time_ns),
+                );
+                fuchsia_async::Timer::new(deadline).await;
+                log_info!("media_button proxy dropped.")
             },
             "wakeup_test",
         );
@@ -130,8 +121,7 @@ impl Commands {
         for index in 0..timer_info.num_events {
             let time = (timer_info.interval * (index as i64)) + timer_info.offset;
             log_info!("WakeupTestDevice::set_timer i: {index} for {time}");
-            tracing::trace_wakeup_set_timer(self.get_trace_event_queue(), self.tid, index, time);
-            self.set_alarm(format!("starnix_wakeup_test_alarm_{index}"), time, timer_info)?;
+            self.schedule_wakeup(time)?;
         }
         Ok(())
     }
@@ -147,50 +137,6 @@ impl Commands {
             }
         }
         None
-    }
-}
-
-struct WakeupTimerHandler {
-    alarm_id: String,
-    timer_ns: i64,
-    timer_info: WakeupTimerInfo,
-    media_button_proxy: futinput::MediaButtonsDeviceProxy,
-}
-
-impl WakeupTimerHandler {
-    fn new(
-        alarm_id: String,
-        timer_ns: i64,
-        timer_info: WakeupTimerInfo,
-        media_button_proxy: futinput::MediaButtonsDeviceProxy,
-    ) -> Self {
-        Self { alarm_id, timer_ns, timer_info, media_button_proxy }
-    }
-
-    async fn on_timer(&self) {
-        log_info!("WakeupTestDevice::on_timer called: {info:?}", info = self.timer_info);
-        let method = WakeupMethod::from(self.timer_info.method);
-
-        // Trace how long we spend processing the timer. It should be inconsequential to the resume
-        // latency.
-        fuchsia_trace::duration!(
-            tracing::POWER_CATEGORY,
-            "WakeupTest:OnTimer",
-            "alarm_id" => self.alarm_id.as_str(),
-            "timer_ns" => self.timer_ns,
-            "method" => <WakeupMethod as Into<&'static str>>::into(method)
-        );
-
-        match method {
-            WakeupMethod::PowerButton => wakeup_send_power_button(&self.media_button_proxy).await,
-            WakeupMethod::WakeupByTouch
-            | WakeupMethod::WakeupBySwipeUp
-            | WakeupMethod::WakeupBySwipeDown
-            | WakeupMethod::WakeupBySwipeLeft
-            | WakeupMethod::WakeupBySwipeRight => {
-                log_error!("unimplemented wakeup method: {:?}", method)
-            }
-        }
     }
 }
 

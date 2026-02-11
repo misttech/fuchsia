@@ -16,9 +16,12 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+    "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_rust",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",
+    "//sdk/rust/zx",
     "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
@@ -31,7 +34,7 @@ rustc_library("lib") {
   ]
 
   test_deps = [
-    "//sdk/rust/zx",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:test-case",

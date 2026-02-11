@@ -21,19 +21,24 @@ use fidl_fuchsia_ui_test_input::{
     TouchScreenMarker, TouchScreenRequest, TouchScreenRequestStream,
 };
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_trace::Scope;
+use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use keymaps::inverse_keymap::{InverseKeymap, Shift};
 use keymaps::usages::{Usages, hid_usage_to_input3_key};
 use log::{error, info, warn};
 use std::time::Duration;
+use zx::HandleBased;
 use {
-    fidl_fuchsia_math as math, fidl_fuchsia_ui_display_singleton as display_info,
-    fuchsia_async as fasync,
+    fidl_fuchsia_math as math, fidl_fuchsia_power_system as fps, fidl_fuchsia_time_alarms as fta,
+    fidl_fuchsia_ui_display_singleton as display_info, fuchsia_async as fasync, zx,
 };
 
 mod input_device;
 mod input_device_registry;
 mod input_reports_reader;
+
+pub(crate) static INPUT_CATEGORY: &str = "input";
 
 /// Use this to place required DeviceInformation into DeviceDescriptor.
 fn new_fake_device_info() -> DeviceInformation {
@@ -172,8 +177,16 @@ async fn register_media_button(
         .expect("failed to create fake media buttons device");
     let device_id = device.device_id;
 
+    let activity_governor = connect_to_protocol::<fps::ActivityGovernorMarker>().ok();
+    let wake_alarm_proxy = connect_to_protocol::<fta::WakeAlarmsMarker>().ok();
     task_group.spawn(async move {
-        handle_media_buttons_device_request_stream(device, device_server_end.into_stream()).await;
+        handle_media_buttons_device_request_stream(
+            device,
+            device_server_end.into_stream(),
+            activity_governor,
+            wake_alarm_proxy,
+        )
+        .await;
     });
 
     info!("wait for input-pipeline setup input-reader");
@@ -694,74 +707,198 @@ async fn handle_touchscreen_request_stream(
 /// Serves `fuchsia.ui.test.input.MediaButtonsDevice`.
 async fn handle_media_buttons_device_request_stream(
     media_buttons_device: input_device::InputDevice,
-    mut request_stream: MediaButtonsDeviceRequestStream,
+    request_stream: MediaButtonsDeviceRequestStream,
+    activity_governor: Option<fps::ActivityGovernorProxy>,
+    wake_alarm_proxy: Option<fta::WakeAlarmsProxy>,
 ) {
-    while let Some(request) = request_stream.next().await {
-        match request {
-            Ok(MediaButtonsDeviceRequest::SimulateButtonPress { payload, responder }) => {
-                if let Some(button) = payload.button {
-                    let media_buttons_input_report = ConsumerControlInputReport {
-                        pressed_buttons: Some(vec![button]),
-                        ..Default::default()
-                    };
+    let mut request_stream = request_stream.fuse();
+    let (alarm_sender, mut alarm_receiver) = futures::channel::mpsc::unbounded();
 
-                    let input_report = InputReport {
-                        event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
-                        consumer_control: Some(media_buttons_input_report),
-                        ..Default::default()
-                    };
+    // Incomplete tasks are dropped when this function exits, avoiding detached orphan tasks.
+    let mut scheduled_inputs = FuturesUnordered::new();
 
-                    media_buttons_device
-                        .send_input_report(input_report)
-                        .expect("Failed to send button press input report");
-
-                    // Send a report with an empty set of pressed buttons,
-                    // so that input pipeline generates a media buttons
-                    // event with the target button being released.
-                    let empty_report = InputReport {
-                        event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
-                        consumer_control: Some(ConsumerControlInputReport {
-                            pressed_buttons: Some(vec![]),
+    loop {
+        futures::select! {
+            request = request_stream.next() => {
+                match request {
+                    Some(Ok(MediaButtonsDeviceRequest::SimulateButtonPress { payload, responder })) => {
+                        if let Some(button) = payload.button {
+                            let wake_lease = if let Some(ref ag) = activity_governor {
+                                acquire_and_deposit_lease(ag, "input-helper-button").await
+                            } else {
+                                None
+                            };
+                            send_media_button_press_and_release(&media_buttons_device, button, wake_lease);
+                            responder.send().expect("Failed to send SimulateButtonPress response");
+                        } else {
+                            warn!("SimulateButtonPress request missing button");
+                            let _ = responder.send();
+                        }
+                    }
+                    Some(Ok(MediaButtonsDeviceRequest::SendButtonsState { payload, responder })) => {
+                        let buttons = match payload.buttons {
+                            Some(buttons) => buttons,
+                            None => vec![],
+                        };
+                        let wake_lease = if let Some(ref ag) = activity_governor {
+                            acquire_and_deposit_lease(ag, "input-helper-button-state").await
+                        } else {
+                            None
+                        };
+                        let input_report = InputReport {
+                            event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
+                            consumer_control: Some(ConsumerControlInputReport {
+                                pressed_buttons: Some(buttons),
+                                ..Default::default()
+                            }),
+                            wake_lease,
                             ..Default::default()
-                        }),
-                        ..Default::default()
-                    };
+                        };
 
-                    media_buttons_device
-                        .send_input_report(empty_report)
-                        .expect("Failed to send button release input report");
+                        media_buttons_device
+                            .send_input_report(input_report)
+                            .expect("Failed to send button press input report");
 
-                    responder.send().expect("Failed to send SimulateButtonPress response");
-                } else {
-                    warn!("SimulateButtonPress request missing button");
+                        responder.send().expect("Failed to send SimulateButtonPress response");
+                    }
+
+                    Some(Ok(MediaButtonsDeviceRequest::ScheduleSimulateButtonPress { payload, responder })) => {
+                        let button = payload.button.expect("missing button");
+                        let delay = zx::Duration::from_nanos(payload.delay.expect("missing delay"));
+                        let sender = alarm_sender.clone();
+                        let proxy = wake_alarm_proxy.clone();
+
+                        scheduled_inputs.push(
+                        fasync::Task::local(async move {
+                            if let Some(alarm_proxy) = proxy {
+                                // Use boot instant here since it will increase,
+                                // even when the device is suspended.
+                                let time = zx::BootInstant::after(delay);
+                                info!("scheduling button press for {:?}", time);
+                                fuchsia_trace::instant!(
+                                    INPUT_CATEGORY,
+                                    "WakeupTest:TimerSet",
+                                    Scope::Process
+                                );
+                                let (_lease, peer) = zx::EventPair::create();
+                                match alarm_proxy
+                                    .set_and_wait(time, fta::SetMode::KeepAlive(peer), "input_helper_button")
+                                    .await
+                                {
+                                    Ok(Ok(lease_token)) => {
+                                        let _ = sender.unbounded_send(Some((button, lease_token)));
+                                    }
+                                    Ok(Err(e)) => {
+                                        error!("Failed to set wakeup alarm: {:?}", e);
+                                    }
+                                    Err(e) => {
+                                        error!("FIDL error: {:?}", e);
+                                    }
+                                }
+                            } else {
+                                error!("failed to connect to WakeAlarms protocol");
+                            }
+                        }));
+                        responder.send().expect("Failed to send ScheduleSimulateButtonPress response");
+                    }
+                    Some(Err(e)) => {
+                        error!("Error on media buttons device channel: {}", e);
+                        break;
+                    }
+                    None => break,
                 }
-            }
-            Ok(MediaButtonsDeviceRequest::SendButtonsState { payload, responder }) => {
-                let buttons = match payload.buttons {
-                    Some(buttons) => buttons,
-                    None => vec![],
-                };
-                let input_report = InputReport {
-                    event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
-                    consumer_control: Some(ConsumerControlInputReport {
-                        pressed_buttons: Some(buttons),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                };
+            },
+            // while processing the request stream, keep checking for scheduled tasks that sent the
+            // fired alarm info.
+            fired_alarm = alarm_receiver.next() => {
+                if let Some(Some((button, lease_token))) = fired_alarm {
+                    info!("wake alarm fired, sending button event");
+                    // Trace how long we spend processing the timer. It should be inconsequential to the resume
+                    // latency.
+                    fuchsia_trace::duration!(INPUT_CATEGORY,"WakeupTest:OnTimer");
 
-                media_buttons_device
-                    .send_input_report(input_report)
-                    .expect("Failed to send button press input report");
+                    // Duplicate for local deposit to mimic hardware safety timeout.
+                    if let Ok(local_lease) = lease_token.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                        deposit_wake_lease(local_lease, zx::MonotonicDuration::from_millis(100));
+                    }
 
-                responder.send().expect("Failed to send SimulateButtonsPress response");
-            }
-            Err(e) => {
-                error!("Error on media buttons device channel: {}", e);
-                return;
-            }
+                    send_media_button_press_and_release(&media_buttons_device, button, Some(lease_token));
+                }
+            },
+            _ = scheduled_inputs.select_next_some() => {},
         }
     }
+}
+
+fn deposit_wake_lease(lease: zx::EventPair, duration: zx::MonotonicDuration) {
+    fasync::Task::local(async move {
+        fasync::Timer::new(fasync::MonotonicInstant::after(duration)).await;
+        std::mem::drop(lease);
+    })
+    .detach();
+}
+
+/// Helper to acquire a wake lease and deposit a local safety copy.
+async fn acquire_and_deposit_lease(
+    ag: &fps::ActivityGovernorProxy,
+    name: &str,
+) -> Option<zx::EventPair> {
+    match ag.acquire_wake_lease(name).await {
+        Ok(Ok(lease)) => {
+            if let Ok(local_lease) = lease.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                deposit_wake_lease(local_lease, zx::MonotonicDuration::from_millis(100));
+            }
+            Some(lease)
+        }
+        Ok(Err(e)) => {
+            error!("Failed to acquire wake lease {name}: {:?}", e);
+            None
+        }
+        Err(e) => {
+            error!("FIDL error acquiring wake lease {name}: {:?}", e);
+            None
+        }
+    }
+}
+
+fn send_media_button_press_and_release(
+    media_buttons_device: &input_device::InputDevice,
+    button: fidl_fuchsia_input_report::ConsumerControlButton,
+    wake_lease: Option<zx::EventPair>,
+) {
+    let media_buttons_input_report =
+        ConsumerControlInputReport { pressed_buttons: Some(vec![button]), ..Default::default() };
+
+    let release_wake_lease =
+        wake_lease.as_ref().and_then(|lease| lease.duplicate(zx::Rights::SAME_RIGHTS).ok());
+
+    let input_report = InputReport {
+        event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
+        consumer_control: Some(media_buttons_input_report),
+        wake_lease,
+        ..Default::default()
+    };
+
+    media_buttons_device
+        .send_input_report(input_report)
+        .expect("Failed to send button press input report");
+
+    // Send a report with an empty set of pressed buttons,
+    // so that input pipeline generates a media buttons
+    // event with the target button being released.
+    let empty_report = InputReport {
+        event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
+        consumer_control: Some(ConsumerControlInputReport {
+            pressed_buttons: Some(vec![]),
+            ..Default::default()
+        }),
+        wake_lease: release_wake_lease,
+        ..Default::default()
+    };
+
+    media_buttons_device
+        .send_input_report(empty_report)
+        .expect("Failed to send button release input report");
 }
 
 /// Serves `fuchsia.ui.test.input.Keyboard`.
@@ -908,7 +1045,9 @@ mod tests {
     //
     // However, we can (and do) validate derive_key_sequence().
 
-    use super::{KeyboardReport, Usages, derive_key_sequence};
+    use super::{
+        KeyboardReport, Usages, derive_key_sequence, handle_media_buttons_device_request_stream,
+    };
     use pretty_assertions::assert_eq;
 
     // TODO(https://fxbug.dev/42059899): Remove this macro.
@@ -1074,5 +1213,70 @@ mod tests {
                 [],
             ]
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_schedule_power_button_press() {
+        use fidl_fuchsia_input_report::{ConsumerControlButton, InputReport};
+        use fidl_fuchsia_time_alarms as fta;
+        use fidl_fuchsia_ui_test_input::MediaButtonsDeviceMarker;
+        use futures::{FutureExt, StreamExt};
+
+        let (report_sender, mut report_receiver) =
+            futures::channel::mpsc::unbounded::<InputReport>();
+        let input_device = crate::input_device::InputDevice::new_for_test(report_sender);
+
+        let (proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<MediaButtonsDeviceMarker>();
+
+        let (alarm_proxy, mut alarm_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fta::WakeAlarmsMarker>();
+        let alarm_proxy_clone = alarm_proxy.clone();
+
+        let handler_fut = handle_media_buttons_device_request_stream(
+            input_device,
+            stream,
+            None,
+            Some(alarm_proxy_clone),
+        );
+
+        let test_fut = async {
+            let schedule_fut = proxy.schedule_simulate_button_press(
+                &fidl_fuchsia_ui_test_input::MediaButtonsDeviceScheduleSimulateButtonPressRequest {
+                    button: Some(ConsumerControlButton::Power),
+                    delay: Some(zx::Duration::<zx::BootTimeline>::from_millis(750).into_nanos()), // 0.75s
+                    ..Default::default()
+                },
+            );
+
+            schedule_fut.await.expect("failed to schedule");
+
+            // Mock WakeAlarms.SetAndWait.
+            if let Some(Ok(fta::WakeAlarmsRequest::SetAndWait { responder, .. })) =
+                alarm_stream.next().await
+            {
+                let (lease, _peer) = zx::EventPair::create();
+                responder.send(Ok(lease)).expect("failed to respond");
+            }
+
+            // Receive press report
+            let press_report: InputReport = report_receiver.next().await.expect("no press report");
+            assert!(press_report.consumer_control.is_some());
+            let cc = press_report.consumer_control.unwrap();
+            assert_eq!(cc.pressed_buttons, Some(vec![ConsumerControlButton::Power]));
+            assert!(press_report.wake_lease.is_some());
+
+            // Receive release report
+            let release_report: InputReport =
+                report_receiver.next().await.expect("no release report");
+            let cc = release_report.consumer_control.unwrap();
+            assert_eq!(cc.pressed_buttons, Some(vec![]));
+            assert!(release_report.wake_lease.is_some());
+        };
+
+        futures::select! {
+            _ = handler_fut.fuse() => panic!("handler exited early"),
+            _ = test_fut.fuse() => (),
+        }
     }
 }

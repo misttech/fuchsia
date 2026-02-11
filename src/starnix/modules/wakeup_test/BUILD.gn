@@ -16,10 +16,10 @@ rustc_library("wakeup_test") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
-    "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel/core",

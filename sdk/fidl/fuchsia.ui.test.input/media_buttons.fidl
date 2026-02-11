@@ -5,6 +5,7 @@
 library fuchsia.ui.test.input;
 
 using fuchsia.input.report;
+using zx;
 
 /// A tool to inject media button events into Input Pipeline.
 ///
@@ -24,5 +25,16 @@ closed protocol MediaButtonsDevice {
         /// The button receiving the button press.
         1: buttons
                 vector<fuchsia.input.report.ConsumerControlButton>:fuchsia.input.report.CONSUMER_CONTROL_MAX_NUM_BUTTONS;
+    }) -> ();
+
+    /// Schedules a button press and release of the requested button at a
+    /// specific duration from now. "Now" is defined as the time when the request is processed by the
+    /// device, so there is some latency.
+    @available(added=NEXT)
+    strict ScheduleSimulateButtonPress(table {
+        /// The button receiving the button press.
+        1: button fuchsia.input.report.ConsumerControlButton;
+        /// The length of the delay before sending the button (in nanos).
+        2: delay zx.Duration;
     }) -> ();
 };

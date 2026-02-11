@@ -25,6 +25,17 @@
             to: [ "#input-helper" ],
         },
         {
+            protocol: [ "fuchsia.time.alarms.WakeAlarms" ],
+            from: "parent",
+            to: [ "#input-helper" ],
+        },
+        {
+            protocol: [ "fuchsia.power.system.ActivityGovernor" ],
+            from: "parent",
+            to: [ "#input-helper" ],
+            availability: "optional",
+        },
+        {
             dictionary: "diagnostics",
             from: "parent",
             to: "#input-helper",
