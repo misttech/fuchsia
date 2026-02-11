@@ -328,15 +328,6 @@ class BatchPQRemove {
   // |freed_list_|, avoiding having to walk |freed_list_| to compute its length.
   size_t freed_count() const { return freed_count_; }
 
-  // Produces a callback suitable for passing to VmPageList::RemovePages that will |PushContent| all
-  // items.
-  auto RemovePagesCallback() {
-    return [this](VmPageOrMarker* p, uint64_t off) {
-      PushContent(p);
-      return ZX_ERR_NEXT;
-    };
-  }
-
  private:
   // The value of 64 was chosen as there is minimal performance gains originally measured by using
   // higher values. There is an incentive on this being as small as possible due to this typically
@@ -2573,7 +2564,12 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
         __UNINITIALIZED ScopedPageFreedList freed_list;
         __UNINITIALIZED BatchPQRemove page_remover(freed_list);
 
-        page_list_.RemovePages(page_remover.RemovePagesCallback(), start_offset, offset);
+        page_list_.RemovePages(
+            [&page_remover](VmPageOrMarker* p, uint64_t off) {
+              page_remover.PushContent(p);
+              return ZX_ERR_NEXT;
+            },
+            start_offset, offset);
         page_remover.Flush();
         freed_list.FreePages(this);
       }
@@ -2725,7 +2721,12 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
       page_list_.RemoveAllContent(
           [&page_remover](VmPageOrMarker&& p) { page_remover.PushContent(&p); });
     } else {
-      page_list_.RemovePages(page_remover.RemovePagesCallback(), offset, offset + len);
+      page_list_.RemovePages(
+          [&page_remover](VmPageOrMarker* p, uint64_t off) {
+            page_remover.PushContent(p);
+            return ZX_ERR_NEXT;
+          },
+          offset, offset + len);
     }
     page_remover.Flush();
     // Potentially trim the parent limit to reflect the range that has been freed.
@@ -3964,7 +3965,12 @@ zx::result<uint64_t> VmCowPages::UnmapAndFreePagesLocked(uint64_t offset, uint64
 
   __UNINITIALIZED BatchPQRemove page_remover(deferred.FreedList(this));
 
-  page_list_.RemovePages(page_remover.RemovePagesCallback(), offset, offset + len);
+  page_list_.RemovePages(
+      [&page_remover](VmPageOrMarker* p, uint64_t off) {
+        page_remover.PushContent(p);
+        return ZX_ERR_NEXT;
+      },
+      offset, offset + len);
   page_remover.Flush();
 
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
