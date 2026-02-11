@@ -819,7 +819,7 @@ fn handle_route_watcher_event<
                 None => {
                     // This is a FIDL table ID that the netlink worker didn't know about, and is
                     // not the main table ID.
-                    crate::logging::log_debug!(
+                    crate::logging::log_warn!(
                         "Observed an added route via the routes watcher that is installed in a \
                         non-main FIDL table not managed by netlink: {added_installed_route:?}"
                     );
@@ -856,7 +856,7 @@ fn handle_route_watcher_event<
                 None => {
                     // This is a FIDL table ID that the netlink worker didn't know about, and is
                     // not the main table ID.
-                    crate::logging::log_debug!(
+                    crate::logging::log_warn!(
                         "Observed a removed route via the routes watcher that is installed in a \
                         non-main FIDL table not managed by netlink: {removed_installed_route:?}"
                     );
