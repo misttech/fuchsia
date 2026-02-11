@@ -626,44 +626,9 @@ def main() -> int:
     debug_symbol_manifest_paths = action_result.debug_symbol_manifest_paths
     all_output_files = action_result.output_files
     build_file_labels = action_result.build_file_labels
+    source_file_labels = action_result.source_file_labels
 
     time_profile.stop()
-
-    source_files = []
-
-    if args.command == "build":
-        time_profile.start(
-            "list_sources", "Query the list of Bazel source files"
-        )
-
-        # Perform a cquery to get all source inputs for the targets, this
-        # returns a list of Bazel labels followed by "(null)" because these
-        # are never configured. E.g.:
-        #
-        #  //build/bazel/examples/hello_world:hello_world (null)
-        #
-        bazel_source_files = bazel_action_impl.run_bazel_query(
-            query_cache,
-            bazel_launcher,
-            "cquery",
-            [
-                "--config=quiet",
-                "--output",
-                "label",
-                f"kind(\"source file\", deps(set({' '.join(args.bazel_targets)})))",
-            ]
-            + configured_args,
-        )
-
-        if bazel_source_files is None:
-            return 1
-
-        if _DEBUG:
-            debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
-
-        # Remove the ' (null)' suffix of each result line.
-        source_files = [l.partition(" (null)")[0] for l in bazel_source_files]
-        time_profile.stop()
 
     if args.compdb_file:
         time_profile.start(
@@ -749,7 +714,7 @@ def main() -> int:
             str(workspace_dir), str(build_dir)
         )
         all_sources = mapper.get_sources_for_labels(
-            build_file_labels + source_files
+            build_file_labels + source_file_labels
         )
 
         depfile_content = "%s: %s\n" % (

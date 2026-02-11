@@ -118,6 +118,7 @@ class BazelActionResult(object):
     debug_symbol_manifest_paths: list[str]
     output_files: list[Path]
     build_file_labels: list[str]
+    source_file_labels: list[str]
 
 
 class BazelActionRunner(object):
@@ -331,17 +332,28 @@ class BazelActionRunner(object):
 
         # Temporary files have now been deleted by the FileCleaner.
 
-        # If we're building, and have packages, query to get the paths to the package archives,
-        # as they need to be copied to the Ninja outdir along with any other files.
-        if command == "build" and outputs.packages:
+        source_file_labels = []
+        if command == "build":
+            # If we're building, query to get the paths of all source files.
             time_profile.start(
-                "package_info",
-                "Run cquery to extract Fuchsia package archiveinformation",
+                "list_sources", "Query the list of Bazel source files"
             )
-            package_archive_files = self.query_for_package_archives(
-                configured_args, outputs.packages
+            source_file_labels = self.query_for_source_inputs(
+                configured_args=configured_args,
+                targets=targets,
             )
-            outputs.files.extend(package_archive_files)
+
+            if outputs.packages:
+                # If we have packages, query to get the paths to the package archives,
+                # as they need to be copied to the Ninja outdir along with any other files.
+                time_profile.start(
+                    "package_info",
+                    "Run cquery to extract Fuchsia package archiveinformation",
+                )
+                package_archive_files = self.query_for_package_archives(
+                    configured_args, outputs.packages
+                )
+                outputs.files.extend(package_archive_files)
 
         # Now copy all the outputs.  This is a separate function to help break up the run()
         # functionality for better clarity.
@@ -353,7 +365,41 @@ class BazelActionRunner(object):
             debug_symbol_manifest_paths=debug_symbol_manifest_paths,
             output_files=all_output_files,
             build_file_labels=build_file_labels,
+            source_file_labels=source_file_labels,
         )
+
+    def query_for_source_inputs(
+        self, configured_args: list[str], targets: list[str]
+    ) -> list[str]:
+        """Given a list of Bazel targets, query to find all the input source files each needs."""
+
+        # Perform a cquery to get all source inputs for the targets. This
+        # returns a list of Bazel labels followed by "(null)" because these
+        # are never configured during analysis. E.g.:
+        #
+        #  //build/bazel/examples/hello_world:hello_world (null)
+        #
+        bazel_source_files = run_bazel_query(
+            self.query_cache,
+            self.launcher,
+            "cquery",
+            [
+                "--config=quiet",
+                "--output",
+                "label",
+                f"kind(\"source file\", deps(set({' '.join(targets)})))",
+            ]
+            + configured_args,
+        )
+
+        if bazel_source_files is None:
+            raise BazelActionError("No source files found.")
+
+        if _DEBUG:
+            debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
+
+        # Remove the ' (null)' suffix of each result line and return
+        return [l.partition(" (null)")[0] for l in bazel_source_files]
 
     def query_for_package_archives(
         self,
