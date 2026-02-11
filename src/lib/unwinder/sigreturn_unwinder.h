@@ -18,21 +18,26 @@ class SigReturnUnwinder : public UnwinderBase {
   // We need |CfiUnwinder::GetModuleForPc|.
   explicit SigReturnUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
-  Error Step(Memory* stack, const Frame& current, Frame& next) override {
-    return Step(stack, current.regs, next.regs);
-  }
+  Error Step(Memory* stack, const Frame& current, Frame& next) override;
+
+  void AsyncStep(AsyncMemory* stack, const Frame& current,
+                 fit::callback<void(Error, Registers)> cb) override;
 
   Frame::Trust trust() const override { return Frame::Trust::kSigReturn; }
 
   static Error ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Registers& regs);
 
  private:
-  Error Step(Memory* stack, const Registers& current, Registers& next);
-  Error StepX64(Memory* stack, const Registers& current, Registers& next);
-  Error StepArm32(Memory* stack, const Registers& current, Registers& next);
-  Error StepArm64(Memory* stack, const Registers& current, Registers& next);
-  Error StepRiscv64(Memory* stack, const Registers& current, Registers& next);
+  Error Step(Memory* stack, uint64_t pc, uint64_t sp_offset, Registers::Arch arch, Registers& next);
+  void AsyncStep(AsyncMemory* stack, uint64_t pc, uint64_t sp_offset, Registers::Arch arch,
+                 fit::callback<void(Error, Registers)> cb);
 
+  Error StepX64(Memory* stack, uint64_t pc, uint64_t sp_offset, Registers& next);
+  Error StepArm32(Memory* stack, uint64_t pc, uint64_t sp_offset, Registers& next);
+  Error StepArm64(Memory* stack, uint64_t pc, uint64_t sp_offset, Registers& next);
+  Error StepRiscv64(Memory* stack, uint64_t pc, uint64_t sp_offset, Registers& next);
+
+  static Error ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, Registers::Arch arch, uint64_t pc);
   static Error ProbeArm32SigReturn(Memory* stack, uint64_t pc);
   static Error ProbeArm64SigReturn(Memory* stack, uint64_t pc);
 };
