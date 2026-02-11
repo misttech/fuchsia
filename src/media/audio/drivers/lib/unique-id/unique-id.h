@@ -25,8 +25,8 @@ fuchsia_hardware_audio::CompositeProperties DspProperties() {
   return PropertiesWithSingularId(fuchsia_hardware_audio::SingularUniqueId::kDsp);
 }
 
-fuchsia_hardware_audio::CompositeProperties BuiltinSpeakersProperties() {
-  return PropertiesWithSingularId(fuchsia_hardware_audio::SingularUniqueId::kBuiltinSpeakers);
+fuchsia_hardware_audio::CompositeProperties BuiltinSpeakerProperties() {
+  return PropertiesWithSingularId(fuchsia_hardware_audio::SingularUniqueId::kBuiltinSpeaker);
 }
 
 fuchsia_hardware_audio::CompositeProperties BuiltinHeadphoneJackProperties() {

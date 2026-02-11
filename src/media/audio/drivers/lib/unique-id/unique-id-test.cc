@@ -23,8 +23,8 @@ TEST(UniqueIdTest, SingularUniqueIdTest) {
   };
 
   verify_unique_id(audio::DspProperties(), fuchsia_hardware_audio::SingularUniqueId::kDsp);
-  verify_unique_id(audio::BuiltinSpeakersProperties(),
-                   fuchsia_hardware_audio::SingularUniqueId::kBuiltinSpeakers);
+  verify_unique_id(audio::BuiltinSpeakerProperties(),
+                   fuchsia_hardware_audio::SingularUniqueId::kBuiltinSpeaker);
   verify_unique_id(audio::BuiltinHeadphoneJackProperties(),
                    fuchsia_hardware_audio::SingularUniqueId::kBuiltinHeadphoneJack);
   verify_unique_id(audio::BuiltinMicrophoneProperties(),
