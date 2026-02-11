@@ -21,7 +21,6 @@ _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 _STANDARD_FIELDS = {
     "deps",
     "edition",
-    "embed",
     "inputs",
     "name",
     "output_name",
@@ -54,7 +53,7 @@ _COMPLEX_FIELDS = {
 
 # Fields that are considered dependencies. Dependencies need to be migrated to Bazel first before
 # this target can be migrated.
-_DEP_FIELDS = ["deps", "public_deps", "test_deps", "data", "embed"]
+_DEP_FIELDS = ["deps", "public_deps", "test_deps", "data"]
 
 # Toolchain shorthands for convenience.
 _TOOLCHAIN_SHORTHANDS = {
