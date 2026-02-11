@@ -163,7 +163,6 @@ host_script_test_data("fx_bash_tests") {
 
       files = [
         "//tools/devshell/build-metrics",
-        "//tools/devshell/cog",
         "//tools/devshell/contrib/ffx",
         "//tools/devshell/contrib/lint",
         "//tools/devshell/contrib/setup-go",
