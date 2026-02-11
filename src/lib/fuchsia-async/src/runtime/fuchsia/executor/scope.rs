@@ -1392,9 +1392,19 @@ impl ScopeHandle {
         task.map(|task| unsafe { task.take_result() })
     }
 
+    /// Returns `true` if the task is accepted.
     pub(super) fn insert_task(&self, task: TaskHandle, for_stream: bool) -> bool {
         let returned_task = self.lock().insert_task(task, for_stream);
-        returned_task.is_none()
+        if let Some(t) = returned_task {
+            // The scope is not accepting new tasks at this time, but we want the user to see this
+            // as if it accepted the task and then immediately aborted the task, which means we
+            // must drop it here.  `try_drop` should succeed because we should be able to get
+            // exclusive access to the task.
+            t.try_drop().unwrap();
+            false
+        } else {
+            true
+        }
     }
 
     /// Drops the specified task.
@@ -2762,5 +2772,22 @@ mod tests {
             let _ = task.await;
         });
         assert_eq!(executor.run_until_stalled(&mut main_future), Poll::Ready(()),);
+    }
+
+    #[test]
+    fn closed_scope_drops_task_immediately() {
+        let executor = TestExecutor::new();
+        let scope = executor.global_scope().new_child();
+        scope.clone().close();
+        let object = Arc::new(());
+        let object2 = object.clone();
+        let _task = scope.spawn(async move {
+            let _object2 = object2;
+            let () = std::future::pending().await;
+        });
+
+        // The scope is closed, so the future should have been immediately dropped,
+        // leaving only one reference.
+        assert!(Arc::into_inner(object).is_some());
     }
 }
