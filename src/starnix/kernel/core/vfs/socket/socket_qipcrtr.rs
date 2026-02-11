@@ -10,7 +10,8 @@ use crate::vfs::socket::{
     SockOptValue, Socket, SocketAddress, SocketHandle, SocketMessageFlags, SocketOps, SocketPeer,
     SocketShutdownFlags, SocketType,
 };
-use fidl::endpoints::create_sync_proxy;
+use anyhow::Context;
+use fidl::endpoints::{SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_hardware_qualcomm_router as fqrtr;
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, MappedMutexGuard, Mutex, MutexGuard};
@@ -20,6 +21,26 @@ use starnix_uapi::{
     AF_QIPCRTR, SO_RCVBUF, SO_SNDBUF, SOL_SOCKET, errno, error, sockaddr_qrtr, socklen_t, ucred,
 };
 use zerocopy::{FromBytes, IntoBytes};
+
+const QRTR_CLIENT_SERVICE_DIRECTORY: &str = "/svc/fuchsia.hardware.qualcomm.router.ClientService";
+fn connect_to_connector() -> Result<fqrtr::QrtrConnectorSynchronousProxy, anyhow::Error> {
+    let mut dir = std::fs::read_dir(QRTR_CLIENT_SERVICE_DIRECTORY)
+        .context("Failed to read ClientService directory")?;
+    let entry = dir
+        .next()
+        .ok_or_else(|| anyhow::format_err!("Missing ClientService instance"))?
+        .context("Unable to read ClientService instance")?;
+    let path = entry
+        .path()
+        .join("qrtr_connector")
+        .into_os_string()
+        .into_string()
+        .map_err(|_| anyhow::format_err!("Failed to get qrtr_connector path"))?;
+
+    let (client_end, server_end) = zx::Channel::create();
+    fdio::service_connect(&path, server_end)?;
+    Ok(fqrtr::QrtrConnectorSynchronousProxy::from_channel(client_end))
+}
 
 // From socket(7).
 pub const SEND_BUF_MIN_SIZE: usize = 2048;
@@ -86,9 +107,7 @@ impl QipcrtrSocket {
 
 impl QipcrtrSocketInner {
     fn new(options: fqrtr::ConnectionOptions) -> Result<Self, Errno> {
-        let connector =
-            fuchsia_component::client::connect_to_protocol_sync::<fqrtr::QrtrConnectorMarker>()
-                .map_err(|e| errno!(ENETUNREACH, e))?;
+        let connector = connect_to_connector().map_err(|e| errno!(ENETUNREACH, e))?;
 
         let (client_end, server_end) = create_sync_proxy::<fqrtr::QrtrClientConnectionMarker>();
         connector

@@ -9,15 +9,23 @@ use fuchsia_component_test::LocalComponentHandles;
 use futures::prelude::*;
 use zx::{self, Peered};
 
+enum Incoming {
+    QrtrConnector(fqrtr::ClientServiceRequest),
+}
+
 pub async fn mock_qrtr_client_service(handles: LocalComponentHandles) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
-    fs.dir("svc").add_fidl_service(|stream: fqrtr::QrtrConnectorRequestStream| stream);
+    fs.dir("svc").add_fidl_service_instance("default", Incoming::QrtrConnector);
     fs.serve_connection(handles.outgoing_dir)?;
 
-    fs.for_each_concurrent(0, |stream| async move {
-        run_qrtr_connector_server(stream)
-            .await
-            .unwrap_or_else(|e| eprintln!("Error while serving QrtrConnector: {:?}", e))
+    fs.for_each_concurrent(0, |request| async move {
+        match request {
+            Incoming::QrtrConnector(fqrtr::ClientServiceRequest::QrtrConnector(stream)) => {
+                run_qrtr_connector_server(stream)
+                    .await
+                    .unwrap_or_else(|e| eprintln!("Error while serving QrtrConnector: {:?}", e))
+            }
+        }
     })
     .await;
 

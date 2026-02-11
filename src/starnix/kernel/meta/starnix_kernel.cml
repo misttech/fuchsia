@@ -146,7 +146,6 @@
                 "fuchsia.hardware.google.nanohub.DisplayDevice",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureFastRpc",
-                "fuchsia.hardware.qualcomm.router.QrtrConnector",
                 "fuchsia.hardware.sockettunnel.Device",
                 "fuchsia.kernel.Stats",
                 "fuchsia.net.filter.Control",

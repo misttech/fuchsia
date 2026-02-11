@@ -35,7 +35,7 @@ async fn main() {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::protocol::<fqrtr::QrtrConnectorMarker>())
+                .capability(Capability::service::<fqrtr::ClientServiceMarker>())
                 .from(&qrtr_client_service_mock)
                 .to(Ref::child("kernel")),
         )
