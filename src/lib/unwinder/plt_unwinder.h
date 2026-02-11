@@ -19,6 +19,8 @@ class PltUnwinder : public UnwinderBase {
   explicit PltUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
+  void AsyncStep(AsyncMemory* stack, const Frame& current,
+                 fit::callback<void(Error, Registers)> cb) override;
 
   Frame::Trust trust() const override { return Frame::Trust::kPLT; }
 
@@ -26,6 +28,8 @@ class PltUnwinder : public UnwinderBase {
   // Note that only the topmost frame could be in PLT.
   // This function assume the current frame has a trust level kContext to avoid false positives!
   Error Step(Memory* stack, const Registers& current, Registers& next);
+  void AsyncStep(AsyncMemory* stack, const Registers& current,
+                 fit::callback<void(Error, Registers)> cb);
 
   Error StepX64(Memory* stack, const Registers& current, Registers& next);
   Error StepArm32(Memory* stack, const Registers& current, Registers& next);

@@ -27,6 +27,54 @@ Error PltUnwinder::Step(Memory* stack, const Registers& current, Registers& next
   }
 }
 
+void PltUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
+                            fit::callback<void(Error, Registers)> cb) {
+  AsyncStep(stack, current.regs, std::move(cb));
+}
+
+void PltUnwinder::AsyncStep(AsyncMemory* stack, const Registers& current,
+                            fit::callback<void(Error, Registers)> cb) {
+  Registers next(current.arch());
+
+  switch (current.arch()) {
+    case Registers::Arch::kX64: {
+      // X64 PLT entries need to read from the stack.
+      uint64_t sp = 0;
+      if (auto err = current.GetSP(sp); err.has_err()) {
+        cb(err, std::move(next));
+        return;
+      }
+
+      // We always are going to read 2 machine sized integers from the stack when unwinding from an
+      // x64 PLT call.
+      constexpr uint32_t kStackFetchSize = 16;
+      stack->FetchMemoryRanges({{sp, kStackFetchSize}},
+                               [=, next = std::move(next), cb = std::move(cb)]() mutable {
+                                 auto err = StepX64(stack, current, next);
+                                 cb(err, std::move(next));
+                               });
+      break;
+    }
+    case Registers::Arch::kArm32: {
+      // Arm32 only requires register and module memory access which can be provided synchronously.
+      auto err = StepArm32(stack, current, next);
+      cb(err, std::move(next));
+      break;
+    }
+    case Registers::Arch::kArm64: {
+      // Arm64 only requires register and module memory access which can be provided synchronously.
+      auto err = StepArm64(stack, current, next);
+      cb(err, std::move(next));
+      break;
+    }
+    case Registers::Arch::kRiscv64: {
+      auto err = StepRiscv64(stack, current, next);
+      cb(err, std::move(next));
+      break;
+    }
+  }
+}
+
 Error PltUnwinder::StepX64(Memory* stack, const Registers& current, Registers& next) {
   // The PLT stub looks like
   //
