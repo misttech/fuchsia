@@ -541,7 +541,10 @@ void DefaultFrameScheduler::SetLatchedTimeForPresentsUpTo(SchedulingIdPair id_pa
 
 bool DefaultFrameScheduler::ApplyUpdates(zx::time target_presentation_time, zx::time latched_time,
                                          uint64_t frame_number) {
-  FX_DCHECK(latched_time <= target_presentation_time);
+  FX_DCHECK(latched_time <= target_presentation_time)
+      << "latched_time=" << latched_time.get()
+      << " target_presentation_time=" << target_presentation_time.get()
+      << " frame number=" << frame_number;
 
   // Logging the first few frames to find common startup bugs.
   if (frame_number < kNumDebugFrames) {
