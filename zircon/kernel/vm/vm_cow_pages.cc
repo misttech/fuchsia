@@ -6584,13 +6584,6 @@ zx_status_t VmCowPages::WritebackEndLocked(VmCowRange range) {
   const uint64_t start_offset = range.offset;
   const uint64_t end_offset = range.end();
 
-  // Mark any AwaitingClean pages Clean. Remove AwaitingClean intervals that can be fully cleaned,
-  // otherwise clip the interval start removing the part that has been cleaned. Note that deleting
-  // an interval start is delayed until the corresponding end is encountered, and to ensure safe
-  // continued traversal, the start should always be released before the end, i.e. in the expected
-  // forward traversal order for RemovePages.
-  VmPageOrMarker* interval_start = nullptr;
-  uint64_t interval_start_off;
   // This tracks the end offset until which all zero intervals can be marked clean. This is a
   // running counter that is maintained across multiple zero intervals. Each time we encounter
   // a new interval start, we take the max of the existing value and the AwaitingCleanLength of the
@@ -6603,80 +6596,96 @@ zx_status_t VmCowPages::WritebackEndLocked(VmCowRange range) {
   // range as zeros, so until the point that it actually completes the writeback, it doesn't matter
   // if zero intervals are removed and re-added, as long as they fall in the range that was
   // initially indicated as being written back as zeros.
-  uint64_t interval_awaiting_clean_end = start_offset;
-  page_list_.RemovePages(
-      [&interval_start, &interval_start_off, &interval_awaiting_clean_end, this](VmPageOrMarker* p,
-                                                                                 uint64_t off) {
-        // VMOs with a page source should never have references.
-        DEBUG_ASSERT(!p->IsReference());
-        // Transition pages from AwaitingClean to Clean.
-        if (p->IsPage() && is_page_awaiting_clean(p->Page())) {
-          AssertHeld(lock_ref());
-          UpdateDirtyStateLocked(p->Page(), off, DirtyState::Clean);
-          return ZX_ERR_NEXT;
-        }
-        // Handle zero intervals.
-        if (p->IsIntervalZero()) {
-          if (!p->IsZeroIntervalDirty()) {
-            // The only other state we support is Untracked.
-            DEBUG_ASSERT(p->IsZeroIntervalUntracked());
+  uint64_t interval_awaiting_clean_end = 0;
+
+  // Mark any AwaitingClean pages Clean. Remove AwaitingClean intervals that can be fully cleaned,
+  // otherwise clip the interval start removing the part that has been cleaned. Any intervals are
+  // handled outside the RemovePages callback in the main loop body to allow for safely modifying
+  // the page_list_.
+  uint64_t remove_start = start_offset;
+  while (remove_start < end_offset) {
+    uint64_t interval_offset = UINT64_MAX;
+    page_list_.RemovePages(
+        [&](VmPageOrMarker* p, uint64_t off) {
+          // VMOs with a page source should never have references.
+          DEBUG_ASSERT(!p->IsReference());
+          // Transition pages from AwaitingClean to Clean.
+          if (p->IsPage() && is_page_awaiting_clean(p->Page())) {
+            AssertHeld(lock_ref());
+            UpdateDirtyStateLocked(p->Page(), off, DirtyState::Clean);
             return ZX_ERR_NEXT;
           }
-          if (p->IsIntervalStart() || p->IsIntervalSlot()) {
-            DEBUG_ASSERT(!interval_start);
-            // Start tracking an interval.
-            interval_start = p;
-            interval_start_off = off;
-            // See if we can advance interval_awaiting_clean_end to include the AwaitingCleanLength
-            // of this interval.
-            interval_awaiting_clean_end = ktl::max(interval_awaiting_clean_end,
-                                                   off + p->GetZeroIntervalAwaitingCleanLength());
-          }
-          if (p->IsIntervalEnd() || p->IsIntervalSlot()) {
-            // Can only transition the end if we saw the corresponding start.
-            if (interval_start) {
-              AssertHeld(lock_ref());
-              if (off < interval_awaiting_clean_end) {
-                // The entire interval is clean, so can remove it.
-                if (interval_start_off != off) {
-                  *interval_start = VmPageOrMarker::Empty();
-                  // Return the start slot as it could have come from an earlier page list node.
-                  // If the start slot came from the same node, we know that we still have a
-                  // non-empty slot in that node (the current interval end we're looking at), and so
-                  // the current node cannot be freed up, making it safe to continue traversal. The
-                  // interval start should always be released before the end, which is consistent
-                  // with forward traversal done by RemovePages.
-                  page_list_.ReturnEmptySlot(interval_start_off);
-                }
-                // This empty slot with be returned by the RemovePages iterator.
-                *p = VmPageOrMarker::Empty();
-              } else {
-                // The entire interval cannot be marked clean. Move forward the start by awaiting
-                // clean length, which will also set the AwaitingCleanLength for the resulting
-                // interval.
-                // Ignore any errors. Cleaning is best effort. If this fails, the interval will
-                // remain as is and get retried on another writeback attempt.
-                page_list_.ClipIntervalStart(interval_start_off,
-                                             interval_awaiting_clean_end - interval_start_off);
-              }
-              // Either way, the interval start tracking needs to be reset.
-              interval_start = nullptr;
+          // Exit out to handle any zero intervals.
+          if (p->IsIntervalZero()) {
+            if (!p->IsZeroIntervalDirty()) {
+              // The only other state we support is Untracked.
+              DEBUG_ASSERT(p->IsZeroIntervalUntracked());
+              return ZX_ERR_NEXT;
             }
+            // If we see an end interval then we have started processing somewhere inside a zero
+            // interval In this case there's nothing for us to do.
+            if (p->IsIntervalEnd()) {
+              return ZX_ERR_NEXT;
+            }
+            interval_offset = off;
+            return ZX_ERR_STOP;
           }
+          // This was either a marker (which is already clean), or a non-AwaitingClean page.
+          DEBUG_ASSERT(p->IsMarker() || !is_page_awaiting_clean(p->Page()));
           return ZX_ERR_NEXT;
-        }
-        // This was either a marker (which is already clean), or a non-AwaitingClean page.
-        DEBUG_ASSERT(p->IsMarker() || !is_page_awaiting_clean(p->Page()));
-        return ZX_ERR_NEXT;
-      },
-      start_offset, end_offset);
+        },
+        remove_start, end_offset);
+    // If no interval found then we are done.
+    if (interval_offset >= end_offset) {
+      break;
+    }
+    const VmPageOrMarker* interval = page_list_.Lookup(interval_offset);
+    DEBUG_ASSERT(interval && interval->IsIntervalZero() && interval->IsZeroIntervalDirty() &&
+                 !interval->IsIntervalEnd());
+    // First determine where this interval ends, which includes where we would resume iteration
+    // from.
+    uint64_t interval_end = interval_offset;
+    if (interval->IsIntervalStart()) {
+      page_list_.ForEveryPageInRange(
+          [&](const VmPageOrMarker* slot, uint64_t offset) {
+            DEBUG_ASSERT(slot->IsIntervalEnd());
+            interval_end = offset;
+            return ZX_ERR_STOP;
+          },
+          interval_offset + kPageSize, VmPageList::MAX_SIZE);
+      DEBUG_ASSERT(interval_end > interval_offset);
+    }
+    remove_start = interval_end + kPageSize;
 
-  // Handle the last partial interval.
-  if (interval_start) {
-    // Ignore any errors. Cleaning is best effort. If this fails, the interval will remain as is and
-    // get retried on another writeback attempt.
-    page_list_.ClipIntervalStart(
-        interval_start_off, ktl::min(interval_awaiting_clean_end, end_offset) - interval_start_off);
+    // See if we can advance interval_awaiting_clean_end to include the AwaitingCleanLength of this
+    // interval.
+    interval_awaiting_clean_end =
+        ktl::max(interval_awaiting_clean_end,
+                 interval_offset + interval->GetZeroIntervalAwaitingCleanLength());
+
+    // Handle interval slots separately for simplicity.
+    if (interval->IsIntervalSlot()) {
+      if (interval_offset < interval_awaiting_clean_end) {
+        page_list_.RemoveContent(interval_offset);
+      }
+      continue;
+    }
+    DEBUG_ASSERT(interval->IsIntervalStart());
+
+    if (interval_end <= end_offset && interval_awaiting_clean_end > interval_end) {
+      // The entire interval is clean (and within the range of our operation), so can remove it.
+      page_list_.RemoveContent(interval_offset);
+      page_list_.RemoveContent(interval_end);
+    } else {
+      // The entire interval cannot be marked clean. Move forward the start by awaiting
+      // clean length, which will also set the AwaitingCleanLength for the resulting
+      // interval.
+      const uint64_t clean_length =
+          ktl::min(interval_awaiting_clean_end, end_offset) - interval_offset;
+      // Ignore any errors. Cleaning is best effort. If this fails, the interval will remain as is
+      // and get retried on another writeback attempt.
+      page_list_.ClipIntervalStart(interval_offset, clean_length);
+    }
   }
 
   VMO_VALIDATION_ASSERT(DebugValidateZeroIntervalsLocked());
