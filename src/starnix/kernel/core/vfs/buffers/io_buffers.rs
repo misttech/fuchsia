@@ -93,8 +93,9 @@ pub trait Buffer: std::fmt::Debug {
 
     /// Calls the callback with each segment backing this buffer.
     ///
-    /// Each segment is safe to read from (if this is an `InputBuffer`) or write
-    /// to (if this is an `OutputBuffer`) without causing undefined behaviour.
+    /// Each segment can be read from (if this is an `InputBuffer`) or written to (if this is an
+    /// `OutputBuffer`) using either user copy routines or Zircon system calls.  If this is an
+    /// `OutputBuffer`, any damage caused by bad addresses will be restricted to user addresses.
     fn peek_each_segment(
         &mut self,
         callback: &mut PeekBufferSegmentsCallback<'_>,
@@ -102,12 +103,13 @@ pub trait Buffer: std::fmt::Debug {
 
     /// Returns all the segments backing this `Buffer`.
     ///
-    /// Note that we use `IovecsRef<'_>` so that while `IovecsRef` is held,
-    /// no other methods may be called on this `Buffer` since `IovecsRef`
-    /// holds onto the mutable reference for this `Buffer`.
+    /// Note that we use `IovecsRef<'_>` so that while `IovecsRef` is held, no other methods may be
+    /// called on this `Buffer` since `IovecsRef` holds onto the mutable reference for this
+    /// `Buffer`.
     ///
-    /// Each segment is safe to read from (if this is an `InputBuffer`) or write
-    /// to (if this is an `OutputBuffer`) without causing undefined behaviour.
+    /// NOTE: The returned segments can only be accessed using user copy routines or Zircon system
+    /// calls (see the comment above for `peek_each_segment). The pointers returned are not _valid_
+    /// for any non-zero sized access (see Rust's std::ptr documentation).
     fn peek_all_segments_as_iovecs(&mut self) -> Result<IovecsRef<'_, syncio::zxio::iovec>, Errno> {
         IovecsRef::new(self)
     }
@@ -119,8 +121,9 @@ pub trait Buffer: std::fmt::Debug {
 /// aspaces is disabled or the `Buffer` does not support I/O on its segments
 /// directly).
 ///
-/// Each segment is safe to read from (if `B` is an `InputBuffer`) or write
-/// to (if `B` is an `OutputBuffer`) without causing undefined behaviour.
+/// NOTE: The segments can only be accessed using user copy routines or Zircon system calls (see the
+/// comment above for `peek_each_segment). The pointers returned are not _valid_ for any non-zero
+/// sized access (see Rust's std::ptr documentation).
 pub fn with_iovec_segments<B: Buffer + ?Sized, I: Iovec, T>(
     data: &mut B,
     f: impl FnOnce(&mut [I]) -> Result<T, Errno>,

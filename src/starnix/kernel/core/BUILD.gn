@@ -326,6 +326,7 @@ _starnix_core_deps = [
   "//src/storage/ext4/lib/metadata",
   "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
   "//src/storage/lib/block_client/rust",
+  "//src/storage/lib/sync_io_client",
   "//src/storage/lib/vfs/rust:vfs",
   "//src/sys/time/timekeeper/pretty:time_pretty",
   "//third_party/rust_crates:anyhow",

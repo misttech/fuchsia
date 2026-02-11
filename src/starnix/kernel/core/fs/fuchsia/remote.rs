@@ -21,15 +21,14 @@ use crate::vfs::{
     fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, SynchronousProxy as _};
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
 use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
 use starnix_sync::{
-    FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
-    Unlocked,
+    FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
@@ -40,11 +39,11 @@ use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{
-    __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, ino_t, mode, off_t,
-    statfs,
+    __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, mode, off_t, statfs,
 };
-use std::ops::Range;
+use std::ops::ControlFlow;
 use std::sync::Arc;
+use sync_io_client::{RemoteIo, create_with_on_representation};
 use syncio::zxio::{
     ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, ZXIO_NODE_PROTOCOL_SYMLINK,
     ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET,
@@ -55,154 +54,11 @@ use syncio::{
     AllocateMode, XattrSetMode, Zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
     zxio_node_attributes_t,
 };
-use zerocopy::FromBytes;
 use zx::{Counter, HandleBased as _};
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder,
     fidl_fuchsia_unknown as funknown,
 };
-
-fn zxio_attr_from_fidl_attributes(in_attr: &fio::NodeAttributes2) -> zxio_node_attributes_t {
-    zxio_attr_from_fidl(&in_attr.mutable_attributes, &in_attr.immutable_attributes)
-}
-
-/// Converts FIDL attributes to `zxio_node_attributes_t`.
-///
-/// NOTE: This does not work for _all_ attributes e.g. fsverity options and root hash.
-fn zxio_attr_from_fidl(
-    mutable: &fio::MutableNodeAttributes,
-    immutable: &fio::ImmutableNodeAttributes,
-) -> zxio_node_attributes_t {
-    let mut out_attr = zxio_node_attributes_t::default();
-    if let Some(protocols) = immutable.protocols {
-        out_attr.protocols = protocols.bits();
-        out_attr.has.protocols = true;
-    }
-    if let Some(abilities) = immutable.abilities {
-        out_attr.abilities = abilities.bits();
-        out_attr.has.abilities = true;
-    }
-    if let Some(id) = immutable.id {
-        out_attr.id = id;
-        out_attr.has.id = true;
-    }
-    if let Some(content_size) = immutable.content_size {
-        out_attr.content_size = content_size;
-        out_attr.has.content_size = true;
-    }
-    if let Some(storage_size) = immutable.storage_size {
-        out_attr.storage_size = storage_size;
-        out_attr.has.storage_size = true;
-    }
-    if let Some(link_count) = immutable.link_count {
-        out_attr.link_count = link_count;
-        out_attr.has.link_count = true;
-    }
-    if let Some(creation_time) = mutable.creation_time {
-        out_attr.creation_time = creation_time;
-        out_attr.has.creation_time = true;
-    }
-    if let Some(modification_time) = mutable.modification_time {
-        out_attr.modification_time = modification_time;
-        out_attr.has.modification_time = true;
-    }
-    if let Some(access_time) = mutable.access_time {
-        out_attr.access_time = access_time;
-        out_attr.has.access_time = true;
-    }
-    if let Some(mode) = mutable.mode {
-        out_attr.mode = mode;
-        out_attr.has.mode = true;
-    }
-    if let Some(uid) = mutable.uid {
-        out_attr.uid = uid;
-        out_attr.has.uid = true;
-    }
-    if let Some(gid) = mutable.gid {
-        out_attr.gid = gid;
-        out_attr.has.gid = true;
-    }
-    if let Some(rdev) = mutable.rdev {
-        out_attr.rdev = rdev;
-        out_attr.has.rdev = true;
-    }
-    if let Some(change_time) = immutable.change_time {
-        out_attr.change_time = change_time;
-        out_attr.has.change_time = true;
-    }
-    if let Some(casefold) = mutable.casefold {
-        out_attr.casefold = casefold;
-        out_attr.has.casefold = true;
-    }
-    if let Some(verity_enabled) = immutable.verity_enabled {
-        out_attr.fsverity_enabled = verity_enabled;
-        out_attr.has.fsverity_enabled = true;
-    }
-    if let Some(wrapping_key_id) = mutable.wrapping_key_id {
-        out_attr.wrapping_key_id = wrapping_key_id;
-        out_attr.has.wrapping_key_id = true;
-    }
-    out_attr
-}
-
-fn create_with_on_representation(
-    proxy: fio::NodeSynchronousProxy,
-    assume_special: bool,
-) -> Result<(Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status> {
-    match proxy.wait_for_event(zx::MonotonicInstant::INFINITE) {
-        Ok(fio::NodeEvent::OnRepresentation { mut payload }) => {
-            let (ops, attrs): (Box<dyn FsNodeOps>, _) = match &mut payload {
-                fio::Representation::Node(info) => {
-                    (Box::new(RemoteNode::new(RemoteIo::new(proxy))), &mut info.attributes)
-                }
-                fio::Representation::Directory(info) => {
-                    (Box::new(RemoteNode::new(RemoteIo::new(proxy))), &mut info.attributes)
-                }
-                fio::Representation::File(info) => {
-                    if assume_special || is_special(info) {
-                        (
-                            Box::new(RemoteSpecialNode { io: RemoteIo::new(proxy) }),
-                            &mut info.attributes,
-                        )
-                    } else {
-                        (
-                            Box::new(RemoteNode::new(RemoteIo {
-                                proxy,
-                                stream: info
-                                    .stream
-                                    .take()
-                                    .unwrap_or_else(|| zx::NullableHandle::invalid().into()),
-                            })),
-                            &mut info.attributes,
-                        )
-                    }
-                }
-                fio::Representation::Symlink(info) => {
-                    let Some(target) = info.target.take() else {
-                        return Err(zx::Status::IO);
-                    };
-                    (
-                        Box::new(RemoteSymlink::new(RemoteIo::new(proxy), target)),
-                        &mut info.attributes,
-                    )
-                }
-                _ => return Err(zx::Status::NOT_SUPPORTED),
-            };
-            let (attrs, context) = attrs
-                .as_mut()
-                .map(|a| {
-                    (zxio_attr_from_fidl_attributes(a), a.mutable_attributes.selinux_context.take())
-                })
-                .unwrap_or_default();
-            Ok((ops, attrs, context))
-        }
-        Ok(_) => Err(zx::Status::IO),
-        Err(e) => Err(zx::Status::from_raw(match e {
-            fidl::Error::ClientChannelClosed { status, .. } => status.into_raw(),
-            _ => zx::sys::ZX_ERR_IO,
-        })),
-    }
-}
 
 fn is_special(file_info: &fio::FileInfo) -> bool {
     matches!(
@@ -219,471 +75,6 @@ fn is_special(file_info: &fio::FileInfo) -> bool {
             mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()
         }
     )
-}
-
-#[derive(Debug)]
-struct RemoteIo {
-    proxy: fio::NodeSynchronousProxy,
-    // NOTE: This can be invalid if the remote end did not return a stream in which case
-    // file I/O will use FIDL (slow).
-    stream: zx::Stream,
-}
-
-impl RemoteIo {
-    fn new(proxy: fio::NodeSynchronousProxy) -> Self {
-        Self { proxy, stream: zx::NullableHandle::invalid().into() }
-    }
-
-    fn fetch_remote_memory(&self, prot: ProtectionFlags) -> Result<Arc<MemoryObject>, Errno> {
-        let without_exec = self
-            .vmo_get(prot.to_vmar_flags() - zx::VmarFlags::PERM_EXECUTE)
-            .map_err(|status| from_status_like_fdio!(status))?;
-        let all_flags = if prot.contains(ProtectionFlags::EXEC) {
-            without_exec.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?
-        } else {
-            without_exec
-        };
-        Ok(Arc::new(MemoryObject::from(all_flags)))
-    }
-
-    fn cast_proxy<T: From<zx::Channel> + Into<zx::NullableHandle>>(&self) -> zx::Unowned<'_, T> {
-        zx::Unowned::new(self.proxy.as_channel())
-    }
-
-    fn attr_get(
-        &self,
-        query: fio::NodeAttributesQuery,
-    ) -> Result<(fio::MutableNodeAttributes, fio::ImmutableNodeAttributes), zx::Status> {
-        self.proxy
-            .get_attributes(query, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)
-    }
-
-    fn attr_get_zxio(
-        &self,
-        query: fio::NodeAttributesQuery,
-    ) -> Result<zxio_node_attributes_t, zx::Status> {
-        self.attr_get(query).map(|(m, i)| zxio_attr_from_fidl(&m, &i))
-    }
-
-    fn attr_set(&self, attributes: fio::MutableNodeAttributes) -> Result<(), zx::Status> {
-        self.proxy
-            .update_attributes(&attributes, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn open(
-        &self,
-        path: &str,
-        flags: fio::Flags,
-        create_attributes: Option<fio::MutableNodeAttributes>,
-        query: fio::NodeAttributesQuery,
-        assume_special: bool,
-    ) -> Result<(Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status>
-    {
-        let (client_end, server_end) = zx::Channel::create();
-        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
-        dir_proxy
-            .open(
-                path,
-                flags | fio::Flags::FLAG_SEND_REPRESENTATION,
-                &fio::Options {
-                    attributes: (!query.is_empty()).then_some(query),
-                    create_attributes,
-                    ..Default::default()
-                },
-                server_end,
-            )
-            .map_err(|_| zx::Status::IO)?;
-        create_with_on_representation(client_end.into(), assume_special)
-    }
-
-    fn read_at(&self, offset: u64, buffer: &mut dyn OutputBuffer) -> Result<usize, Errno> {
-        if self.stream.is_invalid_handle() {
-            let total = buffer.available();
-            let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
-            let mut total_read = 0;
-            while total_read < total {
-                let chunk_size = std::cmp::min((total - total_read) as u64, fio::MAX_TRANSFER_SIZE);
-                let result = file_proxy
-                    .read_at(chunk_size, offset + total_read as u64, zx::MonotonicInstant::INFINITE)
-                    .map_err(|_| errno!(EIO))?
-                    .map_err(|s| from_status_like_fdio!(zx::Status::from_raw(s)))?;
-                if result.is_empty() {
-                    break;
-                }
-                let len = buffer.write(&result)?;
-                total_read += len;
-                if (len as u64) < chunk_size {
-                    break;
-                }
-            }
-            Ok(total_read)
-        } else {
-            let read_bytes = with_iovec_segments(buffer, |iovecs| {
-                // SAFETY: The iovecs are valid for writing because they come from OutputBuffer.
-                unsafe {
-                    self.stream
-                        .readv_at(zx::StreamReadOptions::empty(), offset as u64, iovecs)
-                        .map_err(map_stream_error)
-                }
-            });
-
-            match read_bytes {
-                Some(actual) => {
-                    let actual = actual?;
-                    // SAFETY: we successfully read `actual` bytes directly to the user's buffer
-                    // segments.
-                    unsafe { buffer.advance(actual) }?;
-                    Ok(actual)
-                }
-                None => {
-                    // Perform the (slower) operation by using an intermediate buffer.
-                    let total = buffer.available();
-                    let mut bytes = vec![0u8; total];
-                    // Use readv_at with a single iovec for the fallback
-                    let mut iovec = zx::sys::zx_iovec_t {
-                        buffer: bytes.as_mut_ptr() as *mut _,
-                        capacity: bytes.len(),
-                    };
-                    // SAFETY: iovec points to valid mutable buffer.
-                    let actual = unsafe {
-                        self.stream.readv_at(
-                            zx::StreamReadOptions::empty(),
-                            offset as u64,
-                            std::slice::from_mut(&mut iovec),
-                        )
-                    }
-                    .map_err(map_stream_error)?;
-                    buffer.write_all(&bytes[0..actual])
-                }
-            }
-        }
-    }
-
-    fn write_at(&self, offset: u64, buffer: &mut dyn InputBuffer) -> Result<usize, Errno> {
-        if self.stream.is_invalid_handle() {
-            let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
-            let write_bytes =
-                with_iovec_segments(buffer, |iovecs: &mut [zx::sys::zx_iovec_t]| {
-                    let mut total_written = 0;
-                    for iovec in iovecs {
-                        if iovec.capacity == 0 {
-                            continue;
-                        }
-                        // SAFETY: iovec.buffer is assumed valid and we read from it.
-                        let buf =
-                            unsafe { std::slice::from_raw_parts(iovec.buffer, iovec.capacity) };
-                        for chunk in buf.chunks(fio::MAX_TRANSFER_SIZE as usize) {
-                            let actual = file_proxy
-                                .write_at(
-                                    chunk,
-                                    offset + total_written as u64,
-                                    zx::MonotonicInstant::INFINITE,
-                                )
-                                .map_err(|_| errno!(EIO))?
-                                .map_err(|status| {
-                                    from_status_like_fdio!(zx::Status::from_raw(status))
-                                })? as usize;
-                            total_written += actual;
-                            if actual < chunk.len() {
-                                return Ok(total_written);
-                            }
-                        }
-                    }
-                    Ok(total_written)
-                });
-
-            match write_bytes {
-                Some(actual) => {
-                    let actual = actual?;
-                    buffer.advance(actual)?;
-                    Ok(actual)
-                }
-                None => {
-                    // Perform the (slower) operation by using an intermediate buffer.
-                    let total = buffer.available();
-                    let mut total_written = 0;
-                    let tx_buf_size = std::cmp::min(fio::MAX_TRANSFER_SIZE as usize, total);
-                    let mut tx_buf = Vec::with_capacity(tx_buf_size);
-                    while total_written < total {
-                        tx_buf.clear();
-                        let len = buffer.peek(&mut tx_buf.spare_capacity_mut()[..tx_buf_size])?;
-                        // SAFETY: `peek` read `len` bytes into `tx_buf`.
-                        unsafe {
-                            tx_buf.set_len(len);
-                        }
-                        let actual = file_proxy
-                            .write_at(
-                                &tx_buf,
-                                offset + total_written as u64,
-                                zx::MonotonicInstant::INFINITE,
-                            )
-                            .map_err(|_| errno!(EIO))?
-                            .map_err(|status| {
-                                from_status_like_fdio!(zx::Status::from_raw(status))
-                            })?;
-                        total_written += actual as usize;
-                        buffer.advance(actual as usize)?;
-                        if actual < fio::MAX_TRANSFER_SIZE {
-                            break;
-                        }
-                    }
-                    Ok(total_written)
-                }
-            }
-        } else {
-            let write_bytes = with_iovec_segments(buffer, |iovecs| {
-                self.stream
-                    .writev_at(zx::StreamWriteOptions::empty(), offset as u64, &iovecs)
-                    .map_err(map_stream_error)
-            });
-
-            match write_bytes {
-                Some(actual) => {
-                    let actual = actual?;
-                    buffer.advance(actual)?;
-                    Ok(actual)
-                }
-                None => {
-                    // Perform the (slower) operation by using an intermediate buffer.
-                    let bytes = buffer.peek_all()?;
-                    // Use writev_at with a single iovec for the fallback
-                    let iovec =
-                        zx::sys::zx_iovec_t { buffer: bytes.as_ptr(), capacity: bytes.len() };
-                    let actual = self
-                        .stream
-                        .writev_at(zx::StreamWriteOptions::empty(), offset as u64, &[iovec])
-                        .map_err(map_stream_error)?;
-                    buffer.advance(actual)?;
-                    Ok(actual)
-                }
-            }
-        }
-    }
-
-    fn truncate(&self, length: u64) -> Result<(), zx::Status> {
-        self.cast_proxy::<fio::FileSynchronousProxy>()
-            .resize(length, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn vmo_get(&self, flags: zx::VmarFlags) -> Result<zx::Vmo, zx::Status> {
-        let mut fio_flags = fio::VmoFlags::empty();
-        if flags.contains(zx::VmarFlags::PERM_READ) {
-            fio_flags |= fio::VmoFlags::READ;
-        }
-        if flags.contains(zx::VmarFlags::PERM_WRITE) {
-            fio_flags |= fio::VmoFlags::WRITE;
-        }
-        if flags.contains(zx::VmarFlags::PERM_EXECUTE) {
-            fio_flags |= fio::VmoFlags::EXECUTE;
-        }
-        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
-        let vmo = file_proxy
-            .get_backing_memory(fio_flags, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(vmo)
-    }
-
-    fn sync(&self) -> Result<(), Errno> {
-        self.proxy
-            .sync(zx::MonotonicInstant::INFINITE)
-            .map_err(|_| errno!(EIO))?
-            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
-    }
-
-    fn close_and_update_access_time(self) -> Result<(), zx::Status> {
-        let _ = self.proxy.get_attributes(
-            fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
-            zx::MonotonicInstant::INFINITE_PAST,
-        );
-        Ok(())
-    }
-
-    fn clone_proxy(&self) -> Result<fio::NodeSynchronousProxy, zx::Status> {
-        let (client_end, server_end) = zx::Channel::create();
-        self.proxy.clone(server_end.into()).map_err(|_| zx::Status::IO)?;
-        Ok(client_end.into())
-    }
-
-    fn link_into(&self, target_dir: &Self, name: &str) -> Result<(), zx::Status> {
-        let target_dir_proxy = target_dir.cast_proxy::<fio::DirectorySynchronousProxy>();
-        let (status, token) = target_dir_proxy
-            .get_token(zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?;
-        zx::Status::ok(status)?;
-        let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
-
-        // Linkable::LinkInto is a separate protocol.
-        let linkable_proxy = self.cast_proxy::<fio::LinkableSynchronousProxy>();
-
-        linkable_proxy
-            .link_into(token.into(), name, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn unlink(&self, name: &str, flags: fio::UnlinkFlags) -> Result<(), zx::Status> {
-        let options = fio::UnlinkOptions { flags: Some(flags), ..Default::default() };
-        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
-        dir_proxy
-            .unlink(name, &options, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn rename(
-        &self,
-        old_path: &str,
-        new_directory: &Self,
-        new_path: &str,
-    ) -> Result<(), zx::Status> {
-        let new_dir_proxy = new_directory.cast_proxy::<fio::DirectorySynchronousProxy>();
-        let (status, token) =
-            new_dir_proxy.get_token(zx::MonotonicInstant::INFINITE).map_err(|_| zx::Status::IO)?;
-        zx::Status::ok(status)?;
-        let token = token.ok_or(zx::Status::NOT_SUPPORTED)?;
-        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
-        dir_proxy
-            .rename(old_path, token.into(), new_path, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn create_symlink(&self, name: &str, target: &[u8]) -> Result<RemoteIo, zx::Status> {
-        let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
-        let (client_end, server_end) = zx::Channel::create();
-        dir_proxy
-            .create_symlink(name, target, Some(server_end.into()), zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(RemoteIo::new(client_end.into()))
-    }
-
-    fn enable_verity(&self, descriptor: &zxio_fsverity_descriptor_t) -> Result<(), zx::Status> {
-        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
-        let options = fio::VerificationOptions {
-            hash_algorithm: Some(match descriptor.hash_algorithm {
-                1 => fio::HashAlgorithm::Sha256,
-                2 => fio::HashAlgorithm::Sha512,
-                _ => return Err(zx::Status::INVALID_ARGS),
-            }),
-            salt: Some(descriptor.salt[..descriptor.salt_size as usize].to_vec()),
-            ..Default::default()
-        };
-        file_proxy
-            .enable_verity(&options, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn allocate(&self, offset: u64, len: u64, mode: AllocateMode) -> Result<(), zx::Status> {
-        let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
-        let mut fio_mode = fio::AllocateMode::empty();
-        if mode.contains(AllocateMode::KEEP_SIZE) {
-            fio_mode |= fio::AllocateMode::KEEP_SIZE;
-        }
-        if mode.contains(AllocateMode::UNSHARE_RANGE) {
-            fio_mode |= fio::AllocateMode::UNSHARE_RANGE;
-        }
-        if mode.contains(AllocateMode::PUNCH_HOLE) {
-            fio_mode |= fio::AllocateMode::PUNCH_HOLE;
-        }
-        if mode.contains(AllocateMode::COLLAPSE_RANGE) {
-            fio_mode |= fio::AllocateMode::COLLAPSE_RANGE;
-        }
-        if mode.contains(AllocateMode::ZERO_RANGE) {
-            fio_mode |= fio::AllocateMode::ZERO_RANGE;
-        }
-        if mode.contains(AllocateMode::INSERT_RANGE) {
-            fio_mode |= fio::AllocateMode::INSERT_RANGE;
-        }
-        file_proxy
-            .allocate(offset, len, fio_mode, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn xattr_get(&self, name: &FsStr) -> Result<Vec<u8>, zx::Status> {
-        let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
-        let result = self
-            .proxy
-            .get_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        match result {
-            fio::ExtendedAttributeValue::Bytes(bytes) => Ok(bytes),
-            fio::ExtendedAttributeValue::Buffer(vmo) => {
-                let size = vmo.get_content_size()?;
-                vmo.read_to_vec(0, size)
-            }
-            _ => Err(zx::Status::NOT_SUPPORTED),
-        }
-    }
-
-    fn xattr_set(
-        &self,
-        name: &FsStr,
-        value: &FsStr,
-        mode: syncio::XattrSetMode,
-    ) -> Result<(), zx::Status> {
-        let val = fio::ExtendedAttributeValue::Bytes(value.to_vec());
-        let fidl_mode = match mode {
-            syncio::XattrSetMode::Set => fio::SetExtendedAttributeMode::Set,
-            syncio::XattrSetMode::Create => fio::SetExtendedAttributeMode::Create,
-            syncio::XattrSetMode::Replace => fio::SetExtendedAttributeMode::Replace,
-        };
-        self.proxy
-            .set_extended_attribute(name.as_bytes(), val, fidl_mode, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn xattr_remove(&self, name: &FsStr) -> Result<(), zx::Status> {
-        let name_str = std::str::from_utf8(name.as_ref()).map_err(|_| zx::Status::INVALID_ARGS)?;
-        self.proxy
-            .remove_extended_attribute(name_str.as_bytes(), zx::MonotonicInstant::INFINITE)
-            .map_err(|_| zx::Status::IO)?
-            .map_err(zx::Status::from_raw)?;
-        Ok(())
-    }
-
-    fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
-        let (client_end, server_end) = zx::Channel::create();
-        self.proxy.list_extended_attributes(server_end.into()).map_err(|_| zx::Status::IO)?;
-        let iterator = fio::ExtendedAttributeIteratorSynchronousProxy::new(client_end);
-        let mut all_attrs = vec![];
-        loop {
-            let (attributes, last) = iterator
-                .get_next(zx::MonotonicInstant::INFINITE)
-                .map_err(|_| zx::Status::IO)?
-                .map_err(zx::Status::from_raw)?;
-            all_attrs.extend(attributes);
-            if last {
-                break;
-            }
-        }
-        Ok(all_attrs)
-    }
-
-    fn to_handle(&self) -> Result<Option<zx::NullableHandle>, Errno> {
-        let (client_end, server_end) = zx::Channel::create();
-        self.proxy.clone(server_end.into()).map_err(|_| errno!(EIO))?;
-        Ok(Some(client_end.into_handle()))
-    }
 }
 
 pub fn new_remote_fs(
@@ -855,11 +246,39 @@ impl FileSystemOps for RemoteFs {
         old_parent
             .io
             .rename(get_name_str(old_name)?, &new_parent.io, get_name_str(new_name)?)
-            .map_err(|status| from_status_like_fdio!(status))
+            .map_err(map_sync_io_client_error)
     }
 
     fn manages_timestamps(&self) -> bool {
         true
+    }
+}
+
+struct Factory {
+    assume_special: bool,
+}
+
+impl sync_io_client::Factory for Factory {
+    type Result = Box<dyn FsNodeOps>;
+
+    fn create_node(self, io: RemoteIo) -> Self::Result {
+        Box::new(RemoteNode::new(io))
+    }
+
+    fn create_directory(self, io: RemoteIo) -> Self::Result {
+        Box::new(RemoteNode::new(io))
+    }
+
+    fn create_file(self, io: RemoteIo, info: &fio::FileInfo) -> Self::Result {
+        if self.assume_special || is_special(info) {
+            Box::new(RemoteSpecialNode { io })
+        } else {
+            Box::new(RemoteNode::new(io))
+        }
+    }
+
+    fn create_symlink(self, io: RemoteIo, target: Vec<u8>) -> Self::Result {
+        Box::new(RemoteSymlink::new(io, target))
     }
 }
 
@@ -901,8 +320,9 @@ impl RemoteFs {
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
 
-        let (remote_node, attrs, _) = create_with_on_representation(client_end.into(), false)
-            .map_err(|s| from_status_like_fdio!(s))?;
+        let (remote_node, attrs, _) =
+            create_with_on_representation(client_end.into(), Factory { assume_special: false })
+                .map_err(map_sync_io_client_error)?;
         Ok((
             RemoteFs { use_remote_ids, root_proxy, root_rights },
             remote_node,
@@ -1044,23 +464,23 @@ fn remote_file_attrs_and_ops(
                 let file_proxy = fio::FileSynchronousProxy::from(queryable.into_channel());
                 let info =
                     file_proxy.describe(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
-                let io = RemoteIo {
-                    proxy: file_proxy.into_channel().into(),
-                    stream: info.stream.unwrap_or_else(|| zx::NullableHandle::invalid().into()),
-                };
+                let io = RemoteIo::with_stream(
+                    file_proxy.into_channel().into(),
+                    info.stream.unwrap_or_else(|| zx::NullableHandle::invalid().into()),
+                );
                 let attr = io
                     .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
-                    .map_err(|status| from_status_like_fdio!(status))?;
+                    .map_err(map_sync_io_client_error)?;
                 return Ok((attr, Box::new(AnonymousRemoteFileObject::new(io))));
             }
             DIRECTORY_PROTOCOL => {
                 let io = RemoteIo::new(queryable.into_channel().into());
                 let attr = io
                     .attr_get_zxio(MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES)
-                    .map_err(|status| from_status_like_fdio!(status))?;
+                    .map_err(map_sync_io_client_error)?;
                 return Ok((
                     attr,
-                    Box::new(RemoteDirectoryObject::new(io.proxy.into_channel().into())),
+                    Box::new(RemoteDirectoryObject::new(io.into_proxy().into_channel().into())),
                 ));
             }
             _ => {
@@ -1130,7 +550,7 @@ fn fetch_and_refresh_info_impl<'a>(
     if info.read().pending_time_access_update {
         query |= fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE;
     }
-    let attrs = io.attr_get_zxio(query).map_err(|status| from_status_like_fdio!(status))?;
+    let attrs = io.attr_get_zxio(query).map_err(map_sync_io_client_error)?;
     let mut info = info.write();
     update_info_from_attrs(&mut info, &attrs);
     info.pending_time_access_update = false;
@@ -1260,7 +680,7 @@ impl XattrStorage for RemoteIo {
     fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
         self.xattr_list()
             .map(|attrs| attrs.into_iter().map(FsString::new).collect::<Vec<_>>())
-            .map_err(|status| from_status_like_fdio!(status))
+            .map_err(map_sync_io_client_error)
     }
 }
 
@@ -1296,7 +716,7 @@ impl FsNodeOps for RemoteNode {
                     self.io
                         .clone_proxy()
                         .map(|p| p.into_channel().into())
-                        .map_err(|status| from_status_like_fdio!(status))?,
+                        .map_err(map_sync_io_client_error)?,
                 )));
             }
         }
@@ -1347,7 +767,7 @@ impl FsNodeOps for RemoteNode {
                     ..Default::default()
                 }),
                 fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                !mode.is_reg(),
+                Factory { assume_special: !mode.is_reg() },
             )
             .map_err(|status| from_status_like_fdio!(status, name))?;
 
@@ -1393,7 +813,7 @@ impl FsNodeOps for RemoteNode {
                     ..Default::default()
                 }),
                 fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                false,
+                Factory { assume_special: false },
             )
             .map_err(|status| from_status_like_fdio!(status, name))?;
         node_id = attrs.id;
@@ -1438,7 +858,7 @@ impl FsNodeOps for RemoteNode {
         }
         let (ops, attrs, context) = self
             .io
-            .open(name, fs_ops.root_rights, None, query, false)
+            .open(name, fs_ops.root_rights, None, query, Factory { assume_special: false })
             .map_err(|status| from_status_like_fdio!(status, name))?;
         let node_id = if fs_ops.use_remote_ids {
             if attrs.id == fio::INO_UNKNOWN {
@@ -1671,7 +1091,7 @@ impl FsNodeOps for RemoteNode {
                     ..Default::default()
                 }),
                 fio::NodeAttributesQuery::ID,
-                false,
+                Factory { assume_special: false },
             )
             .map_err(|status| from_status_like_fdio!(status))?;
         node_id = attrs.id;
@@ -1797,139 +1217,11 @@ impl FsNodeOps for RemoteSpecialNode {
     }
 }
 
-#[derive(Default)]
-enum Entry {
-    // Indicates no more entries.
-    #[default]
-    None,
-
-    Some {
-        ino: ino_t,
-        entry_type: DirectoryEntryType,
-        name: Range<usize>,
-    },
-
-    // Indicates dot-dot should be synthesized.
-    DotDot,
-}
-
-impl Entry {
-    fn take(&mut self) -> Entry {
-        std::mem::replace(self, Entry::None)
-    }
-}
-
-struct RemoteDirectoryObject {
-    proxy: fio::DirectorySynchronousProxy,
-    state: Mutex<State>,
-}
-
-#[derive(Default)]
-struct State {
-    /// Buffer contains the last batch of entries read from the remote end.
-    buffer: Vec<u8>,
-
-    /// Position in the buffer for the next entry.
-    offset: usize,
-
-    /// If the last attempt to write to the sink failed, this contains the entry that is pending to
-    /// be added. This is also used to synthesize dot-dot.
-    pending_entry: Entry,
-}
-
-impl State {
-    fn name(&self, range: Range<usize>) -> &FsStr {
-        FsStr::new(&self.buffer[range])
-    }
-
-    /// Returns the next dir entry. If no more entries are found, returns None.  Returns an error if
-    /// the iterator fails.
-    fn next(&mut self, proxy: &fio::DirectorySynchronousProxy) -> Result<Entry, Errno> {
-        let mut next_dirent = || {
-            if self.offset >= self.buffer.len() {
-                match proxy.read_dirents(fio::MAX_BUF, zx::MonotonicInstant::INFINITE) {
-                    Ok((status, dirents)) => {
-                        zx::Status::ok(status).map_err(|s| from_status_like_fdio!(s))?;
-                        if dirents.is_empty() {
-                            return Ok(None);
-                        }
-                        self.buffer = dirents;
-                        self.offset = 0;
-                    }
-                    Err(_) => return error!(EIO),
-                }
-            }
-
-            #[repr(C, packed)]
-            #[derive(FromBytes)]
-            struct DirectoryEntry {
-                ino: u64,
-                name_len: u8,
-                entry_type: u8,
-            }
-
-            let Some((ino, name, entry_type)) =
-                DirectoryEntry::read_from_prefix(&self.buffer[self.offset..]).ok().and_then(
-                    |(DirectoryEntry { ino, name_len, entry_type }, remainder)| {
-                        let name_len = name_len as usize;
-                        let name_start = self.offset + std::mem::size_of::<DirectoryEntry>();
-                        (remainder.len() >= name_len).then_some((
-                            ino,
-                            name_start..name_start + name_len,
-                            entry_type,
-                        ))
-                    },
-                )
-            else {
-                // Truncated entry.
-                return Ok(None);
-            };
-
-            self.offset = name.end;
-
-            Ok(Some(Entry::Some {
-                ino,
-                entry_type: match entry_type {
-                    4 => DirectoryEntryType::DIR,
-                    8 => DirectoryEntryType::REG,
-                    10 => DirectoryEntryType::LNK,
-                    _ => DirectoryEntryType::UNKNOWN,
-                },
-                name,
-            }))
-        };
-
-        let mut next = self.pending_entry.take();
-        if let Entry::None = next {
-            next = next_dirent()?.unwrap_or(Entry::None);
-        }
-        // We only want to synthesize .. if . exists because the . and .. entries get removed if the
-        // directory is unlinked, so if the remote filesystem has removed ., we know to omit the
-        // .. entry.
-        match &next {
-            Entry::Some { name, .. } if self.name(name.clone()) == "." => {
-                self.pending_entry = Entry::DotDot;
-            }
-            _ => {}
-        }
-        Ok(next)
-    }
-}
+struct RemoteDirectoryObject(sync_io_client::RemoteDirectory);
 
 impl RemoteDirectoryObject {
     fn new(proxy: fio::DirectorySynchronousProxy) -> Self {
-        Self { proxy, state: Mutex::default() }
-    }
-
-    fn rewind(&self) -> Result<(), zx::Status> {
-        let mut state = self.state.lock();
-        state.pending_entry = Entry::None;
-        let status =
-            self.proxy.rewind(zx::MonotonicInstant::INFINITE).map_err(|_| zx::Status::IO)?;
-        zx::Status::ok(status)?;
-        state.buffer.clear();
-        state.offset = 0;
-        Ok(())
+        Self(sync_io_client::RemoteDirectory::new(proxy))
     }
 }
 
@@ -1944,34 +1236,10 @@ impl FileOps for RemoteDirectoryObject {
         current_offset: off_t,
         target: SeekTarget,
     ) -> Result<off_t, Errno> {
-        let new_offset = default_seek(current_offset, target, || error!(EINVAL))?;
-        let mut iterator_position = current_offset;
-
-        if new_offset < iterator_position {
-            // Our iterator only goes forward, so reset it here.  Note: we *must* rewind it rather
-            // than just create a new iterator because the remote end maintains the offset.
-            self.rewind().map_err(|status| from_status_like_fdio!(status))?;
-            iterator_position = 0;
-        }
-
-        // Advance the iterator to catch up with the offset.
-        let mut state = self.state.lock();
-        for i in iterator_position..new_offset {
-            match state.next(&self.proxy) {
-                Ok(Entry::Some { .. } | Entry::DotDot) => {}
-                Ok(Entry::None) => break, // No more entries.
-                Err(_) => {
-                    // In order to keep the offset and the iterator in sync, set the new offset
-                    // to be as far as we could get.
-                    // Note that failing the seek here would also cause the iterator and the
-                    // offset to not be in sync, because the iterator has already moved from
-                    // where it was.
-                    return Ok(i);
-                }
-            }
-        }
-
-        Ok(new_offset)
+        Ok(self
+            .0
+            .seek(default_seek(current_offset, target, || error!(EINVAL))? as u64)
+            .map_err(map_sync_io_client_error)? as i64)
     }
 
     fn readdir(
@@ -1981,36 +1249,37 @@ impl FileOps for RemoteDirectoryObject {
         _current_task: &CurrentTask,
         sink: &mut dyn DirentSink,
     ) -> Result<(), Errno> {
-        let mut state = self.state.lock();
-        loop {
-            let entry = state.next(&self.proxy)?;
-            if let Err(e) = match &entry {
-                Entry::Some { ino, entry_type, name } => {
-                    sink.add(*ino, sink.offset() + 1, *entry_type, state.name(name.clone()))
-                }
-                Entry::DotDot => {
-                    let inode_num = if let Some(parent) = file.name.parent_within_mount() {
+        match self
+            .0
+            .readdir(|mut inode_num, entry_type, name| {
+                if name == b".." {
+                    inode_num = if let Some(parent) = file.name.parent_within_mount() {
                         parent.node.ino
                     } else {
                         // For the root .. should have the same inode number as .
                         file.name.entry.node.ino
                     };
-                    sink.add(inode_num, sink.offset() + 1, DirectoryEntryType::DIR, "..".into())
                 }
-                Entry::None => break,
-            } {
-                state.pending_entry = entry;
-                return Err(e);
-            }
+                let entry_type = match entry_type {
+                    fio::DirentType::Directory => DirectoryEntryType::DIR,
+                    fio::DirentType::File => DirectoryEntryType::REG,
+                    fio::DirentType::Symlink => DirectoryEntryType::LNK,
+                    _ => DirectoryEntryType::UNKNOWN,
+                };
+                match sink.add(inode_num, sink.offset() + 1, entry_type, name.into()) {
+                    Ok(()) => ControlFlow::Continue(()),
+                    Err(e) => ControlFlow::Break(e),
+                }
+            })
+            .map_err(map_sync_io_client_error)?
+        {
+            None => Ok(()),
+            Some(e) => Err(e),
         }
-        Ok(())
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        self.proxy
-            .sync(zx::MonotonicInstant::INFINITE)
-            .map_err(|_| errno!(EIO))?
-            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
+        self.0.sync().map_err(map_sync_error)
     }
 
     fn to_handle(
@@ -2018,9 +1287,10 @@ impl FileOps for RemoteDirectoryObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        let (client_end, server_end) = zx::Channel::create();
-        self.proxy.clone(server_end.into()).map_err(|_| errno!(EIO))?;
-        Ok(Some(client_end.into_handle()))
+        self.0
+            .clone_proxy()
+            .map_err(map_sync_io_client_error)
+            .map(|p| Some(p.into_channel().into()))
     }
 }
 
@@ -2043,6 +1313,78 @@ impl RemoteFileObject {
     }
 }
 
+trait RemoteIoExt {
+    fn read_to_output_buffer(
+        &self,
+        offset: u64,
+        buffer: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno>;
+    fn write_from_input_buffer(
+        &self,
+        offset: u64,
+        buffer: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno>;
+    fn fetch_remote_memory(&self, prot: ProtectionFlags) -> Result<Arc<MemoryObject>, Errno>;
+}
+
+impl RemoteIoExt for RemoteIo {
+    fn read_to_output_buffer(
+        &self,
+        offset: u64,
+        buffer: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        if self.supports_vectored()
+            && let Some(actual) = with_iovec_segments(buffer, |iovecs| {
+                // SAFETY: The iovecs are known to point to userspace, so any damage we do here is
+                // limited to userspace.  Zircon will catch faults and return an error.
+                unsafe { self.readv(offset, iovecs).map_err(map_stream_error) }
+            })
+        {
+            let actual = actual?;
+            // SAFETY: we successfully read `actual` bytes directly to the user's buffer
+            // segments.
+            unsafe { buffer.advance(actual) }?;
+            Ok(actual)
+        } else {
+            self.read(
+                offset,
+                buffer.available(),
+                |data| buffer.write(&data),
+                map_sync_io_client_error,
+            )
+        }
+    }
+
+    fn write_from_input_buffer(
+        &self,
+        offset: u64,
+        buffer: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        let actual = if self.supports_vectored()
+            && let Some(actual) = with_iovec_segments(buffer, |iovecs| {
+                self.writev(offset, iovecs).map_err(map_stream_error)
+            }) {
+            actual?
+        } else {
+            self.write(offset as u64, &buffer.peek_all()?).map_err(map_sync_io_client_error)?
+        };
+        buffer.advance(actual)?;
+        Ok(actual)
+    }
+
+    fn fetch_remote_memory(&self, prot: ProtectionFlags) -> Result<Arc<MemoryObject>, Errno> {
+        let without_exec = self
+            .vmo_get(prot.to_vmar_flags() - zx::VmarFlags::PERM_EXECUTE)
+            .map_err(|status| from_status_like_fdio!(status))?;
+        let all_flags = if prot.contains(ProtectionFlags::EXEC) {
+            without_exec.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?
+        } else {
+            without_exec
+        };
+        Ok(Arc::new(MemoryObject::from(all_flags)))
+    }
+}
+
 impl FileOps for RemoteFileObject {
     fileops_impl_seekable!();
 
@@ -2054,7 +1396,7 @@ impl FileOps for RemoteFileObject {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        Self::io(file).read_at(offset as u64, data)
+        Self::io(file).read_to_output_buffer(offset as u64, data)
     }
 
     fn write(
@@ -2065,7 +1407,7 @@ impl FileOps for RemoteFileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        Self::io(file).write_at(offset as u64, data)
+        Self::io(file).write_from_input_buffer(offset as u64, data)
     }
 
     fn get_memory(
@@ -2097,11 +1439,14 @@ impl FileOps for RemoteFileObject {
         file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        Self::io(file).to_handle()
+        Self::io(file)
+            .clone_proxy()
+            .map_err(map_sync_io_client_error)
+            .map(|p| Some(p.into_channel().into()))
     }
 
     fn sync(&self, file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        Self::io(file).sync()
+        Self::io(file).sync().map_err(map_sync_io_client_error)
     }
 
     fn ioctl(
@@ -2144,7 +1489,7 @@ impl FileOps for AnonymousRemoteFileObject {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        self.io.read_at(offset as u64, data)
+        self.io.read_to_output_buffer(offset as u64, data)
     }
 
     fn write(
@@ -2155,7 +1500,7 @@ impl FileOps for AnonymousRemoteFileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        self.io.write_at(offset as u64, data)
+        self.io.write_from_input_buffer(offset as u64, data)
     }
 
     fn get_memory(
@@ -2185,11 +1530,14 @@ impl FileOps for AnonymousRemoteFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        self.io.to_handle()
+        self.io
+            .clone_proxy()
+            .map_err(map_sync_io_client_error)
+            .map(|p| Some(p.into_channel().into()))
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        self.io.sync()
+        self.io.sync().map_err(map_sync_io_client_error)
     }
 
     fn ioctl(
@@ -2337,10 +1685,7 @@ impl FileOps for RemoteZxioFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        self.zxio
-            .clone_handle()
-            .map(|h| Some(h.into()))
-            .map_err(|status| from_status_like_fdio!(status))
+        self.zxio.clone_handle().map(Some).map_err(|status| from_status_like_fdio!(status))
     }
 
     fn sync(&self, _file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
@@ -2498,6 +1843,11 @@ fn map_stream_error(status: zx::Status) -> Errno {
     }
 }
 
+#[track_caller]
+fn map_sync_io_client_error(status: zx::Status) -> Errno {
+    from_status_like_fdio!(status)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -2514,6 +1864,7 @@ mod test {
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
     use starnix_uapi::file_mode::{AccessCheck, mode};
+    use starnix_uapi::ino_t;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use zx::HandleBased;
@@ -3877,7 +3228,7 @@ mod test {
     }
 
     #[::fuchsia::test]
-    async fn test_read_at_chunking() {
+    async fn test_read_chunking() {
         use futures::StreamExt;
         let (client, mut stream) = create_request_stream::<fio::FileMarker>();
         let content = vec![0xAB; (fio::MAX_TRANSFER_SIZE + 100) as usize];
@@ -3904,14 +3255,17 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let mut buffer = VecOutputBuffer::new(content.len());
-            assert_eq!(io.read_at(0, &mut buffer).expect("read_at failed"), content.len());
+            assert_eq!(
+                io.read_to_output_buffer(0, &mut buffer).expect("read_at failed"),
+                content.len()
+            );
             assert_eq!(buffer.data(), content.as_slice());
         })
         .await;
     }
 
     #[::fuchsia::test]
-    async fn test_write_at_chunking() {
+    async fn test_write_chunking() {
         let (client, mut stream) = create_request_stream::<fio::FileMarker>();
         let content = vec![0xCD; (fio::MAX_TRANSFER_SIZE + 100) as usize];
         let content2 = content.clone();
@@ -3934,101 +3288,13 @@ mod test {
         fasync::unblock(move || {
             let io = RemoteIo::new(client.into_channel().into());
             let mut buffer = VecInputBuffer::new(&content);
-            assert_eq!(io.write_at(0, &mut buffer).expect("write_at failed"), content.len());
+            assert_eq!(
+                io.write_from_input_buffer(0, &mut buffer).expect("write_at failed"),
+                content.len()
+            );
         })
         .await;
 
         server_task.await;
-    }
-
-    #[::fuchsia::test]
-    async fn test_large_directory() {
-        use futures::StreamExt;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let (client, mut stream) = create_request_stream::<fio::DirectoryMarker>();
-        let num_entries = 2000;
-        let request_count = Arc::new(AtomicUsize::new(0));
-        let request_count_clone = request_count.clone();
-
-        fasync::Task::spawn(async move {
-            let mut sent_count = 0;
-            while let Some(Ok(request)) = stream.next().await {
-                match request {
-                    fio::DirectoryRequest::Query { responder } => {
-                        let _ = responder.send(fio::DirectoryMarker::PROTOCOL_NAME.as_bytes());
-                    }
-                    fio::DirectoryRequest::GetAttributes { query: _, responder } => {
-                        let mut mutable_attributes = fio::MutableNodeAttributes {
-                            mode: Some(mode!(IFDIR, 0o777).bits()),
-                            ..Default::default()
-                        };
-                        let mut immutable_attributes = fio::ImmutableNodeAttributes {
-                            protocols: Some(fio::NodeProtocolKinds::DIRECTORY),
-                            ..Default::default()
-                        };
-                        let _ = responder
-                            .send(Ok((&mut mutable_attributes, &mut immutable_attributes)));
-                    }
-                    fio::DirectoryRequest::ReadDirents { max_bytes, responder } => {
-                        request_count_clone.fetch_add(1, Ordering::Relaxed);
-                        let mut buffer = Vec::new();
-                        while sent_count < num_entries {
-                            let name = format!("file_{}", sent_count);
-                            let name_bytes = name.as_bytes();
-                            let entry_size = 10 + name_bytes.len();
-                            if buffer.len() + entry_size > max_bytes as usize {
-                                break;
-                            }
-                            buffer.extend_from_slice(&(sent_count as u64 + 1).to_le_bytes());
-                            buffer.push(name_bytes.len() as u8);
-                            buffer.push(fio::DirentType::File.into_primitive());
-                            buffer.extend_from_slice(name_bytes);
-                            sent_count += 1;
-                        }
-                        let _ = responder.send(0, &buffer);
-                    }
-                    fio::DirectoryRequest::Rewind { responder } => {
-                        sent_count = 0;
-                        let _ = responder.send(0);
-                    }
-                    fio::DirectoryRequest::Close { responder } => {
-                        let _ = responder.send(Ok(()));
-                    }
-                    _ => panic!("Unexpected request: {:?}", request),
-                }
-            }
-        })
-        .detach();
-
-        spawn_kernel_and_run(async move |locked, current_task| {
-            let file = new_remote_file(locked, &current_task, client.into(), OpenFlags::RDONLY)
-                .expect("new_remote_file");
-            #[derive(Default)]
-            struct Sink {
-                count: usize,
-                offset: off_t,
-            }
-            impl DirentSink for Sink {
-                fn add(
-                    &mut self,
-                    _inode_num: ino_t,
-                    offset: off_t,
-                    _entry_type: DirectoryEntryType,
-                    _name: &FsStr,
-                ) -> Result<(), Errno> {
-                    self.count += 1;
-                    self.offset = offset;
-                    Ok(())
-                }
-                fn offset(&self) -> off_t {
-                    self.offset
-                }
-            }
-            let mut sink = Sink::default();
-            file.readdir(locked, &current_task, &mut sink).expect("readdir");
-            assert_eq!(sink.count, num_entries);
-            assert!(request_count.load(Ordering::Relaxed) > 1);
-        })
-        .await;
     }
 }
