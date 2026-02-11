@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "operation",
+    srcs = [
+        "operation.cc",
+        "unbuffered_operations_builder.cc",
+    ],
+    hdrs = [
+        "include/storage/operation/operation.h",
+        "include/storage/operation/unbuffered_operation.h",
+        "include/storage/operation/unbuffered_operations_builder.h",
+    ],
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//zircon/system/ulib/range",
+        "//zircon/third_party/ulib/safemath",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/fit",
+        "@fuchsia_sdk//pkg/stdcompat",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)

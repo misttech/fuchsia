@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "buffer",
+    srcs = [
+        "array_buffer.cc",
+        "block_buffer.cc",
+        "blocking_ring_buffer.cc",
+        "owned_vmoid.cc",
+        "resizeable_vmo_buffer.cc",
+        "ring_buffer.cc",
+        "vmo_buffer.cc",
+    ],
+    hdrs = [
+        "include/storage/buffer/array_buffer.h",
+        "include/storage/buffer/block_buffer.h",
+        "include/storage/buffer/block_buffer_view.h",
+        "include/storage/buffer/blocking_ring_buffer.h",
+        "include/storage/buffer/owned_vmoid.h",
+        "include/storage/buffer/resizeable_vmo_buffer.h",
+        "include/storage/buffer/ring_buffer.h",
+        "include/storage/buffer/vmo_buffer.h",
+        "include/storage/buffer/vmoid_registry.h",
+    ],
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//zircon/system/ulib/fzl",
+        "//zircon/system/ulib/storage/operation",
+        "//zircon/third_party/ulib/safemath",
+        "@fuchsia_sdk//fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "@fuchsia_sdk//pkg/fdio",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
