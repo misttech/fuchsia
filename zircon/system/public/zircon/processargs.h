@@ -166,6 +166,14 @@ struct zx_proc_args {
 #define PA_ESCROWED_DICTIONARY 0x3Cu
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+// A |fuchsia.logger.LogSink| handle containing the default channel to use for logging.
+//
+// TODO(https://fxbug.dev/442638676): When we are ready to rollout the LogSink startup handle in
+// the public SDK, change HEAD to NEXT.
+#define PA_LOG_SINK 0x3Du
+#endif
+
 // Used by devmgr and devhosts
 #define PA_RESOURCE 0x3Fu
 

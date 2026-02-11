@@ -177,7 +177,7 @@
   "include/zircon/listnode.h": "76c2d6a27ec627f53ad11afd2eb307ae",
   "include/zircon/lookup.h": "0b69dd13a6b5309e2065dcfdeefdb4a7",
   "include/zircon/process.h": "a2eb011c86cc251ad31c853f9a6d7e8f",
-  "include/zircon/processargs.h": "d4ad2a2658746146c4ca4e776fed71c5",
+  "include/zircon/processargs.h": "5812da4589962c5eb95ba6990821e28f",
   "include/zircon/rights.h": "9355d5fb62b9f3b8b752061b444df6d0",
   "include/zircon/sanitizer.h": "386a5bffe1773abab467a4eb2986bbfa",
   "include/zircon/startup.h": "2fab28734a0b3992640c137b6a081307",

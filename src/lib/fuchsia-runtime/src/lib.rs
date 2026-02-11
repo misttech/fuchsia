@@ -186,6 +186,11 @@ pub enum HandleType {
     /// Equivalent to PA_SYSTEM_RESOURCE.
     SystemResource = 0x54,
 
+    /// A `fuchsia.logger.LogSink` channel handle.
+    ///
+    /// Equivalent to PA_LOG_SINK.
+    LogSink = 0x60,
+
     /// A handle type with user-defined meaning.
     ///
     /// Equivalent to PA_USER0.
