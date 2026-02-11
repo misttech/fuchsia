@@ -22,7 +22,8 @@ ContinuousAttributionTracker& ContinuousAttributionTracker::operator=(
 }
 
 uint32_t ContinuousAttributionTracker::FetchHwmAndReset() {
-  DEBUG_ASSERT(hwm_slots_ >= current_slots_);
+  // TODO(ethanws): Assert that the high-water mark slots are greater than the current slots when
+  // all changes to populated slots are reported to the ContinuousAttributionTracker.
   const uint32_t ret = hwm_slots_;
   hwm_slots_ = current_slots_;  // reset
   return ret;

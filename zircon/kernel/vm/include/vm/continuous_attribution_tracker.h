@@ -38,9 +38,9 @@ class ContinuousAttributionTracker final {
   void Increment(uint32_t by) {
     DEBUG_ASSERT(by > 0);
     [[maybe_unused]] const bool did_overflow = add_overflow(current_slots_, by, &current_slots_);
-    // Overflow would require the page list to be tracking 2 ^ 32 - 1 populated slots, which
-    // suggests a system with terabytes of physical memory. This is not currently supported.
-    DEBUG_ASSERT(!did_overflow);
+    // TODO(ethanws): Assert this did not overflow when all changes to the populated slots count are
+    // reported to the ContinuousAttributionTracker.
+    ktl::ignore = did_overflow;
     hwm_slots_ = ktl::max(hwm_slots_, current_slots_);
   }
 
@@ -51,7 +51,8 @@ class ContinuousAttributionTracker final {
     // TODO(ethanws): Assert this did not overflow when all changes to the populated slots count are
     // reported to the ContinuousAttributionTracker.
     ktl::ignore = did_overflow;
-    DEBUG_ASSERT(hwm_slots_ >= current_slots_);
+    // TODO(ethanws): Assert that the high-water mark slots are greater than the current slots when
+    // all changes to populated slots are reported to the ContinuousAttributionTracker.
   }
 
  private:
