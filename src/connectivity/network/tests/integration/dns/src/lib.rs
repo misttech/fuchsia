@@ -24,6 +24,7 @@ use futures::future::{self, FusedFuture, Future, FutureExt as _};
 use futures::stream::{self, StreamExt as _};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _};
 use itertools::Itertools as _;
+use log::info;
 use net_declare::{fidl_ip, fidl_ip_v4, fidl_ip_v6, fidl_subnet, std_ip_v6, std_socket_addr};
 use net_types::ip::{self as net_types_ip, Ip, Ipv4};
 use netemul::{RealmTcpListener as _, RealmUdpSocket as _};
@@ -287,6 +288,7 @@ async fn discovered_ndp_dns<M: Manager, N: Netstack>(name: &str, check_type: Dns
         },
         |_, network, _, client_realm, _sandbox| {
             async move {
+                info!("Observed interface up, beginning test");
                 // Send a Router Advertisement to an EP on the same network with DNS server
                 // configurations.
                 let fake_ep =
@@ -298,6 +300,7 @@ async fn discovered_ndp_dns<M: Manager, N: Netstack>(name: &str, check_type: Dns
                 send_ra_with_router_lifetime(&fake_ep, 0, &options, ipv6_consts::LINK_LOCAL_ADDR)
                     .await
                     .expect("failed to send router advertisement");
+                info!("Sent Router Advertisement");
 
                 // The list of servers we expect to observe via NDP.
                 let expect = HashSet::from([fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {

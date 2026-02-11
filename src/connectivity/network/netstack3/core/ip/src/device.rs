@@ -1471,6 +1471,7 @@ pub fn join_ip_multicast_with_config<
 ) {
     match core_ctx.gmp_join_group(bindings_ctx, device_id, multicast_addr) {
         GroupJoinResult::Joined(()) => {
+            debug!("joined IP Multicast Group {multicast_addr} on device {device_id:?}");
             core_ctx.join_link_multicast_group(bindings_ctx, device_id, multicast_addr)
         }
         GroupJoinResult::AlreadyMember => {}
