@@ -139,6 +139,14 @@ impl InputDeviceStatus {
         self.events_generated.add(1);
         self.last_generated_timestamp_ns.set(event.event_time.into_nanos().try_into().unwrap());
     }
+
+    pub fn count_generated_events(&self, events: &Vec<InputEvent>) {
+        self.events_generated.add(events.len() as u64);
+        if let Some(last_event) = events.last() {
+            self.last_generated_timestamp_ns
+                .set(last_event.event_time.into_nanos().try_into().unwrap());
+        }
+    }
 }
 
 /// An [`InputEvent`] holds information about an input event and the device that produced the event.
@@ -309,7 +317,7 @@ pub trait InputDeviceBinding: Send {
     fn get_device_descriptor(&self) -> InputDeviceDescriptor;
 
     /// Returns the input event stream's sender.
-    fn input_event_sender(&self) -> UnboundedSender<InputEvent>;
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>>;
 }
 
 /// Initializes the input report stream for the device bound to `device_proxy`.
@@ -329,7 +337,7 @@ pub trait InputDeviceBinding: Send {
 pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     device_proxy: fidl_input_report::InputDeviceProxy,
     device_descriptor: InputDeviceDescriptor,
-    mut event_sender: UnboundedSender<InputEvent>,
+    mut event_sender: UnboundedSender<Vec<InputEvent>>,
     inspect_status: InputDeviceStatus,
     metrics_logger: metrics::MetricsLogger,
     mut process_reports: InputDeviceProcessReportsFn,
@@ -340,7 +348,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
             Vec<InputReport>,
             Option<InputReport>,
             &InputDeviceDescriptor,
-            &mut UnboundedSender<InputEvent>,
+            &mut UnboundedSender<Vec<InputEvent>>,
             &InputDeviceStatus,
             &metrics::MetricsLogger,
         ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>),
@@ -428,7 +436,7 @@ pub async fn get_device_binding(
     device_type: InputDeviceType,
     device_proxy: fidl_input_report::InputDeviceProxy,
     device_id: u32,
-    input_event_sender: UnboundedSender<InputEvent>,
+    input_event_sender: UnboundedSender<Vec<InputEvent>>,
     device_node: fuchsia_inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> Result<Box<dyn InputDeviceBinding>, Error> {

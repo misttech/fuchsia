@@ -110,7 +110,7 @@ impl ConsumerControlsEvent {
 /// from the device, and sends them to the device binding owner over `event_sender`.
 pub struct ConsumerControlsBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<input_device::InputEvent>,
+    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: ConsumerControlsDeviceDescriptor,
@@ -126,7 +126,7 @@ pub struct ConsumerControlsDeviceDescriptor {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for ConsumerControlsBinding {
-    fn input_event_sender(&self) -> UnboundedSender<input_device::InputEvent> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -153,7 +153,7 @@ impl ConsumerControlsBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
@@ -186,7 +186,7 @@ impl ConsumerControlsBinding {
     async fn bind_device(
         device: &InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -254,7 +254,7 @@ impl ConsumerControlsBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
@@ -276,7 +276,7 @@ impl ConsumerControlsBinding {
         mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
@@ -329,7 +329,7 @@ fn send_consumer_controls_event(
     pressed_buttons: Vec<ConsumerControlButton>,
     wake_lease: Option<zx::EventPair>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    sender: &mut UnboundedSender<input_device::InputEvent>,
+    sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
     trace_id: fuchsia_trace::Id,
@@ -344,13 +344,14 @@ fn send_consumer_controls_event(
         handled: Handled::No,
         trace_id: Some(trace_id),
     };
+    let events = vec![event.clone_with_wake_lease()];
 
-    match sender.unbounded_send(event.clone_with_wake_lease()) {
+    match sender.unbounded_send(events.clone()) {
         Err(e) => metrics_logger.log_error(
             InputPipelineErrorMetricDimensionEvent::ConsumerControlsSendEventFailed,
             std::format!("Failed to send ConsumerControlsEvent with error: {:?}", e),
         ),
-        _ => inspect_status.count_generated_event(event),
+        _ => inspect_status.count_generated_events(&events),
     }
 }
 

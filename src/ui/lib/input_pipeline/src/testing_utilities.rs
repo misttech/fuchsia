@@ -850,19 +850,25 @@ macro_rules! assert_input_report_sequence_generates_events {
         };
 
 
+        let mut received_events = vec![];
+        while received_events.len() < num_events {
+            match event_receiver.next().await {
+                Some(batch) => received_events.extend(batch),
+                None => break,
+            }
+        }
+
         for mut expected_event in $expected_events {
-            let input_event = event_receiver.next().await;
-            match input_event {
-                Some(received_event) => {
-                    // Overwrite the expected_event's event_time, because an InputEvent's event_time
-                    // is set at the time InputReports are processed into InputEvents.
-                    expected_event.event_time = received_event.event_time;
-                    expected_last_generated_timestamp = received_event.event_time.into_nanos().try_into().unwrap();
-                    expected_event.trace_id = received_event.trace_id;
-                    pretty_assertions::assert_eq!(expected_event, received_event)
-                }
-                _ => assert!(false),
-            };
+            if received_events.is_empty() {
+                assert!(false, "Expected more events, but none were received.");
+            }
+            let received_event = received_events.remove(0);
+            // Overwrite the expected_event's event_time, because an InputEvent's event_time
+            // is set at the time InputReports are processed into InputEvents.
+            expected_event.event_time = received_event.event_time;
+            expected_last_generated_timestamp = received_event.event_time.into_nanos().try_into().unwrap();
+            expected_event.trace_id = received_event.trace_id;
+            pretty_assertions::assert_eq!(expected_event, received_event);
         }
 
         $crate::testing_utilities::diagnostics_assertions::assert_data_tree!(inspector, root: {

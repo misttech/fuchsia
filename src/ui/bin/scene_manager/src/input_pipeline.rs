@@ -738,7 +738,7 @@ pub async fn handle_input_device_registry_request_streams(
         InputDeviceRegistryRequestStream,
     >,
     input_device_types: Vec<input_device::InputDeviceType>,
-    input_event_sender: futures::channel::mpsc::UnboundedSender<input_device::InputEvent>,
+    input_event_sender: futures::channel::mpsc::UnboundedSender<Vec<input_device::InputEvent>>,
     input_device_bindings: InputDeviceBindingHashMap,
     injected_devices_node: inspect::Node,
     metrics_logger: metrics::MetricsLogger,

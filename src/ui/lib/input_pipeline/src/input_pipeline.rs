@@ -61,10 +61,10 @@ pub type InputDeviceBindingHashMap = Arc<Mutex<HashMap<u32, Vec<BoxedInputDevice
 pub struct InputPipelineAssembly {
     /// The top-level sender: send into this queue to inject an event into the input
     /// pipeline.
-    sender: UnboundedSender<input_device::InputEvent>,
+    sender: UnboundedSender<Vec<input_device::InputEvent>>,
     /// The bottom-level receiver: any events that fall through the entire pipeline can
     /// be read from this receiver.
-    receiver: UnboundedReceiver<input_device::InputEvent>,
+    receiver: UnboundedReceiver<Vec<input_device::InputEvent>>,
 
     /// The input handlers that comprise the input pipeline.
     handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
@@ -141,8 +141,8 @@ impl InputPipelineAssembly {
     fn into_components(
         self,
     ) -> (
-        UnboundedSender<input_device::InputEvent>,
-        UnboundedReceiver<input_device::InputEvent>,
+        UnboundedSender<Vec<input_device::InputEvent>>,
+        UnboundedReceiver<Vec<input_device::InputEvent>>,
         Vec<Rc<dyn input_handler::BatchInputHandler>>,
         metrics::MetricsLogger,
         Option<LocalBoxFuture<'static, ()>>,
@@ -221,14 +221,14 @@ pub struct InputPipeline {
     /// The entry point into the input handler pipeline. Incoming input events should
     /// be inserted into this async queue, and the input pipeline will ensure that they
     /// are propagated through all the input handlers in the appropriate sequence.
-    pipeline_sender: UnboundedSender<input_device::InputEvent>,
+    pipeline_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 
     /// A clone of this sender is given to every InputDeviceBinding that this pipeline owns.
     /// Each InputDeviceBinding will send InputEvents to the pipeline through this channel.
-    device_event_sender: UnboundedSender<input_device::InputEvent>,
+    device_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 
     /// Receives InputEvents from all InputDeviceBindings that this pipeline owns.
-    device_event_receiver: UnboundedReceiver<input_device::InputEvent>,
+    device_event_receiver: UnboundedReceiver<Vec<input_device::InputEvent>>,
 
     /// The types of devices this pipeline supports.
     input_device_types: Vec<input_device::InputDeviceType>,
@@ -379,7 +379,7 @@ impl InputPipeline {
 
     /// Gets the input device sender: this is the channel that should be cloned
     /// and used for injecting events from the drivers into the input pipeline.
-    pub fn input_event_sender(&self) -> &UnboundedSender<input_device::InputEvent> {
+    pub fn input_event_sender(&self) -> &UnboundedSender<Vec<input_device::InputEvent>> {
         &self.device_event_sender
     }
 
@@ -424,7 +424,7 @@ impl InputPipeline {
         mut device_watcher: Watcher,
         dir_proxy: fio::DirectoryProxy,
         device_types: Vec<input_device::InputDeviceType>,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: InputDeviceBindingHashMap,
         input_devices_node: &fuchsia_inspect::Node,
         break_on_idle: bool,
@@ -491,7 +491,7 @@ impl InputPipeline {
     pub async fn handle_input_device_registry_request_stream(
         mut stream: fidl_fuchsia_input_injection::InputDeviceRegistryRequestStream,
         device_types: &Vec<input_device::InputDeviceType>,
-        input_event_sender: &UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: &InputDeviceBindingHashMap,
         input_devices_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
@@ -559,7 +559,7 @@ impl InputPipeline {
 
     /// Initializes all handlers and starts the input pipeline loop in an asynchronous executor.
     fn run(
-        mut receiver: UnboundedReceiver<input_device::InputEvent>,
+        mut receiver: UnboundedReceiver<Vec<input_device::InputEvent>>,
         handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
     ) {
         fasync::Task::local(async move {
@@ -597,29 +597,45 @@ impl InputPipeline {
                 handlers_by_type.insert(event_type, handlers_for_type);
             }
 
-            while let Some(event) = receiver.next().await {
-                let event_type = InputEventType::from(&event.device_event);
-
-                // Get pre-computed handlers for this event type.
-                let handlers = handlers_by_type.get(&event_type).unwrap();
-
-                let mut events = vec![event];
-                for handler in handlers {
-                    let handler_name = handler.get_name();
-                    events = {
-                        let _async_trace = fuchsia_trace::async_enter!(
-                            fuchsia_trace::Id::random(),
-                            "input",
-                            "handle_input_events",
-                            "name" => handler_name
-                        );
-                        handler.clone().handle_input_events(events).await
-                    };
+            while let Some(events) = receiver.next().await {
+                if events.is_empty() {
+                    continue;
                 }
 
-                for event in events {
-                    if event.handled == input_device::Handled::No {
-                        log::warn!("unhandled input event: {:?}", &event);
+                let mut groups_seen = 0;
+                for (event_type, event_group) in events
+                    .into_iter()
+                    .chunk_by(|e| InputEventType::from(&e.device_event))
+                    .into_iter()
+                {
+                    groups_seen += 1;
+                    if groups_seen == 2 {
+                        log::warn!(
+                            "it is not recommanded to contains multiple type of event in 1 send"
+                        );
+                    }
+                    let mut events_in_group: Vec<_> = event_group.collect();
+
+                    // Get pre-computed handlers for this event type.
+                    let handlers = handlers_by_type.get(&event_type).unwrap();
+
+                    for handler in handlers {
+                        let handler_name = handler.get_name();
+                        events_in_group = {
+                            let _async_trace = fuchsia_trace::async_enter!(
+                                fuchsia_trace::Id::random(),
+                                "input",
+                                "handle_input_events",
+                                "name" => handler_name
+                            );
+                            handler.clone().handle_input_events(events_in_group).await
+                        };
+                    }
+
+                    for event in events_in_group {
+                        if event.handled == input_device::Handled::No {
+                            log::warn!("unhandled input event: {:?}", &event);
+                        }
                     }
                 }
             }
@@ -655,7 +671,7 @@ async fn add_device_bindings(
     device_types: &Vec<input_device::InputDeviceType>,
     filename: &String,
     device_proxy: fidl_fuchsia_input_report::InputDeviceProxy,
-    input_event_sender: &UnboundedSender<input_device::InputEvent>,
+    input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
     bindings: &InputDeviceBindingHashMap,
     device_id: u32,
     input_devices_node: &fuchsia_inspect::Node,
@@ -781,8 +797,8 @@ mod tests {
     /// # Parameters
     /// - `sender`: The channel to send the InputEvent over.
     fn send_input_event(
-        sender: UnboundedSender<input_device::InputEvent>,
-    ) -> input_device::InputEvent {
+        sender: UnboundedSender<Vec<input_device::InputEvent>>,
+    ) -> Vec<input_device::InputEvent> {
         let mut rng = rand::rng();
         let offset =
             Position { x: rng.random_range(0..10) as f32, y: rng.random_range(0..10) as f32 };
@@ -817,12 +833,12 @@ mod tests {
             handled: input_device::Handled::No,
             trace_id: None,
         };
-        match sender.unbounded_send(input_event.clone()) {
+        match sender.unbounded_send(vec![input_event.clone()]) {
             Err(_) => assert!(false),
             _ => {}
         }
 
-        input_event
+        vec![input_event]
     }
 
     /// Returns a MouseDescriptor on an InputDeviceRequest.
@@ -896,8 +912,8 @@ mod tests {
         InputPipeline::run(receiver, handlers);
 
         // Send an input event from each device.
-        let first_device_event = send_input_event(first_device_binding.input_event_sender());
-        let second_device_event = send_input_event(second_device_binding.input_event_sender());
+        let first_device_events = send_input_event(first_device_binding.input_event_sender());
+        let second_device_events = send_input_event(second_device_binding.input_event_sender());
 
         // Run the pipeline.
         fasync::Task::local(async {
@@ -907,10 +923,10 @@ mod tests {
 
         // Assert the handler receives the events.
         let first_handled_event = handler_event_receiver.next().await;
-        assert_eq!(first_handled_event, Some(first_device_event));
+        assert_eq!(first_handled_event, first_device_events.into_iter().next());
 
         let second_handled_event = handler_event_receiver.next().await;
-        assert_eq!(second_handled_event, Some(second_device_event));
+        assert_eq!(second_handled_event, second_device_events.into_iter().next());
     }
 
     /// Tests that an input pipeline handles events through multiple input handlers.
@@ -955,7 +971,7 @@ mod tests {
         InputPipeline::run(receiver, handlers);
 
         // Send an input event.
-        let input_event = send_input_event(input_device_binding.input_event_sender());
+        let input_events = send_input_event(input_device_binding.input_event_sender());
 
         // Run the pipeline.
         fasync::Task::local(async {
@@ -964,10 +980,11 @@ mod tests {
         .detach();
 
         // Assert both handlers receive the event.
+        let expected_event = input_events.into_iter().next();
         let first_handler_event = first_handler_event_receiver.next().await;
-        assert_eq!(first_handler_event, Some(input_event.clone()));
+        assert_eq!(first_handler_event, expected_event);
         let second_handler_event = second_handler_event_receiver.next().await;
-        assert_eq!(second_handler_event, Some(input_event));
+        assert_eq!(second_handler_event, expected_event);
     }
 
     /// Tests that a single mouse device binding is created for the one input device in the
@@ -1326,7 +1343,7 @@ mod tests {
         };
 
         // Send the Fake event
-        pipeline_sender.unbounded_send(fake_event.clone()).expect("failed to send event");
+        pipeline_sender.unbounded_send(vec![fake_event.clone()]).expect("failed to send event");
 
         // Verify Fake Handler received it
         let received_by_fake = fake_receiver.next().await;
@@ -1334,5 +1351,89 @@ mod tests {
 
         // Verify Mouse Handler did NOT receive it
         assert!(mouse_receiver.try_next().is_err());
+    }
+
+    fn create_mouse_event(x: f32, y: f32) -> input_device::InputEvent {
+        input_device::InputEvent {
+            device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent::new(
+                mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
+                    millimeters: Position { x, y },
+                }),
+                None,
+                None,
+                mouse_binding::MousePhase::Move,
+                HashSet::new(),
+                HashSet::new(),
+                None,
+                None,
+            )),
+            device_descriptor: input_device::InputDeviceDescriptor::Mouse(
+                mouse_binding::MouseDeviceDescriptor {
+                    device_id: 1,
+                    absolute_x_range: None,
+                    absolute_y_range: None,
+                    wheel_v_range: None,
+                    wheel_h_range: None,
+                    buttons: None,
+                    counts_per_mm: 1,
+                },
+            ),
+            event_time: zx::MonotonicInstant::get(),
+            handled: input_device::Handled::No,
+            trace_id: None,
+        }
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn run_mixed_event_types_dispatched_correctly() {
+        // Mouse Handler (Specific Interest: Mouse)
+        let (mouse_sender, mut mouse_receiver) = futures::channel::mpsc::channel(10);
+        let mouse_handler =
+            SpecificInterestFakeHandler::new(vec![InputEventType::Mouse], mouse_sender);
+
+        // Fake Handler (Specific Interest: Fake)
+        let (fake_sender, mut fake_receiver) = futures::channel::mpsc::channel(10);
+        let fake_handler =
+            SpecificInterestFakeHandler::new(vec![InputEventType::Fake], fake_sender);
+
+        let (pipeline_sender, pipeline_receiver, handlers, _, _, _) =
+            InputPipelineAssembly::new(metrics::MetricsLogger::default())
+                .add_handler(mouse_handler)
+                .add_handler(fake_handler)
+                .into_components();
+
+        // Run the pipeline logic
+        InputPipeline::run(pipeline_receiver, handlers);
+
+        // Create events
+        let mouse_event_1 = create_mouse_event(1.0, 1.0);
+        let mouse_event_2 = create_mouse_event(2.0, 2.0);
+        let mouse_event_3 = create_mouse_event(3.0, 3.0);
+
+        let fake_event_1 = input_device::InputEvent {
+            device_event: input_device::InputDeviceEvent::Fake,
+            device_descriptor: input_device::InputDeviceDescriptor::Fake,
+            event_time: zx::MonotonicInstant::get(),
+            handled: input_device::Handled::No,
+            trace_id: None,
+        };
+
+        // Send mixed batch: [Mouse, Mouse, Fake, Mouse]
+        // This should result in 3 chunks: [Mouse, Mouse], [Fake], [Mouse]
+        let mixed_batch = vec![
+            mouse_event_1.clone(),
+            mouse_event_2.clone(),
+            fake_event_1.clone(),
+            mouse_event_3.clone(),
+        ];
+        pipeline_sender.unbounded_send(mixed_batch).expect("failed to send events");
+
+        // Verify Mouse Handler received M1, M2, and then M3
+        assert_eq!(mouse_receiver.next().await, Some(mouse_event_1));
+        assert_eq!(mouse_receiver.next().await, Some(mouse_event_2));
+        assert_eq!(mouse_receiver.next().await, Some(mouse_event_3));
+
+        // Verify Fake Handler received F1
+        assert_eq!(fake_receiver.next().await, Some(fake_event_1));
     }
 }

@@ -311,7 +311,7 @@ pub struct ContactDeviceDescriptor {
 /// `event_sender`.
 pub struct TouchBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<InputEvent>,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: TouchDeviceDescriptor,
@@ -325,7 +325,7 @@ pub struct TouchBinding {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for TouchBinding {
-    fn input_event_sender(&self) -> UnboundedSender<InputEvent> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -359,7 +359,7 @@ impl TouchBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
@@ -397,7 +397,7 @@ impl TouchBinding {
     async fn bind_device(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -516,7 +516,7 @@ impl TouchBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
@@ -538,7 +538,7 @@ impl TouchBinding {
         report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
@@ -601,7 +601,7 @@ fn process_touch_screen_reports(
     mut report: InputReport,
     previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    input_event_sender: &mut UnboundedSender<InputEvent>,
+    input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
 ) -> Option<InputReport> {
@@ -703,7 +703,7 @@ fn process_touch_screen_reports(
 fn process_touchpad_reports(
     report: InputReport,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    input_event_sender: &mut UnboundedSender<InputEvent>,
+    input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
 ) -> Option<InputReport> {
@@ -788,7 +788,7 @@ fn send_touch_screen_event(
     injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
     pressed_buttons: Vec<fidl_input_report::TouchButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+    input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     trace_id: fuchsia_trace::Id,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
@@ -807,7 +807,7 @@ fn send_touch_screen_event(
         trace_id: Some(trace_id),
     };
 
-    match input_event_sender.unbounded_send(event.clone_with_wake_lease()) {
+    match input_event_sender.unbounded_send(vec![event.clone_with_wake_lease()]) {
         Err(e) => {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
@@ -829,7 +829,7 @@ fn send_touchpad_event(
     injector_contacts: Vec<TouchContact>,
     pressed_buttons: HashSet<mouse_binding::MouseButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+    input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     trace_id: fuchsia_trace::Id,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
@@ -845,7 +845,7 @@ fn send_touchpad_event(
         trace_id: Some(trace_id),
     };
 
-    match input_event_sender.unbounded_send(event.clone()) {
+    match input_event_sender.unbounded_send(vec![event.clone()]) {
         Err(e) => {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchpadEvent,
@@ -1172,7 +1172,7 @@ mod tests {
             &inspect_status,
             &metrics::MetricsLogger::default(),
         );
-        assert_matches!(event_receiver.try_next(), Ok(Some(InputEvent { trace_id: Some(_), .. })));
+        assert_matches!(event_receiver.try_next(), Ok(Some(events)) if events.len() == 1 && events[0].trace_id.is_some());
     }
 
     #[fuchsia::test(allow_stalls = false)]

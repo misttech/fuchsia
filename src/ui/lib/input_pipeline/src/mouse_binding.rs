@@ -281,7 +281,7 @@ impl MouseEvent {
 /// from the device, and sends them to the device binding owner over `event_sender`.
 pub struct MouseBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<input_device::InputEvent>,
+    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: MouseDeviceDescriptor,
@@ -314,7 +314,7 @@ pub struct MouseDeviceDescriptor {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for MouseBinding {
-    fn input_event_sender(&self) -> UnboundedSender<input_device::InputEvent> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -341,7 +341,7 @@ impl MouseBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
@@ -374,7 +374,7 @@ impl MouseBinding {
     async fn bind_device(
         device: &InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -444,7 +444,7 @@ impl MouseBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
@@ -466,7 +466,7 @@ impl MouseBinding {
         mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
@@ -638,7 +638,7 @@ fn send_mouse_event(
     affected_buttons: HashSet<MouseButton>,
     pressed_buttons: HashSet<MouseButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    sender: &mut UnboundedSender<input_device::InputEvent>,
+    sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
     wake_lease: Option<zx::EventPair>,
@@ -682,15 +682,16 @@ fn send_mouse_event(
         handled: Handled::No,
         trace_id: Some(trace_id),
     };
+    let events = vec![event.clone_with_wake_lease()];
 
-    match sender.unbounded_send(event.clone_with_wake_lease()) {
+    match sender.unbounded_send(events.clone()) {
         Err(e) => {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::MouseFailedToSendEvent,
                 std::format!("Failed to send MouseEvent with error: {:?}", e),
             );
         }
-        _ => inspect_status.count_generated_event(event),
+        _ => inspect_status.count_generated_events(&events),
     }
 }
 

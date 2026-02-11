@@ -43,7 +43,7 @@ impl LightSensorEvent {
 /// TODO more details
 pub(crate) struct LightSensorBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<input_device::InputEvent>,
+    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: LightSensorDeviceDescriptor,
@@ -66,7 +66,7 @@ pub struct LightSensorDeviceDescriptor {
 
 #[async_trait]
 impl InputDeviceBinding for LightSensorBinding {
-    fn input_event_sender(&self) -> UnboundedSender<InputEvent> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -93,7 +93,7 @@ impl LightSensorBinding {
     pub(crate) async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
@@ -147,7 +147,7 @@ impl LightSensorBinding {
     async fn bind_device(
         device: &InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<input_device::InputEvent>,
+        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<(Self, InputDeviceStatus), Error> {
@@ -268,7 +268,7 @@ impl LightSensorBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         device_proxy: InputDeviceProxy,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
@@ -292,7 +292,7 @@ impl LightSensorBinding {
         report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<input_device::InputEvent>,
+        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         device_proxy: InputDeviceProxy,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
@@ -344,7 +344,7 @@ impl LightSensorBinding {
             trace_id: None,
         };
 
-        if let Err(e) = input_event_sender.unbounded_send(event.clone()) {
+        if let Err(e) = input_event_sender.unbounded_send(vec![event.clone()]) {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::LightFailedToSendEvent,
                 std::format!("Failed to send LightSensorEvent with error: {e:?}"),

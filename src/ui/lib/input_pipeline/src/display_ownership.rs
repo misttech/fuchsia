@@ -215,7 +215,7 @@ impl DisplayOwnership {
     /// task is suspended.
     pub async fn handle_ownership_change(
         self: &Rc<Self>,
-        output: UnboundedSender<InputEvent>,
+        output: UnboundedSender<Vec<InputEvent>>,
     ) -> Result<()> {
         let mut ownership_source = self
             .display_ownership_change_receiver
@@ -236,7 +236,7 @@ impl DisplayOwnership {
             for key in keys.into_iter() {
                 let key_event = KeyboardEvent::new(key, event_type);
                 output
-                    .unbounded_send(into_input_event(key_event, event_time))
+                    .unbounded_send(vec![into_input_event(key_event, event_time)])
                     .context("unable to send display updates")?;
                 event_time = event_time + MonotonicDuration::from_nanos(1);
             }
@@ -388,7 +388,7 @@ mod tests {
         let (test_sender, handler_receiver) = mpsc::unbounded::<InputEvent>();
 
         // test_receiver is used to pipe input events out of the handler.
-        let (handler_sender, test_receiver) = mpsc::unbounded::<InputEvent>();
+        let (handler_sender, test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
 
         // The unit under test adds a () each time it completes one pass through
         // its event loop.  Use to ensure synchronization.
@@ -412,9 +412,7 @@ mod tests {
                 let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
                 let out_events =
                     handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
-                for out_event in out_events {
-                    handler_sender.unbounded_send(out_event).unwrap();
-                }
+                handler_sender.unbounded_send(out_events).unwrap();
             }
         });
 
@@ -446,8 +444,12 @@ mod tests {
         test_sender.unbounded_send(create_fake_input_event(fake_time)).unwrap();
         loop_done.next().await;
 
-        let actual: Vec<InputEvent> =
-            test_receiver.take(4).map(|e| e.into_with_event_time(fake_time)).collect().await;
+        let actual: Vec<InputEvent> = test_receiver
+            .take(4)
+            .flat_map(|events| futures::stream::iter(events))
+            .map(|e| e.into_with_event_time(fake_time))
+            .collect()
+            .await;
 
         assert_eq!(
             actual,
@@ -478,7 +480,7 @@ mod tests {
     async fn basic_key_state_handling() {
         let (test_event, handler_event) = EventPair::create();
         let (test_sender, handler_receiver) = mpsc::unbounded::<InputEvent>();
-        let (handler_sender, test_receiver) = mpsc::unbounded::<InputEvent>();
+        let (handler_sender, test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
         let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
@@ -496,9 +498,7 @@ mod tests {
                 let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
                 let out_events =
                     handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
-                for out_event in out_events {
-                    handler_sender.unbounded_send(out_event).unwrap();
-                }
+                handler_sender.unbounded_send(out_events).unwrap();
             }
         });
 
@@ -526,8 +526,12 @@ mod tests {
             .unwrap();
         loop_done.next().await;
 
-        let actual: Vec<InputEvent> =
-            test_receiver.take(4).map(|e| e.into_with_event_time(fake_time)).collect().await;
+        let actual: Vec<InputEvent> = test_receiver
+            .take(4)
+            .flat_map(|events| futures::stream::iter(events))
+            .map(|e| e.into_with_event_time(fake_time))
+            .collect()
+            .await;
 
         assert_eq!(
             actual,
@@ -546,7 +550,7 @@ mod tests {
     async fn more_key_state_handling() {
         let (test_event, handler_event) = EventPair::create();
         let (test_sender, handler_receiver) = mpsc::unbounded::<InputEvent>();
-        let (handler_sender, test_receiver) = mpsc::unbounded::<InputEvent>();
+        let (handler_sender, test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
         let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
@@ -564,9 +568,7 @@ mod tests {
                 let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
                 let out_events =
                     handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
-                for out_event in out_events {
-                    handler_sender.unbounded_send(out_event).unwrap();
-                }
+                handler_sender.unbounded_send(out_events).unwrap();
             }
         });
 
@@ -609,8 +611,12 @@ mod tests {
             .unwrap();
         loop_done.next().await;
 
-        let actual: Vec<InputEvent> =
-            test_receiver.take(10).map(|e| e.into_with_event_time(fake_time)).collect().await;
+        let actual: Vec<InputEvent> = test_receiver
+            .take(10) // 2 pressed, 2 cancelled, 1 released (handled), 1 pressed (handled), 2 synced, 2 released
+            .flat_map(|events| futures::stream::iter(events))
+            .map(|e| e.into_with_event_time(fake_time))
+            .collect()
+            .await;
 
         assert_eq!(
             actual,
@@ -670,7 +676,7 @@ mod tests {
     async fn display_ownership_inspect_counts_events() {
         let (test_event, handler_event) = EventPair::create();
         let (test_sender, handler_receiver) = mpsc::unbounded::<InputEvent>();
-        let (handler_sender, _test_receiver) = mpsc::unbounded::<InputEvent>();
+        let (handler_sender, _test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
         let inspector = fuchsia_inspect::Inspector::default();
@@ -693,9 +699,7 @@ mod tests {
                 let unhandled_event = UnhandledInputEvent::try_from(event).unwrap();
                 let out_events =
                     handler_clone_2.clone().handle_unhandled_input_event(unhandled_event).await;
-                for out_event in out_events {
-                    handler_sender.unbounded_send(out_event).unwrap();
-                }
+                handler_sender.unbounded_send(out_events).unwrap();
             }
         });
 

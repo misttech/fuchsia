@@ -10,11 +10,11 @@ use futures::channel::mpsc::UnboundedSender;
 /// A fake [`InputDeviceBinding`] for testing.
 pub struct FakeInputDeviceBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<input_device::InputEvent>,
+    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
 }
 
 impl FakeInputDeviceBinding {
-    pub fn new(input_event_sender: UnboundedSender<input_device::InputEvent>) -> Self {
+    pub fn new(input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>) -> Self {
         FakeInputDeviceBinding { event_sender: input_event_sender }
     }
 }
@@ -36,7 +36,7 @@ impl input_device::InputDeviceBinding for FakeInputDeviceBinding {
         })
     }
 
-    fn input_event_sender(&self) -> UnboundedSender<input_device::InputEvent> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
         self.event_sender.clone()
     }
 }
