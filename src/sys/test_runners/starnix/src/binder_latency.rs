@@ -7,10 +7,10 @@
 //! [custom output format]: https://source.android.com/docs/core/tests/vts/performance#iterations
 
 use crate::helpers::*;
-use anyhow::{ensure, Context as _, Error};
+use anyhow::{Context as _, Error, ensure};
 use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_test::{self as ftest};
-use fuchsiaperf::FuchsiaPerfBenchmarkResult;
+use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult, Unit};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -93,37 +93,43 @@ fn binder_latency_to_fuchsiaperf(
         FuchsiaPerfBenchmarkResult {
             label: "NormalSchedulerMin".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.other_ms.min],
         },
         FuchsiaPerfBenchmarkResult {
             label: "NormalSchedulerAvg".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.other_ms.avg],
         },
         FuchsiaPerfBenchmarkResult {
             label: "NormalSchedulerMax".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.other_ms.max],
         },
         FuchsiaPerfBenchmarkResult {
             label: "FifoSchedulerMin".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.fifo_ms.min],
         },
         FuchsiaPerfBenchmarkResult {
             label: "FifoSchedulerAvg".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.fifo_ms.avg],
         },
         FuchsiaPerfBenchmarkResult {
             label: "FifoSchedulerMax".to_string(),
             test_suite: test_suite.to_owned(),
-            unit: "ms".to_string(),
+            unit: Unit::Milliseconds,
+            direction: Direction::SmallerBetter,
             values: vec![timing.fifo_ms.max],
         },
     ])
@@ -148,37 +154,43 @@ mod tests {
             FuchsiaPerfBenchmarkResult {
                 label: "NormalSchedulerMin".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![0.56],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "NormalSchedulerAvg".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![2.2],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "NormalSchedulerMax".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![10.0],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "FifoSchedulerMin".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![0.68],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "FifoSchedulerAvg".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![1.9],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "FifoSchedulerMax".to_string(),
                 test_suite: suite.to_owned(),
-                unit: "ms".to_string(),
+                unit: Unit::Milliseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![3.9],
             },
         ];

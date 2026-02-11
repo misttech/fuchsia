@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsiaperf::FuchsiaPerfBenchmarkResult;
+use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult, Unit};
 use linux_uapi::{FS_IOC_ENABLE_VERITY, FS_VERITY_HASH_ALG_SHA256, fsverity_enable_arg};
 use std::os::fd::AsRawFd;
 use std::time::Instant;
@@ -31,7 +31,8 @@ pub fn run_benchmark(benchmark: fn(u64, u64) -> u64, benchmark_name: &str) {
         results.push(FuchsiaPerfBenchmarkResult {
             label: format!("{benchmark_name}/{size}"),
             test_suite: "fuchsia.verity".to_string(),
-            unit: "ns".to_string(),
+            unit: Unit::Nanoseconds,
+            direction: Direction::SmallerBetter,
             values: values,
         });
     }

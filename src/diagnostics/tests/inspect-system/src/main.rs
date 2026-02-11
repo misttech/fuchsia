@@ -14,6 +14,7 @@ use fidl_fuchsia_diagnostics::{
     DataType, Format, SelectorArgument, StreamMode, StreamParameters,
 };
 use fuchsia_component::server::ServiceFs;
+use fuchsiaperf::Unit;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{AsyncWriteExt, SinkExt, StreamExt};
@@ -215,10 +216,10 @@ async fn handle_invocation(moniker: &str, stdout: zx::Socket) -> Result<(), Erro
     let mut metrics = MetricSet::default();
     metrics.set_type_hints(
         [
-            (TOTAL_TIME, MetricTypeHint { is_integral: false, unit: "ms" }),
-            (TOTAL_SIZE, MetricTypeHint { is_integral: true, unit: "bytes" }),
-            (BATCH_TIME, MetricTypeHint { is_integral: false, unit: "ms" }),
-            (ENTRY_SIZE, MetricTypeHint { is_integral: true, unit: "bytes" }),
+            (TOTAL_TIME, MetricTypeHint { is_integral: false, unit: Unit::Milliseconds }),
+            (TOTAL_SIZE, MetricTypeHint { is_integral: true, unit: Unit::Bytes }),
+            (BATCH_TIME, MetricTypeHint { is_integral: false, unit: Unit::Milliseconds }),
+            (ENTRY_SIZE, MetricTypeHint { is_integral: true, unit: Unit::Bytes }),
         ]
         .into_iter(),
     );

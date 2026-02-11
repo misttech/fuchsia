@@ -6,7 +6,7 @@ use crate::helpers::*;
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_test::{self as ftest};
-use fuchsiaperf::FuchsiaPerfBenchmarkResult;
+use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult};
 use heck::CamelCase;
 use serde::{Deserialize, Serialize};
 
@@ -93,7 +93,8 @@ fn gbenchmark_to_fuchsiaperf(
         perfs.push(FuchsiaPerfBenchmarkResult {
             label,
             test_suite: test_suite.to_owned(),
-            unit: benchmark.time_unit,
+            unit: benchmark.time_unit.parse().map_err(Error::msg)?,
+            direction: Direction::SmallerBetter,
             values: vec![benchmark.real_time],
         });
     }
@@ -104,6 +105,7 @@ fn gbenchmark_to_fuchsiaperf(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsiaperf::Unit;
 
     const TEST_SUITE: &str = "test_suite";
 
@@ -226,43 +228,50 @@ mod tests {
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/1".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![21959.886533832538],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/2".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![1277058.9649314955],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/64".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![31623.006774103047],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/128".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![8297648.7720006844],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/512".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![54292.060699663125],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName1/Category/1024".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![37122.060699663125],
             },
             FuchsiaPerfBenchmarkResult {
                 label: "MetricName2/Category/1".to_string(),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: "ns".to_string(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: vec![64292.060699663125],
             },
         ];

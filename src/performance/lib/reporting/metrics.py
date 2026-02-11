@@ -94,6 +94,7 @@ class TestCaseResult:
     unit: Unit
     values: tuple[float, ...]
     doc: str
+    # TODO(https://fxbug.dev/483530722) require this field be non-null
     direction: Direction | None = None
 
     def __init__(

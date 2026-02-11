@@ -9,7 +9,7 @@ pub mod io_benchmarks;
 pub mod testing;
 
 use async_trait::async_trait;
-use fuchsiaperf::FuchsiaPerfBenchmarkResult;
+use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult, Unit};
 use log::info;
 use regex::RegexSet;
 use std::io::Write;
@@ -244,7 +244,6 @@ pub struct BenchmarkSetResults {
 impl BenchmarkSetResults {
     /// Writes the benchmark results in the fuchsiaperf.json format to `writer`.
     pub fn write_fuchsia_perf_json<F: Write>(&self, writer: F) {
-        const NANOSECONDS: &str = "nanoseconds";
         const TEST_SUITE: &str = "fuchsia.storage";
         let results: Vec<FuchsiaPerfBenchmarkResult> = self
             .results
@@ -252,7 +251,8 @@ impl BenchmarkSetResults {
             .map(|result| FuchsiaPerfBenchmarkResult {
                 label: format!("{}/{}", result.benchmark_name, result.filesystem_name),
                 test_suite: TEST_SUITE.to_owned(),
-                unit: NANOSECONDS.to_owned(),
+                unit: Unit::Nanoseconds,
+                direction: Direction::SmallerBetter,
                 values: result.values.iter().map(|d| d.0 as f64).collect(),
             })
             .collect();

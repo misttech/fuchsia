@@ -4,6 +4,7 @@
 
 use std::io::{Read as _, Write as _};
 
+use fuchsiaperf::{Direction, Unit};
 use futures::{AsyncReadExt as _, FutureExt as _};
 use {
     fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
@@ -302,7 +303,8 @@ async fn bench_tcp<'a, I: IpExt>(
     fuchsiaperf::FuchsiaPerfBenchmarkResult {
         test_suite: test_suite.into(),
         label: label.clone(),
-        unit: "ns".into(),
+        unit: Unit::Nanoseconds,
+        direction: Direction::SmallerBetter,
         values,
     }
 }
@@ -400,7 +402,8 @@ async fn bench_udp<'a, I: IpExt>(
     fuchsiaperf::FuchsiaPerfBenchmarkResult {
         test_suite: test_suite.into(),
         label: label.clone(),
-        unit: "ns".into(),
+        unit: Unit::Nanoseconds,
+        direction: Direction::SmallerBetter,
         values,
     }
 }

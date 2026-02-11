@@ -4,6 +4,7 @@
 
 use argh::FromArgs;
 use async_trait::async_trait;
+use fuchsiaperf::{Direction, Unit};
 use humansize::{BINARY, format_size};
 use netstack_testing_common::realms::{
     KnownServiceProvider, Netstack, ProdNetstack2, ProdNetstack3, TestSandboxExt as _,
@@ -244,19 +245,22 @@ impl ResourceUsage {
                 test_suite: suite.to_string(),
                 label: format!("{prefix}/Memory/Private"),
                 values: vec![private_bytes as f64],
-                unit: "bytes".to_string(),
+                unit: Unit::Bytes,
+                direction: Direction::SmallerBetter,
             },
             fuchsiaperf::FuchsiaPerfBenchmarkResult {
                 test_suite: suite.to_string(),
                 label: format!("{prefix}/Memory/Shared"),
                 values: vec![shared_bytes as f64],
-                unit: "bytes".to_string(),
+                unit: Unit::Bytes,
+                direction: Direction::SmallerBetter,
             },
             fuchsiaperf::FuchsiaPerfBenchmarkResult {
                 test_suite: suite.to_string(),
                 label: format!("{prefix}/Handles/Total"),
                 values: vec![total as f64],
-                unit: "count_smallerIsBetter".to_string(),
+                unit: Unit::Count,
+                direction: Direction::SmallerBetter,
             },
         ];
         for (object_type, n) in counts.into_iter().enumerate() {
@@ -306,7 +310,8 @@ impl ResourceUsage {
                 test_suite: suite.to_string(),
                 label: format!("{prefix}/Handles/{name}"),
                 values: vec![n as f64],
-                unit: "count_smallerIsBetter".to_string(),
+                unit: Unit::Count,
+                direction: Direction::SmallerBetter,
             });
         }
         results

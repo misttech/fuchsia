@@ -5,6 +5,7 @@
 group("tests") {
   testonly = true
   deps = [
+    "//src/performance/lib/fuchsiaperf:tests",
     "//src/performance/lib/fxt:tests",
     "//src/performance/lib/memory:tests",
     "//src/performance/lib/perf_publish/tests($host_toolchain)",

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fuchsiaperf::FuchsiaPerfBenchmarkResult;
+use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult, Unit};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -49,7 +49,8 @@ impl MetricSet {
                 perf_result.push(FuchsiaPerfBenchmarkResult {
                     label: format!("{key}/{test_case}"),
                     test_suite: "fuchsia.system_inspect_metrics".to_string(),
-                    unit: type_hint.unit.to_string(),
+                    unit: type_hint.unit,
+                    direction: Direction::SmallerBetter,
                     values: values.clone(),
                 })
             }
@@ -75,7 +76,7 @@ impl MetricSet {
                 + self
                     .type_hints
                     .get(key)
-                    .map(|v| v.unit.len() + EXTRA_FORMATTING_CHARACTERS_FOR_UNIT)
+                    .map(|v| v.unit.to_string().len() + EXTRA_FORMATTING_CHARACTERS_FOR_UNIT)
                     .unwrap_or_default()
         };
 
@@ -145,7 +146,7 @@ pub struct MetricTypeHint {
     ///
     /// This is formatted in the text output, and it is directly
     /// copied to the "units" field in fuchsiaperf output.
-    pub unit: &'static str,
+    pub unit: Unit,
 }
 
 #[cfg(test)]
@@ -176,7 +177,7 @@ mod tests {
     fn text_format_hint() {
         let mut metrics = MetricSet::default();
         metrics.set_type_hints(
-            [("test", MetricTypeHint { is_integral: false, unit: "ms" })].into_iter(),
+            [("test", MetricTypeHint { is_integral: false, unit: Unit::Milliseconds })].into_iter(),
         );
 
         metrics.add_measurement("test", 5.0);
@@ -209,8 +210,8 @@ mod tests {
         let mut metrics = MetricSet::default();
         metrics.set_type_hints(
             [
-                ("test", MetricTypeHint { is_integral: false, unit: "ms" }),
-                ("size", MetricTypeHint { is_integral: false, unit: "bytes" }),
+                ("test", MetricTypeHint { is_integral: false, unit: Unit::Milliseconds }),
+                ("size", MetricTypeHint { is_integral: false, unit: Unit::Bytes }),
             ]
             .into_iter(),
         );
@@ -226,11 +227,11 @@ mod tests {
 
         assert_eq!(val.len(), 2);
 
-        let test_entry = val.iter().find(|v| v.unit == "ms");
+        let test_entry = val.iter().find(|v| v.unit == Unit::Milliseconds);
         assert!(test_entry.is_some(), "Expected to find one metric with unit 'ms'");
         let test_entry = test_entry.unwrap();
 
-        let size_entry = val.iter().find(|v| v.unit == "bytes");
+        let size_entry = val.iter().find(|v| v.unit == Unit::Bytes);
         assert!(size_entry.is_some(), "Expected to find one metric with unit 'bytes'");
         let size_entry = size_entry.unwrap();
 
