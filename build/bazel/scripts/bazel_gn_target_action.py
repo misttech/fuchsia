@@ -17,7 +17,6 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_impl
 import bazel_compdb_utils
-import bazel_label_mapper
 import bazel_rust_analyzer_utils
 import build_utils
 import thread_pool_helpers
@@ -625,8 +624,7 @@ def main() -> int:
     configured_args = action_result.configured_args
     debug_symbol_manifest_paths = action_result.debug_symbol_manifest_paths
     all_output_files = action_result.output_files
-    build_file_labels = action_result.build_file_labels
-    source_file_labels = action_result.source_file_labels
+    all_sources = action_result.source_files
 
     time_profile.stop()
 
@@ -704,19 +702,6 @@ def main() -> int:
 
     if args.depfile:
         time_profile.start("depfile", "Write Ninja depfile")
-        # Perform a cquery to get all source inputs for the targets. This
-        # returns a list of Bazel labels followed by "(null)" because these
-        # are never configured during analysis. E.g.:
-        #
-        #  //build/bazel/examples/hello_world:hello_world (null)
-        #
-        mapper = bazel_label_mapper.BazelLabelMapper(
-            str(workspace_dir), str(build_dir)
-        )
-        all_sources = mapper.get_sources_for_labels(
-            build_file_labels + source_file_labels
-        )
-
         depfile_content = "%s: %s\n" % (
             " ".join(depfile_quote(c) for c in all_output_files),
             " ".join(depfile_quote(c) for c in sorted(all_sources)),

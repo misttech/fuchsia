@@ -15,14 +15,14 @@ import typing as T
 from functools import partial
 from pathlib import Path
 
-import thread_pool_helpers
-
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 # LINT.IfChange(imports)
 import bazel_action_utils
+import bazel_label_mapper
 import build_utils
 import stdio_redirection
+import thread_pool_helpers
 from bazel_action_file_copy_utils import (
     FilePath,
     check_if_need_to_copy_file,
@@ -110,15 +110,14 @@ class BazelActionResult(object):
         output_files:  A list of the output paths that were actually copied to (updated)
           by this action.
 
-        build_files:  A list of the Bazel build files that were used by the built targets,
-          expressed as bazel target paths, not standard filesystem paths.
+        source_files:  A list of the Bazel build files and input source files that were
+            used by the built targets, as standard filesystem paths.
     """
 
     configured_args: list[str]
     debug_symbol_manifest_paths: list[str]
     output_files: list[Path]
-    build_file_labels: list[str]
-    source_file_labels: list[str]
+    source_files: list[str]
 
 
 class BazelActionRunner(object):
@@ -332,7 +331,7 @@ class BazelActionRunner(object):
 
         # Temporary files have now been deleted by the FileCleaner.
 
-        source_file_labels = []
+        all_sources = []
         if command == "build":
             # If we're building, query to get the paths of all source files.
             time_profile.start(
@@ -341,6 +340,16 @@ class BazelActionRunner(object):
             source_file_labels = self.query_for_source_inputs(
                 configured_args=configured_args,
                 targets=targets,
+            )
+
+            # Convert the build file and input source file labels into paths
+            mapper = bazel_label_mapper.BazelLabelMapper(
+                str(self.paths.workspace), str(self.paths.ninja_build_dir)
+            )
+            all_sources = list(
+                mapper.get_sources_for_labels(
+                    build_file_labels + source_file_labels
+                )
             )
 
             if outputs.packages:
@@ -364,8 +373,7 @@ class BazelActionRunner(object):
             configured_args=configured_args,
             debug_symbol_manifest_paths=debug_symbol_manifest_paths,
             output_files=all_output_files,
-            build_file_labels=build_file_labels,
-            source_file_labels=source_file_labels,
+            source_files=all_sources,
         )
 
     def query_for_source_inputs(
