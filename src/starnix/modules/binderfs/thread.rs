@@ -16,6 +16,7 @@ use starnix_logging::{log_trace, log_warn, trace_instaflow_begin, trace_instaflo
 use starnix_sync::{Mutex, MutexGuard, ordered_lock};
 use starnix_uapi::vfs::FdEvents;
 
+use crossbeam::queue::SegQueue;
 use starnix_types::ownership::{
     OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef, release_on_error,
 };
@@ -39,6 +40,7 @@ use starnix_uapi::{
 };
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use zerocopy::{Immutable, IntoBytes};
@@ -172,12 +174,16 @@ pub struct BinderThread {
     /// A reference to the wait queue for the command queue. This allows other threads to notify
     /// this thread without acquiring the lock.
     pub command_queue_waiters: WaitQueue,
+
+    /// A shared queue of available threads for the `BinderProcess`.
+    pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 }
 
 impl BinderThread {
     pub fn new(binder_proc: &BinderProcessGuard<'_>, tid: pid_t) -> OwnedRef<Self> {
         let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
+        let available_threads = binder_proc.base.available_threads.clone();
         let state = Mutex::new(inner_state);
         #[cfg(any(test, debug_assertions))]
         {
@@ -194,6 +200,7 @@ impl BinderThread {
             available: AtomicBool::new(false),
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
             command_queue_waiters,
+            available_threads,
         })
     }
 
@@ -260,7 +267,11 @@ impl DerefMut for BinderThreadGuard<'_> {
 
 impl Drop for BinderThreadGuard<'_> {
     fn drop(&mut self) {
-        self.thread.available.store(self.guard.is_available(), Ordering::Release);
+        let is_available = self.guard.is_available();
+        let was_available = self.thread.available.swap(is_available, Ordering::AcqRel);
+        if is_available && !was_available {
+            self.thread.available_threads.push(self.thread.weak_self.clone());
+        }
         self.thread.registration.store(self.guard.registration.to_u8(), Ordering::Release);
     }
 }

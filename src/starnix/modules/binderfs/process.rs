@@ -13,9 +13,9 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::SharedMemory;
 use crate::thread::{
-    BinderThread, BinderThreadGuard, Command, CommandQueueWithWaitQueue, RegistrationState,
-    generate_dead_replies,
+    BinderThread, Command, CommandQueueWithWaitQueue, RegistrationState, generate_dead_replies,
 };
+use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mutable_state::Guard;
@@ -345,6 +345,10 @@ pub struct BinderProcess {
     /// When there are no commands in a thread's and the process' command queue, a binder thread can
     /// register with this [`WaitQueue`] to be notified when commands are available.
     pub command_queue: Mutex<CommandQueueWithWaitQueue>,
+
+    /// A lock-free queue of threads that are available to handle commands.
+    /// A thread adds itself to this queue when it transitions to being available.
+    pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 }
 
 pub struct BinderProcessGuard<'a>(Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>);
@@ -378,6 +382,7 @@ impl BinderProcess {
             shared_memory: Default::default(),
             state: Default::default(),
             command_queue: Default::default(),
+            available_threads: Arc::new(SegQueue::new()),
         });
         #[cfg(any(test, debug_assertions))]
         {
@@ -443,6 +448,22 @@ impl BinderProcess {
         }
     }
 
+    /// Attempts to enqueue a command on an available thread.
+    /// Pops threads from `available_threads` until one is found that is truly available,
+    /// and enqueues the command on it. Returns `Err(command)` if no available threads are found.
+    fn try_enqueue_on_available_thread(&self, command: Command) -> Result<(), Command> {
+        while let Some(weak_thread) = self.available_threads.pop() {
+            if let Some(thread) = weak_thread.upgrade() {
+                let mut thread_guard = thread.lock();
+                if thread_guard.is_available() {
+                    thread_guard.enqueue_command(command);
+                    return Ok(());
+                }
+            }
+        }
+        Err(command)
+    }
+
     /// Enqueues `command` for the process and wakes up any thread that is waiting for commands.
     pub fn enqueue_command(&self, command: Command) {
         log_trace!("BinderProcess id={} enqueuing command {:?}", self.identifier, command);
@@ -450,9 +471,7 @@ impl BinderProcess {
         // avoid accidentally handling them during an ongoing transaction.
         if matches!(command, Command::OnewayTransaction(_)) {
             self.command_queue.lock().push_back(command);
-        } else if let Some(mut thread) = self.state.lock().thread_pool.get_available_thread() {
-            thread.enqueue_command(command);
-        } else {
+        } else if let Err(command) = self.try_enqueue_on_available_thread(command) {
             self.command_queue.lock().push_back(command);
         }
     }
@@ -826,7 +845,7 @@ impl<'a> BinderProcessGuard<'a> {
         !self.thread_requested
             && self.thread_pool.registered_threads() < self.max_thread_count
             && thread.lock().is_main_or_registered()
-            && !self.thread_pool.has_available_thread()
+            && self.base.available_threads.is_empty()
     }
 
     /// Called back when the driver successfully asked the client to start a new thread.
@@ -870,24 +889,6 @@ impl Releasable for BinderProcess {
 pub struct ThreadPool(pub BTreeMap<pid_t, OwnedRef<BinderThread>>);
 
 impl ThreadPool {
-    fn has_available_thread(&self) -> bool {
-        self.0.values().any(|t| {
-            if t.available.load(Ordering::Acquire) { t.lock().is_available() } else { false }
-        })
-    }
-
-    fn get_available_thread(&self) -> Option<BinderThreadGuard<'_>> {
-        self.0.values().find_map(|t| {
-            if t.available.load(Ordering::Acquire) {
-                let thread = t.lock();
-                if thread.is_available() {
-                    return Some(thread);
-                }
-            }
-            None
-        })
-    }
-
     fn notify_all(&self) {
         for t in self.0.values() {
             t.command_queue_waiters.notify_all();
