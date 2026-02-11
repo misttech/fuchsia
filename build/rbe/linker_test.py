@@ -122,6 +122,38 @@ class LinkerScriptParseTests(unittest.TestCase):
         expanded = list(link.expand_linker_script("TARGET(acquired)\n"))
         self.assertEqual(expanded, [])
 
+    def test_extern_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+
+        expanded = list(
+            link.expand_linker_script("EXTERN(__sym1__ __sym2__)\n")
+        )
+        self.assertEqual(expanded, [])
+
+    def test_hidden_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+
+        expanded = list(link.expand_linker_script("HIDDEN(_secret_ = .);"))
+        self.assertEqual(expanded, [])
+
+    def test_provide_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+
+        expanded = list(link.expand_linker_script("PROVIDE(symbol = expr);"))
+        self.assertEqual(expanded, [])
+
+    def test_provide_hidden_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+
+        expanded = list(
+            link.expand_linker_script("PROVIDE_HIDDEN(__foo = .);\n")
+        )
+        self.assertEqual(expanded, [])
+
     def test_output_format_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             link = linker.LinkerInvocation(working_dir_abs=Path(td))

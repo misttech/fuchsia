@@ -60,13 +60,15 @@ class TokenType(enum.Enum):
     CLOSE_PAREN = 4
     SPACE = 5
     NEWLINE = 6
+    SEMICOLON = 7
 
 
 _KEYWORDS_RE = re.compile(
-    r"(INCLUDE|INPUT|GROUP|AS_NEEDED|OUTPUT_FORMAT|OUTPUT|SEARCH_DIR|STARTUP|TARGET)"
+    r"(INCLUDE|INPUT|GROUP|AS_NEEDED|OUTPUT_FORMAT|OUTPUT|SEARCH_DIR|STARTUP|TARGET|PROVIDE_HIDDEN|PROVIDE|HIDDEN|EXTERN)"
 )
 _SPACE_RE = re.compile(r"[ \t]+")
 _NEWLINE_RE = re.compile(r"\r?\n")
+_SEMICOLON_RE = re.compile(r";")
 _ARG_RE = re.compile(r"[^, \t\r\n()]+")
 
 
@@ -138,6 +140,13 @@ def _lex_linker_script(unfiltered_text: str) -> Iterable[Token]:
             newtext_name = newtext_match.group(0)
             yield Token(text=newtext_name, type=TokenType.NEWLINE)
             text = text[len(newtext_name) :]
+            continue
+
+        semicolon_match = _SEMICOLON_RE.match(text)
+        if semicolon_match:
+            semicolon_text = semicolon_match.group(0)
+            yield Token(text=semicolon_text, type=TokenType.SEMICOLON)
+            text = text[len(semicolon_text) :]
             continue
 
         arg_match = _ARG_RE.match(text)
@@ -349,11 +358,15 @@ class LinkerInvocation(object):
     def _handle_directive(self, directive: Directive) -> Iterable[Path]:
         handler_map = {
             # Functions can yield Paths or return None
+            "EXTERN": self._ignore,
+            "HIDDEN": self._ignore,
             "INCLUDE": self._include,
             "INPUT": self._input,
             "GROUP": self._group,
             "OUTPUT": self._ignore,
             "OUTPUT_FORMAT": self._ignore,
+            "PROVIDE": self._ignore,
+            "PROVIDE_HIDDEN": self._ignore,
             "SEARCH_DIR": self._search_dir,
             "TARGET": self._ignore,
             # Not implemented:
