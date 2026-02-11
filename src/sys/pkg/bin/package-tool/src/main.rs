@@ -14,6 +14,18 @@ use package_tool::{
     cmd_package_build, cmd_repo_create, cmd_repo_package_manifest_list, cmd_repo_publish,
 };
 
+struct BoxedRepoPublishCommand(Box<RepoPublishCommand>);
+
+impl FromArgs for BoxedRepoPublishCommand {
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
+        RepoPublishCommand::from_args(command_name, args).map(|c| Self(Box::new(c)))
+    }
+}
+
+impl argh::SubCommand for BoxedRepoPublishCommand {
+    const COMMAND: &'static argh::CommandInfo = <RepoPublishCommand as argh::SubCommand>::COMMAND;
+}
+
 /// Package manipulation tool
 #[derive(FromArgs)]
 struct Command {
@@ -67,12 +79,11 @@ struct RepoCommand {
     subcommands: RepoSubCommands,
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(FromArgs)]
 #[argh(subcommand)]
 enum RepoSubCommands {
     Create(RepoCreateCommand),
-    Publish(RepoPublishCommand),
+    Publish(BoxedRepoPublishCommand),
     PMList(RepoPMListCommand),
 }
 
@@ -90,7 +101,7 @@ async fn main() -> Result<()> {
         },
         SubCommands::Repository(cmd) => match cmd.subcommands {
             RepoSubCommands::Create(cmd) => cmd_repo_create(cmd).await,
-            RepoSubCommands::Publish(cmd) => cmd_repo_publish(cmd).await,
+            RepoSubCommands::Publish(cmd) => cmd_repo_publish(*cmd.0).await,
             RepoSubCommands::PMList(cmd) => cmd_repo_package_manifest_list(cmd).await,
         },
     }
