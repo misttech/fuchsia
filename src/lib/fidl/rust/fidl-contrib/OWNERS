@@ -1,3 +1,2 @@
 include /src/fidl/OWNERS
 
-per-file BUILD.gn,src/lib.rs,src/protocol_connector.rs = zmbush@google.com
