@@ -29,7 +29,7 @@ pub struct CoverageCommand {
     #[argh(option)]
     pub export_lcov: Option<PathBuf>,
 
-    /// "<from>,<to>" remapping of source file paths passed through to llvm-cov
+    /// a "<from>,<to>" remapping of source file paths passed through to llvm-cov
     #[argh(option)]
     pub path_remappings: Vec<String>,
 

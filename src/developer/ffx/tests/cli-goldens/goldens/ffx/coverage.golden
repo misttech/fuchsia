@@ -80,7 +80,7 @@
       "optionality": "repeating",
       "long": "--path-remappings",
       "short": null,
-      "description": "\"<from>,<to>\" remapping of source file paths passed through to llvm-cov",
+      "description": "a \"<from>,<to>\" remapping of source file paths passed through to llvm-cov",
       "hidden": false
     },
     {
