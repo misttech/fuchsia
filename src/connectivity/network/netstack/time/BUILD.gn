@@ -17,7 +17,7 @@ go_library("time") {
 }
 
 go_test("time_test") {
-  library = ":time"
+  embed = [ ":time" ]
 }
 
 fuchsia_unittest_package("netstack-time-gotests") {

@@ -40,7 +40,7 @@ if (is_linux && has_board) {
   }
 
   go_test("conformance_emulator_test") {
-    library = ":emulator"
+    embed = [ ":emulator" ]
     non_go_deps = [
       # Add any host_test_data deps to the `conformance_emulator_non_go_deps`
       # group rather than directly on this target so that an internal petal

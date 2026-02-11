@@ -17,7 +17,7 @@ go_library("sse") {
 }
 
 go_test("sse_test") {
-  library = ":sse"
+  embed = [ ":sse" ]
 }
 
 group("tests") {

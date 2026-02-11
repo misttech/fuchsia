@@ -26,7 +26,7 @@ go_library("go") {
 }
 
 go_test("syslog_test") {
-  library = ":go"
+  embed = [ ":go" ]
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_go($go_toolchain)",
     "//src/lib/component($go_toolchain)",

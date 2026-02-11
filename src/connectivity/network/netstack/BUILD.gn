@@ -12,7 +12,7 @@ import("tracing/go_tracing_include_dirs.gni")
 import("udp_serde/udp_serde_include_dirs.gni")
 
 go_binary("bin") {
-  library = "stub"
+  embed = [ "stub" ]
   output_name = string_replace(target_name, "bin", "netstack")
   include_dirs = udp_serde_include_dirs + netdevice_include_dirs
   gcflags = [ "all=-d=inlstaticinit=1" ]
@@ -50,7 +50,7 @@ fuchsia_component("component-with-sync-udp") {
 }
 
 go_binary("bin_with_deadlock_detection") {
-  library = "stub"
+  embed = [ "stub" ]
   output_name = string_replace(target_name, "bin", "netstack")
 
   tags = [ "deadlock_detection" ]
@@ -90,7 +90,7 @@ fuchsia_component("component-conformance") {
 }
 
 go_binary("bin_with_tracing") {
-  library = "stub"
+  embed = [ "stub" ]
   output_name = string_replace(target_name, "bin", "netstack")
 
   tags = [ "tracing" ]
@@ -126,7 +126,7 @@ go_library("pprof") {
 }
 
 go_test("pprof_test") {
-  library = ":pprof"
+  embed = [ ":pprof" ]
 }
 
 go_library("lib") {
@@ -212,7 +212,7 @@ go_library("lib") {
 }
 
 go_test("netstack_test") {
-  library = ":lib"
+  embed = [ ":lib" ]
   include_dirs = udp_serde_include_dirs + netdevice_include_dirs
 }
 

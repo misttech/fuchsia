@@ -21,11 +21,11 @@ if (is_host) {
   }
 
   go_test("rfcmeta_tests") {
-    library = ":rfcmeta_lib"
+    embed = [ ":rfcmeta_lib" ]
   }
 
   go_binary("rfcmeta") {
-    library = ":rfcmeta_lib"
+    embed = [ ":rfcmeta_lib" ]
   }
 }
 

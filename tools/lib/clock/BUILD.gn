@@ -14,5 +14,5 @@ go_library("clock") {
 }
 
 go_test("clock_tests") {
-  library = ":clock"
+  embed = [ ":clock" ]
 }

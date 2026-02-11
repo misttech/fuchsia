@@ -14,5 +14,5 @@ go_library("streams") {
 }
 
 go_test("streams_tests") {
-  library = ":streams"
+  embed = [ ":streams" ]
 }

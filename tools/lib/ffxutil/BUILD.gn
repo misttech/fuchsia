@@ -30,7 +30,7 @@ go_library("constants") {
 }
 
 go_test("tests") {
-  library = ":ffxutil"
+  embed = [ ":ffxutil" ]
   output_name = "ffxutil_tests"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

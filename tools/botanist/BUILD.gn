@@ -102,19 +102,19 @@ go_library("main") {
 }
 
 go_binary("botanist") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 go_test("botanist_lib_tests") {
-  library = ":botanist_lib"
+  embed = [ ":botanist_lib" ]
 }
 
 go_test("botanist_repo_tests") {
-  library = ":repo"
+  embed = [ ":repo" ]
 }
 
 go_test("botanist_targets_tests") {
-  library = ":targets"
+  embed = [ ":targets" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

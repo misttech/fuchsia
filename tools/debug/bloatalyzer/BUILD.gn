@@ -15,5 +15,5 @@ go_library("main") {
 }
 
 go_binary("bloatalyzer") {
-  library = ":main"
+  embed = [ ":main" ]
 }

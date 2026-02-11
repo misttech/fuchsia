@@ -11,7 +11,7 @@ go_library("lib") {
 }
 
 go_binary("fidlcparsequality") {
-  library = ":lib"
+  embed = [ ":lib" ]
 }
 
 install_host_tools("host") {

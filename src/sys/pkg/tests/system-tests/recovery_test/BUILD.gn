@@ -30,7 +30,7 @@ if (is_host) {
   }
 
   go_test("system_tests_recovery") {
-    library = ":gopkg"
+    embed = [ ":gopkg" ]
     environments = [ disabled_env ]
   }
 }

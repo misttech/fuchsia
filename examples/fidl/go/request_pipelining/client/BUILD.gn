@@ -8,7 +8,7 @@ import("//build/go/go_library.gni")
 import("//build/go/toolchain.gni")
 
 go_binary("bin") {
-  library = ":lib"
+  embed = [ ":lib" ]
   output_name = "fidl_echo_launcher_go_client"
 }
 

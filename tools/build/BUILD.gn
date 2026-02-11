@@ -73,5 +73,5 @@ go_library("build") {
 }
 
 go_test("build_tests") {
-  library = ":build"
+  embed = [ ":build" ]
 }

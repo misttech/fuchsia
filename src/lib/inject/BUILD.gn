@@ -15,7 +15,7 @@ if (is_host) {
   }
 
   go_test("inject_test") {
-    library = ":inject"
+    embed = [ ":inject" ]
   }
 }
 

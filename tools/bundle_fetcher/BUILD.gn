@@ -7,7 +7,7 @@ import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
 go_binary("bundle_fetcher") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 install_host_tools("host") {
@@ -53,12 +53,12 @@ go_library("bundler") {
 }
 
 go_test("bundler_lib_tests") {
-  library = ":bundler"
+  embed = [ ":bundler" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 
 go_test("bundle_fetcher_main_tests") {
-  library = ":main"
+  embed = [ ":main" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

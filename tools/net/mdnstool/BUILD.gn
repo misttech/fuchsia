@@ -12,5 +12,5 @@ go_library("main") {
 }
 
 go_binary("mdnstool") {
-  library = ":main"
+  embed = [ ":main" ]
 }

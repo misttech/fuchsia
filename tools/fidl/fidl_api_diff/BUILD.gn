@@ -17,7 +17,7 @@ if (is_host) {
   }
 
   go_binary("fidl_api_diff") {
-    library = ":gopkg"
+    embed = [ ":gopkg" ]
   }
 }  # is_host
 

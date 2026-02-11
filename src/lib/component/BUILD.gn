@@ -32,7 +32,7 @@ go_library("component") {
 }
 
 go_test("component_test") {
-  library = ":component"
+  embed = [ ":component" ]
   deps = [ ":bindingstest_go($go_toolchain)" ]
 }
 

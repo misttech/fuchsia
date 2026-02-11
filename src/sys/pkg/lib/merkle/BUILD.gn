@@ -14,7 +14,7 @@ go_library("merkle") {
 }
 
 go_test("go_merkle_test") {
-  library = ":merkle"
+  embed = [ ":merkle" ]
 }
 
 fuchsia_unittest_package("go_merkle_tests") {

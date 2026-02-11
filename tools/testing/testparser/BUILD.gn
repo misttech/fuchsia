@@ -35,7 +35,7 @@ group("tests") {
 }
 
 go_test("test") {
-  library = ":testparser"
+  embed = [ ":testparser" ]
   output_name = "testparser_tests"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
@@ -50,11 +50,11 @@ go_library("main") {
 }
 
 go_binary("testparser_cmd") {
-  library = ":main"
+  embed = [ ":main" ]
   output_name = "testparser"
 }
 
 go_test("testparser_cmd_test") {
-  library = ":main"
+  embed = [ ":main" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

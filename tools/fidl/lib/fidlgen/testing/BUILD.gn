@@ -6,7 +6,7 @@ import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 
 go_binary("roundtripper") {
-  library = ":main"
+  embed = [ ":main" ]
   testonly = true
   visibility = [ "..:*" ]
 }

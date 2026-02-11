@@ -63,7 +63,7 @@ if (is_linux) {
   }
 
   go_test("kernel_cprng_tests") {
-    library = ":lib"
+    embed = [ ":lib" ]
     non_go_deps = [ ":main_zbi" ]
   }
 }

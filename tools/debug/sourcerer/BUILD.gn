@@ -16,5 +16,5 @@ go_library("main") {
 }
 
 go_binary("sourcerer") {
-  library = ":main"
+  embed = [ ":main" ]
 }

@@ -16,7 +16,7 @@ go_library("concurrency_test") {
 }
 
 go_test("concurrency_test_driver_golang") {
-  library = ":concurrency_test"
+  embed = [ ":concurrency_test" ]
 }
 
 fuchsia_component("concurrency_test_driver_component") {

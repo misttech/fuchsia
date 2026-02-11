@@ -50,7 +50,7 @@ go_library("constants") {
 }
 
 go_test("testrunner_lib_tests") {
-  library = ":lib"
+  embed = [ ":lib" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

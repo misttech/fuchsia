@@ -27,6 +27,6 @@ go_library("runtests") {
 }
 
 go_test("tests") {
-  library = ":runtests"
+  embed = [ ":runtests" ]
   output_name = "runtests_tests"
 }

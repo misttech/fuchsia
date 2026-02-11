@@ -40,6 +40,6 @@ if (is_host) {
   }
 
   go_test("host-target-testing-omaha_tool-test") {
-    library = ":omaha_tool"
+    embed = [ ":omaha_tool" ]
   }
 }

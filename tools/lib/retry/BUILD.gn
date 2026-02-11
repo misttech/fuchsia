@@ -16,5 +16,5 @@ go_library("retry") {
 }
 
 go_test("retry_tests") {
-  library = ":retry"
+  embed = [ ":retry" ]
 }

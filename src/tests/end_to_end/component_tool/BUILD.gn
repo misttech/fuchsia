@@ -24,7 +24,7 @@ if (is_linux) {
   }
 
   go_test("component_tool_test") {
-    library = ":component_tool_test_lib"
+    embed = [ ":component_tool_test_lib" ]
     non_go_deps = [ "//build/images/fuchsia:fuchsia_zbi_for_host_tests" ]
   }
 }

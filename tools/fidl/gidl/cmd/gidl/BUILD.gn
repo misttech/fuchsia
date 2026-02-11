@@ -29,5 +29,5 @@ go_library("main") {
 }
 
 go_binary("gidl") {
-  library = ":main"
+  embed = [ ":main" ]
 }

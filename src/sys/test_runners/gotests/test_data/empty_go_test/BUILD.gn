@@ -18,5 +18,5 @@ go_library("empty_go_test_lib") {
 }
 
 go_test("empty_go_test") {
-  library = ":empty_go_test_lib"
+  embed = [ ":empty_go_test_lib" ]
 }

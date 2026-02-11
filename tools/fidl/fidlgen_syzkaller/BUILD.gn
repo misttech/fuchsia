@@ -33,7 +33,7 @@ if (is_host) {
   }
 
   go_binary("fidlgen_syzkaller") {
-    library = ":main"
+    embed = [ ":main" ]
   }
 
   fidl_testdata_info_filtered = []

@@ -29,7 +29,7 @@ go_library("netutil") {
 }
 
 go_binary("whereiscl") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 install_host_tools("host") {
@@ -43,7 +43,7 @@ go_library("testhelper") {
 }
 
 go_test("whereiscl_test") {
-  library = ":lib"
+  embed = [ ":lib" ]
   deps = [
     ":testhelper",
     "//third_party/golibs:github.com/google/go-cmp",

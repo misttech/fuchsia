@@ -24,7 +24,7 @@ go_library("lib") {
 }
 
 go_test("fssh-test") {
-  library = ":lib"
+  embed = [ ":lib" ]
   sources = [
     "fssh/fssh_test.go",
     "fssh/tunnel_test.go",
@@ -57,7 +57,7 @@ go_library("synckeys") {
 }
 
 go_test("synckeys-tests") {
-  library = ":synckeys"
+  embed = [ ":synckeys" ]
 }
 
 go_library("tunnel") {
@@ -70,7 +70,7 @@ go_library("tunnel") {
 }
 
 go_test("tunnel-tests") {
-  library = ":tunnel"
+  embed = [ ":tunnel" ]
 }
 
 sdk_host_tool("fssh_sdk") {

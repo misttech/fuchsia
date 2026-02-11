@@ -23,11 +23,11 @@ go_library("main") {
 }
 
 go_binary("generate_breakpad") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 go_test("generate_breakpad_tests") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 group("tests") {

@@ -23,7 +23,7 @@ go_library("dns") {
 }
 
 go_test("dns_test") {
-  library = ":dns"
+  embed = [ ":dns" ]
 }
 
 fuchsia_unittest_package("netstack-dns-gotests") {

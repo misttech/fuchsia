@@ -28,7 +28,7 @@ go_library("filter") {
 }
 
 go_test("filter_test") {
-  library = ":filter"
+  embed = [ ":filter" ]
 }
 
 fuchsia_unittest_package("netstack-filter-gotests") {
