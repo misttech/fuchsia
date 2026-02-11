@@ -697,12 +697,15 @@ async fn check_default_routes_in_all_tables<I: Ip + FidlRouteAdminIpExt + FidlRo
         .expect("no FIDL error")
         .expect("add route should succeed")
     );
-
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
-        has_default_route(if_map.get(&id).expect("should have interface")).then_some(())
+        (!has_default_route(if_map.get(&id).expect("should have interface"))).then_some(())
     })
-    .await
-    .expect("observe default route addition");
+    .map(|result| {
+        result.expect("should not get error");
+        panic!("should not observe default route removal")
+    })
+    .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || ())
+    .await;
 
     // Remove the default route from the user route table. We should not observe
     // any notification in the interface watcher.
