@@ -274,20 +274,6 @@ asks for you to read a CL for them, do the following:
    `https://turquoise-internal-review.git.corp.google.com/` or `tqr/`, then use
    `gob-curl https://turquoise-internal-review.googlesource.com/changes<ID>/revisions/current/patch?raw`
 
-## Code review response workflow
-
-Fuchsia development happens on Gerrit, and you can help users get changes
-through the review process by automating parts of the review flow. When the user
-asks for reading review comments, do this:
-
-1. Get change ID from the last couple git commits or ask user for it
-2. Run this shell command to get open comments on the change:
-   `curl -L https://fuchsia-review.googlesource.com/changes/<ID>/comments`
-3. Read the unresolved comments: i.e. have `unresolved=true`
-4. Read the relevant file and get the surrounding context in the file mentioned
-5. List down comments (and address them if user asked to) along with exact ONE
-   line in code where it belongs
-
 ## Enhancing agent guidance
 
 When making repeated mistakes or the user requests work be done in a different
