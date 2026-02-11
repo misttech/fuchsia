@@ -79,7 +79,7 @@ rust_library(
     }),
     version = "0.24.0+spec-1.1.0",
     deps = [
-        "//third_party/rust_crates/vendor/indexmap-2.12.1:indexmap",
+        "//third_party/rust_crates/vendor/indexmap-2.13.0:indexmap",
         "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0:toml_datetime",
         "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0:toml_parser",
         "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0:toml_writer",

@@ -1661,7 +1661,7 @@ dependencies = [
  "humansize",
  "hyper",
  "hyper-rustls",
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "indoc",
  "iota",
  "itertools 0.14.0",
@@ -2348,9 +2348,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad4bb2b565bca0645f4d68c5c9af97fba094e9791da685bf83cb5f3ce74acf2"
+checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
@@ -5092,7 +5092,7 @@ version = "0.9.11+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3afc9a848309fe1aaffaed6e1546a7a14de1f935dc9d89d32afd9a44bab7c46"
 dependencies = [
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "serde_core",
  "serde_spanned",
  "toml_datetime",
@@ -5116,7 +5116,7 @@ version = "0.24.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c740b185920170a6d9191122cafef7010bd6270a3824594bff6784c04d7f09e"
 dependencies = [
- "indexmap 2.12.1",
+ "indexmap 2.13.0",
  "toml_datetime",
  "toml_parser",
  "toml_writer",

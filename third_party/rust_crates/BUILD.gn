@@ -488,7 +488,7 @@ if (current_os == "fuchsia") {
 }
 
 group("indexmap") {
-  public_deps = [ ":indexmap-v2_12_1" ]
+  public_deps = [ ":indexmap-v2_13_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -9008,18 +9008,18 @@ rustc_library("indexmap-v1_9_2") {
   applicable_licenses = [ ":indexmap-v1_9_2.license" ]
 }
 
-license("indexmap-v2_12_1.license") {
+license("indexmap-v2_13_0.license") {
   public_package_name = "indexmap"
   license_files = [
-    "//third_party/rust_crates/vendor/indexmap-2.12.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/indexmap-2.12.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/indexmap-2.13.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/indexmap-2.13.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("indexmap-v2_12_1") {
+rustc_library("indexmap-v2_13_0") {
   crate_name = "indexmap"
-  source_root = "//third_party/rust_crates/vendor/indexmap-2.12.1/src/lib.rs"
-  output_name = "indexmap-ee4f171aba1d9f4e"
+  source_root = "//third_party/rust_crates/vendor/indexmap-2.13.0/src/lib.rs"
+  output_name = "indexmap-9f0ce8ef9df3c109"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -9037,8 +9037,8 @@ rustc_library("indexmap-v2_12_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ee4f171aba1d9f4e",
-    "-Cextra-filename=-ee4f171aba1d9f4e",
+    "-Cmetadata=9f0ce8ef9df3c109",
+    "-Cextra-filename=-9f0ce8ef9df3c109",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -9046,7 +9046,7 @@ rustc_library("indexmap-v2_12_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":indexmap-v2_12_1.license" ]
+  applicable_licenses = [ ":indexmap-v2_13_0.license" ]
 }
 
 license("indoc-v2_0_6.license") {
@@ -19123,7 +19123,7 @@ rustc_library("toml-v0_9_11+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v2_12_1" ]
+  deps += [ ":indexmap-v2_13_0" ]
   deps += [ ":serde_core-v1_0_228" ]
   deps += [ ":serde_spanned-v1_0_4" ]
   deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
@@ -19205,7 +19205,7 @@ rustc_library("toml_edit-v0_24_0+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v2_12_1" ]
+  deps += [ ":indexmap-v2_13_0" ]
   deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
   deps += [ ":toml_parser-v1_0_6+spec-1_1_0" ]
   deps += [ ":toml_writer-v1_0_6+spec-1_1_0" ]
