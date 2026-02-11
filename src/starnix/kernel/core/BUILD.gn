@@ -29,6 +29,7 @@ _starnix_core_sources = [
   "bpf/mod.rs",
   "bpf/program.rs",
   "bpf/syscalls.rs",
+  "device/block.rs",
   "device/kobject.rs",
   "device/kobject_store.rs",
   "device/mem.rs",
