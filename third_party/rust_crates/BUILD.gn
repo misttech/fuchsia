@@ -810,6 +810,10 @@ group("rand_xorshift") {
   public_deps = [ ":rand_xorshift-v0_4_0" ]
 }
 
+group("range-alloc") {
+  public_deps = [ ":range-alloc-v0_1_4" ]
+}
+
 group("rapidhash") {
   public_deps = [ ":rapidhash-v1_4_0" ]
 }
@@ -14524,6 +14528,38 @@ rustc_library("rand_xoshiro-v0_1_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":rand_xoshiro-v0_1_0.license" ]
+}
+
+license("range-alloc-v0_1_4.license") {
+  public_package_name = "range_alloc"
+  license_files = [
+    "//third_party/rust_crates/vendor/range-alloc-0.1.4/LICENSE.APACHE",
+    "//third_party/rust_crates/vendor/range-alloc-0.1.4/LICENSE.MIT",
+  ]
+}
+
+rustc_library("range-alloc-v0_1_4") {
+  crate_name = "range_alloc"
+  source_root = "//third_party/rust_crates/vendor/range-alloc-0.1.4/src/lib.rs"
+  output_name = "range_alloc-53a449b11fe0023a"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=53a449b11fe0023a",
+    "-Cextra-filename=-53a449b11fe0023a",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":range-alloc-v0_1_4.license" ]
 }
 
 license("rapidhash-v1_4_0.license") {
