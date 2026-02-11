@@ -6,12 +6,12 @@ use crate::above_root_capabilities::AboveRootCapabilitiesForTest;
 use crate::debug_data_processor::{DebugDataDirectory, DebugDataProcessor};
 use crate::error::TestManagerError;
 use crate::offers::map_offers;
-use crate::running_suite::{enumerate_test_cases, RunningSuite};
+use crate::running_suite::{RunningSuite, enumerate_test_cases};
 use crate::self_diagnostics::RootDiagnosticNode;
 use crate::test_suite::{Suite, SuiteRealm, TestRunBuilder};
 use crate::{constants, debug_data_server, facet};
-use fidl::endpoints::ControlHandle;
 use fidl::Error;
+use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_resolution::ResolverProxy;
 use fidl_fuchsia_pkg::PackageResolverProxy;
 use fidl_fuchsia_test_manager as ftest_manager;
@@ -19,7 +19,7 @@ use fidl_fuchsia_test_manager::{QueryEnumerateInRealmResponder, QueryEnumerateRe
 use ftest_manager::LaunchError;
 use fuchsia_async::{self as fasync};
 use futures::prelude::*;
-use log::warn;
+use log::{error, warn};
 use std::sync::Arc;
 
 /// Start `RunBuilder` server and serve it over `stream`.
@@ -485,7 +485,7 @@ pub async fn run_test_manager_suite_runner_server(
                         Ok(r) => r,
                         Err(e) => {
                             warn!(
-                                "Cannot add suite {}, invalid realm. Closing connection. error: {}",
+                                "Cannot run suite {}, invalid realm. Closing connection. error: {}",
                                 test_suite_url, e
                             );
                             control_handle.shutdown_with_epitaph(zx::Status::INVALID_ARGS);
@@ -500,7 +500,7 @@ pub async fn run_test_manager_suite_runner_server(
                         Ok(offers) => offers,
                         Err(e) => {
                             warn!(
-                                "Cannot add suite {}, invalid offers. error: {}",
+                                "Cannot run suite {}, invalid offers. error: {}",
                                 test_suite_url, e
                             );
                             control_handle.shutdown_with_epitaph(zx::Status::INVALID_ARGS);
@@ -510,7 +510,7 @@ pub async fn run_test_manager_suite_runner_server(
                     let test_collection = match realm_options.test_collection {
                         Some(test_collection) => test_collection,
                         None => {
-                            warn!("Cannot add suite {}, missing test collection.", test_suite_url);
+                            warn!("Cannot run suite {}, missing test collection.", test_suite_url);
                             control_handle.shutdown_with_epitaph(zx::Status::INVALID_ARGS);
                             break;
                         }
@@ -519,6 +519,20 @@ pub async fn run_test_manager_suite_runner_server(
                 } else {
                     None
                 };
+
+                // Validate log iterator type.
+                match options.logs_iterator_type {
+                    Some(ftest_manager::LogsIteratorType::Batch)
+                    | Some(ftest_manager::LogsIteratorType::Socket)
+                    | None => {
+                        // Accepted
+                    }
+                    Some(t) => {
+                        error!("Unrecognized log iterator type {:?}.", t);
+                        control_handle.shutdown_with_epitaph(zx::Status::INVALID_ARGS);
+                        break;
+                    }
+                }
 
                 let controller = controller.into_stream();
 
@@ -535,7 +549,7 @@ pub async fn run_test_manager_suite_runner_server(
                         log_interest: options.log_interest,
                         break_on_failure: options.break_on_failure,
                         no_exception_channel: options.no_exception_channel,
-                         ..Default::default()
+                        ..Default::default()
                     },
                     controller,
                     resolver: resolver.clone(),

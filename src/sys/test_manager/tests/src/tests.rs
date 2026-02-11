@@ -7,13 +7,13 @@ use fidl::endpoints;
 use ftest_manager::{CaseStatus, RunOptions, RunSuiteOptions, SuiteStatus};
 use fuchsia_component::client;
 use futures::channel::mpsc;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 use test_manager_test_lib::{
-    collect_string_from_socket_helper, collect_suite_events, collect_suite_events_with_watch,
-    default_run_option, default_run_suite_options, AttributedLog, GroupRunEventByTestCase,
-    RunEvent, SuiteRunner, TestBuilder, TestRunEventPayload,
+    AttributedLog, GroupRunEventByTestCase, RunEvent, SuiteRunner, TestBuilder,
+    TestRunEventPayload, collect_string_from_socket_helper, collect_suite_events,
+    collect_suite_events_with_watch, default_run_option, default_run_suite_options,
 };
 use {fidl_fuchsia_test_manager as ftest_manager, fuchsia_async as fasync};
 
@@ -622,7 +622,7 @@ async fn update_log_severity_for_all_components() {
     let options = RunOptions {
         log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
         log_interest: Some(vec![
-            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap()
+            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap(),
         ]),
         ..default_run_option()
     };
@@ -643,10 +643,9 @@ async fn update_log_severity_for_the_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunOptions {
         log_iterator: Some(ftest_manager::LogsIteratorOption::SocketBatchIterator),
-        log_interest: Some(vec![selectors::parse_log_interest_selector_or_severity(
-            "<root>#DEBUG",
-        )
-        .unwrap()]),
+        log_interest: Some(vec![
+            selectors::parse_log_interest_selector_or_severity("<root>#DEBUG").unwrap(),
+        ]),
         ..default_run_option()
     };
     let (_events, logs) = run_single_test(test_url, options).await.unwrap();
@@ -1349,6 +1348,30 @@ async fn collect_isolated_logs_from_generated_component_manifest_for_suite() {
 }
 
 #[fuchsia::test]
+async fn collect_isolated_logs_using_invalid_iterator_type_for_suite() {
+    let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
+    let options = RunSuiteOptions {
+        logs_iterator_type: Some(ftest_manager::LogsIteratorType::__SourceBreaking {
+            unknown_ordinal: 666,
+        }),
+        ..default_run_suite_options()
+    };
+    let err = run_single_test_for_suite(test_url, options)
+        .await
+        .expect_err("this should return invalid args error");
+
+    let err = err.downcast::<fidl::Error>().expect("expected fidl::Error");
+    match err {
+        fidl::Error::ClientChannelClosed { status, protocol_name: _, epitaph: _ } => {
+            assert_eq!(status, fidl::Status::PEER_CLOSED);
+        }
+        _ => {
+            assert!(false, "expected ClientChannelClosed");
+        }
+    }
+}
+
+#[fuchsia::test]
 async fn collect_isolated_logs_using_batch_for_suite() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let mut options = default_run_suite_options();
@@ -1400,7 +1423,7 @@ async fn update_log_severity_for_all_components_for_suite() {
     let options = RunSuiteOptions {
         logs_iterator_type: Some(ftest_manager::LogsIteratorType::Socket),
         log_interest: Some(vec![
-            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap()
+            selectors::parse_log_interest_selector_or_severity("DEBUG").unwrap(),
         ]),
         ..default_run_suite_options()
     };
@@ -1421,10 +1444,9 @@ async fn update_log_severity_for_the_test_for_suite() {
     let test_url = "fuchsia-pkg://fuchsia.com/test-manager-diagnostics-tests#meta/test-root.cm";
     let options = RunSuiteOptions {
         logs_iterator_type: Some(ftest_manager::LogsIteratorType::Socket),
-        log_interest: Some(vec![selectors::parse_log_interest_selector_or_severity(
-            "<root>#DEBUG",
-        )
-        .unwrap()]),
+        log_interest: Some(vec![
+            selectors::parse_log_interest_selector_or_severity("<root>#DEBUG").unwrap(),
+        ]),
         ..default_run_suite_options()
     };
     let (_events, logs) = run_single_test_for_suite(test_url, options).await.unwrap();
