@@ -4,7 +4,6 @@
 
 #include <lib/driver/devicetree/visitors/driver-visitor.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
 
 namespace fdf_devicetree {
 
@@ -19,8 +18,8 @@ bool DriverVisitor::is_match(
   const devicetree::PropertyValue& compat_pv = properties.at(kCompatibleProp);
   std::optional compat_string = compat_pv.AsStringList();
   if (!compat_string.has_value()) {
-    FDF_SLOG(WARNING, "Node has invalid compatible property",
-             KV("prop_len", compat_pv.AsBytes().size()));
+    FDF_LOG(WARNING, "Node has invalid compatible property. prop_len: %zu",
+            compat_pv.AsBytes().size());
     return false;
   }
 

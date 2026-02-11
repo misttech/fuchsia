@@ -6,7 +6,6 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/devicetree/devicetree.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -42,7 +41,7 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
   // Make sure value is a register array.
   auto reg_props = property->second.AsReg(decoder);
   if (reg_props == std::nullopt) {
-    FDF_SLOG(WARNING, "Node has invalid reg property", KV("node_name", node.name()));
+    FDF_LOG(WARNING, "Node '%s' has invalid reg property.", node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -101,8 +100,8 @@ zx::result<> MmioVisitor::MemoryRegionParser(Node& node,
 zx::result<> MmioVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
   auto parser_output = mmio_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Mmio visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    FDF_LOG(ERROR, "Mmio visitor failed for node '%s' : %d", node.name().c_str(),
+            parser_output.status_value());
     return parser_output.take_error();
   }
 

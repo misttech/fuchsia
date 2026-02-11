@@ -33,17 +33,9 @@ TEST(RtcVisitorTester, TestReferences) {
   ASSERT_EQ(ZX_OK, rtc_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(rtc_tester->DoPublish().is_ok());
 
-  auto non_pbus_node_count =
-      rtc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
-  ASSERT_EQ(non_pbus_node_count, 2u);
-
-  auto pbus_node_count =
-      rtc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-  ASSERT_EQ(pbus_node_count, 0u);
-
-  auto mgr_request =
-      rtc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, 0);
-  EXPECT_EQ(mgr_request.name(), "test-device");
+  auto specs = rtc_tester->GetCompositeNodeSpecs("test-device");
+  ASSERT_EQ(specs.size(), 1u);
+  auto mgr_request = specs[0];
   const auto& parents = mgr_request.parents2();
   ASSERT_EQ(parents->size(), 2u);
 

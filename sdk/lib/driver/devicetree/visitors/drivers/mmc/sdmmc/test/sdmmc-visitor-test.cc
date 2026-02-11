@@ -40,40 +40,27 @@ TEST(SdmmcVisitorTest, TestClocksProperty) {
   ASSERT_EQ(ZX_OK, sdmmc_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(sdmmc_tester->DoPublish().is_ok());
 
-  auto node_count =
-      sdmmc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  std::vector<fuchsia_hardware_platform_bus::Node> mmc_nodes = sdmmc_tester->GetPbusNodes("mmc-");
+  ASSERT_EQ(1lu, mmc_nodes.size());
+  auto& node = mmc_nodes[0];
+  auto metadata = node.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        sdmmc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
 
-    if (node.name()->find("mmc-") != std::string::npos) {
-      auto metadata = sdmmc_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
-
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-
-      // sdmmc metadata
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result sdmmc_metadata =
-          fidl::Unpersist<fuchsia_hardware_sdmmc::SdmmcMetadata>(metadata_blob);
-      ASSERT_TRUE(sdmmc_metadata.is_ok());
-      EXPECT_EQ(sdmmc_metadata->instance_identifier(), "mmc@ff000000");
-      EXPECT_EQ(sdmmc_metadata->max_frequency(), static_cast<uint32_t>(MAX_FREQUENCY));
-      EXPECT_EQ(sdmmc_metadata->removable(), true);
-      EXPECT_EQ(sdmmc_metadata->speed_capabilities(),
-                fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs400 |
-                    fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr);
-      EXPECT_EQ(sdmmc_metadata->use_fidl(), false);
-
-      node_tested_count++;
-    }
-  }
-  ASSERT_EQ(node_tested_count, 1u);
+  // sdmmc metadata
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+  fit::result sdmmc_metadata =
+      fidl::Unpersist<fuchsia_hardware_sdmmc::SdmmcMetadata>(metadata_blob);
+  ASSERT_TRUE(sdmmc_metadata.is_ok());
+  EXPECT_EQ(sdmmc_metadata->instance_identifier(), "mmc@ff000000");
+  EXPECT_EQ(sdmmc_metadata->max_frequency(), static_cast<uint32_t>(MAX_FREQUENCY));
+  EXPECT_EQ(sdmmc_metadata->removable(), true);
+  EXPECT_EQ(sdmmc_metadata->speed_capabilities(),
+            fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHs400 |
+                fuchsia_hardware_sdmmc::SdmmcHostPrefs::kDisableHsddr);
+  EXPECT_EQ(sdmmc_metadata->use_fidl(), false);
 }
 
 TEST(SdmmcVisitorTest, SdhciNode) {
@@ -88,38 +75,24 @@ TEST(SdmmcVisitorTest, SdhciNode) {
   ASSERT_EQ(ZX_OK, sdmmc_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(sdmmc_tester->DoPublish().is_ok());
 
-  auto node_count =
-      sdmmc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  std::vector<fuchsia_hardware_platform_bus::Node> sdhci_nodes =
+      sdmmc_tester->GetPbusNodes("sdhci-");
+  ASSERT_EQ(1lu, sdhci_nodes.size());
+  auto& node = sdhci_nodes[0];
+  auto metadata = node.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        sdmmc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
 
-    if (node.name()->find("sdhci-") == std::string::npos) {
-      continue;
-    }
-
-    auto metadata = sdmmc_tester->env()
-                        .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                        .metadata();
-
-    ASSERT_TRUE(metadata);
-    ASSERT_EQ(1lu, metadata->size());
-
-    std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-    fit::result sdmmc_metadata =
-        fidl::Unpersist<fuchsia_hardware_sdmmc::SdmmcMetadata>(metadata_blob);
-    ASSERT_TRUE(sdmmc_metadata.is_ok());
-    EXPECT_EQ(sdmmc_metadata->instance_identifier(), "sdhci@fe000000");
-    EXPECT_FALSE(sdmmc_metadata->max_frequency().has_value());
-    EXPECT_EQ(sdmmc_metadata->removable(), false);
-    EXPECT_FALSE(sdmmc_metadata->speed_capabilities().has_value());
-    EXPECT_EQ(sdmmc_metadata->use_fidl(), false);
-    node_tested_count++;
-  }
-
-  EXPECT_EQ(node_tested_count, 1u);
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+  fit::result sdmmc_metadata =
+      fidl::Unpersist<fuchsia_hardware_sdmmc::SdmmcMetadata>(metadata_blob);
+  ASSERT_TRUE(sdmmc_metadata.is_ok());
+  EXPECT_EQ(sdmmc_metadata->instance_identifier(), "sdhci@fe000000");
+  EXPECT_FALSE(sdmmc_metadata->max_frequency().has_value());
+  EXPECT_EQ(sdmmc_metadata->removable(), false);
+  EXPECT_FALSE(sdmmc_metadata->speed_capabilities().has_value());
+  EXPECT_EQ(sdmmc_metadata->use_fidl(), false);
 }
 
 }  // namespace sdmmc_dt

@@ -9,7 +9,7 @@
 
 namespace example {
 
-class ExampleDriverVisitor final : public fdf_devicetree::DriverVisitor {
+class ExampleDriverVisitor : public fdf_devicetree::DriverVisitor {
  public:
   ExampleDriverVisitor() : DriverVisitor({"fuchsia,sample-device"}) {}
 

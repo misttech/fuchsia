@@ -26,7 +26,7 @@ source_set("performance-domain-visitor-impl") {
     "performance-domain-visitor.h",
   ]
   deps = [
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]

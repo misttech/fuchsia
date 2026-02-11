@@ -6,7 +6,6 @@
 #include <lib/driver/devicetree/visitors/interrupt-parser.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
 #include <zircon/errors.h>
 
 #include <cstdint>

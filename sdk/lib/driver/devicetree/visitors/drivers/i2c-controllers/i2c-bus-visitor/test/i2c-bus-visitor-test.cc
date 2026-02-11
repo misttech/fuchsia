@@ -42,58 +42,39 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
   ASSERT_EQ(ZX_OK, i2c_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(i2c_tester->DoPublish().is_ok());
 
-  auto pbus_node_count =
-      i2c_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-  auto non_pbus_node_count =
-      i2c_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
-
-  ASSERT_EQ(
-      3lu, i2c_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
+  ASSERT_EQ(3lu, i2c_tester->GetCompositeNodeSpecs().size());
 
   uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < pbus_node_count; i++) {
-    auto node =
-        i2c_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  std::vector<fuchsia_hardware_platform_bus::Node> nodes = i2c_tester->GetPbusNodes("i2c-");
+  for (const auto& node : nodes) {
+    auto metadata = node.metadata();
 
-    if (node.name()->find("i2c-") != std::string::npos) {
-      auto metadata = i2c_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
+    // Test metadata properties.
+    ASSERT_TRUE(metadata);
+    ASSERT_EQ(1lu, metadata->size());
 
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
+    // I2C Channels metadata
+    std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+    fit::result decoded =
+        fidl::Unpersist<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(cpp20::span(metadata_blob));
+    ASSERT_TRUE(decoded.is_ok());
+    ASSERT_EQ(decoded->bus_id(), 0u);
+    auto& channels = *decoded->channels();
+    ASSERT_EQ(channels.size(), 4lu);
+    EXPECT_EQ(channels[0].address(), static_cast<uint32_t>(I2C_ADDRESS1));
+    EXPECT_EQ(channels[1].address(), static_cast<uint32_t>(I2C_ADDRESS2));
+    EXPECT_EQ(channels[2].address(), static_cast<uint32_t>(I2C_ADDRESS3));
+    EXPECT_EQ(channels[3].address(), static_cast<uint32_t>(I2C_ADDRESS4));
 
-      // I2C Channels metadata
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result decoded =
-          fidl::Unpersist<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(cpp20::span(metadata_blob));
-      ASSERT_TRUE(decoded.is_ok());
-      ASSERT_EQ(decoded->bus_id(), 0u);
-      auto& channels = *decoded->channels();
-      ASSERT_EQ(channels.size(), 4lu);
-      EXPECT_EQ(channels[0].address(), static_cast<uint32_t>(I2C_ADDRESS1));
-      EXPECT_EQ(channels[1].address(), static_cast<uint32_t>(I2C_ADDRESS2));
-      EXPECT_EQ(channels[2].address(), static_cast<uint32_t>(I2C_ADDRESS3));
-      EXPECT_EQ(channels[3].address(), static_cast<uint32_t>(I2C_ADDRESS4));
-
-      node_tested_count++;
-    }
+    node_tested_count++;
   }
 
   uint32_t mgr_request_idx = 0;
-  for (size_t i = 0; i < non_pbus_node_count; i++) {
-    std::shared_ptr<fuchsia_driver_framework::NodeAddChildRequest> node =
-        i2c_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
+  for (auto& node : i2c_tester->GetBoardChildNodes("child-")) {
+    std::string node_name = node.name;
 
-    ASSERT_TRUE(node->args().name().has_value());
-    std::string node_name = node->args().name().value();
-    if (node_name.find("child-") == std::string::npos) {
-      continue;
-    }
-
-    fuchsia_driver_framework::CompositeNodeSpec composite_node_spec = i2c_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
+    fuchsia_driver_framework::CompositeNodeSpec composite_node_spec =
+        i2c_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
     ASSERT_TRUE(composite_node_spec.parents2().has_value());
     const std::vector<fuchsia_driver_framework::ParentSpec2>& parent_specs =
         *composite_node_spec.parents2();

@@ -42,138 +42,104 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   ASSERT_EQ(ZX_OK, adc_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(adc_tester->DoPublish().is_ok());
 
-  auto node_count =
-      adc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto vadc_nodes = adc_tester->GetPbusNodes("vadc-ffffa000");
+  ASSERT_EQ(1lu, vadc_nodes.size());
+  const auto& node_vadc = vadc_nodes[0];
+  auto metadata_vadc = node_vadc.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        adc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata_vadc);
+  ASSERT_EQ(1lu, metadata_vadc->size());
 
-    if (node.name()->find("vadc-ffffa000") != std::string::npos) {
-      auto metadata = adc_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
+  // Controller metadata.
+  std::vector<uint8_t> metadata_blob_vadc = std::move(*(*metadata_vadc)[0].data());
+  fit::result controller_metadata_vadc =
+      fidl::Unpersist<fuchsia_hardware_adcimpl::Metadata>(metadata_blob_vadc);
+  ASSERT_TRUE(controller_metadata_vadc.is_ok());
+  ASSERT_TRUE(controller_metadata_vadc->channels());
+  ASSERT_EQ(controller_metadata_vadc->channels()->size(), 1lu);
 
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
+  ASSERT_TRUE(controller_metadata_vadc->channels()->at(0).idx());
+  ASSERT_EQ(*controller_metadata_vadc->channels()->at(0).idx(), static_cast<uint32_t>(ADC_CHAN1));
+  ASSERT_TRUE(controller_metadata_vadc->channels()->at(0).name());
+  EXPECT_EQ(strcmp(controller_metadata_vadc->channels()->at(0).name()->c_str(), ADC_CHAN1_NAME), 0);
 
-      // Controller metadata.
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result controller_metadata =
-          fidl::Unpersist<fuchsia_hardware_adcimpl::Metadata>(metadata_blob);
-      ASSERT_TRUE(controller_metadata.is_ok());
-      ASSERT_TRUE(controller_metadata->channels());
-      ASSERT_EQ(controller_metadata->channels()->size(), 1lu);
+  auto adc_nodes = adc_tester->GetPbusNodes("adc-ffffb000");
+  ASSERT_EQ(1lu, adc_nodes.size());
+  const auto& node_adc = adc_nodes[0];
+  auto metadata_adc = node_adc.metadata();
 
-      ASSERT_TRUE(controller_metadata->channels()->at(0).idx());
-      ASSERT_EQ(*controller_metadata->channels()->at(0).idx(), static_cast<uint32_t>(ADC_CHAN1));
-      ASSERT_TRUE(controller_metadata->channels()->at(0).name());
-      EXPECT_EQ(strcmp(controller_metadata->channels()->at(0).name()->c_str(), ADC_CHAN1_NAME), 0);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata_adc);
+  ASSERT_EQ(1lu, metadata_adc->size());
 
-      node_tested_count++;
-    }
+  // Controller metadata.
+  std::vector<uint8_t> metadata_blob_adc = std::move(*(*metadata_adc)[0].data());
+  fit::result controller_metadata_adc =
+      fidl::Unpersist<fuchsia_hardware_adcimpl::Metadata>(metadata_blob_adc);
+  ASSERT_TRUE(controller_metadata_adc.is_ok());
+  ASSERT_TRUE(controller_metadata_adc->channels());
+  ASSERT_EQ(controller_metadata_adc->channels()->size(), 2lu);
 
-    if (node.name()->find("adc-ffffb000") != std::string::npos) {
-      auto metadata = adc_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
+  ASSERT_TRUE(controller_metadata_adc->channels()->at(0).idx());
+  ASSERT_EQ(*controller_metadata_adc->channels()->at(0).idx(), static_cast<uint32_t>(ADC_CHAN2));
+  ASSERT_TRUE(controller_metadata_adc->channels()->at(0).name());
+  EXPECT_EQ(strcmp(controller_metadata_adc->channels()->at(0).name()->c_str(), ADC_CHAN2_NAME), 0);
 
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
+  ASSERT_TRUE(controller_metadata_adc->channels()->at(1).idx());
+  ASSERT_EQ(*controller_metadata_adc->channels()->at(1).idx(), static_cast<uint32_t>(ADC_CHAN3));
+  ASSERT_TRUE(controller_metadata_adc->channels()->at(1).name());
+  EXPECT_EQ(strcmp(controller_metadata_adc->channels()->at(1).name()->c_str(), ADC_CHAN3_NAME), 0);
 
-      // Controller metadata.
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result controller_metadata =
-          fidl::Unpersist<fuchsia_hardware_adcimpl::Metadata>(metadata_blob);
-      ASSERT_TRUE(controller_metadata.is_ok());
-      ASSERT_TRUE(controller_metadata->channels());
-      ASSERT_EQ(controller_metadata->channels()->size(), 2lu);
+  ASSERT_EQ(1lu, adc_tester->GetCompositeNodeSpecs("audio").size());
+  auto mgr_request_audio = adc_tester->GetCompositeNodeSpecs("audio")[0];
 
-      ASSERT_TRUE(controller_metadata->channels()->at(0).idx());
-      ASSERT_EQ(*controller_metadata->channels()->at(0).idx(), static_cast<uint32_t>(ADC_CHAN2));
-      ASSERT_TRUE(controller_metadata->channels()->at(0).name());
-      EXPECT_EQ(strcmp(controller_metadata->channels()->at(0).name()->c_str(), ADC_CHAN2_NAME), 0);
+  ASSERT_TRUE(mgr_request_audio.parents2().has_value());
+  ASSERT_EQ(3lu, mgr_request_audio.parents2()->size());
 
-      ASSERT_TRUE(controller_metadata->channels()->at(1).idx());
-      ASSERT_EQ(*controller_metadata->channels()->at(1).idx(), static_cast<uint32_t>(ADC_CHAN3));
-      ASSERT_TRUE(controller_metadata->channels()->at(1).name());
-      EXPECT_EQ(strcmp(controller_metadata->channels()->at(1).name()->c_str(), ADC_CHAN3_NAME), 0);
+  // 1st parent is pdev. Skipping that.
+  // 2nd parent is ADC CHAN1.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
+                           bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
+      (*mgr_request_audio.parents2())[1].properties(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
+                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
+      (*mgr_request_audio.parents2())[1].bind_rules(), false));
 
-      node_tested_count++;
-    }
-  }
+  // 3rd parent is ADC CHAN2.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
+                           bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
+      (*mgr_request_audio.parents2())[2].properties(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
+                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
+      (*mgr_request_audio.parents2())[2].bind_rules(), false));
 
-  uint32_t mgr_request_idx = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        adc_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-    if (node.name()->find("audio") != std::string::npos) {
-      node_tested_count++;
+  ASSERT_EQ(1lu, adc_tester->GetCompositeNodeSpecs("video").size());
+  auto mgr_request_video = adc_tester->GetCompositeNodeSpecs("video")[0];
 
-      ASSERT_EQ(2lu, adc_tester->env().SyncCall(
-                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
+  ASSERT_TRUE(mgr_request_video.parents2().has_value());
+  ASSERT_EQ(2lu, mgr_request_video.parents2()->size());
 
-      auto mgr_request = adc_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(3lu, mgr_request.parents2()->size());
-
-      // 1st parent is pdev. Skipping that.
-      // 2nd parent is ADC CHAN1.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                               bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
-          (*mgr_request.parents2())[1].properties(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                     bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-
-      // 3rd parent is ADC CHAN2.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                               bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
-          (*mgr_request.parents2())[2].properties(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                     bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
-          (*mgr_request.parents2())[2].bind_rules(), false));
-    }
-
-    if (node.name()->find("video") != std::string::npos) {
-      node_tested_count++;
-
-      ASSERT_EQ(2lu, adc_tester->env().SyncCall(
-                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
-
-      auto mgr_request = adc_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
-
-      // 1st parent is pdev. Skipping that.
-      // 2nd parent is ADC CHAN3.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                               bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
-          (*mgr_request.parents2())[1].properties(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                     bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 4u);
+  // 1st parent is pdev. Skipping that.
+  // 2nd parent is ADC CHAN3.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
+                           bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
+      (*mgr_request_video.parents2())[1].properties(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
+                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
+      (*mgr_request_video.parents2())[1].bind_rules(), false));
 }
 
 }  // namespace adc_dt

@@ -27,7 +27,7 @@ source_set("thermal-zones-visitor-impl") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.trippoint:fuchsia.hardware.trippoint_cpp",
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]

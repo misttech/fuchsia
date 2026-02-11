@@ -33,34 +33,21 @@ TEST(FocaltechVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, focaltech_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(focaltech_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = focaltech_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  std::vector<fuchsia_hardware_platform_bus::Node> touch_nodes =
+      focaltech_visitor_tester->GetPbusNodes("touchscreen");
+  ASSERT_EQ(1lu, touch_nodes.size());
+  auto metadata = touch_nodes[0].metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = focaltech_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
 
-    if (node.name()->find("touchscreen") != std::string::npos) {
-      node_tested_count++;
-      auto metadata = focaltech_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
-
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-
-      fit::result device_info =
-          fidl::Unpersist<fuchsia_hardware_input_focaltech::Metadata>(metadata_blob);
-      ASSERT_TRUE(device_info.is_ok());
-      EXPECT_EQ(device_info->device_id(), fuchsia_hardware_input_focaltech::DeviceId::kFt6336);
-      EXPECT_TRUE(device_info->needs_firmware());
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  fit::result device_info =
+      fidl::Unpersist<fuchsia_hardware_input_focaltech::Metadata>(metadata_blob);
+  ASSERT_TRUE(device_info.is_ok());
+  EXPECT_EQ(device_info->device_id(), fuchsia_hardware_input_focaltech::DeviceId::kFt6336);
+  EXPECT_TRUE(device_info->needs_firmware());
 }
 
 }  // namespace focaltech_visitor_dt

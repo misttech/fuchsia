@@ -35,41 +35,26 @@ TEST(Dwc2VisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, dwc2_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(dwc2_visitor_tester->DoPublish().is_ok());
 
-  auto node_count =
-      dwc2_visitor_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto nodes = dwc2_visitor_tester->GetPbusNodes("usb-ff400000");
+  ASSERT_EQ(1lu, nodes.size());
+  auto& node = nodes[0];
+  auto metadata = node.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = dwc2_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
 
-    if (node.name()->find("usb-ff400000") != std::string::npos) {
-      auto metadata = dwc2_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
-
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-
-      // Dwc2 metadata
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result dwc2_metadata =
-          fidl::Unpersist<fuchsia_hardware_usb_dwc2::Metadata>(metadata_blob);
-      ASSERT_TRUE(dwc2_metadata.is_ok());
-      EXPECT_EQ(dwc2_metadata->rx_fifo_size(), static_cast<uint32_t>(TEST_G_RX_FIFO_SIZE));
-      EXPECT_EQ(dwc2_metadata->nptx_fifo_size(), static_cast<uint32_t>(TEST_G_NP_TX_FIFO_SIZE));
-      EXPECT_EQ(dwc2_metadata->tx_fifo_sizes()[0], static_cast<uint32_t>(TEST_G_TX_FIFO_SIZE_0));
-      EXPECT_EQ(dwc2_metadata->tx_fifo_sizes()[1], static_cast<uint32_t>(TEST_G_TX_FIFO_SIZE_1));
-      EXPECT_EQ(dwc2_metadata->usb_turnaround_time(),
-                static_cast<uint32_t>(TEST_G_TURNAROUND_TIME));
-      EXPECT_EQ(static_cast<uint32_t>(dwc2_metadata->dma_burst_len()),
-                static_cast<uint32_t>(TEST_DMA_BURST_LENGTH));
-      node_tested_count++;
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // Dwc2 metadata
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+  fit::result dwc2_metadata = fidl::Unpersist<fuchsia_hardware_usb_dwc2::Metadata>(metadata_blob);
+  ASSERT_TRUE(dwc2_metadata.is_ok());
+  EXPECT_EQ(dwc2_metadata->rx_fifo_size(), static_cast<uint32_t>(TEST_G_RX_FIFO_SIZE));
+  EXPECT_EQ(dwc2_metadata->nptx_fifo_size(), static_cast<uint32_t>(TEST_G_NP_TX_FIFO_SIZE));
+  EXPECT_EQ(dwc2_metadata->tx_fifo_sizes()[0], static_cast<uint32_t>(TEST_G_TX_FIFO_SIZE_0));
+  EXPECT_EQ(dwc2_metadata->tx_fifo_sizes()[1], static_cast<uint32_t>(TEST_G_TX_FIFO_SIZE_1));
+  EXPECT_EQ(dwc2_metadata->usb_turnaround_time(), static_cast<uint32_t>(TEST_G_TURNAROUND_TIME));
+  EXPECT_EQ(static_cast<uint32_t>(dwc2_metadata->dma_burst_len()),
+            static_cast<uint32_t>(TEST_DMA_BURST_LENGTH));
 }
 
 }  // namespace dwc2_visitor_dt

@@ -20,8 +20,7 @@ source_set("reset") {
     "reset-visitor.h",
   ]
   deps = [
-    "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:multivisitor",
     "//sdk/lib/driver/devicetree/visitors:registration",

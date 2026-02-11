@@ -35,36 +35,21 @@ TEST(AmlogicCanvasVisitorTest, TestBindProperty) {
   ASSERT_EQ(ZX_OK, canvas_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(canvas_tester->DoPublish().is_ok());
 
-  auto node_count =
-      canvas_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+  ASSERT_EQ(1lu, canvas_tester->GetCompositeNodeSpecs("video-decoder").size());
+  auto mgr_request = canvas_tester->GetCompositeNodeSpecs("video-decoder")[0];
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = canvas_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
+  ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-    if (node->args().name()->find("video-decoder") != std::string::npos) {
-      node_tested_count++;
-      auto mgr_request = canvas_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, 0);
-
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
-
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(
-              bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-              bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                                 bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                                 bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                             bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+      }},
+      (*mgr_request.parents2())[1].properties(), false));
 }
 
 }  // namespace amlogic_canvas_dt

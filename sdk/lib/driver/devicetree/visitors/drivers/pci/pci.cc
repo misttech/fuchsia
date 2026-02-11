@@ -5,7 +5,6 @@
 #include "sdk/lib/driver/devicetree/visitors/drivers/pci/pci.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
 #include <zircon/errors.h>
 
 #include <algorithm>
@@ -246,7 +245,7 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   if (reg->size() != 1u) {
-    FDF_SLOG(ERROR, "Property \"reg\" expected to have one entry", KV("entries", reg->size()));
+    FDF_LOG(ERROR, "Property \"reg\" expected to have one entry, entries: %zu", reg->size());
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   reg_ = (*reg)[0u];

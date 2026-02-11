@@ -26,7 +26,7 @@ source_set("power-element-visitor-impl") {
     "power-element-visitor.h",
   ]
   deps = [
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]

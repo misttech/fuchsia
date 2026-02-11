@@ -6,7 +6,6 @@
 #define LIB_DRIVER_DEVICETREE_MANAGER_NODE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/devicetree/devicetree.h>
 #include <lib/zx/result.h>
@@ -18,6 +17,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "lib/driver/devicetree/manager/publisher.h"
 
 namespace fdf_devicetree {
 
@@ -107,10 +108,7 @@ class Node {
   zx::result<> ChangePublishOrder(uint32_t new_index);
 
   // Publish this node.
-  // TODO(https://fxbug.dev/42059490): Switch to fdf::SyncClient when it's available.
-  zx::result<> Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus,
-                       fidl::SyncClient<fuchsia_driver_framework::CompositeNodeManager>& mgr,
-                       fidl::SyncClient<fuchsia_driver_framework::Node>& fdf_node);
+  zx::result<> Publish(PublisherInterface& publisher);
 
   const std::string& name() const { return name_; }
   const std::string& fdf_name() const { return fdf_name_; }
@@ -168,9 +166,6 @@ class Node {
 
   // Storing handle to manager. This is ok as the manager always outlives the node instance.
   NodeManager* manager_;
-
-  // Valid only when a non platform bus node is published.
-  fidl::SyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
   RegisterType register_type_ = RegisterType::kMmio;
 };

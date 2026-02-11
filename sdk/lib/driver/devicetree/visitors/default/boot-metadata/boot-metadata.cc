@@ -6,7 +6,7 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/devicetree/devicetree.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
+#include <zircon/status.h>
 
 #include <cstdint>
 #include <optional>

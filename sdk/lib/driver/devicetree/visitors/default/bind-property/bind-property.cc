@@ -5,7 +5,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
+#include <zircon/status.h>
 
 #include <bind/fuchsia/devicetree/cpp/bind.h>
 
@@ -20,8 +20,8 @@ constexpr const char kCompatibleProp[] = "compatible";
 zx::result<> BindPropertyVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
   auto compatible = node.GetProperty<std::vector<std::string>>(kCompatibleProp);
   if (compatible.is_error() && compatible.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_SLOG(WARNING, "Node has invalid compatible property", KV("node_name", node.name()),
-             KV("status", compatible.status_string()));
+    FDF_LOG(WARNING, "Node has invalid compatible property. node_name: %s, status: %d",
+            node.name().c_str(), compatible.status_value());
     return compatible.take_error();
   }
 

@@ -60,43 +60,6 @@ class SpmiVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<Spmi
   explicit SpmiVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<SpmiVisitor>(dtb_path, "SpmiBusVisitorTest") {}
 
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-  FindMgrRequest(std::string_view name) {
-    const size_t mgr_request_size =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size);
-    for (size_t i = 0; i < mgr_request_size; i++) {
-      fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec> request =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, i);
-      if (request.name() && *request.name() == name) {
-        return request;
-      }
-    }
-
-    return {};
-  }
-
-  std::optional<fuchsia_hardware_platform_bus::Node> FindPbusNode(std::string_view name) {
-    const size_t pbus_node_size =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-    for (size_t i = 0; i < pbus_node_size; i++) {
-      fuchsia_hardware_platform_bus::Node node =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-      if (node.name() && *node.name() == name) {
-        return node;
-      }
-    }
-
-    return {};
-  }
-
-  std::optional<const fdf_devicetree::Node*> FindDevicetreeNode(std::string_view name) {
-    for (auto& node : manager()->nodes()) {
-      if (node->name() == name) {
-        return node.get();
-      }
-    }
-    return {};
-  }
 };
 
 TEST(SpmiVisitorTest, TwoControllers) {
@@ -112,18 +75,19 @@ TEST(SpmiVisitorTest, TwoControllers) {
   ASSERT_TRUE(spmi_tester->DoPublish().is_ok());
 
   // First controller metadata
-  const auto pbus_node_0 = spmi_tester->FindPbusNode("spmi-abcd0000");
-  ASSERT_TRUE(pbus_node_0);
+  auto pbus_node_0_list = spmi_tester->GetPbusNodes("spmi-abcd0000");
+  ASSERT_EQ(1u, pbus_node_0_list.size());
+  const auto& pbus_node_0 = pbus_node_0_list[0];
 
-  ASSERT_TRUE(pbus_node_0->metadata());
-  ASSERT_EQ(pbus_node_0->metadata()->size(), 1u);
+  ASSERT_TRUE(pbus_node_0.metadata());
+  ASSERT_EQ(pbus_node_0.metadata()->size(), 1u);
 
-  ASSERT_TRUE((*pbus_node_0->metadata())[0].id());
-  EXPECT_EQ(*(*pbus_node_0->metadata())[0].id(),
+  ASSERT_TRUE((*pbus_node_0.metadata())[0].id());
+  EXPECT_EQ(*(*pbus_node_0.metadata())[0].id(),
             fuchsia_hardware_spmi::ControllerInfo::kSerializableName);
 
-  ASSERT_TRUE((*pbus_node_0->metadata())[0].data());
-  const std::vector<uint8_t>& metadata_0 = *(*pbus_node_0->metadata())[0].data();
+  ASSERT_TRUE((*pbus_node_0.metadata())[0].data());
+  const std::vector<uint8_t>& metadata_0 = *(*pbus_node_0.metadata())[0].data();
 
   const auto controller_0 = fidl::Unpersist<fuchsia_hardware_spmi::ControllerInfo>(
       {metadata_0.data(), metadata_0.size()});
@@ -208,11 +172,12 @@ TEST(SpmiVisitorTest, TwoControllers) {
   EXPECT_EQ(*target_3->display_name(), "target-b-3");
 
   // First controller composite node specs
-  const auto vreg_1000 = spmi_tester->FindMgrRequest("vreg-1000");
-  ASSERT_TRUE(vreg_1000);
+  auto vreg_1000_list = spmi_tester->GetCompositeNodeSpecs("vreg-1000");
+  ASSERT_EQ(1u, vreg_1000_list.size());
+  const auto& vreg_1000 = vreg_1000_list[0];
 
-  ASSERT_TRUE(vreg_1000->parents2());
-  ASSERT_EQ(vreg_1000->parents2()->size(), 2u);
+  ASSERT_TRUE(vreg_1000.parents2());
+  ASSERT_EQ(vreg_1000.parents2()->size(), 2u);
 
   // The 0th composite parent has the `compatible` string and is added by the default visitor. Start
   // at index 1 to skip this parent and validate only the parents2 added by the SPMI visitor.
@@ -224,7 +189,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::TARGET_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x1000u),
       },
-      (*vreg_1000->parents2())[1].bind_rules(), false));
+      (*vreg_1000.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
@@ -233,29 +198,30 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x1000u),
       },
-      (*vreg_1000->parents2())[1].properties(), false));
+      (*vreg_1000.parents2())[1].properties(), false));
 
   // gpio@2000 and i2c@3000 are referenced by another node, so no composite node specs should be
   // added for them.
-  const auto gpio_2000 = spmi_tester->FindMgrRequest("gpio-2000");
-  EXPECT_FALSE(gpio_2000);
+  const auto gpio_2000_list = spmi_tester->GetCompositeNodeSpecs("gpio-2000");
+  EXPECT_TRUE(gpio_2000_list.empty());
 
-  const auto i2c_3000 = spmi_tester->FindMgrRequest("i2c-3000");
-  EXPECT_FALSE(i2c_3000);
+  const auto i2c_3000_list = spmi_tester->GetCompositeNodeSpecs("i2c-3000");
+  EXPECT_TRUE(i2c_3000_list.empty());
 
   // Second controller metadata
-  const auto pbus_node_1 = spmi_tester->FindPbusNode("spmi-abcf0000");
-  ASSERT_TRUE(pbus_node_1);
+  const auto pbus_node_1_list = spmi_tester->GetPbusNodes("spmi-abcf0000");
+  ASSERT_EQ(1u, pbus_node_1_list.size());
+  const auto& pbus_node_1 = pbus_node_1_list[0];
 
-  ASSERT_TRUE(pbus_node_1->metadata());
-  ASSERT_EQ(pbus_node_1->metadata()->size(), 1u);
+  ASSERT_TRUE(pbus_node_1.metadata());
+  ASSERT_EQ(pbus_node_1.metadata()->size(), 1u);
 
-  ASSERT_TRUE((*pbus_node_1->metadata())[0].id());
-  EXPECT_EQ(*(*pbus_node_1->metadata())[0].id(),
+  ASSERT_TRUE((*pbus_node_1.metadata())[0].id());
+  EXPECT_EQ(*(*pbus_node_1.metadata())[0].id(),
             fuchsia_hardware_spmi::ControllerInfo::kSerializableName);
 
-  ASSERT_TRUE((*pbus_node_1->metadata())[0].data());
-  const std::vector<uint8_t>& metadata_1 = *(*pbus_node_1->metadata())[0].data();
+  ASSERT_TRUE((*pbus_node_1.metadata())[0].data());
+  const std::vector<uint8_t>& metadata_1 = *(*pbus_node_1.metadata())[0].data();
 
   const auto controller_1 = fidl::Unpersist<fuchsia_hardware_spmi::ControllerInfo>(
       {metadata_1.data(), metadata_1.size()});
@@ -273,11 +239,12 @@ TEST(SpmiVisitorTest, TwoControllers) {
   EXPECT_FALSE(target_1_0->sub_targets());
 
   // Second controller composite node specs
-  const auto target_c_0 = spmi_tester->FindMgrRequest("target-c-0");
-  ASSERT_TRUE(target_c_0);
+  const auto target_c_0_list = spmi_tester->GetCompositeNodeSpecs("target-c-0");
+  ASSERT_EQ(1u, target_c_0_list.size());
+  const auto& target_c_0 = target_c_0_list[0];
 
-  ASSERT_TRUE(target_c_0->parents2());
-  ASSERT_EQ(target_c_0->parents2()->size(), 2u);
+  ASSERT_TRUE(target_c_0.parents2());
+  ASSERT_EQ(target_c_0.parents2()->size(), 2u);
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -286,28 +253,30 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::CONTROLLER_ID, controller_1_id),
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::TARGET_ID, 0u),
       },
-      (*target_c_0->parents2())[1].bind_rules(), false));
+      (*target_c_0.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
                              bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
       },
-      (*target_c_0->parents2())[1].properties(), false));
+      (*target_c_0.parents2())[1].properties(), false));
 
   // The second pbus node is not an SPMI controller and should not have metadata. It does have an
   // "spmis" property and should have composite parents2 for the SPMI sub-targets that it
   // references.
 
-  const auto pbus_node_ignored = spmi_tester->FindPbusNode("not-spmi-abce0000");
-  ASSERT_TRUE(pbus_node_ignored);
-  EXPECT_FALSE(pbus_node_ignored->metadata());
+  const auto pbus_node_ignored_list = spmi_tester->GetPbusNodes("not-spmi-abce0000");
+  ASSERT_EQ(1u, pbus_node_ignored_list.size());
+  const auto& pbus_node_ignored = pbus_node_ignored_list[0];
+  EXPECT_FALSE(pbus_node_ignored.metadata());
 
-  const auto not_spmi = spmi_tester->FindMgrRequest("not-spmi-abce0000");
-  ASSERT_TRUE(not_spmi);
+  const auto not_spmi_list = spmi_tester->GetCompositeNodeSpecs("not-spmi-abce0000");
+  ASSERT_EQ(1u, not_spmi_list.size());
+  const auto& not_spmi = not_spmi_list[0];
 
-  ASSERT_TRUE(not_spmi->parents2());
-  ASSERT_EQ(not_spmi->parents2()->size(), 4u);
+  ASSERT_TRUE(not_spmi.parents2());
+  ASSERT_EQ(not_spmi.parents2()->size(), 4u);
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -317,7 +286,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::TARGET_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x2000u),
       },
-      (*not_spmi->parents2())[1].bind_rules(), false));
+      (*not_spmi.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
@@ -326,7 +295,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x2000u),
       },
-      (*not_spmi->parents2())[1].properties(), false));
+      (*not_spmi.parents2())[1].properties(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -336,7 +305,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::TARGET_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x3000u),
       },
-      (*not_spmi->parents2())[2].bind_rules(), false));
+      (*not_spmi.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
@@ -346,7 +315,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x3000u),
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_NAME, "i2c-core"),
       },
-      (*not_spmi->parents2())[2].properties(), false));
+      (*not_spmi.parents2())[2].properties(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -356,7 +325,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::TARGET_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0xffffu),
       },
-      (*not_spmi->parents2())[3].bind_rules(), false));
+      (*not_spmi.parents2())[3].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
@@ -366,7 +335,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0xffffu),
           fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_NAME, "i2c-config"),
       },
-      (*not_spmi->parents2())[3].properties(), false));
+      (*not_spmi.parents2())[3].properties(), false));
 }
 
 TEST(SpmiVisitorTest, RegisterType) {
@@ -384,18 +353,18 @@ TEST(SpmiVisitorTest, RegisterType) {
   std::vector<std::string> mmio_nodes = {"spmi@abcd0000", "spmi@abcf0000", "not-spmi@abce0000"};
 
   for (auto& mmio_node : mmio_nodes) {
-    ASSERT_TRUE(spmi_tester->FindDevicetreeNode(mmio_node));
-    ASSERT_EQ(spmi_tester->FindDevicetreeNode(mmio_node).value()->register_type(),
-              fdf_devicetree::RegisterType::kMmio);
+    auto nodes = spmi_tester->GetDevicetreeNodes(mmio_node);
+    ASSERT_EQ(1u, nodes.size());
+    ASSERT_EQ(nodes[0]->register_type(), fdf_devicetree::RegisterType::kMmio);
   }
 
   std::vector<std::string> spmi_register_nodes = {"target-a@0", "vreg@1000",  "gpio@2000",
                                                   "i2c@3000",   "target-b@3", "target-c@0"};
 
   for (auto& spmi_register_node : spmi_register_nodes) {
-    ASSERT_TRUE(spmi_tester->FindDevicetreeNode(spmi_register_node));
-    ASSERT_EQ(spmi_tester->FindDevicetreeNode(spmi_register_node).value()->register_type(),
-              fdf_devicetree::RegisterType::kSpmi);
+    auto nodes = spmi_tester->GetDevicetreeNodes(spmi_register_node);
+    ASSERT_EQ(1u, nodes.size());
+    ASSERT_EQ(nodes[0]->register_type(), fdf_devicetree::RegisterType::kSpmi);
   }
 }
 

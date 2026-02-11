@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/load-visitors.h>
 
 namespace example_board {
@@ -45,7 +46,9 @@ zx::result<> ExampleBoard::Start() {
   }
 
   auto pbus_client = fdf::WireSyncClient(std::move(pbus.value()));
-  status = manager->PublishDevices(pbus_client, std::move(*group_manager), node_);
+  auto mgr_client = fidl::SyncClient(std::move(group_manager.value()));
+  fdf_devicetree::PublisherDev publisher(pbus_client, mgr_client, node_);
+  status = manager->PublishDevices(publisher);
   if (status.is_error()) {
     FDF_LOG(ERROR, "Failed to publish devices: %s", status.status_string());
     return status.take_error();

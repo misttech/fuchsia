@@ -24,34 +24,7 @@ class SpiBusVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<Sp
   explicit SpiBusVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<SpiBusVisitor>(dtb_path, "SpiBusVisitorTest") {}
 
-  std::optional<fuchsia_hardware_platform_bus::Node> FindPbusNode(const char* match) {
-    const size_t pbus_node_count =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-    for (size_t i = 0; i < pbus_node_count; i++) {
-      fuchsia_hardware_platform_bus::Node node =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-      if (node.name() && node.name()->find(match) != std::string::npos) {
-        return node;
-      }
-    }
 
-    return {};
-  }
-
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-  FindCompositeNodeSpec(const char* match) {
-    const size_t mgr_request_count =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size);
-    for (size_t i = 0; i < mgr_request_count; i++) {
-      fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec> spec =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, i);
-      if (spec.name() && spec.name()->find(match) != std::string::npos) {
-        return spec;
-      }
-    }
-
-    return {};
-  }
 };
 
 TEST(SpiBusVisitorTest, TestSpiChannels) {
@@ -70,12 +43,12 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
   ASSERT_EQ(ZX_OK, spi_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(spi_tester->DoPublish().is_ok());
 
-  const std::optional<fuchsia_hardware_platform_bus::Node> pbus_node =
-      spi_tester->FindPbusNode("spi-");
-  ASSERT_TRUE(pbus_node);
+  auto pbus_nodes = spi_tester->GetPbusNodes("spi-");
+  ASSERT_EQ(1lu, pbus_nodes.size());
+  const auto& pbus_node = pbus_nodes[0];
 
   const std::optional<std::vector<fuchsia_hardware_platform_bus::Metadata>>& metadata =
-      pbus_node->metadata();
+      pbus_node.metadata();
 
   ASSERT_TRUE(metadata);
   ASSERT_EQ(1lu, metadata->size());
@@ -97,11 +70,12 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
     EXPECT_EQ(channels[3].cs(), 3);
   }
 
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-      child0_spec = spi_tester->FindCompositeNodeSpec("child-0");
-  ASSERT_TRUE(child0_spec);
-  ASSERT_TRUE(child0_spec->parents2());
-  ASSERT_EQ(child0_spec->parents2()->size(), 2ul);
+  auto child0_specs = spi_tester->GetCompositeNodeSpecs("child-0");
+  ASSERT_EQ(1lu, child0_specs.size());
+  const auto& child0_spec = child0_specs[0];
+
+  ASSERT_TRUE(child0_spec.parents2());
+  ASSERT_EQ(child0_spec.parents2()->size(), 2ul);
 
   // The 0th parent is the board driver.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -110,7 +84,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
-      (*child0_spec->parents2())[1].properties(), false));
+      (*child0_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
@@ -118,13 +92,14 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
-      (*child0_spec->parents2())[1].bind_rules(), false));
+      (*child0_spec.parents2())[1].bind_rules(), false));
 
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-      child1_spec = spi_tester->FindCompositeNodeSpec("child-1");
-  ASSERT_TRUE(child1_spec);
-  ASSERT_TRUE(child1_spec->parents2());
-  ASSERT_EQ(child1_spec->parents2()->size(), 2ul);
+  auto child1_specs = spi_tester->GetCompositeNodeSpecs("child-1");
+  ASSERT_EQ(1lu, child1_specs.size());
+  const auto& child1_spec = child1_specs[0];
+
+  ASSERT_TRUE(child1_spec.parents2());
+  ASSERT_EQ(child1_spec.parents2()->size(), 2ul);
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
@@ -132,7 +107,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
-      (*child1_spec->parents2())[1].properties(), false));
+      (*child1_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
@@ -140,13 +115,14 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 1u),
       }},
-      (*child1_spec->parents2())[1].bind_rules(), false));
+      (*child1_spec.parents2())[1].bind_rules(), false));
 
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-      child2_spec = spi_tester->FindCompositeNodeSpec("child-2");
-  ASSERT_TRUE(child2_spec);
-  ASSERT_TRUE(child2_spec->parents2());
-  ASSERT_EQ(child2_spec->parents2()->size(), 3ul);
+  auto child2_specs = spi_tester->GetCompositeNodeSpecs("child-2");
+  ASSERT_EQ(1lu, child2_specs.size());
+  const auto& child2_spec = child2_specs[0];
+
+  ASSERT_TRUE(child2_spec.parents2());
+  ASSERT_EQ(child2_spec.parents2()->size(), 3ul);
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
@@ -154,7 +130,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
-      (*child2_spec->parents2())[1].properties(), false));
+      (*child2_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
@@ -162,7 +138,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 2u),
       }},
-      (*child2_spec->parents2())[1].bind_rules(), false));
+      (*child2_spec.parents2())[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
@@ -170,7 +146,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 1u),
       }},
-      (*child2_spec->parents2())[2].properties(), false));
+      (*child2_spec.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
@@ -178,7 +154,7 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 3u),
       }},
-      (*child2_spec->parents2())[2].bind_rules(), false));
+      (*child2_spec.parents2())[2].bind_rules(), false));
 }
 
 }  // namespace spi_bus_dt

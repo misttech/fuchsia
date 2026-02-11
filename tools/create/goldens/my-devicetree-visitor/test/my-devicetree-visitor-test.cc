@@ -32,22 +32,11 @@ TEST(MyDevicetreeVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, my_devicetree_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(my_devicetree_visitor_tester->DoPublish().is_ok());
 
-  auto node_count =
-      my_devicetree_visitor_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+  // <Add tests for specific node properties>.
+  auto nodes = my_devicetree_visitor_tester->GetBoardChildNodes("sample-device");
+  ASSERT_EQ(nodes.size(), 1u);
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        my_devicetree_visitor_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
-
-    // <Add tests for specific node properties>.
-    if (node->args().name()->find("") != std::string::npos) {
-      node_tested_count++;
-      // <Add Node specific metadata or bind property tests below>.
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // <Add Node specific metadata or bind property tests below>.
 }
 
 }  // namespace my_devicetree_visitor_dt

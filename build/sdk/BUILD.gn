@@ -160,6 +160,7 @@ _internal_source_sets_list = [
   "//sdk/lib/driver/devicetree/manager:manager",
   "//sdk/lib/driver/devicetree/manager:node",
   "//sdk/lib/driver/devicetree/manager:manager-test-helper",
+  "//sdk/lib/driver/devicetree/manager:publisher-fake",
   "//sdk/lib/driver/devicetree/testing:board-test-helper",
   "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
   "//sdk/lib/driver/devicetree/visitors:common-types",

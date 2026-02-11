@@ -893,6 +893,7 @@ if (current_toolchain == default_toolchain) {
       # Remove the `fbl` dependency from `devicetree`.
       "//sdk/lib/driver/devicetree/manager:manager_sdk",
       "//sdk/lib/driver/devicetree/manager:manager-test-helper_sdk",
+      "//sdk/lib/driver/devicetree/manager:publisher-fake_sdk",
       "//sdk/lib/driver/devicetree/testing:board-test-helper_sdk",
       "//sdk/lib/driver/devicetree/testing:visitor-test-helper_sdk",
       "//sdk/lib/driver/devicetree/visitors:driver-visitor_sdk",

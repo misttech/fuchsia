@@ -15,18 +15,100 @@ sdk_source_set("headers") {
   sdk_name = "devicetree-manager-headers"
   category = "internal"
   include_base = "//sdk"
+  public = [ "manager.h" ]
+  public_configs = [ "//sdk/config" ]
+
+  public_deps = [
+    ":node",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//zircon/kernel/lib/devicetree",
+    "//zircon/system/ulib/zx",
+  ]
+  if (is_fuchsia) {
+    public_deps += [ "//sdk/lib/driver/incoming/cpp" ]
+  }
+}
+
+sdk_source_set("publisher-fake") {
+  sdk_name = "devicetree-publisher-fake"
+  category = "internal"
+  include_base = "//sdk"
+  public = [
+    "publisher-fake.h",
+    "test-publisher.h",
+  ]
+  sources = [ "publisher-fake.cc" ]
+  public_configs = [ "//sdk/config" ]
+  public_deps = [
+    ":manager",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/testing/cpp",
+  ]
+  deps = [
+    "//sdk/lib/driver/component/cpp:node",
+    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
+  ]
+  non_sdk_deps = [ "//src/devices/bin/driver_runtime" ]
+}
+
+source_set("manager-host") {
+  sources = [
+    "manager.cc",
+    "publisher-host.cc",
+  ]
   public = [
     "manager.h",
     "node.h",
+    "publisher-host.h",
+    "publisher.h",
+    "test-publisher.h",
     "visitor.h",
   ]
 
-  public_deps = [
+  deps = [
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
-    "//sdk/lib/driver/incoming/cpp",
+    "//sdk/lib/driver/logging/cpp",
+    "//sdk/lib/zbi-format",
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+  ]
+
+  public_deps = [
+    ":headers",
+    ":node",
+  ]
+}
+
+sdk_source_set("node") {
+  sdk_name = "devicetree-node"
+  category = "internal"
+  include_base = "//sdk"
+  sources = [ "node.cc" ]
+  public = [
+    "node.h",
+    "publisher.h",
+    "visitor.h",
+  ]
+  public_deps = [
+    "//sdk/lib/driver/component/cpp:node",
     "//zircon/kernel/lib/devicetree",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.platform",
     "//zircon/system/ulib/zx",
+  ]
+
+  non_sdk_deps = [
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
   ]
 }
 
@@ -36,11 +118,14 @@ sdk_source_set("manager") {
   include_base = "//sdk"
   sources = [
     "manager.cc",
-    "node.cc",
+    "publisher-dev.cc",
   ]
+
   public = [
     "manager.h",
     "node.h",
+    "publisher-dev.h",
+    "publisher.h",
     "visitor.h",
   ]
 
@@ -51,39 +136,54 @@ sdk_source_set("manager") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
-    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/incoming/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/zbi-format",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]
 
-  public_deps = [ ":headers" ]
+  public_deps = [
+    ":headers",
+    ":node",
+  ]
 }
 
 sdk_source_set("manager-test-helper") {
   sdk_name = "devicetree_manager_test_helper"
   category = "internal"
   include_base = "//sdk"
-  sources = [
-    "manager-test-helper.cc",
-    "manager-test-helper.h",
-  ]
+  sources = [ "manager-test-helper.cc" ]
   deps = [ "//sdk/lib/driver/logging/cpp" ]
+  public = [
+    "manager-test-helper.h",
+    "test-publisher.h",
+  ]
   public_deps = [
     ":headers",
-    ":manager",
-    "//sdk/lib/async_patterns/cpp",
-    "//sdk/lib/driver/testing/cpp",
-    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/lib/stdcompat",
     "//sdk/lib/syslog/cpp",
-    "//src/devices/bin/driver_runtime",
   ]
+  if (is_host) {
+    public_deps += [ ":manager-host" ]
+  } else {
+    public_deps += [
+      ":manager",
+      "//sdk/lib/async_patterns/cpp",
+      "//sdk/lib/driver/devicetree/manager:publisher-fake",
+      "//sdk/lib/driver/testing/cpp",
+      "//sdk/lib/driver/testing/cpp:scoped_global_logger",
+      "//src/devices/bin/driver_runtime",
+    ]
+  }
 }
 
 test("devicetree-manager-test") {
   deps = [
     ":manager-test-helper",
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+    "//sdk/lib/driver/devicetree/visitors:load-visitors",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default",
     "//src/devices/bind/fuchsia:fuchsia_cpp",

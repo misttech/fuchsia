@@ -36,26 +36,16 @@ TEST(ResetVisitorTest, TestResetProperty) {
   ASSERT_EQ(ZX_OK, reset_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(reset_tester->DoPublish().is_ok());
 
-  auto non_pbus_node_count =
-      reset_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
-  ASSERT_EQ(non_pbus_node_count, 1u);
-
-  auto pbus_node_count =
-      reset_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-  ASSERT_EQ(pbus_node_count, 2u);
-
-  auto mgr_request =
-      reset_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, 0);
+  auto mgr_request = reset_tester->GetCompositeNodeSpecs()[0];
   const auto& parents = mgr_request.parents2();
   ASSERT_EQ(parents->size(), 4u);
 
   std::optional<unsigned int> reset_controller1_id;
   std::optional<unsigned int> reset_controller2_id;
 
-  for (size_t i = 0; i < pbus_node_count; i++) {
-    auto node =
-        reset_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-
+  std::vector<fuchsia_hardware_platform_bus::Node> pbus_nodes =
+      reset_tester->GetPbusNodes("reset-controller");
+  for (const auto& node : pbus_nodes) {
     std::optional<unsigned int>* active_controller_id = nullptr;
     if (node.name()->find("first-reset-controller") != std::string::npos) {
       active_controller_id = &reset_controller1_id;
@@ -64,9 +54,7 @@ TEST(ResetVisitorTest, TestResetProperty) {
     } else {
       continue;
     }
-    auto metadata = reset_tester->env()
-                        .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                        .metadata();
+    auto metadata = node.metadata();
 
     // Test metadata properties.
     ASSERT_TRUE(metadata);

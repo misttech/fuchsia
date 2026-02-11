@@ -11,6 +11,7 @@
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 
 #include <optional>
 #include <string>
@@ -59,8 +60,8 @@ Node::Node(Node *parent, const std::string_view name, devicetree::Properties pro
   if (phandle.is_ok()) {
     phandle_ = phandle.value();
   } else if (phandle.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(WARNING, "Node '%s' has invalid phandle property: %s", name_.c_str(),
-            phandle.status_string());
+    FDF_LOG(WARNING, "Node '%s' has invalid phandle property: %d", name_.c_str(),
+            phandle.status_value());
   }
 }
 
@@ -135,9 +136,7 @@ zx::result<> Node::ChangePublishOrder(uint32_t new_index) {
   return manager_->ChangePublishOrder(id(), new_index);
 }
 
-zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> &pbus,
-                           fidl::SyncClient<fuchsia_driver_framework::CompositeNodeManager> &mgr,
-                           fidl::SyncClient<fuchsia_driver_framework::Node> &fdf_node) {
+zx::result<> Node::Publish(PublisherInterface &publisher) {
   if (node_properties_.empty() && !composite_ && !add_platform_device_) {
     FDF_LOG(
         DEBUG,
@@ -165,7 +164,7 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
   //        ii. Node does not reference other nodes -> Not published
   //
 
-  bool add_non_platform_device = !add_platform_device_ && !node_properties_.empty();
+  bool add_board_child = !add_platform_device_ && !node_properties_.empty();
 
   if (add_platform_device_) {
     FDF_LOG(DEBUG, "Adding node '%s' to pbus with instance id %d.", fdf_name().c_str(), id_);
@@ -178,36 +177,21 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
       }
     }
 
-    fdf::Arena arena('PBUS');
-    fidl::Arena fidl_arena;
-    auto result = pbus.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pbus_node_));
-    if (!result.ok()) {
-      FDF_LOG(ERROR, "NodeAdd request failed: %s", result.FormatDescription().data());
-      return zx::error(result.status());
-    }
-    if (result->is_error()) {
-      FDF_LOG(ERROR, "NodeAdd failed: %s", zx_status_get_string(result->error_value()));
-      return zx::error(result->error_value());
-    }
-  } else if (add_non_platform_device) {
-    FDF_LOG(DEBUG, "Adding node '%s' as board driver child.", fdf_name().c_str());
-    fuchsia_driver_framework::NodeAddArgs node_add_args;
-    node_add_args.name() = fdf_name();
-
-    node_add_args.properties2() = node_properties_;
-    if (!driver_host_.empty()) {
-      node_add_args.driver_host() = driver_host_;
-    }
-
-    auto [client_end, server_end] =
-        fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-    auto result = fdf_node->AddChild({std::move(node_add_args), std::move(server_end), {}});
+    zx::result<> result = publisher.AddPbusNode(pbus_node_);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "AddChild request failed: %s",
-              result.error_value().FormatDescription().c_str());
-      return zx::error(ZX_ERR_INTERNAL);
+      return result.take_error();
     }
-    node_controller_.Bind(std::move(client_end));
+  } else if (add_board_child) {
+    FDF_LOG(DEBUG, "Adding node '%s' as board driver child.", fdf_name().c_str());
+
+    auto result = publisher.AddBoardChildNode(
+        {.name = fdf_name(),
+         .properties = node_properties_,
+         .driver_host =
+             !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt});
+    if (result.is_error()) {
+      return result.take_error();
+    }
   }
 
   // Add composite node spec if composite.
@@ -238,39 +222,28 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
           fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
       };
       parents_.insert(parents_.begin(), std::move(platform_node));
-    } else if (add_non_platform_device) {
+    } else if (add_board_child) {
       // Construct the non platform bus node.
-      fdf::ParentSpec2 non_pbus_node;
-      non_pbus_node.properties() = node_properties_;
+      fdf::ParentSpec2 board_child_node;
+      board_child_node.properties() = node_properties_;
 
       for (auto &node_property : node_properties_) {
         fdf::BindRule2 bind_rule = {node_property.key(),
                                     fuchsia_driver_framework::Condition::kAccept,
                                     {node_property.value()}};
-        non_pbus_node.bind_rules().emplace_back(std::move(bind_rule));
+        board_child_node.bind_rules().emplace_back(std::move(bind_rule));
       }
-      parents_.insert(parents_.begin(), std::move(non_pbus_node));
+      parents_.insert(parents_.begin(), std::move(board_child_node));
     }
 
     FDF_LOG(DEBUG, "Adding composite node spec to '%s' with %zu parents.", fdf_name().data(),
             parents_.size());
 
-    fdf::CompositeNodeSpec group{{
-        .name = fdf_name(),
-        .parents2 = std::move(parents_),
-    }};
-
-    if (!driver_host_.empty()) {
-      group.driver_host() = driver_host_;
-    }
-
-    auto devicegroup_result = mgr->AddSpec({std::move(group)});
-    if (devicegroup_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create composite node: %s",
-              devicegroup_result.error_value().FormatDescription().data());
-      return zx::error(devicegroup_result.error_value().is_framework_error()
-                           ? devicegroup_result.error_value().framework_error().status()
-                           : ZX_ERR_INVALID_ARGS);
+    zx::result<> result = publisher.AddCompositeNodeSpec(
+        fdf_name(), std::move(parents_),
+        !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt);
+    if (result.is_error()) {
+      return result.take_error();
     }
   }
 

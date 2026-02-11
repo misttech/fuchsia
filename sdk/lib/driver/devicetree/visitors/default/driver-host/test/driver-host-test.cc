@@ -31,21 +31,9 @@ TEST(DriverHostVisitorTest, TestDriverHostProperty) {
   ASSERT_EQ(ZX_OK, driver_host_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(driver_host_tester->DoPublish().is_ok());
 
-  auto node_count =
-      driver_host_tester->env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size);
-
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = driver_host_tester->env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, i);
-
-    if (node->args().name() == "sample-device") {
-      ASSERT_EQ(node->args().driver_host(), "#samples");
-
-      node_tested_count++;
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  std::vector<BoardChildNode> nodes = driver_host_tester->GetBoardChildNodes("sample-device");
+  ASSERT_EQ(1lu, nodes.size());
+  ASSERT_EQ(nodes[0].driver_host, "#samples");
 }
 
 }  // namespace

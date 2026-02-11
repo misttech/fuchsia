@@ -88,14 +88,14 @@ zx::result<> BoardTestHelper::WaitOnDevices(const std::vector<std::string>& devi
   auto result = realm_->component().exposed()->Open("dev-topological", fuchsia::io::PERM_READABLE,
                                                     {}, server_end.TakeChannel());
   if (result != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to open dev-topological : " << zx_status_get_string(result);
+    FX_LOGS(ERROR) << "Failed to open dev-topological : " << result;
     return zx::error(result);
   }
 
   int dev_fd;
   result = fdio_fd_create(client_end.TakeChannel().release(), &dev_fd);
   if (result != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to create fd : " << zx_status_get_string(result);
+    FX_LOGS(ERROR) << "Failed to create fd : " << result;
     return zx::error(result);
   }
 

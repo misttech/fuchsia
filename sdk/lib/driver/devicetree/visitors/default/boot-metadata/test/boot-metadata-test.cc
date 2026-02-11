@@ -32,28 +32,19 @@ TEST(BootMetadataVisitorTest, TestBootMetadataProperty) {
   ASSERT_EQ(ZX_OK, boot_metadata_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(boot_metadata_tester->DoPublish().is_ok());
 
-  auto node_count = boot_metadata_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size);
+  std::vector<fuchsia_hardware_platform_bus::Node> nodes =
+      boot_metadata_tester->GetPbusNodes("sample-device");
+  ASSERT_EQ(1lu, nodes.size());
+  const auto& node = nodes[0];
+  auto boot_metadata = node.boot_metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = boot_metadata_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, i);
-
-    if (node.name() == "sample-device") {
-      auto boot_metadata = node.boot_metadata();
-
-      // Test boot-metadata properties.
-      ASSERT_TRUE(boot_metadata);
-      ASSERT_EQ(2lu, boot_metadata->size());
-      EXPECT_EQ(*(*boot_metadata)[0].zbi_type(), static_cast<uint64_t>(TEST_ZBI_TYPE1));
-      EXPECT_EQ(*(*boot_metadata)[0].zbi_extra(), static_cast<uint64_t>(TEST_ZBI_EXTRA1));
-      EXPECT_EQ(*(*boot_metadata)[1].zbi_type(), static_cast<uint64_t>(TEST_ZBI_TYPE2));
-      EXPECT_EQ(*(*boot_metadata)[1].zbi_extra(), static_cast<uint64_t>(TEST_ZBI_EXTRA2));
-
-      node_tested_count++;
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // Test boot-metadata properties.
+  ASSERT_TRUE(boot_metadata);
+  ASSERT_EQ(2lu, boot_metadata->size());
+  EXPECT_EQ(*(*boot_metadata)[0].zbi_type(), static_cast<uint64_t>(TEST_ZBI_TYPE1));
+  EXPECT_EQ(*(*boot_metadata)[0].zbi_extra(), static_cast<uint64_t>(TEST_ZBI_EXTRA1));
+  EXPECT_EQ(*(*boot_metadata)[1].zbi_type(), static_cast<uint64_t>(TEST_ZBI_TYPE2));
+  EXPECT_EQ(*(*boot_metadata)[1].zbi_extra(), static_cast<uint64_t>(TEST_ZBI_EXTRA2));
 }
 
 }  // namespace

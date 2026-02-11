@@ -39,64 +39,52 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, usb_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(usb_visitor_tester->DoPublish().is_ok());
 
-  auto node_count =
-      usb_visitor_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto nodes = usb_visitor_tester->GetPbusNodes("test");
+  ASSERT_EQ(1lu, nodes.size());
 
-  uint32_t node_tested_count = 0;
-  uint32_t mgr_request_idx = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = usb_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  ASSERT_EQ(1lu, usb_visitor_tester->GetCompositeNodeSpecs().size());
+  auto mgr_request = usb_visitor_tester->GetCompositeNodeSpecs()[0];
+  ASSERT_TRUE(mgr_request.parents2().has_value());
+  ASSERT_EQ(3lu, mgr_request.parents2()->size());
 
-    if (node.name()->find("test") != std::string::npos) {
-      node_tested_count++;
-      auto mgr_request = usb_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(3lu, mgr_request.parents2()->size());
-
-      // 1st parent is pdev. Skip that.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                                     bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                     bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                                     bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                                     bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI)}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
+  // 1st parent is pdev. Skip that.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
                                  bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
                                  bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-              fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
                                  bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-              fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
+                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI)}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
+                             bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                             bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                             bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                             bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+      }},
+      (*mgr_request.parents2())[1].properties(), false));
 
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                                       bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_usb_phy::NAME, "another-phy"),
-          }},
-          (*mgr_request.parents2())[2].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                                 bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, "another-phy"),
-          }},
-          (*mgr_request.parents2())[2].properties(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{
+          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
+                                   bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule2(bind_fuchsia_usb_phy::NAME, "another-phy"),
+      }},
+      (*mgr_request.parents2())[2].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
+                             bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, "another-phy"),
+      }},
+      (*mgr_request.parents2())[2].properties(), false));
 }
 
 }  // namespace usb_phy_visitor_dt

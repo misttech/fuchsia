@@ -5,7 +5,7 @@
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
+#include <zircon/status.h>
 
 #include <cstdint>
 #include <optional>
@@ -26,8 +26,8 @@ zx::result<ParsedProperties> PropertyParser::Parse(Node& node) {
         }
         continue;
       }
-      FDF_LOG(ERROR, "Node '%s' has an invalid property '%s': %s", node.name().c_str(),
-              property->name().c_str(), status.status_string());
+      FDF_LOG(ERROR, "Failed to parse property '%s' for node '%s - %d", property->name().c_str(),
+              node.name().c_str(), status.status_value());
       return status.take_error();
     }
   }
@@ -125,8 +125,8 @@ zx::result<> ReferenceProperty::Parse(Node& node, std::map<PropertyName, std::an
       auto cells_prop_name = std::get<PropertyName>(cell_specifier_);
       auto cell_specifier = reference->GetProperty<uint32_t>(cells_prop_name);
       if (cell_specifier.is_error()) {
-        FDF_LOG(ERROR, "Reference node '%s' does not have '%s' property: %s.",
-                reference->name().c_str(), cells_prop_name.c_str(), cell_specifier.status_string());
+        FDF_LOG(ERROR, "Failed to parse reference with %s cells. reference node: %s. error: %d",
+                reference->name().c_str(), cells_prop_name.c_str(), cell_specifier.status_value());
         return cell_specifier.take_error();
       }
       cell_count = *cell_specifier;

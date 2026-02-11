@@ -43,43 +43,6 @@ class MailboxVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<M
       : fdf_devicetree::testing::VisitorTestHelper<MailboxVisitor>(dtb_path,
                                                                    "MailboxBusVisitorTest") {}
 
-  std::optional<fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec>>
-  FindMgrRequest(std::string_view name) {
-    const size_t mgr_request_size =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size);
-    for (size_t i = 0; i < mgr_request_size; i++) {
-      fidl::Request<fuchsia_driver_framework::CompositeNodeManager::AddSpec> request =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, i);
-      if (request.name() && *request.name() == name) {
-        return request;
-      }
-    }
-
-    return {};
-  }
-
-  std::optional<fuchsia_hardware_platform_bus::Node> FindPbusNode(std::string_view name) {
-    const size_t pbus_node_size =
-        env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-    for (size_t i = 0; i < pbus_node_size; i++) {
-      fuchsia_hardware_platform_bus::Node node =
-          env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-      if (node.name() && *node.name() == name) {
-        return node;
-      }
-    }
-
-    return {};
-  }
-
-  std::optional<const fdf_devicetree::Node*> FindDevicetreeNode(std::string_view name) {
-    for (auto& node : manager()->nodes()) {
-      if (node->name() == name) {
-        return node.get();
-      }
-    }
-    return {};
-  }
 };
 
 TEST(MailboxVisitorTest, TwoControllers) {
@@ -97,18 +60,19 @@ TEST(MailboxVisitorTest, TwoControllers) {
   ASSERT_TRUE(mailbox_tester->DoPublish().is_ok());
 
   // First controller metadata
-  const auto pbus_node_0 = mailbox_tester->FindPbusNode("mailbox-abcd0000");
-  ASSERT_TRUE(pbus_node_0);
+  auto pbus_node_0_list = mailbox_tester->GetPbusNodes("mailbox-abcd0000");
+  ASSERT_EQ(1u, pbus_node_0_list.size());
+  const auto& pbus_node_0 = pbus_node_0_list[0];
 
-  ASSERT_TRUE(pbus_node_0->metadata());
-  ASSERT_EQ(pbus_node_0->metadata()->size(), 1u);
+  ASSERT_TRUE(pbus_node_0.metadata());
+  ASSERT_EQ(pbus_node_0.metadata()->size(), 1u);
 
-  ASSERT_TRUE((*pbus_node_0->metadata())[0].id());
-  EXPECT_EQ(*(*pbus_node_0->metadata())[0].id(),
+  ASSERT_TRUE((*pbus_node_0.metadata())[0].id());
+  EXPECT_EQ(*(*pbus_node_0.metadata())[0].id(),
             fuchsia_hardware_mailbox::ControllerInfo::kSerializableName);
 
-  ASSERT_TRUE((*pbus_node_0->metadata())[0].data());
-  const std::vector<uint8_t>& metadata_0 = *(*pbus_node_0->metadata())[0].data();
+  ASSERT_TRUE((*pbus_node_0.metadata())[0].data());
+  const std::vector<uint8_t>& metadata_0 = *(*pbus_node_0.metadata())[0].data();
 
   const auto controller_0 = fidl::Unpersist<fuchsia_hardware_mailbox::ControllerInfo>(
       {metadata_0.data(), metadata_0.size()});
@@ -124,18 +88,19 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(FindChannel(0x5678, *controller_0));
 
   // Second controller metadata
-  const auto pbus_node_1 = mailbox_tester->FindPbusNode("mailbox-abce0000");
-  ASSERT_TRUE(pbus_node_1);
+  auto pbus_node_1_list = mailbox_tester->GetPbusNodes("mailbox-abce0000");
+  ASSERT_EQ(1u, pbus_node_1_list.size());
+  const auto& pbus_node_1 = pbus_node_1_list[0];
 
-  ASSERT_TRUE(pbus_node_1->metadata());
-  ASSERT_EQ(pbus_node_1->metadata()->size(), 1u);
+  ASSERT_TRUE(pbus_node_1.metadata());
+  ASSERT_EQ(pbus_node_1.metadata()->size(), 1u);
 
-  ASSERT_TRUE((*pbus_node_1->metadata())[0].id());
-  EXPECT_EQ(*(*pbus_node_1->metadata())[0].id(),
+  ASSERT_TRUE((*pbus_node_1.metadata())[0].id());
+  EXPECT_EQ(*(*pbus_node_1.metadata())[0].id(),
             fuchsia_hardware_mailbox::ControllerInfo::kSerializableName);
 
-  ASSERT_TRUE((*pbus_node_1->metadata())[0].data());
-  const std::vector<uint8_t>& metadata_1 = *(*pbus_node_1->metadata())[0].data();
+  ASSERT_TRUE((*pbus_node_1.metadata())[0].data());
+  const std::vector<uint8_t>& metadata_1 = *(*pbus_node_1.metadata())[0].data();
 
   const auto controller_1 = fidl::Unpersist<fuchsia_hardware_mailbox::ControllerInfo>(
       {metadata_1.data(), metadata_1.size()});
@@ -151,11 +116,12 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(FindChannel(0x1234, *controller_1));
 
   // First client composite node specs
-  const auto client_0 = mailbox_tester->FindMgrRequest("node-abcf0000");
-  ASSERT_TRUE(client_0);
+  auto client_0_list = mailbox_tester->GetCompositeNodeSpecs("node-abcf0000");
+  ASSERT_EQ(1u, client_0_list.size());
+  const auto& client_0 = client_0_list[0];
 
-  ASSERT_TRUE(client_0->parents2());
-  ASSERT_EQ(client_0->parents2()->size(), 4u);
+  ASSERT_TRUE(client_0.parents2());
+  ASSERT_EQ(client_0.parents2()->size(), 4u);
 
   // The 0th composite parent has the `compatible` string and is added by the default visitor.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -165,7 +131,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
       },
-      (*client_0->parents2())[1].bind_rules(), false));
+      (*client_0.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
@@ -174,7 +140,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL_NAME, "mailbox-1-1234"),
       },
-      (*client_0->parents2())[1].properties(), false));
+      (*client_0.parents2())[1].properties(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -183,7 +149,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x5678u),
       },
-      (*client_0->parents2())[2].bind_rules(), false));
+      (*client_0.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
@@ -192,7 +158,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, 0x5678u),
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL_NAME, "mailbox-1-5678"),
       },
-      (*client_0->parents2())[2].properties(), false));
+      (*client_0.parents2())[2].properties(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -201,7 +167,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x9abcu),
       },
-      (*client_0->parents2())[3].bind_rules(), false));
+      (*client_0.parents2())[3].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
@@ -210,14 +176,15 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, 0x9abcu),
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL_NAME, "mailbox-2-9abc"),
       },
-      (*client_0->parents2())[3].properties(), false));
+      (*client_0.parents2())[3].properties(), false));
 
   // Second client composite node specs
-  const auto client_1 = mailbox_tester->FindMgrRequest("node-abd00000");
-  ASSERT_TRUE(client_1);
+  auto client_1_list = mailbox_tester->GetCompositeNodeSpecs("node-abd00000");
+  ASSERT_EQ(1u, client_1_list.size());
+  const auto& client_1 = client_1_list[0];
 
-  ASSERT_TRUE(client_1->parents2());
-  ASSERT_EQ(client_1->parents2()->size(), 2u);
+  ASSERT_TRUE(client_1.parents2());
+  ASSERT_EQ(client_1.parents2()->size(), 2u);
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
@@ -226,7 +193,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
           fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
       },
-      (*client_1->parents2())[1].bind_rules(), false));
+      (*client_1.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
@@ -234,7 +201,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
           fdf::MakeProperty2(bind_fuchsia_mailbox::CONTROLLER_ID, 0u),
           fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
       },
-      (*client_1->parents2())[1].properties(), false));
+      (*client_1.parents2())[1].properties(), false));
 }
 
 }  // namespace mailbox_dt

@@ -23,11 +23,9 @@ source_set("interconnect") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib_cpp",
-    "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:common-types",
     "//sdk/lib/driver/devicetree/visitors:registration",
-    "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.interconnect:fuchsia.interconnect_cpp",
     "//src/lib/ddk",

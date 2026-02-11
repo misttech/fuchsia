@@ -27,6 +27,7 @@
 #include "manager-test-helper.h"
 #include "test-data/basic-properties.h"
 #include "test-data/simple.h"
+#include "test-publisher.h"
 #include "visitor.h"
 
 namespace fdf_devicetree {
@@ -34,7 +35,7 @@ namespace {
 
 class ManagerTest : public testing::ManagerTestHelper, public ::testing::Test {
  public:
-  ManagerTest() : ManagerTestHelper("ManagerTest") {}
+  ManagerTest() : ManagerTestHelper(testing::CreateTestPublisher()) {}
 };
 
 TEST_F(ManagerTest, TestFindsNodes) {
@@ -96,15 +97,15 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_EQ(ZX_OK, manager.Walk(default_visitors).status_value());
 
   ASSERT_TRUE(DoPublish(manager).is_ok());
-  ASSERT_EQ(0lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(2lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
+  ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(2lu, publisher()->GetBoardChildNodes().size());
 
-  ASSERT_EQ(0lu, env().SyncCall(&testing::FakeEnvWrapper::mgr_requests_size));
+  ASSERT_EQ(0lu, publisher()->GetCompositeNodeSpecs().size());
 
-  auto non_pbus_node_0 = env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, 0);
-  ASSERT_TRUE(non_pbus_node_0->args().name().has_value());
-  ASSERT_EQ(non_pbus_node_0->args().name(), "dt-root");
-  ASSERT_TRUE(non_pbus_node_0->args().properties2().has_value());
+  auto board_child_node_0 = publisher()->GetBoardChildNodes()[0];
+
+  ASSERT_EQ(board_child_node_0.name, "dt-root");
+  ASSERT_TRUE(!board_child_node_0.properties.empty());
 
   ASSERT_TRUE(testing::CheckHasProperties(
       {{{
@@ -112,12 +113,12 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
           .value =
               fuchsia_driver_framework::NodePropertyValue::WithStringValue("fuchsia,sample-dt"),
       }}},
-      *non_pbus_node_0->args().properties2(), false));
+      board_child_node_0.properties, false));
 
-  auto non_pbus_node_1 = env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, 1);
-  ASSERT_TRUE(non_pbus_node_1->args().name().has_value());
-  ASSERT_NE(nullptr, strstr("example-device", non_pbus_node_1->args().name()->data()));
-  ASSERT_TRUE(non_pbus_node_1->args().properties2().has_value());
+  auto board_child_node_1 = publisher()->GetBoardChildNodes()[1];
+
+  ASSERT_NE(nullptr, strstr("example-device", board_child_node_1.name.data()));
+  ASSERT_TRUE(!board_child_node_1.properties.empty());
 
   ASSERT_TRUE(testing::CheckHasProperties(
       {{{
@@ -125,7 +126,7 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
           .value =
               fuchsia_driver_framework::NodePropertyValue::WithStringValue("fuchsia,sample-device"),
       }}},
-      *non_pbus_node_1->args().properties2(), false));
+      board_child_node_1.properties, false));
 }
 
 TEST_F(ManagerTest, DriverVisitorTest) {
@@ -177,11 +178,11 @@ TEST_F(ManagerTest, TestMetadata) {
 
   ASSERT_TRUE(DoPublish(manager).is_ok());
 
-  ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(10lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
+  ASSERT_EQ(1lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(10lu, publisher()->GetBoardChildNodes().size());
 
   // Check metadata of sample-device.
-  auto metadata = env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, 0).metadata();
+  auto metadata = publisher()->GetPbusNodes()[0].metadata();
 
   // Test Metadata properties.
   ASSERT_TRUE(metadata);
@@ -371,21 +372,21 @@ TEST_F(ManagerTest, TestSkipDisabledNodes) {
   ASSERT_EQ(ZX_OK, manager.Walk(default_visitors).status_value());
 
   ASSERT_TRUE(DoPublish(manager).is_ok());
-  ASSERT_EQ(0lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(3lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
+  ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(3lu, publisher()->GetBoardChildNodes().size());
 
-  auto non_pbus_node0 = env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, 0);
-  ASSERT_TRUE(non_pbus_node0->args().name().has_value());
-  ASSERT_EQ(non_pbus_node0->args().name(), "dt-root");
-  auto non_pbus_node1 = env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, 1);
-  ASSERT_TRUE(non_pbus_node1->args().name().has_value());
-  ASSERT_NE(nullptr, strstr("status-okay-device", non_pbus_node1->args().name()->data()));
-  auto non_pbus_node2 = env().SyncCall(&testing::FakeEnvWrapper::non_pbus_nodes_at, 2);
-  ASSERT_TRUE(non_pbus_node2->args().name().has_value());
-  ASSERT_NE(nullptr, strstr("status-none-device", non_pbus_node2->args().name()->data()));
+  auto board_child_node0 = publisher()->GetBoardChildNodes()[0];
+
+  ASSERT_EQ(board_child_node0.name, "dt-root");
+  auto board_child_node1 = publisher()->GetBoardChildNodes()[1];
+
+  ASSERT_NE(nullptr, strstr("status-okay-device", board_child_node1.name.data()));
+  auto board_child_node2 = publisher()->GetBoardChildNodes()[2];
+
+  ASSERT_NE(nullptr, strstr("status-none-device", board_child_node2.name.data()));
 }
 
-TEST_F(ManagerTest, TestNonPbusCompositeSpec) {
+TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
   Manager manager(testing::LoadTestBlob("/pkg/test-data/simple.dtb"));
   static const std::string kTestKey = "test-key";
   static const std::string kTestProperty = "test-property";
@@ -410,11 +411,11 @@ TEST_F(ManagerTest, TestNonPbusCompositeSpec) {
   ASSERT_EQ(ZX_OK, manager.Walk(visitor).status_value());
   ASSERT_TRUE(DoPublish(manager).is_ok());
 
-  ASSERT_EQ(0lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(2lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
-  ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::mgr_requests_size));
+  ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(2lu, publisher()->GetBoardChildNodes().size());
+  ASSERT_EQ(1lu, publisher()->GetCompositeNodeSpecs().size());
 
-  auto mgr_request = env().SyncCall(&testing::FakeEnvWrapper::mgr_requests_at, 0);
+  auto mgr_request = publisher()->GetCompositeNodeSpecs()[0];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
@@ -465,11 +466,11 @@ TEST_F(ManagerTest, TestPbusCompositeSpec) {
   ASSERT_EQ(ZX_OK, manager.Walk(visitor).status_value());
   ASSERT_TRUE(DoPublish(manager).is_ok());
 
-  ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
-  ASSERT_EQ(1lu, env().SyncCall(&testing::FakeEnvWrapper::mgr_requests_size));
+  ASSERT_EQ(1lu, publisher()->GetPbusNodes().size());
+  ASSERT_EQ(1lu, publisher()->GetBoardChildNodes().size());
+  ASSERT_EQ(1lu, publisher()->GetCompositeNodeSpecs().size());
 
-  auto mgr_request = env().SyncCall(&testing::FakeEnvWrapper::mgr_requests_at, 0);
+  auto mgr_request = publisher()->GetCompositeNodeSpecs()[0];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 

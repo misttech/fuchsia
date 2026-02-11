@@ -54,6 +54,7 @@ sdk_source_set("driver-visitor") {
     ":property-parser",
     "//sdk/lib/driver/component/cpp:node",
     "//sdk/lib/driver/devicetree/manager:headers",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -88,7 +89,8 @@ sdk_source_set("property-parser") {
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:headers",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//zircon/system/ulib/zx",
   ]
 }

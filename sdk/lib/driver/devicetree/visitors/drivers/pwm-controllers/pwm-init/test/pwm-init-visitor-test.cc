@@ -36,34 +36,20 @@ TEST(PwmInitVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, pwm_init_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(pwm_init_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = pwm_init_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+  auto specs = pwm_init_visitor_tester->GetCompositeNodeSpecs("wifi");
+  ASSERT_EQ(1lu, specs.size());
+  auto mgr_request = specs[0];
+  ASSERT_TRUE(mgr_request.parents2().has_value());
+  ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = pwm_init_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
-
-    if (node->args().name()->find("wifi") != std::string::npos) {
-      node_tested_count++;
-      auto mgr_request = pwm_init_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, 0);
-
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
-
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                     bind_fuchsia_pwm::BIND_INIT_STEP_PWM)}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM)}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM),
+      }},
+      (*mgr_request.parents2())[1].properties(), false));
 }
 
 }  // namespace pwm_init_visitor_dt

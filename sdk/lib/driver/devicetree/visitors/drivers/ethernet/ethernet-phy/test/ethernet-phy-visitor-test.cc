@@ -37,38 +37,26 @@ TEST(EthVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, eth_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(eth_visitor_tester->DoPublish().is_ok());
 
-  auto node_count =
-      eth_visitor_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  std::vector<fuchsia_hardware_platform_bus::Node> phy_nodes =
+      eth_visitor_tester->GetPbusNodes("dwmac");
+  ASSERT_EQ(1lu, phy_nodes.size());
 
-  uint32_t node_tested_count = 0;
-  uint32_t mgr_request_idx = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = eth_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  auto mgr_request = eth_visitor_tester->GetCompositeNodeSpecs("dwmac")[0];
 
-    if (node.name()->find("dwmac") != std::string::npos) {
-      node_tested_count++;
-      auto mgr_request = eth_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
+  ASSERT_TRUE(mgr_request.parents2().has_value());
+  ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-      // 1st parent is pdev. Skip that.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(
-              bind_fuchsia_hardware_ethernet_board::SERVICE,
-              bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT)}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_hardware_ethernet_board::SERVICE,
-                                 bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // 1st parent is pdev. Skip that.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_ethernet_board::SERVICE,
+                                 bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT)}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia_hardware_ethernet_board::SERVICE,
+                             bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
+      }},
+      (*mgr_request.parents2())[1].properties(), false));
 }
 
 }  // namespace eth_phy_visitor_dt

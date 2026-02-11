@@ -35,35 +35,22 @@ TEST(MaliGpuVisitorTest, TestBindProperty) {
   ASSERT_EQ(ZX_OK, mali_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(mali_tester->DoPublish().is_ok());
 
-  auto node_count =
-      mali_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+  auto mgr_request_list = mali_tester->GetCompositeNodeSpecs("mali-controller");
+  ASSERT_EQ(1lu, mgr_request_list.size());
+  auto mgr_request = mgr_request_list[0];
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node =
-        mali_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
+  ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-    if (node->args().name()->find("mali-controller") != std::string::npos) {
-      node_tested_count++;
-      auto mgr_request =
-          mali_tester->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, 0);
-
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
-
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                                     bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                                 bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpu_mali::SERVICE,
+                                 bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {{
+          fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,
+                             bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT),
+      }},
+      (*mgr_request.parents2())[1].properties(), false));
 }
 
 }  // namespace mali_gpu_dt

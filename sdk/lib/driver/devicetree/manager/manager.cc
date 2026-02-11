@@ -4,10 +4,15 @@
 
 #include "lib/driver/devicetree/manager/manager.h"
 
+#ifdef __Fuchsia__
+#include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
+#endif
+
 #include <lib/devicetree/devicetree.h>
-#include <lib/driver/logging/cpp/structured_logger.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zx/result.h>
+#include <zircon/status.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -53,23 +58,25 @@ std::string GetParentPath(const devicetree::NodePath& node_path) {
 
 namespace fdf_devicetree {
 
+#ifdef __Fuchsia__
 zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
   zx::result client = ns.Connect<fhpb::Service::Firmware>();
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to fuchsia.hardware.platform.bus.Firmware: %s",
-            client.status_string());
+    FDF_LOG(ERROR, "Failed to connect to fuchsia.hardware.platform.bus.Firmware: %d",
+            client.status_value());
     return client.take_error();
   }
 
   fdf::Arena arena('dtdt');
   auto result =
       fdf::WireCall(*client).buffer(arena)->GetFirmware(fhpb::wire::FirmwareType::kDeviceTree);
+
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to send GetFirmware request: %s", result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to GetFirmware: %s", zx_status_get_string(result->error_value()));
+    FDF_LOG(ERROR, "Failed to GetFirmware: %d", result->error_value());
     return zx::error(result->error_value());
   }
 
@@ -79,13 +86,13 @@ zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
 
   zx_status_t status = vmo.read(data.data(), 0, length);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read %lu bytes from the devicetree: %s", length,
-            zx_status_get_string(status));
+    FDF_LOG(ERROR, "Failed to read %lu bytes from the devicetree: %d", length, status);
     return zx::error(status);
   }
 
   return zx::ok(Manager(std::move(data)));
 }
+#endif
 
 zx::result<> Manager::Walk(Visitor& visitor) {
   // Walk the tree and create all nodes before calling the visitor. This is required for
@@ -120,15 +127,15 @@ zx::result<> Manager::Walk(Visitor& visitor) {
     auto node = nodes_by_path_[GetPath(path)];
     zx::result<> status = visitor.Visit(*node, decoder);
     if (status.is_error()) {
-      FDF_SLOG(ERROR, "Node visit failed.", KV("node_name", node->name()),
-               KV("status_str", status.status_string()));
+      FDF_LOG(ERROR, "Node visit failed. node_name: %s, status_str: %d", node->name().c_str(),
+              status.status_value());
       visit_status = status;
     }
     return true;
   });
 
   if (visit_status.is_error()) {
-    FDF_SLOG(ERROR, "Devicetree walk failed.", KV("status_str", visit_status.status_string()));
+    FDF_LOG(ERROR, "Devicetree walk failed. status_str: %d", visit_status.status_value());
     return visit_status;
   }
 
@@ -139,8 +146,8 @@ zx::result<> Manager::Walk(Visitor& visitor) {
     FDF_LOG(DEBUG, "Finalize node - %s", node->name().c_str());
     zx::result finalize_status = visitor.FinalizeNode(*node);
     if (finalize_status.is_error()) {
-      FDF_SLOG(ERROR, "Node finalize failed.", KV("node_name", node->name()),
-               KV("status_str", finalize_status.status_string()));
+      FDF_LOG(ERROR, "Node finalize failed. node_name: %s, status_str: %d", node->name().c_str(),
+              finalize_status.status_value());
       return finalize_status;
     }
   }
@@ -148,33 +155,21 @@ zx::result<> Manager::Walk(Visitor& visitor) {
   return zx::ok();
 }
 
-zx::result<> Manager::PublishDevices(
-    fdf::WireSyncClient<fhpb::PlatformBus>& pbus_client,
-    fidl::ClientEnd<fuchsia_driver_framework::CompositeNodeManager> mgr,
-    fidl::SyncClient<fuchsia_driver_framework::Node>& fdf_node) {
-  auto mgr_client = fidl::SyncClient(std::move(mgr));
-
+zx::result<> Manager::PublishDevices(PublisherInterface& publisher) {
   for (const auto& [iommu_id, iommu] : iommus_) {
-    fdf::Arena arena('PBUS');
-    auto iommu_wire = iommu.stub_iommu()
-                          ? fhpb::wire::Iommu::WithStubIommu({})
-                          : fhpb::wire::Iommu::WithArmSmmu(arena, iommu.arm_smmu()->base_address());
-    auto result = pbus_client.buffer(arena)->RegisterIommu(iommu_id, iommu_wire);
-    if (!result.ok()) {
-      fdf::error("Failed to publish iommu: {}: {}", iommu_id, result.error());
-    } else if (result->is_error()) {
-      fdf::warn("Failed to publish iommu: {}: {}", iommu_id, result->error_value());
+    zx::result<> result = publisher.RegisterIommu(iommu_id, iommu);
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to register IOMMU for node ID %d: %d", iommu_id, result.error_value());
     }
   }
 
   for (auto& node : nodes_publish_order_) {
-    zx::result<> status = node->Publish(pbus_client, mgr_client, fdf_node);
+    zx::result<> status = node->Publish(publisher);
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Failed to publish node: %s: %s", node->name().c_str(),
-              status.status_string());
+      FDF_LOG(ERROR, "Failed to publish device for node ID %d: %d", node->id(),
+              status.status_value());
     }
   }
-
   return zx::ok();
 }
 

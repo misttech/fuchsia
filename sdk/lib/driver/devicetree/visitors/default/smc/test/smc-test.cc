@@ -32,28 +32,17 @@ TEST(SmcVisitorTest, TestSmcProperty) {
   ASSERT_EQ(ZX_OK, smc_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(smc_tester->DoPublish().is_ok());
 
-  auto node_count = smc_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size);
+  auto nodes = smc_tester->GetPbusNodes("sample-device");
+  ASSERT_EQ(1lu, nodes.size());
+  auto smc = nodes[0].smc();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = smc_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, i);
-
-    if (node.name() == "sample-device") {
-      auto smc = node.smc();
-
-      // Test smc properties.
-      ASSERT_TRUE(smc);
-      ASSERT_EQ(1lu, smc->size());
-      EXPECT_EQ(*(*smc)[0].service_call_num_base(), static_cast<uint64_t>(TEST_SMC_BASE));
-      EXPECT_EQ(*(*smc)[0].count(), static_cast<uint64_t>(TEST_SMC_COUNT));
-      EXPECT_EQ(*(*smc)[0].exclusive(), static_cast<uint64_t>(TEST_SMC_EXCLUSIVE_FLAG));
-      EXPECT_EQ(*(*smc)[0].name(), TEST_SMC_NAME);
-
-      node_tested_count++;
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // Test smc properties.
+  ASSERT_TRUE(smc);
+  ASSERT_EQ(1lu, smc->size());
+  EXPECT_EQ(*(*smc)[0].service_call_num_base(), static_cast<uint64_t>(TEST_SMC_BASE));
+  EXPECT_EQ(*(*smc)[0].count(), static_cast<uint64_t>(TEST_SMC_COUNT));
+  EXPECT_EQ(*(*smc)[0].exclusive(), static_cast<uint64_t>(TEST_SMC_EXCLUSIVE_FLAG));
+  EXPECT_EQ(*(*smc)[0].name(), TEST_SMC_NAME);
 }
 
 }  // namespace

@@ -32,39 +32,24 @@ TEST(BtiVisitorTest, TestBtiProperty) {
   ASSERT_EQ(ZX_OK, bti_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(bti_tester->DoPublish().is_ok());
 
-  auto node_count = bti_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size);
+  auto bti1_nodes = bti_tester->GetPbusNodes("sample-bti-device1");
+  ASSERT_EQ(1lu, bti1_nodes.size());
+  auto bti1 = bti1_nodes[0].bti();
+  // Test BTI properties.
+  ASSERT_TRUE(bti1);
+  ASSERT_EQ(1lu, bti1->size());
+  ASSERT_EQ(2u, *(*bti1)[0].iommu_id());
+  ASSERT_EQ(uint32_t{TEST_BTI_ID1}, *(*bti1)[0].bti_id());
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = bti_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, i);
-
-    if (node.name() == "sample-bti-device1") {
-      auto bti1 = bti_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, i).bti();
-
-      // Test BTI properties.
-      ASSERT_TRUE(bti1);
-      ASSERT_EQ(1lu, bti1->size());
-      ASSERT_EQ(2u, *(*bti1)[0].iommu_id());
-      ASSERT_EQ(uint32_t{TEST_BTI_ID1}, *(*bti1)[0].bti_id());
-
-      node_tested_count++;
-    }
-
-    if (node.name() == "sample-bti-device2") {
-      auto bti2 = bti_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_nodes_at, i).bti();
-
-      // Test BTI properties.
-      ASSERT_TRUE(bti2);
-      ASSERT_EQ(1lu, bti2->size());
-      ASSERT_EQ(2u, *(*bti2)[0].iommu_id());
-      ASSERT_EQ(uint32_t{TEST_BTI_ID2}, *(*bti2)[0].bti_id());
-      ASSERT_EQ(TEST_BTI_ID2_NAME, *(*bti2)[0].name());
-
-      node_tested_count++;
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 2u);
+  auto bti2_nodes = bti_tester->GetPbusNodes("sample-bti-device2");
+  ASSERT_EQ(1lu, bti2_nodes.size());
+  auto bti2 = bti2_nodes[0].bti();
+  // Test BTI properties.
+  ASSERT_TRUE(bti2);
+  ASSERT_EQ(1lu, bti2->size());
+  ASSERT_EQ(2u, *(*bti2)[0].iommu_id());
+  ASSERT_EQ(uint32_t{TEST_BTI_ID2}, *(*bti2)[0].bti_id());
+  ASSERT_EQ(TEST_BTI_ID2_NAME, *(*bti2)[0].name());
 }
 
 }  // namespace

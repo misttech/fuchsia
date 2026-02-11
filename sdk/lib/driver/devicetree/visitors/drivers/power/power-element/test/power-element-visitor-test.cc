@@ -35,117 +35,112 @@ TEST(PowerElementVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, power_element_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(power_element_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = power_element_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  // Check "bluetooth"
+  {
+    auto nodes = power_element_visitor_tester->GetPbusNodes("bluetooth");
+    ASSERT_EQ(1lu, nodes.size());
+    auto& node = nodes[0];
+    ASSERT_TRUE(node.power_config());
+    ASSERT_EQ(node.power_config()->size(), 1u);
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = power_element_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+    ASSERT_TRUE((*node.power_config())[0].element());
+    auto element = *(*node.power_config())[0].element();
+    EXPECT_EQ(element.name(), "wake-on-interrupt");
 
-    if (node.name()->find("bluetooth") != std::string::npos) {
-      node_tested_count++;
-      ASSERT_TRUE(node.power_config());
-      ASSERT_EQ(node.power_config()->size(), 1u);
-
-      ASSERT_TRUE((*node.power_config())[0].element());
-      auto element = *(*node.power_config())[0].element();
-      EXPECT_EQ(element.name(), "wake-on-interrupt");
-
-      ASSERT_TRUE(element.levels());
-      EXPECT_EQ(element.levels()->size(), 3u);
-      uint32_t levels_tested = 0;
-      for (auto& level : *element.levels()) {
-        if (level.name() == "off") {
-          levels_tested++;
-          EXPECT_EQ(level.level(), 0u);
-          ASSERT_TRUE(level.transitions());
-          EXPECT_EQ(level.transitions()->size(), 1u);
-          EXPECT_EQ(level.transitions()->at(0).target_level(), 1u);
-          EXPECT_EQ(level.transitions()->at(0).latency_us(), 1000u);
-        }
-        if (level.name() == "handling") {
-          levels_tested++;
-          EXPECT_EQ(level.level(), 1u);
-        }
-        if (level.name() == "on") {
-          levels_tested++;
-          EXPECT_EQ(level.level(), 2u);
-        }
+    ASSERT_TRUE(element.levels());
+    EXPECT_EQ(element.levels()->size(), 3u);
+    uint32_t levels_tested = 0;
+    for (auto& level : *element.levels()) {
+      if (level.name() == "off") {
+        levels_tested++;
+        EXPECT_EQ(level.level(), 0u);
+        ASSERT_TRUE(level.transitions());
+        EXPECT_EQ(level.transitions()->size(), 1u);
+        EXPECT_EQ(level.transitions()->at(0).target_level(), 1u);
+        EXPECT_EQ(level.transitions()->at(0).latency_us(), 1000u);
       }
-      EXPECT_EQ(levels_tested, 3u);
+      if (level.name() == "handling") {
+        levels_tested++;
+        EXPECT_EQ(level.level(), 1u);
+      }
+      if (level.name() == "on") {
+        levels_tested++;
+        EXPECT_EQ(level.level(), 2u);
+      }
+    }
+    EXPECT_EQ(levels_tested, 3u);
 
-      ASSERT_TRUE((*node.power_config())[0].dependencies());
-      auto dependencies = (*node.power_config())[0].dependencies();
-      EXPECT_EQ(dependencies->size(), 3u);
-      uint32_t dependencies_tested = 0;
-      for (auto& dependency : *dependencies) {
-        EXPECT_EQ(dependency.child(), "wake-on-interrupt");
-        ASSERT_TRUE(dependency.level_deps());
+    ASSERT_TRUE((*node.power_config())[0].dependencies());
+    auto dependencies = (*node.power_config())[0].dependencies();
+    EXPECT_EQ(dependencies->size(), 3u);
+    uint32_t dependencies_tested = 0;
+    for (auto& dependency : *dependencies) {
+      EXPECT_EQ(dependency.child(), "wake-on-interrupt");
+      ASSERT_TRUE(dependency.level_deps());
 
-        if (dependency.parent()->sag().has_value()) {
-          if (dependency.parent()->sag().value() ==
-              fuchsia_hardware_power::SagElement::kExecutionState) {
-            dependencies_tested++;
-            EXPECT_EQ(dependency.level_deps()->size(), 2u);
-            bool found_suspend = false;
-            bool found_active = false;
-            for (const auto& level_dep : *dependency.level_deps()) {
-              if (level_dep.child_level() == 1u && level_dep.parent_level() == 1u) {
-                found_suspend = true;
-              }
-              if (level_dep.child_level() == 2u && level_dep.parent_level() == 2u) {
-                found_active = true;
-              }
+      if (dependency.parent()->sag().has_value()) {
+        if (dependency.parent()->sag().value() ==
+            fuchsia_hardware_power::SagElement::kExecutionState) {
+          dependencies_tested++;
+          EXPECT_EQ(dependency.level_deps()->size(), 2u);
+          bool found_suspend = false;
+          bool found_active = false;
+          for (const auto& level_dep : *dependency.level_deps()) {
+            if (level_dep.child_level() == 1u && level_dep.parent_level() == 1u) {
+              found_suspend = true;
             }
-            EXPECT_TRUE(found_suspend);
-            EXPECT_TRUE(found_active);
+            if (level_dep.child_level() == 2u && level_dep.parent_level() == 2u) {
+              found_active = true;
+            }
           }
-        }
-
-        if (dependency.parent()->cpu_control().has_value()) {
-          dependencies_tested++;
-          EXPECT_EQ(dependency.level_deps()->size(), 1u);
-          EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 1u);
-          EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 1u);
-        }
-
-        if (dependency.parent()->instance_name().has_value()) {
-          dependencies_tested++;
-          EXPECT_EQ(dependency.level_deps()->size(), 1u);
-          EXPECT_EQ(dependency.parent()->instance_name().value(), "rail-1");
-          EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 2u);
-          EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 0u);
+          EXPECT_TRUE(found_suspend);
+          EXPECT_TRUE(found_active);
         }
       }
-      EXPECT_EQ(dependencies_tested, 3u);
-    }
 
-    if (node.name()->find("power-controller") != std::string::npos) {
-      node_tested_count++;
-      ASSERT_TRUE(node.power_config());
-      ASSERT_EQ(node.power_config()->size(), 1u);
-
-      ASSERT_TRUE((*node.power_config())[0].element());
-      auto element = *(*node.power_config())[0].element();
-      EXPECT_EQ(element.name(), "rail-1");
-
-      ASSERT_TRUE(element.levels());
-      EXPECT_EQ(element.levels()->size(), 1u);
-      uint32_t levels_tested = 0;
-      for (auto& level : *element.levels()) {
-        if (level.name() == "rail-on") {
-          levels_tested++;
-          EXPECT_EQ(level.level(), 0u);
-        }
+      if (dependency.parent()->cpu_control().has_value()) {
+        dependencies_tested++;
+        EXPECT_EQ(dependency.level_deps()->size(), 1u);
+        EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 1u);
+        EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 1u);
       }
-      EXPECT_EQ(levels_tested, 1u);
 
-      ASSERT_FALSE((*node.power_config())[0].dependencies());
+      if (dependency.parent()->instance_name().has_value()) {
+        dependencies_tested++;
+        EXPECT_EQ(dependency.level_deps()->size(), 1u);
+        EXPECT_EQ(dependency.parent()->instance_name().value(), "rail-1");
+        EXPECT_EQ(dependency.level_deps()->at(0).child_level(), 2u);
+        EXPECT_EQ(dependency.level_deps()->at(0).parent_level(), 0u);
+      }
     }
+    EXPECT_EQ(dependencies_tested, 3u);
   }
 
-  ASSERT_EQ(node_tested_count, 2u);
+  // Check "power-controller"
+  {
+    auto nodes = power_element_visitor_tester->GetPbusNodes("power-controller");
+    ASSERT_EQ(1lu, nodes.size());
+    auto& node = nodes[0];
+    ASSERT_TRUE(node.power_config());
+    ASSERT_EQ(node.power_config()->size(), 1u);
+
+    ASSERT_TRUE((*node.power_config())[0].element());
+    auto element = *(*node.power_config())[0].element();
+    EXPECT_EQ(element.name(), "rail-1");
+
+    ASSERT_TRUE(element.levels());
+    EXPECT_EQ(element.levels()->size(), 1u);
+    uint32_t levels_tested = 0;
+    for (auto& level : *element.levels()) {
+      if (level.name() == "rail-on") {
+        levels_tested++;
+        EXPECT_EQ(level.level(), 0u);
+      }
+    }
+    EXPECT_EQ(levels_tested, 1u);
+
+    ASSERT_FALSE((*node.power_config())[0].dependencies());
+  }
 }
 
 }  // namespace power_element_visitor_dt

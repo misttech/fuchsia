@@ -96,12 +96,8 @@ TEST(MmioVisitorTest, TranslateRegSuccessfully) {
   ASSERT_TRUE(mmio_tester->has_visited());
   ASSERT_TRUE(mmio_tester->DoPublish().is_ok());
 
-  auto parent_mmio = mmio_tester->env()
-                         .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, 0)
-                         .mmio();
-  auto child_mmio = mmio_tester->env()
-                        .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, 1)
-                        .mmio();
+  auto parent_mmio = mmio_tester->GetPbusNodes()[0].mmio();
+  auto child_mmio = mmio_tester->GetPbusNodes()[1].mmio();
 
   ASSERT_TRUE(parent_mmio);
   ASSERT_TRUE(child_mmio);
@@ -123,8 +119,8 @@ TEST(MmioVisitorTest, IgnoreRegWhichIsNotMmio) {
   ASSERT_TRUE(mmio_tester->manager()->Walk(visitors).is_ok());
   ASSERT_TRUE(mmio_tester->has_visited());
   ASSERT_TRUE(mmio_tester->DoPublish().is_ok());
-  ASSERT_EQ(0lu, mmio_tester->env().SyncCall(&testing::FakeEnvWrapper::pbus_node_size));
-  ASSERT_EQ(3lu, mmio_tester->env().SyncCall(&testing::FakeEnvWrapper::non_pbus_node_size));
+  ASSERT_EQ(0lu, mmio_tester->GetPbusNodes().size());
+  ASSERT_EQ(3lu, mmio_tester->GetBoardChildNodes().size());
 }
 
 }  // namespace

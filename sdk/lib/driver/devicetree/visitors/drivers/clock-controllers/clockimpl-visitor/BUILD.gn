@@ -23,10 +23,8 @@ source_set("clockimpl") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib_cpp",
-    "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
-    "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.clock:fuchsia.clock_cpp",
     "//src/lib/ddk",

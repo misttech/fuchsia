@@ -41,20 +41,16 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, serial_port_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(serial_port_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = serial_port_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto node_count = serial_port_visitor_tester->GetPbusNodes().size();
 
   uint32_t node_tested_count = 0;
   uint32_t mgr_request_idx = 0;
   for (size_t i = 0; i < node_count; i++) {
-    auto node = serial_port_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+    auto node = serial_port_visitor_tester->GetPbusNodes()[i];
 
     if (node.name()->find("bt-uart") != std::string::npos) {
       node_tested_count++;
-      auto metadata = serial_port_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
+      auto metadata = serial_port_visitor_tester->GetPbusNodes()[i].metadata();
 
       // Test metadata properties.
       ASSERT_TRUE(metadata);
@@ -72,11 +68,9 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
 
     if (node.name()->find("bt") != std::string::npos) {
       node_tested_count++;
-      ASSERT_EQ(1lu, serial_port_visitor_tester->env().SyncCall(
-                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
+      ASSERT_EQ(1lu, serial_port_visitor_tester->GetCompositeNodeSpecs().size());
 
-      auto mgr_request = serial_port_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
+      auto mgr_request = serial_port_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
       ASSERT_TRUE(mgr_request.parents2().has_value());
       ASSERT_EQ(2lu, mgr_request.parents2()->size());
 

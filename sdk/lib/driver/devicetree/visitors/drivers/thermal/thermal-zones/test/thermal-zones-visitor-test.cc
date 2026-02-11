@@ -34,34 +34,21 @@ TEST(ThermalZonesVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, thermal_zones_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(thermal_zones_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = thermal_zones_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto nodes = thermal_zones_visitor_tester->GetPbusNodes("ddr-sensor");
+  ASSERT_EQ(1lu, nodes.size());
+  auto& node = nodes[0];
+  auto metadata = node.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = thermal_zones_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
 
-    if (node.name()->find("ddr-sensor") != std::string::npos) {
-      node_tested_count++;
-      auto metadata = thermal_zones_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
-
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-
-      // trippoint metadata.
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result trip_metadata =
-          fidl::Unpersist<fuchsia_hardware_trippoint::TripDeviceMetadata>(metadata_blob);
-      ASSERT_TRUE(trip_metadata.is_ok());
-      ASSERT_EQ((*trip_metadata).critical_temp_celsius(), static_cast<float>(CRITICAL_TEMP) / 1000);
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  // trippoint metadata.
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+  fit::result trip_metadata =
+      fidl::Unpersist<fuchsia_hardware_trippoint::TripDeviceMetadata>(metadata_blob);
+  ASSERT_TRUE(trip_metadata.is_ok());
+  ASSERT_EQ((*trip_metadata).critical_temp_celsius(), static_cast<float>(CRITICAL_TEMP) / 1000);
 }
 
 }  // namespace thermal_zones_visitor_dt

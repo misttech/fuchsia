@@ -35,44 +35,31 @@ TEST(AmlUsbPhyVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(ZX_OK, aml_usb_phy_visitor_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(aml_usb_phy_visitor_tester->DoPublish().is_ok());
 
-  auto node_count = aml_usb_phy_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
+  auto nodes = aml_usb_phy_visitor_tester->GetPbusNodes("phy-ffe00000");
+  ASSERT_EQ(1lu, nodes.size());
+  auto& node = nodes[0];
+  auto metadata = node.metadata();
 
-  uint32_t node_tested_count = 0;
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = aml_usb_phy_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
 
-    if (node.name()->find("phy-ffe00000") != std::string::npos) {
-      node_tested_count++;
-      auto metadata = aml_usb_phy_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
-
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-
-      std::vector<uint8_t> metadata_blob_1 = std::move(*(*metadata)[0].data());
-      fit::result usb_phy_metadata =
-          fidl::Unpersist<fuchsia_hardware_usb_phy::Metadata>(metadata_blob_1);
-      ASSERT_TRUE(usb_phy_metadata.is_ok());
-      EXPECT_EQ(usb_phy_metadata->phy_type(), fuchsia_hardware_usb_phy::AmlogicPhyType::kG12B);
-      const auto& phy_modes = usb_phy_metadata->usb_phy_modes().value();
-      ASSERT_EQ(phy_modes.size(), 3lu);
-      EXPECT_EQ(phy_modes[0].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20);
-      EXPECT_EQ(phy_modes[0].dr_mode(), fuchsia_hardware_usb_phy::Mode::kHost);
-      EXPECT_EQ(phy_modes[0].is_otg_capable(), false);
-      EXPECT_EQ(phy_modes[1].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20);
-      EXPECT_EQ(phy_modes[1].dr_mode(), fuchsia_hardware_usb_phy::Mode::kPeripheral);
-      EXPECT_EQ(phy_modes[1].is_otg_capable(), true);
-      EXPECT_EQ(phy_modes[2].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb30);
-      EXPECT_EQ(phy_modes[2].dr_mode(), fuchsia_hardware_usb_phy::Mode::kHost);
-      EXPECT_EQ(phy_modes[2].is_otg_capable(), false);
-    }
-  }
-
-  ASSERT_EQ(node_tested_count, 1u);
+  std::vector<uint8_t> metadata_blob_1 = std::move(*(*metadata)[0].data());
+  fit::result usb_phy_metadata =
+      fidl::Unpersist<fuchsia_hardware_usb_phy::Metadata>(metadata_blob_1);
+  ASSERT_TRUE(usb_phy_metadata.is_ok());
+  EXPECT_EQ(usb_phy_metadata->phy_type(), fuchsia_hardware_usb_phy::AmlogicPhyType::kG12B);
+  const auto& phy_modes = usb_phy_metadata->usb_phy_modes().value();
+  ASSERT_EQ(phy_modes.size(), 3lu);
+  EXPECT_EQ(phy_modes[0].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20);
+  EXPECT_EQ(phy_modes[0].dr_mode(), fuchsia_hardware_usb_phy::Mode::kHost);
+  EXPECT_EQ(phy_modes[0].is_otg_capable(), false);
+  EXPECT_EQ(phy_modes[1].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20);
+  EXPECT_EQ(phy_modes[1].dr_mode(), fuchsia_hardware_usb_phy::Mode::kPeripheral);
+  EXPECT_EQ(phy_modes[1].is_otg_capable(), true);
+  EXPECT_EQ(phy_modes[2].protocol(), fuchsia_hardware_usb_phy::ProtocolVersion::kUsb30);
+  EXPECT_EQ(phy_modes[2].dr_mode(), fuchsia_hardware_usb_phy::Mode::kHost);
+  EXPECT_EQ(phy_modes[2].is_otg_capable(), false);
 }
 
 }  // namespace aml_usb_phy_visitor_dt

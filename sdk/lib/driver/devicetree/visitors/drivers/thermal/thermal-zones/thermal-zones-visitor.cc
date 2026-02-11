@@ -103,8 +103,8 @@ zx::result<> ThermalZonesVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (sensor->second.trip_metadata) {
     auto persisted_metadata = fidl::Persist(*sensor->second.trip_metadata);
     if (persisted_metadata.is_error()) {
-      FDF_LOG(ERROR, "Failed to persist Trip Point Metadata: %s",
-              zx_status_get_string(persisted_metadata.error_value().status()));
+      FDF_LOG(ERROR, "Failed to persist Trip Point Metadata: %d",
+              persisted_metadata.error_value().status());
       return zx::error(persisted_metadata.error_value().status());
     }
 

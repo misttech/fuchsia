@@ -22,7 +22,7 @@ source_set("display-panel-visitor-impl") {
     "display-panel-visitor.h",
   ]
   deps = [
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
     "//src/graphics/display/lib/device-protocol-display",

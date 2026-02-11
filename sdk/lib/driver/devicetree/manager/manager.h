@@ -5,10 +5,7 @@
 #ifndef LIB_DRIVER_DEVICETREE_MANAGER_MANAGER_H_
 #define LIB_DRIVER_DEVICETREE_MANAGER_MANAGER_H_
 
-#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <lib/devicetree/devicetree.h>
-#include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 
@@ -17,16 +14,23 @@
 
 #include "lib/driver/devicetree/manager/visitor.h"
 
+#ifdef __Fuchsia__
+#include <lib/driver/incoming/cpp/namespace.h>
+#endif
+
 namespace fdf_devicetree {
 
 class Manager final : public NodeManager {
  public:
-  static zx::result<Manager> CreateFromNamespace(fdf::Namespace& ns);
 
   // Create a new device tree manager using the given FDT blob.
   explicit Manager(std::vector<uint8_t> fdt_blob)
       : fdt_blob_(std::move(fdt_blob)),
         tree_(devicetree::ByteView{fdt_blob_.data(), fdt_blob_.size()}) {}
+
+#ifdef __Fuchsia__
+  static zx::result<Manager> CreateFromNamespace(fdf::Namespace& ns);
+#endif
 
   // This method does the following things -
   //   * Does the initial walk of the tree and discovers devices/nodes.
@@ -43,14 +47,7 @@ class Manager final : public NodeManager {
   // This needs to be called before |PublishDevices|.
   zx::result<> Walk(Visitor& visitor);
 
-  // Publish the discovered devices.
-  // The devices maybe added as a platform device using |pbus_client| if it contains any platform
-  // resources, or it maybe added as a child of the board driver using |fdf_node|, or it maybe added
-  // as a composite of multiple devices if it references other nodes.
-  zx::result<> PublishDevices(
-      fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus_client,
-      fidl::ClientEnd<fuchsia_driver_framework::CompositeNodeManager> mgr,
-      fidl::SyncClient<fuchsia_driver_framework::Node>& fdf_node);
+  zx::result<> PublishDevices(PublisherInterface& publisher);
 
   const std::vector<std::unique_ptr<Node>>& nodes() { return nodes_publish_order_; }
 

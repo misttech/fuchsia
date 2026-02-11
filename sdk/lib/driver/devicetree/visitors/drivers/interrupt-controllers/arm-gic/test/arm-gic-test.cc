@@ -39,35 +39,19 @@ class ArmGicVisitorTest : public testing::Test {
 
     ASSERT_EQ(ZX_OK, irq_tester_->manager()->Walk(*visitors_).status_value());
     ASSERT_TRUE(irq_tester_->DoPublish().is_ok());
-
-    for (size_t i = 0; i < NodeCount(); i++) {
-      auto node = NodeAt(i);
-      if (node.name().has_value()) {
-        nodes_[node.name().value()] = node;
-      }
-    }
   }
 
-  size_t NodeCount() {
-    return irq_tester_->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-  }
-
-  fuchsia_hardware_platform_bus::Node& NodeByName(const std::string& name) {
-    return nodes_.at(name);
-  }
-
-  fuchsia_hardware_platform_bus::Node NodeAt(size_t i) {
-    return irq_tester_->env().SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-  }
+  ArmGicVisitorTester* irq_tester() { return irq_tester_; }
 
  private:
   std::unique_ptr<fdf_devicetree::VisitorRegistry> visitors_;
   ArmGicVisitorTester* irq_tester_ = nullptr;
-  std::unordered_map<std::string, fuchsia_hardware_platform_bus::Node> nodes_;
 };
 
 TEST_F(ArmGicVisitorTest, TestInterruptProperty1) {
-  auto irq = NodeByName("sample-device-1").irq();
+  auto nodes = irq_tester()->GetPbusNodes("sample-device-1");
+  ASSERT_EQ(1lu, nodes.size());
+  auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
   EXPECT_EQ(static_cast<uint32_t>(IRQ1_SPI) + 32, *(*irq)[0].irq());
@@ -81,7 +65,9 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty1) {
 }
 
 TEST_F(ArmGicVisitorTest, TestInterruptProperty2) {
-  auto irq = NodeByName("sample-device-2").irq();
+  auto nodes = irq_tester()->GetPbusNodes("sample-device-2");
+  ASSERT_EQ(1lu, nodes.size());
+  auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
   EXPECT_EQ(static_cast<uint32_t>(IRQ3_SPI) + 32, *(*irq)[0].irq());
@@ -95,7 +81,9 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty2) {
 }
 
 TEST_F(ArmGicVisitorTest, TestInterruptProperty3) {
-  auto irq = NodeByName("sample-device-3").irq();
+  auto nodes = irq_tester()->GetPbusNodes("sample-device-3");
+  ASSERT_EQ(1lu, nodes.size());
+  auto irq = nodes[0].irq();
   ASSERT_TRUE(irq);
   ASSERT_EQ(2lu, irq->size());
   EXPECT_EQ(static_cast<uint32_t>(IRQ5_SPI) + 32, *(*irq)[0].irq());
@@ -105,8 +93,9 @@ TEST_F(ArmGicVisitorTest, TestInterruptProperty3) {
 }
 
 TEST_F(ArmGicVisitorTest, WakeVectorsWithoutInterruptNames) {
-  std::vector<fuchsia_hardware_platform_bus::Irq> irqs =
-      (*NodeByName("wake-vectors-without-names").irq());
+  auto nodes = irq_tester()->GetPbusNodes("wake-vectors-without-names");
+  ASSERT_EQ(1lu, nodes.size());
+  std::vector<fuchsia_hardware_platform_bus::Irq> irqs = (*nodes[0].irq());
   ASSERT_EQ(irqs.size(), 2u);
   for (const auto& irq : irqs) {
     EXPECT_FALSE(irq.wake_vector().value_or(false));
@@ -114,7 +103,12 @@ TEST_F(ArmGicVisitorTest, WakeVectorsWithoutInterruptNames) {
 }
 
 TEST_F(ArmGicVisitorTest, WakeVectors) {
-  std::vector<fuchsia_hardware_platform_bus::Irq> irqs = (*NodeByName("wake-vectors").irq());
+  auto nodes = irq_tester()->GetPbusNodes("wake-vectors");
+  // We expect "wake-vectors" and "wake-vectors-without-names" in nodes.
+  auto node_iter = std::find_if(nodes.begin(), nodes.end(),
+                                [](const auto& node) { return node.name() == "wake-vectors"; });
+  ASSERT_NE(node_iter, nodes.end());
+  std::vector<fuchsia_hardware_platform_bus::Irq> irqs = (*node_iter->irq());
   ASSERT_EQ(irqs.size(), 2u);
   EXPECT_FALSE(irqs[0].wake_vector().value_or(false));
   EXPECT_TRUE(irqs[1].wake_vector().value_or(false));

@@ -41,65 +41,48 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
   uint32_t node_tested_count = 0;
   uint32_t mgr_request_idx = 0;
 
-  auto node_count = regulator_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::pbus_node_size);
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = regulator_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i);
-    if (node.name()->find("voltage-regulator") != std::string::npos) {
-      node_tested_count++;
-      auto metadata = regulator_visitor_tester->env()
-                          .SyncCall(&fdf_devicetree::testing::FakeEnvWrapper::pbus_nodes_at, i)
-                          .metadata();
+  std::vector<fuchsia_hardware_platform_bus::Node> pbus_nodes =
+      regulator_visitor_tester->GetPbusNodes("voltage-regulator");
+  ASSERT_EQ(1lu, pbus_nodes.size());
+  auto& node = pbus_nodes[0];
+  node_tested_count++;
+  auto metadata = node.metadata();
 
-      // Test metadata properties.
-      ASSERT_TRUE(metadata);
-      ASSERT_EQ(1lu, metadata->size());
-      std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
-      fit::result vreg_metadata =
-          fidl::Unpersist<fuchsia_hardware_vreg::VregMetadata>(metadata_blob);
-      ASSERT_TRUE(vreg_metadata.is_ok());
-      EXPECT_EQ(vreg_metadata->name(), REGULATOR_NAME);
-      EXPECT_EQ(vreg_metadata->min_voltage_uv(), static_cast<uint32_t>(MIN_VOLTAGE));
-      EXPECT_EQ(vreg_metadata->voltage_step_uv(), static_cast<uint32_t>(STEP_VOLTAGE));
-      EXPECT_EQ(vreg_metadata->num_steps(),
-                static_cast<uint32_t>((MAX_VOLTAGE - MIN_VOLTAGE) / STEP_VOLTAGE) + 1);
-    }
-  }
+  // Test metadata properties.
+  ASSERT_TRUE(metadata);
+  ASSERT_EQ(1lu, metadata->size());
+  std::vector<uint8_t> metadata_blob = std::move(*(*metadata)[0].data());
+  fit::result vreg_metadata = fidl::Unpersist<fuchsia_hardware_vreg::VregMetadata>(metadata_blob);
+  ASSERT_TRUE(vreg_metadata.is_ok());
+  EXPECT_EQ(vreg_metadata->name(), REGULATOR_NAME);
+  EXPECT_EQ(vreg_metadata->min_voltage_uv(), static_cast<uint32_t>(MIN_VOLTAGE));
+  EXPECT_EQ(vreg_metadata->voltage_step_uv(), static_cast<uint32_t>(STEP_VOLTAGE));
+  EXPECT_EQ(vreg_metadata->num_steps(),
+            static_cast<uint32_t>((MAX_VOLTAGE - MIN_VOLTAGE) / STEP_VOLTAGE) + 1);
 
-  node_count = regulator_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
+  auto child_nodes = regulator_visitor_tester->GetBoardChildNodes("cpu-ctrl");
+  ASSERT_EQ(1lu, child_nodes.size());
+  node_tested_count++;
+  ASSERT_EQ(1lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
 
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = regulator_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
+  auto mgr_request = regulator_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
+  ASSERT_TRUE(mgr_request.parents2().has_value());
+  ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-    if (node->args().name()->find("cpu-ctrl") != std::string::npos) {
-      node_tested_count++;
-      ASSERT_EQ(1lu, regulator_visitor_tester->env().SyncCall(
-                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
-
-      auto mgr_request = regulator_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
-
-      // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {
-              {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
-                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-               fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)},
-          },
-          (*mgr_request.parents2())[1].properties(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
-                                     bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(0))}},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-    }
-  }
+  // Check for regulator parent node specs. Skip the 1st one as it is either pdev/board device.
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+      {
+          {fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
+                              bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+           fdf::MakeProperty2(bind_fuchsia_regulator::NAME, REGULATOR_NAME)},
+      },
+      (*mgr_request.parents2())[1].properties(), false));
+  EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
+                                 bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, REGULATOR_NAME),
+        fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, static_cast<uint32_t>(0))}},
+      (*mgr_request.parents2())[1].bind_rules(), false));
 
   ASSERT_EQ(node_tested_count, 2u);
 }
@@ -120,21 +103,13 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
   uint32_t node_tested_count = 0;
   uint32_t mgr_request_idx = 0;
 
-  auto node_count = regulator_visitor_tester->env().SyncCall(
-      &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_node_size);
-
-  for (size_t i = 0; i < node_count; i++) {
-    auto node = regulator_visitor_tester->env().SyncCall(
-        &fdf_devicetree::testing::FakeEnvWrapper::non_pbus_nodes_at, i);
-
-    if (node->args().name()->find("cpu-ctrl") != std::string::npos ||
-        node->args().name()->find("gpu-ctrl") != std::string::npos) {
+  for (const auto& node : regulator_visitor_tester->GetBoardChildNodes()) {
+    if (node.name.find("cpu-ctrl") != std::string::npos ||
+        node.name.find("gpu-ctrl") != std::string::npos) {
       node_tested_count++;
-      ASSERT_EQ(2lu, regulator_visitor_tester->env().SyncCall(
-                         &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_size));
+      ASSERT_EQ(2lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
 
-      auto mgr_request = regulator_visitor_tester->env().SyncCall(
-          &fdf_devicetree::testing::FakeEnvWrapper::mgr_requests_at, mgr_request_idx++);
+      auto mgr_request = regulator_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
       ASSERT_TRUE(mgr_request.parents2().has_value());
       ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
