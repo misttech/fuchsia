@@ -167,6 +167,8 @@ class Registers {
   Error SetPC(uint64_t pc);
   Error GetFP(uint64_t& fp) const;
   Error SetFP(uint64_t fp);
+  Error GetSCS(uint64_t& scs) const;
+  Error SetSCS(uint64_t scs);
 
   // These are not formally specified for all architectures, but we define aliases for them.
   // It's RIP on x64, LR on Arm64, R14 on Arm, and RA on Riscv64. See the note above for why this

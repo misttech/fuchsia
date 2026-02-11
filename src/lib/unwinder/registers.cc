@@ -53,6 +53,19 @@ RegisterID GetFpReg(Registers::Arch arch) {
   }
 }
 
+RegisterID GetScsReg(Registers::Arch arch) {
+  switch (arch) {
+    case Registers::Arch::kX64:
+      return RegisterID::kInvalid;
+    case Registers::Arch::kArm32:
+      return RegisterID::kInvalid;
+    case Registers::Arch::kArm64:
+      return RegisterID::kArm64_x18;
+    case Registers::Arch::kRiscv64:
+      return RegisterID::kRiscv64_gp;
+  }
+}
+
 RegisterID GetReturnAddressRegister(Registers::Arch arch) {
   switch (arch) {
     case Registers::Arch::kX64:
@@ -95,6 +108,9 @@ Error Registers::SetPC(uint64_t pc) { return Set(GetPcReg(arch_), pc); }
 
 Error Registers::GetFP(uint64_t& fp) const { return Get(GetFpReg(arch_), fp); }
 Error Registers::SetFP(uint64_t fp) { return Set(GetFpReg(arch_), fp); }
+
+Error Registers::GetSCS(uint64_t& scs) const { return Get(GetScsReg(arch_), scs); }
+Error Registers::SetSCS(uint64_t scs) { return Set(GetScsReg(arch_), scs); }
 
 Error Registers::GetReturnAddress(uint64_t& ra) const {
   return Get(GetReturnAddressRegister(arch_), ra);

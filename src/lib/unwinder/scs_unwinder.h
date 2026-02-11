@@ -24,10 +24,18 @@ class ShadowCallStackUnwinder : public UnwinderBase {
   explicit ShadowCallStackUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* scs, const Frame& current, Frame& next) override;
+  void AsyncStep(AsyncMemory* scs, const Frame& current,
+                 fit::callback<void(Error, Registers)> cb) override;
   Frame::Trust trust() const override { return Frame::Trust::kSCS; }
 
  private:
-  Error Step(Memory* scs, const Registers& current, Registers& next);
+  Error Step(Memory* scs, uint64_t scs_pointer, Registers& next);
+  void AsyncStep(AsyncMemory* scs, uint64_t scs_pointer, Registers::Arch arch,
+                 fit::callback<void(Error, Registers)> cb);
+
+  // Used for asynchronous methods to attempt to fetch the entire SCS at once instead of each time
+  // |AsyncStep| is called.
+  bool should_synchronize_scs_ = true;
 };
 
 }  // namespace unwinder

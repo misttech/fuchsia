@@ -10,31 +10,19 @@
 namespace unwinder {
 
 Error ShadowCallStackUnwinder::Step(Memory* scs, const Frame& current, Frame& next) {
-  return Step(scs, current.regs, next.regs);
-}
-
-Error ShadowCallStackUnwinder::Step(Memory* scs, const Registers& current, Registers& next) {
-  RegisterID scs_reg;
-  switch (current.arch()) {
-    case Registers::Arch::kX64:
-      return Error("Shadow call stack is not supported on x64");
-    case Registers::Arch::kArm32:
-      return Error("Shadow call stack is not supported on arm32");
-    case Registers::Arch::kArm64:
-      scs_reg = RegisterID::kArm64_x18;
-      break;
-    case Registers::Arch::kRiscv64:
-      scs_reg = RegisterID::kRiscv64_gp;
-      break;
-  }
-  uint64_t scsp;  // shadow call stack pointer
-  if (auto err = current.Get(scs_reg, scsp); err.has_err()) {
+  uint64_t scs_pointer;
+  if (auto err = current.regs.GetSCS(scs_pointer); err.has_err()) {
     return err;
   }
-  if (!scsp) {
+
+  if (!scs_pointer) {
     return Error("shadow call stack is not available");
   }
 
+  return Step(scs, scs_pointer, next.regs);
+}
+
+Error ShadowCallStackUnwinder::Step(Memory* scs, uint64_t scs_pointer, Registers& next) {
   // The shadow call stack is pushed/popped via (e.g., on arm64)
   //
   //    str     x30, [x18], #8    ; post-indexed
@@ -43,7 +31,7 @@ Error ShadowCallStackUnwinder::Step(Memory* scs, const Registers& current, Regis
   //
   // So x18 points to the next available slots. The same applies to riscv64.
   uint64_t ra;
-  if (auto err = scs->Read(scsp - 8, ra); err.has_err()) {
+  if (auto err = scs->Read(scs_pointer - 8, ra); err.has_err()) {
     return err;
   }
 
@@ -56,8 +44,45 @@ Error ShadowCallStackUnwinder::Step(Memory* scs, const Registers& current, Regis
   }
 
   next.SetPC(ra);
-  next.Set(scs_reg, scsp - 8);
+  next.SetSCS(scs_pointer - 8);
   return Success();
+}
+
+void ShadowCallStackUnwinder::AsyncStep(AsyncMemory* scs, const Frame& current,
+                                        fit::callback<void(Error, Registers)> cb) {
+  uint64_t scs_pointer;
+  if (auto err = current.regs.GetSCS(scs_pointer); err.has_err()) {
+    cb(err, Registers(current.regs.arch()));
+    return;
+  }
+
+  if (!scs_pointer) {
+    cb(Error("shadow call stack is not available"), Registers(current.regs.arch()));
+    return;
+  }
+
+  AsyncStep(scs, scs_pointer, current.regs.arch(), std::move(cb));
+}
+
+void ShadowCallStackUnwinder::AsyncStep(AsyncMemory* scs, uint64_t scs_pointer,
+                                        Registers::Arch arch,
+                                        fit::callback<void(Error, Registers)> cb) {
+  Registers next(arch);
+
+  if (should_synchronize_scs_) {
+    should_synchronize_scs_ = false;
+
+    // 4KiB should be more than enough. On 64 bit platforms, this is enough for ~500 SCS entries.
+    constexpr uint32_t kDefaultFetchSize = 4 * 1024;
+    scs->FetchMemoryRanges({{scs_pointer, kDefaultFetchSize}}, [=, cb = std::move(cb)]() mutable {
+      auto err = Step(scs, scs_pointer, next);
+      cb(err, std::move(next));
+    });
+  } else {
+    // Memory should already be available, call the synchronous |Step|.
+    auto err = Step(scs, scs_pointer, next);
+    cb(err, std::move(next));
+  }
 }
 
 }  // namespace unwinder
