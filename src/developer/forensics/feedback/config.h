@@ -61,6 +61,7 @@ struct FeedbackConfig {
   std::optional<StorageSize> snapshot_persistence_max_cache_size;
   std::optional<StorageSize> snapshot_persistence_max_tmp_size;
   SpontaneousRebootReason spontaneous_reboot_reason;
+  bool remote_device_id_provider;
   BuildTypeConfig build_type_config;
 };
 

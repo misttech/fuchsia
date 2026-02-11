@@ -87,7 +87,8 @@ TEST_F(FeedbackConfigTest, MissingCrashReportUploadPolicy) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -103,7 +104,8 @@ TEST_F(FeedbackConfigTest, MissingDailyPerProductCrashReportQuota) {
     "crash_report_upload_policy": "disabled",
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -119,7 +121,8 @@ TEST_F(FeedbackConfigTest, MissingEnableDataRedaction) {
     "crash_report_upload_policy": "disabled",
     "daily_per_product_crash_report_quota": -1,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -135,7 +138,8 @@ TEST_F(FeedbackConfigTest, MissingEnableHourlySnapshots) {
     "crash_report_upload_policy": "disabled",
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -151,7 +155,25 @@ TEST_F(FeedbackConfigTest, MissingEnableLimitInspectData) {
     "crash_report_upload_policy": "disabled",
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
-    "enable_hourly_snapshots": false
+    "enable_hourly_snapshots": false,
+    "remote_device_id_provider": false
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, MissingRemoteDeviceIdProvider) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -168,7 +190,8 @@ TEST_F(FeedbackConfigTest, CrashReportUploadPolicyDisabled) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -187,7 +210,8 @@ TEST_F(FeedbackConfigTest, CrashReportUploadPolicyEnabled) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -206,7 +230,8 @@ TEST_F(FeedbackConfigTest, CrashReportUploadPolicyReadFromPrivacySettings) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -225,7 +250,8 @@ TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotAllowedValue) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -242,7 +268,8 @@ TEST_F(FeedbackConfigTest, CrashReportUploadPolicyNotString) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -259,7 +286,8 @@ TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNegative) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -277,7 +305,8 @@ TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaZero) {
     "daily_per_product_crash_report_quota": 0,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -295,7 +324,8 @@ TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaPositive) {
     "daily_per_product_crash_report_quota": 100,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -313,7 +343,8 @@ TEST_F(FeedbackConfigTest, DailyPerProductCrashReportQuotaNotNumber) {
     "daily_per_product_crash_report_quota": "",
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -330,7 +361,8 @@ TEST_F(FeedbackConfigTest, EnableDataRedactionTrue) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": true,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -348,7 +380,8 @@ TEST_F(FeedbackConfigTest, EnableDataRedactionFalse) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -366,7 +399,8 @@ TEST_F(FeedbackConfigTest, EnableDataRedactionNotBoolean) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": "",
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -383,7 +417,8 @@ TEST_F(FeedbackConfigTest, EnableHourlySnapshotsTrue) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": true,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -401,7 +436,8 @@ TEST_F(FeedbackConfigTest, EnableHourlySnapshotsFalse) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -419,7 +455,8 @@ TEST_F(FeedbackConfigTest, EnableHourlySnapshotsNotBoolean) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": "",
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -436,7 +473,8 @@ TEST_F(FeedbackConfigTest, EnableLimitInspectDataTrue) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": true
+    "enable_limit_inspect_data": true,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -454,7 +492,8 @@ TEST_F(FeedbackConfigTest, EnableLimitInspectDataFalse) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -472,7 +511,64 @@ TEST_F(FeedbackConfigTest, EnableLimitInspectDataNotBoolean) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": ""
+    "enable_limit_inspect_data": "",
+    "remote_device_id_provider": false
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderTrue) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": true
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->remote_device_id_provider);
+}
+
+TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderFalse) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->remote_device_id_provider);
+}
+
+TEST_F(FeedbackConfigTest, RemoteDeviceIdProviderNotBoolean) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous",
+    "crash_report_upload_policy": "disabled",
+    "daily_per_product_crash_report_quota": -1,
+    "enable_data_redaction": false,
+    "enable_hourly_snapshots": false,
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": ""
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -672,7 +768,8 @@ TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxCacheSizeKib) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -688,7 +785,8 @@ TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxTmpSizeKib) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -704,7 +802,8 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -720,7 +819,8 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -736,7 +836,8 @@ TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -754,6 +855,7 @@ TEST_F(FeedbackConfigTest, SpuriousField) {
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
     "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false,
     "spurious": ""
 })");
 
@@ -771,7 +873,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeMibPositive) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_EQ(config->report_persistence_max_cache_size, StorageSize::Kilobytes(1));
@@ -788,7 +891,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibZero) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -805,7 +909,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNegative) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -822,7 +927,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNotNumber) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -839,7 +945,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeMibPositive) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_EQ(config->report_persistence_max_tmp_size, StorageSize::Kilobytes(1));
@@ -856,7 +963,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibZero) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -873,7 +981,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNegative) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -890,7 +999,8 @@ TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNotNumber) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -907,7 +1017,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -925,7 +1036,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -943,7 +1055,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -961,7 +1074,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -978,7 +1092,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -996,7 +1111,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -1014,7 +1130,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -1032,7 +1149,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -1049,7 +1167,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -1066,7 +1185,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   EXPECT_FALSE(config.has_value());
@@ -1083,7 +1203,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -1101,7 +1222,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());
@@ -1119,7 +1241,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
     "daily_per_product_crash_report_quota": -1,
     "enable_data_redaction": false,
     "enable_hourly_snapshots": false,
-    "enable_limit_inspect_data": false
+    "enable_limit_inspect_data": false,
+    "remote_device_id_provider": false
 })");
 
   ASSERT_TRUE(config.has_value());

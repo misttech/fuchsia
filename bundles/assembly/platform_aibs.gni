@@ -348,7 +348,7 @@ user_platform_aib_names =
 
       # Forensics
       "no_remote_feedback_id",
-      "feedback_remote_device_id_provider",
+
       "cobalt_user_config",
 
       # Kernel Reclamation

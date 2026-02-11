@@ -191,6 +191,9 @@ constexpr char kFeedbackConfigSchema[] = R"({
     },
     "enable_limit_inspect_data": {
       "type": "boolean"
+    },
+    "remote_device_id_provider": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -203,7 +206,8 @@ constexpr char kFeedbackConfigSchema[] = R"({
     "daily_per_product_crash_report_quota",
     "enable_data_redaction",
     "enable_hourly_snapshots",
-    "enable_limit_inspect_data"
+    "enable_limit_inspect_data",
+    "remote_device_id_provider"
   ],
   "additionalProperties": false
 })";
@@ -246,6 +250,7 @@ std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& jso
   config.build_type_config.enable_data_redaction = json[kEnableDataRedactionKey].GetBool();
   config.build_type_config.enable_hourly_snapshots = json[kEnableHourlySnapshotsKey].GetBool();
   config.build_type_config.enable_limit_inspect_data = json[kEnableLimitInspectDataKey].GetBool();
+  config.remote_device_id_provider = json["remote_device_id_provider"].GetBool();
 
   if (const std::string policy = json[kCrashReportUploadPolicyKey].GetString();
       policy == "disabled") {

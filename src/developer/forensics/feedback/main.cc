@@ -87,7 +87,7 @@ int main() {
                                 kLegacyPreviousGracefulRebootReasonFile, TestAndSetNotAFdr());
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
-  if (files::IsFile(kUseRemoteDeviceIdProviderPath)) {
+  if (feedback_config->remote_device_id_provider) {
     local_device_id_path = std::nullopt;
   }
 

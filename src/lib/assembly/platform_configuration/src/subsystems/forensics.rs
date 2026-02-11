@@ -40,9 +40,6 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
     ) -> anyhow::Result<()> {
         let (config, session_config) = *platform_config;
 
-        if config.feedback.remote_device_id_provider {
-            builder.platform_bundle("feedback_remote_device_id_provider")?;
-        }
         if config.feedback.include_kernel_logs_in_last_reboot_info {
             builder.platform_bundle("kernel_logs_in_reboot_info")?;
         }
@@ -120,6 +117,7 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 enable_data_redaction: build_type_config.enable_data_redaction,
                 enable_hourly_snapshots: build_type_config.enable_hourly_snapshots,
                 enable_limit_inspect_data: build_type_config.enable_limit_inspect_data,
+                remote_device_id_provider: config.feedback.remote_device_id_provider,
             };
 
             config_dir.entry_from_contents(
@@ -262,6 +260,7 @@ struct FeedbackInternalConfig {
     pub enable_data_redaction: bool,
     pub enable_hourly_snapshots: bool,
     pub enable_limit_inspect_data: bool,
+    pub remote_device_id_provider: bool,
 }
 // LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
 
@@ -628,5 +627,27 @@ mod test {
             config.snapshot_persistence_max_tmp_size_mib,
             LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
         );
+    }
+
+    #[test]
+    fn feedback_config_remote_device_id_provider_false() {
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { remote_device_id_provider: false, ..Default::default() },
+            ..Default::default()
+        };
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
+
+        assert!(!config.remote_device_id_provider);
+    }
+
+    #[test]
+    fn feedback_config_remote_device_id_provider_true() {
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { remote_device_id_provider: true, ..Default::default() },
+            ..Default::default()
+        };
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
+
+        assert!(config.remote_device_id_provider);
     }
 }

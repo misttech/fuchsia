@@ -14,8 +14,6 @@ namespace forensics::feedback {
 // Feedback gives the respective DirectoryMigrators 1 minutes to respond.
 constexpr zx::duration kDirectoryMigratorResponeTimeout = zx::min(1);
 
-constexpr char kUseRemoteDeviceIdProviderPath[] = "/config/data/feedback/remote_device_id_provider";
-
 const char kDefaultBuildTypeConfigPath[] = "/pkg/data/build_type/default_config.json";
 const char kOverrideBuildTypeConfigPath[] = "/config/data/build_type/override_config.json";
 
