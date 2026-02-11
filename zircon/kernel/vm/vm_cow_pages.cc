@@ -4399,129 +4399,144 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
   // also insert any new markers / zero pages in gaps as applicable. We use the VmPageList traversal
   // helper here instead of iterating over each offset in the range so we can efficiently skip over
   // gaps if possible.
-  zx_status_t status = page_list_.RemovePagesAndIterateGaps(
-      [&](VmPageOrMarker* slot, uint64_t offset) {
-        AssertHeld(lock_ref());
+  zx_status_t status = ZX_OK;
+  uint64_t current_start = start;
+  while (status == ZX_OK && current_start < end) {
+    struct {
+      bool found_gap;
+      uint64_t gap_start;
+      uint64_t gap_end;
+    } state = {.found_gap = false, .gap_start = 0, .gap_end = 0};
+    status = page_list_.RemovePagesAndIterateGaps(
+        [&](VmPageOrMarker* slot, uint64_t offset) {
+          AssertHeld(lock_ref());
 
-        // We don't expect intervals in non pager-backed VMOs.
-        DEBUG_ASSERT(!slot->IsInterval());
+          // We don't expect intervals in non pager-backed VMOs.
+          DEBUG_ASSERT(!slot->IsInterval());
 
-        if (slot->IsMarker()) {
-          // The slot is already zero.
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        if (slot->IsPage() && slot->Page()->object.pin_count > 0) {
-          vm_page_t* page = slot->Page();
-          // Loaned pages cannot be pinned.
-          DEBUG_ASSERT(!page->is_loaned());
-          ZeroPage(page);
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        if (slot->IsReference() && !is_root_source_user_pager_backed()) {
-          // We have a reference in an anonymous hierarchy, so we can just free it. Since a
-          // compressed reference wasn't mapped in the first place, we don't have to do an unmap
-          // here.
-          DEBUG_ASSERT(node_has_parent_content_markers());
-          continuous_attribution_tracker_.Decrement(1);
-          FreeReference(slot->ReleaseReference());
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        // All of the below cases require us to invalidate the mappings of the affected pages.
-        do_unmap();
-
-        if (slot->IsPage() && !is_root_source_user_pager_backed()) {
-          // We have a page in an anonymous hierarchy, so we can just remove the content.
-          DEBUG_ASSERT(node_has_parent_content_markers());
-          continuous_attribution_tracker_.Decrement(1);
-          vm_page_t* page = slot->ReleasePage();
-          RemovePageLocked(page, deferred);
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        if (slot->IsPageOrRef()) {
-          // We have a page in a pager-backed hierarchy, so markers are needed to indicate zero.
-          DEBUG_ASSERT(is_root_source_user_pager_backed() && !node_has_parent_content_markers());
-          zx_status_t status = replace_with_marker(offset);
-          if (status != ZX_OK) {
-            return status;
-          }
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        // We handled all of the other node types, so this must be a parent content marker. These
-        // only appear in non- user pager hierarchies.
-        DEBUG_ASSERT(slot->IsParentContent() && !is_root_source_user_pager_backed() &&
-                     node_has_parent_content_markers());
-        // We will no longer be referencing potential content in the parent or ancestor node after
-        // we remove the parent content marker. We must decrement any share count we have on that
-        // content.
-        zx_status_t status = decrement_potential_ancestor(offset);
-        if (status != ZX_OK) {
-          return status;
-        }
-        // An empty slot is safe to represent zero in non- user pager hierarchies.
-        continuous_attribution_tracker_.Decrement(1);
-        *slot = VmPageOrMarker::Empty();
-        zeroed_len += kPageSize;
-        return ZX_ERR_NEXT;
-      },
-      [&](uint64_t gap_start, uint64_t gap_end) {
-        AssertHeld(lock_ref());
-        if (node_has_parent_content_markers()) {
-          // Gaps are already zero when using parent content markers.
-          zeroed_len += (gap_end - gap_start);
-          return ZX_ERR_NEXT;
-        }
-
-        // Since the node doesn't have parent content markers, and the current node isn't hidden,
-        // we must be in a user pager hierarchy.
-        DEBUG_ASSERT(is_root_source_user_pager_backed());
-
-        // If empty slots imply zeroes, and the gap does not see parent contents, we already have
-        // zeroes.
-        if (!can_see_parent(gap_start, gap_end - gap_start)) {
-          zeroed_len += (gap_end - gap_start);
-          return ZX_ERR_NEXT;
-        }
-
-        // can_see_parent implies that there is a parent_.
-        DEBUG_ASSERT(parent_);
-
-        // Otherwise fall back to examining each offset in the gap to determine the action to
-        // perform.
-        for (uint64_t offset = gap_start; offset < gap_end;
-             offset += kPageSize, zeroed_len += kPageSize) {
-          // First see if we can simply get done with an empty slot in the page list.
-          if (!can_see_parent(offset)) {
-            continue;
+          if (slot->IsMarker()) {
+            // The slot is already zero.
+            zeroed_len += kPageSize;
+            return ZX_ERR_NEXT;
           }
 
-          // Inform potential mappings of the marker we are inserting.
+          if (slot->IsPage() && slot->Page()->object.pin_count > 0) {
+            vm_page_t* page = slot->Page();
+            // Loaned pages cannot be pinned.
+            DEBUG_ASSERT(!page->is_loaned());
+            ZeroPage(page);
+            zeroed_len += kPageSize;
+            return ZX_ERR_NEXT;
+          }
+
+          if (slot->IsReference() && !is_root_source_user_pager_backed()) {
+            // We have a reference in an anonymous hierarchy, so we can just free it. Since a
+            // compressed reference wasn't mapped in the first place, we don't have to do an unmap
+            // here.
+            DEBUG_ASSERT(node_has_parent_content_markers());
+            continuous_attribution_tracker_.Decrement(1);
+            FreeReference(slot->ReleaseReference());
+            zeroed_len += kPageSize;
+            return ZX_ERR_NEXT;
+          }
+
+          // All of the below cases require us to invalidate the mappings of the affected pages.
           do_unmap();
 
-          // Let's look up the owner of whatever content is remaining, and decrement their share
-          // count. We will no longer be referencing it after inserting a marker.
+          if (slot->IsPage() && !is_root_source_user_pager_backed()) {
+            // We have a page in an anonymous hierarchy, so we can just remove the content.
+            DEBUG_ASSERT(node_has_parent_content_markers());
+            continuous_attribution_tracker_.Decrement(1);
+            vm_page_t* page = slot->ReleasePage();
+            RemovePageLocked(page, deferred);
+            zeroed_len += kPageSize;
+            return ZX_ERR_NEXT;
+          }
+
+          if (slot->IsPageOrRef()) {
+            // We have a page in a pager-backed hierarchy, so markers are needed to indicate zero.
+            DEBUG_ASSERT(is_root_source_user_pager_backed() && !node_has_parent_content_markers());
+            zx_status_t status = replace_with_marker(offset);
+            if (status != ZX_OK) {
+              return status;
+            }
+            zeroed_len += kPageSize;
+            return ZX_ERR_NEXT;
+          }
+
+          // We handled all of the other node types, so this must be a parent content marker. These
+          // only appear in non- user pager hierarchies.
+          DEBUG_ASSERT(slot->IsParentContent() && !is_root_source_user_pager_backed() &&
+                       node_has_parent_content_markers());
+          // We will no longer be referencing potential content in the parent or ancestor node after
+          // we remove the parent content marker. We must decrement any share count we have on that
+          // content.
           zx_status_t status = decrement_potential_ancestor(offset);
           if (status != ZX_OK) {
             return status;
           }
-          status = replace_with_marker(offset);
-          if (status != ZX_OK) {
-            return status;
+          // An empty slot is safe to represent zero in non- user pager hierarchies.
+          continuous_attribution_tracker_.Decrement(1);
+          *slot = VmPageOrMarker::Empty();
+          zeroed_len += kPageSize;
+          return ZX_ERR_NEXT;
+        },
+        [&](uint64_t gap_start, uint64_t gap_end) {
+          AssertHeld(lock_ref());
+          if (node_has_parent_content_markers()) {
+            // Gaps are already zero when using parent content markers.
+            zeroed_len += (gap_end - gap_start);
+            return ZX_ERR_NEXT;
           }
-        }
 
-        return ZX_ERR_NEXT;
-      },
-      start, end);
+          // Since the node doesn't have parent content markers, and the current node isn't hidden,
+          // we must be in a user pager hierarchy.
+          DEBUG_ASSERT(is_root_source_user_pager_backed());
+
+          // If empty slots imply zeroes, and the gap does not see parent contents, we already have
+          // zeroes.
+          if (!can_see_parent(gap_start, gap_end - gap_start)) {
+            zeroed_len += (gap_end - gap_start);
+            return ZX_ERR_NEXT;
+          }
+
+          // can_see_parent implies that there is a parent_.
+          DEBUG_ASSERT(parent_);
+
+          // Need to examine each offset in the gap to determine the action to perform. As this
+          // might modify the page list exit out of this iteration to ensure we do not corrupt the
+          // iterators.
+          state.found_gap = true;
+          state.gap_start = gap_start;
+          state.gap_end = gap_end;
+          return ZX_ERR_STOP;
+        },
+        current_start, end);
+    if (status != ZX_OK || !state.found_gap) {
+      break;
+    }
+    // Assuming gap processing goes well resume processing from the end of the gap next time around.
+    current_start = state.gap_end;
+
+    // Process the gap found in the previous iteration.
+    for (uint64_t offset = state.gap_start; offset < state.gap_end && status == ZX_OK;
+         offset += kPageSize, zeroed_len += kPageSize) {
+      // First see if we can simply get done with an empty slot in the page list.
+      if (!can_see_parent(offset)) {
+        continue;
+      }
+
+      // Inform potential mappings of the marker we are inserting.
+      do_unmap();
+
+      // Let's look up the owner of whatever content is remaining, and decrement their share
+      // count. We will no longer be referencing it after inserting a marker.
+      status = decrement_potential_ancestor(offset);
+      if (status == ZX_OK) {
+        status = replace_with_marker(offset);
+      }
+    }
+  }
 
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_VALIDATION_ASSERT(DebugValidateZeroIntervalsLocked());
