@@ -5,7 +5,7 @@
 use anyhow::{Error, anyhow};
 use rustfix::{Filter, Suggestion};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::BufRead;
 
@@ -13,6 +13,7 @@ pub fn fix<R: BufRead>(
     lints: &mut R,
     filter: &[String],
     rustfix_filter: Filter,
+    solution_message: Option<&str>,
     dryrun: bool,
 ) -> Result<(), Error> {
     let mut all_lints = String::new();
@@ -36,17 +37,48 @@ pub fn fix<R: BufRead>(
 
     let mut source_files: HashMap<String, Vec<Suggestion>> = Default::default();
     for suggestion in suggestions {
+        assert!(!suggestion.solutions.is_empty());
+
+        let solution = if let Some(message) = solution_message {
+            if let Some(solution) = suggestion.solutions.iter().find(|s| s.message == message) {
+                solution
+            } else {
+                return Err(anyhow!(
+                    "Suggestion does not have a solution with message {}",
+                    message
+                ));
+            }
+        } else if suggestion.solutions.len() > 1 {
+            return Err(anyhow!(
+                "Suggestion has multiple solutions, use `--solution-message` to select one:\n{}",
+                suggestion
+                    .solutions
+                    .iter()
+                    .map(|solution| format!("  - {}", solution.message))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ));
+        } else {
+            &suggestion.solutions[0]
+        };
+
         // there should be only one file per suggestion
-        debug_assert_eq!(
-            suggestion
-                .solutions
-                .iter()
-                .flat_map(|s| s.replacements.iter().map(|r| r.snippet.file_name.clone()))
-                .collect::<HashSet::<_>>()
-                .len(),
-            1,
-        );
-        let file = suggestion.solutions[0].replacements[0].snippet.file_name.clone();
+        let files = solution
+            .replacements
+            .iter()
+            .map(|r| r.snippet.file_name.clone())
+            .collect::<BTreeSet<_>>();
+
+        if files.len() > 1 {
+            return Err(anyhow!(
+                "Solution applies to multiple files:\n{}",
+                files.iter().map(|file| format!("  - {}", file)).collect::<Vec<_>>().join("\n")
+            ));
+        }
+
+        assert_eq!(files.len(), 1);
+
+        let file = solution.replacements[0].snippet.file_name.clone();
         source_files.entry(file).or_default().push(suggestion);
     }
 
@@ -54,8 +86,17 @@ pub fn fix<R: BufRead>(
         let source = fs::read_to_string(source_file)?;
         let mut fix = rustfix::CodeFix::new(&source);
         for suggestion in suggestions.iter().rev() {
-            if let Err(e) = fix.apply(suggestion) {
-                eprintln!("Failed to apply suggestion to {}: {}", source_file, e);
+            if let Some(message) = solution_message {
+                let solution = suggestion.solutions.iter().find(|s| s.message == message).unwrap();
+
+                if let Err(e) = fix.apply_solution(solution) {
+                    eprintln!("Failed to apply solution to {}: {}", source_file, e);
+                }
+            } else {
+                assert_eq!(suggestion.solutions.len(), 1);
+                if let Err(e) = fix.apply(suggestion) {
+                    eprintln!("Failed to apply suggestion to {}: {}", source_file, e);
+                }
             }
         }
         let fixes = fix.finish()?;

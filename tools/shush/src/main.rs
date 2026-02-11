@@ -138,6 +138,9 @@ struct Fix {
     /// which suggestions to apply
     #[argh(option, default = "Filter::MachineApplicableOnly", from_str_fn(filter_from_str))]
     suggestions: Filter,
+    /// use this solution if there are multiple possible solutions.
+    #[argh(option)]
+    solution_message: Option<String>,
 }
 
 fn filter_from_str(s: &str) -> Result<Filter, String> {
@@ -229,6 +232,7 @@ fn main() -> Result<()> {
                     &mut lint_args.read_lints(),
                     lint_args.try_get_filter()?,
                     f.suggestions,
+                    f.solution_message.as_deref(),
                     lint_args.dryrun,
                 ),
                 LintAction::Allow(allow_args) => {
