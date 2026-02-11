@@ -44,9 +44,6 @@ from debug_symbols import (
 # LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_gn_target_imports)
 
 
-# Directory where to find templated files.
-_TEMPLATE_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "templates")
-
 # Technical notes on input (source and build files) located in Bazel external
 # repositories.
 #
@@ -586,37 +583,6 @@ def main() -> int:
     )
 
     time_profile.start(
-        "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
-    )
-
-    # All bazel targets as a set() expression for Bazel queries below.
-    # See https://bazel.build/query/language#set
-    query_targets = "set(%s)" % " ".join(args.bazel_targets)
-
-    # Generate a BUILD.bazel file that defines a genquery() target for listing
-    # all build files that we need to include in the depfile for this target,
-    # i.e. any changes in these build files should trigger a rebuild of this target.
-    #
-    # IMPORTANT: This file should be removed after the Bazel build command below
-    # to ensure our consistency builders do not flake on it. Otherwise the content
-    # of $BAZEL_EXECROOT/bazel-out/<config_dir>/bin/buildfiles_genquery/genquery
-    # after a full build will reflect the last bazel_action() command that was
-    # invoked by Ninja, whose scheduling is not deterministic. In certain cases
-    # Ninja may decide between two builds to schedule bazel_action() commands
-    # in a different order, leaving two files with different content in each
-    # build's relative file path, creating a puzzling consistency error.
-    genquery_tmpl = os.path.join(_TEMPLATE_DIR, "template.genrule.bazel")
-    with open(genquery_tmpl, "rt") as tmpl:
-        genquery_build_content = tmpl.read().format(
-            query_expression=f"buildfiles(deps({query_targets}))",
-            query_scopes=",".join((f'"{s}"' for s in args.bazel_targets)),
-            query_opts='"--output=label"',
-        )
-
-    genquery_build_file = workspace_dir / "buildfiles_genquery/BUILD.bazel"
-    write_file_if_changed(genquery_build_file, genquery_build_content)
-
-    time_profile.start(
         f"bazel {args.command}", "Invoking Bazel {args.command} command"
     )
 
@@ -638,7 +604,7 @@ def main() -> int:
             command=args.command,
             platform_config=bazel_platform_config,
             platform_label=args.bazel_platform_label,
-            targets=args.bazel_targets + ["//buildfiles_genquery:genquery"],
+            targets=args.bazel_targets,
             outputs=bazel_action_impl.BazelActionOutputs(
                 file_outputs,
                 directory_outputs,
@@ -659,29 +625,16 @@ def main() -> int:
     configured_args = action_result.configured_args
     debug_symbol_manifest_paths = action_result.debug_symbol_manifest_paths
     all_output_files = action_result.output_files
+    build_file_labels = action_result.build_file_labels
 
     time_profile.stop()
 
-    build_files = []
     source_files = []
 
     if args.command == "build":
         time_profile.start(
             "list_sources", "Query the list of Bazel source files"
         )
-
-        # Get the list of input build files from the output of the genquery
-        # target that was built along the other requested Bazel targets.
-        # Doing this is considerably faster than performing a query here.
-        genquery_output_file = (
-            workspace_dir / "bazel-bin/buildfiles_genquery/genquery"
-        )
-        build_files = genquery_output_file.read_text().splitlines()
-
-        # Remove the build and output files now to avoid consistency flakes,
-        # see comment above.
-        genquery_output_file.unlink()
-        genquery_build_file.unlink()
 
         # Perform a cquery to get all source inputs for the targets, this
         # returns a list of Bazel labels followed by "(null)" because these
@@ -697,7 +650,7 @@ def main() -> int:
                 "--config=quiet",
                 "--output",
                 "label",
-                f'kind("source file", deps({query_targets}))',
+                f"kind(\"source file\", deps(set({' '.join(args.bazel_targets)})))",
             ]
             + configured_args,
         )
@@ -795,7 +748,9 @@ def main() -> int:
         mapper = bazel_label_mapper.BazelLabelMapper(
             str(workspace_dir), str(build_dir)
         )
-        all_sources = mapper.get_sources_for_labels(build_files + source_files)
+        all_sources = mapper.get_sources_for_labels(
+            build_file_labels + source_files
+        )
 
         depfile_content = "%s: %s\n" % (
             " ".join(depfile_quote(c) for c in all_output_files),

@@ -5,11 +5,13 @@
 
 "Implement the running of a Bazel command from Ninja and copying the outputs back into the ninja outdir."
 
+import contextlib
 import dataclasses
 import json
 import os
 import shlex
 import sys
+import typing as T
 from functools import partial
 from pathlib import Path
 
@@ -55,6 +57,9 @@ _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX = b"DEBUG_SYMBOLS_MANIFEST_PATH="
 
 # Directory where to find Starlark input files.
 _STARLARK_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "starlark")
+
+# Directory where to find templated files.
+_TEMPLATE_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "templates")
 
 
 class BazelActionError(Exception):
@@ -104,11 +109,15 @@ class BazelActionResult(object):
 
         output_files:  A list of the output paths that were actually copied to (updated)
           by this action.
+
+        build_files:  A list of the Bazel build files that were used by the built targets,
+          expressed as bazel target paths, not standard filesystem paths.
     """
 
     configured_args: list[str]
     debug_symbol_manifest_paths: list[str]
     output_files: list[Path]
+    build_file_labels: list[str]
 
 
 class BazelActionRunner(object):
@@ -187,7 +196,26 @@ class BazelActionRunner(object):
         cmd_args: list[str] = [
             command,
             *configured_args,
+        ]
+
+        # To capture the set of dependencies for targets, a genquery that can find
+        # all the BUILD.bazel and .bzl files needed for each target.
+        #
+        # The build file must be deleted after each build command.
+        time_profile.start(
+            "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
+        )
+        (
+            buildfile_genquery_target,
+            genquery_build_file,
+            genquery_output_file,
+        ) = self.create_buildfiles_genquery(targets)
+
+        # Add the genquery target to the list of targets and add those to the
+        # command line for bazel
+        cmd_args += [
             *targets,
+            buildfile_genquery_target,
         ]
 
         # If a build event json file is requested, tell Bazel to create one.
@@ -277,6 +305,162 @@ class BazelActionRunner(object):
                 )
                 + "\n",
             )
+
+        with FileCleaner(
+            # These files need to be deleted after the running of the action, to make
+            # sure that ninja doesn't see them as files that can cause consistency or
+            # non-convergence issues.
+            [
+                genquery_build_file,
+                genquery_output_file,
+            ]
+        ):
+            debug_symbol_manifest_paths = (
+                self._invoke_bazel_and_return_debug_symbols(
+                    targets,
+                    cmd_args,
+                    time_profile,
+                )
+            )
+
+            build_file_labels = []
+            if command == "build":
+                build_file_labels = (
+                    genquery_output_file.read_text().splitlines()
+                )
+
+        # Temporary files have now been deleted by the FileCleaner.
+
+        # If we're building, and have packages, query to get the paths to the package archives,
+        # as they need to be copied to the Ninja outdir along with any other files.
+        if command == "build" and outputs.packages:
+            time_profile.start(
+                "package_info",
+                "Run cquery to extract Fuchsia package archiveinformation",
+            )
+            package_archive_files = self.query_for_package_archives(
+                configured_args, outputs.packages
+            )
+            outputs.files.extend(package_archive_files)
+
+        # Now copy all the outputs.  This is a separate function to help break up the run()
+        # functionality for better clarity.
+        output_copier = _BazelOutputCopier(self.paths)
+        all_output_files = output_copier.copy(outputs, time_profile)
+
+        return BazelActionResult(
+            configured_args=configured_args,
+            debug_symbol_manifest_paths=debug_symbol_manifest_paths,
+            output_files=all_output_files,
+            build_file_labels=build_file_labels,
+        )
+
+    def query_for_package_archives(
+        self,
+        configured_args: list[str],
+        packages: list[bazel_action_utils.PackageOutput],
+    ) -> list[bazel_action_utils.FileOutput]:
+        """Given a list of PackageOutputs, query to find all the archive files to copy.
+
+        This basically is converting PackageOutput entries into FileOutput entries.
+        """
+
+        # Query against all package output targets at once.  The query results
+        # embed the target labels so that they can be matched with the ninja
+        # output paths.
+        query_result = run_starlark_cquery(
+            self.query_cache,
+            self.launcher,
+            configured_args,
+            [entry.package_label for entry in packages],
+            "FuchsiaPackageInfo_archive.cquery",
+        )
+
+        # The results are lines of json, so split them and parse each.  They're
+        # each a dict of:
+        #   target:  "@@<the bazel target>""
+        #   archive_path: "<path to the archive file>""
+        results: dict[str, str] = {
+            p["target"].removeprefix("@@"): p["archive_path"]
+            for p in [json.loads(line) for line in query_result]
+        }
+
+        # Now match each package output label to its results and add to the file
+        # copies to perform.
+        package_archive_paths: list[bazel_action_utils.FileOutput] = []
+        for entry in packages:
+            bazel_archive_path = results.get(entry.package_label)
+
+            # This is just in case we don't get a result for a label, or they
+            # change format on us.
+            assert bazel_archive_path
+
+            package_archive_paths.append(
+                bazel_action_utils.FileOutput(
+                    bazel_path=str(self.paths.execroot / bazel_archive_path),
+                    ninja_path=entry.archive_path,
+                )
+            )
+        return package_archive_paths
+
+    def create_buildfiles_genquery(
+        self, targets: list[str]
+    ) -> tuple[str, Path, Path]:
+        """Create a BUILD.bazel file that defines a genquery that returns all build files used.
+
+        Generate a BUILD.bazel file that defines a genquery() target for listing
+        all build files that we need to include in the depfile for this target,
+        i.e. any changes in these build files should trigger a rebuild of this target.
+
+        Args:
+            targets: The list of Bazel targets to create the query for
+
+        Returns:
+            Tuple of:
+                - Label for the genquery to add to the list of targets to build
+                - Path to the generated source file
+                - Path to the output of the query
+
+            IMPORTANT: These files should be removed after the Bazel build command below
+            to ensure our consistency builders do not flake on it. Otherwise the content
+            of $BAZEL_EXECROOT/bazel-out/<config_dir>/bin/buildfiles_genquery/genquery
+            after a full build will reflect the last bazel_action() command that was
+            invoked by Ninja, whose scheduling is not deterministic. In certain cases
+            Ninja may decide between two builds to schedule bazel_action() commands
+            in a different order, leaving two files with different content in each
+            build's relative file path, creating a puzzling consistency error.
+        """
+
+        genquery_tmpl = os.path.join(_TEMPLATE_DIR, "template.genrule.bazel")
+        with open(genquery_tmpl, "rt") as tmpl:
+            genquery_build_content = tmpl.read().format(
+                query_expression=f"buildfiles(deps(set({' '.join(targets)})))",
+                query_scopes=",".join((f'"{s}"' for s in targets)),
+                query_opts='"--output=label"',
+            )
+
+        genquery_build_file = (
+            self.paths.workspace / "buildfiles_genquery/BUILD.bazel"
+        )
+        write_file_if_changed(genquery_build_file, genquery_build_content)
+
+        genquery_output_file = (
+            self.paths.workspace / "bazel-bin/buildfiles_genquery/genquery"
+        )
+
+        return (
+            "//buildfiles_genquery:genquery",
+            genquery_build_file,
+            genquery_output_file,
+        )
+
+    def _invoke_bazel_and_return_debug_symbols(
+        self,
+        targets: list[str],
+        cmd_args: list[str],
+        time_profile: build_utils.TimeProfile,
+    ) -> list[str]:
+        """A helper function to handle the invocation of Bazel and extraction of debug symbols from its output."""
 
         if self.global_args.quiet:
             # Still capture stdout to print its content if there is an error
@@ -370,76 +554,7 @@ class BazelActionRunner(object):
             )
             raise BazelActionError()
 
-        # If we're building, and have packages, query to get the paths to the package archives,
-        # as they need to be copied to the Ninja outdir along with any other files.
-        if command == "build" and outputs.packages:
-            time_profile.start(
-                "package_info",
-                "Run cquery to extract Fuchsia package archiveinformation",
-            )
-            package_archive_files = self.query_for_package_archives(
-                configured_args, outputs.packages
-            )
-            outputs.files.extend(package_archive_files)
-
-        # Now copy all the outputs.  This is a separate function to help break up the run()
-        # functionality for better clarity.
-        output_copier = _BazelOutputCopier(self.paths)
-        all_output_files = output_copier.copy(outputs, time_profile)
-
-        return BazelActionResult(
-            configured_args=configured_args,
-            debug_symbol_manifest_paths=debug_symbol_manifest_paths,
-            output_files=all_output_files,
-        )
-
-    def query_for_package_archives(
-        self,
-        configured_args: list[str],
-        packages: list[bazel_action_utils.PackageOutput],
-    ) -> list[bazel_action_utils.FileOutput]:
-        """Given a list of PackageOutputs, query to find all the archive files to copy.
-
-        This basically is converting PackageOutput entries into FileOutput entries.
-        """
-
-        # Query against all package output targets at once.  The query results
-        # embed the target labels so that they can be matched with the ninja
-        # output paths.
-        query_result = run_starlark_cquery(
-            self.query_cache,
-            self.launcher,
-            configured_args,
-            [entry.package_label for entry in packages],
-            "FuchsiaPackageInfo_archive.cquery",
-        )
-
-        # The results are lines of json, so split them and parse each.  They're
-        # each a dict of:
-        #   target:  "@@<the bazel target>""
-        #   archive_path: "<path to the archive file>""
-        results: dict[str, str] = {
-            p["target"].removeprefix("@@"): p["archive_path"]
-            for p in [json.loads(line) for line in query_result]
-        }
-
-        # Now match each package output label to its results and add to the file
-        # copies to perform.
-        package_archive_paths: list[bazel_action_utils.FileOutput] = []
-        for entry in packages:
-            bazel_archive_path = results.get(entry.package_label)
-
-            # This is just in case we don't get a result for a label, or they
-            # change format on us.
-            assert bazel_archive_path
-
-            package_archive_paths.append(
-                bazel_action_utils.FileOutput(
-                    bazel_path=str(self.paths.execroot / bazel_archive_path),
-                    ninja_path=entry.archive_path,
-                )
-            )
-        return package_archive_paths
+        return debug_symbol_manifest_paths
 
 
 def calculate_platform_config_args(
@@ -719,6 +834,17 @@ def run_bazel_query(
             else None
         ),
     )
+
+
+class FileCleaner(contextlib.ExitStack):
+    """A context manager that unlinks files upon exiting."""
+
+    def __init__(self, files: T.Sequence[Path]) -> None:
+        super().__init__()
+        # Register each file's unlinking to be done as the exit
+        # callback.
+        for file in files:
+            self.callback(file.unlink)
 
 
 class _BazelOutputCopier(object):
