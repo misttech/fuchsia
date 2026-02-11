@@ -30,7 +30,7 @@ function debug() {
   [[ "$verbose" == 0 ]] || echo "[$SCRIPT_NAME]: $*"
 }
 
-function error() {
+function die() {
   echo "[$SCRIPT_NAME] Error: $*"
   exit 1
 }
@@ -153,7 +153,7 @@ build_tool_args+=( "$@" )
 [[ -n "$build_dir" ]] || {
   # Try to infer the build_dir from the build tool args.
   prev_opt=
-  for "$opt" in "${build_tool_args[@]}"
+  for opt in "${build_tool_args[@]}"
   do
     if [[ -n "$prev_opt" ]]
     then
@@ -167,7 +167,7 @@ build_tool_args+=( "$@" )
   done
   debug "Inferred build-dir: $build_dir"
 }
-[[ -n "$build_dir" ]] || error "Missing required --build-dir option."
+[[ -n "$build_dir" ]] || die "Missing required --build-dir option."
 
 readonly build_dir_basename="${build_dir##*/}"  # basename
 
