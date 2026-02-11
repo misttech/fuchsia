@@ -514,38 +514,20 @@ impl TouchBinding {
     /// binding does not generate InputEvents asynchronously, this will be `None`.
     fn process_reports(
         reports: Vec<InputReport>,
-        mut previous_report: Option<InputReport>,
-        device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
-        inspect_status: &InputDeviceStatus,
-        metrics_logger: &metrics::MetricsLogger,
-    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-        fuchsia_trace::duration!("input", "touch-binding-process-report", "num_reports" => reports.len());
-        for report in reports {
-            previous_report = Self::process_report(
-                report,
-                previous_report,
-                device_descriptor,
-                input_event_sender,
-                inspect_status,
-                metrics_logger,
-            );
-        }
-        (previous_report, None)
-    }
-
-    fn process_report(
-        report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
-    ) -> Option<InputReport> {
-        inspect_status.count_received_report(&report);
+    ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+        fuchsia_trace::duration!(
+            "input",
+            "touch-binding-process-report",
+            "num_reports" => reports.len(),
+        );
         match device_descriptor {
             input_device::InputDeviceDescriptor::TouchScreen(_) => process_touch_screen_reports(
-                report,
+                reports,
                 previous_report,
                 device_descriptor,
                 input_event_sender,
@@ -553,13 +535,14 @@ impl TouchBinding {
                 metrics_logger,
             ),
             input_device::InputDeviceDescriptor::Touchpad(_) => process_touchpad_reports(
-                report,
+                reports,
+                previous_report,
                 device_descriptor,
                 input_event_sender,
                 inspect_status,
                 metrics_logger,
             ),
-            _ => previous_report,
+            _ => (previous_report, None),
         }
     }
 
@@ -598,13 +581,50 @@ impl TouchBinding {
 }
 
 fn process_touch_screen_reports(
-    mut report: InputReport,
-    previous_report: Option<InputReport>,
+    reports: Vec<InputReport>,
+    mut previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
-) -> Option<InputReport> {
+) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    let mut batch: Vec<InputEvent> = Vec::new();
+    for report in reports {
+        inspect_status.count_received_report(&report);
+        let (prev_report, events) = process_single_touch_screen_report(
+            report,
+            previous_report,
+            device_descriptor,
+            inspect_status,
+        );
+        previous_report = prev_report;
+        batch.extend(events);
+    }
+
+    if !batch.is_empty() {
+        let events_to_send: Vec<InputEvent> =
+            batch.iter().map(|e| e.clone_with_wake_lease()).collect();
+        match input_event_sender.unbounded_send(events_to_send) {
+            Err(e) => {
+                metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
+                    std::format!("Failed to send TouchScreenEvent with error: {:?}", e),
+                );
+            }
+            _ => {
+                inspect_status.count_generated_events(&batch);
+            }
+        }
+    }
+    (previous_report, None)
+}
+
+fn process_single_touch_screen_report(
+    mut report: InputReport,
+    previous_report: Option<InputReport>,
+    device_descriptor: &input_device::InputDeviceDescriptor,
+    inspect_status: &InputDeviceStatus,
+) -> (Option<InputReport>, Vec<InputEvent>) {
     fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
@@ -612,7 +632,7 @@ fn process_touch_screen_reports(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return previous_report;
+            return (previous_report, vec![]);
         }
     };
 
@@ -636,7 +656,7 @@ fn process_touch_screen_reports(
         && current_buttons.is_empty()
     {
         inspect_status.count_filtered_report();
-        return Some(report);
+        return (Some(report), vec![]);
     }
 
     // A touch input report containing button state should persist prior contact state,
@@ -675,7 +695,7 @@ fn process_touch_screen_reports(
 
     let trace_id = fuchsia_trace::Id::random();
     fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
-    send_touch_screen_event(
+    let event = create_touch_screen_event(
         hashmap! {
             fidl_ui_input::PointerEventPhase::Add => added_contacts.clone(),
             fidl_ui_input::PointerEventPhase::Down => added_contacts.clone(),
@@ -690,18 +710,39 @@ fn process_touch_screen_reports(
         },
         current_buttons,
         device_descriptor,
-        input_event_sender,
         trace_id,
-        inspect_status,
-        metrics_logger,
         report.wake_lease.take(),
     );
 
-    Some(report)
+    (Some(report), vec![event])
 }
 
 fn process_touchpad_reports(
+    reports: Vec<InputReport>,
+    mut previous_report: Option<InputReport>,
+    device_descriptor: &input_device::InputDeviceDescriptor,
+    input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
+    inspect_status: &InputDeviceStatus,
+    metrics_logger: &metrics::MetricsLogger,
+) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    for report in reports {
+        inspect_status.count_received_report(&report);
+        let prev_report = process_single_touchpad_report(
+            report,
+            previous_report,
+            device_descriptor,
+            input_event_sender,
+            inspect_status,
+            metrics_logger,
+        );
+        previous_report = prev_report;
+    }
+    (previous_report, None)
+}
+
+fn process_single_touchpad_report(
     report: InputReport,
+    previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
@@ -716,7 +757,7 @@ fn process_touchpad_reports(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return None;
+            return previous_report;
         }
     };
 
@@ -774,27 +815,24 @@ fn touch_contacts_and_buttons_from_touch_report(
     )
 }
 
-/// Sends a TouchScreenEvent over `input_event_sender`.
+/// Create a TouchScreenEvent.
 ///
 /// # Parameters
 /// - `contacts`: The contact points relevant to the new TouchScreenEvent.
 /// - `injector_contacts`: The contact points relevant to the new TouchScreenEvent, used to send
 ///                        pointer events into Scenic.
 /// - `device_descriptor`: The descriptor for the input device generating the input reports.
-/// - `input_event_sender`: The sender for the device binding's input event stream.
+/// - `trace_id`: The trace id to distinguish the event.
 /// - `wake_lease`: The wake lease to send with the event.
-fn send_touch_screen_event(
+fn create_touch_screen_event(
     contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
     injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
     pressed_buttons: Vec<fidl_input_report::TouchButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
-    input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     trace_id: fuchsia_trace::Id,
-    inspect_status: &InputDeviceStatus,
-    metrics_logger: &metrics::MetricsLogger,
     wake_lease: Option<zx::EventPair>,
-) {
-    let event = input_device::InputEvent {
+) -> InputEvent {
+    input_device::InputEvent {
         device_event: input_device::InputDeviceEvent::TouchScreen(TouchScreenEvent {
             contacts,
             injector_contacts,
@@ -805,16 +843,6 @@ fn send_touch_screen_event(
         event_time: zx::MonotonicInstant::get(),
         handled: Handled::No,
         trace_id: Some(trace_id),
-    };
-
-    match input_event_sender.unbounded_send(vec![event.clone_with_wake_lease()]) {
-        Err(e) => {
-            metrics_logger.log_error(
-                InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
-                std::format!("Failed to send TouchScreenEvent with error: {:?}", e),
-            );
-        }
-        _ => inspect_status.count_generated_event(event),
     }
 }
 
@@ -1750,5 +1778,58 @@ mod tests {
             device_descriptor: descriptor,
             device_type: TouchBinding,
         );
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn process_reports_batches_events() {
+        const TOUCH_ID: u32 = 2;
+
+        let descriptor =
+            input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
+                device_id: 1,
+                contacts: vec![],
+            });
+        let (event_time_i64, _) = testing_utilities::event_times();
+
+        let contact1 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(0),
+            position_y: Some(0),
+            ..Default::default()
+        };
+        let contact2 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(10),
+            position_y: Some(10),
+            ..Default::default()
+        };
+        let reports = vec![
+            create_touch_input_report(vec![contact1], None, event_time_i64),
+            create_touch_input_report(vec![contact2], None, event_time_i64),
+        ];
+
+        let (mut event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let test_node = inspector.root().create_child("TestDevice_Touch");
+        let mut inspect_status = InputDeviceStatus::new(test_node);
+        inspect_status.health_node.set_ok();
+
+        let _ = TouchBinding::process_reports(
+            reports,
+            None,
+            &descriptor,
+            &mut event_sender,
+            &inspect_status,
+            &metrics::MetricsLogger::default(),
+        );
+
+        // Expect EXACTLY one batch containing two events.
+        let batch = event_receiver.try_next().expect("Expected a batch of events");
+        let events = batch.expect("Expected events in the batch");
+        assert_eq!(events.len(), 2);
+
+        // Verify no more batches.
+        assert!(event_receiver.try_next().is_err());
     }
 }
