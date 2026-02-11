@@ -16,6 +16,6 @@ if (is_host) {
   }
 
   go_test("host-target-testing-avb-test") {
-    embed = [ ":avb" ]
+    library = ":avb"
   }
 }

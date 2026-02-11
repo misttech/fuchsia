@@ -134,6 +134,6 @@ if (is_linux) {
   }
 
   go_test("emulator_tests") {
-    embed = [ ":emulator" ]
+    library = ":emulator"
   }
 }

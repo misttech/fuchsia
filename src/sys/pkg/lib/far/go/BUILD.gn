@@ -15,7 +15,7 @@ go_library("far") {
 }
 
 go_test("go_far_test") {
-  embed = [ ":far" ]
+  library = ":far"
 }
 
 fuchsia_component("test-component") {

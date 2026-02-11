@@ -22,7 +22,7 @@ go_library("util") {
 }
 
 go_test("util_test") {
-  embed = [ ":util" ]
+  library = ":util"
 }
 
 fuchsia_unittest_package("netstack-util-gotests") {

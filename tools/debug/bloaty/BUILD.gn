@@ -17,5 +17,5 @@ go_library("bloaty") {
 }
 
 go_test("bloaty_tests") {
-  embed = [ ":bloaty" ]
+  library = ":bloaty"
 }

@@ -22,11 +22,11 @@ if (is_host) {
   }
 
   go_binary("gndoc") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 
   go_test("gndoc-tests") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 }
 

@@ -52,7 +52,7 @@ if (has_board) {
   }
 
   go_test("fidl_go_conformance_tests") {
-    embed = [ ":conformance_tests_library" ]
+    library = ":conformance_tests_library"
     non_go_deps = [ ":conformance_suite" ]
   }
 

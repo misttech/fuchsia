@@ -51,19 +51,19 @@ go_library("main") {
 }
 
 go_test("utils_tests") {
-  embed = [ ":utils" ]
+  library = ":utils"
 }
 
 go_test("ffx_tests") {
-  embed = [ ":ffx" ]
+  library = ":ffx"
 }
 
 go_test("orchestrate_tests") {
-  embed = [ ":lib" ]
+  library = ":lib"
 }
 
 go_binary("orchestrate") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 # Used for distributing the Orchestrate tool to private IDKs. Not to be included in

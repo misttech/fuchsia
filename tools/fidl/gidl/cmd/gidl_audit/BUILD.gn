@@ -17,5 +17,5 @@ go_library("main") {
 }
 
 go_binary("gidl_audit") {
-  embed = [ ":main" ]
+  library = ":main"
 }

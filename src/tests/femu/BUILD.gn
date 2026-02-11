@@ -30,7 +30,7 @@ if (is_linux) {
   }
 
   go_test("femu_test") {
-    embed = [ ":lib" ]
+    library = ":lib"
     deps = [
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

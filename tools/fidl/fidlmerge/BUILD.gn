@@ -16,7 +16,7 @@ go_library("gopkg") {
 }
 
 go_binary("fidlmerge") {
-  embed = [ ":gopkg" ]
+  library = ":gopkg"
 }
 
 install_host_tools("host") {

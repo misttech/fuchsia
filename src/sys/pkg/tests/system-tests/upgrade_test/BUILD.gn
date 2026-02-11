@@ -32,7 +32,7 @@ if (is_host) {
   }
 
   go_test("system_tests_upgrade") {
-    embed = [ ":gopkg" ]
+    library = ":gopkg"
     environments = [ disabled_env ]
   }
 }

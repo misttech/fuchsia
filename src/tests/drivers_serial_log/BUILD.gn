@@ -26,7 +26,7 @@ if (is_linux) {
   }
 
   go_test("drivers_serial_log_test") {
-    embed = [ ":lib" ]
+    library = ":lib"
     non_go_deps = [ ":bringup_zbi" ]
   }
 }

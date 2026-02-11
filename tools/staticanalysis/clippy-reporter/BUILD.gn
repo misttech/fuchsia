@@ -24,11 +24,11 @@ if (is_host) {
   }
 
   go_test("clippy_reporter_tests") {
-    embed = [ ":clippy_reporter_lib" ]
+    library = ":clippy_reporter_lib"
   }
 
   go_binary("clippy-reporter") {
-    embed = [ ":clippy_reporter_lib" ]
+    library = ":clippy_reporter_lib"
   }
 }
 

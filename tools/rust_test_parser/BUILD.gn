@@ -21,7 +21,7 @@ group("tests") {
 }
 
 go_test("rust_test_parser_lib_tests") {
-  embed = [ ":rust_test_parser_lib" ]
+  library = ":rust_test_parser_lib"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 
@@ -35,5 +35,5 @@ go_library("main") {
 }
 
 go_binary("rust_test_parser") {
-  embed = [ ":main" ]
+  library = ":main"
 }

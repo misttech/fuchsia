@@ -18,7 +18,7 @@ go_library("generate_intermediate_json") {
 }
 
 go_binary("generate_intermediate_json_cmd") {
-  embed = [ ":generate_intermediate_json" ]
+  library = ":generate_intermediate_json"
 }
 
 install_host_tools("host") {

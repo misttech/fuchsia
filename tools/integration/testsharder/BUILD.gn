@@ -87,17 +87,17 @@ go_library("main") {
 }
 
 go_binary("testsharder") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 if (is_host) {
   go_test("testsharder_lib_tests") {
-    embed = [ ":testsharder_lib" ]
+    library = ":testsharder_lib"
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 
   go_test("testsharder_metadata_tests") {
-    embed = [ ":metadata" ]
+    library = ":metadata"
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 
@@ -144,7 +144,7 @@ if (is_host) {
   }
 
   go_test("testsharder_tests") {
-    embed = [ ":main" ]
+    library = ":main"
     deps = [
       "//third_party/golibs:github.com/google/go-cmp",
       "//tools/lib/jsonutil",

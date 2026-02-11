@@ -13,6 +13,6 @@ go_library("pkg") {
 }
 
 go_test("pm_pkg_test") {
-  embed = [ ":pkg" ]
+  library = ":pkg"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

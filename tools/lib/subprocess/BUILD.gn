@@ -18,5 +18,5 @@ go_library("subprocess") {
 }
 
 go_test("subprocess_tests") {
-  embed = [ ":subprocess" ]
+  library = ":subprocess"
 }

@@ -31,7 +31,7 @@ if (is_linux && has_board) {
   }
 
   go_test("femu_usb_test") {
-    embed = [ ":lib" ]
+    library = ":lib"
     deps = [
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

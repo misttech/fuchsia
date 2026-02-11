@@ -28,6 +28,6 @@ go_library("tokenizer") {
 }
 
 go_test("tap_tests") {
-  embed = [ ":tap" ]
+  library = ":tap"
   deps = [ "//third_party/golibs:gopkg.in/yaml.v2" ]
 }

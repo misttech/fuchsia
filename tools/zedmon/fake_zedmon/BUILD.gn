@@ -10,7 +10,7 @@ go_library("lib") {
 }
 
 go_binary("bin") {
-  embed = [ ":lib" ]
+  library = ":lib"
   output_name = "fake_zedmon"
 }
 

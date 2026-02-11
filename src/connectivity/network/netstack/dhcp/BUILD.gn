@@ -28,7 +28,7 @@ go_library("dhcp") {
 }
 
 go_test("dhcp_test") {
-  embed = [ ":dhcp" ]
+  library = ":dhcp"
 }
 
 fuchsia_unittest_package("netstack-dhcp-gotests") {

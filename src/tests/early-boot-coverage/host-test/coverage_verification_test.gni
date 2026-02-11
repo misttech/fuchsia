@@ -147,7 +147,7 @@ template("coverage_verification_test") {
   # Instantiate the host interaction helper with the parameters and images
   # generated for this target.
   go_test(target_name) {
-    embed = [ "//src/tests/early-boot-coverage/host-test:lib" ]
+    library = "//src/tests/early-boot-coverage/host-test:lib"
     non_go_deps = [
                     ":$expectation_sources_label",
                     ":$instrumented_binary_label",

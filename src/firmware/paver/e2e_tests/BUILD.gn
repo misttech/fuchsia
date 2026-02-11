@@ -35,7 +35,7 @@ if (is_host) {
   }
 
   go_test("e2e_tests_pave") {
-    embed = [ ":lib" ]
+    library = ":lib"
     environments = [ disabled_env ]
   }
 }

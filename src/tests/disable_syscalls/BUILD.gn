@@ -55,7 +55,7 @@ if (is_linux) {
     }
 
     go_test("${split_name}_test") {
-      embed = [ ":$split_name" ]
+      library = ":$split_name"
       non_go_deps = [
         ":misc_tools",
         ":syscall_zbi",

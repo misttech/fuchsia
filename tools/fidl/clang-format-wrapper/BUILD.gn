@@ -12,6 +12,6 @@ if (is_host) {
   }
 
   go_binary("clang-format-wrapper") {
-    embed = [ ":gopkg" ]
+    library = ":gopkg"
   }
 }  # is_host

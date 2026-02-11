@@ -7,7 +7,7 @@ import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
 go_binary("artifactory") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 group("tests") {
@@ -72,10 +72,10 @@ go_library("lib") {
 }
 
 go_test("artifactory_lib_tests") {
-  embed = [ ":lib" ]
+  library = ":lib"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 
 go_test("artifactory_main_tests") {
-  embed = [ ":main" ]
+  library = ":main"
 }

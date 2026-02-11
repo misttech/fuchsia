@@ -13,7 +13,7 @@ go_library("bench") {
 }
 
 go_test("bench_test") {
-  embed = [ ":bench" ]
+  library = ":bench"
 }
 
 fuchsia_unittest_package("netstack-bench-gotests") {

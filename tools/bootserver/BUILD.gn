@@ -55,18 +55,18 @@ go_library("main") {
 }
 
 go_binary("bootserver") {
-  embed = [ ":main" ]
+  library = ":main"
 
   # TODO(https://fxbug.dev/42114276): Stop renaming once zircon bootserver goes away.
   output_name = "bootserver_new"
 }
 
 go_test("bootserver_lib_tests") {
-  embed = [ ":bootserver_lib" ]
+  library = ":bootserver_lib"
 }
 
 go_test("bootserver_cmd_tests") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 group("tests") {

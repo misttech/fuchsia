@@ -15,5 +15,5 @@ go_library("cache") {
 }
 
 go_test("cache_tests") {
-  embed = [ ":cache" ]
+  library = ":cache"
 }

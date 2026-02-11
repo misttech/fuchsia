@@ -24,7 +24,7 @@ go_library("serial") {
 }
 
 go_test("tests") {
-  embed = [ ":serial" ]
+  library = ":serial"
   output_name = "serial_tests"
   deps = [
     "//third_party/golibs:github.com/google/go-cmp",

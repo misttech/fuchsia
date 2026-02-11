@@ -15,5 +15,5 @@ go_library("tftp") {
 }
 
 go_test("tftp_tests") {
-  embed = [ ":tftp" ]
+  library = ":tftp"
 }

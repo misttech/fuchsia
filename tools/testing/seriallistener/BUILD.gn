@@ -20,5 +20,5 @@ go_library("main") {
 }
 
 go_binary("seriallistener") {
-  embed = [ ":main" ]
+  library = ":main"
 }

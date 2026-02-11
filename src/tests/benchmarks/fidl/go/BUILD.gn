@@ -33,7 +33,7 @@ go_library("benchmark_suite_go_lib") {
 }
 
 go_binary("go_fidl_microbenchmarks_bin") {
-  embed = [ ":go_fidl_microbenchmarks_lib" ]
+  library = ":go_fidl_microbenchmarks_lib"
   testonly = true
   output_name = "go_fidl_microbenchmarks"
 }

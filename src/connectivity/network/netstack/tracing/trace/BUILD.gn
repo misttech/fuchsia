@@ -29,7 +29,7 @@ go_library("trace") {
 }
 
 go_test("trace_test") {
-  embed = [ ":trace" ]
+  library = ":trace"
   tags = [ "tracing" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   include_dirs = go_tracing_include_dirs

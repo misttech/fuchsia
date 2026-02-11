@@ -18,7 +18,7 @@ go_library("puppet-lib") {
 }
 
 go_binary("internal-puppet-bin") {
-  embed = [ ":puppet-lib" ]
+  library = ":puppet-lib"
   deps = [
     "//src/connectivity/network/netstack/inspect/validator/puppet-internal/fidl:validate_go($go_toolchain)",
     "//src/lib/component",

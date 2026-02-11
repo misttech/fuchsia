@@ -14,7 +14,7 @@ if (is_host) {
   }
 
   go_test("buildstats_tests") {
-    embed = [ ":buildstats_lib" ]
+    library = ":buildstats_lib"
     output_name = "buildstats_tests"
     sources = [ "main_test.go" ]
     args = [

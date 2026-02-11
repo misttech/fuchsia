@@ -13,6 +13,6 @@ go_library("environment") {
 }
 
 go_test("environment_tests") {
-  embed = [ ":environment" ]
+  library = ":environment"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

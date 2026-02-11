@@ -13,7 +13,7 @@ go_library("lib") {
 
 go_binary("regenerate-metadata") {
   testonly = true
-  embed = [ ":lib" ]
+  library = ":lib"
   output_name = "regenerate-metadata"
   deps = [ "//third_party/golibs:github.com/theupdateframework/go-tuf" ]
 }

@@ -22,7 +22,7 @@ if (is_host) {
   }
 
   go_test("host-target-testing-ffx-test") {
-    embed = [ ":ffx" ]
+    library = ":ffx"
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 }

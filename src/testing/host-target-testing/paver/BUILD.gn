@@ -19,6 +19,6 @@ if (is_host) {
   }
 
   go_test("host-target-testing-paver-test") {
-    embed = [ ":paver" ]
+    library = ":paver"
   }
 }

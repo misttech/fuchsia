@@ -30,11 +30,11 @@ go_library("main") {
 }
 
 go_binary("debugsyms") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 go_test("debugsyms_tests") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 group("tests") {

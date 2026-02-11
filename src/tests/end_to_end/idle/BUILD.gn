@@ -15,7 +15,7 @@ go_library("idle_test_lib") {
 }
 
 go_test("idle_test") {
-  embed = [ ":idle_test_lib" ]
+  library = ":idle_test_lib"
 
   environments = [
     {

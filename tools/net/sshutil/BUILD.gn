@@ -33,5 +33,5 @@ go_library("constants") {
 }
 
 go_test("sshutil_tests") {
-  embed = [ ":sshutil" ]
+  library = ":sshutil"
 }

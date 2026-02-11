@@ -19,6 +19,6 @@ if (is_host) {
   }
 
   go_test("host-target-testing-util-test") {
-    embed = [ ":util" ]
+    library = ":util"
   }
 }

@@ -79,7 +79,7 @@ if (is_host) {
   }
 
   go_test("fint_lib_tests") {
-    embed = [ ":fint_lib" ]
+    library = ":fint_lib"
   }
 
   go_library("main") {
@@ -106,11 +106,11 @@ if (is_host) {
   }
 
   go_test("main_tests") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 
   go_binary("fint") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 }
 

@@ -23,7 +23,7 @@ go_library("routes") {
 }
 
 go_test("routes_test") {
-  embed = [ ":routes" ]
+  library = ":routes"
 }
 
 fuchsia_unittest_package("netstack-routes-gotests") {

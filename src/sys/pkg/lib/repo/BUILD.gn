@@ -35,5 +35,5 @@ group("tests") {
 }
 
 go_test("repo_tests") {
-  embed = [ ":repo" ]
+  library = ":repo"
 }

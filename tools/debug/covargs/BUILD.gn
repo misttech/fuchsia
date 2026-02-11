@@ -55,16 +55,16 @@ go_library("main") {
 }
 
 go_binary("covargs") {
-  embed = [ ":main" ]
+  library = ":main"
   cgo = false
 }
 
 go_test("covargs_lib_tests") {
-  embed = [ ":covargs_lib" ]
+  library = ":covargs_lib"
 }
 
 go_test("covargs_tests") {
-  embed = [ ":main" ]
+  library = ":main"
 }
 
 group("tests") {

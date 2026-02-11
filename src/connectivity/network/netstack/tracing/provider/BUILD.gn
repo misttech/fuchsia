@@ -25,7 +25,7 @@ go_library("provider") {
 }
 
 go_test("provider_test") {
-  embed = [ ":provider" ]
+  library = ":provider"
   tags = [ "tracing" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   include_dirs = go_tracing_include_dirs

@@ -18,6 +18,6 @@ go_library("iomisc") {
 }
 
 go_test("tests") {
-  embed = [ ":iomisc" ]
+  library = ":iomisc"
   output_name = "iomisc_tests"
 }

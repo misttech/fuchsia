@@ -19,7 +19,7 @@ go_library("generate_project_json_lib") {
 }
 
 go_binary("check-licenses-gen-project-json") {
-  embed = [ ":generate_project_json_lib" ]
+  library = ":generate_project_json_lib"
 }
 
 install_host_tools("host") {

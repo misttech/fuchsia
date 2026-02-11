@@ -84,7 +84,7 @@ go_library("go_empty_gidl_tests_library") {
 }
 
 go_test("go_empty_gidl_test_bin") {
-  embed = [ ":go_empty_gidl_tests_library" ]
+  library = ":go_empty_gidl_tests_library"
   non_go_deps = [ ":go_empty_gidl" ]
 }
 assert(is_fuchsia, "gidl test is fuchsia-only (${current_toolchain})")

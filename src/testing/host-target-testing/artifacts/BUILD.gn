@@ -29,6 +29,6 @@ if (is_host) {
   }
 
   go_test("host-target-testing-artifacts-test") {
-    embed = [ ":artifacts" ]
+    library = ":artifacts"
   }
 }

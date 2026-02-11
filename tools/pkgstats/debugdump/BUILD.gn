@@ -13,7 +13,7 @@ if (is_host) {
   }
 
   go_binary("debugdump") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 
   install_host_tools("host") {

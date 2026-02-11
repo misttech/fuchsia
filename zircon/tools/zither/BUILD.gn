@@ -34,7 +34,7 @@ group("tests") {
 
 if (is_host) {
   go_binary("zither") {
-    embed = [ ":main" ]
+    library = ":main"
   }
 
   go_library("main") {
@@ -76,7 +76,7 @@ if (is_host) {
   }
 
   fidlgentest_go_test("unittests") {
-    embed = [ ":common" ]
+    library = ":common"
     output_name = "zither-unittests"
     deps = [
       "//third_party/golibs:github.com/google/go-cmp",
@@ -340,7 +340,7 @@ template("zither_golden_test") {
       }
 
       go_binary(compilation_check_target) {
-        embed = [ ":$main_library_target" ]
+        library = ":$main_library_target"
         visibility = [ ":*" ]
         testonly = true
       }

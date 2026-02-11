@@ -19,7 +19,7 @@ go_library("sdkcommon") {
 }
 
 go_test("sdkcommon-test") {
-  embed = [ ":sdkcommon" ]
+  library = ":sdkcommon"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

@@ -26,5 +26,5 @@ go_library("golang") {
 }
 
 go_test("gidl_golang_tests") {
-  embed = [ ":golang" ]
+  library = ":golang"
 }

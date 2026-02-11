@@ -18,5 +18,5 @@ go_library("measurer") {
 }
 
 go_test("measure-tape_test") {
-  embed = [ ":measurer" ]
+  library = ":measurer"
 }

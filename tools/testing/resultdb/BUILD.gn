@@ -46,7 +46,7 @@ go_library("main") {
 }
 
 go_binary("resultdb") {
-  embed = [ ":main" ]
+  library = ":main"
 
   # Needed to support cross-compilation. The infra recipes always needs this
   # built for Linux, even if build happens on Mac.
@@ -65,7 +65,7 @@ if (is_host) {
   _testdata_path = "$target_gen_dir/testdata"
 
   go_test("test") {
-    embed = [ ":main" ]
+    library = ":main"
     output_name = "resultdb_tests"
   }
 
@@ -83,7 +83,7 @@ if (is_host) {
   }
 
   go_test("resultdb_lib_tests") {
-    embed = [ ":lib" ]
+    library = ":lib"
     args = [
       "--test_data_dir",
       rebase_path(_testdata_path, root_build_dir),

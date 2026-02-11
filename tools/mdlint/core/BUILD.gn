@@ -19,6 +19,6 @@ go_library("core") {
 }
 
 go_test("mdlint_core_tests") {
-  embed = [ ":core" ]
+  library = ":core"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

@@ -15,7 +15,7 @@ go_library("qemu") {
 }
 
 go_test("qemu_tests") {
-  embed = [ ":qemu" ]
+  library = ":qemu"
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 
