@@ -164,10 +164,14 @@ pub(crate) async fn previous_data() -> Result<Option<PersistenceData>, Error> {
     read_data(PREVIOUS_DATA).await
 }
 
-pub(crate) fn write_current_data(data: &PersistenceData) -> Result<(), Error> {
-    let file = File::create(CURRENT_DATA)
-        .context("Failed to open current Persistence data for writing")?;
-    serde_json::to_writer(file, data).context("Failed to serialize Persistence data")
+pub(crate) async fn write_current_data(data: &PersistenceData) -> Result<(), Error> {
+    let file = fuchsia_fs::file::open_in_namespace(
+        CURRENT_DATA,
+        fuchsia_fs::Flags::FLAG_MAYBE_CREATE | fuchsia_fs::Flags::PERM_WRITE_BYTES,
+    )
+    .context("Failed to open current Persistence data for writing")?;
+    let buf = serde_json::to_vec(data).context("Failed to serialize Persistence data")?;
+    fuchsia_fs::file::write(&file, &buf).await.context("Failed to write current Persistence data")
 }
 
 #[cfg(test)]

@@ -216,8 +216,7 @@ impl Scheduler {
             }
         }
 
-        file_handler::write_current_data(&current_data)
-            .context("Failed to write current data to disk")
+        file_handler::write_current_data(&current_data).await
     }
 }
 
