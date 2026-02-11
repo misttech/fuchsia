@@ -20,19 +20,22 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "winnow",
-    package_url = "https://github.com/winnow-rs/winnow",
-    package_version = "0.7.13",
+    package_name = "askama_parser",
+    package_url = "https://github.com/askama-rs/askama",
+    package_version = "0.15.4",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:MIT"],
-    license_text = "LICENSE-MIT",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
-    name = "winnow",
+    name = "askama_parser",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -50,29 +53,19 @@ rust_library(
         ],
     ),
     crate_features = [
-        "alloc",
-        "default",
-        "std",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "simd",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "simd",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "simd",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+        "config",
+    ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive",
+    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=winnow",
+        "crate-name=askama_parser",
         "manual",
         "noclippy",
         "norustfmt",
@@ -85,17 +78,11 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.13",
-    deps = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    version = "0.15.4",
+    deps = [
+        "//third_party/rust_crates/vendor/rustc-hash-2.1.1:rustc_hash",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/unicode-ident-1.0.19:unicode_ident",
+        "//third_party/rust_crates/vendor/winnow-0.7.13:winnow",
+    ],
 )

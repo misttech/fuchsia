@@ -8,7 +8,7 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 
 package(
     default_package_metadata = [
@@ -20,19 +20,22 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "winnow",
-    package_url = "https://github.com/winnow-rs/winnow",
-    package_version = "0.7.13",
+    package_name = "askama_macros",
+    package_url = "https://github.com/askama-rs/askama",
+    package_version = "0.15.4",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:MIT"],
-    license_text = "LICENSE-MIT",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
 )
 
-rust_library(
-    name = "winnow",
+rust_proc_macro(
+    name = "askama_macros",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -51,28 +54,18 @@ rust_library(
     ),
     crate_features = [
         "alloc",
-        "default",
+        "config",
         "std",
-    ] + select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "simd",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "simd",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "simd",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+        "urlencode",
+    ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=winnow",
+        "crate-name=askama_macros",
         "manual",
         "noclippy",
         "norustfmt",
@@ -85,17 +78,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.13",
-    deps = select({
-        "@rules_rust//rust/platform:aarch64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # aarch64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-apple-darwin": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-apple-darwin
-        ],
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/ask2patch/memchr",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    version = "0.15.4",
+    deps = [
+        "//third_party/rust_crates/vendor/askama_derive-0.15.4:askama_derive",
+    ],
 )

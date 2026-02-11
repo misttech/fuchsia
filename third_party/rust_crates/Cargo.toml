@@ -306,7 +306,7 @@ zeroize = "1.8.1"
 # Host-side only dependencies
 [target.'cfg(not(target_os = "fuchsia"))'.dependencies]
 # keep-sorted start
-askama = "0.14.0"
+askama = "0.15.4"
 async-fs = "2.2.0"
 cargo_metadata = "0.23.1"
 crossterm = "0.19"

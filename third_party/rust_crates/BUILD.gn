@@ -61,7 +61,7 @@ group("ash") {
 
 if (!(current_os == "fuchsia")) {
   group("askama") {
-    public_deps = [ ":askama-v0_14_0" ]
+    public_deps = [ ":askama-v0_15_4" ]
   }
 }
 
@@ -1956,25 +1956,25 @@ rustc_library("ash-v0_37_0+1_3_209") {
   applicable_licenses = [ ":ash-v0_37_0+1_3_209.license" ]
 }
 
-license("askama-v0_14_0.license") {
+license("askama-v0_15_4.license") {
   public_package_name = "askama"
   license_files = [
-    "//third_party/rust_crates/vendor/askama-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/askama-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/askama-0.15.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/askama-0.15.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("askama-v0_14_0") {
+rustc_library("askama-v0_15_4") {
   crate_name = "askama"
-  source_root = "//third_party/rust_crates/vendor/askama-0.14.0/src/lib.rs"
-  output_name = "askama-4353a3ef13fd6b52"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/askama-0.15.4/src/lib.rs"
+  output_name = "askama-aa614a9ce84200af"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":askama_derive-v0_14_0($host_toolchain)" ]
+  deps += [ ":askama_macros-v0_15_4($host_toolchain)" ]
   deps += [ ":itoa-v1_0_17" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
@@ -1984,8 +1984,8 @@ rustc_library("askama-v0_14_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4353a3ef13fd6b52",
-    "-Cextra-filename=-4353a3ef13fd6b52",
+    "-Cmetadata=aa614a9ce84200af",
+    "-Cextra-filename=-aa614a9ce84200af",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"config\"",
     "--cfg=feature=\"default\"",
@@ -1996,30 +1996,30 @@ rustc_library("askama-v0_14_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":askama-v0_14_0.license" ]
+  applicable_licenses = [ ":askama-v0_15_4.license" ]
 }
 
-license("askama_derive-v0_14_0.license") {
+license("askama_derive-v0_15_4.license") {
   public_package_name = "askama_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/askama_derive-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/askama_derive-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/askama_derive-0.15.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/askama_derive-0.15.4/LICENSE-MIT",
   ]
 }
 
-rustc_macro("askama_derive-v0_14_0") {
+rustc_library("askama_derive-v0_15_4") {
   crate_name = "askama_derive"
   source_root =
-      "//third_party/rust_crates/vendor/askama_derive-0.14.0/src/lib.rs"
-  output_name = "askama_derive-62e7d07cfeb938e0"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/askama_derive-0.15.4/src/lib.rs"
+  output_name = "askama_derive-9609b96e7f1f16a6"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":memchr-v2_7_6" ]
-  deps += [ ":askama_parser-v0_14_0" ]
+  deps += [ ":askama_parser-v0_15_4" ]
   deps += [ ":basic-toml-v0_1_10" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
@@ -2032,61 +2032,100 @@ rustc_macro("askama_derive-v0_14_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=62e7d07cfeb938e0",
-    "-Cextra-filename=-62e7d07cfeb938e0",
+    "-Cmetadata=9609b96e7f1f16a6",
+    "-Cextra-filename=-9609b96e7f1f16a6",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"config\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"external-sources\"",
+    "--cfg=feature=\"proc-macro\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"urlencode\"",
   ]
 
   aliased_deps = {
-    parser = ":askama_parser-v0_14_0.actual"
+    parser = ":askama_parser-v0_15_4.actual"
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":askama_derive-v0_14_0.license" ]
+  applicable_licenses = [ ":askama_derive-v0_15_4.license" ]
 }
 
-license("askama_parser-v0_14_0.license") {
-  public_package_name = "askama_parser"
+license("askama_macros-v0_15_4.license") {
+  public_package_name = "askama_macros"
   license_files = [
-    "//third_party/rust_crates/vendor/askama_parser-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/askama_parser-0.14.0/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/askama_parser-0.14.0/benches/librustdoc/LICENSE.md",
+    "//third_party/rust_crates/vendor/askama_macros-0.15.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/askama_macros-0.15.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("askama_parser-v0_14_0") {
-  crate_name = "askama_parser"
+rustc_macro("askama_macros-v0_15_4") {
+  crate_name = "askama_macros"
   source_root =
-      "//third_party/rust_crates/vendor/askama_parser-0.14.0/src/lib.rs"
-  output_name = "askama_parser-d82a880d54b3ef2c"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/askama_macros-0.15.4/src/lib.rs"
+  output_name = "askama_macros-5e95e0fd47a0c0a7"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":memchr-v2_7_6" ]
+  deps += [ ":askama_derive-v0_15_4" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=5e95e0fd47a0c0a7",
+    "-Cextra-filename=-5e95e0fd47a0c0a7",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"config\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"urlencode\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":askama_macros-v0_15_4.license" ]
+}
+
+license("askama_parser-v0_15_4.license") {
+  public_package_name = "askama_parser"
+  license_files = [
+    "//third_party/rust_crates/vendor/askama_parser-0.15.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/askama_parser-0.15.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/askama_parser-0.15.4/benches/librustdoc/LICENSE.md",
+  ]
+}
+
+rustc_library("askama_parser-v0_15_4") {
+  crate_name = "askama_parser"
+  source_root =
+      "//third_party/rust_crates/vendor/askama_parser-0.15.4/src/lib.rs"
+  output_name = "askama_parser-94e5111578881aa9"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":rustc-hash-v2_1_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
+  deps += [ ":unicode-ident-v1_0_19" ]
   deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d82a880d54b3ef2c",
-    "-Cextra-filename=-d82a880d54b3ef2c",
+    "-Cmetadata=94e5111578881aa9",
+    "-Cextra-filename=-94e5111578881aa9",
     "--cfg=feature=\"config\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":askama_parser-v0_14_0.license" ]
+  applicable_licenses = [ ":askama_parser-v0_15_4.license" ]
 }
 
 license("assert_matches-v1_5_0.license") {
@@ -21490,6 +21529,7 @@ rustc_library("winnow-v0_7_13") {
     "-Cextra-filename=-ebf53e8e4431caf3",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"simd\"",
     "--cfg=feature=\"std\"",
   ]
 
