@@ -888,10 +888,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   static void DebugDumpReclaimCounters();
 
-  // Test-only interface to get the associated ContinuousAttributionTracker.
-  AttributionTracker& DebugGetContinuousAttributionTracker() {
-    return continuous_attribution_tracker_;
-  }
+  // Test-only interface to get the current populated slots count.
+  //
+  // This method panics if the kernel is built without support for the functional continuous
+  // attribution tracker (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED).
+  uint32_t DebugGetPopulatedSlotsCount() const;
 
  private:
   // private constructor (use Create...())

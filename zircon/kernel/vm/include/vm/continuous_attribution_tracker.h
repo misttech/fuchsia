@@ -15,6 +15,9 @@
 // Tracks the number of populated slots in the VmCowPages' local page list. If the VmCowPages
 // changes a slot to being populated, or vice versa, that should be reported to
 // ContinuousAttributionTracker.
+//
+// This class is not thread safe and should only be accessed under the lock of the associated
+// VmCowPages.
 class ContinuousAttributionTracker final {
  public:
   ContinuousAttributionTracker() = default;

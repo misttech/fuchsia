@@ -202,6 +202,11 @@ void VmCowPages::DebugDumpReclaimCounters() {
   printf("Failed reclaim uncached %ld\n", vm_reclaim_uncached.SumAcrossAllCpus());
 }
 
+uint32_t VmCowPages::DebugGetPopulatedSlotsCount() const {
+  Guard<CriticalMutex> guard{lock()};
+  return continuous_attribution_tracker_.FetchCurrent();
+}
+
 // Helper for walking up a VmCowPages hierarchy where the start node is locked, and the immediate
 // parent may or may not be locked.
 class LockedParentWalker {

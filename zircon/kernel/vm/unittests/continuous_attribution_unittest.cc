@@ -155,8 +155,7 @@ bool continuous_attribution_tracker_populate_vmo() {
   {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-    EXPECT_EQ(0u, tracker.FetchCurrent());  // There is no content.
+    EXPECT_EQ(0u, cow_pages->DebugGetPopulatedSlotsCount());  // There is no content.
   }
 
   // Write a non-zero value to the first two pages.
@@ -171,8 +170,7 @@ bool continuous_attribution_tracker_populate_vmo() {
   {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-    EXPECT_EQ(2u, tracker.FetchCurrent());  // There are two populated pages.
+    EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());  // There are two populated pages.
   }
 
   END_TEST;
@@ -206,10 +204,8 @@ bool continuous_attribution_tracker_unidirectional_child() {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
 
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-
     // There are two pages committed in the parent.
-    EXPECT_EQ(2u, tracker.FetchCurrent());
+    EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());
   }
 
   {
@@ -218,10 +214,8 @@ bool continuous_attribution_tracker_unidirectional_child() {
     fbl::RefPtr<VmCowPages> cow_pages = child->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
 
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-
     // There are no parent content markers in this hierarchy to track, as intended.
-    EXPECT_EQ(0u, tracker.FetchCurrent());
+    EXPECT_EQ(0u, cow_pages->DebugGetPopulatedSlotsCount());
   }
 
   END_TEST;
@@ -261,9 +255,7 @@ bool continuous_attribution_tracker_bidirectional_child() {
     fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
 
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-
-    EXPECT_EQ(2u, tracker.FetchCurrent());
+    EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());
   }
 
   {
@@ -272,15 +264,11 @@ bool continuous_attribution_tracker_bidirectional_child() {
     fbl::RefPtr<VmCowPages> cow_pages = child->DebugGetCowPages();
     ASSERT_NONNULL(cow_pages);
 
-    auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
-
-    EXPECT_EQ(2u, tracker.FetchCurrent());
+    EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());
   }
 
-  auto &tracker = hidden_parent->DebugGetContinuousAttributionTracker();
-
   // There are two pages committed in the parent.
-  EXPECT_EQ(2u, tracker.FetchCurrent());
+  EXPECT_EQ(2u, hidden_parent->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -300,7 +288,6 @@ bool continuous_attribution_tracker_zero_anonymous() {
 
   fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
   ASSERT_NONNULL(cow_pages);
-  auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
 
   // Write a non-zero value to the first two pages.
   {
@@ -311,7 +298,7 @@ bool continuous_attribution_tracker_zero_anonymous() {
     EXPECT_EQ(ZX_OK, vmo->Write(a.data(), 0, a.size()));
   }
 
-  EXPECT_EQ(2u, tracker.FetchCurrent());
+  EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());
 
   // Clear out one page, so that afterwards the VMO will only have one populated page.
   {
@@ -327,7 +314,7 @@ bool continuous_attribution_tracker_zero_anonymous() {
     EXPECT_OK(status);
   }
 
-  EXPECT_EQ(1u, tracker.FetchCurrent());
+  EXPECT_EQ(1u, cow_pages->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -348,9 +335,8 @@ bool continuous_attribution_tracker_zero_pager_backed() {
 
   fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
   ASSERT_NONNULL(cow_pages);
-  auto &tracker = cow_pages->DebugGetContinuousAttributionTracker();
 
-  EXPECT_EQ(2u, tracker.FetchCurrent());
+  EXPECT_EQ(2u, cow_pages->DebugGetPopulatedSlotsCount());
 
   // Clear out one page, so that afterwards the VMO will only have one populated page.
   {
@@ -366,7 +352,7 @@ bool continuous_attribution_tracker_zero_pager_backed() {
     EXPECT_OK(status);
   }
 
-  EXPECT_EQ(1u, tracker.FetchCurrent());
+  EXPECT_EQ(1u, cow_pages->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -393,13 +379,12 @@ bool continuous_attribution_tracker_zero_pager_clone() {
   ASSERT_NONNULL(child);
 
   fbl::RefPtr<VmCowPages> child_cow_pages = child->DebugGetCowPages();
-  auto &child_tracker = child_cow_pages->DebugGetContinuousAttributionTracker();
 
-  EXPECT_EQ(0u, child_tracker.FetchCurrent());
+  EXPECT_EQ(0u, child_cow_pages->DebugGetPopulatedSlotsCount());
 
   ASSERT_OK(child->CommitRange(0, 2 * kPageSize));
 
-  EXPECT_EQ(2u, child_tracker.FetchCurrent());
+  EXPECT_EQ(2u, child_cow_pages->DebugGetPopulatedSlotsCount());
 
   // Clear out one page, so that afterwards the VMO will only have one populated page.
   {
@@ -415,7 +400,7 @@ bool continuous_attribution_tracker_zero_pager_clone() {
     EXPECT_OK(status);
   }
 
-  EXPECT_EQ(1u, child_tracker.FetchCurrent());
+  EXPECT_EQ(1u, child_cow_pages->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -461,15 +446,15 @@ bool continuous_attribution_tracker_require_move_page() {
 
   // The content is attributed to both the parent and the child because the pages are resident in
   // the hidden parent and the child has parent content markers.
-  EXPECT_EQ(2u, hidden_parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
-  EXPECT_EQ(2u, child2_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, hidden_parent_cow->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(2u, child2_cow->DebugGetPopulatedSlotsCount());
 
   child2->CommitRange(0, kPageSize);
 
   // The hidden parent's attribution count is decremented because it no longer has the page resident
   // (it has been moved to the child).
-  EXPECT_EQ(1u, hidden_parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
-  EXPECT_EQ(2u, child2_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, hidden_parent_cow->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(2u, child2_cow->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -511,8 +496,7 @@ bool continuous_attribution_tracker_hidden_no_parent_content() {
 
   fbl::RefPtr<VmCowPages> parent = vmo3->DebugGetCowPages()->DebugGetParent();
   ASSERT_NONNULL(parent);
-  auto &tracker = parent->DebugGetContinuousAttributionTracker();
-  EXPECT_EQ(1u, tracker.FetchCurrent());
+  EXPECT_EQ(1u, parent->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -533,13 +517,13 @@ bool continuous_attribution_tracker_reclaim_page() {
   ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/1, /*trap_dirty=*/false,
                                                /*resizable=*/false, false, &committed_page, &vmo));
 
-  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   ASSERT_TRUE(vmo->DebugGetCowPages()
                   ->ReclaimPageForEviction(committed_page, 0, VmCowPages::EvictionAction::Require)
                   .is_ok());
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -560,7 +544,7 @@ bool continuous_attribution_tracker_zero_page_compression() {
 
   ASSERT_OK(vmo->CommitRange(0, kPageSize));
 
-  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   vm_page_t *page = vmo->DebugGetPage(0);
   ASSERT_NONNULL(page);
@@ -577,7 +561,7 @@ bool continuous_attribution_tracker_zero_page_compression() {
                   ->ReclaimPage(page, 0, VmCowPages::EvictionAction::Require, &compressor.get())
                   .is_ok());
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -598,14 +582,14 @@ bool continuous_attribution_tracker_zero_page_deduplication() {
 
   ASSERT_OK(vmo->CommitRange(0, kPageSize));
 
-  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   vm_page_t *page = vmo->DebugGetPage(0);
   ASSERT_NONNULL(page);
 
   ASSERT_TRUE(vmo->DebugGetCowPages()->DedupZeroPage(page, 0));
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -634,7 +618,7 @@ bool continuous_attribution_tracker_release_hidden() {
   ASSERT_OK(child->CommitRange(0, 2 * kPageSize));
 
   fbl::RefPtr<VmCowPages> parent_cow = vmo->DebugGetCowPages()->DebugGetParent();
-  EXPECT_EQ(2u, parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, parent_cow->DebugGetPopulatedSlotsCount());
 
   // Remove the remaining share count for the first page, which will trigger the hidden parent to
   // remove the content from its local page list.
@@ -652,7 +636,7 @@ bool continuous_attribution_tracker_release_hidden() {
     EXPECT_OK(status);
   }
 
-  EXPECT_EQ(1u, parent_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, parent_cow->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -671,15 +655,15 @@ bool continuous_attribution_tracker_decommit_range() {
   fbl::RefPtr<VmObjectPaged> vmo;
   ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
 
-  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   ASSERT_OK(vmo->DecommitRange(0, kPageSize));
 
-  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -698,11 +682,11 @@ bool continuous_attribution_tracker_detach_source() {
   ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/2, /*trap_dirty=*/false,
                                                /*resizable=*/false, false, nullptr, &vmo));
 
-  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   vmo->DetachSource();
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -750,15 +734,15 @@ bool continuous_attribution_tracker_remove_loaned_high_priority() {
     pc.ChangeHighPriorityCountLocked();
   };
 
-  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   change_priority(1);
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   change_priority(-1);
 
-  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -778,25 +762,27 @@ bool continuous_attribution_tracker_add_pages() {
   ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 4 * kPageSize, &vmo));
   fbl::RefPtr<VmCowPages> vmo_cow = vmo->DebugGetCowPages();
 
-  EXPECT_EQ(0u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(0u, vmo_cow->DebugGetPopulatedSlotsCount());
 
   ASSERT_OK(vmo->CommitRange(kPageSize, kPageSize));
 
-  EXPECT_EQ(1u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo_cow->DebugGetPopulatedSlotsCount());
 
-  VmCowPages::DeferredOps deferred(vmo_cow.get());
-  Guard<CriticalMutex> guard{vmo_cow->lock()};
+  {
+    VmCowPages::DeferredOps deferred(vmo_cow.get());
+    Guard<CriticalMutex> guard{vmo_cow->lock()};
 
-  list_node list = LIST_INITIAL_VALUE(list);
-  const size_t count = 3;
-  ASSERT_OK(pmm_alloc_pages(count, 0, &list));
-  auto cleanup = fit::defer([&]() { pmm_free(&list); });
+    list_node list = LIST_INITIAL_VALUE(list);
+    const size_t count = 3;
+    ASSERT_OK(pmm_alloc_pages(count, 0, &list));
+    auto cleanup = fit::defer([&]() { pmm_free(&list); });
 
-  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS,
-            vmo_cow->AddNewPagesLocked(0, &list, VmCowPages::CanOverwriteSlot::Empty,
-                                       /*zero=*/true, &deferred));
+    EXPECT_EQ(ZX_ERR_ALREADY_EXISTS,
+              vmo_cow->AddNewPagesLocked(0, &list, VmCowPages::CanOverwriteSlot::Empty,
+                                         /*zero=*/true, &deferred));
+  }
 
-  EXPECT_EQ(1u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+  EXPECT_EQ(1u, vmo_cow->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
