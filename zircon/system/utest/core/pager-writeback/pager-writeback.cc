@@ -19,6 +19,135 @@
 
 NEEDS_NEXT_SYSCALL(zx_pager_query_dirty_ranges);
 
+namespace {
+
+class ThreadedPagePinner {
+ public:
+  static zx::result<std::unique_ptr<ThreadedPagePinner>> Create(
+      const zx::resource& iommu_resource) {
+    zx::iommu iommu;
+    zx::bti bti;
+
+    zx_iommu_desc_stub_t desc;
+    if (const zx_status_t status =
+            zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    if (const zx_status_t status = zx::bti::create(iommu, 0, 0xdeadbeef, &bti); status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    return zx::ok(std::unique_ptr<ThreadedPagePinner>{
+        new ThreadedPagePinner(std::move(iommu), std::move(bti))});
+  }
+
+  bool StartPinOperation(zx::unowned_vmo vmo_to_pin, uint64_t amt,
+                         uint32_t perms = ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE,
+                         uint64_t offset = 0) {
+    if (thread_state_ != ThreadState::kInitial) {
+      return false;
+    }
+
+    if (!*vmo_to_pin || !amt) {
+      return false;
+    }
+
+    vmo_to_pin_ = vmo_to_pin;
+    perms_ = perms;
+    offset_ = offset;
+    amt_ = amt;
+
+    thread_state_ = thread_.Start() ? ThreadState::kStarted : ThreadState::kFailedToStart;
+    return (thread_state_ == ThreadState::kStarted);
+  }
+
+  bool WaitForPin() {
+    if (thread_state_ != ThreadState::kStarted) {
+      return false;
+    }
+
+    if (thread_.Wait()) {
+      thread_state_ = ThreadState::kCompleted;
+      return true;
+    }
+
+    return false;
+  }
+
+  bool WaitForPinFailure() {
+    if (thread_state_ != ThreadState::kStarted) {
+      return false;
+    }
+
+    if (thread_.WaitForFailure()) {
+      thread_state_ = ThreadState::kCompleted;
+      return true;
+    }
+
+    return false;
+  }
+
+  bool ExplicitUnpin() {
+    if (thread_state_ != ThreadState::kCompleted) {
+      return false;
+    }
+
+    if (pmt_) {
+      pmt_.unpin();
+      pmt_.reset();
+    }
+
+    return true;
+  }
+
+ private:
+  friend typename std::unique_ptr<ThreadedPagePinner>::deleter_type;
+
+  enum class ThreadState {
+    kInitial,
+    kStarted,
+    kCompleted,
+    kFailedToStart,
+  };
+
+  ThreadedPagePinner(zx::iommu iommu, zx::bti bti)
+      : thread_{[this]() { return ThreadMain(); }},
+        iommu_{std::move(iommu)},
+        bti_{std::move(bti)} {}
+
+  ~ThreadedPagePinner() {
+    // IF the thread has started, but has not been waited on, wait for it to finish now.
+    if (thread_state_ == ThreadState::kStarted) {
+      ZX_ASSERT(thread_.WaitForTerm());
+    }
+
+    // If we successfully pinned our memory, unpin it before we close the PMT handle.
+    if (pmt_) {
+      pmt_.unpin();
+    }
+  }
+
+  bool ThreadMain() {
+    const uint64_t page_size = zx_system_get_page_size();
+    const uint64_t pages_to_pin = (amt_ + page_size - 1) / page_size;
+    std::unique_ptr<zx_paddr_t[]> addrs = std::make_unique<zx_paddr_t[]>(pages_to_pin);
+    return bti_.pin(perms_, *vmo_to_pin_, offset_, amt_, addrs.get(), pages_to_pin, &pmt_) == ZX_OK;
+  }
+
+  pager_tests::TestThread thread_;
+  ThreadState thread_state_{ThreadState::kInitial};
+  zx::iommu iommu_;
+  zx::bti bti_;
+  zx::pmt pmt_;
+  zx::unowned_vmo vmo_to_pin_;
+  uint32_t perms_{0};
+  uint64_t offset_{0};
+  uint64_t amt_{0};
+};
+}  // namespace
+
 namespace pager_tests {
 
 // This value corresponds to `VmObjectPaged::ReadWriteInternalLocked::kMaxWriteWaitPages`
@@ -5957,30 +6086,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWrite, 0) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin a page for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // If we're trapping dirty transitions, the pin will generate a DIRTY request.
   if (create_option & ZX_VMO_TRAP_DIRTY) {
@@ -5988,7 +6099,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWrite, 0) {
     ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
   }
 
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6036,30 +6147,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinnedWriteback, 0) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin a page for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // If we're trapping dirty transitions, the pin will generate a DIRTY request.
   if (create_option & ZX_VMO_TRAP_DIRTY) {
@@ -6067,7 +6160,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinnedWriteback, 0) {
     ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
   }
 
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6088,10 +6181,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinnedWriteback, 0) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
 
   // Unpin the VMO and attempt writeback again.
-  if (pmt) {
-    pmt.unpin();
-    pmt.reset();
-  }
+  ASSERT_TRUE(page_pinner->ExplicitUnpin());
 
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, 1));
   ASSERT_TRUE(pager.WritebackEndPages(vmo, 0, 1));
@@ -6251,30 +6341,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritePinAwaitingClean, 0) {
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, 1));
 
   // Pin a page for write.
-  zx::pmt pmt;
-  TestThread t2([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t2.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // If we're trapping dirty transitions, the pin will generate a DIRTY request.
   if (create_option & ZX_VMO_TRAP_DIRTY) {
@@ -6282,7 +6354,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritePinAwaitingClean, 0) {
     ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
   }
 
-  ASSERT_TRUE(t2.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6297,10 +6369,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritePinAwaitingClean, 0) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
 
   // Unpin the VMO and attempt writeback again.
-  if (pmt) {
-    pmt.unpin();
-    pmt.reset();
-  }
+  ASSERT_TRUE(page_pinner->ExplicitUnpin());
 
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, 1));
   ASSERT_TRUE(pager.WritebackEndPages(vmo, 0, 1));
@@ -6371,30 +6440,12 @@ TEST(PagerWriteback, DelayedPinAwaitingClean) {
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, 1));
 
   // Try to pin for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // We should see a DIRTY request from the pin.
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
@@ -6405,7 +6456,7 @@ TEST(PagerWriteback, DelayedPinAwaitingClean) {
 
   // Now succeed the pin attempt.
   ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6483,30 +6534,12 @@ TEST(PagerWriteback, FailedPinAwaitingClean) {
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, 1));
 
   // Try to pin for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // We should see a DIRTY request from the pin.
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
@@ -6517,7 +6550,7 @@ TEST(PagerWriteback, FailedPinAwaitingClean) {
 
   // Fail the pin attempt.
   ASSERT_TRUE(pager.FailPages(vmo, 0, 1));
-  ASSERT_TRUE(t.WaitForFailure());
+  ASSERT_TRUE(page_pinner->WaitForPinFailure());
 
   // The VMO should not be modified.
   ASSERT_FALSE(pager.VerifyModified(vmo));
@@ -6562,35 +6595,17 @@ TEST(PagerWriteback, DirtyAfterPin) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin a page for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // The pin will generate a DIRTY request.
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
   ASSERT_TRUE(pager.DirtyPages(vmo, 0, 1));
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6740,30 +6755,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWriteUnpopulated, 0) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin both pages for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr[2];
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0,
-                   2 * zx_system_get_page_size(), addr, 2, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), 2 * zx_system_get_page_size()));
 
   // If we're trapping dirty transitions, the pin will generate a DIRTY request for the page already
   // present.
@@ -6782,7 +6779,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWriteUnpopulated, 0) {
     ASSERT_TRUE(pager.DirtyPages(vmo, 1, 1));
   }
 
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
@@ -6830,37 +6827,19 @@ TEST(PagerWriteback, NotModifiedFailedPinWrite) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin a page for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr;
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0, zx_system_get_page_size(),
-                   &addr, 1, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), zx_system_get_page_size()));
 
   // We should see a DIRTY request.
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 1, ZX_TIME_INFINITE));
 
   // Fail the DIRTY request, so that the overall pin fails.
   ASSERT_TRUE(pager.FailPages(vmo, 0, 1));
-  ASSERT_TRUE(t.WaitForFailure());
+  ASSERT_TRUE(page_pinner->WaitForPinFailure());
 
   // The VMO should not be modified.
   ASSERT_FALSE(pager.VerifyModified(vmo));
@@ -6905,30 +6884,12 @@ TEST(PagerWriteback, NotModifiedPartialFailedPinWrite) {
   ASSERT_FALSE(pager.VerifyModified(vmo));
 
   // Pin both pages for write.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr[2];
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, vmo->vmo(), 0,
-                   2 * zx_system_get_page_size(), addr, 2, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(vmo->vmo().borrow(), 2 * zx_system_get_page_size()));
 
   // We should see a DIRTY request for both pages.
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 0, 2, ZX_TIME_INFINITE));
@@ -6938,7 +6899,7 @@ TEST(PagerWriteback, NotModifiedPartialFailedPinWrite) {
   ASSERT_TRUE(pager.FailPages(vmo, 1, 1));
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 1, 1, ZX_TIME_INFINITE));
   ASSERT_TRUE(pager.FailPages(vmo, 1, 1));
-  ASSERT_TRUE(t.WaitForFailure());
+  ASSERT_TRUE(page_pinner->WaitForPinFailure());
 
   // The VMO should not be modified.
   ASSERT_FALSE(pager.VerifyModified(vmo));
@@ -6988,30 +6949,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(SlicePinWrite, 0) {
   ASSERT_OK(vmo->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, 2 * zx_system_get_page_size(), &slice));
 
   // Pin both pages for write through a slice.
-  zx::pmt pmt;
-  TestThread t([&pmt, &iommu_resource, &slice]() -> bool {
-    zx::iommu iommu;
-    zx::bti bti;
-    zx_iommu_desc_stub_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
-                        iommu.reset_and_get_address()) != ZX_OK) {
-      return false;
-    }
-    if (zx::bti::create(iommu, 0, 0xdeadbeef, &bti) != ZX_OK) {
-      return false;
-    }
-    zx_paddr_t addr[2];
-    return bti.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, slice, 0, 2 * zx_system_get_page_size(),
-                   addr, 2, &pmt) == ZX_OK;
-  });
+  zx::result<std::unique_ptr<ThreadedPagePinner>> maybe_page_pinner =
+      ThreadedPagePinner::Create(iommu_resource);
+  ASSERT_OK(maybe_page_pinner.status_value());
 
-  auto unpin = fit::defer([&pmt]() {
-    if (pmt) {
-      pmt.unpin();
-    }
-  });
-
-  ASSERT_TRUE(t.Start());
+  const std::unique_ptr<ThreadedPagePinner> page_pinner = std::move(*maybe_page_pinner);
+  ASSERT_TRUE(page_pinner->StartPinOperation(slice.borrow(), 2 * zx_system_get_page_size()));
 
   // If we're trapping dirty transitions, we should see a DIRTY request for both pages.
   if (create_option & ZX_VMO_TRAP_DIRTY) {
@@ -7020,7 +6963,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(SlicePinWrite, 0) {
     ASSERT_TRUE(pager.DirtyPages(vmo, 0, 2));
   }
 
-  ASSERT_TRUE(t.Wait());
+  ASSERT_TRUE(page_pinner->WaitForPin());
 
   // The VMO should be modified.
   ASSERT_TRUE(pager.VerifyModified(vmo));
