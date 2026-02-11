@@ -671,6 +671,7 @@ function main {
     readonly fint="${FX_CACHE_DIR}/fint"
     "$FUCHSIA_DIR/tools/integration/bootstrap.sh" -o "$fint" || exit $?
 
+    # TODO: replace RBE_WRAPPER with $top_build_wrapper
     local rbe_wrapper=()
     if fx-rbe-enabled
     then

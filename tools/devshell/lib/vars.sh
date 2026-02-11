@@ -93,9 +93,8 @@ readonly NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
 # Record the set if inputs that triggered some build actions.
 readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
 
-# This wrapper script collects system CPU/mem/IO info while
-# another process is running.
-readonly profile_wrap="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
+# Unified standalone build script that can enable RBE, profiling, ResultStore...
+readonly top_build_wrapper="${FUCHSIA_DIR}/build/scripts/top_build_wrap.sh"
 
 # If ResultStore is enabled, wrap builds with ResultStore tools.
 RESULTSTORE_ENABLED=0
@@ -105,14 +104,13 @@ if [[ -f "$fx_resultstore_config" ]]; then
   source "$fx_resultstore_config"
   # This sets RESULTSTORE_ENABLED to 0 or 1.
 fi
-# Use re-client's credentials helper tool to exchange LOAS for OAuth2 tokens.
-readonly credshelper="${PREBUILT_RECLIENT_DIR}/credshelper"
 
 date="$(date +%Y%m%d-%H%M%S)"
 readonly date
 
 readonly jq="$PREBUILT_JQ"
 
+# TODO: Replace RBE_WRAPPER uses with $top_build_wrapper
 # For commands whose subprocesses may use reclient for RBE, prefix those
 # commands conditioned on 'if fx-rbe-enabled' (function).
 # This could not be made into a shell-function because it is used
@@ -1106,6 +1104,11 @@ function fx-run-build-command {
   ;;
   esac
 
+  local -a top_build_command=( "$top_build_wrapper" )
+  if [[ -o xtrace ]]; then
+    top_build_command=( /bin/bash -x "${top_build_command[@]}" )
+  fi
+
   # TERM is passed for the pretty ninja UI
   # PATH is passed through.  The ninja actions should invoke tools without
   # relying on PATH.
@@ -1131,17 +1134,19 @@ You can confirm that authentication still works with 'fx rbe auth'.
 EOF
   }
 
-  local -a rbe_wrapper_loas_args=()
   if fx-build-needs-auth
   then
     local -r loas_type_detected="$(fx-command-run rbe _check_loas_type)"
-    local -r loas_type_for_reclient="$loas_type_detected"
+    top_build_command+=( --loas-type "$loas_type_detected" )
+
     local -r loas_type_for_bazel="$loas_type_detected"
-    rbe_wrapper_loas_args+=( --loas-type="$loas_type_for_reclient" )
     user_rbe_env+=(
       # Automatic auth with gcert (from re-client bootstrap) needs $USER.
       "USER=${USER}"
+
+      # Bazel sub-builds use FX_BUILD_LOAS_TYPE in wrapper.bazel.sh.
       "FX_BUILD_LOAS_TYPE=$loas_type_for_bazel"
+
       # A few tools need application credentials for authentication,
       # like 'remotetool'.
       # Explicitly set this variable without forwarding $HOME.
@@ -1150,30 +1155,31 @@ EOF
       # unset this variable to prevent bazel from looking for a file
       # that it doesn't need.  This is handled in bazel wrappers.
       "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+
       # For bazel subinvocations to be able to authenticate with gcert,
       # need to forward the authentication socket (used by gnubby).
       "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}"
     )
+  else
+    top_build_command+=( --loas-type "skip" )
   fi
 
   # Create a unique log directory for this build invocation.
   # Do this unconditionally, so that other build-log-consuming
   # tools can use it.
   local -r build_log_dir="$(fx-new-build-log-dir)"
+  top_build_command+=(
+    --build-dir "$FUCHSIA_BUILD_DIR"
+    --log-dir "$build_log_dir"
+  )
+
   # Record the invocation Id, which is also used for the top-level
   # ninja invocation results streamed to ResultStore (if enabled).
   echo "$build_uuid" > "$build_log_dir/invocation_id"
 
-  local -a rbe_wrapper=()
   if fx-rbe-enabled
   then
-    local -r reproxy_logdir="${build_log_dir}/reproxy_logs"
-    mkdir -p "${reproxy_logdir}"
-
-    # reproxy wants temporary space on the same physical device where the build happens.
-    # Re-use the randomly generated dir name in a custom tempdir.
-    local -r reproxy_tmpdir="$FUCHSIA_BUILD_DIR/.reproxy_tmpdirs/$(basename "${build_log_dir}")"
-    mkdir -p "$reproxy_tmpdir"
+    top_build_command+=( --rbe )
 
     # Honor additional cfg files from the current build dir.
     local -r rbe_config_json="$FUCHSIA_BUILD_DIR/rbe_config.json"
@@ -1184,29 +1190,11 @@ EOF
       all_proxy_cfgs=($("$jq" '.[] | .path' "$rbe_config_json" | sed -e 's|"\(.*\)"|\1|'))
       # Adjust paths to be absolute.
       for f in "${all_proxy_cfgs[@]}"
-      do proxy_cfg_args+=(--cfg "$FUCHSIA_BUILD_DIR/$f")  # cumulative, repeatable
+      do top_build_command+=( --reproxy-cfg "$FUCHSIA_BUILD_DIR/$f" )
+        # cumulative, repeatable
       done
     fi
 
-    local -a rbe_wrapper_shutdown_opts=()
-    if [[ "${RESULTSTORE_ENABLED}" -eq 0 ]]; then
-      # When resultstore is enabled, we need to wait for reproxy to fully
-      # shutdown to guarantee that produces the logs and metrics that will
-      # be uploaded as post-build artifacts by rsproxy.
-      # Otherwise, allow reproxy to shutdown asynchronously.
-      rbe_wrapper_shutdown_opts=(--async_reproxy_termination)
-    fi
-
-    local -a rbe_wrapper=(
-      env
-      "${RBE_WRAPPER[@]}"
-      --logdir "$reproxy_logdir"
-      --tmpdir "$reproxy_tmpdir"
-      "${proxy_cfg_args[@]}"
-      "${rbe_wrapper_shutdown_opts[@]}"
-      "${rbe_wrapper_loas_args[@]}"
-      --
-    )
     [[ "${USER-NOT_SET}" != "NOT_SET" ]] || {
       echo "Error: USER is not set"
       exit 1
@@ -1242,20 +1230,8 @@ EOF
     ${FX_BUILD_QUIET+"FX_BUILD_QUIET=$FX_BUILD_QUIET"}
   )
 
-  local profile_wrapper=()
   if [[ "$BUILD_PROFILE_ENABLED" == 1 ]]
-  then
-    # Collect system profile data while build is running.
-    local profile_dir="${build_log_dir}/build_profile"
-    mkdir -p "$profile_dir"
-    local vmstat_log="${profile_dir}/vmstat.log"
-    local ifconfig_log="${profile_dir}/ifconfig.log"
-    profile_wrapper=(
-      "$profile_wrap"
-      --vmstat-log "$vmstat_log"
-      --ifconfig-log "$ifconfig_log"
-      --
-    )
+  then top_build_command+=( --profile )
   fi
 
   if [[ "$command_type" == "ninja" ]]; then
@@ -1282,48 +1258,21 @@ EOF
     )
   fi
 
-  local resultstore_wrapper=()
-  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]] && [[ "$command_type" == "ninja" ]] ; then
-    local -r rsproxy_wrap="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
-    if [[ -x "${rsproxy_wrap}" ]]; then
-      # Select the right rsproxy configuration, depending on the LOAS cert type.
-      # "unrestricted" credentials can use gcert for authentication.
-      local loas_type
-      loas_type="$(fx-command-run rbe _check_loas_type)"
-      local -r rsproxy_log_dir="${build_log_dir}/rsproxy_logs"
-      local -a rsproxy_options=()
-      local -a pre_build_uploads=(
-        args.gn
-      )
-      # The $rsproxy_wrap script automatically detects extra ninja artifacts
-      # specified as args (e.g. trace file, dirty sources log) to upload.
-      for f in "${pre_build_uploads[@]}"
-      do rsproxy_options+=( --pre_build_uploads "$FUCHSIA_BUILD_DIR/$f" )
-      done
-      if fx-rbe-enabled
-      then
-        rsproxy_options+=(
-          --post_build_uploads "$FUCHSIA_BUILD_DIR/rbe_settings.json"
-          --post_build_uploads "$reproxy_logdir/rbe_metrics.txt"
-          --post_build_uploads "$reproxy_logdir/reproxy.rrpl"
-        )
-      fi
-      # TODO: upload system profile traces
-      resultstore_wrapper=(
-        "${rsproxy_wrap}"
-        --loas-type "$loas_type"
-        --log-dir "${rsproxy_log_dir}"
-        "${rsproxy_options[@]}"
-        --
-      )
-    fi
+  if [[ "${RESULTSTORE_ENABLED}" == 1 ]]; then
+    top_build_command+=( --resultstore )
+
+    local -a pre_build_uploads=(
+      args.gn
+    )
+    for f in "${pre_build_uploads[@]}"
+    do top_build_command+=(--pre-build-uploads "$FUCHSIA_BUILD_DIR/$f")
+    done
   fi
 
   local full_cmdline=(
     env -i "${envs[@]}"
-    "${resultstore_wrapper[@]}"
-    "${profile_wrapper[@]}"
-    "${rbe_wrapper[@]}"
+    "${top_build_command[@]}"
+    --
     "${build_command[@]}"
   )
 
