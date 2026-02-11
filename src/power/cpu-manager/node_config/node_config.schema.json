@@ -373,6 +373,40 @@
             {
                 "properties": {
                     "type": {
+                        "pattern": "CpuStatsRecorder"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "config": {
+                        "type": "object",
+                        "properties": {
+                            "poll_interval_s": {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            "num_history_entries": {
+                                "type": "number",
+                                "minimum": 0
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "poll_interval_s",
+                            "num_history_entries"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "type",
+                    "name",
+                    "config"
+                ]
+            },
+            {
+                "properties": {
+                    "type": {
                         "pattern": "DeviceControlHandler"
                     },
                     "config": {

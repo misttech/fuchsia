@@ -20,7 +20,8 @@ use {
 // nodes
 use crate::{
     cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler,
-    domain_controller, rppm_handler, syscall_handler, thermal_watcher, trippoint_watcher,
+    cpu_stats_recorder, domain_controller, rppm_handler, syscall_handler, thermal_watcher,
+    trippoint_watcher,
 };
 
 pub struct CpuManager {
@@ -171,6 +172,11 @@ impl CpuManager {
             "CpuStatsHandler" => {
                 cpu_stats_handler::CpuStatsHandlerBuilder::new_from_json(json_data, &self.nodes)
                     .build()
+                    .await?
+            }
+            "CpuStatsRecorder" => {
+                cpu_stats_recorder::CpuStatsRecorderBuilder::new_from_json(json_data, &self.nodes)
+                    .build(node_futures)
                     .await?
             }
             "DomainController" => domain_controller::DomainControllerBuilder::new_from_json(
