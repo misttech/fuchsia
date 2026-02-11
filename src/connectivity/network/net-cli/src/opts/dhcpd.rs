@@ -847,7 +847,7 @@ impl Into<fidl_fuchsia_net_dhcp::Option_> for PathMtuAgingTimeout {
 #[derive(Clone, Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "path-mtu-plateau-table")]
 pub struct PathMtuPlateauTable {
-    /// A list of MTU sizes, ordered from smallest to largest. The smallest value cannot be smaller
+    /// a list of MTU sizes, ordered from smallest to largest. The smallest value cannot be smaller
     /// than 68.
     #[argh(option)]
     mtu_sizes: Vec<u16>,
@@ -944,7 +944,7 @@ impl Into<fidl_fuchsia_net_dhcp::Option_> for MaskSupplier {
 #[derive(Clone, Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "perform-router-discovery")]
 pub struct PerformRouterDiscovery {
-    /// A flag indicating whether the client should solicit routers using Router Discovery as
+    /// a flag indicating whether the client should solicit routers using Router Discovery as
     /// defined in RFC 1256.
     #[argh(switch)]
     do_discovery: bool,
@@ -1648,7 +1648,7 @@ impl Into<fidl_fuchsia_net_dhcp::Parameter> for Parameter {
 #[derive(Clone, Debug, ArgsInfo, FromArgs, PartialEq)]
 #[argh(subcommand, name = "ip-addrs")]
 pub struct IpAddrs {
-    /// A list of IPv4 Addresses to which the server is bound.
+    /// a list of IPv4 Addresses to which the server is bound.
     #[argh(option)]
     addrs: Vec<Ipv4Addr>,
 }

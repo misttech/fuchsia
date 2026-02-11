@@ -16,7 +16,7 @@
       "optionality": "optional",
       "long": "--do-discovery",
       "short": null,
-      "description": "A flag indicating whether the client should solicit routers using Router Discovery as defined in RFC 1256.",
+      "description": "a flag indicating whether the client should solicit routers using Router Discovery as defined in RFC 1256.",
       "hidden": false
     }
   ],

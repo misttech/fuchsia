@@ -20,7 +20,7 @@
       "optionality": "repeating",
       "long": "--mtu-sizes",
       "short": null,
-      "description": "A list of MTU sizes, ordered from smallest to largest. The smallest value cannot be smaller than 68.",
+      "description": "a list of MTU sizes, ordered from smallest to largest. The smallest value cannot be smaller than 68.",
       "hidden": false
     }
   ],

@@ -20,7 +20,7 @@
       "optionality": "repeating",
       "long": "--addrs",
       "short": null,
-      "description": "A list of IPv4 Addresses to which the server is bound.",
+      "description": "a list of IPv4 Addresses to which the server is bound.",
       "hidden": false
     }
   ],
