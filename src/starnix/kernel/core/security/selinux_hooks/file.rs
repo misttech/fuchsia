@@ -18,14 +18,14 @@ use crate::security::selinux_hooks::{
 };
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
-use selinux::{CommonFsNodePermission, SecurityId, SecurityServer};
+use linux_uapi::{
+    F_GETLK, F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX,
+    FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
+};
+use selinux::{CommonFsNodePermission, PolicyCap, SecurityId, SecurityServer};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
-use starnix_uapi::{
-    F_GETLK, F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ, FIOASYNC, FIONBIO, FIONREAD,
-    FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
-};
 use std::ops::Range;
 
 /// Returns the security state for a new file object created by `current_task`.
@@ -143,6 +143,9 @@ pub(in crate::security) fn check_file_ioctl_access(
             NO_PERMISSIONS,
             current_task.into(),
         ),
+        FIOCLEX | FIONCLEX if security_server.is_policycap_enabled(PolicyCap::IoctlSkipCloexec) => {
+            return Ok(());
+        }
         _ => {
             // The ioctl command is the 2 least-significant bytes of `request`.
             let ioctl = request as u16;

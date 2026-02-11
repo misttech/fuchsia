@@ -897,9 +897,7 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
         PolicyCap::GenfsSeclabelWildcard => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
-        PolicyCap::IoctlSkipCloexec => {
-            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::IoctlSkipCloexec => PolicyCapSupport::Configurable,
         PolicyCap::MemfdClass => PolicyCapSupport::Configurable,
         PolicyCap::NetifWildcard => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))

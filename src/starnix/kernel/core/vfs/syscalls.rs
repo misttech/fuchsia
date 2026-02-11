@@ -1719,12 +1719,8 @@ pub fn sys_ioctl(
     arg: SyscallArg,
 ) -> Result<SyscallResult, Errno> {
     match request {
-        FIOCLEX => {
-            current_task.files.set_fd_flags(fd, FdFlags::CLOEXEC)?;
-            Ok(SUCCESS)
-        }
-        FIONCLEX => {
-            current_task.files.set_fd_flags(fd, FdFlags::empty())?;
+        FIOCLEX | FIONCLEX => {
+            current_task.files.ioctl_fd_flags(current_task, fd, request)?;
             Ok(SUCCESS)
         }
         _ => {

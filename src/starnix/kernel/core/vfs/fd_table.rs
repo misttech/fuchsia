@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::security;
 use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_rcu::{RcuArc, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
+use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
 use starnix_sync::{
     FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits,
     Unlocked,
@@ -16,7 +18,7 @@ use starnix_types::ownership::Releasable;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
-use starnix_uapi::{FD_CLOEXEC, errno, error};
+use starnix_uapi::{errno, error};
 use static_assertions::const_assert;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -742,16 +744,29 @@ impl FdTable {
         self.get_allowing_opath_with_flags(fd).map(|(_file, flags)| flags)
     }
 
-    /// Sets the flags associated with the given file descriptor.
+    /// Updates the flags of the specified FD with the `request`ed change.
     ///
     /// This operation fails if the file descriptor was opened with `O_PATH` or is not valid.
-    pub fn set_fd_flags(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
+    pub fn ioctl_fd_flags(
+        &self,
+        current_task: &CurrentTask,
+        fd: FdNumber,
+        request: u32,
+    ) -> Result<(), Errno> {
         let inner = self.inner.read();
         let guard = inner.write();
         let file = guard.get_file(&inner.scope, fd).ok_or_else(|| errno!(EBADF))?;
         if file.flags().contains(OpenFlags::PATH) {
             return error!(EBADF);
         }
+        let flags = match request {
+            FIOCLEX => FdFlags::CLOEXEC,
+            FIONCLEX => FdFlags::empty(),
+            _ => {
+                return error!(EINVAL);
+            }
+        };
+        security::check_file_ioctl_access(current_task, &file, request)?;
         guard.set_fd_flags(&inner.scope, fd, flags)
     }
 
