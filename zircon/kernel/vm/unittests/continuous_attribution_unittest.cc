@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
+
 #include <ktl/source_location.h>
 #include <ktl/utility.h>
 #include <vm/continuous_attribution_tracker.h>
@@ -655,6 +657,150 @@ bool continuous_attribution_tracker_release_hidden() {
   END_TEST;
 }
 
+// Test that DecommitRange decrements the populated slots count based on the number of populated
+// pages it removes.
+bool continuous_attribution_tracker_decommit_range() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+
+  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  ASSERT_OK(vmo->DecommitRange(0, kPageSize));
+
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
+// Check that DetachSource decrements the populated slots count for the removal of clean content.
+bool continuous_attribution_tracker_detach_source() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/2, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, nullptr, &vmo));
+
+  EXPECT_EQ(2u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  vmo->DetachSource();
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
+// Test that the populated slots count is decremented when loaned pages are removed from a VMO as
+// it's upgraded to being high priority.
+bool continuous_attribution_tracker_remove_loaned_high_priority() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  const bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
+  PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
+  auto cleanup = fit::defer([loaning_was_enabled] {
+    PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
+  });
+
+  // Provide a place for ReplacePageWithLoaned to borrow from.
+  fbl::RefPtr<VmObjectPaged> contiguous_vmo;
+  ASSERT_OK(VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, kPageSize, /*alignment_log2=*/0,
+                                            &contiguous_vmo));
+
+  ASSERT_OK(contiguous_vmo->DecommitRange(0, kPageSize));
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  vm_page_t *before_page;
+  ASSERT_OK(make_committed_pager_vmo(1, /*trap_dirty=*/false,
+                                     /*resizable=*/false, &before_page, &vmo));
+
+  fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+
+  ASSERT_NONNULL(before_page);
+  ASSERT_OK(cow_pages->ReplacePageWithLoaned(before_page, /*offset=*/0));
+
+  auto change_priority = [&vmo](int64_t delta) {
+    PriorityChanger pc = vmo->MakePriorityChanger(delta);
+    if (delta > 0) {
+      pc.PrepareMayNotAlreadyBeHighPriority();
+    }
+    Guard<CriticalMutex> guard{AliasedLock, vmo->lock(), pc.lock()};
+    pc.ChangeHighPriorityCountLocked();
+  };
+
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  change_priority(1);
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  change_priority(-1);
+
+  EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
+// Test that failing to add a sequence of pages correctly updates the populated slots count on
+// cleanup.
+bool continuous_attribution_tracker_add_pages() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 4 * kPageSize, &vmo));
+  fbl::RefPtr<VmCowPages> vmo_cow = vmo->DebugGetCowPages();
+
+  EXPECT_EQ(0u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  ASSERT_OK(vmo->CommitRange(kPageSize, kPageSize));
+
+  EXPECT_EQ(1u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  VmCowPages::DeferredOps deferred(vmo_cow.get());
+  Guard<CriticalMutex> guard{vmo_cow->lock()};
+
+  list_node list = LIST_INITIAL_VALUE(list);
+  const size_t count = 3;
+  ASSERT_OK(pmm_alloc_pages(count, 0, &list));
+  auto cleanup = fit::defer([&]() { pmm_free(&list); });
+
+  EXPECT_EQ(ZX_ERR_ALREADY_EXISTS,
+            vmo_cow->AddNewPagesLocked(0, &list, VmCowPages::CanOverwriteSlot::Empty,
+                                       /*zero=*/true, &deferred));
+
+  EXPECT_EQ(1u, vmo_cow->DebugGetContinuousAttributionTracker().FetchCurrent());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -673,6 +819,10 @@ VM_UNITTEST(continuous_attribution_tracker_reclaim_page)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_compression)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_deduplication)
 VM_UNITTEST(continuous_attribution_tracker_release_hidden)
+VM_UNITTEST(continuous_attribution_tracker_decommit_range)
+VM_UNITTEST(continuous_attribution_tracker_detach_source)
+VM_UNITTEST(continuous_attribution_tracker_remove_loaned_high_priority)
+VM_UNITTEST(continuous_attribution_tracker_add_pages)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

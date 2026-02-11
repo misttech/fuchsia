@@ -2561,17 +2561,24 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
       list_add_head(pages, &p->queue_node);
       // Remove any pages we already placed.
       if (offset > start_offset) {
+        uint32_t populated_slots_removed = 0;
         __UNINITIALIZED ScopedPageFreedList freed_list;
         __UNINITIALIZED BatchPQRemove page_remover(freed_list);
 
         page_list_.RemovePages(
-            [&page_remover](VmPageOrMarker* p, uint64_t off) {
+            [&](VmPageOrMarker* p, uint64_t off) {
+              // We only insert pages.
+              DEBUG_ASSERT(p->IsPage());
+              ++populated_slots_removed;
               page_remover.PushContent(p);
               return ZX_ERR_NEXT;
             },
             start_offset, offset);
         page_remover.Flush();
         freed_list.FreePages(this);
+        if (populated_slots_removed > 0) {
+          continuous_attribution_tracker_.Decrement(populated_slots_removed);
+        }
       }
 
       // Free all the pages back as we had ownership of them.
@@ -3963,15 +3970,24 @@ zx::result<uint64_t> VmCowPages::UnmapAndFreePagesLocked(uint64_t offset, uint64
   // unmap all of the pages in this range on all the mapping regions
   RangeChangeUpdateLocked(VmCowRange(offset, len), RangeChangeOp::Unmap, &deferred);
 
+  uint32_t populated_slots_removed = 0;
   __UNINITIALIZED BatchPQRemove page_remover(deferred.FreedList(this));
 
   page_list_.RemovePages(
-      [&page_remover](VmPageOrMarker* p, uint64_t off) {
+      [&](VmPageOrMarker* p, uint64_t off) {
+        // UnmapAndFreePagesLocked is only called on VMOs with no parent.
+        DEBUG_ASSERT(!p->IsParentContent());
+        if (p->IsPageOrRef()) {
+          ++populated_slots_removed;
+        }
         page_remover.PushContent(p);
         return ZX_ERR_NEXT;
       },
       offset, offset + len);
   page_remover.Flush();
+  if (populated_slots_removed > 0) {
+    continuous_attribution_tracker_.Decrement(populated_slots_removed);
+  }
 
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
@@ -4972,7 +4988,8 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
     return delta;
   }
 
-  // will become populated once we find loaned pages
+  uint32_t populated_slots_removed = 0;
+  // page_remover will take on a non-nullopt value once we find loaned pages
   ktl::optional<BatchPQRemove> page_remover;
 
   const auto remove_pages_callback = [&](VmPageOrMarker* page_or_marker, uint64_t offset) {
@@ -5000,6 +5017,7 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
       // we're about to remove it, so it better not be pinned
       DEBUG_ASSERT(page->object.pin_count == 0);
       page_remover->Push(page_or_marker->ReleasePage());
+      ++populated_slots_removed;
     } else if (page->object.pin_count == 0) {
       // If we moved to or from zero then update every page into the correct page queue for
       // tracking. MoveToNotPinnedLocked will check the high_priority_count_, which has already been
@@ -5015,6 +5033,9 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
 
   if (page_remover) {
     page_remover->Flush();
+  }
+  if (populated_slots_removed > 0) {
+    current.continuous_attribution_tracker_.Decrement(populated_slots_removed);
   }
 
   vm_vmo_high_priority.Add(delta);
@@ -6688,6 +6709,7 @@ void VmCowPages::DetachSource() {
   // than page faults to update hardware page table mappings for resident pages.
   RangeChangeUpdateLocked(VmCowRange(0, size_), RangeChangeOp::Unmap, &deferred);
 
+  uint32_t populated_slots_removed = 0;
   __UNINITIALIZED BatchPQRemove page_remover(deferred.FreedList(this));
 
   // Remove all clean (or untracked) pages.
@@ -6697,7 +6719,7 @@ void VmCowPages::DetachSource() {
   // If we do that, we could also extend the eager approach to supply_pages, where pages get
   // decommitted on supply, i.e. the supply is a no-op.
   page_list_.RemovePages(
-      [&page_remover](VmPageOrMarker* p, uint64_t off) {
+      [&](VmPageOrMarker* p, uint64_t off) {
         // A marker is a clean zero page. Replace it with an empty slot.
         if (p->IsMarker()) {
           *p = VmPageOrMarker::Empty();
@@ -6724,11 +6746,15 @@ void VmCowPages::DetachSource() {
         DEBUG_ASSERT(p->Page()->object.pin_count == 0);
 
         page_remover.Push(p->ReleasePage());
+        ++populated_slots_removed;
         return ZX_ERR_NEXT;
       },
       0, size_);
 
   page_remover.Flush();
+  if (populated_slots_removed > 0) {
+    continuous_attribution_tracker_.Decrement(populated_slots_removed);
+  }
 }
 
 void VmCowPages::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op,
