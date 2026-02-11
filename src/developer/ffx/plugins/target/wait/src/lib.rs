@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use discovery::query::TargetInfoQuery;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::Notifier;
 use ffx_wait_args::WaitOptions;
@@ -33,7 +32,7 @@ pub trait DeviceWaiter {
         &self,
         dur: Option<Duration>,
         env: &EnvironmentContext,
-        target_spec: &TargetInfoQuery,
+        target_spec: &Option<String>,
         behavior: ffx_target::WaitFor,
     ) -> impl Future<Output = Result<()>>;
 }
@@ -52,7 +51,7 @@ impl DeviceWaiter for DeviceWaiterImpl {
         &self,
         dur: Option<Duration>,
         env: &EnvironmentContext,
-        target_spec: &TargetInfoQuery,
+        target_spec: &Option<String>,
         behavior: ffx_target::WaitFor,
     ) -> Result<()> {
         ffx_target::wait_for_device(dur, env, target_spec, behavior).await
@@ -114,8 +113,7 @@ impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
 
 impl<T: DeviceWaiter + fho::TryFromEnv> WaitOperation<T> {
     pub async fn wait_impl(&self) -> Result<()> {
-        let default_target: Option<String> =
-            ffx_target::get_target_specifier(&self.env).bug()?;
+        let target_spec: Option<String> = ffx_target::get_target_specifier(&self.env).bug()?;
         let behavior = if self.cmd.down {
             ffx_target::WaitFor::DeviceOffline
         } else {
@@ -123,8 +121,7 @@ impl<T: DeviceWaiter + fho::TryFromEnv> WaitOperation<T> {
         };
         let duration =
             if self.cmd.timeout > 0 { Some(Duration::from_secs(self.cmd.timeout)) } else { None };
-        let spec: TargetInfoQuery = default_target.into();
-        self.waiter.wait(duration, &self.env, &spec, behavior).await
+        self.waiter.wait(duration, &self.env, &target_spec, behavior).await
     }
 }
 

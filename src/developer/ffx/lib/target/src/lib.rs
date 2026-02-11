@@ -281,7 +281,7 @@ const DOWN_REPOLL_DELAY_MS: u64 = 500;
 pub async fn wait_for_device(
     wait_timeout: Option<Duration>,
     env: &EnvironmentContext,
-    target_spec: &TargetInfoQuery,
+    target_spec: &Option<String>,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
     wait_for_device_inner(LocalRcsKnockerImpl, wait_timeout, env, target_spec, behavior).await
@@ -291,14 +291,18 @@ async fn wait_for_device_inner(
     knocker: impl RcsKnocker,
     wait_timeout: Option<Duration>,
     env: &EnvironmentContext,
-    target_spec: &TargetInfoQuery,
+    target_spec: &Option<String>,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
     let target_spec_clone = target_spec.clone();
     let knock_fut = async {
         loop {
             futures_lite::future::yield_now().await;
-            break match knocker.knock_rcs(&(target_spec_clone.clone().into()), &env).await {
+            // Note that we transform the target_spec into a query every time
+            // through the loop, because while we are waiting for the device, we
+            // may have to wait for a valid scope-id to appear.
+            let query: TargetInfoQuery = target_spec_clone.clone().into();
+            break match knocker.knock_rcs(&query, &env).await {
                 Err(e) => {
                     log::debug!("unable to knock target: {e:?}");
                     if let WaitFor::DeviceOffline = behavior {
@@ -834,7 +838,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3000)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -850,7 +854,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -876,7 +880,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -894,7 +898,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -912,7 +916,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -930,7 +934,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -948,7 +952,7 @@ mod test {
             mock,
             Some(Duration::from_secs(5)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -971,7 +975,7 @@ mod test {
             mock,
             Some(Duration::from_secs(10)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOnline,
         )
         .await;
@@ -1000,7 +1004,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
@@ -1016,7 +1020,7 @@ mod test {
             mock,
             Some(Duration::from_secs(3)),
             &env.context,
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+            &Some("foo".to_string()),
             WaitFor::DeviceOffline,
         )
         .await;
