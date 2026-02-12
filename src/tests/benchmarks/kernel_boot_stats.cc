@@ -106,7 +106,7 @@ void WriteBootTimelineStats(perftest::ResultsSet& results, const inspect::Hierar
 void WriteBootMemoryStats(perftest::ResultsSet& results, const inspect::Hierarchy& memory_stats) {
   int64_t value = GetIntValueOrDie(memory_stats.node(), "boot.memory.post_init_free_bytes");
   perftest::TestCaseResults* t =
-      results.AddTestCase(kTestSuiteName, "KernelBootFreeMemoryAfterInit", "bytes");
+      results.AddTestCase(kTestSuiteName, "KernelBootFreeMemoryAfterInit", "bytes_biggerIsBetter");
   t->AppendValue(static_cast<double>(value));
 }
 
