@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crossbeam_utils::CachePadded;
 use starnix_rcu::rcu_cache::RcuCacheInsertionResult;
 use starnix_rcu::{RcuCache, RcuReadScope};
 use std::hash::Hash;
 use std::ops::Add;
 use std::sync::atomic::{AtomicU64, Ordering};
+use zx;
 
 /// Describes the performance statistics of a cache implementation.
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -85,7 +87,14 @@ where
     R: Clone + Send + Sync + 'static,
 {
     cache: RcuCache<A, R>,
-    stats: AtomicCacheStats,
+    // The stats are sharded and padded to reduce cache line contention.
+    stats: Vec<CachePadded<AtomicCacheStats>>,
+}
+
+/// The number of shards to use for the cache stats.
+fn num_shards() -> usize {
+    let num_cpus = zx::system_get_num_cpus() as usize;
+    2 * num_cpus
 }
 
 impl<A, R> AccessCache<A, R>
@@ -100,13 +109,27 @@ where
     /// Panics if `capacity` is 0.
     pub fn with_capacity(capacity: usize) -> Self {
         assert!(capacity > 0, "cannot instantiate fixed access vector cache of size 0");
-        Self { cache: RcuCache::new(capacity), stats: AtomicCacheStats::default() }
+        let num_shards = num_shards();
+        let stats =
+            (0..num_shards).map(|_| CachePadded::new(AtomicCacheStats::default())).collect();
+        Self { cache: RcuCache::new(capacity), stats }
     }
 
     /// Returns the capacity with which this instance was initialized.
     #[cfg(test)]
     pub fn capacity(&self) -> usize {
         self.cache.capacity()
+    }
+
+    fn stats_shard(&self) -> &AtomicCacheStats {
+        thread_local! {
+            static SHARD_INDEX: usize = {
+                static NEXT_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                let index = NEXT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                index % num_shards()
+            };
+        }
+        SHARD_INDEX.with(|index| &self.stats[*index])
     }
 
     /// Searches the cache and returns a reference to the result `R` matching
@@ -134,10 +157,11 @@ where
         query_args: A,
         callback: impl FnOnce() -> Result<R, E>,
     ) -> Result<R, E> {
-        self.stats.lookups.fetch_add(1, Ordering::Relaxed);
+        let stats = self.stats_shard();
+        stats.lookups.fetch_add(1, Ordering::Relaxed);
 
         if let Some(result) = self.cache.get(&RcuReadScope::new(), &query_args) {
-            self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            stats.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(result.clone());
         }
 
@@ -147,18 +171,18 @@ where
 
         // Check to see if another thread has already populated this entry in the cache.
         if let Some(result) = self.cache.get(&scope, &query_args) {
-            self.stats.hits.fetch_add(1, Ordering::Relaxed);
+            stats.hits.fetch_add(1, Ordering::Relaxed);
             return Ok(result.clone());
         }
 
-        self.stats.misses.fetch_add(1, Ordering::Relaxed);
+        stats.misses.fetch_add(1, Ordering::Relaxed);
         let result = callback()?;
 
-        self.stats.allocs.fetch_add(1, Ordering::Relaxed);
+        stats.allocs.fetch_add(1, Ordering::Relaxed);
         if let RcuCacheInsertionResult::Evicted(_) =
             guard.insert(&scope, query_args, result.clone())
         {
-            self.stats.reclaims.fetch_add(1, Ordering::Relaxed);
+            stats.reclaims.fetch_add(1, Ordering::Relaxed);
         }
         Ok(result)
     }
@@ -170,10 +194,14 @@ where
 
     pub fn reset(&self) {
         self.cache.clear();
-        self.stats.reset();
+        for stats in &self.stats {
+            stats.reset();
+        }
     }
 
+    /// Returns the performance statistics of the cache.
+    /// TODO(483629131): Report stats per-core.
     pub fn cache_stats(&self) -> CacheStats {
-        self.stats.snapshot()
+        self.stats.iter().fold(CacheStats::default(), |acc, stats| &acc + &stats.snapshot())
     }
 }
