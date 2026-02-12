@@ -12,19 +12,34 @@
 
 // CPSR
 // Current Program Status Register. It contains processor status and control
-// information. Only the top 4 bits (NCZV) are addressable from user mode.
-inline constexpr uint32_t kArmUserVisibleFlags = 0xf0000000;
+// information. The top 4 bits (NCZV) are always addressable from user mode.
+inline constexpr uint32_t kArmNczvFlags = 0xf0000000;
+
+// These are the BTYPE aka branch type flags used by FEAT_BTI in aarch64 mode.
+inline constexpr uint32_t kArm64BtypeFlags = 0xc00;
+inline constexpr uint32_t kArm64UserVisibleFlags = kArmNczvFlags | kArm64BtypeFlags;
+
 // M[4]/nRW. When bit 4 is set, aarch32 execution is enabled.
 inline constexpr uint32_t kArm32BitMode = 0x10;
+
+// Aarch32 specific bits.
 // When bit 5 is set, aarch32 thumb mode is enabled.
 inline constexpr uint32_t kArm32BitThumbMode = 0x20;
 // GE[19:16] and Q[27] bits which may be set by userland and should be preserved.
-inline constexpr uint32_t kArmGeQBits = 0x80f0000;
+inline constexpr uint32_t kArm32GeQBits = 0x80f0000;
 // IT[15:10,26:25] bits which may be set by userland thumb mode and should be preserved.
-inline constexpr uint32_t kArmItBits = 0x600fc00;
+inline constexpr uint32_t kArm32ItBits = 0x600fc00;
 
+// These bits are only user visible in aarch64 mode
+inline constexpr uint32_t kArm64UserRestrictedVisibleFlags = kArmNczvFlags | kArm64BtypeFlags;
+
+// These bits are only user visible in aarch32 mode
+inline constexpr uint32_t kArm32UserRestrictedVisibleFlags =
+    kArmNczvFlags | kArm32BitMode | kArm32BitThumbMode | kArm32GeQBits | kArm32ItBits;
+
+// These bits are user restricted bits for any thread, 32 or 64 bit.
 inline constexpr uint32_t kArmUserRestrictedVisibleFlags =
-    kArmUserVisibleFlags | kArm32BitMode | kArm32BitThumbMode | kArmGeQBits | kArmItBits;
+    kArm64UserRestrictedVisibleFlags | kArm32UserRestrictedVisibleFlags;
 
 // MDSCR_EL1
 // Monitor Debug System Control Register. It's the main control register fot the debug

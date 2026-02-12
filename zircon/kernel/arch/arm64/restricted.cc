@@ -67,16 +67,17 @@ zx_status_t RestrictedState::ArchValidateStatePreRestrictedEntry(
     }
 
     // Validate that only the NCZV flags and 32-bit relevant flags of the CPSR are set.
-    if (unlikely((state.cpsr & ~(kArmUserRestrictedVisibleFlags)) != 0)) {
-      LTRACEF("fail due to flags outside of kArmUserRestrictedVisibleFlags set (%#" PRIx32 ")\n",
+    if (unlikely((state.cpsr & ~(kArm32UserRestrictedVisibleFlags)) != 0)) {
+      LTRACEF("fail due to flags outside of kArm32UserRestrictedVisibleFlags set (%#" PRIx32 ")\n",
               state.cpsr);
       return ZX_ERR_BAD_STATE;
     }
   } else {
-    // Validate that only the NCZV flags of the CPSR are set.
+    // Validate that only the NCZV and BTYPE flags of the CPSR are set.
     // For aarch64 restricted threads, the flags are the same as normal user threads.
-    if (unlikely((state.cpsr & ~(kArmUserVisibleFlags)) != 0)) {
-      LTRACEF("fail due to flags outside of kArmUserVisibleFlags set (%#" PRIx32 ")\n", state.cpsr);
+    if (unlikely((state.cpsr & ~(kArm64UserRestrictedVisibleFlags)) != 0)) {
+      LTRACEF("fail due to flags outside of kArm64UserRestrictedVisibleFlags set (%#" PRIx32 ")\n",
+              state.cpsr);
       return ZX_ERR_BAD_STATE;
     }
   }

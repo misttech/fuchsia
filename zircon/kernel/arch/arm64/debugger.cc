@@ -72,17 +72,17 @@ zx_status_t arch_set_general_regs(Thread* thread, const zx_thread_state_general_
   out->lr = in->lr;
   out->usp = in->sp;
   out->elr = in->pc;
-  // Preserve all flags outside of the user visible set when in restricted mode.
-  // This allows continuity in 32-bit or 64-bit without allowing direct access
-  // to mode changes.
   if (arch_get_restricted_flag()) {
-    out->spsr = (out->spsr & ~kArmUserVisibleFlags) | (in->cpsr & kArmUserVisibleFlags);
+    // Preserve all flags outside of NCZV (the directly user visible set) when
+    // in restricted mode.  This allows continuity in 32-bit or 64-bit without
+    // allowing direct access to mode changes.
+    out->spsr = (out->spsr & ~kArmNczvFlags) | (in->cpsr & kArmNczvFlags);
   } else {
     // A normal mode thread should only allow user visible flags to be set.
     // However, this function may be called on a thread that has transitioned
     // from restricted mode, and as such, the mask below ensures that any saved
     // restricted-mode-only flags are not preserved.
-    out->spsr = (out->spsr & ~kArmUserRestrictedVisibleFlags) | (in->cpsr & kArmUserVisibleFlags);
+    out->spsr = (out->spsr & ~kArmUserRestrictedVisibleFlags) | (in->cpsr & kArm64UserVisibleFlags);
   }
   thread->arch().tpidr_el0 = in->tpidr;
 

@@ -1574,7 +1574,9 @@ TEST(Threads, WritingArmFlagsRegister) {
 
   // Check that zx_thread_read_state() does not report any more flag bits
   // than are readable via userland instructions.
-  constexpr uint64_t kUserVisibleFlags = 0xf0000000;
+  // 0xf0000000 are the NCZV flags
+  // 0x00000c00 are the BTYPE flags
+  constexpr uint64_t kUserVisibleFlags = 0xf0000c00;
   EXPECT_EQ(regs.cpsr & ~kUserVisibleFlags, 0u);
 
   // Try setting more flag bits.
