@@ -20,6 +20,28 @@ If you've opened Fuchsia using `fuchsia.code-workspace`, the agent's terminal
 should also be able to run `fx`/`ffx`/etc commands without additional
 modifications.
 
+### Alternative: user-global `BASH_ENV`
+
+On some platforms Antigravity runs its shells without going through the
+workspace's terminal integration and it won't have see the mise-provided
+`fx`, `ffx`, etc.
+
+In these situations, you can copy `//.mise/agent_hook.sh` to a path in your
+home directory and point future shells to run it even for non-login shells
+with `BASH_ENV`:
+
+```sh
+mkdir $HOME/.mise
+cp $FUCHSIA_DIR/.mise/agent_hook.sh $HOME/.mise/agent_hook.sh
+echo 'export BASH_ENV="$HOME/.mise/agent_hook.sh"' >> $HOME/.bashrc
+```
+
+The agent hook script should be a no-op unless it's run in a shell created by
+Antigravity's agent.
+
+You may need to log out of your shell or your desktop session and log back in
+to see the effects of this change.
+
 ## Personal Settings
 
 Some users may have personal dotfiles or other settings they previously used
