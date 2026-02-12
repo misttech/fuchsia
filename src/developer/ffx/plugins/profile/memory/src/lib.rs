@@ -116,7 +116,7 @@ impl FfxMain for MemoryTool {
                         stats_only: None,
                         assembly_manifest: None,
                     },
-                    monitor_proxy: mm2,
+                    monitor_proxy: fho::Deferred::from_output(Ok(mm2)),
                 };
                 tool.run(ComponentProfileResultWriter { writer }).await
             }

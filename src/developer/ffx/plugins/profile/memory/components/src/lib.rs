@@ -18,7 +18,7 @@ use attribution_processing::{AttributionData, Principal, Resource, ZXName, diges
 use errors::ffx_error;
 use ffx_profile_memory_components_args::ComponentsCommand;
 use ffx_writer::{MachineWriter, ToolIO};
-use fho::{AvailabilityFlag, FfxMain, FfxTool};
+use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use futures::AsyncReadExt;
 use json::JsonConvertible;
@@ -37,8 +37,8 @@ use crate::statistics::CommandMemoryStatistics;
 pub struct MemoryComponentsTool {
     #[command]
     pub cmd: ComponentsCommand,
-    #[with(moniker("/core/memory_monitor2"))]
-    pub monitor_proxy: fplugin::MemoryMonitorProxy,
+    #[with(deferred(moniker("/core/memory_monitor2")))]
+    pub monitor_proxy: Deferred<fplugin::MemoryMonitorProxy>,
 }
 
 fho::embedded_plugin!(MemoryComponentsTool);
@@ -93,7 +93,7 @@ impl FfxMain for MemoryComponentsTool {
 }
 
 impl MemoryComponentsTool {
-    pub async fn run(&self, writer: impl PluginOutput<ComponentProfileResult>) -> fho::Result<()> {
+    pub async fn run(self, writer: impl PluginOutput<ComponentProfileResult>) -> fho::Result<()> {
         match self.cmd.stats_only {
             Some(interval) => self.process_statistics(writer, interval).await,
             None => self.process_snapshot(writer).await,
@@ -101,7 +101,7 @@ impl MemoryComponentsTool {
     }
 
     async fn process_statistics(
-        &self,
+        self,
         mut writer: impl PluginOutput<ComponentProfileResult>,
         interval: u64,
     ) -> std::result::Result<(), fho::Error> {
@@ -114,9 +114,9 @@ impl MemoryComponentsTool {
             return Err(fho::Error::User(anyhow!("only --csv is supported with --stats-only")));
         }
         let mut w = csv::WriterBuilder::new().has_headers(true).from_writer(writer.stdout());
+        let proxy = self.monitor_proxy.await?;
         loop {
-            let statistics: CommandMemoryStatistics = self
-                .monitor_proxy
+            let statistics: CommandMemoryStatistics = proxy
                 .get_system_statistics()
                 .await
                 .map_err(|err| ffx_error!("Failed to get statistics: {err:?} :{err}"))?
@@ -139,7 +139,7 @@ impl MemoryComponentsTool {
     }
 
     async fn process_snapshot(
-        &self,
+        self,
         mut writer: impl PluginOutput<ComponentProfileResult>,
     ) -> std::result::Result<(), fho::Error> {
         let resource_annotator = match &self.cmd.assembly_manifest {
@@ -152,7 +152,7 @@ impl MemoryComponentsTool {
         };
 
         let snapshot = match self.cmd.stdin_input {
-            false => self.load_snapshot_from_device().await?,
+            false => Self::load_snapshot_from_device(self.monitor_proxy).await?,
             true => {
                 fplugin::Snapshot::from_json(&serde_json::from_reader(std::io::stdin()).unwrap())
                     .unwrap()
@@ -190,11 +190,14 @@ impl MemoryComponentsTool {
         Ok(())
     }
 
-    async fn load_snapshot_from_device(&self) -> fho::Result<fplugin::Snapshot> {
+    async fn load_snapshot_from_device(
+        monitor_proxy: Deferred<fplugin::MemoryMonitorProxy>,
+    ) -> fho::Result<fplugin::Snapshot> {
         let (client_end, server_end) = fidl::Socket::create_stream();
         let mut client_socket = fidl::AsyncSocket::from_socket(client_end);
 
-        self.monitor_proxy.get_snapshot(server_end).map_err(|err| {
+        let proxy = monitor_proxy.await?;
+        proxy.get_snapshot(server_end).map_err(|err| {
             ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err:?} : {err}")
         })?;
         let mut compressed_data: Vec<u8> = Vec::new();
