@@ -16,6 +16,8 @@ _MOBLY_TEST_OUTPUT_TEMPLATE = (
     'fx test --e2e {test_name} -- --test_cases="{test_case}"'
 )
 
+_PYTHON_HOST_TEST_OUTPUT_TEMPLATE = 'fx test {test_name} -- -k "{test_case}"'
+
 _DEFAULT_TEST_OUTPUT_TEMPLATE = (
     'fx test {test_name} --test-filter "{test_case}"'
 )
@@ -331,6 +333,11 @@ class TestExecution:
         # TODO(fxbug.dev/481539525): This behavior should ideally be in a script run by fx test
         if self._test.build.test.list_cases_argument == "list_mobly_tests":
             return _MOBLY_TEST_OUTPUT_TEMPLATE
+        if (
+            self._test.build.test.list_cases_argument
+            == "list_host_python_unittests"
+        ):
+            return _PYTHON_HOST_TEST_OUTPUT_TEMPLATE
         return _DEFAULT_TEST_OUTPUT_TEMPLATE
 
     async def enumerate_mobly_test(
@@ -433,6 +440,7 @@ class TestExecution:
             recorder=recorder,
             parent=parent,
             print_verbatim=False,
+            env=self.environment(),
         )
 
     def environment(self) -> dict[str, str] | None:

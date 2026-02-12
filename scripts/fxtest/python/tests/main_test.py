@@ -258,6 +258,17 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patch.stop)
         return m
 
+    def _mock_enumerate_test_cases(
+        self, output: command.CommandOutput
+    ) -> mock.MagicMock:
+        m = mock.AsyncMock(return_value=output)
+        patch = mock.patch(
+            "main.execution.TestExecution.enumerate_test_cases", m
+        )
+        patch.start()
+        self.addCleanup(patch.stop)
+        return m
+
     def _mock_has_tests_in_base(self, test_packages: list[str]) -> None:
         with open(os.path.join(self.out_dir, "base_packages.list"), "w") as f:
             json.dump(
@@ -1345,6 +1356,49 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             events[0].command_template,
             main.execution._MOBLY_TEST_OUTPUT_TEMPLATE,
+        )
+        self.assertEqual(
+            events[0].test_case_names,
+            [
+                "test_case_1",
+                "test_case_2",
+                "test_case_3",
+            ],
+        )
+
+    async def test_list_python_host_tests(self) -> None:
+        """Test that we can list python host test cases using --list"""
+
+        mock_enumerate = self._mock_enumerate_test_cases(
+            command.CommandOutput(
+                stdout="test_case_1\ntest_case_2\ntest_case_3",
+                stderr="",
+                return_code=0,
+                runtime=10,
+                wrapper_return_code=None,
+            )
+        )
+
+        recorder = event.EventRecorder()
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                ["--simple", "--no-build", "--list", "host_x64/baz_test"]
+            ),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 0)
+        self.assertEqual(mock_enumerate.call_count, 1)
+
+        events = [
+            e.payload.enumerate_test_cases
+            async for e in recorder.iter()
+            if e.payload is not None
+            and e.payload.enumerate_test_cases is not None
+        ]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(
+            events[0].command_template,
+            main.execution._PYTHON_HOST_TEST_OUTPUT_TEMPLATE,
         )
         self.assertEqual(
             events[0].test_case_names,

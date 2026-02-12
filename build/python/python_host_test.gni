@@ -79,6 +79,11 @@ import("//build/testing/host_test_data.gni")
 #    Type: list(string)
 #    Default: empty list
 #
+#  list_cases_argument (optional)
+#    Argument to pass to the host python unittest binary to list test cases.
+#    Type: string
+#    Default: "list_host_python_unittests"
+#
 #  deps
 #  environments
 #  visibility
@@ -123,6 +128,10 @@ template("python_host_test") {
   }
 
   _host_test_data_target = "${target_name}_test_data"
+  _test_lister_target_label =
+      "//scripts/fxtest/list_host_test:list_host_python_unittests_data"
+  _test_lister_target_out_dir =
+      get_label_info(_test_lister_target_label, "target_out_dir")
   host_test_data(_host_test_data_target) {
     testonly = true
     visibility = [ ":*" ]
@@ -130,7 +139,10 @@ template("python_host_test") {
     sources = [ get_label_info(":${_python_binary_target}", "target_out_dir") +
                 "/${_python_binary_name}" ]
     outputs = [ "${_test_dir}/${_python_binary_name}" ]
-    deps = [ ":${_python_binary_target}" ]
+    deps = [
+      ":${_python_binary_target}",
+      _test_lister_target_label,
+    ]
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
@@ -145,6 +157,11 @@ template("python_host_test") {
     }
   }
 
+  _list_cases_argument = "list_host_python_unittests"
+  if (defined(invoker.list_cases_argument)) {
+    _list_cases_argument = invoker.list_cases_argument
+  }
+
   host_test(target_name) {
     forward_variables_from(invoker,
                            [
@@ -157,9 +174,15 @@ template("python_host_test") {
                              "expects_ssh",
                            ])
 
+    list_cases_argument = _list_cases_argument
+
     binary_path = python_exe_src
-    args =
-        [ rebase_path("${_test_dir}/${_python_binary_name}", root_build_dir) ]
+    args = [
+      "test_lister_path=" + rebase_path(
+              "${_test_lister_target_out_dir}/test_data/list_host_python_unittests.pyz",
+              root_build_dir),
+      rebase_path("${_test_dir}/${_python_binary_name}", root_build_dir),
+    ]
     if (defined(invoker.extra_args)) {
       args += invoker.extra_args
     }

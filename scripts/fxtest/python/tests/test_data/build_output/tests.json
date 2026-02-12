@@ -46,7 +46,8 @@
             "name": "host_x64/baz_test",
             "label": "//src/sys:baz_test(//build/toolchain/host:x64)",
             "path": "host_x64/baz_test",
-            "os": "linux"
+            "os": "linux",
+            "list_cases_argument": "list_host_python_unittests"
         }
     },
     {
