@@ -81,10 +81,7 @@ test("ftl-integration") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
-    "//sdk/fidl/fuchsia.storage.ftl:fuchsia.storage.ftl_cpp",
-    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//sdk/lib/zxio",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/storage/lib/ramdevice_client/cpp",
     "//src/storage/lib/ramdevice_client/cpp:ramdevice-client-test",

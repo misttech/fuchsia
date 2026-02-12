@@ -5,7 +5,6 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
-#include <lib/fdf/cpp/dispatcher.h>
 
 #include <memory>
 
@@ -18,8 +17,7 @@ namespace {
 zx_status_t FtlDriverBind(void* ctx, zx_device_t* parent) {
   zxlogf(INFO, "FTL: Binding. Version 1.2.04 (update to NDM v2)");
   fbl::AllocChecker checker;
-  std::unique_ptr<ftl::BlockDevice> device(
-      new (&checker) ftl::BlockDevice(parent, fdf::Dispatcher::GetCurrent()->get()));
+  std::unique_ptr<ftl::BlockDevice> device(new (&checker) ftl::BlockDevice(parent));
   if (!checker.check()) {
     return ZX_ERR_NO_MEMORY;
   }

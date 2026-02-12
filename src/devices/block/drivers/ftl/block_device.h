@@ -7,14 +7,12 @@
 
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <fidl/fuchsia.storage.ftl/cpp/wire.h>
 #include <fuchsia/hardware/badblock/c/banjo.h>
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/sync/completion.h>
 #include <lib/zbi-format/partition.h>
@@ -25,7 +23,6 @@
 
 #include <memory>
 #include <mutex>
-#include <optional>
 
 #include <ddktl/device.h>
 #include <fbl/macros.h>
@@ -61,11 +58,9 @@ using DeviceType =
 class BlockDevice : public DeviceType,
                     public ddk::BlockImplProtocol<BlockDevice, ddk::base_protocol>,
                     public ddk::BlockPartitionProtocol<BlockDevice>,
-                    public fidl::WireServer<fuchsia_storage_ftl::Configuration>,
                     public ftl::FtlInstance {
  public:
-  // dispatcher is required to run configuration service handlers.
-  explicit BlockDevice(zx_device_t* parent = nullptr, fdf_dispatcher_t* dispatcher = nullptr);
+  explicit BlockDevice(zx_device_t* parent = nullptr) : DeviceType(parent) {}
   ~BlockDevice() override;
 
   zx_status_t Bind();
@@ -95,11 +90,6 @@ class BlockDevice : public DeviceType,
     completer.ReplySuccess(DuplicateInspectVmo());
   }
 
-  // Configuration interface.
-  void Get(GetCompleter::Sync& completer) final;
-  void Set(fuchsia_storage_ftl::wire::ConfigurationOptions* request,
-           SetCompleter::Sync& completer) final;
-
   // FtlInstance interface.
   bool OnVolumeAdded(uint32_t page_size, uint32_t num_pages) final;
 
@@ -111,7 +101,7 @@ class BlockDevice : public DeviceType,
 
   OperationCounters& nand_counters() { return nand_counters_; }
 
-  void SetVolumeForTest(std::unique_ptr<ftl::Volume> volume);
+  void SetVolumeForTest(std::unique_ptr<ftl::Volume> volume) { volume_ = std::move(volume); }
 
   void SetNandParentForTest(const nand_protocol_t& nand) { parent_ = nand; }
 
@@ -126,9 +116,9 @@ class BlockDevice : public DeviceType,
   static int WorkerThreadStub(void* arg);
 
   // Implementation of the actual commands.
-  zx_status_t ReadWriteData(block_op_t* operation) TA_REQ(volume_lock_);
-  zx_status_t TrimData(block_op_t* operation) TA_REQ(volume_lock_);
-  zx_status_t Flush() TA_REQ(volume_lock_);
+  zx_status_t ReadWriteData(block_op_t* operation);
+  zx_status_t TrimData(block_op_t* operation);
+  zx_status_t Flush();
 
   BlockParams params_ = {};
 
@@ -145,10 +135,7 @@ class BlockDevice : public DeviceType,
   nand_protocol_t parent_ = {};
   bad_block_protocol_t bad_block_ = {};
 
-  // Enforce one operation at a time between the `ftl_config_` running on the dispatcher and the
-  // `worker_` thread loop.
-  std::mutex volume_lock_;
-  std::unique_ptr<ftl::Volume> volume_ TA_GUARDED(volume_lock_);
+  std::unique_ptr<ftl::Volume> volume_;
 
   uint8_t guid_[ZBI_PARTITION_GUID_LEN] = {};
 
@@ -156,10 +143,6 @@ class BlockDevice : public DeviceType,
 
   // Keeps track of the nand operations being issued for each incoming block operation.
   OperationCounters nand_counters_;
-
-  fdf_dispatcher_t* dispatcher_;
-  std::optional<fdf::OutgoingDirectory> outgoing_;
-  fidl::ServerBindingGroup<fuchsia_storage_ftl::Configuration> config_binding_;
 };
 
 }  // namespace ftl

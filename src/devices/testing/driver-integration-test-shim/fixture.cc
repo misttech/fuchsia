@@ -70,8 +70,6 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
           fuchsia_component_test::Service{{.name = "fuchsia.hardware.skipblock.Service"}}),
       fuchsia_component_test::Capability::WithService(
           fuchsia_component_test::Service{{.name = "fuchsia.hardware.ramdisk.Service"}}),
-      fuchsia_component_test::Capability::WithService(
-          fuchsia_component_test::Service{{.name = "fuchsia.storage.ftl.Service"}}),
   }};
 
   fuchsia_driver_test::RealmArgs realm_args = fuchsia_driver_test::RealmArgs{
