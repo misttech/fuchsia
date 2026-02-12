@@ -15,6 +15,8 @@ rustc_library("bt-hfp") {
     "src/audio/codec.rs",
     "src/audio/dai.rs",
     "src/audio/inband.rs",
+    "src/audio/partial_offload.rs",
+    "src/audio/test.rs",
     "src/call.rs",
     "src/call/direction.rs",
     "src/call/indicators.rs",
