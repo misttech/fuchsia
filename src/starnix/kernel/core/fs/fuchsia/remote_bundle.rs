@@ -19,7 +19,7 @@ use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use starnix_logging::{impossible_error, log_warn};
 use starnix_sync::{
-    FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard,
+    FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -49,8 +49,29 @@ pub struct RemoteBundle {
 }
 
 impl RemoteBundle {
-    /// Returns a new RemoteBundle filesystem that can be found at `path` relative to `base`.
-    pub fn new_fs<L>(
+    pub fn new_fs(
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        mut options: FileSystemOptions,
+    ) -> Result<FileSystemHandle, Errno> {
+        let kernel = current_task.kernel();
+        let requested_path = std::str::from_utf8(&options.source)
+            .map_err(|_| errno!(EINVAL, "source path is not utf8"))?;
+        let (root_proxy, subdir) =
+            kernel.open_ns_dir(requested_path, fio::Flags::PROTOCOL_DIRECTORY)?;
+        options.source = subdir.into();
+        Self::new_fs_in_base(
+            locked,
+            current_task.kernel(),
+            &root_proxy,
+            options,
+            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+        )
+        .map_err(|e| errno!(EIO, format!("failed to mount remote bundle: {e}")))
+    }
+
+    /// Returns a new RemoteBundle filesystem that can be found at `options.source` relative to `base`.
+    pub fn new_fs_in_base<L>(
         locked: &mut Locked<L>,
         kernel: &Kernel,
         base: &fio::DirectorySynchronousProxy,
@@ -545,7 +566,7 @@ mod test {
             let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg", rights, server).expect("failed to open /pkg");
-            let fs = RemoteBundle::new_fs(
+            let fs = RemoteBundle::new_fs_in_base(
                 locked,
                 &kernel,
                 &fio::DirectorySynchronousProxy::new(client),

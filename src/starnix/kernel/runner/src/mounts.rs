@@ -4,7 +4,7 @@
 
 use anyhow::{Error, anyhow, bail};
 use fidl_fuchsia_io as fio;
-use starnix_core::fs::fuchsia::{RemoteBundle, create_remotefs_filesystem};
+use starnix_core::fs::fuchsia::{RemoteBundle, new_remotefs_in_root};
 use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
@@ -33,10 +33,8 @@ impl MountAction {
         // The root file system needs to be creatable without a task because we mount the root
         // file system before creating the initial task.
         let fs = match spec.fs_type.as_slice() {
-            b"remote_bundle" => RemoteBundle::new_fs(locked, kernel, pkg, options, rights)?,
-            b"remote_pkg_subdir" => {
-                create_remotefs_filesystem(locked, kernel, pkg, options, rights)?
-            }
+            b"remote_bundle" => RemoteBundle::new_fs_in_base(locked, kernel, pkg, options, rights)?,
+            b"remote_pkg_subdir" => new_remotefs_in_root(locked, kernel, pkg, options, rights)?,
             b"tmpfs" => TmpFs::new_fs_with_options(locked, kernel, options)?,
             _ => bail!("unsupported root file system: {}", spec.fs_type),
         };
@@ -56,12 +54,12 @@ impl MountAction {
         let fs = match spec.fs_type.as_slice() {
             // The remote_bundle file system is available only via the mounts declaration in CML.
             b"remote_bundle" => {
-                RemoteBundle::new_fs(locked, current_task.kernel(), pkg, options, rights)?
+                RemoteBundle::new_fs_in_base(locked, current_task.kernel(), pkg, options, rights)?
             }
 
             // Mounts a subdirectory of the container's `/pkg`.
             b"remote_pkg_subdir" => {
-                create_remotefs_filesystem(locked, current_task.kernel(), pkg, options, rights)?
+                new_remotefs_in_root(locked, current_task.kernel(), pkg, options, rights)?
             }
 
             _ => current_task.create_filesystem(locked, spec.fs_type.as_ref(), options)?,

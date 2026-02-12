@@ -99,12 +99,12 @@ pub fn new_remote_fs(
     }
     let mut subdir_options = options;
     subdir_options.source = subdir.into();
-    create_remotefs_filesystem(locked, kernel, &root_proxy, subdir_options, open_rights)
+    new_remotefs_in_root(locked, kernel, &root_proxy, subdir_options, open_rights)
 }
 
-/// Create a filesystem to access the content of the fuchsia directory available at `fs_src` inside
-/// `pkg`.
-pub fn create_remotefs_filesystem<L>(
+/// Create a filesystem to access the content of the fuchsia directory available
+/// at `options.source` inside `root`.
+pub fn new_remotefs_in_root<L>(
     locked: &mut Locked<L>,
     kernel: &Kernel,
     root: &fio::DirectorySynchronousProxy,

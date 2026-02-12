@@ -12,7 +12,7 @@ use starnix_core::device::{DeviceMode, simple_device_ops};
 use starnix_core::fs::debugfs::debug_fs;
 use starnix_core::fs::devpts::{dev_pts_fs, tty_device_init};
 use starnix_core::fs::devtmpfs::dev_tmp_fs;
-use starnix_core::fs::fuchsia::{new_remote_fs, new_remote_vol};
+use starnix_core::fs::fuchsia::{RemoteBundle, new_remote_fs, new_remote_vol};
 use starnix_core::fs::sysfs::sys_fs;
 use starnix_core::fs::tmpfs::tmp_fs;
 use starnix_core::task::Kernel;
@@ -120,6 +120,7 @@ pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Ker
     registry.register(b"pstore".into(), pstore_fs);
     registry.register(b"remotefs".into(), new_remote_fs);
     registry.register(b"remotevol".into(), new_remote_vol);
+    registry.register(b"remote_bundle".into(), RemoteBundle::new_fs);
     registry.register(b"selinuxfs".into(), selinux_fs);
     registry.register(b"sysfs".into(), sys_fs);
     registry.register(b"tmpfs".into(), tmp_fs);

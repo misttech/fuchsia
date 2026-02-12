@@ -27,7 +27,7 @@ use starnix_core::device::remote_block_device::remote_block_device_init;
 use starnix_core::execution::{
     create_init_process, create_system_task, execute_task_with_prerun_result,
 };
-use starnix_core::fs::fuchsia::create_remotefs_filesystem;
+use starnix_core::fs::fuchsia::new_remotefs_in_root;
 use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::security;
 use starnix_core::task::container_namespace::ContainerNamespace;
@@ -892,7 +892,7 @@ fn create_fs_context(
             params: kernel.features.ns_mount_options("#container").context("#container options")?,
             ..Default::default()
         };
-        let container_remotefs = create_remotefs_filesystem(
+        let container_remotefs = new_remotefs_in_root(
             locked,
             kernel,
             pkg_dir_proxy,
