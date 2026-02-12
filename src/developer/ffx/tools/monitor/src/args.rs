@@ -54,6 +54,12 @@ pub struct StartCommand {
         description = "file to store the monitor log file (relative to log.dir or absolute)"
     )]
     pub log_file: Option<String>,
+
+    #[argh(
+        option,
+        description = "file to store the monitor log aggregations file (relative to log.dir or absolute)"
+    )]
+    pub aggregations_file: Option<String>,
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
