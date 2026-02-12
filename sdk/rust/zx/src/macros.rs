@@ -38,6 +38,11 @@ macro_rules! delegated_concrete_handle_based_impls {
             self.0.raw_handle()
         }
 
+        // TODO(https://fxbug.dev/465766514) remove with NullableHandle migration
+        pub fn is_invalid(&self) -> bool {
+            self.0.is_invalid()
+        }
+
         /// Return the raw handle's integer value without closing it when `self` is dropped.
         pub fn into_raw(self) -> $crate::sys::zx_handle_t {
             self.0.into_raw()

@@ -12,7 +12,6 @@ use fuchsia_sync::Mutex;
 use std::ops::{ControlFlow, Range};
 use syncio::{AllocateMode, zxio_fsverity_descriptor_t, zxio_node_attributes_t};
 use zerocopy::FromBytes;
-use zx::{self, HandleBased};
 
 fn zxio_attr_from_fidl_attributes(in_attr: &fio::NodeAttributes2) -> zxio_node_attributes_t {
     zxio_attr_from_fidl(&in_attr.mutable_attributes, &in_attr.immutable_attributes)
@@ -250,7 +249,7 @@ impl RemoteIo {
     /// is false, then it is still possible that a subsequent read would read no more i.e. the end
     /// of the file _might_ have been reached.  This might return fewer bytes than `max`.
     pub fn read_partial(&self, offset: u64, max: usize) -> Result<(Vec<u8>, bool), zx::Status> {
-        if self.stream.is_invalid_handle() {
+        if self.stream.is_invalid() {
             let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
             let max = std::cmp::min(max as u64, fio::MAX_TRANSFER_SIZE);
             let data = file_proxy
@@ -335,7 +334,7 @@ impl RemoteIo {
     /// Returns true if vectored operations are supported.
     pub fn supports_vectored(&self) -> bool {
         // We only support readv and writev if we have a stream.
-        !self.stream.is_invalid_handle()
+        !self.stream.is_invalid()
     }
 
     /// Reads into `iovecs` using a vectored read.  This is only supported with a valid stream.  See
@@ -349,7 +348,7 @@ impl RemoteIo {
         offset: u64,
         iovecs: &mut [zx::sys::zx_iovec_t],
     ) -> Result<usize, zx::Status> {
-        if self.stream.is_invalid_handle() {
+        if self.stream.is_invalid() {
             return Err(zx::Status::NOT_SUPPORTED);
         }
         // SAFETY: See `zx::Stream::readv`.
@@ -359,7 +358,7 @@ impl RemoteIo {
     /// Writes from `iovecs` using vectored write.  This is only supported with a valid stream.  See
     /// `supports_vectored` above.
     pub fn writev(&self, offset: u64, iovecs: &[zx::sys::zx_iovec_t]) -> Result<usize, zx::Status> {
-        if self.stream.is_invalid_handle() {
+        if self.stream.is_invalid() {
             return Err(zx::Status::NOT_SUPPORTED);
         }
         self.stream.writev_at(zx::StreamWriteOptions::empty(), offset, &iovecs)

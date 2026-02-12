@@ -2100,7 +2100,6 @@ mod test {
     use super::*;
 
     use anyhow::Error;
-    use fidl::HandleBased;
     use fidl::endpoints::Proxy as _;
     use fuchsia_fs::directory;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -2142,7 +2141,7 @@ mod test {
             fio::VmoFlags::READ | fio::VmoFlags::EXECUTE,
             zx::MonotonicInstant::INFINITE,
         )?;
-        assert!(!vmo.is_invalid_handle());
+        assert!(!vmo.is_invalid());
 
         let info = vmo.basic_info()?;
         assert_eq!(zx::Rights::READ, info.rights & zx::Rights::READ);
@@ -2171,7 +2170,7 @@ mod test {
             fio::VmoFlags::READ | fio::VmoFlags::EXECUTE,
             zx::MonotonicInstant::INFINITE,
         )?;
-        assert!(!vmo.is_invalid_handle());
+        assert!(!vmo.is_invalid());
 
         let info = vmo.basic_info()?;
         assert_eq!(zx::Rights::READ, info.rights & zx::Rights::READ);

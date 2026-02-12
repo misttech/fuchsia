@@ -10,7 +10,6 @@ use fidl_fuchsia_hardware_pty::{DeviceMarker, DeviceProxy, WindowSize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use test_util::assert_gt;
-use zx::{self as zx, HandleBased};
 use {fidl_fuchsia_hardware_pty as fpty, fuchsia_async as fasync};
 
 fn setup() -> DeviceProxy {
@@ -39,7 +38,7 @@ async fn get_event(conn: &DeviceProxy) -> Result<zx::EventPair, zx::Status> {
 async fn server_describe() {
     let server = setup();
     let event = get_event(&server).await.expect("failed to get event");
-    assert!(!event.is_invalid_handle());
+    assert!(!event.is_invalid());
 }
 
 #[fuchsia::test]
@@ -215,7 +214,7 @@ async fn client_describe() {
 
     let info = client.describe().await.unwrap();
     let event = info.event.unwrap();
-    assert!(!event.is_invalid_handle());
+    assert!(!event.is_invalid());
 }
 
 #[fuchsia::test]

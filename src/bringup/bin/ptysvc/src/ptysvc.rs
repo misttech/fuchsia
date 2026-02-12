@@ -783,7 +783,7 @@ mod tests {
     async fn test_server_describe() {
         let pty = Pty::new();
         let event = pty.server.remote_event.duplicate_handle(zx::Rights::BASIC).unwrap();
-        assert!(!event.is_invalid_handle());
+        assert!(!event.is_invalid());
     }
 
     #[fuchsia::test]

@@ -144,7 +144,7 @@ fn uuid_to_fuchsia_tee_uuid(uuid: &Uuid) -> fuchsia_tee::Uuid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::{Error, HandleBased as _, endpoints};
+    use fidl::{Error, endpoints};
     use fidl_fuchsia_hardware_tee::DeviceConnectorRequest;
     use fidl_fuchsia_tee::ApplicationMarker;
     use fidl_fuchsia_tee_manager::ProviderProxy;
@@ -206,7 +206,7 @@ mod tests {
                 } => {
                     assert_eq!(application_uuid, app_uuid);
                     assert!(service_provider.is_some());
-                    assert!(!application_request.channel().is_invalid_handle());
+                    assert!(!application_request.channel().is_invalid());
 
                     let provider_proxy = service_provider.unwrap().into_proxy();
 
@@ -249,7 +249,7 @@ mod tests {
                     device_info_request,
                     control_handle: _,
                 } => {
-                    assert!(!device_info_request.channel().is_invalid_handle());
+                    assert!(!device_info_request.channel().is_invalid());
                     device_info_request
                         .close_with_epitaph(Status::OK)
                         .expect("Unable to close device_info_request");

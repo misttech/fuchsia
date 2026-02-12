@@ -460,7 +460,6 @@ mod tests {
     use vfs::ToObjectRequest;
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::{VmoFile, read_only};
-    use zx::{self as zx, HandleBased as _};
 
     const DATA_FILE_CONTENTS: &str = "Hello World!\n";
 
@@ -745,7 +744,7 @@ mod tests {
         let stream = extract_stream_from_on_open_event(event)
             .expect("Not a file")
             .expect("Stream not present");
-        assert!(!stream.is_invalid_handle());
+        assert!(!stream.is_invalid());
     }
 
     #[test]
@@ -794,7 +793,7 @@ mod tests {
         let stream = extract_stream_from_on_open_event(event)
             .expect("Not a file")
             .expect("Stream not present");
-        assert!(!stream.is_invalid_handle());
+        assert!(!stream.is_invalid());
     }
 
     #[test]

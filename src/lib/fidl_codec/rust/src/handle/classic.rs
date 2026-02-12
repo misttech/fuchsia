@@ -20,8 +20,6 @@ impl super::CodecHandle for NullableHandle {
 impl super::CodecChannel for Channel {
     type Handle = NullableHandle;
     fn is_invalid(&self) -> bool {
-        #[cfg(not(target_os = "fuchsia"))]
-        use fidl::AsHandleRef;
         self.as_handle_ref().is_invalid()
     }
 }

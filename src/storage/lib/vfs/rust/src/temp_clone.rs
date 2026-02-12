@@ -47,7 +47,7 @@ impl<T: HandleBased> TempClonable<T> {
     ///
     /// Panics if the handle is invalid.
     pub fn temp_clone(&self) -> TempClone<T> {
-        assert!(!self.is_invalid_handle());
+        assert!(!self.as_handle_ref().is_invalid());
         let mut clones = clones().lock();
         let raw_handle = self.0.as_handle_ref().raw_handle();
         TempClone {

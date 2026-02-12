@@ -8,7 +8,6 @@ use diagnostics_assertions::{
 };
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
-use fidl::HandleBased;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_test_systemactivitygovernor::RealmOptions;
@@ -85,7 +84,7 @@ async fn test_activity_governor_returns_expected_power_elements() -> Result<()> 
 
     let aa_element = power_elements.application_activity.unwrap();
     let aa_assertive_token = aa_element.assertive_dependency_token.unwrap();
-    assert!(!aa_assertive_token.is_invalid_handle());
+    assert!(!aa_assertive_token.is_invalid());
 
     Ok(())
 }

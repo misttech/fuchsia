@@ -5,7 +5,6 @@
 use crate::ProtocolsExt;
 use crate::execution_scope::ExecutionScope;
 use crate::node::{self, Node};
-use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
 use futures::FutureExt;
@@ -43,7 +42,7 @@ impl ObjectRequest {
         create_attributes: Option<&fio::MutableNodeAttributes>,
         truncate: bool,
     ) -> Self {
-        assert!(!object_request.is_invalid_handle());
+        assert!(!object_request.as_handle_ref().is_invalid());
         let create_attributes = create_attributes.map(|a| Box::new(a.clone()));
         Self { object_request, what_to_send, attributes, create_attributes, truncate }
     }
@@ -145,7 +144,7 @@ impl ObjectRequest {
 
     /// Terminates the object request with the given status.
     pub fn shutdown(self, status: Status) {
-        if self.object_request.is_invalid_handle() {
+        if self.object_request.as_handle_ref().is_invalid() {
             return;
         }
         if let ObjectRequestSend::OnOpen = self.what_to_send {
@@ -200,7 +199,7 @@ impl ObjectRequest {
 
     /// Take the ObjectRequest.  The caller is responsible for sending errors.
     pub fn take(&mut self) -> ObjectRequest {
-        assert!(!self.object_request.is_invalid_handle());
+        assert!(!self.object_request.as_handle_ref().is_invalid());
         Self {
             object_request: std::mem::replace(
                 &mut self.object_request,
@@ -227,7 +226,7 @@ impl ObjectRequest {
         C: ConnectionCreator<N>,
         N: Node,
     {
-        assert!(!self.object_request.is_invalid_handle());
+        assert!(!self.object_request.as_handle_ref().is_invalid());
         if protocols.is_node() {
             node::Connection::create(scope, node, protocols, self).await
         } else {
@@ -252,7 +251,7 @@ impl ObjectRequest {
         C: ConnectionCreator<N>,
         N: Node,
     {
-        assert!(!self.object_request.is_invalid_handle());
+        assert!(!self.object_request.as_handle_ref().is_invalid());
         if protocols.is_node() {
             self.create_connection_sync_or_spawn::<node::Connection<N>, N>(scope, node, protocols);
         } else {

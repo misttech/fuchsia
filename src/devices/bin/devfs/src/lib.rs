@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context};
+use anyhow::{Context, bail, format_err};
+use fidl::AsHandleRef;
 use fidl::endpoints::ServerEnd;
-use fidl::HandleBased;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
@@ -20,10 +20,10 @@ pub async fn main(
     directory_request: ServerEnd<fio::DirectoryMarker>,
     lifecycle: ServerEnd<fpl::LifecycleMarker>,
 ) -> Result<(), anyhow::Error> {
-    if lifecycle.is_invalid_handle() {
+    if lifecycle.as_handle_ref().is_invalid() {
         bail!("No valid handle found for lifecycle events");
     }
-    if directory_request.is_invalid_handle() {
+    if directory_request.as_handle_ref().is_invalid() {
         bail!("No valid handle found for outgoing directory");
     }
     let Some(svc) = ns_entries.iter().find(|e| e.path == "/svc") else {

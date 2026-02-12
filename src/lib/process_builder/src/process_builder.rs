@@ -11,7 +11,7 @@ use futures::prelude::*;
 use std::ffi::{CStr, CString};
 use std::{iter, mem};
 use thiserror::Error;
-use zx::HandleBased;
+use zx::{AsHandleRef, HandleBased};
 use {fidl_fuchsia_io as fio, fidl_fuchsia_ldsvc as fldsvc};
 
 /// Error type returned by ProcessBuilder methods.
@@ -195,10 +195,10 @@ impl ProcessBuilder {
         executable: zx::Vmo,
         system_vdso_vmo: zx::Vmo,
     ) -> Result<ProcessBuilder, ProcessBuilderError> {
-        if job.is_invalid_handle() {
+        if job.is_invalid() {
             return Err(ProcessBuilderError::BadHandle("Invalid job handle"));
         }
-        if executable.is_invalid_handle() {
+        if executable.is_invalid() {
             return Err(ProcessBuilderError::BadHandle("Invalid executable handle"));
         }
 
@@ -252,7 +252,7 @@ impl ProcessBuilder {
         &mut self,
         ldsvc: ClientEnd<fldsvc::LoaderMarker>,
     ) -> Result<(), ProcessBuilderError> {
-        if ldsvc.is_invalid_handle() {
+        if ldsvc.as_handle_ref().is_invalid() {
             return Err(ProcessBuilderError::BadHandle("Invalid loader service handle"));
         }
         self.ldsvc = Some(ldsvc.into_proxy());
@@ -396,7 +396,7 @@ impl ProcessBuilder {
         }
 
         for entry in &entries {
-            if entry.directory.is_invalid_handle() {
+            if entry.directory.as_handle_ref().is_invalid() {
                 return Err(ProcessBuilderError::BadHandle("Invalid handle in namespace entry"));
             }
         }

@@ -2071,7 +2071,7 @@ impl MemoryManagerState {
         current_task: &CurrentTask,
         op: impl FnOnce(&[zx::MapInfo]) -> R,
     ) -> R {
-        if self.user_vmar.is_invalid_handle() {
+        if self.user_vmar.is_invalid() {
             return op(&[]);
         };
 
@@ -3980,8 +3980,7 @@ impl MemoryManager {
     }
 
     pub fn get_restricted_vmar_info(&self) -> Option<VmarInfo> {
-        use zx::HandleBased;
-        if self.root_vmar.is_invalid_handle() {
+        if self.root_vmar.is_invalid() {
             return None;
         }
         Some(VmarInfo { base: RESTRICTED_ASPACE_BASE, len: RESTRICTED_ASPACE_SIZE })

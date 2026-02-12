@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, bail, format_err};
-use fidl::HandleBased;
+use fidl::AsHandleRef;
 use fidl::endpoints::ServerEnd;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjTrait};
@@ -153,7 +153,7 @@ pub async fn main(
     program: Option<fdata::Dictionary>,
 ) -> Result<()> {
     drop(lifecycle);
-    if directory_request.is_invalid_handle() {
+    if directory_request.as_handle_ref().is_invalid() {
         bail!("No valid handle found for outgoing directory");
     }
     let Some(svc) = ns_entries.into_iter().find(|e| e.path == "/svc") else {

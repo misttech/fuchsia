@@ -13,6 +13,7 @@ use fuchsia_component_test::{
 };
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
+use zx::AsHandleRef;
 use {
     fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_test as ftest,
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
@@ -279,7 +280,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
 
         let boot_dir = Arc::new(match args.boot {
             Some(boot_dir) => {
-                if !boot_dir.is_invalid_handle() {
+                if !boot_dir.as_handle_ref().is_invalid() {
                     Some(boot_dir.into_proxy())
                 } else {
                     None

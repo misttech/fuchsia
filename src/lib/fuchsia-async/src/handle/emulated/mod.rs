@@ -63,6 +63,11 @@ impl<'a> HandleRef<'a> {
         Self(INVALID_HANDLE, std::marker::PhantomData)
     }
 
+    /// Return true if this handle is invalid
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE
+    }
+
     /// Returns the integer value of this handle.
     pub fn raw_handle(&self) -> u32 {
         self.0
@@ -178,11 +183,6 @@ pub trait AsHandleRef {
     /// Get a reference to the handle.
     fn as_handle_ref<'a>(&'a self) -> HandleRef<'a>;
 
-    /// Return true if this handle is invalid
-    fn is_invalid(&self) -> bool {
-        self.as_handle_ref().0 == INVALID_HANDLE
-    }
-
     /// Interpret the reference as a raw handle (an integer type). Two distinct
     /// handles will have different raw values (so it can perhaps be used as a
     /// key in a data structure).
@@ -215,7 +215,7 @@ pub trait Peered: HandleBased {
     /// [zx_object_signal_peer](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal.md)
     /// syscall.
     fn signal_peer(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        if self.is_invalid() {
+        if self.as_handle_ref().is_invalid() {
             return Err(zx_status::Status::BAD_HANDLE);
         }
 
@@ -238,7 +238,7 @@ pub trait Peered: HandleBased {
 pub trait EmulatedHandleRef: AsHandleRef {
     /// Return the type of a handle.
     fn object_type(&self) -> ObjectType {
-        if self.is_invalid() {
+        if self.as_handle_ref().is_invalid() {
             ObjectType::NONE
         } else {
             let ty = get_hdl_type(self.raw_handle()).expect("Bad handle");
@@ -248,7 +248,7 @@ pub trait EmulatedHandleRef: AsHandleRef {
 
     /// Return a reference to the other end of a handle.
     fn related<'a>(&'a self) -> HandleRef<'a> {
-        if self.is_invalid() {
+        if self.as_handle_ref().is_invalid() {
             HandleRef(INVALID_HANDLE, std::marker::PhantomData)
         } else {
             let table = HANDLE_TABLE.lock();
@@ -267,7 +267,7 @@ pub trait EmulatedHandleRef: AsHandleRef {
 
     /// Return a "koid" like value.
     fn koid_pair(&self) -> (u64, u64) {
-        if self.is_invalid() {
+        if self.as_handle_ref().is_invalid() {
             (INVALID_KOID.0, INVALID_KOID.0)
         } else {
             with_handle(self.as_handle_ref().0, |mut h, side| h.as_hdl_data().koids(side))
@@ -278,7 +278,7 @@ pub trait EmulatedHandleRef: AsHandleRef {
     /// but does not exist in the table. This should not normally return true;
     /// when it does, dropping the handle will cause a panic.
     fn is_dangling(&self) -> bool {
-        if self.is_invalid() {
+        if self.as_handle_ref().is_invalid() {
             false
         } else {
             !HANDLE_TABLE.lock().contains_key(&self.raw_handle())
@@ -320,11 +320,6 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
     /// The caller takes ownership over the raw handle, and must close it.
     fn into_raw(self) -> u32 {
         self.into_handle().raw_take()
-    }
-
-    /// Returns whether this is an invalid handle.
-    fn is_invalid_handle(&self) -> bool {
-        self.is_invalid()
     }
 }
 
@@ -480,6 +475,11 @@ impl Drop for Channel {
 }
 
 impl Channel {
+    /// Return true if this handle is invalid
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE
+    }
+
     /// Create a channel, resulting in a pair of `Channel` objects representing both
     /// sides of the channel. Messages written into one maybe read from the opposite.
     pub fn create() -> (Channel, Channel) {
@@ -828,6 +828,11 @@ pub struct SocketInfo {
 }
 
 impl Socket {
+    /// Return true if this handle is invalid
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE
+    }
+
     /// Create a streaming socket.
     pub fn create_stream() -> (Socket, Socket) {
         let rights = Rights::SOCKET_DEFAULT;
@@ -1062,6 +1067,11 @@ impl Drop for EventPair {
 }
 
 impl EventPair {
+    /// Return true if this handle is invalid
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE
+    }
+
     /// Create an event pair.
     pub fn create() -> (Self, Self) {
         Self::try_create().unwrap()
@@ -1117,6 +1127,11 @@ impl Drop for Event {
 }
 
 impl Event {
+    /// Return true if this handle is invalid
+    pub fn is_invalid(&self) -> bool {
+        self.0 == INVALID_HANDLE
+    }
+
     /// Create an event.
     pub fn create() -> Event {
         Event(new_handle(HdlType::Event, Rights::EVENT_DEFAULT).0)

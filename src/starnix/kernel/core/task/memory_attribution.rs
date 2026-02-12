@@ -12,7 +12,6 @@ use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_
 use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::{Arc, Weak, mpsc};
-use zx::HandleBased;
 
 use crate::task::{Kernel, ThreadGroup};
 
@@ -319,7 +318,7 @@ fn scan_processes(
 }
 
 fn get_thread_group_identifier(thread_group: &ThreadGroup) -> String {
-    let name = match thread_group.process.is_invalid_handle() {
+    let name = match thread_group.process.is_invalid() {
         // The system task has an invalid Zircon process handle.
         true => zx::Name::new_lossy("[system task]"),
         false => thread_group.process.get_name().unwrap_or_default(),
