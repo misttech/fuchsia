@@ -106,7 +106,7 @@ impl<O: OutputSink> FuzzCtl<O> {
     async fn run_libfuzzer(&self, cmd: &RunLibFuzzerSubcommand) -> Result<()> {
         let fuzzer_dir = self.get_fuzzer_dir(&cmd.url).context("failed to get fuzzer directory")?;
         let controller = self
-            .get_controller(&cmd.url, &cmd.forward)
+            .get_controller(&cmd.url, &cmd.forward.0)
             .await
             .context("failed to get fuzzer controller")?;
         let mut workflow =
@@ -119,7 +119,7 @@ impl<O: OutputSink> FuzzCtl<O> {
     async fn resume_libfuzzer(&self, cmd: &ResumeLibFuzzerSubcommand) -> Result<()> {
         let fuzzer_dir = self.get_fuzzer_dir(&cmd.url).context("failed to get fuzzer directory")?;
         let controller = self
-            .get_controller(&cmd.url, &cmd.forward)
+            .get_controller(&cmd.url, &cmd.forward.0)
             .await
             .context("failed to get fuzzer controller")?;
         let workflow =

@@ -58,8 +58,12 @@ pub struct ResetSubcommand {
 pub struct RunLibFuzzerSubcommand {
     /// comma-separated list of streams to forward, made up of the following:
     ///  "stdout", "stderr", "syslog", and/or "all"
-    #[argh(option, from_str_fn(parse_forward), default = "vec![fuzz::TestOutput::Stderr]")]
-    pub forward: Vec<fuzz::TestOutput>,
+    #[argh(
+        option,
+        from_str_fn(parse_forward),
+        default = "ForwardConfig(vec![fuzz::TestOutput::Stderr])"
+    )]
+    pub forward: ForwardConfig,
 
     /// directory used to store fuzzer artifacts
     #[argh(option)]
@@ -158,8 +162,12 @@ pub struct RunLibFuzzerSubcommand {
 pub struct ResumeLibFuzzerSubcommand {
     /// comma-separated list of streams to forward, made up of the following:
     ///  "stdout", "stderr", "syslog", and/or "all"
-    #[argh(option, from_str_fn(parse_forward), default = "vec![fuzz::TestOutput::Stderr]")]
-    pub forward: Vec<fuzz::TestOutput>,
+    #[argh(
+        option,
+        from_str_fn(parse_forward),
+        default = "ForwardConfig(vec![fuzz::TestOutput::Stderr])"
+    )]
+    pub forward: ForwardConfig,
 
     /// save the artifact this location if one is produced
     #[argh(option)]
@@ -170,7 +178,10 @@ pub struct ResumeLibFuzzerSubcommand {
     pub url: Url,
 }
 
-fn parse_forward(value: &str) -> Result<Vec<fuzz::TestOutput>, String> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct ForwardConfig(pub Vec<fuzz::TestOutput>);
+
+fn parse_forward(value: &str) -> Result<ForwardConfig, String> {
     let mut outputs = Vec::new();
     for token in value.split(',') {
         match token {
@@ -185,7 +196,7 @@ fn parse_forward(value: &str) -> Result<Vec<fuzz::TestOutput>, String> {
             unknown => return Err(format!("cannot forward: unknown output: {}", unknown)),
         };
     }
-    Ok(outputs)
+    Ok(ForwardConfig(outputs))
 }
 
 fn parse_switch(value: &str) -> Result<bool, String> {
