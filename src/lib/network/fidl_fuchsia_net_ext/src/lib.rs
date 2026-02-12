@@ -643,7 +643,7 @@ impl From<SocketAddress> for fidl::SocketAddress {
 }
 
 /// This struct represents all the marks the netstack supports.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Marks {
     /// The mark for the MARK_1 domain.
     pub mark_1: Option<u32>,

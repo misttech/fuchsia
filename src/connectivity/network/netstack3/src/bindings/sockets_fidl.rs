@@ -10,14 +10,14 @@ use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_net_sockets::{self as fnet_sockets};
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
 use futures::TryStreamExt;
-use net_types::ip::{Ip, IpAddress as _, Ipv4, Ipv6};
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use netstack3_core::socket::IpSocketMatcher;
 use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use netstack3_core::{Instant as _, MatcherBindingsTypes};
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
-    fidl_fuchsia_net_tcp as fnet_tcp, fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
+    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
+    fidl_fuchsia_net_udp as fnet_udp, fuchsia_async as fasync,
 };
 
 use crate::bindings::time::StackTime;
@@ -59,7 +59,7 @@ fn iterate_ip(
     ctx: &mut Ctx,
     extensions: fnet_sockets::Extensions,
     matchers: Vec<fnet_sockets::IpSocketMatcher>,
-) -> Result<Vec<fnet_sockets::IpSocketState>, fnet_sockets::InvalidMatcher> {
+) -> Result<Vec<fnet_sockets_ext::IpSocketState>, fnet_sockets::InvalidMatcher> {
     let matchers = match convert_matchers(matchers) {
         Ok(matchers) => matchers,
         Err((err, index)) => {
@@ -89,8 +89,9 @@ fn iterate_ip(
 
 async fn serve_ipiterator(
     mut stream: fnet_sockets::IpIteratorRequestStream,
-    results: Vec<fnet_sockets::IpSocketState>,
+    results: Vec<fnet_sockets_ext::IpSocketState>,
 ) -> Result<(), fidl::Error> {
+    let results: Vec<_> = results.into_iter().map(|s| s.into()).collect();
     let mut iter = results.chunks(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize).peekable();
 
     // TODO(https://fxbug.dev/452354359): Close the connection if the reader
@@ -218,31 +219,34 @@ impl TryFromFidl<fnet_sockets_ext::IpSocketMatcher>
     }
 }
 
-impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for UdpSocketDiagnostics<I> {
+impl<I: Ip> TryIntoFidl<fnet_sockets_ext::IpSocketState> for UdpSocketDiagnostics<I> {
     type Error = Never;
 
-    fn try_into_fidl(self) -> Result<fnet_sockets::IpSocketState, Self::Error> {
+    fn try_into_fidl(self) -> Result<fnet_sockets_ext::IpSocketState, Self::Error> {
         let UdpSocketDiagnostics { state, cookie, marks } = self;
 
-        Ok(fnet_sockets::IpSocketState {
-            family: Some(I::map_ip_in((), |()| fnet::IpVersion::V4, |()| fnet::IpVersion::V6)),
-            src_addr: state.src_addr().map(|addr| addr.to_ip_addr().into_fidl()),
-            dst_addr: state.dst_addr().map(|addr| addr.to_ip_addr().into_fidl()),
-            cookie: Some(cookie.export_value()),
-            marks: Some(marks.into_fidl()),
-            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
-                fnet_sockets::IpSocketUdpState {
+        let state_specific = fnet_sockets_ext::IpSocketStateSpecific {
+            src_addr: state.src_addr(),
+            dst_addr: state.dst_addr(),
+            cookie: cookie.export_value(),
+            marks: marks.into_fidl(),
+            transport: fnet_sockets_ext::IpSocketTransportState::Udp(
+                fnet_sockets_ext::IpSocketUdpState {
                     src_port: state.src_port().map(|p| p.get()),
                     dst_port: state.dst_port(),
-                    state: Some(match state {
+                    state: match state {
                         UdpSocketDiagnosticTuple::Bound { .. } => fnet_udp::State::Bound,
                         UdpSocketDiagnosticTuple::Connected { .. } => fnet_udp::State::Connected,
-                    }),
-                    __source_breaking: fidl::marker::SourceBreaking,
+                    },
                 },
-            )),
-            __source_breaking: fidl::marker::SourceBreaking,
-        })
+            ),
+        };
+
+        Ok(I::map_ip_in(
+            state_specific,
+            |state| fnet_sockets_ext::IpSocketState::V4(state),
+            |state| fnet_sockets_ext::IpSocketState::V6(state),
+        ))
     }
 }
 
@@ -268,6 +272,7 @@ impl TryIntoFidl<fnet_tcp::State> for TcpSocketState {
 
 impl TryIntoFidl<fnet_tcp::CongestionControlState> for CongestionControlState {
     type Error = Never;
+
     fn try_into_fidl(self) -> Result<fnet_tcp::CongestionControlState, Self::Error> {
         Ok(match self {
             CongestionControlState::Open => fnet_tcp::CongestionControlState::Open,
@@ -281,9 +286,9 @@ impl TryIntoFidl<fnet_tcp::CongestionControlState> for CongestionControlState {
     }
 }
 
-impl TryIntoFidl<fnet_tcp::Info> for TcpSocketInfo<StackTime> {
+impl TryIntoFidl<fnet_sockets_ext::TcpInfo> for TcpSocketInfo<StackTime> {
     type Error = Never;
-    fn try_into_fidl(self) -> Result<fnet_tcp::Info, Self::Error> {
+    fn try_into_fidl(self) -> Result<fnet_sockets_ext::TcpInfo, Self::Error> {
         let TcpSocketInfo {
             state,
             ca_state,
@@ -301,53 +306,55 @@ impl TryIntoFidl<fnet_tcp::Info> for TcpSocketInfo<StackTime> {
 
         let now = StackTime::now();
 
-        Ok(fnet_tcp::Info {
-            state: Some(state.into_fidl()),
-            ca_state: Some(ca_state.try_into_fidl()?),
+        Ok(fnet_sockets_ext::TcpInfo {
+            state: state.into_fidl(),
+            ca_state: ca_state.into_fidl(),
             rto_usec: rto.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
             rtt_usec: rtt.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
             rtt_var_usec: rtt_var.map(|d| d.as_micros().try_into().unwrap_or(u32::MAX)),
-            snd_ssthresh: Some(snd_ssthresh),
-            snd_cwnd: Some(snd_cwnd),
-            tcpi_total_retrans: Some(retransmits.try_into().unwrap_or(u32::MAX)),
+            snd_ssthresh: snd_ssthresh,
+            snd_cwnd: snd_cwnd,
+            tcpi_total_retrans: retransmits.try_into().unwrap_or(u32::MAX),
             tcpi_last_ack_recv_msec: last_ack_recv.and_then(|i| {
                 now.checked_duration_since(i).map(|d| d.as_millis().try_into().unwrap_or(u32::MAX))
             }),
-            tcpi_segs_out: Some(segs_out),
-            tcpi_segs_in: Some(segs_in),
+            tcpi_segs_out: segs_out,
+            tcpi_segs_in: segs_in,
             // TODO(https://fxbug.dev/404910001): Netstack2 only reports
             // reordering when using RACK, which Netstack3 doesn't support.
-            reorder_seen: None,
+            reorder_seen: false,
             tcpi_last_data_sent_msec: last_data_sent.and_then(|i| {
                 now.checked_duration_since(i).map(|d| d.as_millis().try_into().unwrap_or(u32::MAX))
             }),
-            __source_breaking: fidl::marker::SourceBreaking,
         })
     }
 }
 
-impl<I: Ip> TryIntoFidl<fnet_sockets::IpSocketState> for TcpSocketDiagnostics<I, StackTime> {
+impl<I: Ip> TryIntoFidl<fnet_sockets_ext::IpSocketState> for TcpSocketDiagnostics<I, StackTime> {
     type Error = Never;
 
-    fn try_into_fidl(self) -> Result<fnet_sockets::IpSocketState, Self::Error> {
+    fn try_into_fidl(self) -> Result<fnet_sockets_ext::IpSocketState, Self::Error> {
         let TcpSocketDiagnostics { tuple, state_machine, cookie, marks, tcp_info } = self;
 
-        Ok(fnet_sockets::IpSocketState {
-            family: Some(I::map_ip_in((), |()| fnet::IpVersion::V4, |()| fnet::IpVersion::V6)),
-            src_addr: tuple.src_addr().map(|addr| addr.to_ip_addr().into_fidl()),
-            dst_addr: tuple.dst_addr().map(|addr| addr.to_ip_addr().into_fidl()),
-            cookie: Some(cookie.export_value()),
-            marks: Some(marks.into_fidl()),
-            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
-                fnet_sockets::IpSocketTcpState {
+        let state_specific = fnet_sockets_ext::IpSocketStateSpecific {
+            src_addr: tuple.src_addr(),
+            dst_addr: tuple.dst_addr(),
+            cookie: cookie.export_value(),
+            marks: marks.into_fidl(),
+            transport: fnet_sockets_ext::IpSocketTransportState::Tcp(
+                fnet_sockets_ext::IpSocketTcpState {
                     src_port: tuple.src_port().map(|p| p.get()),
                     dst_port: tuple.dst_port().map(|p| p.get()),
-                    state: Some(state_machine.into_fidl()),
+                    state: state_machine.into_fidl(),
                     tcp_info: tcp_info.map(|i| i.into_fidl()),
-                    __source_breaking: fidl::marker::SourceBreaking,
                 },
-            )),
-            __source_breaking: fidl::marker::SourceBreaking,
-        })
+            ),
+        };
+
+        Ok(I::map_ip_in(
+            state_specific,
+            |state| fnet_sockets_ext::IpSocketState::V4(state),
+            |state| fnet_sockets_ext::IpSocketState::V6(state),
+        ))
     }
 }

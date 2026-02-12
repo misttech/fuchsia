@@ -12,13 +12,14 @@
     clippy::precedence
 )]
 
-use fidl_fuchsia_net_ext::IntoExt;
+use fidl_fuchsia_net_ext::{IntoExt, Marks};
 use futures::{Stream, TryStreamExt as _};
-use net_types::ip;
+use net_types::ip::{self, GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use thiserror::Error;
 use {
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_net_tcp as fnet_tcp, fidl_fuchsia_net_udp as fnet_udp,
 };
 
 /// An extension type for [`fnet_sockets::IpSocketMatcher`].
@@ -124,6 +125,410 @@ impl From<IpSocketMatcher> for fnet_sockets::IpSocketMatcher {
     }
 }
 
+/// Extension type for [`fnet_sockets::IpSocketState`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum IpSocketState {
+    /// IPv4 socket state.
+    V4(IpSocketStateSpecific<Ipv4>),
+    /// IPv6 socket state.
+    V6(IpSocketStateSpecific<Ipv6>),
+}
+
+/// Error type for [`IpSocketState`] conversion.
+#[derive(Debug, Error, PartialEq)]
+pub enum IpSocketStateError {
+    /// Missing a required field.
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+    /// The socket address version does not match the expected version.
+    #[error("version mismatch")]
+    VersionMismatch,
+    /// The transport state is invalid.
+    #[error("transport state error: {0}")]
+    Transport(IpSocketTransportStateError),
+}
+
+impl TryFrom<fnet_sockets::IpSocketState> for IpSocketState {
+    type Error = IpSocketStateError;
+
+    fn try_from(value: fnet_sockets::IpSocketState) -> Result<Self, Self::Error> {
+        fn convert_address<I: Ip>(addr: fnet::IpAddress) -> Result<I::Addr, IpSocketStateError> {
+            I::map_ip::<_, Option<I::Addr>>(
+                IpInvariant(addr.into_ext()),
+                |IpInvariant(addr)| match addr {
+                    net_types::ip::IpAddr::V4(addr) => Some(addr),
+                    _ => None,
+                },
+                |IpInvariant(addr)| match addr {
+                    net_types::ip::IpAddr::V6(addr) => Some(addr),
+                    _ => None,
+                },
+            )
+            .ok_or(IpSocketStateError::VersionMismatch)
+        }
+
+        fn to_ip_socket_specific<I: Ip>(
+            src_addr: Option<fnet::IpAddress>,
+            dst_addr: Option<fnet::IpAddress>,
+            cookie: u64,
+            marks: fnet::Marks,
+            transport: fnet_sockets::IpSocketTransportState,
+        ) -> Result<IpSocketStateSpecific<I>, IpSocketStateError> {
+            let src_addr: Option<I::Addr> = src_addr.map(convert_address::<I>).transpose()?;
+            let dst_addr: Option<I::Addr> = dst_addr.map(convert_address::<I>).transpose()?;
+
+            Ok(IpSocketStateSpecific {
+                src_addr,
+                dst_addr,
+                cookie,
+                marks: marks.into(),
+                transport: transport.try_into().map_err(IpSocketStateError::Transport)?,
+            })
+        }
+
+        let fnet_sockets::IpSocketState {
+            family,
+            src_addr,
+            dst_addr,
+            cookie,
+            marks,
+            transport,
+            __source_breaking,
+        } = value;
+
+        let family = family.ok_or(IpSocketStateError::MissingField("family"))?;
+        let cookie = cookie.ok_or(IpSocketStateError::MissingField("cookie"))?;
+        let marks = marks.ok_or(IpSocketStateError::MissingField("marks"))?;
+        let transport = transport.ok_or(IpSocketStateError::MissingField("transport"))?;
+
+        match family {
+            fnet::IpVersion::V4 => Ok(IpSocketState::V4(to_ip_socket_specific(
+                src_addr, dst_addr, cookie, marks, transport,
+            )?)),
+            fnet::IpVersion::V6 => Ok(IpSocketState::V6(to_ip_socket_specific(
+                src_addr, dst_addr, cookie, marks, transport,
+            )?)),
+        }
+    }
+}
+
+impl From<IpSocketState> for fnet_sockets::IpSocketState {
+    fn from(state: IpSocketState) -> Self {
+        match state {
+            IpSocketState::V4(state) => state.into(),
+            IpSocketState::V6(state) => state.into(),
+        }
+    }
+}
+
+/// Lowest-level socket state information that ensures all fields are for the
+/// same IP version.
+#[derive(Debug, PartialEq, Eq, Clone, GenericOverIp)]
+#[generic_over_ip(I, Ip)]
+pub struct IpSocketStateSpecific<I: Ip> {
+    /// The source address of the socket.
+    pub src_addr: Option<I::Addr>,
+    /// The destination address of the socket.
+    pub dst_addr: Option<I::Addr>,
+    /// The cookie of the socket.
+    pub cookie: u64,
+    /// The marks of the socket.
+    pub marks: Marks,
+    /// The transport state of the socket.
+    pub transport: IpSocketTransportState,
+}
+
+impl<I: Ip> From<IpSocketStateSpecific<I>> for fnet_sockets::IpSocketState {
+    fn from(value: IpSocketStateSpecific<I>) -> Self {
+        let IpSocketStateSpecific { src_addr, dst_addr, cookie, marks, transport } = value;
+
+        fnet_sockets::IpSocketState {
+            family: Some(I::VERSION.into_ext()),
+            src_addr: src_addr.map(|a| net_types::ip::IpAddr::from(a).into_ext()),
+            dst_addr: dst_addr.map(|a| net_types::ip::IpAddr::from(a).into_ext()),
+            cookie: Some(cookie),
+            marks: Some(marks.into()),
+            transport: Some(transport.into()),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
+/// Extension type for [`fnet_sockets::IpSocketTransportState`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum IpSocketTransportState {
+    /// TCP socket state.
+    Tcp(IpSocketTcpState),
+    /// UDP socket state.
+    Udp(IpSocketUdpState),
+}
+
+/// Error type for [`IpSocketTransportState`] conversion.
+#[derive(Debug, PartialEq, Error)]
+pub enum IpSocketTransportStateError {
+    /// Error converting a TCP socket state.
+    #[error("tcp validation error: {0}")]
+    Tcp(IpSocketTcpStateError),
+    /// Error converting a UDP socket state.
+    #[error("udp validation error: {0}")]
+    Udp(IpSocketUdpStateError),
+    /// A union type was unknown.
+    #[error("got unexpected union variant: {0}")]
+    UnknownUnionVariant(u64),
+}
+
+impl TryFrom<fnet_sockets::IpSocketTransportState> for IpSocketTransportState {
+    type Error = IpSocketTransportStateError;
+
+    fn try_from(value: fnet_sockets::IpSocketTransportState) -> Result<Self, Self::Error> {
+        match value {
+            fnet_sockets::IpSocketTransportState::Tcp(tcp) => Ok(IpSocketTransportState::Tcp(
+                tcp.try_into().map_err(IpSocketTransportStateError::Tcp)?,
+            )),
+            fnet_sockets::IpSocketTransportState::Udp(udp) => Ok(IpSocketTransportState::Udp(
+                udp.try_into().map_err(IpSocketTransportStateError::Udp)?,
+            )),
+            fnet_sockets::IpSocketTransportState::__SourceBreaking { unknown_ordinal } => {
+                Err(IpSocketTransportStateError::UnknownUnionVariant(unknown_ordinal))
+            }
+        }
+    }
+}
+
+impl From<IpSocketTransportState> for fnet_sockets::IpSocketTransportState {
+    fn from(state: IpSocketTransportState) -> Self {
+        match state {
+            IpSocketTransportState::Tcp(tcp) => {
+                fnet_sockets::IpSocketTransportState::Tcp(tcp.into())
+            }
+            IpSocketTransportState::Udp(udp) => {
+                fnet_sockets::IpSocketTransportState::Udp(udp.into())
+            }
+        }
+    }
+}
+
+/// Extension type for [`fnet_sockets::IpSocketTcpState`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct IpSocketTcpState {
+    /// The source port of the socket.
+    pub src_port: Option<u16>,
+    /// The destination port of the socket.
+    pub dst_port: Option<u16>,
+    /// The TCP state machine state for the socket.
+    pub state: fnet_tcp::State,
+    /// Extended TCP information if the TCP_INFO extension was requested.
+    pub tcp_info: Option<TcpInfo>,
+}
+
+/// Error type for [`IpSocketTcpState`] conversion.
+#[derive(Debug, PartialEq, Error)]
+pub enum IpSocketTcpStateError {
+    /// Missing a required field.
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+    /// Error converting a [`TcpInfo`].
+    #[error("tcp info error: {0}")]
+    TcpInfo(TcpInfoError),
+}
+
+impl TryFrom<fnet_sockets::IpSocketTcpState> for IpSocketTcpState {
+    type Error = IpSocketTcpStateError;
+
+    fn try_from(value: fnet_sockets::IpSocketTcpState) -> Result<Self, Self::Error> {
+        let fnet_sockets::IpSocketTcpState {
+            src_port,
+            dst_port,
+            state,
+            tcp_info,
+            __source_breaking,
+        } = value;
+
+        let state = state.ok_or(IpSocketTcpStateError::MissingField("state"))?;
+
+        Ok(IpSocketTcpState {
+            src_port,
+            dst_port,
+            state,
+            tcp_info: tcp_info
+                .map(|t| t.try_into())
+                .transpose()
+                .map_err(|e| IpSocketTcpStateError::TcpInfo(e))?,
+        })
+    }
+}
+
+impl From<IpSocketTcpState> for fnet_sockets::IpSocketTcpState {
+    fn from(state: IpSocketTcpState) -> Self {
+        let IpSocketTcpState { src_port, dst_port, state, tcp_info } = state;
+        fnet_sockets::IpSocketTcpState {
+            src_port,
+            dst_port,
+            state: Some(state),
+            tcp_info: tcp_info.map(Into::into),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
+/// Extension type for [`fnet_tcp::Info`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TcpInfo {
+    /// The state of the TCP connection.
+    pub state: fnet_tcp::State,
+    /// The congestion control state of the TCP connection.
+    pub ca_state: fnet_tcp::CongestionControlState,
+    /// The retransmission timeout of the TCP connection in microseconds.
+    pub rto_usec: Option<u32>,
+    /// The time since the most recent data was sent on the connection in milliseconds.
+    pub tcpi_last_data_sent_msec: Option<u32>,
+    /// The time since the most recent ACK was received in milliseconds.
+    pub tcpi_last_ack_recv_msec: Option<u32>,
+    /// The estimated smoothed roundtrip time in microseconds.
+    pub rtt_usec: Option<u32>,
+    /// The smoothed mean deviation of the roundtrip time in microseconds.
+    pub rtt_var_usec: Option<u32>,
+    /// The sending slow start threshold in segments.
+    pub snd_ssthresh: u32,
+    /// The current sending congestion window in segments.
+    pub snd_cwnd: u32,
+    /// The total number of retransmissions.
+    pub tcpi_total_retrans: u32,
+    /// The total number of segments sent.
+    pub tcpi_segs_out: u64,
+    /// The total number of segments received.
+    pub tcpi_segs_in: u64,
+    /// Whether reordering has been seen on the connection.
+    pub reorder_seen: bool,
+}
+
+/// Error type for [`TcpInfo`] conversion.
+#[derive(Debug, PartialEq, Error)]
+pub enum TcpInfoError {
+    /// Missing a required field.
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+}
+
+impl TryFrom<fnet_tcp::Info> for TcpInfo {
+    type Error = TcpInfoError;
+
+    fn try_from(value: fnet_tcp::Info) -> Result<Self, Self::Error> {
+        let fnet_tcp::Info {
+            state,
+            ca_state,
+            rto_usec,
+            tcpi_last_data_sent_msec,
+            tcpi_last_ack_recv_msec,
+            rtt_usec,
+            rtt_var_usec,
+            snd_ssthresh,
+            snd_cwnd,
+            tcpi_total_retrans,
+            tcpi_segs_out,
+            tcpi_segs_in,
+            reorder_seen,
+            __source_breaking,
+        } = value;
+
+        Ok(TcpInfo {
+            state: state.ok_or(TcpInfoError::MissingField("state"))?,
+            ca_state: ca_state.ok_or(TcpInfoError::MissingField("ca_state"))?,
+            rto_usec,
+            tcpi_last_data_sent_msec,
+            tcpi_last_ack_recv_msec,
+            rtt_usec,
+            rtt_var_usec,
+            snd_ssthresh: snd_ssthresh.ok_or(TcpInfoError::MissingField("snd_ssthresh"))?,
+            snd_cwnd: snd_cwnd.ok_or(TcpInfoError::MissingField("snd_cwnd"))?,
+            tcpi_total_retrans: tcpi_total_retrans
+                .ok_or(TcpInfoError::MissingField("tcpi_total_retrans"))?,
+            tcpi_segs_out: tcpi_segs_out.ok_or(TcpInfoError::MissingField("tcpi_segs_out"))?,
+            tcpi_segs_in: tcpi_segs_in.ok_or(TcpInfoError::MissingField("tcpi_segs_in"))?,
+            reorder_seen: reorder_seen.ok_or(TcpInfoError::MissingField("reorder_seen"))?,
+        })
+    }
+}
+
+impl From<TcpInfo> for fnet_tcp::Info {
+    fn from(info: TcpInfo) -> Self {
+        let TcpInfo {
+            state,
+            ca_state,
+            rto_usec,
+            tcpi_last_data_sent_msec,
+            tcpi_last_ack_recv_msec,
+            rtt_usec,
+            rtt_var_usec,
+            snd_ssthresh,
+            snd_cwnd,
+            tcpi_total_retrans,
+            tcpi_segs_out,
+            tcpi_segs_in,
+            reorder_seen,
+        } = info;
+        fnet_tcp::Info {
+            state: Some(state),
+            ca_state: Some(ca_state),
+            rto_usec: rto_usec,
+            tcpi_last_data_sent_msec,
+            tcpi_last_ack_recv_msec,
+            rtt_usec: rtt_usec,
+            rtt_var_usec: rtt_var_usec,
+            snd_ssthresh: Some(snd_ssthresh),
+            snd_cwnd: Some(snd_cwnd),
+            tcpi_total_retrans: Some(tcpi_total_retrans),
+            tcpi_segs_out: Some(tcpi_segs_out),
+            tcpi_segs_in: Some(tcpi_segs_in),
+            reorder_seen: Some(reorder_seen),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
+/// Extension type for [`fnet_sockets::IpSocketUdpState`].
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct IpSocketUdpState {
+    /// The source port of the socket.
+    pub src_port: Option<u16>,
+    /// The destination port of the socket.
+    pub dst_port: Option<u16>,
+    /// The UDP pseudo-state machine state for the socket.
+    pub state: fnet_udp::State,
+}
+
+/// Error type for [`IpSocketUdpState`] conversion.
+#[derive(Debug, PartialEq, Error)]
+pub enum IpSocketUdpStateError {
+    /// Missing a required field.
+    #[error("missing field: {0}")]
+    MissingField(&'static str),
+}
+
+impl TryFrom<fnet_sockets::IpSocketUdpState> for IpSocketUdpState {
+    type Error = IpSocketUdpStateError;
+
+    fn try_from(value: fnet_sockets::IpSocketUdpState) -> Result<Self, Self::Error> {
+        let fnet_sockets::IpSocketUdpState { src_port, dst_port, state, __source_breaking } = value;
+
+        let state = state.ok_or(IpSocketUdpStateError::MissingField("state"))?;
+
+        Ok(IpSocketUdpState { src_port, dst_port, state })
+    }
+}
+
+impl From<IpSocketUdpState> for fnet_sockets::IpSocketUdpState {
+    fn from(state: IpSocketUdpState) -> Self {
+        let IpSocketUdpState { src_port, dst_port, state } = state;
+        fnet_sockets::IpSocketUdpState {
+            src_port,
+            dst_port,
+            state: Some(state),
+            __source_breaking: fidl::marker::SourceBreaking,
+        }
+    }
+}
+
 /// Errors returned by [`iterate_ip`]
 #[derive(Debug, Error)]
 pub enum IterateIpError {
@@ -155,6 +560,9 @@ pub enum IpIteratorError {
     /// `Diagnostics.IterateIp`.
     #[error("fidl error during Diagnostics.IterateIp call: {0}")]
     Fidl(fidl::Error),
+    /// An error was encountered while converting a socket state.
+    #[error("error converting socket state: {0}")]
+    Conversion(IpSocketStateError),
 }
 
 impl From<fidl::Error> for IpIteratorError {
@@ -173,7 +581,7 @@ pub async fn iterate_ip<M, I>(
     diagnostics: &fnet_sockets::DiagnosticsProxy,
     extensions: fnet_sockets::Extensions,
     matchers: M,
-) -> Result<impl Stream<Item = Result<fnet_sockets::IpSocketState, IpIteratorError>>, IterateIpError>
+) -> Result<impl Stream<Item = Result<IpSocketState, IpIteratorError>>, IterateIpError>
 where
     M: IntoIterator<Item = I>,
     I: Into<fnet_sockets::IpSocketMatcher>,
@@ -205,7 +613,14 @@ where
         if batch.is_empty() && has_more {
             Err(IpIteratorError::EmptyBatch)
         } else {
-            Ok(Some((futures::stream::iter(batch.into_iter().map(Ok)), (proxy, has_more))))
+            Ok(Some((
+                futures::stream::iter(
+                    batch
+                        .into_iter()
+                        .map(|s| s.try_into().map_err(|e| IpIteratorError::Conversion(e))),
+                ),
+                (proxy, has_more),
+            )))
         }
     })
     .try_flatten())
@@ -219,7 +634,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use futures::{FutureExt as _, StreamExt as _, future, pin_mut};
-    use net_declare::{fidl_ip, fidl_subnet};
+    use net_declare::{fidl_ip, fidl_subnet, net_ip_v4, net_ip_v6};
     use test_case::test_case;
     use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_tcp as fnet_tcp};
 
@@ -369,6 +784,118 @@ mod tests {
         ));
         "ProtoUdpDstPortUnbound"
     )]
+    #[test_case(
+        fnet_tcp::Info {
+            state: Some(fnet_tcp::State::Established),
+            ca_state: Some(fnet_tcp::CongestionControlState::Open),
+            rto_usec: Some(1),
+            tcpi_last_data_sent_msec: Some(2),
+            tcpi_last_ack_recv_msec: Some(3),
+            rtt_usec: Some(4),
+            rtt_var_usec: Some(5),
+            snd_ssthresh: Some(6),
+            snd_cwnd: Some(7),
+            tcpi_total_retrans: Some(8),
+            tcpi_segs_out: Some(9),
+            tcpi_segs_in: Some(10),
+            reorder_seen: Some(true),
+            __source_breaking: fidl::marker::SourceBreaking,
+        },
+        TcpInfo {
+            state: fnet_tcp::State::Established,
+            ca_state: fnet_tcp::CongestionControlState::Open,
+            rto_usec: Some(1),
+            tcpi_last_data_sent_msec: Some(2),
+            tcpi_last_ack_recv_msec: Some(3),
+            rtt_usec: Some(4),
+            rtt_var_usec: Some(5),
+            snd_ssthresh: 6,
+            snd_cwnd: 7,
+            tcpi_total_retrans: 8,
+            tcpi_segs_out: 9,
+            tcpi_segs_in: 10,
+            reorder_seen: true,
+        };
+        "TcpInfo"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        },
+        IpSocketState::V4(IpSocketStateSpecific {
+            src_addr: Some(net_ip_v4!("192.168.1.1")),
+            dst_addr: Some(net_ip_v4!("192.168.1.2")),
+            cookie: 1234,
+            marks: fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }.into(),
+            transport: IpSocketTransportState::Tcp(IpSocketTcpState {
+                src_port: Some(1111),
+                dst_port: Some(2222),
+                state: fnet_tcp::State::Established,
+                tcp_info: None,
+            }),
+        });
+        "IpSocketStateV4"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("2001:db8::1")),
+            dst_addr: Some(fidl_ip!("2001:db8::2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
+                fnet_sockets::IpSocketUdpState {
+                    src_port: Some(3333),
+                    dst_port: Some(4444),
+                    state: Some(fnet_udp::State::Connected),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        },
+        IpSocketState::V6(IpSocketStateSpecific {
+            src_addr: Some(net_ip_v6!("2001:db8::1")),
+            dst_addr: Some(net_ip_v6!("2001:db8::2")),
+            cookie: 1234,
+            marks: fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }.into(),
+            transport: IpSocketTransportState::Udp(IpSocketUdpState {
+                src_port: Some(3333),
+                dst_port: Some(4444),
+                state: fnet_udp::State::Connected,
+            }),
+        });
+        "IpSocketStateV6"
+    )]
     fn convert_from_fidl_and_back<F, E>(fidl_type: F, local_type: E)
     where
         E: TryFrom<F> + Clone + std::fmt::Debug + PartialEq,
@@ -428,6 +955,195 @@ mod tests {
         fidl: fnet_sockets::IpSocketMatcher,
     ) -> Result<IpSocketMatcher, IpSocketMatcherError> {
         IpSocketMatcher::try_from(fidl)
+    }
+
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: None,
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::MissingField("family"));
+        "MissingFamily"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: None,
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::MissingField("cookie"));
+        "MissingCookie"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: None,
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::MissingField("marks"));
+        "MissingMarks"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: None,
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::MissingField("transport"));
+        "MissingTransport"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("2001:db8::2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::VersionMismatch);
+        "VersionMismatchV4"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("2001:db8::2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::VersionMismatch);
+        "VersionMismatchV6"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: None,
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::Transport(IpSocketTransportStateError::Tcp(
+                IpSocketTcpStateError::MissingField("state"),
+        )));
+        "MissingTcpState"
+    )]
+    #[test_case(
+        fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V6),
+            src_addr: Some(fidl_ip!("2001:db8::1")),
+            dst_addr: Some(fidl_ip!("2001:db8::2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Udp(
+                fnet_sockets::IpSocketUdpState {
+                    src_port: Some(3333),
+                    dst_port: Some(4444),
+                    state: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        } => Err(IpSocketStateError::Transport(IpSocketTransportStateError::Udp(
+                IpSocketUdpStateError::MissingField("state"),
+        )));
+        "MissingUdpState"
+    )]
+    fn ip_socket_state_try_from_error(
+        fidl: fnet_sockets::IpSocketState,
+    ) -> Result<IpSocketState, IpSocketStateError> {
+        IpSocketState::try_from(fidl)
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -579,7 +1295,11 @@ mod tests {
             src_addr: Some(fidl_ip!("192.168.1.1")),
             dst_addr: Some(fidl_ip!("192.168.1.2")),
             cookie: Some(1234),
-            marks: None,
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
             transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
                 fnet_sockets::IpSocketTcpState {
                     src_port: Some(1111),
@@ -597,7 +1317,11 @@ mod tests {
             src_addr: Some(fidl_ip!("192.168.8.1")),
             dst_addr: Some(fidl_ip!("192.168.8.2")),
             cookie: Some(9876),
-            marks: None,
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: Some(2222),
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
             transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
                 fnet_sockets::IpSocketTcpState {
                     src_port: Some(3333),
@@ -615,7 +1339,11 @@ mod tests {
             src_addr: Some(fidl_ip!("2001:db8::1")),
             dst_addr: Some(fidl_ip!("2001:db8::2")),
             cookie: Some(5678),
-            marks: None,
+            marks: Some(fnet::Marks {
+                mark_1: None,
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
             transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
                 fnet_sockets::IpSocketTcpState {
                     src_port: Some(5555),
@@ -685,6 +1413,13 @@ mod tests {
         };
 
         let ((), sockets) = future::join(server_fut, client_fut).await;
-        assert_eq!(sockets, vec![socket_1.clone(), socket_2.clone(), socket_3.clone()]);
+        assert_eq!(
+            sockets,
+            vec![
+                socket_1.clone().try_into().unwrap(),
+                socket_2.clone().try_into().unwrap(),
+                socket_3.clone().try_into().unwrap()
+            ]
+        );
     }
 }

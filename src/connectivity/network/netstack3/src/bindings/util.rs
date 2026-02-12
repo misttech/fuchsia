@@ -1176,6 +1176,17 @@ impl TryIntoFidl<fidl_net::Marks> for netstack3_core::ip::Marks {
     }
 }
 
+impl TryIntoFidl<fnet_ext::Marks> for netstack3_core::ip::Marks {
+    type Error = Never;
+
+    fn try_into_fidl(self) -> Result<fnet_ext::Marks, Self::Error> {
+        let netstack3_core::ip::Mark(mark_1) = *self.get(MarkDomain::Mark1);
+        let netstack3_core::ip::Mark(mark_2) = *self.get(MarkDomain::Mark2);
+
+        Ok(fnet_ext::Marks { mark_1, mark_2 })
+    }
+}
+
 impl TryFromFidl<fnet_routes_ext::ResolveOptions> for netstack3_core::routes::RouteResolveOptions {
     type Error = Never;
 

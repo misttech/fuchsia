@@ -629,7 +629,7 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
         )),
     ];
 
-    let sockets: Vec<fnet_sockets::IpSocketState> = fnet_sockets_ext::iterate_ip(
+    let sockets: Vec<fnet_sockets_ext::IpSocketState> = fnet_sockets_ext::iterate_ip(
         &diagnostics,
         fnet_sockets::Extensions::TCP_INFO,
         matchers.clone(),
@@ -641,44 +641,73 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
     .unwrap();
 
     // Capture last_data_sent and last_ack_recv for comparison after a sleep.
-    let (last_data_sent, last_ack_recv) = assert_matches!(
-        &sockets[..],
-        [fnet_sockets::IpSocketState {
-            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(fnet_sockets::IpSocketTcpState {
-                tcp_info: Some(fnet_tcp::Info {
-                    state: Some(fnet_tcp::State::Established),
-                    ca_state: Some(fnet_tcp::CongestionControlState::Open),
-                    rto_usec: Some(rto),
-                    rtt_usec: Some(rtt),
-                    rtt_var_usec: Some(rtt_var),
-                    snd_ssthresh: Some(ssthresh),
-                    snd_cwnd: Some(cwnd),
-                    tcpi_total_retrans: Some(tcpi_total_retrans),
-                    tcpi_segs_out: Some(segs_out),
-                    tcpi_segs_in: Some(segs_in),
-                    reorder_seen: None,
-                    tcpi_last_data_sent_msec: Some(last_data_sent),
-                    tcpi_last_ack_recv_msec: Some(last_ack_recv),
-                    __source_breaking,
-                }),
-                state: Some(fnet_tcp::State::Established),
-                ..
-            })),
-            ..
-        }] => {
-            // We can't verify exact values for RTT/variances, but we can at least
-            // verify that they're reasonable.
-            assert_gt!(*rto, 0);
-            assert_gt!(*rtt, 0);
-            assert_gt!(*rtt_var, 0);
-            assert_gt!(*ssthresh, 0);
-            assert_gt!(*cwnd, 0);
-            assert_gt!(*segs_out, 0);
-            assert_gt!(*segs_in, 0);
-            assert_eq!(*tcpi_total_retrans, 0);
-            (*last_data_sent, *last_ack_recv)
-        }
-    );
+    let (last_data_sent, last_ack_recv) = {
+        let socket = assert_matches!(&sockets[..], [socket] => socket.clone());
+        let fnet_sockets_ext::TcpInfo {
+            state,
+            ca_state,
+            rto_usec,
+            tcpi_last_data_sent_msec,
+            tcpi_last_ack_recv_msec,
+            rtt_usec,
+            rtt_var_usec,
+            snd_ssthresh,
+            snd_cwnd,
+            tcpi_total_retrans,
+            tcpi_segs_out,
+            tcpi_segs_in,
+            reorder_seen,
+        } = {
+            let transport = match socket {
+                fnet_sockets_ext::IpSocketState::V4(state) => {
+                    assert_matches!(
+                        state.transport,
+                        fnet_sockets_ext::IpSocketTransportState::Tcp(transport)
+                            => transport
+                    )
+                }
+                fnet_sockets_ext::IpSocketState::V6(state) => {
+                    assert_matches!(
+                        state.transport,
+                        fnet_sockets_ext::IpSocketTransportState::Tcp(transport)
+                            => transport
+                    )
+                }
+            };
+
+            assert_matches!(
+                transport,
+                fnet_sockets_ext::IpSocketTcpState { tcp_info: Some(tcp_info), .. }
+                    => tcp_info
+            )
+        };
+
+        // We can't verify exact values for RTT/variances, but we can at least
+        // verify that they're reasonable.
+        assert_matches!(rto_usec, Some(rto_usec) => assert_gt!(rto_usec, 0));
+        assert_matches!(rtt_usec, Some(rtt_usec) => assert_gt!(rtt_usec, 0));
+        assert_matches!(rtt_var_usec, Some(rtt_var_usec) => assert_gt!(rtt_var_usec, 0));
+        assert_gt!(snd_ssthresh, 0);
+        assert_gt!(snd_cwnd, 0);
+        assert_gt!(tcpi_segs_out, 0);
+        assert_gt!(tcpi_segs_in, 0);
+        assert_eq!(tcpi_total_retrans, 0);
+        assert_eq!(state, fnet_tcp::State::Established);
+        assert_eq!(ca_state, fnet_tcp::CongestionControlState::Open);
+        assert_eq!(reorder_seen, false);
+        (
+            assert_matches!(
+                tcpi_last_data_sent_msec,
+                Some(tcpi_last_data_sent_msec)
+                    => tcpi_last_data_sent_msec
+            ),
+            assert_matches!(
+                tcpi_last_ack_recv_msec,
+                Some(tcpi_last_ack_recv_msec)
+                    => tcpi_last_ack_recv_msec
+            ),
+        )
+    };
 
     // Sleep for a bit to ensure the timestamps increase. SLEEP_MS is arbitrary
     // but plenty long enough to be measurable (1ms granularity).
@@ -687,7 +716,7 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
     // We don't send any more data, the "time since last X" metrics will increase
     // by at least the sleep duration.
 
-    let sockets: Vec<fnet_sockets::IpSocketState> =
+    let sockets: Vec<fnet_sockets_ext::IpSocketState> =
         fnet_sockets_ext::iterate_ip(&diagnostics, fnet_sockets::Extensions::TCP_INFO, matchers)
             .await
             .unwrap()
@@ -695,23 +724,44 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
             .await
             .unwrap();
 
+    let socket = assert_matches!(&sockets[..], [socket] => socket.clone());
+    let fnet_sockets_ext::TcpInfo { tcpi_last_data_sent_msec, tcpi_last_ack_recv_msec, .. } = {
+        let transport = match socket {
+            fnet_sockets_ext::IpSocketState::V4(state) => {
+                assert_matches!(
+                    state.transport,
+                    fnet_sockets_ext::IpSocketTransportState::Tcp(transport)
+                        => transport
+                )
+            }
+            fnet_sockets_ext::IpSocketState::V6(state) => {
+                assert_matches!(
+                    state.transport,
+                    fnet_sockets_ext::IpSocketTransportState::Tcp(transport)
+                        => transport
+                )
+            }
+        };
+
+        assert_matches!(
+            transport,
+            fnet_sockets_ext::IpSocketTcpState { tcp_info: Some(tcp_info), .. }
+                => tcp_info
+        )
+    };
+
     assert_matches!(
-        &sockets[..],
-        [fnet_sockets::IpSocketState {
-            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
-                fnet_sockets::IpSocketTcpState {
-                    tcp_info: Some(fnet_tcp::Info {
-                        tcpi_last_data_sent_msec: Some(new_last_data_sent),
-                        tcpi_last_ack_recv_msec: Some(new_last_ack_recv),
-                        ..
-                    }),
-                    ..
-                }
-            )),
-            ..
-        }] => {
-            assert_geq!(*new_last_data_sent, last_data_sent + u32::try_from(SLEEP_MS).unwrap());
-            assert_geq!(*new_last_ack_recv, last_ack_recv + u32::try_from(SLEEP_MS).unwrap());
-        }
-    );
+        tcpi_last_data_sent_msec,
+        Some(tcpi_last_data_sent_msec)
+            => assert_geq!(
+                tcpi_last_data_sent_msec,
+                last_data_sent + u32::try_from(SLEEP_MS).unwrap()
+    ));
+    assert_matches!(
+        tcpi_last_ack_recv_msec,
+        Some(tcpi_last_ack_recv_msec)
+            => assert_geq!(
+                tcpi_last_ack_recv_msec,
+                last_ack_recv + u32::try_from(SLEEP_MS).unwrap()
+    ));
 }
