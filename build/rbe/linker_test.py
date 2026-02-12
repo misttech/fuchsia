@@ -145,6 +145,17 @@ class LinkerScriptParseTests(unittest.TestCase):
         expanded = list(link.expand_linker_script("PROVIDE(symbol = expr);"))
         self.assertEqual(expanded, [])
 
+    def test_segment_start_inside_provide_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+
+        expanded = list(
+            link.expand_linker_script(
+                'PROVIDE(symbol = SEGMENT_START("text", 0x40000));'
+            )
+        )
+        self.assertEqual(expanded, [])
+
     def test_provide_hidden_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             link = linker.LinkerInvocation(working_dir_abs=Path(td))
@@ -430,6 +441,26 @@ class LinkerInvocationResolveTests(unittest.TestCase):
             resolved = link.resolve_path(lib, check_sysroot=True)
 
         self.assertEqual(resolved, libdir / lib)
+
+    def test_resolve_path_relative_to_linker_script(self) -> None:
+        libdir = Path("raz/lib/foo")
+        lib = Path("libbar.ld")
+        libdir2 = Path("raz/lib")
+        lib2 = Path("quux.o")
+
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            (tdp / libdir).mkdir(parents=True, exist_ok=True)
+            (tdp / libdir / lib).write_text("INPUT(../quux.o)\n")
+            (tdp / libdir2).mkdir(parents=True, exist_ok=True)
+            (tdp / libdir2 / lib2).touch()
+
+            link = linker.LinkerInvocation(
+                working_dir_abs=tdp,
+            )
+            expanded = list(link.expand_possible_linker_script(libdir / lib))
+
+        self.assertEqual(expanded, [libdir / lib, libdir / ".." / lib2])
 
     def test_resolve_path_success_in_sysroot(self) -> None:
         libdir = Path("raz/lib/foo")
