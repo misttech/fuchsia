@@ -5,22 +5,61 @@
 Tests for Android Packet Filter (APF) support.
 """
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
+import fidl_fuchsia_wlan_device_service as fidl_device_svc
+import fidl_fuchsia_wlan_sme as fidl_sme
+from fuchsia_controller_py import Channel
+from fuchsia_controller_py.wrappers import AsyncAdapter
+from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
-from mobly.asserts import assert_equal, assert_is_not_none
+from mobly.asserts import (
+    assert_equal,
+    assert_false,
+    assert_is_not_none,
+    assert_true,
+)
 from wlanix_testing import base_test
 
 
 class ApfTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
-    @asyncmethod
-    async def test_get_apf_packet_filter_support(self) -> None:
+    def setup_test(self) -> None:
+        super().setup_test()
+
+        device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
+            self.fuchsia_device.honeydew_fd.fuchsia_controller.connect_device_proxy(
+                FidlEndpoint(
+                    "core/wlandevicemonitor",
+                    "fuchsia.wlan.device.service.DeviceMonitor",
+                )
+            )
+        )
+        proxy, server = Channel.create()
+
+        # Find the interface ID for the client SME
+        list_ifaces_response = asyncio.run(device_monitor_proxy.list_ifaces())
+        # Assuming the first interface found is the one we're interested in
+        iface_id = list_ifaces_response.iface_list[0]
+        assert_is_not_none(iface_id, "Could not find a client interface.")
+
+        # Get a reference to the client SME.
+        asyncio.run(
+            device_monitor_proxy.get_client_sme(
+                iface_id=iface_id,
+                sme_server=server.take(),
+            )
+        )
+        self.client_sme = fidl_sme.ClientSmeClient(proxy)
+
+    def test_get_apf_packet_filter_support(self) -> None:
         """Tests that APF support information can be retrieved."""
         response = (
-            await self.wifi_sta_iface_proxy.get_apf_packet_filter_support()
+            asyncio.run(
+                self.wifi_sta_iface_proxy.get_apf_packet_filter_support()
+            )
         ).unwrap()
         assert_is_not_none(
             response.version, "APF support response is missing version"
@@ -35,28 +74,41 @@ class ApfTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
             response.max_filter_length,
         )
 
-    @asyncmethod
-    async def test_install_apf_packet_filter(self) -> None:
+    def test_install_apf_packet_filter(self) -> None:
         """Tests that an APF program can be installed."""
-        # A simple APF program (e.g., just returning PASS/ACCEPT)
+        # Precondition: check APF is not already enabled
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_false(response.enabled, "APF should not be enabled")
+
         # For testing purposes, we just want to ensure the FIDL call succeeds.
         program = [0x01, 0x02, 0x03, 0x04]
         (
-            await self.wifi_sta_iface_proxy.install_apf_packet_filter(
-                program=program
+            asyncio.run(
+                self.wifi_sta_iface_proxy.install_apf_packet_filter(
+                    program=program
+                )
             )
         ).unwrap()
 
-    @asyncmethod
-    async def test_read_apf_packet_filter_data(self) -> None:
+        # Check that installing the packet filter did not enable it
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_false(response.enabled, "APF should not be enabled")
+
+    def test_read_apf_packet_filter_data(self) -> None:
         """Tests that APF packet filter data can be read back."""
         support_response = (
-            await self.wifi_sta_iface_proxy.get_apf_packet_filter_support()
+            asyncio.run(
+                self.wifi_sta_iface_proxy.get_apf_packet_filter_support()
+            )
         ).unwrap()
         max_filter_length = support_response.max_filter_length
 
         response = (
-            await self.wifi_sta_iface_proxy.read_apf_packet_filter_data()
+            asyncio.run(self.wifi_sta_iface_proxy.read_apf_packet_filter_data())
         ).unwrap()
         assert (
             response.memory is not None
@@ -66,6 +118,67 @@ class ApfTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
             max_filter_length,
             "Read APF data length should match max_filter_length",
         )
+
+    def test_apf_packet_filter_enabled_by_suspend_mode(self) -> None:
+        """Tests that APF packet filter is enabled by suspend mode."""
+        # Install a placeholder APF program
+        program = [0x01, 0x02, 0x03, 0x04]
+        (
+            asyncio.run(
+                self.wifi_sta_iface_proxy.install_apf_packet_filter(
+                    program=program
+                )
+            )
+        ).unwrap()
+
+        # Check that the filter is not already enabled
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_false(response.enabled, "APF should not be enabled")
+
+        # Enable suspend mode
+        (
+            asyncio.run(
+                self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
+                    enable=True
+                )
+            )
+        ).unwrap()
+
+        # Check if APF is enabled using the SME APIs
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_true(response.enabled, "APF should be enabled")
+
+        # Disable suspend mode
+        (
+            asyncio.run(
+                self.supplicant_sta_iface_proxy.set_suspend_mode_enabled(
+                    enable=False
+                )
+            )
+        ).unwrap()
+
+        # Check that the filter is no longer enabled
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_false(response.enabled, "APF should not be enabled")
+
+        # Ensure other power save modes don't result in APF enablement
+        (
+            asyncio.run(
+                self.supplicant_sta_iface_proxy.set_power_save(enable=True)
+            )
+        ).unwrap()
+
+        # Check that the filter is still not enabled
+        response = (
+            asyncio.run(self.client_sme.get_apf_packet_filter_enabled())
+        ).unwrap()
+        assert_false(response.enabled, "APF should not be enabled")
 
 
 if __name__ == "__main__":

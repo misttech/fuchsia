@@ -105,11 +105,14 @@ class WlanixBaseTestClass(base_test.BaseTestClass):
     wlanix_proxy: fidl_wlanix.WlanixClient
 
     def setup_class(self) -> None:
-        fuchsia_devices = self.register_controller(fuchsia_device)
+        fuchsia_devices: list[
+            fuchsia_device.FuchsiaDevice
+        ] | None = self.register_controller(fuchsia_device)
 
-        abort_class_if(
-            len(fuchsia_devices) != 1, "Requires exactly one Fuchsia device"
-        )
+        if fuchsia_devices is None or len(fuchsia_devices) != 1:
+            raise signals.TestAbortClass(
+                "Requires exactly one Fuchsia device",
+            )
         self.fuchsia_device = fuchsia_devices[0]
         abort_class_if(
             not hasattr(self.fuchsia_device, "honeydew_fd")

@@ -465,17 +465,36 @@ impl SmeClientIface {
     async fn update_power_level(&self, new_level: StaIfacePowerLevel) -> Result<(), Error> {
         if let Some(recorder) = &mut self.power_state.lock().await.recorder {
             recorder.record(new_level);
-            self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
-                iface_id: self.iface_id,
-                iface_power_level: match new_level {
-                    StaIfacePowerLevel::Suspended => wlan_telemetry::IfacePowerLevel::SuspendMode,
-                    StaIfacePowerLevel::Normal => wlan_telemetry::IfacePowerLevel::Normal,
-                    StaIfacePowerLevel::NoPowerSavings => {
-                        wlan_telemetry::IfacePowerLevel::NoPowerSavings
-                    }
-                },
-            });
         }
+
+        self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
+            iface_id: self.iface_id,
+            iface_power_level: match new_level {
+                StaIfacePowerLevel::Suspended => wlan_telemetry::IfacePowerLevel::SuspendMode,
+                StaIfacePowerLevel::Normal => wlan_telemetry::IfacePowerLevel::Normal,
+                StaIfacePowerLevel::NoPowerSavings => {
+                    wlan_telemetry::IfacePowerLevel::NoPowerSavings
+                }
+            },
+        });
+
+        // Apply (or turn off) the optimizations for "suspend mode"
+        if new_level == StaIfacePowerLevel::Suspended {
+            match self.sme_proxy.set_apf_packet_filter_enabled(true).await {
+                Ok(Ok(())) => {}
+                e => {
+                    warn!("Failed to enable APF packet filter: {:?}", e)
+                }
+            }
+        } else {
+            match self.sme_proxy.set_apf_packet_filter_enabled(false).await {
+                Ok(Ok(())) => {}
+                e => {
+                    warn!("Failed to disable APF packet filter: {:?}", e)
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -2569,7 +2588,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
-        let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
@@ -2589,6 +2608,16 @@ mod tests {
                 PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
                 PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
             };
+            let mut power_call_fut = pin!(power_call_fut);
+            assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+
+            // Respond to the call to set APF status
+            assert_matches!(
+                exec.run_until_stalled(&mut sme_stream.next()),
+                Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
+                    responder.send(Ok(())).expect("failed to send SME response");
+                }
+            );
 
             // Future completes
             exec.run_singlethreaded(power_call_fut).expect("future finished");
@@ -2605,7 +2634,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
-        let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
@@ -2623,6 +2652,17 @@ mod tests {
             PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
             PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
         };
+        let mut power_call_fut = pin!(power_call_fut);
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+
+        // Respond to the call to set APF status
+        assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
+                responder.send(Ok(())).expect("failed to send SME response");
+            }
+        );
+
         // Future completes
         exec.run_singlethreaded(power_call_fut).expect("future finished");
 
@@ -2655,7 +2695,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
-        let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
@@ -2670,6 +2710,16 @@ mod tests {
 
         // Set suspend mode on
         let power_call_fut = iface.set_suspend_mode(true);
+        let mut power_call_fut = pin!(power_call_fut);
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set APF status
+        assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
+                responder.send(Ok(())).expect("failed to send SME response");
+            }
+        );
+        // Future completes
         exec.run_singlethreaded(power_call_fut).expect("future finished");
 
         let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
@@ -2684,7 +2734,15 @@ mod tests {
             PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
             PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
         };
-
+        let mut power_call_fut = pin!(power_call_fut);
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set APF status
+        assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
+                responder.send(Ok(())).expect("failed to send SME response");
+            }
+        );
         // Future completes
         exec.run_singlethreaded(power_call_fut).expect("future finished");
 
@@ -2698,7 +2756,47 @@ mod tests {
         );
     }
 
-    #[test]
+    #[test_case(true)]
+    #[test_case(false)]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_update_power_level_sets_suspend_optimizations(suspend_mode: bool) {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc, _monitor_stream) =
+            create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
+        let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let phy_id = rand::random();
+        let (telemetry_sender, mut _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+
+        // Create the interface with a power broker channel
+        let iface = SmeClientIface::new(
+            phy_id,
+            TEST_IFACE_ID,
+            sme_proxy,
+            monitor_svc,
+            TelemetrySender::new(telemetry_sender),
+        );
+
+        // Update the power level
+        let level_to_set =
+            if suspend_mode { StaIfacePowerLevel::Suspended } else { StaIfacePowerLevel::Normal };
+        let power_call_fut = iface.update_power_level(level_to_set);
+        let mut power_call_fut = pin!(power_call_fut);
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+
+        // SME call to set APF enabled
+        assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled, responder }))) => {
+                assert_eq!(enabled, suspend_mode);
+                responder.send(Ok(())).expect("failed to send SME response");
+            }
+        );
+
+        // Future completes
+        exec.run_singlethreaded(power_call_fut).expect("future finished");
+    }
+
+    #[fuchsia::test]
     fn test_reset_tx_power_scenario_succeeds() {
         let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
         let test_phy_id = 123;
