@@ -288,3 +288,6 @@ lcov.info
 
 # gemini-cli logs
 .gemini/logs.json
+
+# COG workspace create a symlink for integration repo
+integration

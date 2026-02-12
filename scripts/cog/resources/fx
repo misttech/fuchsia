@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 readonly GIT_CITC_PATH="$(which git-citc)"
+readonly GIT_PATH="$(which git)"
 readonly COG_FUCHSIA_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
 readonly CARTFS_FUCHSIA_DIR="${COG_FUCHSIA_DIR}/cartfs-dir/fuchsia"
 
@@ -16,7 +17,7 @@ fi
 
 # Compute the base commit hash
 base_commit_hash=$("${GIT_CITC_PATH}" api.get-repo-states fuchsia | grep base_commit_hash | awk '{print $2}' | tr -d '"')
-base_commit_hash_in_cartfs=$(cd "${CARTFS_FUCHSIA_DIR}" && git rev-parse HEAD)
+base_commit_hash_in_cartfs=$(cd "${CARTFS_FUCHSIA_DIR}" && "${GIT_PATH}" rev-parse HEAD)
 
 # if the base commit hash is different from the one in CartFS, then we need to
 # update the CartFS.
@@ -48,16 +49,26 @@ for file in ${deleted_files[@]}; do
   fi
 done
 
-command="$1"
-if [[ "$command" =~ ^(set|build|test|add-test|add-host-test|set-main-pb|args)$ ]]; then
-  # We need to run this here to make sure that the PATH is updated with the
-  # prebuilts in the CartFS. If we do not do this then we will pick up the wrong
-  # hermetic-env.
-  source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh" && fx-update-path
-  (
-    cd "${CARTFS_FUCHSIA_DIR}"
-    exec "${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"
-  )
-else
-  exec "${COG_FUCHSIA_DIR}/scripts/fx" "$@"
-fi
+# We need to run this here to make sure that the PATH is updated with the
+# prebuilts in the CartFS. If we do not do this then we will pick up the wrong
+# hermetic-env.
+source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh" && fx-update-path
+(
+  cd "${CARTFS_FUCHSIA_DIR}"
+  exec "${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"
+)
+
+# Copy modified files back to the COG workspace. This is mostly needed for
+# fx format-code
+git_status_output=$(cd "${CARTFS_FUCHSIA_DIR}" && "${GIT_PATH}" add . && "${GIT_PATH}" status -s)
+modified_files=$(echo "${git_status_output}" | grep '^[AM]' | awk '{print $2}')
+for file in ${modified_files[@]}; do
+  if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
+    continue
+  fi
+  sha256_cog=$(sha256sum "${COG_FUCHSIA_DIR}/${file}" | awk '{print $1}')
+  sha256_cartfs=$(sha256sum "${CARTFS_FUCHSIA_DIR}/${file}" | awk '{print $1}')
+  if [[ "${sha256_cog}" != "${sha256_cartfs}" ]]; then
+    cp "${CARTFS_FUCHSIA_DIR}/${file}" "${COG_FUCHSIA_DIR}/${file}"
+  fi
+done
