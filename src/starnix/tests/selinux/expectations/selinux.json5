@@ -12,7 +12,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // keep-sorted start
                 "binder/001", // TODO: https://fxbug.dev/398654361
                 "binder/004",
                 "binder/008",
@@ -293,8 +292,6 @@
                 "userfaultfd/009",
                 "watchkey/001", // TODO: https://fxbug.dev/398711590
                 "watchkey/002",
-
-                // keep-sorted end
             ],
         },
         {
