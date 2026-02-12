@@ -174,7 +174,7 @@ pub struct TopLevel {
     #[argh(option, default = "VBMETA_SIZE")]
     pub vbmeta_size: u64,
 
-    /// A/B/R partition to boot by default
+    /// the A/B/R partition to boot by default
     #[argh(option, default = "BootPart::default()")]
     pub abr_boot: BootPart,
 
