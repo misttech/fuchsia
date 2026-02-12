@@ -467,10 +467,8 @@ pub mod processed {
                         if let Some(processed::Vmo { parent_koid, .. }) = koid_to_vmo.get(&vmo_koid)
                         {
                             if *vmo_koid == *parent_koid {
-                                eprintln!(
-                                    "[stderr] Process {:?} refers (directly or indirectly) to a VMO which is its own parent {}",
-                                    process.koid, vmo_koid
-                                );
+                                // TODO(https://fxbug.dev/439837320): IOBuffer hierarchy has cycles.
+                                // Once fixed we should log an error when a cycle is detected.
                                 break;
                             }
                             vmo_koid = parent_koid;
