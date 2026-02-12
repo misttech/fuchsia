@@ -12,15 +12,14 @@ rustc_binary("fake_netcfg_svc") {
   testonly = true
 
   deps = [
-    "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
     "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
+    "//sdk/fidl/fuchsia.net.policy.socketproxy:fuchsia.net.policy.socketproxy_rust",
     "//src/connectivity/network/lib/dns_server_watcher",
     "//src/connectivity/policy/netcfg:lib",
     "//src/connectivity/policy/tests/integration/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]

@@ -4,6 +4,7 @@
 
 #![cfg(test)]
 
+use assert_matches::assert_matches;
 use fuchsia_async::DurationExt as _;
 use futures::channel::mpsc;
 use futures::future::join;
@@ -11,16 +12,13 @@ use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use log::info;
 use net_declare::fidl_ip_v6;
-use netstack_testing_common::constants::ipv6 as ipv6_consts;
-use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
     self, KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
     TestSandboxExt as _,
 };
 use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, wait_for_component_stopped};
 use netstack_testing_macros::netstack_test;
-use packet_formats::icmp::ndp::options::{NdpOptionBuilder, RecursiveDnsServer};
-use policy_properties::NetworkTokenExt;
+use policy_properties::{NetworkTokenExt, NetworksWatchDefaultResponseExt};
 use policy_testing_common::{NetcfgOwnedDeviceArgs, with_netcfg_owned_device};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
@@ -173,7 +171,9 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                                             network = net;
                                         },
                                         None => {
-                                            info!("Default network was lost via WatchDefault");
+                                            info!(
+                                                "Default network was lost via WatchDefault."
+                                            );
                                             {
                                                 let mut updates = last_updates.lock().await;
                                                 if updates.last() != Some(&None) {
@@ -207,7 +207,7 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                                                 }
                                             }
                                         }
-                                        Ok(Err(fnp_properties::WatchError::DefaultNetworkLost)) => {
+                                        Ok(Err(fnp_properties::WatchError::NetworkGone)) => {
                                             info!("Default network was lost via WatchUpdate");
                                             {
                                                 let mut updates = last_updates.lock().await;
@@ -332,6 +332,7 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
     const NDP_DNS_SERVER3: fnet::Ipv6Address = fidl_ip_v6!("20a::3456:7890");
 
     const DEFAULT_DNS_PORT: u16 = 53;
+    const TEST_NETWORK_ID: u32 = 2;
 
     let _if_name = with_netcfg_owned_device::<M, N, _>(
         name,
@@ -341,27 +342,31 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
             socket_proxy_type: SocketProxyType::Fake,
             ..Default::default()
         },
-        |_if_id, test_network, _interface_state, realm, _sandbox| {
+        |_if_id, _test_network, _interface_state, realm, _sandbox| {
             async move {
-                let fake_ep =
-                    test_network.create_fake_endpoint().expect("failed to create fake endpoint");
-
                 async fn update_dns(
-                    fake_ep: &netemul::TestFakeEndpoint<'_>,
+                    fake_socket_proxy: &fnp_testing::FakeSocketProxy_Proxy,
                     addresses: &[fnet::Ipv6Address],
                 ) {
-                    let addresses =
-                        addresses.into_iter().map(|addr| addr.addr.into()).collect::<Vec<_>>();
-                    let rdnss = RecursiveDnsServer::new(9999, &addresses);
-                    let options = [NdpOptionBuilder::RecursiveDnsServer(rdnss)];
-                    send_ra_with_router_lifetime(
-                        fake_ep,
-                        0,
-                        &options,
-                        ipv6_consts::LINK_LOCAL_ADDR,
-                    )
-                    .await
-                    .expect("failed to send router advertisment");
+                    fake_socket_proxy
+                        .set_dns(&[fnp_socketproxy::DnsServerList {
+                            source_network_id: Some(TEST_NETWORK_ID),
+                            addresses: Some(
+                                addresses
+                                    .iter()
+                                    .map(|address| {
+                                        fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                                            address: address.clone(),
+                                            port: DEFAULT_DNS_PORT,
+                                            zone_index: 0,
+                                        })
+                                    })
+                                    .collect(),
+                            ),
+                            ..Default::default()
+                        }])
+                        .await
+                        .expect("fidl error");
                 }
 
                 let wait_for_netmgr = wait_for_component_stopped(
@@ -377,7 +382,7 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     )
                     .expect("failed to connect to FakeSocketProxy");
                 socket_proxy
-                    .add(&network(2, None))
+                    .add(&network(TEST_NETWORK_ID, None))
                     .await
                     .expect("fidl error")
                     .expect("protocol error");
@@ -415,6 +420,13 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     vec![NDP_DNS_SERVER1, NDP_DNS_SERVER2, NDP_DNS_SERVER3],
                 ]);
                 let mut seen_updates = Vec::new();
+
+                let fake_socket_proxy = realm
+                    .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                    )
+                    .expect("Failed to connect to FakeSocketProxy");
+
                 'main: loop {
                     let () = futures::select! {
                         update = watch => {
@@ -433,7 +445,7 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                                 // last. Wait until we see the previous
                                 // update.
                                 if list.len() - 1 == server_count {
-                                    update_dns(&fake_ep, &list).await;
+                                    update_dns(&fake_socket_proxy, &list).await;
                                 } else {
                                     dns_sequence.push_front(list);
                                 }
@@ -540,35 +552,170 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
 
 #[netstack_test]
 #[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_token_correlation<N: Netstack, M: Manager>(
+    name: &str,
+) -> Result<(), anyhow::Error> {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::Fake,
+            ..Default::default()
+        },
+        |if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let socket_proxy = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::fake_socket_proxy::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to FakeSocketProxy");
+                socket_proxy
+                    .add(&network(if_id.try_into().unwrap(), None))
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+                socket_proxy
+                    .set_default(&fposix_socket::OptionalUint32::Value(if_id.try_into().unwrap()))
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("fidl error");
+                let networks2 = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("fidl error");
+
+                let (net1, net2) =
+                    futures::future::join(networks.watch_default(), networks2.watch_default())
+                        .await;
+                let (net1, net2) = (
+                    net1.ok().and_then(NetworksWatchDefaultResponseExt::into_network).unwrap(),
+                    net2.ok().and_then(NetworksWatchDefaultResponseExt::into_network).unwrap(),
+                );
+
+                assert!(net1.koid().is_ok());
+                assert_eq!(net1.koid(), net2.koid());
+
+                let resolver = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworkTokenResolverMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("fidl error");
+                let resolver2 = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworkTokenResolverMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("fidl error");
+                let (resolved1, resolved2) = futures::future::join(
+                    resolver.resolve_token(net1.duplicate().expect("can't duplicate")),
+                    resolver2.resolve_token(net1.duplicate().expect("can't duplicate")),
+                )
+                .await;
+                let (resolved1, resolved2) = (
+                    resolved1.expect("fidl error").expect("bad token"),
+                    resolved2.expect("fidl error").expect("bad token"),
+                );
+
+                assert_ne!(resolved1.koid(), net1.koid());
+                assert!(resolved1.koid().is_ok());
+                assert_eq!(resolved1.koid(), resolved2.koid());
+
+                // Unset the default.
+                socket_proxy
+                    .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
+                    .await
+                    .expect("fidl error")
+                    .expect("thingy");
+
+                // Resolving using a default network token for a network that is
+                // no longer the default should fail, since the default network
+                // token is no longer valid.
+                let no_default_resolved = resolver
+                    .resolve_token(net1.duplicate().expect("can't duplicate"))
+                    .await
+                    .expect("fidl error");
+                assert_matches!(
+                    no_default_resolved,
+                    Err(fnp_properties::NetworkTokenResolverResolveTokenError::InvalidNetworkToken)
+                );
+            }
+            .boxed_local()
+        },
+    )
+    .await;
+
+    Ok(())
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
 async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> {
+    const TEST_INTERFACE: u64 = 1;
+
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
         .create_netstack_realm_with::<N, _, _>(name, [KnownServiceProvider::FakeNetcfg])
         .expect("create netstack realm");
 
-    let networks = realm
-        .connect_to_protocol::<fnp_properties::NetworksMarker>()
-        .expect("could not connect to Networks");
     let fake_netcfg = realm
         .connect_to_protocol::<fnp_testing::FakeNetcfgMarker>()
         .expect("could not connect to FakeNetcfg");
+    let networks = realm
+        .connect_to_protocol::<fnp_properties::NetworksMarker>()
+        .expect("could not connect to Networks");
+    let network_registry = realm
+        .connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+        .expect("could not connect to FakeNetcfg");
+
+    let expected_servers = vec![fnet_name::DnsServer_ {
+        address: Some(net_declare::fidl_socket_addr!("[20a::1234:5678]:53")),
+        source: Some(fnet_name::DnsServerSource::SocketProxy(
+            fnet_name::SocketProxyDnsServerSource {
+                source_interface: Some(TEST_INTERFACE),
+                ..Default::default()
+            },
+        )),
+        ..Default::default()
+    }];
+    // TODO(https://fxbug.dev/477980011): This is unnecessary once
+    // DNS servers are derived from NetworkRegistry updates.
+    fake_netcfg.set_dns(&expected_servers).await.expect("Failed to set expected dns servers");
 
     let expected =
         vec![fnp_properties::PropertyUpdate::DnsConfiguration(fnp_properties::DnsConfiguration {
-            servers: Some(vec![fnet_name::DnsServer_ {
-                address: Some(net_declare::fidl_socket_addr!("[20a::1234:5678]:53")),
-                source: Some(fnet_name::DnsServerSource::SocketProxy(
-                    fnet_name::SocketProxyDnsServerSource {
-                        source_interface: Some(1),
-                        ..Default::default()
-                    },
-                )),
-                ..Default::default()
-            }]),
+            servers: Some(expected_servers),
             ..Default::default()
         })];
 
-    let update_watch_fut = fake_netcfg.update_properties(1, true, &expected);
+    let update_netcfg_fut = async move {
+        network_registry
+            .add(&fnp_socketproxy::Network {
+                network_id: Some(TEST_INTERFACE as u32),
+                info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                    fnp_socketproxy::StarnixNetworkInfo { mark: Some(1), ..Default::default() },
+                )),
+                dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                    v6: Some(vec![net_declare::fidl_ip_v6!("20a::1234:5678")]),
+                    v4: Some(vec![]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await?
+            .expect("add failed");
+
+        let res = network_registry.set_default(&fposix_socket::OptionalUint32::Value(1)).await?;
+
+        Ok::<_, anyhow::Error>(res)
+    };
     let properties_watch = async move {
         let network = networks.watch_default().await?.take_network().expect("no network returned");
 
@@ -584,9 +731,9 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
         Ok::<_, anyhow::Error>(update)
     };
 
-    let (res1, res2) = join(update_watch_fut, properties_watch).await;
+    let (res1, res2) = join(update_netcfg_fut, properties_watch).await;
 
-    res1.expect("update_watch_properties fidl error");
+    res1.expect("add network fidl error").expect("add network protocol error");
     let update = res2.expect("error while watching properties");
     assert_eq!(update, expected);
 

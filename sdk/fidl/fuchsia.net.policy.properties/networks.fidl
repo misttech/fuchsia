@@ -8,11 +8,10 @@ using fuchsia.net;
 using fuchsia.net.name;
 using zx;
 
-/// The NetworkToken is an opaque token minted by [`Networks::WatchDefault`]
-/// that represents a logical network for the purpose of accessing network
-/// properties.
-type NetworkToken = resource table {
-    1: value zx.Handle:EVENTPAIR;
+/// The NetworkToken is an opaque token minted by this service that represents a
+/// logical network for the purpose of accessing network properties.
+type NetworkToken = resource struct {
+    value zx.Handle:EVENTPAIR;
 };
 
 /// A single update from [`Networks.WatchProperties`].
@@ -29,6 +28,33 @@ type PropertyUpdate = flexible union {
 
 // TODO(https://fxbug.dev/42159332): Use built-in empty struct when available.
 type Empty = struct {};
+
+/// Protocol to allow operations on `NetworkToken` objects, including resolving
+/// `NetworkToken` to its canonical form.
+@discoverable
+open protocol NetworkTokenResolver {
+    /// Resolves a network token to a canonical form.
+    ///
+    /// Since a "default network" network token is a distinct token from the
+    /// non-default network variant, there needs to be a way to disambiguate
+    /// the pair.
+    ///
+    /// Since a "default network" token (i.e. a token obtained from
+    /// [`Networks.WatchDefault`]) is a distinct token from the non-default
+    /// network variant, there needs to be a way to disambiguate the pair. If a
+    /// non-default network token is passed, the same token is returned.
+    strict ResolveToken(resource struct {
+        token NetworkToken;
+    }) -> (resource struct {
+        /// The resolved token, it represents a specific logical network,
+        /// regardless of if that network happens to be the current default
+        /// network.
+        resolved_token NetworkToken;
+    }) error flexible enum : uint32 {
+        /// The provided `NetworkToken` is invalid or out-of-date.
+        INVALID_NETWORK_TOKEN = 1;
+    };
+};
 
 /// Protocol for acquiring [`NetworkToken`]s, and querying properties of that
 /// network.
@@ -88,12 +114,6 @@ open protocol Networks {
         /// When the network represented by `network` no longer exists, a new
         /// [`NetworkToken`] must be acquired.
         NETWORK_GONE = 3;
-        /// When the network represented by `network` is no longer the default
-        /// network, a new [`NetworkToken`] must be acquired.
-        DEFAULT_NETWORK_CHANGED = 4;
-        /// When there is no longer a default network, a new [`NetworkToken`]
-        /// must be acquired.
-        DEFAULT_NETWORK_LOST = 5;
 
         /// An argument marked above as REQUIRED was not provided.
         MISSING_REQUIRED_ARGUMENT = 99;

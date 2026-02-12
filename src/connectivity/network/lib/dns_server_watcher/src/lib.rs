@@ -23,7 +23,7 @@ pub use self::stream::*;
 pub const DEFAULT_DNS_PORT: u16 = 53;
 
 /// The DNS servers learned from all sources.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DnsServers {
     /// DNS servers obtained from some default configurations.
     ///

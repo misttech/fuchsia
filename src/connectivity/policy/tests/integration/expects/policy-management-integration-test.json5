@@ -29,6 +29,7 @@
                 // not support rules.
                 "network_properties::test_track_socket_marks_ns2*",
                 "network_properties::test_track_dns_changes_ns2*",
+                "network_properties::test_network_token_correlation_ns2*",
             ],
         },
         {

@@ -11,6 +11,7 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.Networks",
+                "fuchsia.net.policy.socketproxy.NetworkRegistry",
                 "fuchsia.net.policy.testing.FakeNetcfg",
             ],
         },
@@ -19,6 +20,7 @@
         {
             protocol: [
                 "fuchsia.net.policy.properties.Networks",
+                "fuchsia.net.policy.socketproxy.NetworkRegistry",
                 "fuchsia.net.policy.testing.FakeNetcfg",
             ],
             from: "self",

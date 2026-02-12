@@ -32,6 +32,8 @@ use fuchsia_component::client::{clone_namespace_svc, new_protocol_connector_in_d
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_fs::directory as fvfs_watcher;
 
+use crate::network::PropertyUpdate;
+
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
     fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
@@ -854,6 +856,7 @@ enum RequestStream {
     DnsServerWatcher(fnet_name::DnsServerWatcherRequestStream),
     NetworkAttributes(fnp_properties::NetworksRequestStream),
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
 }
 
 impl std::fmt::Debug for RequestStream {
@@ -865,6 +868,7 @@ impl std::fmt::Debug for RequestStream {
             RequestStream::DnsServerWatcher(_) => write!(f, "DnsServerWatcher"),
             RequestStream::NetworkAttributes(_) => write!(f, "NetworkAttributes"),
             RequestStream::DelegatedNetworks(_) => write!(f, "DelegatedNetworks"),
+            RequestStream::NetworkTokenResolver(_) => write!(f, "NetworkTokenResolver"),
         }
     }
 }
@@ -1246,7 +1250,8 @@ impl<'a> NetCfg<'a> {
             .add_fidl_service(RequestStream::Masquerade)
             .add_fidl_service(RequestStream::DnsServerWatcher)
             .add_fidl_service(RequestStream::NetworkAttributes)
-            .add_fidl_service(RequestStream::DelegatedNetworks);
+            .add_fidl_service(RequestStream::DelegatedNetworks)
+            .add_fidl_service(RequestStream::NetworkTokenResolver);
         let _: &mut ServiceFs<_> =
             fs.take_and_serve_directory_handle().context("take and serve directory handle")?;
         let mut fs = fs.fuse();
@@ -1264,7 +1269,10 @@ impl<'a> NetCfg<'a> {
         let mut dns_server_watcher_incoming_requests =
             dns::DnsServerWatcherRequestStreams::default();
 
-        let mut networks_request_streams = network::NetworksRequestStreams::default();
+        let mut networks_request_streams =
+            network::ConnectionTagged::<fnp_properties::NetworksRequestStream>::default();
+        let mut network_token_resolver_request_streams =
+            futures::stream::SelectAll::<fnp_properties::NetworkTokenResolverRequestStream>::new();
 
         let mut delegated_networks_stream =
             DelegatedNetworksStream::Right(futures_util::stream::empty());
@@ -1291,6 +1299,9 @@ impl<'a> NetCfg<'a> {
             ),
             NetworkAttributesRequest(
                 (network::ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>),
+            ),
+            NetworkTokenResolverRequest(
+                Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
             ),
             DelegatedNetworksUpdate(Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>),
             ProvisioningEvent(ProvisioningEvent),
@@ -1386,6 +1397,9 @@ impl<'a> NetCfg<'a> {
                 net_attr_req = networks_request_streams.select_next_some() => {
                     Event::NetworkAttributesRequest(net_attr_req)
                 }
+                net_tok_admin_req = network_token_resolver_request_streams.select_next_some() => {
+                    Event::NetworkTokenResolverRequest(net_tok_admin_req)
+                }
                 delegated_networks_update = delegated_networks_stream.select_next_some() => {
                     Event::DelegatedNetworksUpdate(delegated_networks_update)
                 }
@@ -1439,14 +1453,28 @@ impl<'a> NetCfg<'a> {
                     }
                 }
                 Event::NetworkAttributesRequest((id, req)) => {
-                    self.netpol_networks_service.handle_network_attributes_request(id, req).await?
+                    self.netpol_networks_service
+                        .handle_network_attributes_request(id, req)
+                        .await
+                        .unwrap_or_else(|e| {
+                            error!("Could not handle network attributes request: {e:?}")
+                        });
+                }
+                Event::NetworkTokenResolverRequest(req) => {
+                    self.netpol_networks_service
+                        .handle_network_token_resolver_request(req)
+                        .await
+                        .unwrap_or_else(|e| {
+                            error!("Could not handle network token resolver request: {e:?}")
+                        });
                 }
                 Event::DelegatedNetworksUpdate(update) => {
-                    if let Err(e) =
-                        self.netpol_networks_service.handle_delegated_networks_update(update).await
-                    {
-                        error!("Could not handle delegated network update: {e:?}");
-                    }
+                    self.netpol_networks_service
+                        .handle_delegated_networks_update(update)
+                        .await
+                        .unwrap_or_else(|e| {
+                            error!("Could not handle delegated network update: {e:?}")
+                        });
                 }
                 Event::ProvisioningEvent(event) => {
                     self.handle_provisioning_event(
@@ -1460,6 +1488,7 @@ impl<'a> NetCfg<'a> {
                         &mut masquerade_events,
                         &mut networks_request_streams,
                         &mut delegated_networks_stream,
+                        &mut network_token_resolver_request_streams,
                     )
                     .await?
                 }
@@ -1479,8 +1508,13 @@ impl<'a> NetCfg<'a> {
         virtualization_events: &mut futures::stream::SelectAll<virtualization::EventStream>,
         masquerade_handler: &mut MasqueradeHandler,
         masquerade_events: &mut futures::stream::SelectAll<masquerade::EventStream>,
-        networks_request_streams: &mut network::NetworksRequestStreams,
+        networks_request_streams: &mut network::ConnectionTagged<
+            fnp_properties::NetworksRequestStream,
+        >,
         delegated_networks_stream: &mut DelegatedNetworksStream,
+        network_token_resolver_request_streams: &mut futures::stream::SelectAll<
+            fnp_properties::NetworkTokenResolverRequestStream,
+        >,
     ) -> Result<(), anyhow::Error> {
         match event {
             ProvisioningEvent::InterfaceWatcherResult(if_watcher_res) => {
@@ -1563,6 +1597,9 @@ impl<'a> NetCfg<'a> {
                                  may be active at a time"
                             );
                         }
+                    }
+                    RequestStream::NetworkTokenResolver(req_stream) => {
+                        network_token_resolver_request_streams.push(req_stream)
                     }
                 };
             }
@@ -2263,7 +2300,14 @@ impl<'a> NetCfg<'a> {
                     state: (),
                 },
             ) => {
-                netpol_networks_service.remove_network(*id).await;
+                let network_id = network::NetworkId::fuchsia(*id);
+                netpol_networks_service
+                    .update(network::PropertyUpdate::ChangeNetwork(
+                        network_id,
+                        network::NetworkChange::Remove,
+                    ))
+                    .await;
+                netpol_networks_service.remove_network(network_id).await;
                 match interface_states.remove(&(*id).into()) {
                     // An interface netcfg was not responsible for configuring was removed, do
                     // nothing.
@@ -2754,6 +2798,15 @@ impl<'a> NetCfg<'a> {
                     id
                 )));
             }
+            self.netpol_networks_service
+                .update(PropertyUpdate::ChangeNetwork(
+                    network::NetworkId::fuchsia(interface_id),
+                    network::NetworkChange::Change(network::PropertyChangeEvent {
+                        added: true,
+                        marks: None,
+                    }),
+                ))
+                .await;
             let InterfaceState { control, .. } = match self.interface_states.entry(interface_id) {
                 Entry::Occupied(entry) => {
                     panic!(
@@ -2804,6 +2857,15 @@ impl<'a> NetCfg<'a> {
                     );
                 }
                 Entry::Vacant(entry) => {
+                    self.netpol_networks_service
+                        .update(PropertyUpdate::ChangeNetwork(
+                            network::NetworkId::fuchsia(interface_id),
+                            network::NetworkChange::Change(network::PropertyChangeEvent {
+                                added: true,
+                                marks: None,
+                            }),
+                        ))
+                        .await;
                     let dhcpv6_pd_config = if !self
                         .allowed_upstream_device_classes
                         .contains(&device_info.device_class)

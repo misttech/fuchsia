@@ -5,12 +5,15 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
 use log::{debug, error};
+use {
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_policy_testing as fnp_testing,
+};
 
 async fn handle_provider(
     delegated_networks: Arc<fnp_socketproxy::NetworkRegistryProxy>,
@@ -43,17 +46,56 @@ async fn handle_provider(
         .await
 }
 
-async fn handle_dns_server_watcher(
-    rs: fnp_socketproxy::DnsServerWatcherRequestStream,
+async fn handle_fake_socket_proxy(
+    responders: Arc<Mutex<Vec<fnp_socketproxy::DnsServerWatcherWatchServersResponder>>>,
+    next_dns_update: Arc<Mutex<Option<Vec<fnp_socketproxy::DnsServerList>>>>,
+    rs: fnp_testing::FakeSocketProxy_RequestStream,
 ) -> Result<(), anyhow::Error> {
-    let responders = Arc::new(Mutex::new(Vec::new()));
     rs.map(|r| r.context("fidl error"))
         .try_for_each(|req| {
             let responders = responders.clone();
+            let next_dns_update = next_dns_update.clone();
+            async move {
+                match req {
+                    fnp_testing::FakeSocketProxy_Request::SetDns { servers, responder } => {
+                        let mut resp = Vec::new();
+                        // Take the existing list of responders, so they will be
+                        // dropped after sending below.
+                        std::mem::swap(&mut resp, &mut *responders.lock().await);
+                        if resp.is_empty() {
+                            *next_dns_update.lock().await = Some(servers);
+                        } else {
+                            for r in resp {
+                                r.send(&servers)?;
+                            }
+                        }
+                        responder.send()?;
+                    }
+                }
+
+                Ok(())
+            }
+        })
+        .await
+}
+
+async fn handle_dns_server_watcher(
+    responders: Arc<Mutex<Vec<fnp_socketproxy::DnsServerWatcherWatchServersResponder>>>,
+    next_dns_update: Arc<Mutex<Option<Vec<fnp_socketproxy::DnsServerList>>>>,
+    rs: fnp_socketproxy::DnsServerWatcherRequestStream,
+) -> Result<(), anyhow::Error> {
+    rs.map(|r| r.context("fidl error"))
+        .try_for_each(|req| {
+            let responders = responders.clone();
+            let next_dns_update = next_dns_update.clone();
             async move {
                 match req {
                     fnp_socketproxy::DnsServerWatcherRequest::WatchServers { responder } => {
-                        responders.lock().await.push(responder);
+                        if let Some(servers) = next_dns_update.lock().await.take() {
+                            responder.send(&servers)?;
+                        } else {
+                            responders.lock().await.push(responder);
+                        }
                     }
                 }
 
@@ -90,7 +132,8 @@ async fn handle_fuchsia_networks(
 }
 
 enum IncomingServices {
-    FakeSocketProxy(fnp_socketproxy::NetworkRegistryRequestStream),
+    FakeSocketProxy(fnp_testing::FakeSocketProxy_RequestStream),
+    NetworkRegistry(fnp_socketproxy::NetworkRegistryRequestStream),
     DnsServerWatcher(fnp_socketproxy::DnsServerWatcherRequestStream),
     FuchsiaNetworks(fnp_socketproxy::FuchsiaNetworksRequestStream),
 }
@@ -107,20 +150,32 @@ async fn main() -> Result<(), anyhow::Error> {
     let _ = fs
         .dir("svc")
         .add_fidl_service(IncomingServices::FakeSocketProxy)
+        .add_fidl_service(IncomingServices::NetworkRegistry)
         .add_fidl_service(IncomingServices::DnsServerWatcher)
         .add_fidl_service(IncomingServices::FuchsiaNetworks);
 
     let _ = fs.take_and_serve_directory_handle()?;
+    let dns_responders = Arc::new(Mutex::new(Vec::new()));
+    let next_dns_update = Arc::new(Mutex::new(None));
 
     fs.for_each_concurrent(10, |request| {
         let delegated_networks = delegated_networks.clone();
+        let dns_responders = dns_responders.clone();
+        let next_dns_update = next_dns_update.clone();
         async {
             if let Err(e) = match request {
                 IncomingServices::FakeSocketProxy(rs) => {
-                    handle_provider(delegated_networks, rs).await.context("fake socket proxy")
+                    handle_fake_socket_proxy(dns_responders, next_dns_update, rs)
+                        .await
+                        .context("fake socket proxy")
+                }
+                IncomingServices::NetworkRegistry(rs) => {
+                    handle_provider(delegated_networks, rs).await.context("network registry")
                 }
                 IncomingServices::DnsServerWatcher(rs) => {
-                    handle_dns_server_watcher(rs).await.context("dns server watcher")
+                    handle_dns_server_watcher(dns_responders, next_dns_update, rs)
+                        .await
+                        .context("dns server watcher")
                 }
                 IncomingServices::FuchsiaNetworks(rs) => {
                     handle_fuchsia_networks(rs).await.context("fuchsia networks")

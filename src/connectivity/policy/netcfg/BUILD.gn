@@ -42,6 +42,7 @@ rustc_library("lib") {
     "//src/connectivity/network/dhcpv4/lib",
     "//src/connectivity/network/lib/dns_server_watcher",
     "//src/connectivity/network/lib/netfilter",
+    "//src/connectivity/policy/lib/properties",
     "//src/connectivity/policy/socket-proxy:lib",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/log/rust",
@@ -95,7 +96,7 @@ rustc_library("lib") {
     "src/lib.rs",
     "src/masquerade.rs",
     "src/network/mod.rs",
-    "src/network/token_map.rs",
+    "src/network/token_registry.rs",
     "src/socketproxy.rs",
     "src/virtualization.rs",
   ]

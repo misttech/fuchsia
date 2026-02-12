@@ -8,9 +8,11 @@ use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
 use fidl::endpoints::{ControlHandle as _, Responder as _};
 use log::{error, info, warn};
+use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
-mod token_map;
+mod token_registry;
 
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
@@ -19,9 +21,46 @@ use {
     fidl_fuchsia_posix_socket as fposix_socket,
 };
 
+// The id for each network, separated by network source.
+//
+// NB: These are separated in the case that the same underlying
+// interface id is used by Fuchsia and a delegated actor.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NetworkId {
+    Fuchsia(InterfaceId),
+    Delegated(InterfaceId),
+}
+
+impl std::fmt::Display for NetworkId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NetworkId::Fuchsia(interface_id) => write!(f, "fuchsia:{interface_id}"),
+            NetworkId::Delegated(interface_id) => write!(f, "delegated:{interface_id}"),
+        }
+    }
+}
+
+impl NetworkId {
+    pub fn get(&self) -> InterfaceId {
+        match self {
+            NetworkId::Fuchsia(interface_id) => *interface_id,
+            NetworkId::Delegated(interface_id) => *interface_id,
+        }
+    }
+
+    pub fn fuchsia<I: Into<InterfaceId>>(id: I) -> Self {
+        NetworkId::Fuchsia(id.into())
+    }
+
+    pub fn delegated<I: Into<InterfaceId>>(id: I) -> Self {
+        NetworkId::Delegated(id.into())
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NetworkTokenContents {
-    connection_id: ConnectionId,
-    interface_id: InterfaceId,
+    network_id: NetworkId,
+    is_default: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -65,7 +104,7 @@ impl UpdateGenerations {
 
 #[derive(Debug)]
 pub(crate) struct NetworkPropertyResponder {
-    token: fidl::EventPair,
+    token: fnp_properties::NetworkToken,
     watched_properties: Vec<fnp_properties::Property>,
     responder: fnp_properties::NetworksWatchPropertiesResponder,
 }
@@ -79,98 +118,102 @@ impl NetworkPropertyResponder {
     }
 }
 
-#[derive(Default)]
-pub struct NetpolNetworksService {
-    // The current generation
-    current_generation: UpdateGeneration,
-    // The last generation sent per connection
-    generations_by_connection: UpdateGenerations,
-    // Default Network Watchers
-    default_network_responders:
-        HashMap<ConnectionId, fnp_properties::NetworksWatchDefaultResponder>,
-    tokens: token_map::TokenMap<NetworkTokenContents>,
-    // NetworkProperty Watchers
-    property_responders: HashMap<ConnectionId, NetworkPropertyResponder>,
-    // Network properties
-    network_properties: NetworkProperties,
-}
-
 #[derive(Default, Clone)]
 struct NetworkProperties {
-    // Current default network
-    default_network: Option<InterfaceId>,
-    // Network marks
-    socket_marks: HashMap<InterfaceId, fnet::Marks>,
-    // DNS Servers
-    dns_servers: Vec<fnet_name::DnsServer_>,
+    socket_marks: Option<fnet::Marks>,
 }
 
 impl NetworkProperties {
-    fn apply(&mut self, update: PropertyUpdate) -> UpdatesApplied {
-        let mut updates = UpdatesApplied::default();
+    fn get_marks(&self) -> Option<&fnet::Marks> {
+        self.socket_marks.as_ref()
+    }
+}
 
-        if let Some(new_default_network) = update.default_network {
-            updates.default_network = self.handle_default_network_update(new_default_network);
+/// The current state of all networks sent to the NetworkRegistry.
+#[derive(Default, Clone)]
+struct RegisteredNetworks {
+    default_network: Option<NetworkId>,
+    networks: HashMap<NetworkId, NetworkProperties>,
+    dns_servers: Vec<fnet_name::DnsServer_>,
+}
+
+impl RegisteredNetworks {
+    fn apply(&mut self, update: PropertyUpdate) -> UpdateApplied {
+        match update {
+            PropertyUpdate::LoseDefaultNetwork => self.handle_default_network_update(None),
+            PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
+                NetworkChange::Change(event) => self.handle_changed_network(network_id, event),
+                NetworkChange::Remove => UpdateApplied::NetworkRemoved(network_id),
+                NetworkChange::MakeDefault => self.handle_default_network_update(Some(network_id)),
+            },
+            PropertyUpdate::UpdateDns(dns_servers) => {
+                if self.dns_servers != dns_servers {
+                    self.dns_servers = dns_servers;
+                    UpdateApplied::DnsChanged
+                } else {
+                    UpdateApplied::None
+                }
+            }
         }
-
-        if let Some((netid, marks)) = update.socket_marks {
-            updates.socket_marks_network = self.handle_socket_marks_update(netid, marks);
-        }
-
-        if let Some(dns) = update.dns {
-            updates.dns_changed = self.dns_servers != dns;
-            self.dns_servers = dns;
-        }
-
-        updates
     }
 
     // Handle the `default_network` argument in a `PropertyUpdate`, determining
     // whether the network changed as a result of the update.
     //
-    // Returns the update to set for the `default_network` argument
-    // of UpdatesApplied.
+    // Returns an `UpdateApplied::DefaultNetworkChanged` if the new default
+    // network is different from the old one.
     fn handle_default_network_update(
         &mut self,
-        new_default_network: Option<InterfaceId>,
-    ) -> Option<Option<InterfaceId>> {
+        new_default_network: Option<NetworkId>,
+    ) -> UpdateApplied {
         // We do not need to send an update applied if the network stayed the same.
         if new_default_network == self.default_network {
-            return None;
+            return UpdateApplied::None;
         }
 
         let old_default_network = self.default_network;
-        if let (None, Some(old_default_network_id)) = (new_default_network, old_default_network) {
-            let _: Option<_> = self.socket_marks.remove(&old_default_network_id);
-        }
         self.default_network = new_default_network;
-        return Some(old_default_network);
+        return UpdateApplied::DefaultNetworkChanged(old_default_network);
     }
 
-    // Handle the `socket_marks` argument in a `PropertyUpdate`, determining
-    // whether the socket marks changed as a result of the update.
+    // Handle the `PropertyChangeEvent` in a `PropertyUpdate`, determining
+    // whether network properties changed as a result of the update.
     //
-    // Returns the update to set for the `socket_marks_network` argument
-    // of UpdatesApplied.
-    fn handle_socket_marks_update(
+    // Returns an `UpdateApplied::NetworkChanged` event if this is a valid change.
+    fn handle_changed_network(
         &mut self,
-        netid: InterfaceId,
-        marks: fnet::Marks,
-    ) -> Option<InterfaceId> {
-        // We do not need to send an update applied if the marks for the
-        // provided netid stay the same.
-        if self.socket_marks.contains_key(&netid)
-            && self
-                .socket_marks
-                .get(&netid)
-                .and_then(|old_marks| Some(*old_marks == marks))
-                .unwrap_or_default()
-        {
-            return None;
-        }
+        network_id: NetworkId,
+        event: PropertyChangeEvent,
+    ) -> UpdateApplied {
+        let PropertyChangeEvent { added, marks: socket_marks } = event;
+        let entry = self.networks.entry(network_id);
+        let result = match (added, &entry, network_id, socket_marks) {
+            (true, Entry::Occupied(_), _, _) => Err("add already added network"),
+            (false, Entry::Vacant(_), _, _) => Err("update a non-added network"),
+            (_, _, NetworkId::Fuchsia(_), Some(_)) => Err("have a fuchsia network with marks"),
+            (_, _, NetworkId::Delegated(_), None) => Err("have a delegated network without marks"),
 
-        let _: Option<_> = self.socket_marks.insert(netid, marks);
-        return Some(netid);
+            (_, _, NetworkId::Fuchsia(_), None) => Ok((NetworkProperties::default(), added)),
+            (_, entry, NetworkId::Delegated(_), Some(socket_marks)) => {
+                let changed = if let Entry::Occupied(e) = entry {
+                    e.get().get_marks() != Some(&socket_marks)
+                } else {
+                    true
+                };
+                Ok((NetworkProperties { socket_marks: Some(socket_marks) }, changed))
+            }
+        };
+
+        match result {
+            Ok((properties, changed_marks)) => {
+                let _ = entry.insert_entry(properties);
+                UpdateApplied::NetworkChanged { network_id, added, changed_marks }
+            }
+            Err(e) => {
+                error!("Cannot {e}. Update ignored.");
+                UpdateApplied::None
+            }
+        }
     }
 
     fn maybe_respond(
@@ -196,13 +239,13 @@ impl NetworkProperties {
 trait PropertyUpdates {
     fn add_socket_marks(
         &mut self,
-        properties: &NetworkProperties,
+        network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
         responder: &NetworkPropertyResponder,
     );
     fn add_dns(
         &mut self,
-        properties: &NetworkProperties,
+        network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
         responder: &NetworkPropertyResponder,
     );
@@ -211,22 +254,34 @@ trait PropertyUpdates {
 impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
     fn add_socket_marks(
         &mut self,
-        properties: &NetworkProperties,
+        network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
         responder: &NetworkPropertyResponder,
     ) {
         if !responder.watched_properties.contains(&fnp_properties::Property::SocketMarks) {
             return;
         }
-        match properties.socket_marks.get(&network.interface_id) {
-            Some(marks) => self.push(fnp_properties::PropertyUpdate::SocketMarks(marks.clone())),
-            None => {}
+
+        match network_registry.networks.get(&network.network_id) {
+            Some(network) => {
+                if let Some(socket_marks) = network.get_marks() {
+                    self.push(fnp_properties::PropertyUpdate::SocketMarks(socket_marks.clone()));
+                }
+                return;
+            }
+            None => {
+                error!(
+                    "State is inconsistent. We attempted to add marks for a \
+            network that is not known: {:?}",
+                    network.network_id
+                );
+            }
         }
     }
 
     fn add_dns(
         &mut self,
-        properties: &NetworkProperties,
+        network_registry: &RegisteredNetworks,
         network: &NetworkTokenContents,
         responder: &NetworkPropertyResponder,
     ) {
@@ -234,11 +289,11 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
             return;
         }
 
-        let interface_id = network.interface_id;
+        let interface_id = network.network_id;
         self.push(fnp_properties::PropertyUpdate::DnsConfiguration(
             fnp_properties::DnsConfiguration {
                 servers: Some(
-                    properties
+                    network_registry
                         .dns_servers
                         .iter()
                         .filter(|d| {
@@ -250,8 +305,15 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
                                             source_interface,
                                             ..
                                         },
-                                    )
-                                    | fnet_name::DnsServerSource::Dhcp(
+                                    ) => match (interface_id, source_interface) {
+                                        (_, None) => true,
+                                        (id1, Some(id2)) => {
+                                            Ok(id1)
+                                                == InterfaceId::try_from(*id2)
+                                                    .map(|id| NetworkId::delegated(id))
+                                        }
+                                    },
+                                    fnet_name::DnsServerSource::Dhcp(
                                         fnet_name::DhcpDnsServerSource { source_interface, .. },
                                     )
                                     | fnet_name::DnsServerSource::Ndp(
@@ -263,7 +325,11 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
                                         },
                                     ) => match (interface_id, source_interface) {
                                         (_, None) => true,
-                                        (id1, Some(id2)) => id1.get() == *id2,
+                                        (id1, Some(id2)) => {
+                                            Ok(id1)
+                                                == InterfaceId::try_from(*id2)
+                                                    .map(|id| NetworkId::fuchsia(id))
+                                        }
                                     },
 
                                     _ => {
@@ -285,59 +351,76 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct PropertyUpdate {
-    default_network: Option<Option<InterfaceId>>,
-    socket_marks: Option<(InterfaceId, fnet::Marks)>,
-    dns: Option<Vec<fnet_name::DnsServer_>>,
+// TODO(https://fxbug.dev/483165646): Improve naming in this module.
+/// An event representing the properties that changed for a network.
+#[derive(Debug)]
+pub struct PropertyChangeEvent {
+    /// When true, this is a new network being added. Otherwise, this is an
+    /// update to an existing network.
+    pub added: bool,
+    /// The new marks for the network.
+    pub marks: Option<fnet::Marks>,
 }
 
-#[derive(Default, Debug)]
-struct UpdatesApplied {
-    // If Some, contains old network id
-    default_network: Option<Option<InterfaceId>>,
+#[derive(Debug)]
+pub enum NetworkChange {
+    /// Change a network's properties.
+    Change(PropertyChangeEvent),
+    Remove,
+    MakeDefault,
+}
 
-    // If Some, contains the network ID for which the mark was set
-    socket_marks_network: Option<InterfaceId>,
+#[derive(Debug)]
+enum UpdateApplied {
+    /// No update was performed.
+    None,
 
-    // Was the DNS changed
-    dns_changed: bool,
+    /// A default network has changed. Carries the previous default id, if any.
+    DefaultNetworkChanged(Option<NetworkId>),
+
+    /// Whether the DNS servers changed.
+    DnsChanged,
+
+    /// Network was added or updated, contains the NetworkId of the added network.
+    NetworkChanged { network_id: NetworkId, added: bool, changed_marks: bool },
+
+    /// Network was removed, contains the NetworkId of the removed network.
+    NetworkRemoved(NetworkId),
+}
+
+#[derive(Debug)]
+pub enum PropertyUpdate {
+    LoseDefaultNetwork,
+    ChangeNetwork(NetworkId, NetworkChange),
+    UpdateDns(Vec<fnet_name::DnsServer_>),
 }
 
 impl PropertyUpdate {
-    pub fn default_network<N: Into<InterfaceId>>(mut self, network_id: N) -> Self {
-        self.default_network = Some(Some(network_id.into()));
-        self
+    pub fn default_network_lost() -> Self {
+        PropertyUpdate::LoseDefaultNetwork
     }
 
-    pub fn default_network_lost(mut self) -> Self {
-        self.default_network = Some(None);
-        self
+    pub fn dns(dns_servers: &DnsServers) -> Self {
+        // TODO(https://fxbug.dev/477980011): Switch to deriving dns servers from
+        // NetworkRegistry updates.
+        PropertyUpdate::UpdateDns(dns_servers.consolidated_dns_servers())
     }
+}
 
-    pub fn socket_marks<N: Into<InterfaceId>, Marks: Into<fnet::Marks>>(
-        mut self,
-        network_id: N,
-        marks: Marks,
-    ) -> Self {
-        self.socket_marks = Some((network_id.into(), marks.into()));
-        self
-    }
-
-    pub fn dns(mut self, dns_servers: &DnsServers) -> Self {
-        self.dns = Some(dns_servers.consolidated_dns_servers());
-        self
-    }
-
-    pub fn add_network<N: Into<InterfaceId>>(self, _id: N) -> Self {
-        // TODO(https://fxbug.dev/428712735): Implement tracking of added networks.
-        self
-    }
-
-    pub fn remove_network<N: Into<InterfaceId>>(self, _id: N) -> Self {
-        // TODO(https://fxbug.dev/428712735): Implement tracking of added networks.
-        self
-    }
+#[derive(Default)]
+pub struct NetpolNetworksService {
+    // The current generation
+    current_generation: UpdateGeneration,
+    // The last generation sent per connection
+    generations_by_connection: UpdateGenerations,
+    // Default Network Watchers
+    default_network_responders:
+        HashMap<ConnectionId, fnp_properties::NetworksWatchDefaultResponder>,
+    tokens: token_registry::TokenRegistry<NetworkTokenContents>,
+    // NetworkProperty Watchers
+    property_responders: HashMap<ConnectionId, NetworkPropertyResponder>,
+    // The networks known to the system
+    network_registry: RegisteredNetworks,
 }
 
 impl NetpolNetworksService {
@@ -360,43 +443,33 @@ impl NetpolNetworksService {
                             .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED)
                     }
                     std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                        let interface_id = if self
+                        let network_id = if self
                             .generations_by_connection
                             .default_network(&id)
                             .unwrap_or_default()
                             < self.current_generation.default_network
                         {
-                            match self.network_properties.default_network {
-                                Some(interface_id) => Some(interface_id),
-                                None => None,
-                            }
+                            self.network_registry.default_network
                         } else {
                             None
                         };
-                        if let Some(interface_id) = interface_id {
+                        if let Some(network_id) = network_id {
                             self.generations_by_connection
                                 .set_default_network(id, self.current_generation);
                             let token = self
                                 .tokens
-                                .insert_data(NetworkTokenContents {
-                                    connection_id: id,
-                                    interface_id,
-                                })
-                                .await;
+                                .ensure_token(NetworkTokenContents { network_id, is_default: true })
+                                .get()
+                                .duplicate()
+                                .context("could not duplicate token")?;
                             responder.send(
-                                fnp_properties::NetworksWatchDefaultResponse::Network(
-                                    fnp_properties::NetworkToken {
-                                        value: Some(token),
-                                        ..Default::default()
-                                    },
-                                ),
+                                fnp_properties::NetworksWatchDefaultResponse::Network(token),
                             )?;
 
                             if let Some(responder) = self.property_responders.remove(&id) {
                                 let _: Option<_> = self.generations_by_connection.remove(&id);
-                                let _: Result<(), fidl::Error> = responder.respond(Err(
-                                    fnp_properties::WatchError::DefaultNetworkChanged,
-                                ));
+                                let _: Result<(), fidl::Error> =
+                                    responder.respond(Err(fnp_properties::WatchError::NetworkGone));
                             }
                         } else {
                             let _: &mut _ = vacant_entry.insert(responder);
@@ -414,7 +487,7 @@ impl NetpolNetworksService {
                 (Some(network), Some(properties)) => {
                     if properties.is_empty() {
                         responder.send(Err(fnp_properties::WatchError::NoProperties))?;
-                    } else if let Some(token) = network.value {
+                    } else {
                         match self.property_responders.entry(id) {
                             std::collections::hash_map::Entry::Occupied(_) => {
                                 warn!(
@@ -427,54 +500,42 @@ impl NetpolNetworksService {
                                     .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED)
                             }
                             std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                                match self.tokens.get(&token).await {
-                                    None => {
-                                        warn!("Unknown network token. ({token:?}");
+                                match self.tokens.get_contents(&network) {
+                                    Err(e) => {
+                                        warn!("Unknown network token. ({network:?}: {e})");
                                         responder.send(Err(
                                             fnp_properties::WatchError::InvalidNetworkToken,
                                         ))?;
                                     }
-                                    Some(network_contents) => {
-                                        if network_contents.connection_id != id {
-                                            warn!(
-                                                "Cannot watch a NetworkToken that was not created \
-                                                by this connection."
-                                            );
-                                            responder.send(Err(
-                                                fnp_properties::WatchError::InvalidNetworkToken,
-                                            ))?;
-                                        } else {
-                                            let responder = NetworkPropertyResponder {
-                                                token,
-                                                watched_properties: properties,
-                                                responder,
-                                            };
-                                            if self
-                                                .generations_by_connection
-                                                .properties(&id)
-                                                .unwrap_or_default()
-                                                < self.current_generation.properties
+                                    Ok(network_contents) => {
+                                        let responder = NetworkPropertyResponder {
+                                            token: network,
+                                            watched_properties: properties,
+                                            responder,
+                                        };
+                                        if self
+                                            .generations_by_connection
+                                            .properties(&id)
+                                            .unwrap_or_default()
+                                            < self.current_generation.properties
+                                        {
+                                            self.generations_by_connection
+                                                .set_properties(id, self.current_generation);
+                                            if let Some(responder) = self
+                                                .network_registry
+                                                .maybe_respond(&network_contents, responder)
                                             {
-                                                self.generations_by_connection
-                                                    .set_properties(id, self.current_generation);
-                                                if let Some(responder) = self
-                                                    .network_properties
-                                                    .maybe_respond(&network_contents, responder)
-                                                {
-                                                    let _: &mut NetworkPropertyResponder =
-                                                        vacant_entry.insert(responder);
-                                                }
-                                            } else {
                                                 let _: &mut NetworkPropertyResponder =
                                                     vacant_entry.insert(responder);
                                             }
+                                        } else {
+                                            let _: &mut NetworkPropertyResponder =
+                                                vacant_entry.insert(responder);
                                         }
                                     }
                                 }
                             }
                         }
-                    } else {
-                        responder.send(Err(fnp_properties::WatchError::InvalidNetworkToken))?;
                     }
                 }
             },
@@ -508,17 +569,18 @@ impl NetpolNetworksService {
                     // TODO(https://fxbug.dev/475266563): Stop using
                     // `fuchsia.posix.socket.OptionalUint32` here.
                     fposix_socket::OptionalUint32::Value(interface_id) => {
-                        self.update(
-                            PropertyUpdate::default().default_network(
+                        self.update(PropertyUpdate::ChangeNetwork(
+                            NetworkId::delegated(
                                 InterfaceId::try_from(interface_id)
                                     .map_err(|_| NetworkRegistrySetDefaultError::NotFound)?,
                             ),
-                        )
+                            NetworkChange::MakeDefault,
+                        ))
                         .await;
                         Ok(())
                     }
                     fposix_socket::OptionalUint32::Unset(_) => {
-                        self.update(PropertyUpdate::default().default_network_lost()).await;
+                        self.update(PropertyUpdate::default_network_lost()).await;
                         Ok(())
                     }
                 })()
@@ -526,20 +588,27 @@ impl NetpolNetworksService {
             ),
             Ok(NetworkRegistryRequest::Add { network, responder }) => responder.send(
                 (async || {
-                    let network_id: InterfaceId = network
+                    let network_id = network
                         .network_id
-                        .and_then(|id| id.try_into().ok())
+                        .and_then(|id| InterfaceId::try_from(id).ok())
+                        .map(|id| NetworkId::delegated(id))
                         .ok_or(NetworkRegistryAddError::MissingNetworkId)?;
                     let NetworkInfo::Starnix(info) =
                         network.info.ok_or(NetworkRegistryAddError::MissingNetworkInfo)?
                     else {
                         return Err(NetworkRegistryAddError::MissingNetworkInfo);
                     };
-                    self.update(PropertyUpdate::default().add_network(network_id).socket_marks(
+
+                    // TODO(https://fxbug.dev/431822969): Replace this with a common definition
+                    // of which mark domain is used for which purpose.
+                    let marks =
+                        Some(fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() });
+
+                    // TODO(https://fxbug.dev/477980011): Also include DNS update here,
+                    // rather than relying on DnsServerWatcher provided by socket-proxy.
+                    self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        // TODO(https://fxbug.dev/431822969): Replace this with a common definition
-                        // of which mark domain is used for which purpose.
-                        fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() },
+                        NetworkChange::Change(PropertyChangeEvent { added: true, marks }),
                     ))
                     .await;
                     Ok(())
@@ -548,20 +617,24 @@ impl NetpolNetworksService {
             ),
             Ok(NetworkRegistryRequest::Update { network, responder }) => responder.send(
                 (async || {
-                    let network_id: InterfaceId = network
+                    let network_id = network
                         .network_id
-                        .and_then(|id| id.try_into().ok())
+                        .and_then(|id| InterfaceId::try_from(id).ok())
+                        .map(|id| NetworkId::delegated(id))
                         .ok_or(NetworkRegistryUpdateError::MissingNetworkId)?;
                     let NetworkInfo::Starnix(info) =
                         network.info.ok_or(NetworkRegistryUpdateError::MissingNetworkInfo)?
                     else {
                         return Err(NetworkRegistryUpdateError::MissingNetworkInfo);
                     };
-                    self.update(PropertyUpdate::default().add_network(network_id).socket_marks(
+
+                    // TODO(https://fxbug.dev/431822969): Replace this with a common definition
+                    // of which mark domain is used for which purpose.
+                    let marks =
+                        Some(fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() });
+                    self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        // TODO(https://fxbug.dev/431822969): Replace this with a common definition
-                        // of which mark domain is used for which purpose.
-                        fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() },
+                        NetworkChange::Change(PropertyChangeEvent { added: false, marks }),
                     ))
                     .await;
                     Ok(())
@@ -570,15 +643,16 @@ impl NetpolNetworksService {
             ),
             Ok(NetworkRegistryRequest::Remove { network_id, responder }) => responder.send(
                 (async || {
-                    self.update(
-                        PropertyUpdate::default().remove_network(
+                    self.update(PropertyUpdate::ChangeNetwork(
+                        NetworkId::delegated(
                             // Try to convert network_id to an `InterfaceId`. If
                             // this fails (i.e. the network_id is 0) this is
                             // treated the same as a `NOT_FOUND` error.
                             InterfaceId::try_from(network_id)
                                 .map_err(|_| NetworkRegistryRemoveError::NotFound)?,
                         ),
-                    )
+                        NetworkChange::Remove,
+                    ))
                     .await;
                     Ok(())
                 })()
@@ -588,39 +662,104 @@ impl NetpolNetworksService {
         .context("while handling DelegatedNetwork request")
     }
 
+    pub(crate) async fn handle_network_token_resolver_request(
+        &mut self,
+        request: Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
+    ) -> Result<(), anyhow::Error> {
+        use fnp_properties::NetworkTokenResolverResolveTokenError as ResolveTokenError;
+
+        let request = request.context("while handling NetworkTokenResolver request")?;
+        match request {
+            fnp_properties::NetworkTokenResolverRequest::ResolveToken { token, responder } => {
+                let maybe_contents = self.tokens.get_contents(&token).copied();
+                match maybe_contents {
+                    Err(e) => {
+                        warn!("Unknown network token. ({token:?}: {e})");
+                        responder.send(Err(ResolveTokenError::InvalidNetworkToken))?;
+                    }
+                    Ok(contents) => {
+                        if contents.is_default {
+                            // This is a default network token, we need to grab
+                            // the non-default variant.
+                            let query = NetworkTokenContents { is_default: false, ..contents };
+                            if let Some(tok) = self.tokens.get_token(&query) {
+                                responder.send(tok.duplicate().map_err(|e| {
+                                    warn!("Encountered issue duplicating generated token. {e}");
+                                    ResolveTokenError::InvalidNetworkToken
+                                }))?;
+                            } else {
+                                warn!("Requested canonical version of unregistered network.");
+                                responder.send(Err(ResolveTokenError::InvalidNetworkToken))?;
+                            }
+                        } else {
+                            responder.send(Ok(token))?;
+                        }
+                    }
+                }
+            }
+            fidl_fuchsia_net_policy_properties::NetworkTokenResolverRequest::_UnknownMethod {
+                ordinal,
+                control_handle,
+                method_type,
+                ..
+            } => warn!(
+                "Encountered unknown method call on NetworkTokenResolver: {ordinal} \
+                {control_handle:?} {method_type:?}"
+            ),
+        }
+
+        Ok(())
+    }
+
     async fn changed_default_network(
-        error: fnp_properties::WatchError,
+        &mut self,
+        previous_default_network: Option<NetworkId>,
         responders: &mut HashMap<ConnectionId, NetworkPropertyResponder>,
-        generations: &mut UpdateGenerations,
     ) {
         let mut r = HashMap::new();
         std::mem::swap(&mut r, responders);
         r = r
             .into_iter()
             .filter_map(|(id, responder)| {
-                // NB: Currently all responders are for the default network.
-                let _: Option<_> = generations.remove(&id);
-                let _: Result<(), fidl::Error> = responder.respond(Err(error));
-                None
+                match self.tokens.get_contents(&responder.token) {
+                    Ok(contents) => {
+                        // We only want to remove when watching a default token.
+                        if contents.is_default {
+                            let _: Option<_> = self.generations_by_connection.remove(&id);
+                            let _: Result<(), fidl::Error> =
+                                responder.respond(Err(fnp_properties::WatchError::NetworkGone));
+                            return None;
+                        }
+                    }
+                    Err(zx::Status::NOT_FOUND) => {
+                        warn!("Token provided to get_contents is not valid.");
+                    }
+                    Err(e) => {
+                        warn!("Encountered unknown issue while getting contents: {e}");
+                    }
+                }
+                Some((id, responder))
             })
             .collect::<HashMap<_, _>>();
         std::mem::swap(&mut r, responders);
+        self.tokens.drop_if(|&c| {
+            c.is_default && previous_default_network.is_some_and(|i| i == c.network_id)
+        });
     }
 
-    pub(crate) async fn remove_network<ID: Into<InterfaceId>>(&mut self, interface_id: ID) {
-        let interface_id = interface_id.into();
-        info!("Removing interface {interface_id}. Reporting NETWORK_GONE to all clients.");
+    pub(crate) async fn remove_network(&mut self, network_id: NetworkId) {
+        info!("Removing interface {network_id}. Reporting NETWORK_GONE to all clients.");
         let mut responders = HashMap::new();
         std::mem::swap(&mut self.property_responders, &mut responders);
         for (id, responder) in responders {
-            let network = match self.tokens.get(&responder.token).await {
-                Some(network) => network,
-                None => {
-                    warn!("Could not fetch network data for responder");
+            let network = match self.tokens.get_contents(&responder.token) {
+                Ok(network) => network,
+                Err(e) => {
+                    warn!("Could not fetch network data for responder: {e}");
                     continue;
                 }
             };
-            if network.interface_id == interface_id {
+            if network.network_id == network_id {
                 // Report that this interface was removed
                 if let Err(e) = responder.respond(Err(fnp_properties::WatchError::NetworkGone)) {
                     warn!("Could not send to responder: {e}");
@@ -635,86 +774,107 @@ impl NetpolNetworksService {
 
     pub async fn update(&mut self, update: PropertyUpdate) {
         self.current_generation.properties += 1;
-        let updates_applied = self.network_properties.apply(update);
+        let update_applied = self.network_registry.apply(update);
+        if let UpdateApplied::None = update_applied {
+            // Return early if the update resulted in no changes.
+            return;
+        }
+
         let mut property_responders = HashMap::new();
         std::mem::swap(&mut self.property_responders, &mut property_responders);
 
-        if updates_applied.default_network.is_some() {
-            if let Some(default_network) = self.network_properties.default_network {
-                self.current_generation.default_network += 1;
-                let mut responders = HashMap::new();
-                std::mem::swap(&mut self.default_network_responders, &mut responders);
-                for (id, responder) in responders {
-                    self.generations_by_connection.set_default_network(id, self.current_generation);
-
-                    let token = self
-                        .tokens
-                        .insert_data(NetworkTokenContents {
-                            connection_id: id,
-                            interface_id: default_network,
-                        })
-                        .await;
-
-                    if let Err(e) =
-                        responder.send(fnp_properties::NetworksWatchDefaultResponse::Network(
-                            fnp_properties::NetworkToken {
-                                value: Some(token),
-                                ..Default::default()
-                            },
-                        ))
-                    {
-                        warn!("Could not send to responder: {e}");
+        match update_applied {
+            UpdateApplied::DefaultNetworkChanged(previous_default) => {
+                self.changed_default_network(previous_default, &mut property_responders).await;
+                match self.network_registry.default_network {
+                    Some(default_network) => {
+                        self.current_generation.default_network += 1;
+                        let mut responders = HashMap::new();
+                        std::mem::swap(&mut self.default_network_responders, &mut responders);
+                        for (id, responder) in responders {
+                            self.generations_by_connection
+                                .set_default_network(id, self.current_generation);
+                            match self
+                                .tokens
+                                .ensure_token(NetworkTokenContents {
+                                    network_id: default_network,
+                                    is_default: true,
+                                })
+                                .get()
+                                .duplicate()
+                            {
+                                Ok(token) => {
+                                    if let Err(e) = responder.send(
+                                        fnp_properties::NetworksWatchDefaultResponse::Network(
+                                            token,
+                                        ),
+                                    ) {
+                                        warn!("Could not send to responder: {e}");
+                                    }
+                                }
+                                Err(e) => warn!("Could not duplicate token: {e}"),
+                            };
+                        }
+                    }
+                    None => {
+                        // The default network has been lost.
+                        self.current_generation.default_network += 1;
+                        let mut responders = HashMap::new();
+                        std::mem::swap(&mut self.default_network_responders, &mut responders);
+                        for (id, responder) in responders {
+                            self.generations_by_connection
+                                .set_default_network(id, self.current_generation);
+                            if let Err(e) = responder.send(
+                                fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
+                                    fnp_properties::Empty,
+                                ),
+                            ) {
+                                warn!("Could not send to responder: {e}");
+                            }
+                        }
                     }
                 }
 
-                NetpolNetworksService::changed_default_network(
-                    fnp_properties::WatchError::DefaultNetworkChanged,
-                    &mut property_responders,
-                    &mut self.generations_by_connection,
-                )
-                .await;
-            } else {
-                // The default network has been lost.
-                self.current_generation.default_network += 1;
-                let mut responders = HashMap::new();
-                std::mem::swap(&mut self.default_network_responders, &mut responders);
-                for (id, responder) in responders {
-                    self.generations_by_connection.set_default_network(id, self.current_generation);
-                    if let Err(e) = responder.send(
-                        fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
-                            fnp_properties::Empty,
-                        ),
-                    ) {
-                        warn!("Could not send to responder: {e}");
-                    }
-                }
-
-                NetpolNetworksService::changed_default_network(
-                    fnp_properties::WatchError::DefaultNetworkLost,
-                    &mut property_responders,
-                    &mut self.generations_by_connection,
-                )
-                .await;
+                // All property updaters have been notified
+                return;
             }
+            UpdateApplied::NetworkChanged { network_id, added: true, .. } => {
+                let _ = self
+                    .tokens
+                    .ensure_token(NetworkTokenContents { network_id, is_default: false });
+            }
+            UpdateApplied::NetworkRemoved(network_id) => {
+                self.tokens.drop_if(|c| !c.is_default && c.network_id == network_id);
+            }
+            UpdateApplied::NetworkChanged { added: false, .. } => {
+                // The network already exists so the token must also exist.
+                // No action is needed.
+            }
+            // TODO(https://fxbug.dev/477980011): Switch to deriving dns servers from
+            // NetworkRegistry updates.
+            UpdateApplied::DnsChanged => {}
+            UpdateApplied::None => {}
         }
 
         for (id, responder) in property_responders {
             let mut updates = Vec::new();
-            let network = match self.tokens.get(&responder.token).await {
-                Some(network) => network,
-                None => {
-                    warn!("Could not fetch network data for responder");
+            let network = match self.tokens.get_contents(&responder.token) {
+                Ok(network) => network,
+                Err(e) => {
+                    warn!("Could not fetch network data for responder: {e}");
                     continue;
                 }
             };
 
-            if let Some(network_id) = updates_applied.socket_marks_network {
-                if network.interface_id == network_id {
-                    updates.add_socket_marks(&self.network_properties, &network, &responder);
+            if let UpdateApplied::NetworkChanged { network_id, changed_marks: true, .. } =
+                update_applied
+            {
+                if network.network_id == network_id {
+                    updates.add_socket_marks(&self.network_registry, &network, &responder);
                 }
             }
-            if updates_applied.dns_changed {
-                updates.add_dns(&self.network_properties, &network, &responder);
+            if let UpdateApplied::DnsChanged = update_applied {
+                updates.add_dns(&self.network_registry, &network, &responder);
             }
 
             self.generations_by_connection.set_properties(id, self.current_generation);
@@ -731,33 +891,37 @@ impl NetpolNetworksService {
     }
 }
 
-#[derive(Default)]
-pub struct NetworksRequestStreams {
+pub struct ConnectionTagged<Stream: futures::Stream + Unpin> {
     next_id: ConnectionId,
-    request_streams:
-        futures::stream::SelectAll<Tagged<ConnectionId, fnp_properties::NetworksRequestStream>>,
+    streams: futures::stream::SelectAll<Tagged<ConnectionId, Stream>>,
 }
 
-impl NetworksRequestStreams {
-    pub fn push(&mut self, stream: fnp_properties::NetworksRequestStream) {
-        self.request_streams.push(stream.tagged(self.next_id));
+impl<Stream: futures::Stream + Unpin> Default for ConnectionTagged<Stream> {
+    fn default() -> Self {
+        Self { next_id: Default::default(), streams: Default::default() }
+    }
+}
+
+impl<Stream: futures::Stream + Unpin> ConnectionTagged<Stream> {
+    pub fn push(&mut self, stream: Stream) {
+        self.streams.push(stream.tagged(self.next_id));
         self.next_id.0 += 1;
     }
 }
 
-impl futures::Stream for NetworksRequestStreams {
-    type Item = (ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>);
+impl<Stream: futures::Stream + Unpin> futures::Stream for ConnectionTagged<Stream> {
+    type Item = (ConnectionId, <Stream as futures::Stream>::Item);
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        std::pin::Pin::new(&mut self.request_streams).poll_next(cx)
+        std::pin::Pin::new(&mut self.streams).poll_next(cx)
     }
 }
 
-impl futures::stream::FusedStream for NetworksRequestStreams {
+impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for ConnectionTagged<Stream> {
     fn is_terminated(&self) -> bool {
-        self.request_streams.is_terminated()
+        self.streams.is_terminated()
     }
 }

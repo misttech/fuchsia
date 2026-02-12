@@ -1,18 +1,17 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 library fuchsia.net.policy.testing;
 
-using fuchsia.net.name;
+using fuchsia.net.policy.socketproxy;
 
 @discoverable
-closed protocol FakeNetcfg {
+closed protocol FakeSocketProxy {
     // TODO(https://fxbug.dev/477980011): This is unnecessary once
     // DNS servers are derived from NetworkRegistry updates.
-    /// Sets the DNS as if it was received from
-    /// [`fuchsia.net.policy.socketproxy`] via
+    /// Sets a list of DNS servers that should be reported via
     /// [`fuchsia.net.policy.socketproxy.DnsServerWatcher`].
     strict SetDns(struct {
-        servers vector<fuchsia.net.name.DnsServer>:MAX;
+        servers vector<fuchsia.net.policy.socketproxy.DnsServerList>:MAX;
     }) -> ();
 };

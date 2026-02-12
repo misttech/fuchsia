@@ -187,6 +187,7 @@ impl ManagementAgent {
                 fnet_name::DnsServerWatcherMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
+                fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
             ],
             Self::NetCfg(NetCfgVersion::Advanced) => &[
                 fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
@@ -195,6 +196,7 @@ impl ManagementAgent {
                 fnet_virtualization::ControlMarker::PROTOCOL_NAME,
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
+                fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
             ],
         }
     }
@@ -873,6 +875,7 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
+                    fnp_testing::FakeSocketProxy_Marker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(fnetemul::ChildDep {
@@ -891,8 +894,8 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 )),
                 exposes: Some(vec![
                     fnp_properties::NetworksMarker::PROTOCOL_NAME.to_string(),
-                    fnp_testing::FakeNetcfgMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME.to_string(),
+                    fnp_testing::FakeNetcfgMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 ..Default::default()
             },
