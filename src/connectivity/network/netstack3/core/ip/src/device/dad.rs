@@ -703,6 +703,7 @@ fn do_duplicate_address_detection<
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
     addr: &CC::AddressId,
+    timer_id: Option<BC::UniqueTimerId>,
 ) {
     let should_send_probe = core_ctx.with_dad_state(
         device_id,
@@ -724,6 +725,14 @@ fn do_duplicate_address_detection<
                     ip_specific_state,
                     probe_wait,
                 } => {
+                    if let Some(timer_id) = timer_id
+                        && timer_id != bindings_ctx.unique_timer_id(timer)
+                    {
+                        // This timer was from a previous round of DAD for this
+                        // (device, address). Just ignore it.
+                        return None;
+                    }
+
                     let (should_send_probe, state_change) = run_tentative_step::<I, CC, BC>(
                         core_ctx,
                         bindings_ctx,
@@ -757,6 +766,14 @@ fn do_duplicate_address_detection<
                     should_send_probe
                 }
                 DadState::Announcing { ip_specific_state, timer } => {
+                    if let Some(timer_id) = timer_id
+                        && timer_id != bindings_ctx.unique_timer_id(timer)
+                    {
+                        // This timer was from a previous round of DAD for this
+                        // (device, address). Just ignore it.
+                        return None;
+                    }
+
                     #[derive(GenericOverIp)]
                     #[generic_over_ip(I, Ip)]
                     struct WrapIn<'a, I: DadIpExt>(&'a mut I::AnnouncingState, I::Addr);
@@ -1115,7 +1132,7 @@ impl<BC: DadBindingsContext<Ipv4, Self::DeviceId>, CC: DadContext<Ipv4, BC>> Dad
         start_dad: StartDad<'_, Self::AddressId, Self::DeviceId>,
     ) {
         let StartDad { device_id, address_id } = start_dad;
-        do_duplicate_address_detection(self, bindings_ctx, device_id, address_id)
+        do_duplicate_address_detection(self, bindings_ctx, device_id, address_id, None)
     }
 
     fn stop_duplicate_address_detection(
@@ -1199,7 +1216,7 @@ where
         start_dad: StartDad<'_, Self::AddressId, Self::DeviceId>,
     ) {
         let StartDad { device_id, address_id } = start_dad;
-        do_duplicate_address_detection(self, bindings_ctx, device_id, address_id)
+        do_duplicate_address_detection(self, bindings_ctx, device_id, address_id, None)
     }
 
     fn stop_duplicate_address_detection(
@@ -1244,7 +1261,7 @@ where
 impl<I: IpDeviceIpExt, BC: DadBindingsContext<I, CC::DeviceId>, CC: DadContext<I, BC>>
     HandleableTimer<CC, BC> for DadTimerId<I, CC::WeakDeviceId, CC::WeakAddressId>
 {
-    fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, _: BC::UniqueTimerId) {
+    fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, timer_id: BC::UniqueTimerId) {
         let Self { device_id, addr, _marker } = self;
         let Some(device_id) = device_id.upgrade() else {
             return;
@@ -1252,7 +1269,7 @@ impl<I: IpDeviceIpExt, BC: DadBindingsContext<I, CC::DeviceId>, CC: DadContext<I
         let Some(addr_id) = addr.upgrade() else {
             return;
         };
-        do_duplicate_address_detection(core_ctx, bindings_ctx, &device_id, &addr_id)
+        do_duplicate_address_detection(core_ctx, bindings_ctx, &device_id, &addr_id, Some(timer_id))
     }
 }
 
@@ -2272,5 +2289,68 @@ mod tests {
             let duration = ipv4_dad_probe_wait(&mut bindings_ctx);
             assert!(IPV4_PROBE_WAIT_RANGE.contains(&duration), "actual={duration:?}");
         })
+    }
+
+    #[ip_test(I)]
+    fn dad_ignores_stale_timers<I: TestDadIpExt>() {
+        const DAD_TRANSMITS_REQUIRED: u16 = 1;
+
+        let mut ctx = FakeCtx::with_core_ctx(FakeCoreCtxImpl::with_state(FakeDadContext {
+            state: DadState::Uninitialized,
+            max_dad_transmits: NonZeroU16::new(DAD_TRANSMITS_REQUIRED),
+            address_ctx: FakeAddressCtxImpl::with_state(FakeDadAddressContext::default()),
+        }));
+        let FakeCtx { core_ctx, bindings_ctx } = &mut ctx;
+        let address_id = get_address_id::<I>(I::DAD_ADDRESS);
+        I::with_dad_handler(core_ctx, |core_ctx| {
+            let start_dad = core_ctx.initialize_duplicate_address_detection(
+                bindings_ctx,
+                &FakeDeviceId,
+                &address_id,
+                into_state_change_event::<I>,
+            );
+            let token = assert_matches!(start_dad, NeedsDad::Yes(token) => token);
+            core_ctx.start_duplicate_address_detection(bindings_ctx, token);
+        });
+
+        let old_timer = assert_matches!(
+            &core_ctx.state.state,
+            DadState::Tentative { timer, .. } => timer.clone()
+        );
+
+        // Restart DAD.
+        I::with_dad_handler(core_ctx, |core_ctx| {
+            core_ctx.stop_duplicate_address_detection(bindings_ctx, &FakeDeviceId, &address_id);
+            let start_dad = core_ctx.initialize_duplicate_address_detection(
+                bindings_ctx,
+                &FakeDeviceId,
+                &address_id,
+                into_state_change_event::<I>,
+            );
+            let token = assert_matches!(start_dad, NeedsDad::Yes(token) => token);
+            core_ctx.start_duplicate_address_detection(bindings_ctx, token);
+        });
+
+        skip_probe_wait::<I>(core_ctx, bindings_ctx);
+
+        assert_matches!(core_ctx.state.state, DadState::Tentative { .. });
+        let unique_timer_id = bindings_ctx.unique_timer_id(&old_timer);
+        old_timer.dispatch_id.handle(core_ctx, bindings_ctx, unique_timer_id);
+        assert_matches!(core_ctx.state.state, DadState::Tentative { .. });
+
+        // For maximum paranoia, let's make sure firing the proper timer works
+        // as we'd expect.
+        let mut new_timer = assert_matches!(
+            &core_ctx.state.state,
+            DadState::Tentative { timer, .. } => timer.clone()
+        );
+        // Pretend we're firing this thing.
+        assert_matches!(bindings_ctx.cancel_timer(&mut new_timer), Some(_));
+        let unique_timer_id = bindings_ctx.unique_timer_id(&new_timer);
+        new_timer.dispatch_id.handle(core_ctx, bindings_ctx, unique_timer_id);
+        match I::VERSION {
+            IpVersion::V4 => assert_matches!(core_ctx.state.state, DadState::Announcing { .. }),
+            IpVersion::V6 => assert_matches!(core_ctx.state.state, DadState::Assigned { .. }),
+        };
     }
 }
