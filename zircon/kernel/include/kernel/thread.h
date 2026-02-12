@@ -24,6 +24,7 @@
 #include <zircon/compiler.h>
 #include <zircon/listnode.h>
 #include <zircon/syscalls/object.h>
+#include <zircon/syscalls/rseq.h>
 #include <zircon/syscalls/scheduler.h>
 #include <zircon/types.h>
 
@@ -542,6 +543,7 @@ typedef void (*thread_trampoline_routine)() __NO_RETURN;
 #define THREAD_SIGNAL_POLICY_EXCEPTION       (1 << 2)
 #define THREAD_SIGNAL_RESTRICTED_KICK        (1 << 3)
 #define THREAD_SIGNAL_SAMPLE_STACK           (1 << 4)
+#define THREAD_SIGNAL_CHECK_RSEQ             (1 << 5)
 // clang-format on
 
 // thread priority
@@ -1334,6 +1336,17 @@ struct Thread : public ChainLockable {
     }
   }
 
+  void SignalCheckRestartableSequenceIfNeeded() {
+    if (likely(!rseq_ptr_)) {
+      return;
+    }
+    signals_.fetch_or(THREAD_SIGNAL_CHECK_RSEQ, ktl::memory_order_relaxed);
+  }
+
+  void set_rseq_ptr(zx_rseq_t* ptr) { rseq_ptr_ = ptr; }
+
+  void CheckRestartableSequence(GeneralRegsSource source, void* gregs);
+
   void OwnerName(char (&out_name)[ZX_MAX_NAME_LEN]) const;
   // Return the number of nanoseconds a thread has been running for.
   zx_duration_mono_t Runtime() const TA_EXCL(get_lock());
@@ -1882,6 +1895,18 @@ struct Thread : public ChainLockable {
 
   // Provides a way to execute custom logic when a thread is context switched to or away from.
   ContextSwitchFn context_switch_fn_;
+
+  // A pointer to the kernel mapping for the thread's restartable sequence structure, if any.
+  //
+  // This is used to detect when a thread is preempted or enters a waiting state
+  // while in a restartable sequence.  When this happens, the restartable sequence
+  // is interrupted, and the thread will restart the sequence when it resumes.
+  //
+  // Kernel threads do not use restartable sequences, so this will always be null for kernel
+  // threads.
+  //
+  // Must be accessed only by the current thread.
+  zx_rseq_t* rseq_ptr_ = nullptr;
 
   // Used to track threads that have set |migrate_fn_|. This is used to migrate
   // threads before a CPU is taken offline.

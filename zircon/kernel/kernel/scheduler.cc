@@ -2205,7 +2205,12 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     //    value is junk.
     // ++ The value of current_thread before the switch has been stashed in
     //    the new current thread's scheduler_state's previous thread member.
-    //
+
+    // If the new current thread has a restartable sequence registered, we
+    // need to signal the thread to check for the restartable sequence before
+    // it returns to userspace.
+    current_thread->SignalCheckRestartableSequenceIfNeeded();
+
     // We need to drop the old current thread's lock, while continuing to hold
     // the new current thread's lock as we unwind.
     // Scheduler::LockHandoffInternal will take care of dropping the previous

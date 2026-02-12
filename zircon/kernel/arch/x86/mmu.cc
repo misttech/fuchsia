@@ -109,6 +109,13 @@ bool x86_is_vaddr_canonical(vaddr_t vaddr) {
          ((vaddr & kX86CanonicalAddressMask) == kX86CanonicalAddressMask);
 }
 
+// Whether the instruction pointer is canonical and in userspace.
+//
+// See docs/concepts/kernel/sysret_problem.md for more information.
+bool x86_is_ip_canonical(vaddr_t ip) {
+  return x86_is_vaddr_canonical(ip) && !is_kernel_address(ip);
+}
+
 /**
  * @brief  check if the virtual address is aligned and canonical
  */

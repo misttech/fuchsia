@@ -91,6 +91,7 @@ KCOUNTER(thread_timeslice_extended, "thread.timeslice_extended")
 KCOUNTER(thread_restricted_kick_count, "thread.restricted_kick")
 // counts the number of failed samples
 KCOUNTER(thread_sampling_failed, "thread.sampling_failed")
+KCOUNTER(rseq_bad_ip, "rseq.bad_ip")
 
 namespace {
 
@@ -1550,6 +1551,16 @@ void Thread::Current::ProcessPendingSignals(GeneralRegsSource source, void* greg
       }
     }
 
+    // THREAD_SIGNAL_CHECK_RSEQ
+    //
+    if (signals & THREAD_SIGNAL_CHECK_RSEQ) {
+      DEBUG_ASSERT(has_user_thread);
+      current_thread->signals_.fetch_and(~THREAD_SIGNAL_CHECK_RSEQ, ktl::memory_order_relaxed);
+      current_thread->CheckRestartableSequence(source, gregs);
+    }
+
+    // THREAD_SIGNAL_SAMPLE_STACK
+    //
     if (signals & THREAD_SIGNAL_SAMPLE_STACK) {
       // Sampling the user stack may page fault as we try to do usercopies.
       arch_enable_ints();
@@ -2090,6 +2101,47 @@ void Thread::ReviveIdlePowerThread(cpu_num_t cpu_num) {
 
   arch_thread_initialize(thread, reinterpret_cast<vaddr_t>(Thread::Trampoline));
   thread->preemption_state().Reset();
+}
+
+void Thread::CheckRestartableSequence(GeneralRegsSource source, void* gregs) {
+  DEBUG_ASSERT(arch_ints_disabled());
+
+  // Check if the restartable sequence has been removed since the signal was generated.
+  //
+  // This situation can occur if the thread was processing a `zx_thread_set_rseq` syscall that was
+  // going to clear this pointer when it was preempted. When the scheduler resumes the thread, the
+  // `rseq_ptr_` will be non-null, and the scheduler will raise the signal to check the restartable
+  // sequence. However, the `zx_thread_set_rseq` syscall will resume and clear the pointer before
+  // the signal handler is called, so we need to check if the pointer is still valid.
+  if (!rseq_ptr_) {
+    return;
+  }
+
+  // Update the CPU ID in the restartable sequence structure.
+  volatile cpu_num_t* cpu_id = &rseq_ptr_->cpu_id;
+  *cpu_id = arch_curr_cpu_num();
+
+  zx_vaddr_t ip = arch_get_instruction_pointer(source, gregs);
+  volatile zx_vaddr_t* start_ip_ptr = &rseq_ptr_->start_ip;
+  volatile zx_vaddr_t* post_commit_offset_ptr = &rseq_ptr_->post_commit_offset;
+
+  zx_vaddr_t start_ip = *start_ip_ptr;
+  size_t post_commit_offset = *post_commit_offset_ptr;
+
+  if (ip - start_ip >= post_commit_offset) {
+    // The restartable sequence has completed.
+    return;
+  }
+
+  // The restartable sequence was interrupted. Restart it.
+  volatile zx_vaddr_t* abort_ip_ptr = &rseq_ptr_->abort_ip;
+  zx_vaddr_t abort_ip = *abort_ip_ptr;
+  zx_status_t status = arch_set_return_instruction_pointer(source, gregs, abort_ip);
+  if (status != ZX_OK) {
+    // TODO(https://fxbug.dev/449980934): Decide what we should do if we cannot set the
+    // instruction pointer. Perhaps raise a policy exception?
+    kcounter_add(rseq_bad_ip, 1);
+  }
 }
 
 /**

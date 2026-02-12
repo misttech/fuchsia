@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_ARCH_DEBUGGER_H_
 #define ZIRCON_KERNEL_INCLUDE_ARCH_DEBUGGER_H_
 
+#include <arch.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -31,5 +32,8 @@ zx_status_t arch_set_debug_regs(Thread* thread, const zx_thread_state_debug_regs
 
 zx_status_t arch_get_single_step(Thread* thread, zx_thread_state_single_step_t* out);
 zx_status_t arch_set_single_step(Thread* thread, const zx_thread_state_single_step_t* in);
+
+vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs);
+zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip);
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_DEBUGGER_H_

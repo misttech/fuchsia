@@ -257,6 +257,19 @@ zx_status_t arch_set_debug_regs(Thread* thread, const zx_thread_state_debug_regs
   return ZX_OK;
 }
 
+vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs) {
+  DEBUG_ASSERT_MSG(source == GeneralRegsSource::Iframe, "invalid source %u\n",
+                   static_cast<uint32_t>(source));
+  return (reinterpret_cast<iframe_t*>(gregs)->elr);
+}
+
+zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip) {
+  DEBUG_ASSERT_MSG(source == GeneralRegsSource::Iframe, "invalid source %u\n",
+                   static_cast<uint32_t>(source));
+  static_cast<iframe_t*>(gregs)->elr = ip;
+  return ZX_OK;
+}
+
 uint8_t arch_get_hw_breakpoint_count() { return arm64_hw_breakpoint_count(); }
 
 uint8_t arch_get_hw_watchpoint_count() { return arm64_hw_watchpoint_count(); }

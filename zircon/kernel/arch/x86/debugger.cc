@@ -224,7 +224,7 @@ zx_status_t arch_set_general_regs(Thread* thread, const zx_thread_state_general_
   //
   // The code also restricts the RIP to userspace addresses. There is no use
   // case for setting the RIP to a kernel address.
-  if (!x86_is_vaddr_canonical(in->rip) || is_kernel_address(in->rip))
+  if (!x86_is_ip_canonical(in->rip))
     return ZX_ERR_INVALID_ARGS;
 
   DEBUG_ASSERT(thread->arch().suspended_general_regs.gregs);
@@ -421,6 +421,36 @@ zx_status_t arch_set_debug_regs(Thread* thread, const zx_thread_state_debug_regs
   // Restore the original debug state. Should always work as the input was already validated.
   x86_write_hw_debug_regs(&current_debug_state);
 
+  return ZX_OK;
+}
+
+vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs) {
+  switch (source) {
+    case GeneralRegsSource::Iframe:
+      return static_cast<iframe_t*>(gregs)->ip;
+    case GeneralRegsSource::Syscall:
+      return static_cast<syscall_regs_t*>(gregs)->rip;
+    case GeneralRegsSource::None:
+      return 0;
+  }
+  DEBUG_ASSERT(false);
+  return 0;
+}
+
+zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip) {
+  if (!x86_is_ip_canonical(ip)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  switch (source) {
+    case GeneralRegsSource::Iframe:
+      static_cast<iframe_t*>(gregs)->ip = ip;
+      break;
+    case GeneralRegsSource::Syscall:
+      static_cast<syscall_regs_t*>(gregs)->rip = ip;
+      break;
+    case GeneralRegsSource::None:
+      break;
+  }
   return ZX_OK;
 }
 
