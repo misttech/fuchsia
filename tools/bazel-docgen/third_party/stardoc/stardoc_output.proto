@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 // Vendored from src/main/protobuf/stardoc_output.proto
-// in the Bazel source tree at commit 5301289b0c2ec10578797903183a136a6916cc57
+// in the Bazel source tree at commit 9780e6dc69470c9c8a141004775de03ae3d28ad8
 //
 // Protos for Stardoc data.
 //
@@ -173,6 +173,10 @@ message AttributeInfo {
 
   // If true, the attribute is defined in Bazel's native code, not in Starlark.
   bool natively_defined = 8;
+
+  // If non-empty, the string representations of the allowed values for this
+  // attribute.
+  repeated string values = 9;
 }
 
 // Representation of a set of providers.
