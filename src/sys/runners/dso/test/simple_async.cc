@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/syslog/cpp/macros.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
+#include <zircon/status.h>
+#include <zircon/syscalls.h>
+#include <zircon/types.h>
 
 #include "src/lib/dso/cpp/async.h"
 
@@ -16,9 +20,13 @@ uint32_t run_counter = 0;
 __EXPORT
 extern "C" uint32_t simple_async_read_run_counter() { return run_counter; }
 
-int dso_main_async(int argc, const char** argv, const char** envp, fdf_dispatcher_t* dispatcher) {
+int dso_main_async(int argc, const char** argv, const char** envp, zx_handle_t _svc,
+                   zx_handle_t _pkg, zx_handle_t _directory_request, zx_handle_t lifecycle,
+                   zx_handle_t _config, fdf_dispatcher_t* dispatcher) {
+  FX_CHECK(lifecycle != ZX_HANDLE_INVALID);
   ++run_counter;
-  // TODO(https://fxbug.dev/403545512): Once the lifecycle channel is passed to main immediately
-  // close it now to exit the component.
+  // Close lifecycle channel immediately to exit the component.
+  zx_status_t s = zx_handle_close(lifecycle);
+  FX_CHECK(s == ZX_OK) << zx_status_get_string(s);
   return 0;
 }

@@ -10,6 +10,7 @@ group("components") {
     "config",
     "config_from_parent",
     "dictionaries:dictionary-examples",
+    "dso",
     "echo:echo-example",
     "lifecycle",
     "routing:components-routing-example",

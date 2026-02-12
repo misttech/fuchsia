@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <zircon/compiler.h>
+#include <zircon/types.h>
 
 #include <atomic>
 
@@ -17,7 +18,9 @@ std::atomic_uint32_t run_counter{0};
 __EXPORT
 extern "C" uint32_t hanging_async_read_run_counter() { return run_counter.load(); }
 
-int dso_main_async(int argc, const char** argv, const char** envp, fdf_dispatcher_t* dispatcher) {
+int dso_main_async(int argc, const char** argv, const char** envp, zx_handle_t _svc,
+                   zx_handle_t _pkg, zx_handle_t _directory_request, zx_handle_t _lifecycle,
+                   zx_handle_t _config, fdf_dispatcher_t* dispatcher) {
   run_counter.fetch_add(1);
   // We don't need to hang here to "hang" the program. Because this is an async component it
   // continues running until its dispatcher is shutdown, which we simply don't do.

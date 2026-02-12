@@ -4,8 +4,10 @@
 
 #include "src/lib/dso/cpp/async.h"
 
-int dso_main_async(int argc, const char** argv, const char** envp, fdf_dispatcher_t* dispatcher) {
+int dso_main_async(int argc, const char** argv, const char** envp, zx_handle_t svc, zx_handle_t pkg,
+                   zx_handle_t directory_request, zx_handle_t lifecycle, zx_handle_t config,
+                   fdf_dispatcher_t* dispatcher) {
   // Returning a non-zero code here will cause the runner to immediately terminate the component,
-  // there is no need to shutdown the dispatcher here.
-  return 128;
+  // there is no need to close the lifecycle channel here.
+  return 1;
 }

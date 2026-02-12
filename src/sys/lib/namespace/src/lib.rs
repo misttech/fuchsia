@@ -160,9 +160,27 @@ impl TryFrom<Namespace> for Arc<vfs::directory::immutable::simple::Simple> {
     }
 }
 
+impl From<cm_types::NamespaceEntry> for Entry {
+    fn from(entry: cm_types::NamespaceEntry) -> Self {
+        Entry { path: entry.path, directory: entry.directory }
+    }
+}
+
 impl From<Tree<ClientEnd<fio::DirectoryMarker>>> for Namespace {
     fn from(tree: Tree<ClientEnd<fio::DirectoryMarker>>) -> Self {
         Self { tree }
+    }
+}
+
+impl TryFrom<Vec<cm_types::NamespaceEntry>> for Namespace {
+    type Error = NamespaceError;
+
+    fn try_from(value: Vec<cm_types::NamespaceEntry>) -> Result<Self, Self::Error> {
+        let mut ns = Namespace::new();
+        for entry in value {
+            ns.add(&entry.path, entry.directory)?;
+        }
+        Ok(ns)
     }
 }
 

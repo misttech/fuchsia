@@ -116,6 +116,7 @@ pub enum RepackageError {
 static SUPPORTED_RUNNERS: &[&str] = &[
     "builtin_shutdown_shim",
     "driver",
+    "dso",
     "elf",
     "elf_test_runner",
     "elf_test_create_raw_processes_ambient_exec_runner",

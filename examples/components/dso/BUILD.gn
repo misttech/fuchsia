@@ -3,13 +3,15 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//src/lib/dso/fuchsia_dso.gni")
 
-loadable_module("lib") {
+fuchsia_cc_dso("lib") {
   output_name = "simple_dso"
+  async = false
   sources = [ "main.cc" ]
   deps = [
     "//sdk/lib/syslog/cpp",
-    "//src/lib/dso:cpp_sync",
+    "//src/lib/dso/cpp:sync",
   ]
 }
 

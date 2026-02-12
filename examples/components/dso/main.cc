@@ -6,7 +6,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/compiler.h>
 
-#include "src/lib/dso/sync.h"
+#include "src/lib/dso/cpp/sync.h"
 
 int dso_main(int argc, const char** argv, const char** envp) {
   fuchsia_logging::LogSettingsBuilder builder;

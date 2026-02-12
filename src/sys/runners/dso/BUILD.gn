@@ -54,11 +54,15 @@ rustc_binary("bin") {
     ":error_sync",
     ":hanging_async",
     ":hanging_sync",
+    ":rust_async",
+    ":rust_error_sync",
+    ":rust_sync",
     ":simple_async",
     ":simple_sync",
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
     "//src/lib/fdio/rust:fdio",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:test-case",
   ]
 }
 
@@ -73,7 +77,10 @@ fuchsia_cc_dso("simple_async") {
   testonly = true
   sources = [ "test/simple_async.cc" ]
   async = true
-  deps = [ "//zircon/system/ulib/zx" ]
+  deps = [
+    "//sdk/lib/syslog/cpp",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 fuchsia_cc_dso("hanging_sync") {
@@ -103,6 +110,27 @@ fuchsia_cc_dso("error_async") {
   testonly = true
   sources = [ "test/error_async.cc" ]
   async = true
+}
+
+fuchsia_rust_dso("rust_sync") {
+  # rustc_cdylib does not support testonly
+  edition = "2024"
+  sources = [ "test/rust_sync.rs" ]
+  source_root = "test/rust_sync.rs"
+}
+
+fuchsia_rust_dso("rust_async") {
+  # rustc_cdylib does not support testonly
+  edition = "2024"
+  sources = [ "test/rust_async.rs" ]
+  source_root = "test/rust_async.rs"
+}
+
+fuchsia_rust_dso("rust_error_sync") {
+  # rustc_cdylib does not support testonly
+  edition = "2024"
+  sources = [ "test/rust_error_sync.rs" ]
+  source_root = "test/rust_error_sync.rs"
 }
 
 fuchsia_component("component") {

@@ -502,10 +502,8 @@ mod tests {
     use fidl::endpoints::{self, ClientEnd};
     use futures::poll;
     use futures::task::Poll;
+    use test_case::test_case;
     use {fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
-
-    const TEST_ROLE: &'static str = "fuchsia.dso.test";
-    const MAX_DISPATCHER_THREADS: u32 = 1;
 
     #[derive(Debug)]
     struct ComponentInfo {
@@ -585,12 +583,6 @@ mod tests {
         })
     }
 
-    fn make_env() -> fdf_env::Environment {
-        let env = fdf_env::Environment::start(0).unwrap();
-        env.set_thread_limit(TEST_ROLE, MAX_DISPATCHER_THREADS).unwrap();
-        env
-    }
-
     fn lib_so(name: &str) -> String {
         format!("lib/{name}")
     }
@@ -600,11 +592,19 @@ mod tests {
         safe fn simple_async_read_run_counter() -> u32;
         safe fn hanging_sync_read_run_counter() -> u32;
         safe fn hanging_async_read_run_counter() -> u32;
+        safe fn rust_sync_read_run_counter() -> u32;
+        safe fn rust_async_read_run_counter() -> u32;
+    }
+
+    #[derive(Debug)]
+    enum Language {
+        Cpp,
+        Rust,
     }
 
     #[fuchsia::test]
     async fn start_binary_not_found() {
-        let env = make_env();
+        let env = crate::init();
         let binary = lib_so("libdoes_not_exist.so");
         for syncness in [Syncness::Sync, Syncness::Async] {
             let res = start_component(&env, &binary, syncness).await;
@@ -619,15 +619,24 @@ mod tests {
         }
     }
 
+    #[test_case(Language::Cpp)]
+    #[test_case(Language::Rust)]
     #[fuchsia::test]
-    async fn start_and_exit_sync() {
-        fn read_run_counter() -> usize {
-            simple_sync_read_run_counter() as usize
-        }
+    async fn start_and_exit_sync(lang: Language) {
+        let read_run_counter = || {
+            (match lang {
+                Language::Cpp => simple_sync_read_run_counter(),
+                Language::Rust => rust_sync_read_run_counter(),
+            }) as usize
+        };
 
         const NUM_REPS: usize = 3;
-        let env = make_env();
-        let binary = lib_so("libsimple_sync.so");
+        let env = crate::init();
+        let name = match lang {
+            Language::Cpp => "libsimple_sync.so",
+            Language::Rust => "librust_sync.so",
+        };
+        let binary = lib_so(name);
         for _ in 0..NUM_REPS {
             let mut component = start_component(&env, &binary, Syncness::Sync).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
@@ -645,20 +654,27 @@ mod tests {
             // Termination callback should not run.
             assert_matches!(component.termination_rx.take().unwrap().await, Err(oneshot::Canceled));
         }
-        assert_eq!(read_run_counter(), NUM_REPS);
+        assert_eq!((read_run_counter)(), NUM_REPS);
     }
 
-    // TODO(https://fxbug.dev/403545512): Enable this test once async exit support is working.
+    #[test_case(Language::Cpp)]
+    #[test_case(Language::Rust)]
     #[fuchsia::test]
-    #[ignore]
-    async fn start_and_exit_async() {
-        fn read_run_counter() -> usize {
-            simple_async_read_run_counter() as usize
-        }
+    async fn start_and_exit_async(lang: Language) {
+        let read_run_counter = || {
+            (match lang {
+                Language::Cpp => simple_async_read_run_counter(),
+                Language::Rust => rust_async_read_run_counter(),
+            }) as usize
+        };
 
         const NUM_REPS: usize = 3;
-        let env = make_env();
-        let binary = lib_so("libsimple_async.so");
+        let env = crate::init();
+        let name = match lang {
+            Language::Cpp => "libsimple_async.so",
+            Language::Rust => "librust_async.so",
+        };
+        let binary = lib_so(name);
         for _ in 0..NUM_REPS {
             let component = start_component(&env, &binary, Syncness::Async).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
@@ -677,11 +693,17 @@ mod tests {
         assert_eq!(read_run_counter(), NUM_REPS);
     }
 
+    #[test_case(Language::Cpp)]
+    #[test_case(Language::Rust)]
     #[fuchsia::test]
-    async fn start_and_exit_sync_with_error() {
+    async fn start_and_exit_sync_with_error(lang: Language) {
         const NUM_REPS: usize = 3;
-        let env = make_env();
-        let binary = lib_so("liberror_sync.so");
+        let env = crate::init();
+        let name = match lang {
+            Language::Cpp => "liberror_sync.so",
+            Language::Rust => "librust_error_sync.so",
+        };
+        let binary = lib_so(name);
         for _ in 0..NUM_REPS {
             let mut component = start_component(&env, &binary, Syncness::Sync).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
@@ -690,8 +712,8 @@ mod tests {
                 Some(Ok(frunner::ComponentControllerEvent::OnStop {
                     payload: frunner::ComponentStopInfo {
                         termination_status: Some(0),
-                        // Returned by dso_main[_async]
-                        exit_code: Some(128),
+                        // Returned by dso_main
+                        exit_code: Some(1),
                         ..
                     }
                 }))
@@ -702,11 +724,20 @@ mod tests {
         }
     }
 
+    // This test is for C++ only because the rust DSO bindings in libfuchsia always generate a
+    // _dso_main_async that returns 0. This is because its implementation of _dso_main_async
+    // currently just spawns a thread to run dso_main_async() and exits; the reason for this that
+    // the fuchsia-async executor expects to have its own thread.
+    #[test_case(Language::Cpp)]
     #[fuchsia::test]
-    async fn start_and_exit_async_with_error() {
+    async fn start_and_exit_async_with_error(lang: Language) {
         const NUM_REPS: usize = 3;
-        let env = make_env();
-        let binary = lib_so("liberror_async.so");
+        let env = crate::init();
+        let name = match lang {
+            Language::Cpp => "liberror_async.so",
+            Language::Rust => unreachable!(),
+        };
+        let binary = lib_so(name);
         for _ in 0..NUM_REPS {
             let component = start_component(&env, &binary, Syncness::Async).await.unwrap();
             let mut event_stream = component.controller.take_event_stream();
@@ -715,8 +746,8 @@ mod tests {
                 Some(Ok(frunner::ComponentControllerEvent::OnStop {
                     payload: frunner::ComponentStopInfo {
                         termination_status: Some(0),
-                        // Returned by dso_main[_async]
-                        exit_code: Some(128),
+                        // Returned by dso_main_async
+                        exit_code: Some(1),
                         ..
                     }
                 }))
@@ -735,7 +766,7 @@ mod tests {
         }
 
         const NUM_REPS: usize = 3;
-        let env = make_env();
+        let env = crate::init();
         let binary = lib_so("libhanging_sync.so");
 
         let mut components = vec![];
@@ -766,7 +797,7 @@ mod tests {
         }
 
         const NUM_REPS: usize = 3;
-        let env = make_env();
+        let env = crate::init();
         let binary = lib_so("libhanging_async.so");
 
         let mut components = vec![];

@@ -4,8 +4,9 @@
 
 #include "src/lib/dso/cpp/async.h"
 
+#include <string.h>
 #include <zircon/compiler.h>
-#include <zircon/types.h>
+#include <zircon/processargs.h>
 
 extern "C" struct dso_async_input {
   uint32_t handle_count;
@@ -21,11 +22,46 @@ extern "C" struct dso_async_input {
 
 typedef struct dso_async_input dso_async_input_t;
 
+#define TAKE_HANDLE(_name_)                 \
+  _name_ = input.handle[n];                 \
+  input.handle_info[n] = ZX_HANDLE_INVALID; \
+  input.handle[n] = ZX_HANDLE_INVALID;
+
 __EXPORT
 extern "C" int _dso_start_async(dso_async_input_t input) {
-  // TODO(https://fxbug.dev/403545512): Fill in the implementation of this routine to extract
-  // relevant handles and pass them to dso_main_async.
-  const int code = dso_main_async(input.argc, input.argv, input.envp, input.dispatcher);
-  // Don't call libc finalize, component is still running.
-  return code;
+  // Capture handles that we want to pass to dso_main() directly.
+  zx_handle_t svc = ZX_HANDLE_INVALID;
+  zx_handle_t pkg = ZX_HANDLE_INVALID;
+  zx_handle_t directory_request = ZX_HANDLE_INVALID;
+  zx_handle_t lifecycle = ZX_HANDLE_INVALID;
+  zx_handle_t config = ZX_HANDLE_INVALID;
+  for (uint32_t n = 0; n < input.handle_count; ++n) {
+    const unsigned arg = PA_HND_ARG(input.handle_info[n]);
+    switch (PA_HND_TYPE(input.handle_info[n])) {
+      case PA_NS_DIR:
+        if (arg < input.name_count) {
+          if (strcmp(input.names[arg], "/svc") == 0) {
+            TAKE_HANDLE(svc)
+          }
+          if (strcmp(input.names[arg], "/pkg") == 0) {
+            TAKE_HANDLE(pkg)
+          }
+        }
+        break;
+      case PA_DIRECTORY_REQUEST:
+        TAKE_HANDLE(directory_request)
+        break;
+      case PA_LIFECYCLE:
+        TAKE_HANDLE(lifecycle)
+        break;
+      case PA_VMO_COMPONENT_CONFIG:
+        TAKE_HANDLE(config)
+        break;
+      default:
+        continue;
+    }
+  }
+
+  return dso_main_async(input.argc, input.argv, input.envp, svc, pkg, directory_request, lifecycle,
+                        config, input.dispatcher);
 }

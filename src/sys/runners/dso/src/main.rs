@@ -2,6 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// This is needed to suppress a spurious warning in test builds that arises from a dependency
+// on a rustc_cdylib:
+//
+// warning: extern crate `_rust_sync_rustc` is unused in crate `main`
+//
+// TODO(https://fxbug.dev/42055130): Figure out why this is necessary and resolve this
+#![cfg_attr(test, allow(unused_crate_dependencies))]
+
 use crate::component::TerminateCallback;
 use futures::prelude::*;
 use log::{error, warn};
@@ -14,13 +22,19 @@ mod error;
 mod loader;
 mod util;
 
+pub(crate) fn init() -> Rc<fdf_env::Environment> {
+    let env = Rc::new(fdf_env::Environment::start(0).expect("start fdf environment"));
+    env
+}
+
 #[fuchsia::main]
 async fn main() {
     enum IncomingRequest {
         ComponentRunner(frunner::ComponentRunnerRequestStream),
     }
 
-    let env = Rc::new(fdf_env::Environment::start(0).expect("start fdf environment"));
+    let env = init();
+
     // TODO(https://fxbug.dev/403545512): Govern the number of threads in the environment with a
     // constant, adding more than one thread if appropriate.
     let mut fs = fuchsia_component::server::ServiceFs::new();

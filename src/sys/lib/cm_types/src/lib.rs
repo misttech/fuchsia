@@ -1700,6 +1700,14 @@ impl<'de> de::Deserialize<'de> for HandleType {
     }
 }
 
+/// A namespace entry type. Identical to the type in the `namespace` crate but can be used in
+/// contexts where that crate is not included.
+#[derive(Debug)]
+pub struct NamespaceEntry {
+    pub path: NamespacePath,
+    pub directory: fidl::endpoints::ClientEnd<fio::DirectoryMarker>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

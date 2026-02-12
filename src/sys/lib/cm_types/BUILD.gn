@@ -11,6 +11,7 @@ rustc_library("cm_types") {
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/storage/lib/vfs/rust/name",
     "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:serde",
