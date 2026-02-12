@@ -15,8 +15,7 @@ use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
 use hkdf::Hkdf;
 use linux_uapi::FSCRYPT_KEY_IDENTIFIER_SIZE;
-use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, error};
+use starnix_uapi::errors::{Errno, errno, error, from_status_like_fdio};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::OnceLock;
 
@@ -97,13 +96,27 @@ impl CryptService {
             let key = Box::from(
                 proxy
                     .derive_raw_secret(raw_key, zx::MonotonicInstant::INFINITE)
-                    .map_err(|_| errno!(EPIPE))?
-                    .map_err(|_| errno!(EPIPE))?,
+                    .map_err(|error| {
+                        log::error!(error:?; "derive_raw_secret FIDL error");
+                        errno!(EPIPE)
+                    })?
+                    .map_err(|status| {
+                        let status = zx::Status::from_raw(status);
+                        log::error!(status:?; "derive_raw_secret failed");
+                        from_status_like_fdio!(status)
+                    })?,
             );
             let slot = proxy
                 .program_key(raw_key, DATA_UNIT_SIZE, zx::MonotonicInstant::INFINITE)
-                .map_err(|_| errno!(EPIPE))?
-                .map_err(|_| errno!(EPIPE))?;
+                .map_err(|error| {
+                    log::error!(error:?; "program_key FIDL error");
+                    errno!(EPIPE)
+                })?
+                .map_err(|status| {
+                    let status = zx::Status::from_raw(status);
+                    log::error!(status:?; "program_key failed");
+                    from_status_like_fdio!(status)
+                })?;
             (key, Some(slot))
         } else {
             (Box::from(raw_key), None)
