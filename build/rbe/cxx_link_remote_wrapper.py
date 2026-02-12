@@ -287,6 +287,7 @@ class CxxLinkRemoteAction(object):
             search_paths=search_paths,
             l_libs=self.cxx_action.libs,
             sysroot=self.sysroot,
+            direct_files=self.cxx_action.linker_inputs,
         )
 
     def scan_linker_inputs(self) -> Iterable[Path]:

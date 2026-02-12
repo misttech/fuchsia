@@ -294,6 +294,13 @@ class CxxActionTests(unittest.TestCase):
         self.assertTrue(c.shared)
         self.assertEqual(c.linker_inputs, [source])
 
+    def test_linker_script(self) -> None:
+        source = Path("hello.ld")
+        output = Path("hello.so")
+        c = cxx.CxxAction(_strs(["clang++", "-shared", source, "-o", output]))
+        self.assertTrue(c.shared)
+        self.assertEqual(c.linker_inputs, [source])
+
     def test_flto_default(self) -> None:
         source = Path("hello.o")
         output = Path("hello")

@@ -9,6 +9,7 @@ https://sourceware.org/binutils/docs-2.40/ld/Simple-Commands.html
 """
 
 import argparse
+import copy
 import dataclasses
 import enum
 import os
@@ -286,6 +287,9 @@ class LinkerInvocation(object):
     def search_paths(self) -> Sequence[Path]:
         return self._search_paths
 
+    def prepend_search_paths(self, paths: Sequence[Path]) -> None:
+        self._search_paths = list(paths) + list(self.search_paths)
+
     @property
     def l_libs(self) -> Sequence[str]:
         return self._l_libs
@@ -464,20 +468,30 @@ class LinkerInvocation(object):
           It is up to the caller to adjust/resolve these if needed.
         """
         for lib in self.l_libs:
-            vmsg(f"Expanding: {lib}")
+            vmsg(f"Expanding from -l: {lib}")
             resolved = self.resolve_lib(lib)
             if resolved:
                 yield from self.expand_possible_linker_script(resolved)
 
         for f in self.direct_files:
-            vmsg(f"Expanding: {f}")
+            vmsg(f"Expanding direct file: {f}")
             yield from self.expand_possible_linker_script(f)
 
-    def expand_possible_linker_script(self, lib: Path) -> Iterable[Path]:
+    def expand_possible_linker_script(
+        self,
+        lib: Path,
+    ) -> Iterable[Path]:
         """Finds other files referenced if `lib` is a linker script."""
         yield lib
         # parse it and expand
-        yield from self.expand_linker_script(try_linker_script_text(lib))
+        linker_script_text = try_linker_script_text(self.abs_path(lib))
+        if not linker_script_text:
+            return
+
+        # Search relative to the location of the linker script first.
+        invoc = copy.deepcopy(self)
+        invoc.prepend_search_paths([lib.parent])
+        yield from invoc.expand_linker_script(linker_script_text)
 
         # Otherwise, it is a regular linker binary file.
         # Nothing else to do.
