@@ -14,7 +14,7 @@ use fidl::endpoints::Proxy as _;
 use fuchsia_async::{self as fasync, TimeoutExt};
 
 use futures::channel::{mpsc, oneshot};
-use futures::{FutureExt as _, StreamExt as _};
+use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, StreamExt as _};
 use linux_uapi::{
     NLM_F_DUMP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
     rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
@@ -23,7 +23,7 @@ use linux_uapi::{
 use net_declare::{fidl_mac, net_ip_v6, std_ip};
 use net_types::Witness;
 use net_types::ip::{Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-use netemul::{RealmTcpListener as _, RealmUdpSocket as _, TestRealm};
+use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _, TestRealm};
 use netlink::messaging::{
     AccessControl, MessageWithPermission, NetlinkMessageWithCreds, Permission,
 };
@@ -1931,4 +1931,133 @@ async fn sock_diag_get_one<I: Ip>(name: &str, proto: i32) {
         Ok(Some(payload)) => panic!("received unexpected extra message: {:?}", payload),
         _ => {}
     }
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn sock_destroy_tcp<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+    let mut client = add_sock_diag_client(&netlink);
+
+    let listener = fasync::net::TcpListener::listen_in_realm(
+        &realm,
+        std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.get().to_ip_addr().into(), 0),
+    )
+    .await
+    .expect("listen_in_realm");
+    let listener_addr = listener.local_addr().expect("get local addr");
+
+    let mut client_socket = fasync::net::TcpStream::connect_in_realm(&realm, listener_addr)
+        .await
+        .expect("connect_in_realm");
+
+    let (_listener, _server_socket, _peer) = listener.accept().await.expect("accept");
+
+    let local_addr = client_socket.std().local_addr().expect("get local addr");
+    let peer_addr = client_socket.std().peer_addr().expect("get peer addr");
+
+    let req = InetRequest {
+        family: match I::VERSION {
+            IpVersion::V4 => linux_uapi::AF_INET as u8,
+            IpVersion::V6 => linux_uapi::AF_INET6 as u8,
+        },
+        protocol: linux_uapi::IPPROTO_TCP as u8,
+        extensions: ExtensionFlags::empty(),
+        states: StateFlags::all(),
+        socket_id: SocketId {
+            source_port: local_addr.port(),
+            destination_port: peer_addr.port(),
+            source_address: local_addr.ip(),
+            destination_address: peer_addr.ip(),
+            interface_id: 0,
+            // The match-all cookie.
+            cookie: [0xFF; 8],
+        },
+    };
+
+    let msg = SockDiagRequest::InetSockDestroy(req);
+    let mut netlink_msg: NetlinkMessage<SockDiagRequest> = msg.into();
+    netlink_msg.header.flags = NLM_F_ACK | (linux_uapi::NLM_F_REQUEST as u16);
+    netlink_msg.finalize();
+
+    client.sender.0.unbounded_send(FakeCreds::attach(netlink_msg)).expect("send request");
+
+    let msg = client.receiver.next().await.expect("receive ack").message;
+    assert_matches::assert_matches!(
+        msg.payload,
+        NetlinkPayload::Error(ErrorMessage { code: None, .. })
+    );
+
+    let mut buf = [0u8; 1];
+    assert_matches!(
+        client_socket.read(&mut buf).await,
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionAborted
+    );
+}
+
+// TODO(https://fxbug.dev/459457112): Add test for SOCK_DESTROY on UDP once
+// that's supported in the netstack.
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn sock_destroy_id_mismatch<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+    let mut client = add_sock_diag_client(&netlink);
+
+    let listener = fasync::net::TcpListener::listen_in_realm(
+        &realm,
+        std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.get().to_ip_addr().into(), 0),
+    )
+    .await
+    .expect("listen_in_realm");
+    let listener_addr = listener.local_addr().expect("get local addr");
+
+    let mut client_socket = fasync::net::TcpStream::connect_in_realm(&realm, listener_addr)
+        .await
+        .expect("connect_in_realm");
+
+    let (_listener, _server_socket, _peer) = listener.accept().await.expect("accept");
+
+    let local_addr = client_socket.std().local_addr().expect("get local addr");
+    let peer_addr = client_socket.std().peer_addr().expect("get peer addr");
+
+    let req = InetRequest {
+        family: match I::VERSION {
+            IpVersion::V4 => linux_uapi::AF_INET as u8,
+            IpVersion::V6 => linux_uapi::AF_INET6 as u8,
+        },
+        protocol: linux_uapi::IPPROTO_TCP as u8,
+        extensions: ExtensionFlags::empty(),
+        states: StateFlags::all(),
+        socket_id: SocketId {
+            source_port: local_addr.port() + 1, // Wrong port
+            destination_port: peer_addr.port(),
+            source_address: local_addr.ip(),
+            destination_address: peer_addr.ip(),
+            interface_id: 0,
+            cookie: [0xFF; 8],
+        },
+    };
+
+    let msg = SockDiagRequest::InetSockDestroy(req);
+    let mut netlink_msg: NetlinkMessage<SockDiagRequest> = msg.into();
+    netlink_msg.header.flags = NLM_F_ACK | (linux_uapi::NLM_F_REQUEST as u16);
+    netlink_msg.finalize();
+
+    client.sender.0.unbounded_send(FakeCreds::attach(netlink_msg)).expect("send request");
+
+    let msg = client.receiver.next().await.expect("receive ack").message;
+    let err = assert_matches::assert_matches!(
+        msg.payload,
+        NetlinkPayload::Error(err) => err
+    );
+    let expected = std::num::NonZeroI32::new(-(libc::ENOENT as i32)).unwrap();
+    assert_eq!(err.code, Some(expected));
+
+    let res = client_socket.write_all(&[0u8]).await;
+    assert!(res.is_ok(), "Socket should still work");
 }

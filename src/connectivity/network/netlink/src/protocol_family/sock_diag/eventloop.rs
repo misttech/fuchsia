@@ -27,7 +27,7 @@ use {
 };
 
 use crate::client::{AsyncWorkItem, InternalClient};
-use crate::logging::{log_debug, log_error, log_warn};
+use crate::logging::{log_debug, log_error};
 use crate::messaging::Sender;
 use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
@@ -60,7 +60,6 @@ impl RequestError {
             RequestError::NotFound => Errno::ENOENT,
             RequestError::InvalidRequest => Errno::EINVAL,
             RequestError::Unsupported => Errno::ENOTSUP,
-
             RequestError::Internal => Errno::EINVAL,
         }
     }
@@ -87,8 +86,6 @@ pub(crate) struct SockDiagEventLoop<
     S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>,
 > {
     pub(crate) socket_diagnostics: fnet_sockets::DiagnosticsProxy,
-    // TODO(https://fxbug.dev/323590076): Remove allowance once used.
-    #[allow(dead_code)]
     pub(crate) socket_control: fnet_sockets::ControlProxy,
     pub(crate) request_stream: mpsc::Receiver<Request<S>>,
     // TODO(https://fxbug.dev/470079735): Support multicast socket destruction
@@ -107,7 +104,7 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
     }
 
     async fn run_one_step(&mut self) {
-        let Self { socket_diagnostics, socket_control: _, request_stream, async_work_receiver: _ } =
+        let Self { socket_diagnostics, socket_control, request_stream, async_work_receiver: _ } =
             self;
 
         let mut request = request_stream.next().await.expect("request stream cannot end");
@@ -179,12 +176,24 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
                     .send(result)
                     .expect("receiving end of completer should not be dropped");
             }
-            RequestArgs::Destroy(_) => {
-                // TODO(https://fxbug.dev/433947762): Support `Destroy` requests.
-                log_warn!("Received unsupposed SOCK_DESTROY request");
+            RequestArgs::Destroy(matchers) => {
+                log_debug!("Calling disconnect_ip with matchers: {:?}", matchers);
+                let result = match fnet_sockets_ext::disconnect_ip(socket_control, matchers).await {
+                    Ok(disconnected) => {
+                        if disconnected > 0 {
+                            Ok(())
+                        } else {
+                            Err(RequestError::NotFound)
+                        }
+                    }
+                    Err(e) => {
+                        log_error!("disconnect_ip error: {e:?}");
+                        Err(RequestError::Internal)
+                    }
+                };
                 request
                     .completer
-                    .send(Err(RequestError::Unsupported))
+                    .send(result)
                     .expect("receiving end of completer should not be dropped");
             }
         }

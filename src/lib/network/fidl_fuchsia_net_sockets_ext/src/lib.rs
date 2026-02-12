@@ -626,6 +626,64 @@ where
     .try_flatten())
 }
 
+/// Errors returned by [`disconnect_ip`]
+#[derive(Debug, Error)]
+pub enum DisconnectIpError {
+    /// The specified matcher was the first invalid one.
+    #[error("invalid matcher at position {0}")]
+    InvalidMatcher(usize),
+    /// Specified matchers would a priori match all sockets.
+    #[error("matchers were unconstrained")]
+    UnconstrainedMatchers,
+    /// An unknown response was received on the call to `Control.DisconnectIp`
+    #[error("unknown ordinal on Control.DisconnectIp call: {0}")]
+    UnknownOrdinal(u64),
+    /// A low-level FIDL error was encountered on the call to
+    /// `Control.DisconnectIp`.
+    #[error("fidl error during Control.DisconnectIp call: {0}")]
+    Fidl(fidl::Error),
+}
+
+/// Send a request to `Control.DisconnectIp` with the provided matchers.
+pub async fn disconnect_ip<M, I>(
+    control: &fnet_sockets::ControlProxy,
+    matchers: M,
+) -> Result<usize, DisconnectIpError>
+where
+    M: IntoIterator<Item = I>,
+    I: Into<fnet_sockets::IpSocketMatcher>,
+{
+    match control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(matchers.into_iter().map(Into::into).collect()),
+            __source_breaking: fidl::marker::SourceBreaking,
+        })
+        .await
+    {
+        Ok(r) => match r {
+            fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+                disconnected,
+            }) => {
+                // Unwrap is safe because usize is always at least u32.
+                Ok(disconnected.try_into().unwrap())
+            }
+            fnet_sockets::DisconnectIpResult::InvalidMatcher(fnet_sockets::InvalidMatcher {
+                index,
+            }) => {
+                // Unwrap is safe because usize is always at least u32.
+                Err(DisconnectIpError::InvalidMatcher(index.try_into().unwrap()))
+            }
+            fnet_sockets::DisconnectIpResult::UnconstrainedMatchers(fnet_sockets::Empty) => {
+                Err(DisconnectIpError::UnconstrainedMatchers)
+            }
+            fnet_sockets::DisconnectIpResult::__SourceBreaking { unknown_ordinal } => {
+                Err(DisconnectIpError::UnknownOrdinal(unknown_ordinal))
+            }
+        },
+        Err(e) => Err(DisconnectIpError::Fidl(e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
