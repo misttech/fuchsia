@@ -35,6 +35,7 @@ def _execute_test(
     timeout_sec: Optional[int] = None,
     verbose: bool = False,
     hermetic: bool = False,
+    list_mobly_tests: bool = False,
 ) -> None:
     """Executes a Mobly test with the specified Mobly Driver.
 
@@ -49,6 +50,7 @@ def _execute_test(
         If set to None, timeout is not enforced.
       verbose: Whether to enable verbose output from the mobly test.
       hermetic: Whether the mobly test is a self-contained executable.
+      list_mobly_tests: Whether to list test cases instead of running them.
 
     Raises:
       MoblyTestFailureException if Mobly test returns non-zero return code.
@@ -67,11 +69,15 @@ def _execute_test(
         tmp_config.flush()
 
         cmd = [] if hermetic else [python_path]
-        cmd += [test_path, "-c", tmp_config.name]
-        if test_cases:
-            cmd += ["--test_case"] + test_cases
-        if verbose:
-            cmd.append("-v")
+        if list_mobly_tests:
+            cmd += [test_path, "--list_tests"]
+        else:
+            cmd += [test_path, "-c", tmp_config.name]
+            if test_cases:
+                cmd += ["--test_case"] + test_cases
+            if verbose:
+                cmd.append("-v")
+
         cmd_str = " ".join(cmd)
         print(f'[Mobly Driver] - Executing Mobly test via cmd:\n"$ {cmd_str}"')
 
@@ -120,6 +126,7 @@ def run(
     timeout_sec: Optional[int] = None,
     verbose: bool = False,
     hermetic: bool = False,
+    list_mobly_tests: bool = False,
 ) -> None:
     """Runs the Mobly Driver which handles the lifecycle of a Mobly test.
 
@@ -136,6 +143,7 @@ def run(
           If None, timeout is not enforced.
       verbose: Whether to enable verbose output from the mobly test.
       hermetic: Whether the mobly test is a self-contained executable.
+      list_mobly_tests: Whether to list test cases instead of running them.
 
     Raises:
       MoblyTestFailureException if the test returns a non-zero return code.
@@ -162,6 +170,7 @@ def run(
             test_cases=test_cases,
             verbose=verbose,
             hermetic=hermetic,
+            list_mobly_tests=list_mobly_tests,
         )
     finally:
         driver.teardown()

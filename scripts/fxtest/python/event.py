@@ -275,6 +275,20 @@ class EnumerateTestCasesPayload:
     # The names of the test cases in the test.
     test_case_names: list[str]
 
+    # Optional template for the run command.
+    # Should contain {test_case} placeholder.
+    command_template: str | None = None
+
+    # format a command for running a specific test case.
+    def maybe_format_command(
+        self, test_name: str, test_case: str
+    ) -> str | None:
+        if self.command_template is None:
+            return None
+        return self.command_template.format(
+            test_name=test_name, test_case=test_case
+        )
+
 
 @dataparse
 @dataclass
@@ -1203,7 +1217,10 @@ class EventRecorder:
         )
 
     def emit_enumerate_test_cases(
-        self, test_name: str, test_case_names: list[str]
+        self,
+        test_name: str,
+        test_case_names: list[str],
+        command_template: str | None = None,
     ) -> None:
         id = self._new_id()
         self._emit(
@@ -1212,7 +1229,7 @@ class EventRecorder:
                 self._get_timestamp(),
                 payload=EventPayloadUnion(
                     enumerate_test_cases=EnumerateTestCasesPayload(
-                        test_name, test_case_names
+                        test_name, test_case_names, command_template
                     )
                 ),
             )

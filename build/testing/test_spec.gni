@@ -574,6 +574,7 @@ template("test_spec") {
                                "timeout_secs",
                                "build_rule",
                                "has_generated_manifest",
+                               "list_cases_argument",
                              ])
       if (defined(_parallel)) {
         parallel = _parallel

@@ -5,7 +5,20 @@
 import asyncio
 import math
 import os
+import re
 import tempfile
+
+_MOBLY_CLASS_HEADER_REGEX = re.compile(
+    r"^==========> (?P<class_name>.*) <==========$"
+)
+
+_MOBLY_TEST_OUTPUT_TEMPLATE = (
+    'fx test --e2e {test_name} -- --test_cases="{test_case}"'
+)
+
+_DEFAULT_TEST_OUTPUT_TEMPLATE = (
+    'fx test {test_name} --test-filter "{test_case}"'
+)
 
 import async_utils.command as command
 import statusinfo
@@ -276,6 +289,19 @@ class TestExecution:
                 if possible, None otherwise.
         """
 
+        # If the test definition includes a `list_cases_argument` (e.g. "list_mobly_tests"),
+        # we construct a command to execute the test binary with that argument.
+        # This is primarily used for host tests which support listing cases via a flag.
+        if (
+            self._test.build.test.list_cases_argument
+            and self._test.build.test.path
+        ):
+            arg = f"--{self._test.build.test.list_cases_argument}"
+            path = self._test.build.test.path
+            if not os.path.isabs(path):
+                path = os.path.join(self._exec_env.out_dir, path)
+            return [path, arg]
+
         execution = self._test.info.execution
         exec_env = self._exec_env
 
@@ -294,6 +320,119 @@ class TestExecution:
             exec_env.fx_cmd_line("ffx", "test", "list-cases")
             + extra_args
             + [component_url]
+        )
+
+    def enumerate_cases_output_template(self) -> str:
+        """Get the template string for the output command.
+
+        Returns:
+            str: The template string
+        """
+        # TODO(fxbug.dev/481539525): This behavior should ideally be in a script run by fx test
+        if self._test.build.test.list_cases_argument == "list_mobly_tests":
+            return _MOBLY_TEST_OUTPUT_TEMPLATE
+        return _DEFAULT_TEST_OUTPUT_TEMPLATE
+
+    async def enumerate_mobly_test(
+        self,
+        recorder: event.EventRecorder,
+        parent: event.Id | None = None,
+    ) -> command.CommandOutput | None:
+        """Enumerate test cases for this (Mobly) test.
+
+        Args:
+            recorder (event.EventRecorder): Recorder for events.
+            parent (event.Id | None): Parent event ID.
+
+        Returns:
+            command.CommandOutput | None: Command output if successful.
+        """
+        cmd = self.enumerate_cases_command_line()
+        if not cmd:
+            return None
+
+        env = self.environment() or {}
+        cwd = env.get("CWD")
+
+        # mobly_driver (and potentially others) requires FUCHSIA_TEST_OUTDIR to be set.
+        # We create a temporary directory for enumeration outputs.
+        with tempfile.TemporaryDirectory() as temp_out_dir:
+            # Adjust temp_out_dir if CWD is set, mirroring execution.py logic
+            out_dir_val = temp_out_dir
+            if cwd and not os.path.isabs(out_dir_val):
+                out_dir_val = os.path.relpath(out_dir_val, cwd)
+
+            env["FUCHSIA_TEST_OUTDIR"] = out_dir_val
+
+            output = await run_command(
+                *cmd,
+                recorder=recorder,
+                parent=parent,
+                env=env,
+                print_verbatim=False,
+            )
+
+            if output and output.stdout:
+                # Parse Mobly output to extract test cases.
+                # Format is:
+                # ==========> ClassName <==========
+                # test_name_1
+                # test_name_2
+                lines = output.stdout.splitlines()
+                clean_lines = []
+
+                # We discard all output lines until we match a class header.
+                # Once a header is found, subsequent lines are treated as test case names
+                # belonging to that class, until EOL.
+                current_class = None
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    match = _MOBLY_CLASS_HEADER_REGEX.match(line)
+                    if match:
+                        current_class = match.group("class_name")
+                        continue
+
+                    # Capture tests under the current class header
+                    if current_class:
+                        clean_lines.append(line)
+
+                if clean_lines:
+                    output.stdout = "\n".join(clean_lines)
+
+            return output
+
+    async def enumerate_test_cases(
+        self,
+        recorder: event.EventRecorder,
+        parent: event.Id | None = None,
+    ) -> command.CommandOutput | None:
+        """Enumerate test cases for this test.
+
+        This method dispatches to specific enumeration logic based on test type.
+
+        Args:
+            recorder (event.EventRecorder): Recorder for events.
+            parent (event.Id | None): Parent event ID.
+
+        Returns:
+            command.CommandOutput | None: Command output if successful.
+        """
+        if self._test.build.test.list_cases_argument == "list_mobly_tests":
+            return await self.enumerate_mobly_test(recorder, parent)
+
+        cmd = self.enumerate_cases_command_line()
+        if not cmd:
+            return None
+
+        # Standard enumeration (e.g. device tests)
+        return await run_command(
+            *cmd,
+            recorder=recorder,
+            parent=parent,
+            print_verbatim=False,
         )
 
     def environment(self) -> dict[str, str] | None:

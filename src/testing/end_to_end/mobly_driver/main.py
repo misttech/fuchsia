@@ -84,6 +84,12 @@ parser.add_argument(
     type=str,
     help="List of test cases to run.",
 )
+parser.add_argument(
+    "--list_mobly_tests",
+    action="store_true",
+    default=False,
+    help="List test cases.",
+)
 args = parser.parse_args()
 
 
@@ -115,6 +121,7 @@ def main() -> None:
             timeout_sec=args.test_timeout_sec,
             verbose=args.v,
             hermetic=args.hermetic,
+            list_mobly_tests=args.list_mobly_tests,
         )
     except mobly_driver.MoblyTestFailureException as mtfe:
         # If an exception escapes a python process, the exit code is set to 1.

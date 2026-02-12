@@ -239,6 +239,11 @@ import("//build/testing/host_test_data.gni")
 #    Type: String
 #    Default: "ip"
 #
+#  list_cases_argument (optional)
+#    Argument to pass to the test binary to list test cases.
+#    Type: string
+#    Default: "list_mobly_tests"
+#
 #  deps
 #  visibility
 #
@@ -284,6 +289,11 @@ template("python_mobly_test") {
   _main_callable = "test_runner.main"
   if (defined(invoker.main_callable)) {
     _main_callable = invoker.main_callable
+  }
+
+  _list_cases_argument = "list_mobly_tests"
+  if (defined(invoker.list_cases_argument)) {
+    _list_cases_argument = invoker.list_cases_argument
   }
 
   #
@@ -499,6 +509,8 @@ template("python_mobly_test") {
                              "timeout_secs",
                              "visibility",
                            ])
+
+    list_cases_argument = _list_cases_argument
 
     binary_path = python_exe_src
 

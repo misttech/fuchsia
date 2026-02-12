@@ -204,6 +204,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             typing.Callable[[typing.Any, typing.Any], typing.Awaitable[None]]
             | None
         ) = None,
+        stdout: str = "",
     ) -> mock.MagicMock:
         async def handler(
             *args: typing.Any, **kwargs: typing.Any
@@ -211,7 +212,10 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             if async_handler is not None:
                 await async_handler(*args, **kwargs)
             return mock.MagicMock(
-                return_code=return_code, stdout="", stderr="", was_timeout=False
+                return_code=return_code,
+                stdout=stdout,
+                stderr="",
+                was_timeout=False,
             )
 
         m = mock.AsyncMock(side_effect=handler)
@@ -242,6 +246,17 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         patch = mock.patch("main.has_package_server_connected_to_device", m)
         patch.start()
         self.addCleanup(patch.stop)
+
+    def _mock_enumerate_mobly_test(
+        self, output: command.CommandOutput
+    ) -> mock.MagicMock:
+        m = mock.AsyncMock(return_value=output)
+        patch = mock.patch(
+            "main.execution.TestExecution.enumerate_mobly_test", m
+        )
+        patch.start()
+        self.addCleanup(patch.stop)
+        return m
 
     def _mock_has_tests_in_base(self, test_packages: list[str]) -> None:
         with open(os.path.join(self.out_dir, "base_packages.list"), "w") as f:
@@ -1212,10 +1227,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Test that we can list test cases using --list"""
 
-        command_mock = self._mock_run_command(0)
-        command_parallel_mock = self._mock_run_commands_in_parallel(
-            "foo::test\nbar::test",
-        )
+        command_mock = self._mock_run_command(0, stdout="foo::test\nbar::test")
 
         self._mock_has_package_server_connected_to_device(
             existing_package_server
@@ -1230,7 +1242,11 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             recorder=recorder,
         )
         self.assertEqual(ret, 0)
-        self.assertEqual(command_parallel_mock.call_count, 1)
+        if existing_package_server:
+            self.assertEqual(command_mock.call_count, 1)
+        else:
+            # has to run an extra command: "fx serve"
+            self.assertEqual(command_mock.call_count, 2)
 
         events = [
             e.payload.enumerate_test_cases
@@ -1246,6 +1262,11 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "foo::test",
                 "bar::test",
             ],
+        )
+
+        self.assertEqual(
+            events[0].command_template,
+            main.execution._DEFAULT_TEST_OUTPUT_TEMPLATE,
         )
 
         call_prefixes = self._make_call_args_prefix_set(
@@ -1265,9 +1286,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_list_failing_command(self) -> None:
         """Test that failing to list test cases using --list results in a nonzero exit code"""
 
-        command_mock = self._mock_run_commands_in_parallel(
-            "Failed to create remote control proxy: Timeout attempting to reach target foo.",
+        command_mock = self._mock_run_command(
             100,
+            stdout="Failed to create remote control proxy: Timeout attempting to reach target foo.",
         )
 
         self._mock_has_package_server_connected_to_device(True)
@@ -1289,6 +1310,50 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             and e.payload.enumerate_test_cases is not None
         ]
         self.assertEqual(len(events), 0)
+
+    async def test_list_mobly_tests(self) -> None:
+        """Test that we can list Mobly test cases using --list"""
+
+        mock_enumerate = self._mock_enumerate_mobly_test(
+            command.CommandOutput(
+                stdout="test_case_1\ntest_case_2\ntest_case_3",
+                stderr="",
+                return_code=0,
+                runtime=10,
+                wrapper_return_code=None,
+            )
+        )
+
+        recorder = event.EventRecorder()
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                ["--simple", "--no-build", "--list", "host_x64/bar_test"]
+            ),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 0)
+        self.assertEqual(mock_enumerate.call_count, 1)
+
+        events = [
+            e.payload.enumerate_test_cases
+            async for e in recorder.iter()
+            if e.payload is not None
+            and e.payload.enumerate_test_cases is not None
+        ]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(
+            events[0].command_template,
+            main.execution._MOBLY_TEST_OUTPUT_TEMPLATE,
+        )
+        self.assertEqual(
+            events[0].test_case_names,
+            [
+                "test_case_1",
+                "test_case_2",
+                "test_case_3",
+            ],
+        )
 
     @mock.patch("main.run_build_with_suspended_output", side_effect=[0])
     async def test_updateifinbase(self, _build_mock: mock.AsyncMock) -> None:

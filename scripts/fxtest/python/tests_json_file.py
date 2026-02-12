@@ -65,6 +65,9 @@ class TestSection:
     # Timeout interval in seconds. This value is None unless a timeout is supplied via test_specs.
     timeout_secs: int | None = None
 
+    # The argument to pass to the test binary to list test cases.
+    list_cases_argument: str | None = None
+
 
 @dataparse
 @dataclass

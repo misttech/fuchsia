@@ -32,6 +32,10 @@ import("//build/testing/test_spec.gni")
 #   name (optional)
 #     [string] Optionally override the name of the resulting test. Used for display and grouping.
 #
+#   list_cases_argument (optional)
+#     [string]: Forwarded from invoker. It's the argument to call the test binary with
+#               to list test cases.
+#
 #   deps, environments, data_deps, public_deps, visibility
 #     Forwarded from invoker.
 #
@@ -100,6 +104,7 @@ template("host_test") {
                              "package_deps",
                              "product_bundle",
                              "expects_ssh",
+                             "list_cases_argument",
                            ])
 
     # If we have args, we put most deps on the script target,

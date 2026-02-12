@@ -869,7 +869,11 @@ async def _console_event_loop(
                     lines_to_print.append(
                         f" {statusinfo.highlight(line, style=flags.style)}"
                     )
-                    command = f'fx test {cases_payload.test_name} --test-filter "{line}"'
+                    command = cases_payload.maybe_format_command(
+                        test_name=cases_payload.test_name, test_case=line
+                    )
+                    if command is None:
+                        command = f'fx test {cases_payload.test_name} --test-filter "{line}"'
                     lines_to_print.append(
                         f" {statusinfo.dim(command, style=flags.style)}"
                     )

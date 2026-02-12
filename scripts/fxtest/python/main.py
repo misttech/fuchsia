@@ -1779,16 +1779,29 @@ class AsyncMain:
 
         wont_enumerate_count = len(tests.selected) - len(executions)
 
-        outputs = await run_commands_in_parallel(
-            [
-                cmd_line
-                for e in executions
-                if (cmd_line := e.enumerate_cases_command_line()) is not None
-            ],
-            group_name="Enumerate test cases",
-            recorder=recorder,
-            maximum_parallel=8,
+        outputs: list[command.CommandOutput | None] = []
+        # Limit parallelism
+        sem = asyncio.Semaphore(8)
+        group_id = recorder.emit_event_group(
+            "Enumerate test cases", queued_events=len(executions)
         )
+
+        async def run_one_enumeration(
+            e: execution.TestExecution,
+        ) -> command.CommandOutput | None:
+            if not e.enumerate_cases_command_line():
+                return None
+
+            async with sem:
+                return await e.enumerate_test_cases(
+                    recorder=recorder, parent=group_id
+                )
+
+        tasks = [run_one_enumeration(e) for e in executions]
+        if tasks:
+            outputs = list(await asyncio.gather(*tasks))
+
+        recorder.emit_end(id=group_id)
 
         assert len(outputs) == len(executions)
 
@@ -1802,8 +1815,16 @@ class AsyncMain:
             if output is None or output.return_code != 0:
                 failed_enumeration_names.append(exec.name())
                 continue
+
+            # We use a template to format the output because different test types (e.g. host vs device)
+            # require different commands to run per test case.
+            # - Host tests (like Mobly) are executed directly.
+            # - Device tests are typically run via `ffx test run`.
+            command_template = exec.enumerate_cases_output_template()
             recorder.emit_enumerate_test_cases(
-                exec.name(), list(output.stdout.splitlines())
+                exec.name(),
+                list(output.stdout.splitlines()),
+                command_template=command_template,
             )
 
         if failed_enumeration_names:

@@ -29,7 +29,8 @@
             "name": "host_x64/bar_test",
             "label": "//src/sys:bar_test(//build/toolchain/host:x64)",
             "path": "host_x64/bar_test",
-            "os": "linux"
+            "os": "linux",
+            "list_cases_argument": "list_mobly_tests"
         }
     },
     {
