@@ -116,7 +116,7 @@ type IpSocketState = table {
     1: family fuchsia.net.IpVersion;
     /// The source address of the socket.
     ///
-    /// Required.
+    /// Present if the socket is bound to a local address.
     2: src_addr fuchsia.net.IpAddress;
     /// The destination address of the socket.
     ///
@@ -139,7 +139,7 @@ type IpSocketState = table {
         1: tcp @generated_name("IpSocketTcpState") table {
             /// The source port of the TCP socket.
             ///
-            /// Required.
+            /// Present if the socket is bound to a local port.
             1: src_port uint16;
             /// The destination port of the TCP socket.
             ///
@@ -157,7 +157,7 @@ type IpSocketState = table {
         2: udp @generated_name("IpSocketUdpState") table {
             /// The source port of the UDP socket.
             ///
-            /// Required.
+            /// Present if the socket is bound to a local port.
             1: src_port uint16;
             /// The destination port of the UDP socket.
             ///
@@ -185,15 +185,14 @@ open protocol IpIterator {
     /// could have occurred in between results for each socket being
     /// materialized.
     strict Next() -> (struct {
+        /// The sockets for this batch.
+        ///
+        /// Empty iff has_more is false.
         sockets vector<IpSocketState>:MAX_IP_SOCKET_BATCH_SIZE;
 
         /// Whether there are more results available. the server immediately
         /// closes its end of the channel after yielding a response with
         /// `has_more = false`.
-        ///
-        /// NOTE: It's possible for `has_more` to be true when `sockets` is
-        /// empty. Don't use the length of `sockets` as the signal of when there
-        /// are no more results.
         has_more bool;
     });
 };
@@ -224,6 +223,11 @@ closed protocol Control {
     ///
     /// If no matchers are specified, or the provided matchers match all sockets,
     /// an error is returned and no action is taken.
+    ///
+    /// NOTE: This operation is asynchronous. While the internal state of the
+    /// socket is updated before this call returns, propagation of the error to
+    /// an application is unsynchronized. Subsequent operations (such as TCP
+    /// reads and writes) may not immediately see the error.
     strict DisconnectIp(table {
         /// Sockets matching all matchers will be disconnected (see above).
         ///
