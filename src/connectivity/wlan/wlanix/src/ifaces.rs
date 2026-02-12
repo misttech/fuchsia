@@ -54,6 +54,10 @@ pub(crate) trait IfaceManager: Send + Sync {
         &self,
         iface_id: u16,
     ) -> Result<fidl_device_service::QueryIfaceResponse, Error>;
+    async fn query_iface_capabilities(
+        &self,
+        iface_id: u16,
+    ) -> Result<fidl_common::ApfPacketFilterSupport, Error>;
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error>;
     async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error>;
     async fn set_tx_power_scenario(
@@ -161,6 +165,17 @@ impl IfaceManager for DeviceMonitorIfaceManager {
             .await?
             .map_err(zx::Status::from_raw)
             .context("Could not query iface info")
+    }
+
+    async fn query_iface_capabilities(
+        &self,
+        iface_id: u16,
+    ) -> Result<fidl_common::ApfPacketFilterSupport, Error> {
+        self.monitor_svc
+            .query_iface_capabilities(iface_id)
+            .await?
+            .map_err(zx::Status::from_raw)
+            .context("Could not query iface device capabilities")
     }
 
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error> {
@@ -349,6 +364,8 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn set_suspend_mode(&self, enabled: bool) -> Result<(), Error>;
     async fn set_country(&self, code: [u8; 2]) -> Result<(), Error>;
     async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status>;
+    async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status>;
+    async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status>;
 }
 
 #[derive(Debug, Clone)]
@@ -765,6 +782,28 @@ impl ClientIface for SmeClientIface {
             })?
             .map_err(zx::Status::from_raw)
     }
+
+    async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status> {
+        self.sme_proxy
+            .install_apf_packet_filter(&program)
+            .await
+            .map_err(|e| {
+                error!("FIDL error calling install_apf_packet_filter: {:?}", e);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
+    }
+
+    async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status> {
+        self.sme_proxy
+            .read_apf_packet_filter_data()
+            .await
+            .map_err(|e| {
+                error!("FIDL error calling read_apf_packet_filter_data: {:?}", e);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
+    }
 }
 
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
@@ -868,6 +907,8 @@ pub mod test_utils {
         SetSuspendMode(bool),
         SetCountry([u8; 2]),
         SetMacAddress([u8; 6]),
+        InstallApfPacketFilter(Vec<u8>),
+        ReadApfPacketFilterData,
     }
 
     pub struct TestClientIface {
@@ -999,6 +1040,16 @@ pub mod test_utils {
             self.calls.lock().push(ClientIfaceCall::SetMacAddress(mac_addr));
             Ok(())
         }
+
+        async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status> {
+            self.calls.lock().push(ClientIfaceCall::InstallApfPacketFilter(program));
+            Ok(())
+        }
+
+        async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status> {
+            self.calls.lock().push(ClientIfaceCall::ReadApfPacketFilterData);
+            Ok(vec![2, 2, 2, 2])
+        }
     }
 
     // Iface IDs are not currently read out of this struct anywhere, but keep them for future tests.
@@ -1010,6 +1061,7 @@ pub mod test_utils {
         GetCountry,
         SetCountry { phy_id: u16, country: [u8; 2] },
         QueryIface(u16),
+        QueryIfaceCapabilities(u16),
         CreateClientIface(u16),
         GetClientIface(u16),
         DestroyIface(u16),
@@ -1168,6 +1220,23 @@ pub mod test_utils {
             self.calls.lock().push(IfaceManagerCall::QueryIface(iface_id));
             if self.client_iface.lock().is_some() && iface_id == *self.iface_id.lock() {
                 Ok(FAKE_IFACE_RESPONSE)
+            } else {
+                Err(format_err!("Unexpected query for iface id {}", iface_id))
+            }
+        }
+
+        async fn query_iface_capabilities(
+            &self,
+            iface_id: u16,
+        ) -> Result<fidl_common::ApfPacketFilterSupport, Error> {
+            self.calls.lock().push(IfaceManagerCall::QueryIfaceCapabilities(iface_id));
+            if self.client_iface.lock().is_some() && iface_id == *self.iface_id.lock() {
+                Ok(fidl_common::ApfPacketFilterSupport {
+                    supported: Some(true),
+                    version: Some(1),
+                    max_filter_length: Some(1),
+                    ..fidl_common::ApfPacketFilterSupport::default()
+                })
             } else {
                 Err(format_err!("Unexpected query for iface id {}", iface_id))
             }
@@ -1415,6 +1484,39 @@ mod tests {
         let result =
             assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);
         assert_eq!(result, FAKE_IFACE_RESPONSE);
+    }
+
+    #[test]
+    fn test_query_iface_capabilities() {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc, mut monitor_stream) =
+            create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let manager = DeviceMonitorIfaceManager {
+            monitor_svc,
+            ifaces: Mutex::new(HashMap::new()),
+            telemetry_sender: TelemetrySender::new(telemetry_sender),
+        };
+        let iface_id = 42;
+        let mut fut = manager.query_iface_capabilities(iface_id);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        let (req_iface_id, responder) = assert_matches!(
+                 exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::QueryIfaceCapabilities { iface_id, responder })) => (iface_id, responder));
+        assert_eq!(req_iface_id, iface_id);
+
+        let apf_support = fidl_common::ApfPacketFilterSupport {
+            supported: Some(true),
+            version: Some(1),
+            max_filter_length: Some(1024),
+            ..Default::default()
+        };
+        responder.send(Ok(&apf_support)).expect("Failed to respond to QueryIfaceCapabilities");
+
+        let result =
+            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);
+        assert_eq!(result, apf_support);
     }
 
     #[test]
@@ -1694,6 +1796,45 @@ mod tests {
         responder.send(Ok(())).expect("Failed to send SetMacAddress response");
 
         assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_install_apf_packet_filter_on_iface() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let test_program = vec![1, 2, 3, 4];
+        let mut install_fut = iface.install_apf_packet_filter(test_program.clone());
+
+        assert_matches!(exec.run_until_stalled(&mut install_fut), Poll::Pending);
+
+        let (program, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::InstallApfPacketFilter { program, responder }))) => (program, responder)
+        );
+        assert_eq!(program, test_program);
+        responder.send(Ok(())).expect("Failed to send InstallApfPacketFilter response");
+
+        assert_matches!(exec.run_until_stalled(&mut install_fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_read_apf_packet_filter_data_on_iface() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let mut read_fut = iface.read_apf_packet_filter_data();
+
+        assert_matches!(exec.run_until_stalled(&mut read_fut), Poll::Pending);
+
+        let responder = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::ReadApfPacketFilterData { responder }))) => responder
+        );
+        let test_data = vec![5, 6, 7, 8];
+        responder.send(Ok(&test_data)).expect("Failed to send ReadApfPacketFilterData response");
+
+        let result =
+            assert_matches!(exec.run_until_stalled(&mut read_fut), Poll::Ready(Ok(data)) => data);
+        assert_eq!(result, test_data);
     }
 
     #[test]

@@ -395,6 +395,22 @@ fn convert_band_cap(cap: fidl_fullmac::BandCapability) -> Result<fidl_mlme::Band
     })
 }
 
+pub fn convert_read_apf_packet_filter_data_resp(
+    resp: fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse,
+) -> Result<fidl_mlme::MlmeReadApfPacketFilterDataResponse> {
+    Ok(fidl_mlme::MlmeReadApfPacketFilterDataResponse {
+        memory: resp.memory.context("missing memory")?,
+    })
+}
+
+pub fn convert_get_apf_packet_filter_enabled_resp(
+    resp: fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse,
+) -> Result<fidl_mlme::MlmeGetApfPacketFilterEnabledResponse> {
+    Ok(fidl_mlme::MlmeGetApfPacketFilterEnabledResponse {
+        enabled: resp.enabled.context("missing enabled")?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +578,29 @@ mod tests {
         let mlme = convert_band_cap(fullmac).unwrap();
         assert!(mlme.ht_cap.is_none());
         assert!(mlme.vht_cap.is_none());
+    }
+
+    #[test]
+    fn test_convert_read_apf_packet_filter_data_resp() {
+        let fullmac_resp = fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse {
+            memory: Some(vec![1, 2, 3, 4]),
+            ..Default::default()
+        };
+        assert_eq!(
+            convert_read_apf_packet_filter_data_resp(fullmac_resp).unwrap(),
+            fidl_mlme::MlmeReadApfPacketFilterDataResponse { memory: vec![1, 2, 3, 4] }
+        );
+    }
+
+    #[test]
+    fn test_convert_get_apf_packet_filter_enabled_resp() {
+        let fullmac_resp = fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse {
+            enabled: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            convert_get_apf_packet_filter_enabled_resp(fullmac_resp).unwrap(),
+            fidl_mlme::MlmeGetApfPacketFilterEnabledResponse { enabled: true }
+        );
     }
 }

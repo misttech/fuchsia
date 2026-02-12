@@ -576,6 +576,29 @@ void WlanInterface::SetMacAddress(SetMacAddressRequestView request,
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void WlanInterface::QueryApfPacketFilterSupport(
+    QueryApfPacketFilterSupportCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::InstallApfPacketFilter(InstallApfPacketFilterRequestView request,
+                                           InstallApfPacketFilterCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::ReadApfPacketFilterData(ReadApfPacketFilterDataCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::SetApfPacketFilterEnabled(SetApfPacketFilterEnabledRequestView request,
+                                              SetApfPacketFilterEnabledCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::GetApfPacketFilterEnabled(GetApfPacketFilterEnabledCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 uint32_t WlanInterface::PortGetMtu() { return kEthernetMtu; }
 
 void WlanInterface::MacGetAddress(fuchsia_net::MacAddress* out_mac) {

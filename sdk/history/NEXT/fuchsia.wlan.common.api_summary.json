@@ -1,5 +1,27 @@
 [
     {
+        "kind": "table/member",
+        "name": "fuchsia.wlan.common/ApfPacketFilterSupport.max_filter_length",
+        "ordinal": "3",
+        "type": "int32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.wlan.common/ApfPacketFilterSupport.supported",
+        "ordinal": "1",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.wlan.common/ApfPacketFilterSupport.version",
+        "ordinal": "2",
+        "type": "int32"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.wlan.common/ApfPacketFilterSupport"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.wlan.common/BssType.INDEPENDENT",
         "value": "2"

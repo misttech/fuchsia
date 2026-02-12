@@ -888,6 +888,54 @@ impl ClientSme {
         self.context.mlme_sink.send(MlmeRequest::SetMacAddress(mac_addr, responder));
         receiver
     }
+
+    pub fn query_apf_packet_filter_support(
+        &mut self,
+    ) -> oneshot::Receiver<Result<fidl_common::ApfPacketFilterSupport, i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::QueryApfPacketFilterSupport(responder));
+        receiver
+    }
+
+    pub fn install_apf_packet_filter(
+        &mut self,
+        program: Vec<u8>,
+    ) -> oneshot::Receiver<Result<(), i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::InstallApfPacketFilter(
+            fidl_mlme::MlmeInstallApfPacketFilterRequest { program },
+            responder,
+        ));
+        receiver
+    }
+
+    pub fn read_apf_packet_filter_data(
+        &mut self,
+    ) -> oneshot::Receiver<Result<fidl_mlme::MlmeReadApfPacketFilterDataResponse, i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::ReadApfPacketFilterData(responder));
+        receiver
+    }
+
+    pub fn set_apf_packet_filter_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> oneshot::Receiver<Result<(), i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::SetApfPacketFilterEnabled(
+            fidl_mlme::MlmeSetApfPacketFilterEnabledRequest { enabled },
+            responder,
+        ));
+        receiver
+    }
+
+    pub fn get_apf_packet_filter_enabled(
+        &mut self,
+    ) -> oneshot::Receiver<Result<fidl_mlme::MlmeGetApfPacketFilterEnabledResponse, i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::GetApfPacketFilterEnabled(responder));
+        receiver
+    }
 }
 
 impl super::Station for ClientSme {
@@ -2149,6 +2197,50 @@ mod tests {
         assert_matches!(mlme_stream.try_next(), Ok(Some(MlmeRequest::WmmStatusReq)));
         sme.on_mlme_event(create_on_wmm_status_resp(zx::sys::ZX_ERR_IO));
         assert_eq!(receiver.try_recv(), Ok(Some(Err(zx::sys::ZX_ERR_IO))));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_query_apf_packet_filter_support() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let mut _receiver = sme.query_apf_packet_filter_support();
+        assert_matches!(
+            mlme_stream.try_next(),
+            Ok(Some(MlmeRequest::QueryApfPacketFilterSupport(..)))
+        );
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_install_apf_packet_filter() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let program = vec![1, 2, 3];
+        let mut _receiver = sme.install_apf_packet_filter(program.clone());
+        let req = assert_matches!(mlme_stream.try_next(), Ok(Some(MlmeRequest::InstallApfPacketFilter(req, ..))) => req);
+        assert_eq!(req.program, program);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_read_apf_packet_filter_data() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let mut _receiver = sme.read_apf_packet_filter_data();
+        assert_matches!(mlme_stream.try_next(), Ok(Some(MlmeRequest::ReadApfPacketFilterData(..))));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_set_apf_packet_filter_enabled() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let mut _receiver = sme.set_apf_packet_filter_enabled(true);
+        let req = assert_matches!(mlme_stream.try_next(), Ok(Some(MlmeRequest::SetApfPacketFilterEnabled(req, ..))) => req);
+        assert!(req.enabled);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_get_apf_packet_filter_enabled() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let mut _receiver = sme.get_apf_packet_filter_enabled();
+        assert_matches!(
+            mlme_stream.try_next(),
+            Ok(Some(MlmeRequest::GetApfPacketFilterEnabled(..)))
+        );
     }
 
     fn assert_no_connect(mlme_stream: &mut mpsc::UnboundedReceiver<MlmeRequest>) {

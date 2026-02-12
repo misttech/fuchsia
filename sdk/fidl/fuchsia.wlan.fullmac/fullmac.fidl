@@ -400,6 +400,9 @@ open protocol WlanFullmacImpl {
     strict QueryTelemetrySupport() -> (table {
         1: resp fuchsia.wlan.stats.TelemetrySupport;
     }) error zx.Status;
+    flexible QueryApfPacketFilterSupport() -> (table {
+        1: resp fuchsia.wlan.common.ApfPacketFilterSupport;
+    }) error zx.Status;
 
     // MLME operations
     strict StartScan(table {
@@ -558,6 +561,29 @@ open protocol WlanFullmacImpl {
     strict SetMacAddress(struct {
         mac_addr ieee80211.MacAddr;
     }) -> () error zx.Status;
+
+    /// Installs an APF program, replacing an existing program if present. This method does not
+    /// enable the program.
+    flexible InstallApfPacketFilter(table {
+        1: program vector<uint8>:MAX;
+    }) -> () error zx.Status;
+    /// Fetches a consistent snapshot of the entire APF program and working
+    /// memory buffer and returns it to the host. The returned buffer contains
+    /// both code and data. Its length must match the most recently returned
+    /// QueryPacketFilterSupport().max_filter_length.
+    ///
+    /// While the snapshot is being fetched, the APF interpreter must not execute
+    /// and all incoming packets must be passed to the host as if there was no
+    /// APF program installed.
+    flexible ReadApfPacketFilterData() -> (table {
+        1: memory vector<uint8>:MAX;
+    }) error zx.Status;
+    flexible SetApfPacketFilterEnabled(table {
+        1: enabled bool;
+    }) -> () error zx.Status;
+    flexible GetApfPacketFilterEnabled() -> (table {
+        1: enabled bool;
+    }) error zx.Status;
 };
 
 service Service {

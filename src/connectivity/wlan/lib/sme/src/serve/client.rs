@@ -110,6 +110,46 @@ async fn handle_fidl_request(
         ClientSmeRequest::SetMacAddress { mac_addr, responder } => {
             Ok(set_mac_address(sme, mac_addr, responder).await?)
         }
+        ClientSmeRequest::InstallApfPacketFilter { program, responder } => {
+            let receiver = sme.lock().install_apf_packet_filter(program);
+            let resp = match receiver.await {
+                Ok(result) => result,
+                Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+            };
+            responder.send(resp).unwrap_or_else(|e| error!("Error sending response: {:?}", e));
+            Ok(())
+        }
+        ClientSmeRequest::ReadApfPacketFilterData { responder } => {
+            let receiver = sme.lock().read_apf_packet_filter_data();
+            let resp = match receiver.await {
+                Ok(result) => result.map(|r| r.memory),
+                Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+            };
+            responder
+                .send(resp.as_ref().map(|m| &m[..]).map_err(|e| *e))
+                .unwrap_or_else(|e| error!("Error sending response: {:?}", e));
+            Ok(())
+        }
+        ClientSmeRequest::SetApfPacketFilterEnabled { enabled, responder } => {
+            let receiver = sme.lock().set_apf_packet_filter_enabled(enabled);
+            let resp = match receiver.await {
+                Ok(result) => result,
+                Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+            };
+            responder.send(resp).unwrap_or_else(|e| error!("Error sending response: {:?}", e));
+            Ok(())
+        }
+        ClientSmeRequest::GetApfPacketFilterEnabled { responder } => {
+            let receiver = sme.lock().get_apf_packet_filter_enabled();
+            let resp = match receiver.await {
+                Ok(result) => result.map(|r| r.enabled),
+                Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+            };
+            responder
+                .send(resp.as_ref().map(|e| *e).map_err(|e| *e))
+                .unwrap_or_else(|e| error!("Error sending response: {:?}", e));
+            Ok(())
+        }
     }
 }
 
@@ -346,6 +386,7 @@ fn convert_roam_result(result: &RoamResult) -> fidl_sme::RoamResult {
 mod tests {
     use super::*;
     use crate::client::{ConnectFailure, EstablishRsnaFailure, EstablishRsnaFailureReason};
+    use crate::test_utils;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_wlan_mlme::ScanResultCode;
@@ -623,5 +664,93 @@ mod tests {
             timestamp: zx::MonotonicInstant::from_nanos(rng.random()),
             bss_description: random_bss_description!(),
         }
+    }
+
+    #[test]
+    fn test_handle_fidl_request_apf() {
+        let mut exec = fasync::TestExecutor::new();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let (sme, _mlme_sink, mut mlme_stream, _time_stream) = client_sme::ClientSme::new(
+            client_sme::ClientConfig::default(),
+            test_utils::fake_device_info([0; 6].into()),
+            inspector.clone(),
+            inspector.root().create_child("sme"),
+            wlan_common::test_utils::fake_features::fake_security_support(),
+            wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+        );
+        let sme = Mutex::new(sme);
+
+        // Test InstallApfPacketFilter
+        let (proxy, stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let program = vec![1, 2, 3];
+        let mut install_fut = proxy.install_apf_packet_filter(&program);
+        let mut stream = pin!(stream);
+
+        // Run handle_fidl_request for the install request
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            // Forward from SME to MLME
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::InstallApfPacketFilter(req, responder))) => {
+                assert_eq!(req.program, program);
+                responder.respond(Ok(()));
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+        assert_matches!(exec.run_until_stalled(&mut install_fut), Poll::Ready(Ok(Ok(()))));
+
+        // Test ReadApfPacketFilterData
+        let mut read_fut = proxy.read_apf_packet_filter_data();
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            // Forward from SME to MLME
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::ReadApfPacketFilterData(responder))) => {
+                responder.respond(Ok(fidl_mlme::MlmeReadApfPacketFilterDataResponse {
+                    memory: vec![4, 5, 6],
+                }));
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+        assert_matches!(exec.run_until_stalled(&mut read_fut), Poll::Ready(Ok(Ok(data))) => {
+            assert_eq!(data, vec![4, 5, 6]);
+        });
+
+        // Test SetApfPacketFilterEnabled
+        let mut set_enabled_fut = proxy.set_apf_packet_filter_enabled(true);
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            // Forward from SME to MLME
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::SetApfPacketFilterEnabled(req, responder))) => {
+                assert!(req.enabled);
+                responder.respond(Ok(()));
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+        assert_matches!(exec.run_until_stalled(&mut set_enabled_fut), Poll::Ready(Ok(Ok(()))));
+
+        // Test GetApfPacketFilterEnabled
+        let mut get_enabled_fut = proxy.get_apf_packet_filter_enabled();
+        assert_matches!(exec.run_until_stalled(&mut stream.next()), Poll::Ready(Some(Ok(req))) => {
+            let mut handle_fut = pin!(handle_fidl_request(&sme, req));
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Pending);
+
+            // Forward from SME to MLME
+            assert_matches!(exec.run_until_stalled(&mut mlme_stream.next()), Poll::Ready(Some(crate::MlmeRequest::GetApfPacketFilterEnabled(responder))) => {
+                responder.respond(Ok(fidl_mlme::MlmeGetApfPacketFilterEnabledResponse {
+                    enabled: true,
+                }));
+            });
+
+            assert_matches!(exec.run_until_stalled(&mut handle_fut), Poll::Ready(Ok(())));
+        });
+        assert_matches!(exec.run_until_stalled(&mut get_enabled_fut), Poll::Ready(Ok(Ok(true))));
     }
 }

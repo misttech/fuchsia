@@ -23,6 +23,9 @@ pub trait DeviceOps {
         &self,
     ) -> anyhow::Result<fidl_common::SpectrumManagementSupport>;
     fn query_telemetry_support(&self) -> anyhow::Result<Result<fidl_stats::TelemetrySupport, i32>>;
+    fn query_apf_packet_filter_support(
+        &self,
+    ) -> anyhow::Result<Result<fidl_common::ApfPacketFilterSupport, i32>>;
     fn start_scan(&self, req: fidl_fullmac::WlanFullmacImplStartScanRequest) -> anyhow::Result<()>;
     fn connect(&self, req: fidl_fullmac::WlanFullmacImplConnectRequest) -> anyhow::Result<()>;
     fn reconnect(&self, req: fidl_fullmac::WlanFullmacImplReconnectRequest) -> anyhow::Result<()>;
@@ -58,6 +61,20 @@ pub trait DeviceOps {
         &self,
         req: fidl_fullmac::WlanFullmacImplSetMacAddressRequest,
     ) -> anyhow::Result<Result<(), i32>>;
+    fn install_apf_packet_filter(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest,
+    ) -> anyhow::Result<Result<(), i32>>;
+    fn read_apf_packet_filter_data(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse, i32>>;
+    fn set_apf_packet_filter_enabled(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest,
+    ) -> anyhow::Result<Result<(), i32>>;
+    fn get_apf_packet_filter_enabled(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>>;
 }
 
 pub struct FullmacDevice {
@@ -138,7 +155,24 @@ impl DeviceOps for FullmacDevice {
                 Ok(response) => response
                     .resp
                     .ok_or_else(|| {
-                        format_err!("Driver returned empty QuerySpectrumManagementSupport response")
+                        format_err!("Driver returned empty QueryTelemetrySupport response")
+                    })
+                    .map(Ok),
+                Err(e) => Ok(Err(e)),
+            })
+    }
+
+    fn query_apf_packet_filter_support(
+        &self,
+    ) -> anyhow::Result<Result<fidl_common::ApfPacketFilterSupport, i32>> {
+        self.fullmac_impl_sync_proxy
+            .query_apf_packet_filter_support(zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on QueryApfPacketFilterSupport")
+            .and_then(|support| match support {
+                Ok(response) => response
+                    .resp
+                    .ok_or_else(|| {
+                        format_err!("Driver returned empty QueryApfPacketFilterSupport response")
                     })
                     .map(Ok),
                 Err(e) => Ok(Err(e)),
@@ -273,6 +307,42 @@ impl DeviceOps for FullmacDevice {
             .set_mac_address(&req.mac_addr, zx::MonotonicInstant::INFINITE)
             .context("FIDL error on SetMacAddress")
     }
+
+    fn install_apf_packet_filter(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest,
+    ) -> anyhow::Result<Result<(), i32>> {
+        self.fullmac_impl_sync_proxy
+            .install_apf_packet_filter(&req, zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on InstallApfPacketFilter")
+    }
+
+    fn read_apf_packet_filter_data(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse, i32>>
+    {
+        self.fullmac_impl_sync_proxy
+            .read_apf_packet_filter_data(zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on ReadApfPacketFilterData")
+    }
+
+    fn set_apf_packet_filter_enabled(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest,
+    ) -> anyhow::Result<Result<(), i32>> {
+        self.fullmac_impl_sync_proxy
+            .set_apf_packet_filter_enabled(&req, zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on SetApfPacketFilterEnabled")
+    }
+
+    fn get_apf_packet_filter_enabled(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>>
+    {
+        self.fullmac_impl_sync_proxy
+            .get_apf_packet_filter_enabled(zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on GetApfPacketFilterEnabled")
+    }
 }
 
 #[cfg(test)]
@@ -286,27 +356,68 @@ pub mod test_utils {
 
     #[derive(Debug)]
     pub enum DriverCall {
-        StartScan { req: fidl_fullmac::WlanFullmacImplStartScanRequest },
-        ConnectReq { req: fidl_fullmac::WlanFullmacImplConnectRequest },
-        ReconnectReq { req: fidl_fullmac::WlanFullmacImplReconnectRequest },
-        RoamReq { req: fidl_fullmac::WlanFullmacImplRoamRequest },
-        AuthResp { resp: fidl_fullmac::WlanFullmacImplAuthRespRequest },
-        DeauthReq { req: fidl_fullmac::WlanFullmacImplDeauthRequest },
-        AssocResp { resp: fidl_fullmac::WlanFullmacImplAssocRespRequest },
-        Disassoc { req: fidl_fullmac::WlanFullmacImplDisassocRequest },
-        StartBss { req: fidl_fullmac::WlanFullmacImplStartBssRequest },
-        StopBss { req: fidl_fullmac::WlanFullmacImplStopBssRequest },
-        SetKeys { req: fidl_fullmac::WlanFullmacImplSetKeysRequest },
-        EapolTx { req: fidl_fullmac::WlanFullmacImplEapolTxRequest },
+        StartScan {
+            req: fidl_fullmac::WlanFullmacImplStartScanRequest,
+        },
+        ConnectReq {
+            req: fidl_fullmac::WlanFullmacImplConnectRequest,
+        },
+        ReconnectReq {
+            req: fidl_fullmac::WlanFullmacImplReconnectRequest,
+        },
+        RoamReq {
+            req: fidl_fullmac::WlanFullmacImplRoamRequest,
+        },
+        AuthResp {
+            resp: fidl_fullmac::WlanFullmacImplAuthRespRequest,
+        },
+        DeauthReq {
+            req: fidl_fullmac::WlanFullmacImplDeauthRequest,
+        },
+        AssocResp {
+            resp: fidl_fullmac::WlanFullmacImplAssocRespRequest,
+        },
+        Disassoc {
+            req: fidl_fullmac::WlanFullmacImplDisassocRequest,
+        },
+        StartBss {
+            req: fidl_fullmac::WlanFullmacImplStartBssRequest,
+        },
+        StopBss {
+            req: fidl_fullmac::WlanFullmacImplStopBssRequest,
+        },
+        SetKeys {
+            req: fidl_fullmac::WlanFullmacImplSetKeysRequest,
+        },
+        EapolTx {
+            req: fidl_fullmac::WlanFullmacImplEapolTxRequest,
+        },
         QueryTelemetrySupport,
+        QueryApfPacketFilterSupport,
         GetIfaceStats,
         GetIfaceHistogramStats,
         GetSignalReport,
-        SaeHandshakeResp { resp: fidl_fullmac::WlanFullmacImplSaeHandshakeRespRequest },
-        SaeFrameTx { frame: fidl_fullmac::SaeFrame },
+        SaeHandshakeResp {
+            resp: fidl_fullmac::WlanFullmacImplSaeHandshakeRespRequest,
+        },
+        SaeFrameTx {
+            frame: fidl_fullmac::SaeFrame,
+        },
         WmmStatusReq,
-        OnLinkStateChanged { req: fidl_fullmac::WlanFullmacImplOnLinkStateChangedRequest },
-        SetMacAddress { req: fidl_fullmac::WlanFullmacImplSetMacAddressRequest },
+        OnLinkStateChanged {
+            req: fidl_fullmac::WlanFullmacImplOnLinkStateChangedRequest,
+        },
+        SetMacAddress {
+            req: fidl_fullmac::WlanFullmacImplSetMacAddressRequest,
+        },
+        InstallApfPacketFilter {
+            req: fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest,
+        },
+        ReadApfPacketFilterData,
+        SetApfPacketFilterEnabled {
+            req: fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest,
+        },
+        GetApfPacketFilterEnabled,
     }
 
     pub struct FakeFullmacDeviceMocks {
@@ -321,11 +432,19 @@ pub mod test_utils {
         pub query_security_support_mock: Option<fidl_common::SecuritySupport>,
         pub query_spectrum_management_support_mock: Option<fidl_common::SpectrumManagementSupport>,
         pub query_telemetry_support_mock: Option<Result<fidl_stats::TelemetrySupport, i32>>,
+        pub query_apf_packet_filter_support_mock:
+            Option<Result<fidl_common::ApfPacketFilterSupport, i32>>,
 
         pub set_keys_resp_mock: Option<fidl_fullmac::WlanFullmacSetKeysResp>,
         pub get_iface_stats_mock: Option<fidl_mlme::GetIfaceStatsResponse>,
         pub get_iface_histogram_stats_mock: Option<fidl_mlme::GetIfaceHistogramStatsResponse>,
         pub get_signal_report_mock: Option<Result<fidl_stats::SignalReport, i32>>,
+        pub install_apf_packet_filter_mock: Option<Result<(), i32>>,
+        pub read_apf_packet_filter_data_mock:
+            Option<Result<fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse, i32>>,
+        pub set_apf_packet_filter_enabled_mock: Option<Result<(), i32>>,
+        pub get_apf_packet_filter_enabled_mock:
+            Option<Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>>,
 
         pub fullmac_ifc_client_end: Option<ClientEnd<fidl_fullmac::WlanFullmacImplIfcMarker>>,
     }
@@ -395,12 +514,32 @@ pub mod test_utils {
                     query_telemetry_support_mock: Some(Ok(fidl_stats::TelemetrySupport {
                         ..Default::default()
                     })),
+                    query_apf_packet_filter_support_mock: Some(Ok(
+                        fidl_common::ApfPacketFilterSupport {
+                            supported: Some(false),
+                            ..Default::default()
+                        },
+                    )),
                     get_signal_report_mock: Some(Ok(fidl_stats::SignalReport {
                         ..Default::default()
                     })),
                     set_keys_resp_mock: None,
                     get_iface_stats_mock: None,
                     get_iface_histogram_stats_mock: None,
+                    install_apf_packet_filter_mock: Some(Ok(())),
+                    read_apf_packet_filter_data_mock: Some(Ok(
+                        fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse {
+                            memory: Some(vec![]),
+                            ..Default::default()
+                        },
+                    )),
+                    set_apf_packet_filter_enabled_mock: Some(Ok(())),
+                    get_apf_packet_filter_enabled_mock: Some(Ok(
+                        fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse {
+                            enabled: Some(false),
+                            ..Default::default()
+                        },
+                    )),
                 })),
             };
 
@@ -447,6 +586,15 @@ pub mod test_utils {
         ) -> anyhow::Result<Result<fidl_stats::TelemetrySupport, i32>> {
             self.driver_call_sender.send(DriverCall::QueryTelemetrySupport);
             self.mocks.lock().query_telemetry_support_mock.clone().ok_or_else(|| format_err!(""))
+        }
+
+        fn query_apf_packet_filter_support(
+            &self,
+        ) -> anyhow::Result<Result<fidl_common::ApfPacketFilterSupport, i32>> {
+            self.driver_call_sender.send(DriverCall::QueryApfPacketFilterSupport);
+            self.mocks.lock().query_apf_packet_filter_support_mock.clone().ok_or_else(|| {
+                format_err!("query_apf_packet_filter_support_mock is None in FakeFullmacDevice")
+            })
         }
 
         // Cannot mark fn unsafe because it has to match fn signature in FullDeviceInterface
@@ -574,6 +722,47 @@ pub mod test_utils {
         ) -> anyhow::Result<Result<(), i32>> {
             self.driver_call_sender.send(DriverCall::SetMacAddress { req });
             Ok(Ok(()))
+        }
+
+        fn install_apf_packet_filter(
+            &self,
+            req: fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest,
+        ) -> anyhow::Result<Result<(), i32>> {
+            self.driver_call_sender.send(DriverCall::InstallApfPacketFilter { req });
+            self.mocks.lock().install_apf_packet_filter_mock.clone().ok_or_else(|| {
+                format_err!("install_apf_packet_filter_mock is None in FakeFullmacDevice")
+            })
+        }
+
+        fn read_apf_packet_filter_data(
+            &self,
+        ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse, i32>>
+        {
+            self.driver_call_sender.send(DriverCall::ReadApfPacketFilterData);
+            self.mocks.lock().read_apf_packet_filter_data_mock.clone().ok_or_else(|| {
+                format_err!("read_apf_packet_filter_data_mock is None in FakeFullmacDevice")
+            })
+        }
+
+        fn set_apf_packet_filter_enabled(
+            &self,
+            req: fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest,
+        ) -> anyhow::Result<Result<(), i32>> {
+            self.driver_call_sender.send(DriverCall::SetApfPacketFilterEnabled { req });
+            self.mocks.lock().set_apf_packet_filter_enabled_mock.clone().ok_or_else(|| {
+                format_err!("set_apf_packet_filter_enabled_mock is None in FakeFullmacDevice")
+            })
+        }
+
+        fn get_apf_packet_filter_enabled(
+            &self,
+        ) -> anyhow::Result<
+            Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>,
+        > {
+            self.driver_call_sender.send(DriverCall::GetApfPacketFilterEnabled);
+            self.mocks.lock().get_apf_packet_filter_enabled_mock.clone().ok_or_else(|| {
+                format_err!("get_apf_packet_filter_enabled_mock is None in FakeFullmacDevice")
+            })
         }
     }
 }

@@ -45,6 +45,9 @@ enum class CommandTag {
   kWifiStaIfaceGetName,
   kWifiStaIfaceSetScanOnlyMode,
   kWifiStaIfaceSetMacAddress,
+  kWifiStaIfaceGetApfPacketFilterSupport,
+  kWifiStaIfaceInstallApfPacketFilter,
+  kWifiStaIfaceReadApfPacketFilterData,
   kWifiStaIfaceUnknownMethod,
   kSupplicantAddStaInterface,
   kSupplicantRemoveInterface,
@@ -143,6 +146,11 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
                        SetScanOnlyModeCompleter::Sync& completer) override;
   void SetMacAddress(fuchsia_wlan_wlanix::wire::WifiStaIfaceSetMacAddressRequest* request,
                      SetMacAddressCompleter::Sync& completer) override;
+  void GetApfPacketFilterSupport(GetApfPacketFilterSupportCompleter::Sync& completer) override;
+  void InstallApfPacketFilter(
+      fuchsia_wlan_wlanix::wire::WifiStaIfaceInstallApfPacketFilterRequest* request,
+      InstallApfPacketFilterCompleter::Sync& completer) override;
+  void ReadApfPacketFilterData(ReadApfPacketFilterDataCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::WifiStaIface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;

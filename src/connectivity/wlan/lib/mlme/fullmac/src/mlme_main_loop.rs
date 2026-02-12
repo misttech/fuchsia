@@ -174,6 +174,9 @@ impl<D: DeviceOps> MlmeMainLoop<D> {
             QueryTelemetrySupport(responder) => {
                 responder.respond(self.device.query_telemetry_support()?)
             }
+            QueryApfPacketFilterSupport(responder) => {
+                responder.respond(self.device.query_apf_packet_filter_support()?)
+            }
             GetIfaceStats(responder) => responder.respond(self.device.get_iface_stats()?),
             GetIfaceHistogramStats(responder) => {
                 responder.respond(self.device.get_iface_histogram_stats()?)
@@ -193,6 +196,32 @@ impl<D: DeviceOps> MlmeMainLoop<D> {
                 responder.respond(self.device.set_mac_address(
                     fidl_fullmac::WlanFullmacImplSetMacAddressRequest { mac_addr },
                 )?)
+            }
+            InstallApfPacketFilter(req, responder) => {
+                responder.respond(self.device.install_apf_packet_filter(
+                    mlme_to_fullmac::convert_install_apf_packet_filter_request(req),
+                )?)
+            }
+            ReadApfPacketFilterData(responder) => {
+                let res = match self.device.read_apf_packet_filter_data()? {
+                    Ok(res) => Ok(fullmac_to_mlme::convert_read_apf_packet_filter_data_resp(res)?),
+                    Err(e) => Err(e),
+                };
+                responder.respond(res);
+            }
+            SetApfPacketFilterEnabled(req, responder) => {
+                responder.respond(self.device.set_apf_packet_filter_enabled(
+                    mlme_to_fullmac::convert_set_apf_packet_filter_enabled_request(req),
+                )?)
+            }
+            GetApfPacketFilterEnabled(responder) => {
+                let res = match self.device.get_apf_packet_filter_enabled()? {
+                    Ok(res) => {
+                        Ok(fullmac_to_mlme::convert_get_apf_packet_filter_enabled_resp(res)?)
+                    }
+                    Err(e) => Err(e),
+                };
+                responder.respond(res);
             }
         };
         Ok(())
@@ -1043,6 +1072,99 @@ mod handle_mlme_request_tests {
             assert_eq!(req.mac_addr, mac_addr);
         });
         assert_matches!(receiver.try_recv(), Ok(Some(Ok(()))));
+    }
+
+    #[test]
+    fn test_query_apf_packet_filter_support() {
+        let mut h = TestHelper::set_up();
+        let mocked_support = Ok(fidl_common::ApfPacketFilterSupport {
+            supported: Some(true),
+            version: Some(1),
+            max_filter_length: Some(1024),
+            ..Default::default()
+        });
+        h.fake_device.lock().query_apf_packet_filter_support_mock.replace(mocked_support.clone());
+        let (support_responder, mut support_receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::QueryApfPacketFilterSupport(support_responder);
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        assert_matches!(
+            h.driver_calls.try_next(),
+            Ok(Some(DriverCall::QueryApfPacketFilterSupport))
+        );
+        let support = assert_matches!(support_receiver.try_recv(), Ok(Some(support)) => support);
+        assert_eq!(support, mocked_support);
+    }
+
+    #[test]
+    fn test_install_apf_packet_filter() {
+        let mut h = TestHelper::set_up();
+        let program = vec![1, 2, 3, 4, 5];
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::InstallApfPacketFilter(
+            fidl_mlme::MlmeInstallApfPacketFilterRequest { program: program.clone() },
+            responder,
+        );
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        let driver_req = assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::InstallApfPacketFilter { req })) => req);
+        assert_eq!(driver_req.program, Some(program));
+        assert_matches!(receiver.try_recv(), Ok(Some(Ok(()))));
+    }
+
+    #[test]
+    fn test_read_apf_packet_filter_data() {
+        let mut h = TestHelper::set_up();
+        let memory = vec![10, 20, 30, 40];
+        h.fake_device.lock().read_apf_packet_filter_data_mock =
+            Some(Ok(fidl_fullmac::WlanFullmacImplReadApfPacketFilterDataResponse {
+                memory: Some(memory.clone()),
+                ..Default::default()
+            }));
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::ReadApfPacketFilterData(responder);
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::ReadApfPacketFilterData)));
+        let response = assert_matches!(receiver.try_recv(), Ok(Some(Ok(resp))) => resp);
+        assert_eq!(response.memory, memory);
+    }
+
+    #[test]
+    fn test_set_apf_packet_filter_enabled() {
+        let mut h = TestHelper::set_up();
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::SetApfPacketFilterEnabled(
+            fidl_mlme::MlmeSetApfPacketFilterEnabledRequest { enabled: true },
+            responder,
+        );
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        let driver_req = assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::SetApfPacketFilterEnabled { req })) => req);
+        assert_eq!(driver_req.enabled, Some(true));
+        assert_matches!(receiver.try_recv(), Ok(Some(Ok(()))));
+    }
+
+    #[test]
+    fn test_get_apf_packet_filter_enabled() {
+        let mut h = TestHelper::set_up();
+        h.fake_device.lock().get_apf_packet_filter_enabled_mock =
+            Some(Ok(fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse {
+                enabled: Some(true),
+                ..Default::default()
+            }));
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::GetApfPacketFilterEnabled(responder);
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::GetApfPacketFilterEnabled)));
+        let response = assert_matches!(receiver.try_recv(), Ok(Some(Ok(resp))) => resp);
+        assert_eq!(response.enabled, true);
     }
 
     pub struct TestHelper {

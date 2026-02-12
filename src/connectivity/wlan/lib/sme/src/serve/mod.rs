@@ -48,12 +48,29 @@ async fn serve_generic_sme(
                     fidl_sme::GenericSmeRequest::Query { responder } => {
                         let (info_responder, info_receiver) = crate::responder::Responder::new();
                         mlme_sink.send(crate::MlmeRequest::QueryDeviceInfo(info_responder));
-                        let info = info_receiver.await?;
-                        responder.send(&fidl_sme::GenericSmeQuery {
-                            role: info.role,
-                            sta_addr: info.sta_addr,
-                            factory_addr: info.factory_addr,
-                        })
+                        match info_receiver.await {
+                            Ok(info) => responder.send(&fidl_sme::GenericSmeQuery {
+                                role: info.role,
+                                sta_addr: info.sta_addr,
+                                factory_addr: info.factory_addr,
+                            }),
+                            Err(e) => {
+                                error!("Failed to query device info: {}", e);
+                                Ok(())
+                            }
+                        }
+                    }
+                    fidl_sme::GenericSmeRequest::QueryIfaceCapabilities { responder } => {
+                        let (apf_responder, apf_receiver) = crate::responder::Responder::new();
+                        mlme_sink
+                            .send(crate::MlmeRequest::QueryApfPacketFilterSupport(apf_responder));
+                        match apf_receiver.await {
+                            Ok(apf_support) => responder.send(apf_support.as_ref().map_err(|e| *e)),
+                            Err(e) => {
+                                error!("Failed to query device capabilities: {}", e);
+                                responder.send(Err(zx::Status::INTERNAL.into_raw()))
+                            }
+                        }
                     }
                     fidl_sme::GenericSmeRequest::GetClientSme { sme_server, responder } => {
                         let response =
@@ -579,5 +596,28 @@ mod tests {
         let query_result = assert_matches!(helper.exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(result)) => result);
         assert_eq!(query_result.role, mac_role);
         assert_eq!(query_result.sta_addr, [2; 6]);
+    }
+
+    #[test]
+    fn generic_sme_query_iface_capabilities() {
+        let (mut helper, mut serve_fut) =
+            start_generic_sme_test(fidl_common::WlanMacRole::Client).unwrap();
+
+        let mut query_fut = helper.proxy.query_iface_capabilities();
+        assert_matches!(helper.exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+
+        let query_req = assert_matches!(helper.exec.run_until_stalled(&mut helper.mlme_req_stream.next()), Poll::Ready(Some(req)) => req);
+        let query_responder = assert_matches!(query_req, crate::MlmeRequest::QueryApfPacketFilterSupport(responder) => responder);
+        let apf_support = fidl_common::ApfPacketFilterSupport {
+            supported: Some(true),
+            version: Some(1),
+            max_filter_length: Some(1024),
+            ..Default::default()
+        };
+        query_responder.respond(Ok(apf_support.clone()));
+
+        assert_matches!(helper.exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        let query_result = assert_matches!(helper.exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(result)) => result);
+        assert_eq!(query_result, Ok(apf_support));
     }
 }

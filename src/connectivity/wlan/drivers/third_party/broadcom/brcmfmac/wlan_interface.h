@@ -111,6 +111,15 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
   void SetMacAddress(SetMacAddressRequestView request,
                      SetMacAddressCompleter::Sync& completer) override;
 
+  // APF (Android Packet Filter) extensions
+  void QueryApfPacketFilterSupport(QueryApfPacketFilterSupportCompleter::Sync& completer) override;
+  void InstallApfPacketFilter(InstallApfPacketFilterRequestView request,
+                              InstallApfPacketFilterCompleter::Sync& completer) override;
+  void ReadApfPacketFilterData(ReadApfPacketFilterDataCompleter::Sync& completer) override;
+  void SetApfPacketFilterEnabled(SetApfPacketFilterEnabledRequestView request,
+                                 SetApfPacketFilterEnabledCompleter::Sync& completer) override;
+  void GetApfPacketFilterEnabled(GetApfPacketFilterEnabledCompleter::Sync& completer) override;
+
   void on_fidl_error(fidl::UnbindInfo error) override {
     BRCMF_WARN("Fidl Error: %s", error.FormatDescription().c_str());
   }

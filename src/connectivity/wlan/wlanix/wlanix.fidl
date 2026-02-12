@@ -162,6 +162,29 @@ open protocol WifiStaIface {
     flexible SetMacAddress(resource struct {
         mac_addr fuchsia.wlan.ieee80211.MacAddr;
     }) -> () error zx.Status;
+
+    // APF (Android Packet Filter) extensions
+    flexible GetApfPacketFilterSupport() -> (table {
+        1: version int32;
+        2: max_filter_length int32;
+    }) error zx.Status;
+    /// Installs an APF program, replacing an existing program if present. This method does not
+    /// enable the program. Rather, the upstream users expect that the program will be enabled
+    /// and disabled by the platform in response to other signals, like suspension.
+    flexible InstallApfPacketFilter(table {
+        1: program vector<uint8>:MAX;
+    }) -> () error zx.Status;
+    /// Fetches a consistent snapshot of the entire APF program and working
+    /// memory buffer and returns it to the host. The returned buffer contains
+    /// both code and data. Its length must match the most recently returned
+    /// GetApfPacketFilterSupport().max_filter_length.
+    ///
+    /// While the snapshot is being fetched, the APF interpreter must not execute
+    /// and all incoming packets must be passed to the host as if there was no
+    /// APF program installed.
+    flexible ReadApfPacketFilterData() -> (table {
+        1: memory vector<uint8>:MAX;
+    }) error zx.Status;
 };
 
 open protocol Supplicant {

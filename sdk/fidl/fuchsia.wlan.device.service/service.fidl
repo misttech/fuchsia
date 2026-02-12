@@ -217,6 +217,12 @@ closed protocol DeviceMonitor {
     }) -> (struct {
         status int32;
     });
+    strict QueryIfaceCapabilities(struct {
+        iface_id uint16;
+    }) -> (struct {
+        /// Android Packet Filter support
+        apf_support fuchsia.wlan.common.ApfPacketFilterSupport;
+    }) error zx.Status;
 
     // SME methods
 

@@ -705,6 +705,20 @@ closed protocol MLME {
     strict SetMacAddress(struct {
         mac_addr ieee80211.MacAddr;
     }) -> () error zx.Status;
+
+    // APF (Android Packet Filter) functionality
+    strict InstallApfPacketFilter(struct {
+        program vector<uint8>:MAX;
+    }) -> () error zx.Status;
+    strict ReadApfPacketFilterData() -> (struct {
+        memory vector<uint8>:MAX;
+    }) error zx.Status;
+    strict SetApfPacketFilterEnabled(struct {
+        enabled bool;
+    }) -> () error zx.Status;
+    strict GetApfPacketFilterEnabled() -> (struct {
+        enabled bool;
+    }) error zx.Status;
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and

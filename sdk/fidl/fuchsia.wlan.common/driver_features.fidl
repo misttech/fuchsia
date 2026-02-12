@@ -141,3 +141,13 @@ type DfsFeature = table {
 type SpectrumManagementSupport = table {
     1: dfs DfsFeature;
 };
+
+/// Android Packet Filter (APF) support.
+@available(added=NEXT)
+type ApfPacketFilterSupport = table {
+    1: supported bool;
+    /// Only valid if 'supported' is true.
+    2: version int32;
+    /// Only valid if 'supported' is true.
+    3: max_filter_length int32;
+};

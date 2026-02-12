@@ -91,6 +91,71 @@ async fn handle_wifi_sta_iface_request<I: IfaceManager>(
                 });
             responder.send(result).context("send SetMacAddress response")?;
         }
+        fidl_wlanix::WifiStaIfaceRequest::GetApfPacketFilterSupport { responder } => {
+            let (_iface, iface_id) = get_iface_and_log(
+                "fidl_wlanix::WifiStaIfaceRequest::GetApfPacketFilterSupport",
+                iface_manager.clone(),
+                IFACE_NAME,
+            )
+            .await?;
+            let resp = iface_manager.query_iface_capabilities(iface_id).await;
+            let result = match resp {
+                Ok(support) if support.supported == Some(true) => {
+                    Ok(fidl_wlanix::WifiStaIfaceGetApfPacketFilterSupportResponse {
+                        version: support.version,
+                        max_filter_length: support.max_filter_length,
+                        ..Default::default()
+                    })
+                }
+                Ok(_) => Err(zx::sys::ZX_ERR_NOT_SUPPORTED),
+                _ => Err(zx::sys::ZX_ERR_NOT_SUPPORTED),
+            };
+            let result = result.as_ref().map_err(|status| *status);
+            responder.send(result).context("send GetApfPacketFilterSupport response")?;
+        }
+        fidl_wlanix::WifiStaIfaceRequest::InstallApfPacketFilter { responder, payload } => {
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::WifiStaIfaceRequest::InstallApfPacketFilter",
+                iface_manager,
+                IFACE_NAME,
+            )
+            .await?;
+            let result = match payload.program {
+                Some(program) => iface
+                    .install_apf_packet_filter(program)
+                    .await
+                    .map_err(|status| status.into_raw())
+                    .inspect_err(|raw_status| {
+                        warn!("Failed to install APF packet filter: {:?}", raw_status);
+                    }),
+                None => {
+                    warn!("InstallApfPacketFilter was missing a program");
+                    Err(zx::sys::ZX_ERR_INVALID_ARGS)
+                }
+            };
+            responder.send(result).context("send InstallApfPacketFilter response")?;
+        }
+        fidl_wlanix::WifiStaIfaceRequest::ReadApfPacketFilterData { responder } => {
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::WifiStaIfaceRequest::ReadApfPacketFilterData",
+                iface_manager,
+                IFACE_NAME,
+            )
+            .await?;
+            let result = iface
+                .read_apf_packet_filter_data()
+                .await
+                .map(|memory| fidl_wlanix::WifiStaIfaceReadApfPacketFilterDataResponse {
+                    memory: Some(memory),
+                    ..Default::default()
+                })
+                .map_err(|status| status.into_raw())
+                .inspect_err(|raw_status| {
+                    warn!("Failed to read APF packet filter: {:?}", raw_status);
+                });
+            let result = result.as_ref().map_err(|status| *status);
+            responder.send(result).context("send ReadApfPacketFilterData response")?;
+        }
         fidl_wlanix::WifiStaIfaceRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiStaIfaceRequest ordinal: {}", ordinal);
         }
@@ -3035,6 +3100,51 @@ mod tests {
         assert_eq!(response.iface_name, Some(IFACE_NAME.to_string()));
     }
 
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_apf_packet_filter() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+
+        let test_program = vec![1, 2, 3, 4];
+        let mut install_fut = test_helper.wifi_sta_iface_proxy.install_apf_packet_filter(
+            &fidl_wlanix::WifiStaIfaceInstallApfPacketFilterRequest {
+                program: Some(test_program.clone()),
+                ..Default::default()
+            },
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut install_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(iface_calls.lock().last().unwrap(), ClientIfaceCall::InstallApfPacketFilter(program) => assert_eq!(program, &test_program));
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut install_fut),
+            Poll::Ready(Ok(Ok(())))
+        );
+
+        let mut read_fut = test_helper.wifi_sta_iface_proxy.read_apf_packet_filter_data();
+        assert_matches!(test_helper.exec.run_until_stalled(&mut read_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(
+            iface_calls.lock().last().unwrap(),
+            ClientIfaceCall::ReadApfPacketFilterData
+        );
+        let response = assert_matches!(test_helper.exec.run_until_stalled(&mut read_fut), Poll::Ready(Ok(Ok(response))) => response);
+        assert_eq!(response.memory, Some(vec![2, 2, 2, 2]));
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_apf_packet_filter_support() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+
+        let mut support_fut = test_helper.wifi_sta_iface_proxy.get_apf_packet_filter_support();
+        assert_matches!(test_helper.exec.run_until_stalled(&mut support_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let response = assert_matches!(test_helper.exec.run_until_stalled(&mut support_fut), Poll::Ready(Ok(Ok(response))) => response);
+        assert_eq!(response.version, Some(1));
+        assert_eq!(response.max_filter_length, Some(1));
+    }
+
     struct WifiTestHelper {
         _wlanix_proxy: fidl_wlanix::WlanixProxy,
         wifi_proxy: fidl_wlanix::WifiProxy,
@@ -5273,5 +5383,86 @@ mod tests {
         assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::SetMacAddress(addr) => {
             assert_eq!(*addr, mac);
         });
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_get_apf_packet_filter_support() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+
+        let get_apt_support_fut = test_helper.wifi_sta_iface_proxy.get_apf_packet_filter_support();
+        let mut get_apt_support_fut = pin!(get_apt_support_fut);
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_apt_support_fut),
+            Poll::Pending
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_apt_support_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_matches!(response, Ok(fidl_wlanix::WifiStaIfaceGetApfPacketFilterSupportResponse {
+            version,
+            max_filter_length,
+            ..
+        }) => {
+            assert_eq!(version, Some(1));
+            assert_eq!(max_filter_length, Some(1));
+
+        });
+
+        let calls = test_helper.iface_manager.calls.lock();
+        assert_matches!(
+            &calls[calls.len() - 1],
+            ifaces::test_utils::IfaceManagerCall::QueryIfaceCapabilities(_)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_install_apf_packet_filter() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+        let expected_filter = vec![1, 2, 3, 4];
+
+        let install_apf_fut = test_helper.wifi_sta_iface_proxy.install_apf_packet_filter(
+            &fidl_fuchsia_wlan_wlanix::WifiStaIfaceInstallApfPacketFilterRequest {
+                program: Some(expected_filter.clone()),
+                ..Default::default()
+            },
+        );
+        let mut install_apf_fut = pin!(install_apf_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut install_apf_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut install_apf_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_matches!(response, Ok(()));
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::InstallApfPacketFilter(filter) => {
+            assert_eq!(*filter, expected_filter);
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_read_apf_packet_filter_data() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+
+        let read_apf_fut = test_helper.wifi_sta_iface_proxy.read_apf_packet_filter_data();
+        let mut read_apf_fut = pin!(read_apf_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut read_apf_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut read_apf_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_matches!(response, Ok(fidl_wlanix::WifiStaIfaceReadApfPacketFilterDataResponse {
+            memory,
+            ..
+        }) => {
+            assert_eq!(memory, Some(vec![2, 2, 2, 2]));
+        });
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::ReadApfPacketFilterData);
     }
 }

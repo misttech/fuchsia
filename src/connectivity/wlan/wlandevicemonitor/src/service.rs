@@ -140,6 +140,10 @@ pub(crate) async fn handle_monitor_request(
             let result = query_iface(ifaces, iface_id).await;
             responder.send(result.as_ref().map_err(|e| e.into_raw()))?;
         }
+        DeviceMonitorRequest::QueryIfaceCapabilities { iface_id, responder } => {
+            let result = query_device_capability(ifaces, iface_id).await;
+            responder.send(result.as_ref().map_err(|e| e.into_raw()))?;
+        }
         DeviceMonitorRequest::DestroyIface { req, responder } => {
             let result = destroy_iface(phys, ifaces, ifaces_tree, req.iface_id).await;
             let status = into_status_and_opt(result).0;
@@ -583,6 +587,17 @@ async fn query_iface(
         sta_addr: iface_query_info.sta_addr,
         factory_addr: iface_query_info.factory_addr,
     })
+}
+
+async fn query_device_capability(
+    ifaces: &IfaceMap,
+    id: u16,
+) -> Result<fidl_common::ApfPacketFilterSupport, zx::Status> {
+    info!("query_device_capability(id = {})", id);
+    let iface = ifaces.get(&id).ok_or(zx::Status::NOT_FOUND)?;
+    let info =
+        iface.generic_sme.query_iface_capabilities().await.map_err(|_| zx::Status::INTERNAL)?;
+    info.map_err(zx::Status::from_raw)
 }
 
 async fn destroy_iface(
@@ -3773,6 +3788,66 @@ mod tests {
                 factory_addr: [2; 6],
             }
         );
+    }
+
+    #[fuchsia::test]
+    fn test_service_query_iface_capabilities() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+
+        let (phy, _phy_stream) = fake_phy();
+        let phy_id = 10u16;
+        test_values.phys.insert(phy_id, phy);
+        let (generic_sme_proxy, mut generic_sme_stream) =
+            create_proxy_and_stream::<fidl_sme::GenericSmeMarker>();
+
+        let iface_id = 42;
+        test_values.ifaces.insert(
+            iface_id,
+            device::IfaceDevice {
+                phy_ownership: PhyOwnership { phy_id: 10, phy_assigned_id: 0 },
+                generic_sme: generic_sme_proxy,
+            },
+        );
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.phy_event_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request query_iface_capabilities via DeviceMonitor proxy
+        let query_fut = test_values.monitor_proxy.query_iface_capabilities(iface_id);
+        let mut query_fut = pin!(query_fut);
+        assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Respond to a query_iface_capabilities with appropriate info.
+        let apf_support = fidl_common::ApfPacketFilterSupport {
+            supported: Some(true),
+            version: Some(1),
+            max_filter_length: Some(1024),
+            ..Default::default()
+        };
+        assert_matches!(
+            exec.run_until_stalled(&mut generic_sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::GenericSmeRequest::QueryIfaceCapabilities { responder, .. }))) => {
+                responder.send(Ok(&apf_support)).expect("Failed to send query response");
+            }
+        );
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        let resp = assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(Ok(resp))) => resp);
+        assert_eq!(resp, apf_support);
     }
 
     #[test_case(zx::Status::OK, false; "Generic SME with OK epitaph shuts down cleanly")]

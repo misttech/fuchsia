@@ -349,6 +349,39 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
         ForwardResult<WlanFullmacImpl::SetMacAddress>(completer.ToAsync()));
   }
 
+  // APF (Android Packet Filter) extensions
+  void QueryApfPacketFilterSupport(QueryApfPacketFilterSupportCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->QueryApfPacketFilterSupport().Then(
+        ForwardResult<WlanFullmacImpl::QueryApfPacketFilterSupport>(completer.ToAsync()));
+  }
+
+  void InstallApfPacketFilter(InstallApfPacketFilterRequest& request,
+                              InstallApfPacketFilterCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->InstallApfPacketFilter(request).Then(
+        ForwardResult<WlanFullmacImpl::InstallApfPacketFilter>(completer.ToAsync()));
+  }
+
+  void ReadApfPacketFilterData(ReadApfPacketFilterDataCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->ReadApfPacketFilterData().Then(
+        ForwardResult<WlanFullmacImpl::ReadApfPacketFilterData>(completer.ToAsync()));
+  }
+
+  void SetApfPacketFilterEnabled(SetApfPacketFilterEnabledRequest& request,
+                                 SetApfPacketFilterEnabledCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->SetApfPacketFilterEnabled(request).Then(
+        ForwardResult<WlanFullmacImpl::SetApfPacketFilterEnabled>(completer.ToAsync()));
+  }
+
+  void GetApfPacketFilterEnabled(GetApfPacketFilterEnabledCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->GetApfPacketFilterEnabled().Then(
+        ForwardResult<WlanFullmacImpl::GetApfPacketFilterEnabled>(completer.ToAsync()));
+  }
+
   // Calling |RemoveChild| will cause this server to eventually unbind.
   // |unbind_callback| will run in |OnUnbind|.
   zx::result<> RemoveChild(fit::closure unbind_callback) {

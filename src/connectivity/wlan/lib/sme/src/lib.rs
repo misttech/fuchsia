@@ -80,7 +80,24 @@ pub enum MlmeRequest {
     QuerySecuritySupport(responder::Responder<fidl_common::SecuritySupport>),
     QuerySpectrumManagementSupport(responder::Responder<fidl_common::SpectrumManagementSupport>),
     QueryTelemetrySupport(responder::Responder<Result<fidl_stats::TelemetrySupport, i32>>),
+    QueryApfPacketFilterSupport(
+        responder::Responder<Result<fidl_common::ApfPacketFilterSupport, i32>>,
+    ),
     SetMacAddress(fidl_ieee80211::MacAddr, responder::Responder<Result<(), i32>>),
+    InstallApfPacketFilter(
+        fidl_mlme::MlmeInstallApfPacketFilterRequest,
+        responder::Responder<Result<(), i32>>,
+    ),
+    ReadApfPacketFilterData(
+        responder::Responder<Result<fidl_mlme::MlmeReadApfPacketFilterDataResponse, i32>>,
+    ),
+    SetApfPacketFilterEnabled(
+        fidl_mlme::MlmeSetApfPacketFilterEnabledRequest,
+        responder::Responder<Result<(), i32>>,
+    ),
+    GetApfPacketFilterEnabled(
+        responder::Responder<Result<fidl_mlme::MlmeGetApfPacketFilterEnabledResponse, i32>>,
+    ),
 }
 
 impl MlmeRequest {
@@ -113,7 +130,12 @@ impl MlmeRequest {
             Self::QuerySecuritySupport(_) => "QuerySecuritySupport",
             Self::QuerySpectrumManagementSupport(_) => "QuerySpectrumManagementSupport",
             Self::QueryTelemetrySupport(_) => "QueryTelemetrySupport",
+            Self::QueryApfPacketFilterSupport(_) => "QueryApfPacketFilterSupport",
             Self::SetMacAddress(..) => "SetMacAddress",
+            Self::InstallApfPacketFilter(..) => "InstallApfPacketFilter",
+            Self::ReadApfPacketFilterData(_) => "ReadApfPacketFilterData",
+            Self::SetApfPacketFilterEnabled(..) => "SetApfPacketFilterEnabled",
+            Self::GetApfPacketFilterEnabled(_) => "GetApfPacketFilterEnabled",
         }
     }
 }

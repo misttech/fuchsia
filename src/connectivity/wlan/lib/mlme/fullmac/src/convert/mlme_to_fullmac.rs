@@ -315,6 +315,24 @@ fn convert_key_type_legacy(mlme_key_type: fidl_mlme::KeyType) -> fidl_common::Wl
     }
 }
 
+pub fn convert_install_apf_packet_filter_request(
+    req: fidl_mlme::MlmeInstallApfPacketFilterRequest,
+) -> fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest {
+    fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest {
+        program: Some(req.program),
+        ..Default::default()
+    }
+}
+
+pub fn convert_set_apf_packet_filter_enabled_request(
+    req: fidl_mlme::MlmeSetApfPacketFilterEnabledRequest,
+) -> fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest {
+    fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest {
+        enabled: Some(req.enabled),
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -530,6 +548,31 @@ mod tests {
                 key_id: Some(123),
                 key: Some(vec![1, 2, 3]),
                 rsc: Some(1234567),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_convert_install_apf_packet_filter_request() {
+        let mlme_req =
+            fidl_mlme::MlmeInstallApfPacketFilterRequest { program: vec![1, 2, 3, 4, 5] };
+        assert_eq!(
+            convert_install_apf_packet_filter_request(mlme_req),
+            fidl_fullmac::WlanFullmacImplInstallApfPacketFilterRequest {
+                program: Some(vec![1, 2, 3, 4, 5]),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_convert_set_apf_packet_filter_enabled_request() {
+        let mlme_req = fidl_mlme::MlmeSetApfPacketFilterEnabledRequest { enabled: true };
+        assert_eq!(
+            convert_set_apf_packet_filter_enabled_request(mlme_req),
+            fidl_fullmac::WlanFullmacImplSetApfPacketFilterEnabledRequest {
+                enabled: Some(true),
                 ..Default::default()
             }
         );

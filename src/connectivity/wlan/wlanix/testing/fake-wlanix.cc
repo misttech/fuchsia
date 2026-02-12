@@ -248,10 +248,38 @@ void FakeWlanix::SetScanOnlyMode(
   completer.Reply(fit::ok());
 }
 
-void FakeWlanix::SetMacAddress(fuchsia_wlan_wlanix::wire::WifiStaIfaceSetMacAddressRequest* requet,
+void FakeWlanix::SetMacAddress(fuchsia_wlan_wlanix::wire::WifiStaIfaceSetMacAddressRequest* request,
                                SetMacAddressCompleter::Sync& completer) {
   AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceSetMacAddress});
   completer.Reply(fit::ok());
+}
+
+void FakeWlanix::GetApfPacketFilterSupport(GetApfPacketFilterSupportCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceGetApfPacketFilterSupport});
+  fidl::Arena arena;
+  auto builder =
+      fuchsia_wlan_wlanix::wire::WifiStaIfaceGetApfPacketFilterSupportResponse::Builder(arena);
+  builder.max_filter_length(100);
+  builder.version(200);
+  auto response = builder.Build();
+  completer.Reply(fit::ok(&response));
+}
+
+void FakeWlanix::InstallApfPacketFilter(
+    fuchsia_wlan_wlanix::wire::WifiStaIfaceInstallApfPacketFilterRequest* request,
+    InstallApfPacketFilterCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceInstallApfPacketFilter});
+  completer.Reply(fit::ok());
+}
+
+void FakeWlanix::ReadApfPacketFilterData(ReadApfPacketFilterDataCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceReadApfPacketFilterData});
+  fidl::Arena arena;
+  auto builder =
+      fuchsia_wlan_wlanix::wire::WifiStaIfaceReadApfPacketFilterDataResponse::Builder(arena);
+  builder.memory(100);
+  auto response = builder.Build();
+  completer.Reply(fit::ok(&response));
 }
 
 void FakeWlanix::handle_unknown_method(

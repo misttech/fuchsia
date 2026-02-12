@@ -312,6 +312,20 @@ closed protocol ClientSme {
     strict SetMacAddress(struct {
         mac_addr ieee80211.MacAddr;
     }) -> () error zx.Status;
+
+    // APF (Android Packet Filter) functionality
+    strict InstallApfPacketFilter(struct {
+        program vector<uint8>:MAX;
+    }) -> () error zx.Status;
+    strict ReadApfPacketFilterData() -> (struct {
+        memory vector<uint8>:MAX;
+    }) error zx.Status;
+    strict SetApfPacketFilterEnabled(struct {
+        enabled bool;
+    }) -> () error zx.Status;
+    strict GetApfPacketFilterEnabled() -> (struct {
+        enabled bool;
+    }) error zx.Status;
 };
 
 type ApConfig = struct {
@@ -408,6 +422,11 @@ closed protocol GenericSme {
     strict Query() -> (resource struct {
         resp GenericSmeQuery;
     });
+    /// Query the underlying SME to determine extended properties.
+    strict QueryIfaceCapabilities() -> (struct {
+        /// Android Packet Filter support
+        apf_support fuchsia.wlan.common.ApfPacketFilterSupport;
+    }) error zx.Status;
     /// Attempt to establish a new connection to an underlying Client SME.
     /// Connections may be established for the whole lifetime of the SME,
     /// but concurrent connections might lead to unexpected behavior.
