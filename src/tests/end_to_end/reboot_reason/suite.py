@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import logging
-import time
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
@@ -36,13 +35,6 @@ class RebootReasonTestSuite(fuchsia_base_test.FuchsiaBaseTest):
             ],
             machine=ffx_types.MachineFormat.RAW,
         )
-
-        # TODO(https://fxbug.dev/483465416): switch to "wait for product to be
-        # fully booted" once available.
-        _LOGGER.info(
-            "[test_reboot_reason] Sleep for 60 seconds to wait for device to have its product fully booted"
-        )
-        time.sleep(60)
 
         _LOGGER.info("[test_reboot_reason] Rebooting device...")
         # Under the hood, this makes a FIDL call over
