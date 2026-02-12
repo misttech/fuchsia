@@ -26,7 +26,6 @@ use fxfs::log::*;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::{DataObjectHandle, ObjectDescriptor};
 use fxfs::round::{round_down, round_up};
-use fxfs::serialized_types::BlobMetadata;
 use fxfs_macros::ToWeakNode;
 use std::num::NonZero;
 use std::ops::Range;
@@ -431,25 +430,16 @@ pub struct CompressionInfo {
 }
 
 impl CompressionInfo {
-    pub fn from_metadata(metadata: &BlobMetadata) -> Result<Option<Self>, Error> {
-        Ok(if metadata.compressed_offsets.is_empty() {
-            None
-        } else {
-            Some(Self::new(metadata.chunk_size, &metadata.compressed_offsets)?)
-        })
-    }
-
-    fn new(chunk_size: u64, offsets: &[u64]) -> Result<Self, Error> {
+    pub fn new(chunk_size: u64, offsets: &[u64]) -> Result<Self, Error> {
         // All of the read-ahead sizes must be a multiple of the base read-ahead size.
         let min_read_size = read_ahead_size_for_chunk_size(chunk_size, BASE_READ_AHEAD_SIZE);
 
-        // FxBlob only constructs CompressionInfo when offsets is not empty so there should always
-        // be at least 1. The chunked compression format stipulates that the first offset is always
-        // zero but this value comes from disk so shouldn't be trusted.
-        ensure!(
-            *offsets.first().expect("There must at least 1 offset") == 0,
-            FxfsError::IntegrityError
-        );
+        // There should always be at least 1 offset even if there is only 1 chunk.
+        ensure!(!offsets.is_empty(), FxfsError::IntegrityError);
+
+        // The chunked compression format stipulates that the first offset is always zero but this
+        // value comes from disk so shouldn't be trusted.
+        ensure!(*offsets.first().unwrap() == 0, FxfsError::IntegrityError);
 
         let chunks_per_read = (min_read_size / chunk_size) as usize;
         if offsets.len() <= chunks_per_read {
@@ -697,6 +687,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_start_with_zero() {
+        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[]).is_err());
         assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[1]).is_err());
         assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[0]).is_ok());
     }

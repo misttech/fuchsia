@@ -6,6 +6,7 @@ use crate::checksum::{Checksum, Checksums, fletcher64};
 use crate::errors::FxfsError;
 use crate::log::*;
 use crate::lsm_tree::Query;
+use crate::lsm_tree::merge::MergerIterator;
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
@@ -1118,26 +1119,48 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let layer_set = tree.layer_set();
         let mut merger = layer_set.merger();
         let key = ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Attribute);
-        let mut iter = merger.query(Query::FullRange(&key)).await?;
-        let (mut buffer, size) = match iter.get() {
+        let iter = merger.query(Query::FullRange(&key)).await?;
+        match iter.get() {
             Some(item) if item.key == &key => match item.value {
-                ObjectValue::Attribute { size, .. } => {
-                    // TODO(https://fxbug.dev/42073113): size > max buffer size
-                    (
-                        store
-                            .device
-                            .allocate_buffer(round_up(*size, self.block_size()).unwrap() as usize)
-                            .await,
-                        *size as usize,
-                    )
-                }
+                ObjectValue::Attribute { .. } => Ok(Some(self.read_attr_from_iter(iter).await?)),
                 // Attribute was deleted.
-                ObjectValue::None => return Ok(None),
-                _ => bail!(FxfsError::Inconsistent),
+                ObjectValue::None => Ok(None),
+                _ => Err(FxfsError::Inconsistent.into()),
             },
-            _ => return Ok(None),
+            _ => Ok(None),
+        }
+    }
+
+    /// Reads an entire attribute pointed to by `iter`. `iter` must be pointing to the
+    /// `AttributeKey::Attribute` of the attribute.
+    pub async fn read_attr_from_iter(
+        &self,
+        mut iter: MergerIterator<'_, '_, ObjectKey, ObjectValue>,
+    ) -> Result<Box<[u8]>, Error> {
+        let (mut buffer, size, attribute_id) = match iter.get() {
+            Some(ItemRef {
+                key:
+                    ObjectKey {
+                        object_id,
+                        data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Attribute),
+                    },
+                value: ObjectValue::Attribute { size, .. },
+                ..
+            }) if *object_id == self.object_id => {
+                // TODO(https://fxbug.dev/42073113): size > max buffer size
+                (
+                    self.store()
+                        .device
+                        .allocate_buffer(round_up(*size, self.block_size()).unwrap() as usize)
+                        .await,
+                    *size as usize,
+                    *attribute_id,
+                )
+            }
+            _ => bail!(FxfsError::InvalidArgs),
         };
-        store.logical_read_ops.fetch_add(1, Ordering::Relaxed);
+
+        self.store().logical_read_ops.fetch_add(1, Ordering::Relaxed);
         let mut last_offset = 0;
         loop {
             iter.advance().await?;
@@ -1193,7 +1216,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             }
         }
         buffer.as_mut_slice()[std::cmp::min(last_offset, size)..].fill(0);
-        Ok(Some(buffer.as_slice()[..size].into()))
+        Ok(buffer.as_slice()[..size].into())
     }
 
     /// Writes potentially unaligned data at `device_offset` and returns checksums if requested.

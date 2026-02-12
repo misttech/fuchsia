@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::blob_metadata::{BlobMetadata, BlobMetadataV53};
 use crate::lsm_tree::{
     PersistentLayerHeader, PersistentLayerHeaderV39, PersistentLayerInfo, PersistentLayerInfoV39,
 };
@@ -43,7 +44,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 52, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 53, minor: 0 };
 
 /// The earliest supported version of the on-disk filesystem format.
 ///
@@ -180,5 +181,8 @@ versioned_types! {
         43.. => SuperBlockRecordV43,
         41.. => SuperBlockRecordV41,
         40.. => SuperBlockRecordV40,
+    }
+    BlobMetadata {
+        53.. => BlobMetadataV53,
     }
 }

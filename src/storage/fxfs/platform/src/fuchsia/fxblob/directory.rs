@@ -19,15 +19,12 @@ use fidl_fuchsia_fxfs::{
 };
 use fidl_fuchsia_io::{self as fio, FilesystemInfo, NodeMarker, WatchMask};
 use fuchsia_hash::Hash;
-use fuchsia_merkle::MerkleVerifier;
 use futures::TryStreamExt;
+use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
-use fxfs::object_store::{
-    self, BLOB_MERKLE_ATTRIBUTE_ID, HandleOptions, ObjectDescriptor, ObjectStore,
-};
-use fxfs::serialized_types::BlobMetadata;
+use fxfs::object_store::{self, HandleOptions, ObjectDescriptor, ObjectStore};
 use fxfs_macros::ToWeakNode;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -227,28 +224,20 @@ impl BlobDirectory {
                 let object =
                     ObjectStore::open_object(volume, object_id, HandleOptions::default(), None)
                         .await?;
-                let metadata = match object.read_attr(BLOB_MERKLE_ATTRIBUTE_ID).await? {
-                    None => {
-                        // If the file is uncompressed and is small enough, it may not have any
-                        // metadata stored on disk.
-                        BlobMetadata {
-                            hashes: vec![],
-                            chunk_size: 0,
-                            compressed_offsets: vec![],
-                            uncompressed_size: object.get_size(),
-                        }
-                    }
-                    Some(data) => bincode::deserialize_from(&*data)?,
+                let metadata = BlobMetadata::read_from(&object).await?;
+                let (uncompressed_size, compression_info) = match &metadata.format {
+                    BlobFormat::Uncompressed => (object.get_size(), None),
+                    BlobFormat::ChunkedZstd {
+                        uncompressed_size,
+                        chunk_size,
+                        compressed_offsets,
+                    } => (
+                        *uncompressed_size,
+                        Some(CompressionInfo::new(*chunk_size, compressed_offsets)?),
+                    ),
                 };
-                let compression_info = CompressionInfo::from_metadata(&metadata)?;
-                let hashes = if metadata.hashes.is_empty() {
-                    Box::new([id.hash])
-                } else {
-                    metadata.hashes.into_iter().map(Into::into).collect::<Box<[Hash]>>()
-                };
-                let merkle_verifier = MerkleVerifier::new(id.hash, hashes)?;
+                let merkle_verifier = metadata.into_merkle_verifier(id.hash)?;
 
-                let uncompressed_size = metadata.uncompressed_size;
                 let node = FxBlob::new(
                     object,
                     id.hash,

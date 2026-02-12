@@ -50,10 +50,12 @@ impl Version {
 ///
 /// It also allows versions to serialize/deserialize themselves differently on a per-version basis.
 /// Doing this here enforces consistency at a given filesystem version.
-///
 pub trait Versioned: Serialize + for<'de> Deserialize<'de> {
-    fn max_serialized_size() -> u64 {
-        DEFAULT_MAX_SERIALIZED_RECORD_SIZE
+    /// Maximum size of a serialized version of this type. Serialization and deserialization will
+    /// fail if the limit is exceeded. If None, there is no limit. None is preferred over u64::MAX
+    /// because serializing and deserializing with a limit has runtime overhead.
+    fn max_serialized_size() -> Option<u64> {
+        Some(DEFAULT_MAX_SERIALIZED_RECORD_SIZE)
     }
 
     fn deserialize_from<R: ?Sized>(reader: &mut R, _version: Version) -> anyhow::Result<Self>
@@ -62,14 +64,13 @@ pub trait Versioned: Serialize + for<'de> Deserialize<'de> {
         for<'de> Self: serde::Deserialize<'de>,
     {
         use bincode::Options;
-        let options = bincode::DefaultOptions::new()
-            .with_limit(Self::max_serialized_size())
-            .allow_trailing_bytes();
-        match options.deserialize_from(reader) {
-            // Strip bincode wrapping. anyhow can take std::io::Error.
-            Err(e) => Err(if let bincode::ErrorKind::Io(e) = *e { e.into() } else { e.into() }),
-            Ok(t) => Ok(t),
-        }
+        let options = bincode::DefaultOptions::new().allow_trailing_bytes();
+        let result = if let Some(limit) = Self::max_serialized_size() {
+            options.with_limit(limit).deserialize_from(reader)
+        } else {
+            options.deserialize_from(reader)
+        };
+        result.map_err(map_bincode_error)
     }
     fn serialize_into<W>(&self, writer: &mut W) -> anyhow::Result<()>
     where
@@ -77,14 +78,13 @@ pub trait Versioned: Serialize + for<'de> Deserialize<'de> {
         Self: serde::Serialize,
     {
         use bincode::Options;
-        let options = bincode::DefaultOptions::new()
-            .with_limit(Self::max_serialized_size())
-            .allow_trailing_bytes();
-        match options.serialize_into(writer, self) {
-            // Strip bincode wrapping. anyhow can take std::io::Error.
-            Err(e) => Err(if let bincode::ErrorKind::Io(e) = *e { e.into() } else { e.into() }),
-            Ok(t) => Ok(t),
-        }
+        let options = bincode::DefaultOptions::new().allow_trailing_bytes();
+        let result = if let Some(limit) = Self::max_serialized_size() {
+            options.with_limit(limit).serialize_into(writer, self)
+        } else {
+            options.serialize_into(writer, self)
+        };
+        result.map_err(map_bincode_error)
     }
 }
 
@@ -116,4 +116,9 @@ pub trait VersionedLatest: Versioned + TypeFingerprint {
         LATEST_VERSION.serialize_into(writer)?;
         self.serialize_into(writer)
     }
+}
+
+fn map_bincode_error(e: Box<bincode::ErrorKind>) -> anyhow::Error {
+    // Strip bincode wrapping. anyhow can take std::io::Error.
+    if let bincode::ErrorKind::Io(io) = *e { io.into() } else { e.into() }
 }

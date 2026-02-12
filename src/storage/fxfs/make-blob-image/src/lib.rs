@@ -5,8 +5,9 @@
 use anyhow::{Context, Error, anyhow};
 use delivery_blob::compression::ChunkedArchive;
 use fuchsia_async as fasync;
-use fuchsia_merkle::{HASH_SIZE, Hash, LeafHashCollector, MerkleRootBuilder};
+use fuchsia_merkle::{Hash, MerkleRootBuilder};
 use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
+use fxfs::blob_metadata::{BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::WriteBytes;
@@ -16,11 +17,9 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions,
-    ObjectStore,
+    DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions, ObjectStore,
 };
 use fxfs::round::round_up;
-use fxfs::serialized_types::BlobMetadata;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -251,13 +250,8 @@ impl FxBlobBuilder {
             writer.complete().await.context("flush blob contents")?;
         }
 
-        // Write serialized metadata, if present.
-        if !blob.metadata.is_empty() {
-            handle
-                .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &blob.metadata)
-                .await
-                .context("write blob metadata")?;
-        }
+        // Write the metadata to the object handle.
+        blob.metadata.write_to(&handle).await.context("write blob metadata")?;
 
         Ok(handle)
     }
@@ -307,8 +301,8 @@ pub struct BlobToInstall {
     data: BlobData,
     /// Uncompressed size of the blob's data.
     uncompressed_size: usize,
-    /// Serialized metadata for this blob (Merkle tree and compressed offsets).
-    metadata: Vec<u8>,
+    /// Holds the merkle leaves and compressed offsets.
+    metadata: BlobMetadata,
     /// Path, if any, corresponding to the on-disk location of the source for this blob. Only set
     /// if created via [`Self::new_from_file`].
     source: Option<PathBuf>,
@@ -321,9 +315,8 @@ impl BlobToInstall {
         fs_block_size: usize,
         compression_enabled: bool,
     ) -> Result<Self, Error> {
-        let (hash, hashes) = MerkleRootBuilder::new(VecHashCollector(Vec::new())).complete(&data);
-        // When there's only 1 leaf hash, it's the root and doesn't need to be stored.
-        let hashes = if hashes.len() == 1 { vec![] } else { hashes };
+        let (hash, hashes) =
+            MerkleRootBuilder::new(BlobMetadataLeafHashCollector::new()).complete(&data);
 
         let uncompressed_size = data.len();
         let data = if compression_enabled {
@@ -331,17 +324,18 @@ impl BlobToInstall {
         } else {
             BlobData::Uncompressed(data)
         };
-        // We only need to store metadata with the blob if it's large enough or was compressed.
-        let metadata: Vec<u8> = if !hashes.is_empty() || matches!(data, BlobData::Compressed(_)) {
-            let metadata = BlobMetadata {
-                hashes,
-                chunk_size: data.chunk_size().unwrap_or_default(),
-                compressed_offsets: data.compressed_offsets().unwrap_or_default(),
-                uncompressed_size: uncompressed_size as u64,
-            };
-            bincode::serialize(&metadata).context("serialize blob metadata")?
-        } else {
-            vec![]
+        let metadata = match &data {
+            BlobData::Uncompressed(_) => {
+                BlobMetadata { merkle_leaves: hashes, format: BlobFormat::Uncompressed }
+            }
+            BlobData::Compressed(_) => BlobMetadata {
+                merkle_leaves: hashes,
+                format: BlobFormat::ChunkedZstd {
+                    uncompressed_size: uncompressed_size as u64,
+                    chunk_size: data.chunk_size().unwrap(),
+                    compressed_offsets: data.compressed_offsets().unwrap(),
+                },
+            },
         };
         Ok(BlobToInstall { hash, data, uncompressed_size, metadata, source: None })
     }
@@ -427,7 +421,7 @@ async fn install_blob_with_json_output(
         size: properties.allocated_size,
         file_size: blob.uncompressed_size,
         compressed_file_size: properties.data_attribute_size,
-        merkle_tree_size: blob.metadata.len(),
+        merkle_tree_size: blob.metadata.serialized_size().context("blob metadata size")?,
         used_space_in_blobfs: properties.allocated_size,
     })
 }
@@ -442,19 +436,6 @@ fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize)
         BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
         BlobData::Compressed(archive)
-    }
-}
-
-struct VecHashCollector(Vec<[u8; HASH_SIZE]>);
-impl LeafHashCollector for VecHashCollector {
-    type Output = (Hash, Vec<[u8; HASH_SIZE]>);
-
-    fn add_leaf_hash(&mut self, hash: Hash) {
-        self.0.push(hash.into());
-    }
-
-    fn complete(self, root: Hash) -> Self::Output {
-        (root, self.0)
     }
 }
 
@@ -556,7 +537,7 @@ mod tests {
                 // always compress down to a single block.
                 size: 8192,
                 file_size: 65537,
-                merkle_tree_size: 344,
+                merkle_tree_size: 308,
                 used_space_in_blobfs: 8192,
                 ..
             } if merkle == "1194c76d2d3b61f29df97a85ede7b2fd2b293b452f53072356e3c5c939c8131d"

@@ -55,8 +55,6 @@
 
 mod traits;
 
-use serde::{Deserialize, Serialize};
-
 pub const DEFAULT_MAX_SERIALIZED_RECORD_SIZE: u64 = 4096;
 
 // Re-export the traits we need.
@@ -76,14 +74,3 @@ pub use types::{
     EARLIEST_SUPPORTED_VERSION, FIRST_EXTENT_IN_SUPERBLOCK_VERSION, LATEST_VERSION,
     SMALL_SUPERBLOCK_VERSION, get_type_fingerprints,
 };
-
-// TODO(https://fxbug.dev/42073113): This should be versioned.  Whether we reused serialized_types is up for
-// debate (since this version might be better off as independent from the journal version).
-// TODO(https://fxbug.dev/42073113): Is this the best home for this?
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BlobMetadata {
-    pub hashes: Vec<[u8; 32]>,
-    pub chunk_size: u64,
-    pub compressed_offsets: Vec<u64>,
-    pub uncompressed_size: u64,
-}

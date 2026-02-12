@@ -77,8 +77,8 @@ use storage_device::Device;
 use uuid::Uuid;
 
 pub use extent_record::{
-    BLOB_MERKLE_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey, ExtentMode, ExtentValue,
-    FSVERITY_MERKLE_ATTRIBUTE_ID,
+    BLOB_MERKLE_ATTRIBUTE_ID, BLOB_METADATA_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey,
+    ExtentMode, ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID,
 };
 pub use object_record::{
     AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, FxfsKey,
@@ -356,8 +356,8 @@ impl std::fmt::Debug for EncryptedMutations {
 }
 
 impl Versioned for EncryptedMutations {
-    fn max_serialized_size() -> u64 {
-        MAX_ENCRYPTED_MUTATIONS_SIZE as u64
+    fn max_serialized_size() -> Option<u64> {
+        Some(MAX_ENCRYPTED_MUTATIONS_SIZE as u64)
     }
 }
 
@@ -383,8 +383,8 @@ pub struct EncryptedMutationsV40 {
 }
 
 impl Versioned for EncryptedMutationsV40 {
-    fn max_serialized_size() -> u64 {
-        MAX_ENCRYPTED_MUTATIONS_SIZE as u64
+    fn max_serialized_size() -> Option<u64> {
+        Some(MAX_ENCRYPTED_MUTATIONS_SIZE as u64)
     }
 }
 

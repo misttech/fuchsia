@@ -17,10 +17,12 @@ use std::ops::Range;
 /// The common case for extents which cover the data payload of some object.
 pub const DEFAULT_DATA_ATTRIBUTE_ID: u64 = 0;
 
-/// For Blobs in Fxfs, we store the merkle tree at a well-known attribute.
-/// TODO(https://fxbug.dev/42073113): Is this the best place to store the merkle tree?  What about inline with
-/// data?
+/// Contains a serialized `BlobMetadataUnversioned` struct. This is attribute may still exist on
+/// blobs but should no longer be written. Use `BLOB_METADATA_ATTRIBUTE_ID` instead.
 pub const BLOB_MERKLE_ATTRIBUTE_ID: u64 = 1;
+/// Contains a serialized and versioned `BlobMetadata` struct. Use `BlobMetadata::read_from` and
+/// `BlobMetadata::write_to` to access this attribute.
+pub const BLOB_METADATA_ATTRIBUTE_ID: u64 = 3;
 
 /// For fsverity files in Fxfs, we store the merkle tree of the verified file at a well-known
 /// attribute.

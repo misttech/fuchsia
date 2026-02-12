@@ -16,20 +16,18 @@ use delivery_blob::Type1Blob;
 use delivery_blob::compression::{ChunkInfo, ChunkedDecompressor, decode_archive};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
-use fuchsia_hash::{HASH_SIZE, Hash};
-use fuchsia_merkle::{BufferedMerkleRootBuilder, LeafHashCollector, MerkleVerifier};
+use fuchsia_merkle::{BufferedMerkleRootBuilder, Hash};
 use futures::{TryStreamExt as _, try_join};
+use fxfs::blob_metadata::{BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector, MerkleLeaves};
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::data_object_handle::OverwriteOptions;
 use fxfs::object_store::directory::{ReplacedChild, replace_child_with_object};
 use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::{
-    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore,
-    Timestamp,
+    DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp,
 };
 use fxfs::round::{round_down, round_up};
-use fxfs::serialized_types::BlobMetadata;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use zx::{self as zx, HandleBased as _, Status};
@@ -114,7 +112,7 @@ pub struct DeliveryBlobWriter {
     header: Option<Type1Blob>,
     /// The Merkle tree builder for this blob. Once the Merkle tree is complete, the root hash of
     /// the blob is verified, before storing the Merkle tree as part of the blob's metadata.
-    tree_builder: BufferedMerkleRootBuilder<VecHashCollector>,
+    tree_builder: BufferedMerkleRootBuilder<BlobMetadataLeafHashCollector>,
     /// Set to true when we've allocated space for the blob payload on disk.
     allocated_space: bool,
     /// How many bytes from the delivery blob payload have been written to disk so far.
@@ -161,7 +159,7 @@ impl DeliveryBlobWriter {
             vmo: None,
             buffer: Default::default(),
             header: None,
-            tree_builder: BufferedMerkleRootBuilder::new(VecHashCollector(Vec::new())),
+            tree_builder: BufferedMerkleRootBuilder::new(BlobMetadataLeafHashCollector::new()),
             allocated_space: false,
             payload_persisted: 0,
             payload_offset: 0,
@@ -268,30 +266,29 @@ impl DeliveryBlobWriter {
         Ok(())
     }
 
-    fn generate_metadata(
-        &self,
-        hashes: Vec<[u8; HASH_SIZE]>,
-    ) -> Result<Option<BlobMetadata>, Error> {
-        // We only write metadata if the Merkle tree has multiple levels or the data is compressed.
-        let is_compressed = self.header().is_compressed;
-        // Special case: handle empty compressed archive.
-        if is_compressed && self.decompressor().seek_table().is_empty() {
-            return Ok(None);
-        }
-        // When there's only 1 leaf hash, it's the root and doesn't need to be stored.
-        let hashes = if hashes.len() > 1 { hashes } else { vec![] };
-        if !hashes.is_empty() || is_compressed {
-            let (uncompressed_size, chunk_size, compressed_offsets) = if is_compressed {
-                parse_seek_table(self.decompressor().seek_table())
-                    .context("Failed to parse seek table.")?
-            } else {
-                (self.header().payload_length as u64, 0u64, vec![])
-            };
-
-            Ok(Some(BlobMetadata { hashes, chunk_size, compressed_offsets, uncompressed_size }))
-        } else {
-            Ok(None)
-        }
+    fn generate_metadata(&self, hashes: MerkleLeaves) -> Result<BlobMetadata, Error> {
+        let metadata = match &self.decompressor {
+            // Uncompressed blob.
+            None => BlobMetadata { merkle_leaves: hashes, format: BlobFormat::Uncompressed },
+            // The delivery blob said it was compressed but there are no chunks so it's actually the
+            // empty blob.
+            Some(decompressor) if decompressor.seek_table().is_empty() => BlobMetadata::empty(),
+            // Compressed blob.
+            Some(decompressor) => {
+                let (uncompressed_size, chunk_size, compressed_offsets) =
+                    parse_seek_table(decompressor.seek_table())
+                        .context("Failed to parse seek table.")?;
+                BlobMetadata {
+                    merkle_leaves: hashes,
+                    format: BlobFormat::ChunkedZstd {
+                        uncompressed_size,
+                        chunk_size,
+                        compressed_offsets,
+                    },
+                }
+            }
+        };
+        Ok(metadata)
     }
 
     async fn ensure_allocated(&mut self) -> Result<(), Error> {
@@ -326,7 +323,7 @@ impl DeliveryBlobWriter {
         // Finish building Merkle tree and verify the hash matches the filename.
         let (root, hashes) = std::mem::replace(
             &mut self.tree_builder,
-            BufferedMerkleRootBuilder::new(VecHashCollector(Vec::new())),
+            BufferedMerkleRootBuilder::new(BlobMetadataLeafHashCollector::new()),
         )
         .complete();
         if root != self.hash {
@@ -338,28 +335,17 @@ impl DeliveryBlobWriter {
             });
         }
         // Write metadata to disk.
-        let (compression_info, hashes) = match self
-            .generate_metadata(hashes)
-            .context("Failed to generate metadata for blob.")?
-        {
-            Some(metadata) => {
-                let mut serialized = vec![];
-                bincode::serialize_into(&mut serialized, &metadata)?;
-                self.stage
-                    .handle()
-                    .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &serialized)
-                    .await
-                    .context("Failed to write metadata for blob.")?;
-                (CompressionInfo::from_metadata(&metadata)?, metadata.hashes)
+        let metadata =
+            self.generate_metadata(hashes).context("Failed to generate metadata for blob.")?;
+        metadata.write_to(self.stage.handle()).await.context("Failed to write blob metadata")?;
+
+        let compression_info = match &metadata.format {
+            BlobFormat::Uncompressed => None,
+            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
+                Some(CompressionInfo::new(*chunk_size, &compressed_offsets)?)
             }
-            None => (None, vec![]),
         };
-        let hashes = if hashes.is_empty() {
-            Box::new([root])
-        } else {
-            hashes.into_iter().map(Into::into).collect::<Box<[Hash]>>()
-        };
-        let merkle_verifier = MerkleVerifier::new(root, hashes)?;
+        let merkle_verifier = metadata.into_merkle_verifier(root)?;
 
         let name = format!("{}", self.hash);
         let (volume, store, object_id) = {
@@ -661,19 +647,6 @@ fn parse_seek_table(
     };
 
     Ok((uncompressed_size.try_into()?, aligned_chunk_size, compressed_offsets))
-}
-
-struct VecHashCollector(Vec<[u8; HASH_SIZE]>);
-impl LeafHashCollector for VecHashCollector {
-    type Output = (Hash, Vec<[u8; HASH_SIZE]>);
-
-    fn add_leaf_hash(&mut self, hash: Hash) {
-        self.0.push(hash.into());
-    }
-
-    fn complete(self, root: Hash) -> Self::Output {
-        (root, self.0)
-    }
 }
 
 #[cfg(test)]
@@ -1543,23 +1516,17 @@ mod tests {
             )
             .await
             .unwrap();
-            let serialized_metadata = blob_object
-                .read_attr(BLOB_MERKLE_ATTRIBUTE_ID)
-                .await
-                .expect("Failed to read blob metadata")
-                .expect("Blob metadata should exist");
-            let mut metadata: BlobMetadata = bincode::deserialize_from(&*serialized_metadata)
-                .expect("Failed to deserialize blob metadata");
-            assert!(metadata.compressed_offsets.len() > 1);
-            metadata.chunk_size = BLOB_SIZE as u64;
-            metadata.compressed_offsets.truncate(1);
-            let mut reserialized_metadata = vec![];
-            bincode::serialize_into(&mut reserialized_metadata, &metadata)
-                .expect("Failed to serialize blob metadata");
-            blob_object
-                .write_attr(BLOB_MERKLE_ATTRIBUTE_ID, &reserialized_metadata)
-                .await
-                .expect("Failed to write blob metadata");
+            let mut metadata =
+                BlobMetadata::read_from(&blob_object).await.expect("Failed to read blob metadata");
+            match &mut metadata.format {
+                BlobFormat::Uncompressed => panic!("The blob should be compressed"),
+                BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
+                    assert!(compressed_offsets.len() > 1);
+                    *chunk_size = BLOB_SIZE as u64;
+                    compressed_offsets.truncate(1);
+                }
+            }
+            metadata.write_to(&blob_object).await.expect("Failed to write blob metadata");
         };
         // A VMO from the original blob must be held to get `overwrite_me` to be called.
         let old_blob_vmo = fixture.get_blob_vmo(hash).await;
