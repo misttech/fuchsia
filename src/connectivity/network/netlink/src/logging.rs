@@ -54,3 +54,37 @@ macro_rules! log_error {
 // https://doc.rust-lang.org/reference/macros-by-example.html#hygiene for more
 // details.
 pub(crate) use {__log_inner, log_debug, log_error, log_info, log_warn};
+
+#[cfg(test)]
+pub(crate) mod testutils {
+    use std::sync::atomic::AtomicBool;
+
+    /// Install a logger for tests.
+    ///
+    /// Call this method at the beginning of the test for which logging is desired.
+    /// This function sets global program state, so all tests that run after this
+    /// function is called will use the logger.
+    pub(crate) fn set_logger_for_test() {
+        struct Logger;
+
+        impl log::Log for Logger {
+            fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+                true
+            }
+
+            fn log(&self, record: &log::Record<'_>) {
+                println!("[{}] ({}) {}", record.level(), record.target(), record.args())
+            }
+
+            fn flush(&self) {}
+        }
+
+        static LOGGER_ONCE: AtomicBool = AtomicBool::new(true);
+
+        // log::set_logger will panic if called multiple times.
+        if LOGGER_ONCE.swap(false, std::sync::atomic::Ordering::AcqRel) {
+            log::set_logger(&Logger).unwrap();
+            log::set_max_level(log::LevelFilter::Trace);
+        }
+    }
+}

@@ -23,6 +23,8 @@ rustc_library("netlink") {
     "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
     "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust",
     "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
+    "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_rust",
+    "//sdk/fidl/fuchsia.net.udp:fuchsia.net.udp_rust",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",
     "//src/connectivity/network/lib/oneshot-sync",

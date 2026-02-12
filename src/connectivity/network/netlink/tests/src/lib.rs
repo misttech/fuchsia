@@ -12,6 +12,7 @@ use std::num::NonZeroU64;
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
 use fuchsia_async::{self as fasync, TimeoutExt};
+
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
 use linux_uapi::{
@@ -20,8 +21,9 @@ use linux_uapi::{
     rtnetlink_groups_RTNLGRP_ND_USEROPT,
 };
 use net_declare::{fidl_mac, net_ip_v6, std_ip};
-use net_types::ip::{Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-use netemul::{RealmUdpSocket as _, TestRealm};
+use net_types::Witness;
+use net_types::ip::{Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
+use netemul::{RealmTcpListener as _, RealmUdpSocket as _, TestRealm};
 use netlink::messaging::{
     AccessControl, MessageWithPermission, NetlinkMessageWithCreds, Permission,
 };
@@ -36,6 +38,8 @@ use netlink_packet_route::route::{
 };
 use netlink_packet_route::rule::{RuleAction, RuleAttribute, RuleFlags, RuleHeader, RuleMessage};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
+use netlink_packet_sock_diag::inet::{ExtensionFlags, InetRequest, SocketId, StateFlags};
+use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use netlink_packet_utils::DecodeError;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_common::{
@@ -43,7 +47,7 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp as packet_formats_ndp;
-use test_case::test_matrix;
+use test_case::{test_case, test_matrix};
 
 use fidl_fuchsia_net_ext::FromExt as _;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
@@ -1742,5 +1746,189 @@ async fn add_remove_routes<I: Ip + FidlRouteIpExt>(name: &str) {
             priority,
         )
         .await;
+    }
+}
+
+struct NetlinkSockDiagClient {
+    _client: netlink::protocol_family::sock_diag::NetlinkSockDiagClient,
+    sender: Sender<NetlinkMessageWithCreds<NetlinkMessage<SockDiagRequest>, FakeCreds>>,
+    receiver: Receiver<SentNetlinkMessage<SockDiagResponse>>,
+}
+
+fn add_sock_diag_client(netlink: &netlink::Netlink<NetlinkContext>) -> NetlinkSockDiagClient {
+    let (server_sender, client_receiver) = Sender::new_pair();
+    let (client_sender, server_receiver) = Sender::new_pair();
+    let client = netlink
+        .new_sock_diag_client(server_sender, server_receiver)
+        .expect("should create new client successfully");
+    NetlinkSockDiagClient { _client: client, sender: client_sender, receiver: client_receiver }
+}
+
+async fn bind_socket<I: Ip>(
+    realm: &TestRealm<'_>,
+    proto: i32,
+    addr: I::Addr,
+) -> (std::net::IpAddr, u16, Box<dyn std::any::Any>) {
+    let addr = std::net::SocketAddr::new(addr.to_ip_addr().into(), 0);
+    match proto {
+        libc::IPPROTO_UDP => {
+            let s =
+                fasync::net::UdpSocket::bind_in_realm(realm, addr).await.expect("bind UDP socket");
+            let local = s.local_addr().expect("get local addr");
+            (local.ip(), local.port(), Box::new(s))
+        }
+        libc::IPPROTO_TCP => {
+            let s = fasync::net::TcpListener::listen_in_realm(realm, addr)
+                .await
+                .expect("listen TCP socket");
+            let local = s.local_addr().expect("get local addr");
+            (local.ip(), local.port(), Box::new(s))
+        }
+        p => panic!("unsupported protocol {}", p),
+    }
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(libc::IPPROTO_UDP; "udp")]
+#[test_case(libc::IPPROTO_TCP; "tcp")]
+async fn sock_diag_dump<I: Ip>(name: &str, proto: i32) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+    let mut client = add_sock_diag_client(&netlink);
+
+    let (_ip1, port1, _socket1) = bind_socket::<I>(&realm, proto, I::LOOPBACK_ADDRESS.get()).await;
+    let (_ip2, port2, _socket2) = bind_socket::<I>(&realm, proto, I::LOOPBACK_ADDRESS.get()).await;
+
+    let req = InetRequest {
+        family: match I::VERSION {
+            IpVersion::V4 => libc::AF_INET as u8,
+            IpVersion::V6 => libc::AF_INET6 as u8,
+        },
+        protocol: proto as u8,
+        extensions: ExtensionFlags::empty(),
+        states: StateFlags::all(),
+        socket_id: SocketId {
+            source_port: 0,
+            destination_port: 0,
+            source_address: I::UNSPECIFIED_ADDRESS.to_ip_addr().into(),
+            destination_address: I::UNSPECIFIED_ADDRESS.to_ip_addr().into(),
+            interface_id: 0,
+            cookie: [0xFF; 8],
+        },
+    };
+
+    let mut message: NetlinkMessage<SockDiagRequest> = SockDiagRequest::InetRequest(req).into();
+    message.header.flags |= netlink_packet_core::NLM_F_DUMP;
+    message.finalize();
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("send request");
+
+    let mut found_ports = Vec::new();
+    while let Some(response) = client.receiver.next().await {
+        match response.message.payload {
+            NetlinkPayload::InnerMessage(SockDiagResponse::InetResponse(msg)) => {
+                let _ = found_ports.push(msg.header.socket_id.source_port);
+            }
+            NetlinkPayload::Done(_) => break,
+            NetlinkPayload::Error(e) => panic!("received error: {:?}", e),
+            p => panic!("unexpected payload: {:?}", p),
+        }
+    }
+
+    found_ports.sort();
+    let mut expected_ports = [port1, port2];
+    expected_ports.sort();
+
+    assert_eq!(found_ports, expected_ports);
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(libc::IPPROTO_UDP; "udp")]
+#[test_case(libc::IPPROTO_TCP; "tcp")]
+async fn sock_diag_get_one<I: Ip>(name: &str, proto: i32) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+    let mut client = add_sock_diag_client(&netlink);
+
+    let (ip1, port1, _socket1) = bind_socket::<I>(&realm, proto, I::UNSPECIFIED_ADDRESS).await;
+    let (_ip2, _port2, _socket2) = bind_socket::<I>(&realm, proto, I::UNSPECIFIED_ADDRESS).await;
+
+    // Linux has a bug where the UDP tuple is reversed for single-socket requests.
+    let (source_port, destination_port, source_address, destination_address) =
+        if proto == libc::IPPROTO_UDP {
+            (0, port1, I::UNSPECIFIED_ADDRESS.to_ip_addr().into(), ip1)
+        } else {
+            (port1, 0, ip1, I::UNSPECIFIED_ADDRESS.to_ip_addr().into())
+        };
+
+    let req = InetRequest {
+        family: match I::VERSION {
+            IpVersion::V4 => libc::AF_INET as u8,
+            IpVersion::V6 => libc::AF_INET6 as u8,
+        },
+        protocol: proto as u8,
+        extensions: ExtensionFlags::empty(),
+        states: StateFlags::all(),
+        socket_id: SocketId {
+            source_port,
+            destination_port,
+            source_address,
+            destination_address,
+            interface_id: 0,
+            cookie: [0xFF; 8],
+        },
+    };
+
+    let mut message: NetlinkMessage<SockDiagRequest> = SockDiagRequest::InetRequest(req).into();
+    message.finalize();
+    client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("send request");
+
+    let expected_state = match proto.into() {
+        libc::IPPROTO_UDP => netlink_packet_sock_diag::TCP_CLOSE,
+        libc::IPPROTO_TCP => netlink_packet_sock_diag::TCP_LISTEN,
+        _ => panic!("unsupported protocol"),
+    };
+
+    let response = client.receiver.next().await.expect("should receive one response");
+
+    match response.message.payload {
+        NetlinkPayload::InnerMessage(SockDiagResponse::InetResponse(msg)) => {
+            assert_eq!(
+                net_types::ip::IpAddr::from(msg.header.socket_id.source_address),
+                net_types::ip::IpAddr::from(ip1),
+            );
+            assert_eq!(msg.header.socket_id.source_port, port1);
+            assert_eq!(msg.header.socket_id.destination_port, 0);
+            assert_eq!(
+                net_types::ip::IpAddr::from(msg.header.socket_id.destination_address),
+                I::UNSPECIFIED_ADDRESS.to_ip_addr()
+            );
+            assert_eq!(msg.header.socket_id.interface_id, u32::MAX);
+            assert_ne!(msg.header.socket_id.cookie, [0xFF; 8]);
+
+            assert_eq!(
+                msg.header.family,
+                match I::VERSION {
+                    IpVersion::V4 => libc::AF_INET as u8,
+                    IpVersion::V6 => libc::AF_INET6 as u8,
+                }
+            );
+
+            assert_eq!(msg.header.state, expected_state);
+            assert_eq!(msg.header.timer, None);
+            assert_eq!(msg.header.recv_queue, u32::MAX);
+            assert_eq!(msg.header.send_queue, u32::MAX);
+            assert_eq!(msg.header.uid, u32::MAX);
+            assert_eq!(msg.header.inode, u32::MAX);
+        }
+        p => panic!("unexpected payload: {:?}", p),
+    }
+
+    match client.receiver.try_next() {
+        Ok(Some(payload)) => panic!("received unexpected extra message: {:?}", payload),
+        _ => {}
     }
 }

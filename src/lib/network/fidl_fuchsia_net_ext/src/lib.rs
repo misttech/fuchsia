@@ -654,6 +654,15 @@ pub struct Marks {
 /// The maximum number of mark domains supported.
 pub const MAX_MARK_DOMAIN_COUNTS: usize = 2;
 
+impl Marks {
+    pub fn get(&self, domain: fidl::MarkDomain) -> Option<u32> {
+        match domain {
+            fidl_fuchsia_net::MarkDomain::Mark1 => self.mark_1,
+            fidl_fuchsia_net::MarkDomain::Mark2 => self.mark_2,
+        }
+    }
+}
+
 impl IntoIterator for Marks {
     type Item = (fidl::MarkDomain, fidl::Mark);
 
