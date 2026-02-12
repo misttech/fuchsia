@@ -680,9 +680,14 @@ closed protocol Flatland {
 
     // ***** Transform management *****
 
-    /// Adds a child Transform to a parent Transform. The new child Transform, and any Content
-    /// attached to it or its children, will be rendered on top of the parent's Content, as well as
-    /// any previously added children.
+    /// Adds a child Transform to a parent Transform. The new child Transform,
+    /// and any Content attached to it or its children, will be rendered on top
+    /// of the parent's Content, as well as any previously added children.
+    ///
+    /// The caller must ensure that `child_transform_id` is valid and that there
+    /// are no repetitions.  Sending a repeated `child_transform_id` over
+    /// multiple calls will result in session closure.
+    @available(added=26)
     strict AddChild(struct {
         parent_transform_id TransformId;
         child_transform_id TransformId;
@@ -694,8 +699,12 @@ closed protocol Flatland {
         child_transform_id TransformId;
     });
 
-    /// Removes all child Transforms from a parent Transform and replaces them with the new child
-    /// transforms in `new_child_transform_ids`.
+    /// Removes all child Transforms from a parent Transform and replaces them
+    /// with the new child transforms in `new_child_transform_ids`.  The caller
+    /// must ensure that all `TransformId` values in `new_child_transform_ids`
+    /// are valid and that there are no repetitions.  Sending a repeated
+    /// `TransformId` in `new_child_transform_ids` will result in session
+    /// closure.
     @available(added=26)
     strict ReplaceChildren(struct {
         parent_transform_id TransformId;
