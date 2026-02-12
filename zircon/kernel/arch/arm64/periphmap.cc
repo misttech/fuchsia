@@ -308,6 +308,11 @@ vaddr_t periph_paddr_to_vaddr(paddr_t paddr) {
   return ret.has_value() ? ret.value() : 0;
 }
 
+paddr_t periph_vaddr_to_paddr(vaddr_t vaddr) {
+  auto ret = Virt2Phys::Map(vaddr);
+  return ret.has_value() ? ret.value() : 0;
+}
+
 STATIC_COMMAND_START
 STATIC_COMMAND_MASKED("pm", "peripheral mapping commands", &cmd_peripheral_map, CMD_AVAIL_ALWAYS)
 STATIC_COMMAND_END(pmap)
