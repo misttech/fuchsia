@@ -147,7 +147,8 @@ exist nearby.
 ## Copyright headers in new files
 
 When adding files to the source tree which contain languages that support
-comments, ALWAYS add the Fuchsia copyright header at the top with the current
+comments, ALWAYS add the Fuchsia copyright header at the top. Use the current
+year in the header, even if other files in the same directory indicate a prior
 year. The copyright header must use an appropriate comment syntax for the
 type of file you are adding. For example, in C++ and Rust files each line
 should start with `//`, while in GN and Python files each line should start
