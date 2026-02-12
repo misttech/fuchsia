@@ -99,6 +99,12 @@ constexpr std::array<display::PixelFormat, 2> kSupportedPixelFormats = {
 
 constexpr uint32_t kBufferAlignment = 64;
 
+constexpr display::EngineInfo kEngineInfo({
+    .max_layer_count = 1,
+    .max_connected_display_count = 1,
+    .is_capture_supported = true,
+});
+
 bool IsFormatSupported(display::PixelFormat format) {
   return std::ranges::find(kSupportedPixelFormats, format) != kSupportedPixelFormats.end();
 }
@@ -218,11 +224,7 @@ display::EngineInfo DisplayEngine::CompleteCoordinatorConnection() {
                                   kSupportedPixelFormats);
   }
 
-  return display::EngineInfo{{
-      .max_layer_count = 1,
-      .max_connected_display_count = 1,
-      .is_capture_supported = true,
-  }};
+  return kEngineInfo;
 }
 
 zx::result<> DisplayEngine::ImportBufferCollection(
@@ -452,39 +454,37 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
 
   display::Mode target_display_mode = std::move(get_display_mode_result).value();
 
-  display::ConfigCheckResult check_result = [&] {
-    if (layers.size() > 1) {
-      // We only support 1 layer
-      fdf::warn("CheckConfig failure: {} layers requested, we only support 1", layers.size());
+  if (layers.size() > kEngineInfo.max_layer_count()) {
+    fdf::warn("CheckConfig failure: {} layers requested, we only support {}", layers.size(),
+              kEngineInfo.max_layer_count());
+    return display::ConfigCheckResult::kUnsupportedConfig;
+  }
+
+  // TODO(https://fxbug.dev/42080882): Move color conversion validation code to a common
+  // library.
+  for (float preoffset : color_conversion.preoffsets()) {
+    if (preoffset <= -1 || preoffset >= 1) {
+      fdf::warn("CheckConfig failure: preoffset {} out of range (-1, 1)", preoffset);
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
+  }
 
-    // TODO(https://fxbug.dev/42080882): Move color conversion validation code to a common
-    // library.
-    for (float preoffset : color_conversion.preoffsets()) {
-      if (preoffset <= -1 || preoffset >= 1) {
-        fdf::warn("CheckConfig failure: preoffset {} out of range (-1, 1)", preoffset);
-        return display::ConfigCheckResult::kUnsupportedConfig;
-        ;
-      }
+  for (float postoffset : color_conversion.postoffsets()) {
+    if (postoffset <= -1 || postoffset >= 1) {
+      fdf::warn("CheckConfig failure: postoffset {} out of range (-1, 1)", postoffset);
+      return display::ConfigCheckResult::kUnsupportedConfig;
     }
-    for (float postoffset : color_conversion.postoffsets()) {
-      if (postoffset <= -1 || postoffset >= 1) {
-        fdf::warn("CheckConfig failure: postoffset {} out of range (-1, 1)", postoffset);
-        return display::ConfigCheckResult::kUnsupportedConfig;
-        ;
-      }
-    }
+  }
 
-    // Make sure the layer configuration is supported.
-    const display::DriverLayer& layer = layers[0];
-    const display::Rectangle display_area({
-        .x = 0,
-        .y = 0,
-        .width = target_display_mode.active_area().width(),
-        .height = target_display_mode.active_area().height(),
-    });
+  // Make sure the layer configuration is supported.
+  const display::Rectangle display_area({
+      .x = 0,
+      .y = 0,
+      .width = target_display_mode.active_area().width(),
+      .height = target_display_mode.active_area().height(),
+  });
 
+  for (const display::DriverLayer& layer : layers) {
     if (layer.alpha_mode() == display::AlphaMode::kPremultiplied) {
       // we don't support pre-multiplied alpha mode
       fdf::warn("CheckConfig failure: pre-multipled alpha not supported");
@@ -518,15 +518,15 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
     if (layer.image_source() != display_area) {
-      fdf::warn("CheckConfig failure: image source {}x{} at ({}, {}) requires cropping or scaling",
-                layer.image_source().width(), layer.image_source().height(),
-                layer.image_source().x(), layer.image_source().y());
+      fdf::warn(
+          "CheckConfig failure: image source {}x{} at ({}, {}) requires cropping or scaling",
+          layer.image_source().width(), layer.image_source().height(), layer.image_source().x(),
+          layer.image_source().y());
       return display::ConfigCheckResult::kUnsupportedConfig;
     }
-    return display::ConfigCheckResult::kOk;
-  }();
+  }
 
-  return check_result;
+  return display::ConfigCheckResult::kOk;
 }
 
 void DisplayEngine::ApplyConfiguration(display::DisplayId display_id, display::ModeId mode_id,
@@ -534,6 +534,10 @@ void DisplayEngine::ApplyConfiguration(display::DisplayId display_id, display::M
                                        cpp20::span<const display::DriverLayer> layers,
                                        display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&display_mutex_);
+
+  ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
+                      layers.size());
+
   if (!layers.empty()) {
     // Perform Vout modeset first.
     //
