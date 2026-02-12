@@ -4,6 +4,7 @@
 
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
+use crate::input_device::InputPipelineFeatureFlags;
 use crate::input_handler::Handler;
 use crate::{input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
@@ -242,6 +243,9 @@ pub struct InputPipeline {
 
     /// The metrics logger.
     metrics_logger: metrics::MetricsLogger,
+
+    /// The feature flags for the input pipeline.
+    pub feature_flags: input_device::InputPipelineFeatureFlags,
 }
 
 impl InputPipeline {
@@ -249,6 +253,7 @@ impl InputPipeline {
         input_device_types: Vec<input_device::InputDeviceType>,
         assembly: InputPipelineAssembly,
         inspect_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
     ) -> Self {
         let (
             pipeline_sender,
@@ -290,6 +295,7 @@ impl InputPipeline {
             input_device_bindings,
             inspect_node,
             metrics_logger,
+            feature_flags,
         }
     }
 
@@ -307,7 +313,12 @@ impl InputPipeline {
         let inspector = fuchsia_inspect::Inspector::default();
         let root = inspector.root();
         let test_node = root.create_child("input_pipeline");
-        Self::new_common(input_device_types, assembly, test_node)
+        Self::new_common(
+            input_device_types,
+            assembly,
+            test_node,
+            input_device::InputPipelineFeatureFlags { enable_merge_touch_events: false },
+        )
     }
 
     /// Creates a new [`InputPipeline`] for production use.
@@ -320,13 +331,16 @@ impl InputPipeline {
         input_device_types: Vec<input_device::InputDeviceType>,
         assembly: InputPipelineAssembly,
         inspect_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
-        let input_pipeline = Self::new_common(input_device_types, assembly, inspect_node);
+        let input_pipeline =
+            Self::new_common(input_device_types, assembly, inspect_node, feature_flags);
         let input_device_types = input_pipeline.input_device_types.clone();
         let input_event_sender = input_pipeline.device_event_sender.clone();
         let input_device_bindings = input_pipeline.input_device_bindings.clone();
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
+        let feature_flags = input_pipeline.feature_flags.clone();
         fasync::Task::local(async move {
             // Watches the input device directory for new input devices. Creates new InputDeviceBindings
             // that send InputEvents to `input_event_receiver`.
@@ -346,6 +360,7 @@ impl InputPipeline {
                     input_device_bindings,
                     &devices_node,
                     false, /* break_on_idle */
+                    feature_flags,
                     metrics_logger.clone(),
                 )
                 .await
@@ -428,6 +443,7 @@ impl InputPipeline {
         bindings: InputDeviceBindingHashMap,
         input_devices_node: &fuchsia_inspect::Node,
         break_on_idle: bool,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<(), Error> {
         // Add non-static properties to inspect node.
@@ -455,6 +471,7 @@ impl InputPipeline {
                             get_next_device_id(),
                             input_devices_node,
                             Some(&devices_connected),
+                            feature_flags.clone(),
                             metrics_logger.clone(),
                         )
                         .await;
@@ -494,6 +511,7 @@ impl InputPipeline {
         input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
         bindings: &InputDeviceBindingHashMap,
         input_devices_node: &fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<(), Error> {
         while let Some(request) = stream
@@ -520,6 +538,7 @@ impl InputPipeline {
                         device_id,
                         input_devices_node,
                         None,
+                        feature_flags.clone(),
                         metrics_logger.clone(),
                     )
                     .await;
@@ -542,6 +561,7 @@ impl InputPipeline {
                         device_id,
                         input_devices_node,
                         None,
+                        feature_flags.clone(),
                         metrics_logger.clone(),
                     )
                     .await;
@@ -676,6 +696,7 @@ async fn add_device_bindings(
     device_id: u32,
     input_devices_node: &fuchsia_inspect::Node,
     devices_connected: Option<&fuchsia_inspect::UintProperty>,
+    feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
 ) {
     let mut matched_device_types = vec![];
@@ -751,6 +772,7 @@ async fn add_device_bindings(
             device_id,
             input_event_sender.clone(),
             device_node,
+            feature_flags.clone(),
             metrics_logger.clone(),
         )
         .await
@@ -908,6 +930,7 @@ mod tests {
             input_device_bindings: Arc::new(Mutex::new(HashMap::new())),
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
+            feature_flags: input_device::InputPipelineFeatureFlags::default(),
         };
         InputPipeline::run(receiver, handlers);
 
@@ -967,6 +990,7 @@ mod tests {
             input_device_bindings: Arc::new(Mutex::new(HashMap::new())),
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
+            feature_flags: input_device::InputPipelineFeatureFlags::default(),
         };
         InputPipeline::run(receiver, handlers);
 
@@ -1045,6 +1069,7 @@ mod tests {
             bindings.clone(),
             &input_devices,
             true, /* break_on_idle */
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
         )
         .await;
@@ -1153,6 +1178,7 @@ mod tests {
             bindings.clone(),
             &input_devices,
             true, /* break_on_idle */
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
         )
         .await;
@@ -1226,6 +1252,7 @@ mod tests {
             &input_event_sender,
             &bindings_clone,
             &test_node,
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
         )
         .await;
@@ -1257,6 +1284,7 @@ mod tests {
             device_types,
             assembly,
             test_node,
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
         );
         diagnostics_assertions::assert_data_tree!(inspector, root: {

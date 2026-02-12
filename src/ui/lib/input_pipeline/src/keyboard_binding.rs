@@ -246,7 +246,7 @@ impl Default for KeyboardDeviceDescriptor {
 /// from the device, and sends them to the device binding owner over `event_sender`.
 pub struct KeyboardBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: KeyboardDeviceDescriptor,
@@ -254,7 +254,7 @@ pub struct KeyboardBinding {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for KeyboardBinding {
-    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -281,8 +281,9 @@ impl KeyboardBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
         let (device_binding, mut inspect_status) = Self::bind_device(
@@ -299,7 +300,8 @@ impl KeyboardBinding {
             device_binding.get_device_descriptor(),
             device_binding.input_event_sender(),
             inspect_status,
-            metrics_logger,
+            metrics_logger.clone(),
+            feature_flags,
             Self::process_reports,
         );
 
@@ -348,7 +350,7 @@ impl KeyboardBinding {
     /// correctly.
     async fn bind_device(
         device: &InputDeviceProxy,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_id: u32,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
@@ -425,9 +427,10 @@ impl KeyboardBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
+        _feature_flags: &input_device::InputPipelineFeatureFlags,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "keyboard-binding-process-report", "num_reports" => reports.len());
         let (inspect_sender, inspect_receiver) = futures::channel::mpsc::unbounded();
@@ -451,7 +454,7 @@ impl KeyboardBinding {
         mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
         inspect_sender: UnboundedSender<InputEvent>,
@@ -542,7 +545,7 @@ impl KeyboardBinding {
         previous_keys: &Vec<fidl_fuchsia_input::Key>,
         device_descriptor: input_device::InputDeviceDescriptor,
         event_time: zx::MonotonicInstant,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         inspect_sender: UnboundedSender<input_device::InputEvent>,
         metrics_logger: &metrics::MetricsLogger,
         tracing_id: fuchsia_trace::Id,

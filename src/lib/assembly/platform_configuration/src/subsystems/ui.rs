@@ -246,6 +246,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             "fuchsia.ui.EnableTouchBatonPassing",
             Config::new(ConfigValueType::Bool, ui_config.enable_touch_baton_passing.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.ui.EnableMergeTouchEvents",
+            Config::new(ConfigValueType::Bool, ui_config.enable_merge_touch_events.into()),
+        )?;
 
         Ok(())
     }

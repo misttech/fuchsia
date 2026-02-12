@@ -100,6 +100,7 @@ pub struct PlatformUiConfig {
     pub enable_button_baton_passing: bool,
     pub enable_mouse_baton_passing: bool,
     pub enable_touch_baton_passing: bool,
+    pub enable_merge_touch_events: bool,
 }
 
 impl Default for PlatformUiConfig {
@@ -125,6 +126,7 @@ impl Default for PlatformUiConfig {
             enable_button_baton_passing: false,
             enable_mouse_baton_passing: false,
             enable_touch_baton_passing: false,
+            enable_merge_touch_events: false,
         }
     }
 }

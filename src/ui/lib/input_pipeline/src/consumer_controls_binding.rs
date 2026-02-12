@@ -110,7 +110,7 @@ impl ConsumerControlsEvent {
 /// from the device, and sends them to the device binding owner over `event_sender`.
 pub struct ConsumerControlsBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: ConsumerControlsDeviceDescriptor,
@@ -126,7 +126,7 @@ pub struct ConsumerControlsDeviceDescriptor {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for ConsumerControlsBinding {
-    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -153,8 +153,9 @@ impl ConsumerControlsBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
         let (device_binding, mut inspect_status) =
@@ -166,6 +167,7 @@ impl ConsumerControlsBinding {
             device_binding.input_event_sender(),
             inspect_status,
             metrics_logger,
+            feature_flags,
             Self::process_reports,
         );
 
@@ -186,7 +188,7 @@ impl ConsumerControlsBinding {
     async fn bind_device(
         device: &InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -254,9 +256,10 @@ impl ConsumerControlsBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
+        _feature_flags: &input_device::InputPipelineFeatureFlags,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "consumer-controls-binding-process-report", "num_reports" => reports.len());
         for report in reports {
@@ -276,7 +279,7 @@ impl ConsumerControlsBinding {
         mut report: InputReport,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {

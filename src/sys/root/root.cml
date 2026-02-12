@@ -81,6 +81,7 @@
                 "fuchsia.starnix.mcu.ExpectReady",
                 "fuchsia.storage.SdmmcCommandQueueingEnabled",
                 "fuchsia.ui.EnableButtonBatonPassing",
+                "fuchsia.ui.EnableMergeTouchEvents",
                 "fuchsia.ui.EnableMouseBatonPassing",
                 "fuchsia.ui.EnableTouchBatonPassing",
                 "fuchsia.usb.PeripheralConfig.Functions",

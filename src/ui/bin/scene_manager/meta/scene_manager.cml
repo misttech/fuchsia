@@ -122,6 +122,11 @@
             key: "enable_touch_baton_passing",
             type: "bool",
         },
+        {
+            config: "fuchsia.ui.EnableMergeTouchEvents",
+            key: "enable_merge_touch_events",
+            type: "bool",
+        },
     ],
     expose: [
         {

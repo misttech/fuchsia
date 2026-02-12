@@ -127,6 +127,7 @@ async fn assemble_realm(
             .capability(Capability::configuration("fuchsia.ui.EnableButtonBatonPassing"))
             .capability(Capability::configuration("fuchsia.ui.EnableMouseBatonPassing"))
             .capability(Capability::configuration("fuchsia.ui.EnableTouchBatonPassing"))
+            .capability(Capability::configuration("fuchsia.ui.EnableMergeTouchEvents"))
             .capability(Capability::configuration("fuchsia.ui.IdleThresholdMs"))
             .capability(Capability::configuration("fuchsia.ui.SupportedInputDevices"))
             .capability(Capability::configuration("fuchsia.ui.ViewingDistance"))

@@ -359,8 +359,9 @@ impl TouchBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
+        feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
         let (device_binding, mut inspect_status) =
@@ -377,6 +378,7 @@ impl TouchBinding {
             device_binding.input_event_sender(),
             inspect_status,
             metrics_logger,
+            feature_flags,
             Self::process_reports,
         );
 
@@ -397,7 +399,7 @@ impl TouchBinding {
     async fn bind_device(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -519,6 +521,7 @@ impl TouchBinding {
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
+        feature_flags: &input_device::InputPipelineFeatureFlags,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!(
             "input",
@@ -533,6 +536,7 @@ impl TouchBinding {
                 input_event_sender,
                 inspect_status,
                 metrics_logger,
+                feature_flags.enable_merge_touch_events,
             ),
             input_device::InputDeviceDescriptor::Touchpad(_) => process_touchpad_reports(
                 reports,
@@ -587,7 +591,13 @@ fn process_touch_screen_reports(
     input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
+    enable_merge_touch_events: bool,
 ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
+    // TODO: b/475285439 - impl merge touch events
+    if enable_merge_touch_events {
+        log::debug!("Enabling merge touch events");
+    }
+
     let mut batch: Vec<InputEvent> = Vec::new();
     for report in reports {
         inspect_status.count_received_report(&report);
@@ -954,6 +964,7 @@ mod tests {
             &mut event_sender,
             &inspect_status,
             &metrics::MetricsLogger::default(),
+            &input_device::InputPipelineFeatureFlags::default(),
         );
         assert!(returned_report.is_some());
         assert_eq!(returned_report.unwrap().event_time, Some(report_time));
@@ -1199,6 +1210,7 @@ mod tests {
             &mut event_sender,
             &inspect_status,
             &metrics::MetricsLogger::default(),
+            &input_device::InputPipelineFeatureFlags::default(),
         );
         assert_matches!(event_receiver.try_next(), Ok(Some(events)) if events.len() == 1 && events[0].trace_id.is_some());
     }
@@ -1262,6 +1274,7 @@ mod tests {
             0,
             device_event_sender,
             test_node,
+            input_device::InputPipelineFeatureFlags::default(),
             metrics::MetricsLogger::default(),
         )
         .await
@@ -1322,6 +1335,7 @@ mod tests {
             0,
             device_event_sender,
             test_node,
+            input_device::InputPipelineFeatureFlags::default(),
             metrics::MetricsLogger::default(),
         )
         .await
@@ -1822,6 +1836,7 @@ mod tests {
             &mut event_sender,
             &inspect_status,
             &metrics::MetricsLogger::default(),
+            &input_device::InputPipelineFeatureFlags::default(),
         );
 
         // Expect EXACTLY one batch containing two events.

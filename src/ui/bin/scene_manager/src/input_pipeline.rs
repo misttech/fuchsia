@@ -85,6 +85,7 @@ pub async fn handle_input(
     enable_button_baton_passing: bool,
     enable_mouse_baton_passing: bool,
     enable_touch_baton_passing: bool,
+    enable_merge_touch_events: bool,
 ) -> Result<InputPipeline, Error> {
     let input_handlers_node = node.create_child("input_handlers");
     let metrics_logger = metrics::MetricsLogger::new();
@@ -184,6 +185,7 @@ pub async fn handle_input(
         )
         .await,
         node,
+        ::input_pipeline::input_device::InputPipelineFeatureFlags { enable_merge_touch_events },
         metrics_logger.clone(),
     )
     .context("Failed to create InputPipeline.")?;
@@ -204,6 +206,7 @@ pub async fn handle_input(
         input_pipeline.input_event_sender().clone(),
         input_pipeline.input_device_bindings().clone(),
         injected_devices_node,
+        input_pipeline.feature_flags.clone(),
         metrics_logger.clone(),
     );
     fasync::Task::local(input_device_registry_fut).detach();
@@ -741,12 +744,14 @@ pub async fn handle_input_device_registry_request_streams(
     input_event_sender: futures::channel::mpsc::UnboundedSender<Vec<input_device::InputEvent>>,
     input_device_bindings: InputDeviceBindingHashMap,
     injected_devices_node: inspect::Node,
+    feature_flags: ::input_pipeline::input_device::InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
 ) {
     while let Some(stream) = stream_receiver.next().await {
         let input_device_types_clone = input_device_types.clone();
         let input_event_sender_clone = input_event_sender.clone();
         let input_device_bindings_clone = input_device_bindings.clone();
+        let feature_flags_clone = feature_flags.clone();
         let metrics_logger_clone = metrics_logger.clone();
 
         // Must clone inspect node since we move it to our async task, but we want to
@@ -762,6 +767,7 @@ pub async fn handle_input_device_registry_request_streams(
                 &input_event_sender_clone,
                 &input_device_bindings_clone,
                 &node_clone,
+                feature_flags_clone,
                 metrics_logger_clone,
             )
             .await

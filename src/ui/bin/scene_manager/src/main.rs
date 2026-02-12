@@ -181,6 +181,7 @@ async fn main() -> Result<(), Error> {
         enable_button_baton_passing,
         enable_mouse_baton_passing,
         enable_touch_baton_passing,
+        enable_merge_touch_events,
         ..
     } = Config::take_from_startup_handle();
 
@@ -268,6 +269,7 @@ async fn main() -> Result<(), Error> {
         enable_button_baton_passing,
         enable_mouse_baton_passing,
         enable_touch_baton_passing,
+        enable_merge_touch_events,
     )
     .await
     {

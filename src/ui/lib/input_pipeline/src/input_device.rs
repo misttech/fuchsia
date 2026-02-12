@@ -26,6 +26,12 @@ use {
 
 pub use input_device_constants::InputDeviceType;
 
+#[derive(Debug, Clone, Default)]
+pub struct InputPipelineFeatureFlags {
+    /// Merge touch events in same InputReport frame if they are same contact and movement only.
+    pub enable_merge_touch_events: bool,
+}
+
 /// The path to the input-report directory.
 pub static INPUT_REPORT_PATH: &str = "/dev/class/input-report";
 
@@ -340,6 +346,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     mut event_sender: UnboundedSender<Vec<InputEvent>>,
     inspect_status: InputDeviceStatus,
     metrics_logger: metrics::MetricsLogger,
+    feature_flags: InputPipelineFeatureFlags,
     mut process_reports: InputDeviceProcessReportsFn,
 ) where
     InputDeviceProcessReportsFn: 'static
@@ -351,6 +358,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
             &mut UnboundedSender<Vec<InputEvent>>,
             &InputDeviceStatus,
             &metrics::MetricsLogger,
+            &InputPipelineFeatureFlags,
         ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>),
 {
     fasync::Task::local(async move {
@@ -379,6 +387,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                         &mut event_sender,
                         &inspect_status,
                         &metrics_logger,
+                        &feature_flags,
                     );
                     previous_report = prev_report;
 
@@ -438,6 +447,7 @@ pub async fn get_device_binding(
     device_id: u32,
     input_event_sender: UnboundedSender<Vec<InputEvent>>,
     device_node: fuchsia_inspect::Node,
+    feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
 ) -> Result<Box<dyn InputDeviceBinding>, Error> {
     match device_type {
@@ -447,6 +457,7 @@ pub async fn get_device_binding(
                 device_id,
                 input_event_sender,
                 device_node,
+                feature_flags.clone(),
                 metrics_logger,
             )
             .await?;
@@ -458,6 +469,7 @@ pub async fn get_device_binding(
                 device_id,
                 input_event_sender,
                 device_node,
+                feature_flags.clone(),
                 metrics_logger,
             )
             .await?;
@@ -469,6 +481,7 @@ pub async fn get_device_binding(
                 device_id,
                 input_event_sender,
                 device_node,
+                feature_flags.clone(),
                 metrics_logger,
             )
             .await?;
@@ -480,6 +493,7 @@ pub async fn get_device_binding(
                 device_id,
                 input_event_sender,
                 device_node,
+                feature_flags.clone(),
                 metrics_logger,
             )
             .await?;
@@ -491,6 +505,7 @@ pub async fn get_device_binding(
                 device_id,
                 input_event_sender,
                 device_node,
+                feature_flags.clone(),
                 metrics_logger,
             )
             .await?;

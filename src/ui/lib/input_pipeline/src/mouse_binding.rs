@@ -281,7 +281,7 @@ impl MouseEvent {
 /// from the device, and sends them to the device binding owner over `event_sender`.
 pub struct MouseBinding {
     /// The channel to stream InputEvents to.
-    event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
 
     /// Holds information about this device.
     device_descriptor: MouseDeviceDescriptor,
@@ -314,7 +314,7 @@ pub struct MouseDeviceDescriptor {
 
 #[async_trait]
 impl input_device::InputDeviceBinding for MouseBinding {
-    fn input_event_sender(&self) -> UnboundedSender<Vec<input_device::InputEvent>> {
+    fn input_event_sender(&self) -> UnboundedSender<Vec<InputEvent>> {
         self.event_sender.clone()
     }
 
@@ -341,8 +341,9 @@ impl MouseBinding {
     pub async fn new(
         device_proxy: InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
+        _feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Self, Error> {
         let (device_binding, mut inspect_status) =
@@ -354,6 +355,7 @@ impl MouseBinding {
             device_binding.input_event_sender(),
             inspect_status,
             metrics_logger,
+            _feature_flags,
             Self::process_reports,
         );
 
@@ -374,7 +376,7 @@ impl MouseBinding {
     async fn bind_device(
         device: &InputDeviceProxy,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
@@ -444,9 +446,10 @@ impl MouseBinding {
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
-        input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
+        input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
+        _feature_flags: &input_device::InputPipelineFeatureFlags,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
         fuchsia_trace::duration!("input", "mouse-binding-process-reports", "num_reports" => reports.len());
         for report in reports {
