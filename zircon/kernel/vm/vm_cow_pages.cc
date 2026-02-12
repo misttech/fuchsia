@@ -2572,8 +2572,6 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
 
         page_list_.RemovePages(
             [&](VmPageOrMarker* p, uint64_t off) {
-              // We only insert pages.
-              DEBUG_ASSERT(p->IsPage());
               ++populated_slots_removed;
               page_remover.PushContent(p);
               return ZX_ERR_NEXT;
@@ -3980,8 +3978,6 @@ zx::result<uint64_t> VmCowPages::UnmapAndFreePagesLocked(uint64_t offset, uint64
 
   page_list_.RemovePages(
       [&](VmPageOrMarker* p, uint64_t off) {
-        // UnmapAndFreePagesLocked is only called on VMOs with no parent.
-        DEBUG_ASSERT(!p->IsParentContent());
         if (p->IsPageOrRef()) {
           ++populated_slots_removed;
         }
