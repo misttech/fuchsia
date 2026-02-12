@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-	"syscall/zx"
 	"syscall/zx/fidl"
 
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/fidlconv"
@@ -325,11 +324,21 @@ var _ neighbor.ControllerWithCtx = (*neighborImpl)(nil)
 func (n *neighborImpl) AddEntry(_ fidl.Context, interfaceID uint64, neighborIP net.IpAddress, mac net.MacAddress) (neighbor.ControllerAddEntryResult, error) {
 	address, network := fidlconv.ToTCPIPAddressAndProtocolNumber(neighborIP)
 	linkAddr := fidlconv.ToTCPIPLinkAddress(mac)
-	if !isValidNeighborAddr(fidlconv.ToStdAddr(neighborIP)) || !header.IsValidUnicastEthernetAddress(linkAddr) {
-		return neighbor.ControllerAddEntryResultWithErr(int32(zx.ErrInvalidArgs)), nil
+	if !isValidNeighborAddr(fidlconv.ToStdAddr(neighborIP)) {
+		return neighbor.ControllerAddEntryResultWithErr(neighbor.ControllerErrorInvalidIpAddress), nil
+	}
+	if !header.IsValidUnicastEthernetAddress(linkAddr) {
+		return neighbor.ControllerAddEntryResultWithErr(neighbor.ControllerErrorMacAddressNotUnicast), nil
 	}
 	if err := n.stack.AddStaticNeighbor(tcpip.NICID(interfaceID), network, address, linkAddr); err != nil {
-		return neighbor.ControllerAddEntryResultWithErr(int32(WrapTcpIpError(err).ToZxStatus())), nil
+		var cErr neighbor.ControllerError
+		switch err.(type) {
+		case *tcpip.ErrUnknownNICID:
+			cErr = neighbor.ControllerErrorInterfaceNotFound
+		case *tcpip.ErrNotSupported:
+			cErr = neighbor.ControllerErrorInterfaceNotSupported
+		}
+		return neighbor.ControllerAddEntryResultWithErr(cErr), nil
 	}
 	return neighbor.ControllerAddEntryResultWithResponse(neighbor.ControllerAddEntryResponse{}), nil
 }
@@ -337,29 +346,34 @@ func (n *neighborImpl) AddEntry(_ fidl.Context, interfaceID uint64, neighborIP n
 func (n *neighborImpl) RemoveEntry(_ fidl.Context, interfaceID uint64, neighborIP net.IpAddress) (neighbor.ControllerRemoveEntryResult, error) {
 	address, network := fidlconv.ToTCPIPAddressAndProtocolNumber(neighborIP)
 	if !isValidNeighborAddr(fidlconv.ToStdAddr(neighborIP)) {
-		return neighbor.ControllerRemoveEntryResultWithErr(int32(zx.ErrInvalidArgs)), nil
+		return neighbor.ControllerRemoveEntryResultWithErr(neighbor.ControllerErrorInvalidIpAddress), nil
 	}
 	if err := n.stack.RemoveNeighbor(tcpip.NICID(interfaceID), network, address); err != nil {
-		var zxErr zx.Status
+		var cErr neighbor.ControllerError
 		switch err.(type) {
 		case *tcpip.ErrBadAddress:
-			zxErr = zx.ErrNotFound
-		default:
-			zxErr = WrapTcpIpError(err).ToZxStatus()
+			cErr = neighbor.ControllerErrorNeighborNotFound
+		case *tcpip.ErrUnknownNICID:
+			cErr = neighbor.ControllerErrorInterfaceNotFound
+		case *tcpip.ErrNotSupported:
+			cErr = neighbor.ControllerErrorInterfaceNotSupported
 		}
-		return neighbor.ControllerRemoveEntryResultWithErr(int32(zxErr)), nil
+		return neighbor.ControllerRemoveEntryResultWithErr(cErr), nil
 	}
 	return neighbor.ControllerRemoveEntryResultWithResponse(neighbor.ControllerRemoveEntryResponse{}), nil
 }
 
 func (n *neighborImpl) ClearEntries(_ fidl.Context, interfaceID uint64, ipVersion net.IpVersion) (neighbor.ControllerClearEntriesResult, error) {
-	netProto, ok := fidlconv.ToTCPIPNetProto(ipVersion)
-	if !ok {
-		return neighbor.ControllerClearEntriesResultWithErr(int32(zx.ErrInvalidArgs)), nil
-	}
-
+	netProto := fidlconv.ToTCPIPNetProto(ipVersion)
 	if err := n.stack.ClearNeighbors(tcpip.NICID(interfaceID), netProto); err != nil {
-		return neighbor.ControllerClearEntriesResultWithErr(int32(WrapTcpIpError(err).ToZxStatus())), nil
+		var cErr neighbor.ControllerError
+		switch err.(type) {
+		case *tcpip.ErrUnknownNICID:
+			cErr = neighbor.ControllerErrorInterfaceNotFound
+		case *tcpip.ErrNotSupported:
+			cErr = neighbor.ControllerErrorInterfaceNotSupported
+		}
+		return neighbor.ControllerClearEntriesResultWithErr(cErr), nil
 	}
 	return neighbor.ControllerClearEntriesResultWithResponse(neighbor.ControllerClearEntriesResponse{}), nil
 }

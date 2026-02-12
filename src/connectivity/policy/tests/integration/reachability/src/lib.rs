@@ -20,20 +20,20 @@ use log::info;
 use net_declare::{net_ip_v4, net_ip_v6, net_mac};
 use netstack_testing_common::constants::{ipv4 as ipv4_consts, ipv6 as ipv6_consts};
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Netstack, TestSandboxExt as _,
+    KnownServiceProvider, Netstack, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{get_inspect_data, interfaces, wait_for_component_stopped};
 use netstack_testing_macros::netstack_test;
 use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck, ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::{IcmpEchoRequest, IcmpPacketBuilder, IcmpZeroCode, MessageBody as _};
 use packet_formats::ip::{Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::ipv6::Ipv6PacketBuilder;
 use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
-use reachability_core::{LinkState, State, FIDL_TIMEOUT_ID};
+use reachability_core::{FIDL_TIMEOUT_ID, LinkState, State};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::pin::pin;
@@ -189,7 +189,7 @@ fn reply_if_echo_request(
                     .serialize_vec_outer()
                     .expect("failed to serialize ICMPv6 packet")
                     .unwrap_b()
-            })
+            });
         }
         Err(packet_formats::error::IpParseError::Parse {
             error: packet_formats::error::ParseError::NotExpected,
@@ -345,13 +345,11 @@ async fn configure_interface<'a>(
         .add_entry(device_id, &gateway_v6, &gateway_mac)
         .await
         .expect("neighbor add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add IPv6 gateway neighbor table entry failed");
     let () = controller
         .add_entry(device_id, &gateway_v4, &gateway_mac)
         .await
         .expect("neighbor add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add IPv4 gateway neighbor table entry failed");
 
     // Add default routes.

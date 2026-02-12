@@ -12,7 +12,6 @@ rustc_test("neighbor") {
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
     "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
-    "//sdk/rust/zx",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/testing/netemul/rust:lib",

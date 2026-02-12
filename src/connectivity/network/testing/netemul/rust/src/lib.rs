@@ -921,8 +921,7 @@ impl<'a> TestRealm<'a> {
             .add_entry(interface, &addr, &mac)
             .await
             .context("add_entry")?
-            .map_err(zx::Status::from_raw)
-            .context("add_entry failed")
+            .map_err(|e| anyhow::anyhow!("add_entry failed: {e:?}"))
     }
 
     /// Get a stream of interface events from a new watcher with default

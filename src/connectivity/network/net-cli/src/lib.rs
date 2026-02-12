@@ -1508,8 +1508,7 @@ async fn do_neigh_add(
         .add_entry(interface, &neighbor.into(), &mac.into())
         .await
         .context("FIDL error adding neighbor entry")?
-        .map_err(zx::Status::from_raw)
-        .context("error adding neighbor entry")
+        .map_err(|e| anyhow::anyhow!("error adding neighbor entry: {e:?}"))
 }
 
 async fn do_neigh_clear(
@@ -1521,8 +1520,7 @@ async fn do_neigh_clear(
         .clear_entries(interface, ip_version)
         .await
         .context("FIDL error clearing neighbor table")?
-        .map_err(zx::Status::from_raw)
-        .context("error clearing neighbor table")
+        .map_err(|e| anyhow::anyhow!("error clearing neighbor table: {e:?}"))
 }
 
 async fn do_neigh_del(
@@ -1534,8 +1532,7 @@ async fn do_neigh_del(
         .remove_entry(interface, &neighbor.into())
         .await
         .context("FIDL error removing neighbor entry")?
-        .map_err(zx::Status::from_raw)
-        .context("error removing neighbor entry")
+        .map_err(|e| anyhow::anyhow!("error removing neighbor entry: {e:?}"))
 }
 
 fn unpack_neigh_iter_item(

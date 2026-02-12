@@ -218,7 +218,6 @@ async fn inspect_nic(name: &str) {
         .add_entry(netdev.id(), &BOB_IP, &BOB_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry failed");
 
     let diagnostics_dir =

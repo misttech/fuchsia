@@ -253,7 +253,6 @@ async fn resolve_default_route_while_dhcp_is_running<N: NetstackAndDhcpClient>(n
         .add_entry(ep.id(), &GATEWAY_ADDR, &GATEWAY_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry error");
 
     // Install a default route and try to resolve through the gateway.
@@ -313,7 +312,6 @@ async fn resolve_fails_with_no_src_address<N: Netstack, I: Ip>(name: &str) {
         .add_entry(interface.id(), &remote, &REMOTE_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry error");
 
     let routes = realm

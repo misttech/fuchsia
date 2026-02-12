@@ -26,14 +26,14 @@ import (
 	tcpipstack "gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-func ToTCPIPNetProto(v net.IpVersion) (tcpip.NetworkProtocolNumber, bool) {
+func ToTCPIPNetProto(v net.IpVersion) tcpip.NetworkProtocolNumber {
 	switch v {
 	case net.IpVersionV4:
-		return header.IPv4ProtocolNumber, true
+		return header.IPv4ProtocolNumber
 	case net.IpVersionV6:
-		return header.IPv6ProtocolNumber, true
+		return header.IPv6ProtocolNumber
 	default:
-		return 0, false
+		panic(fmt.Sprintf("invalid fuchsia.net/IpVersion %s (%d)", v, v))
 	}
 }
 

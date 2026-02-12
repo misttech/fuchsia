@@ -8,8 +8,8 @@ use fidl::endpoints::{ControlHandle as _, RequestStream as _, Responder as _};
 use fidl_fuchsia_net_ext::IntoExt;
 use fidl_fuchsia_net_multicast_ext::FidlMulticastAdminIpExt;
 use fidl_fuchsia_net_neighbor::{
-    self as fnet_neighbor, ControllerRequest, ControllerRequestStream, ViewRequest,
-    ViewRequestStream,
+    self as fnet_neighbor, ControllerError, ControllerRequest, ControllerRequestStream,
+    ViewRequest, ViewRequestStream,
 };
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext};
 
@@ -533,15 +533,18 @@ pub(super) async fn serve_view(
         .await
 }
 
-fn get_ethernet_id(ctx: &Ctx, interface: u64) -> Result<EthernetDeviceId<BindingsCtx>, zx::Status> {
+fn get_ethernet_id(
+    ctx: &Ctx,
+    interface: u64,
+) -> Result<EthernetDeviceId<BindingsCtx>, ControllerError> {
     match BindingId::new(interface)
         .and_then(|id| ctx.bindings_ctx().devices.get_core_id(id))
-        .ok_or(zx::Status::NOT_FOUND)?
+        .ok_or(ControllerError::InterfaceNotFound)?
     {
         DeviceId::Ethernet(e) => Ok(e),
         // NUD is not supported for Loopback, pure IP, or blackhole devices.
         DeviceId::Loopback(_) | DeviceId::PureIp(_) | DeviceId::Blackhole(_) => {
-            Err(zx::Status::NOT_SUPPORTED)
+            Err(ControllerError::InterfaceNotSupported)
         }
     }
 }
@@ -552,7 +555,7 @@ fn add_static_entry<A: IpAddress>(
     interface: u64,
     neighbor: A,
     mac: fnet::MacAddress,
-) -> Result<(), zx::Status>
+) -> Result<(), ControllerError>
 where
     A::Version: IpExt,
 {
@@ -562,13 +565,19 @@ where
         .neighbor::<A::Version, EthernetLinkDevice>()
         .insert_static_entry(&device_id, neighbor, mac)
         .map_err(|e| match e {
-            StaticNeighborInsertionError::MacAddressNotUnicast
-            | StaticNeighborInsertionError::IpAddressInvalid => zx::Status::INVALID_ARGS,
+            StaticNeighborInsertionError::MacAddressNotUnicast => {
+                ControllerError::MacAddressNotUnicast
+            }
+            StaticNeighborInsertionError::IpAddressInvalid => ControllerError::InvalidIpAddress,
         })
 }
 
 #[netstack3_core::context_ip_bounds(A::Version, BindingsCtx)]
-fn remove_entry<A: IpAddress>(ctx: &mut Ctx, interface: u64, neighbor: A) -> Result<(), zx::Status>
+fn remove_entry<A: IpAddress>(
+    ctx: &mut Ctx,
+    interface: u64,
+    neighbor: A,
+) -> Result<(), ControllerError>
 where
     A::Version: IpExt,
 {
@@ -577,13 +586,13 @@ where
         .neighbor::<A::Version, EthernetLinkDevice>()
         .remove_entry(&device_id, neighbor)
         .map_err(|e| match e {
-            NeighborRemovalError::IpAddressInvalid => zx::Status::INVALID_ARGS,
-            NeighborRemovalError::NotFound(NotFoundError) => zx::Status::NOT_FOUND,
+            NeighborRemovalError::IpAddressInvalid => ControllerError::InvalidIpAddress,
+            NeighborRemovalError::NotFound(NotFoundError) => ControllerError::NeighborNotFound,
         })
 }
 
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
-fn clear_entries<I: IpExt>(ctx: &mut Ctx, interface: u64) -> Result<(), zx::Status> {
+fn clear_entries<I: IpExt>(ctx: &mut Ctx, interface: u64) -> Result<(), ControllerError> {
     let device_id = get_ethernet_id(ctx, interface)?;
     Ok(ctx.api().neighbor::<I, EthernetLinkDevice>().flush_table(&device_id))
 }
@@ -601,21 +610,21 @@ pub(super) async fn serve_controller(
                         IpAddr::V4(v4) => add_static_entry(&mut ctx, interface, v4, mac),
                         IpAddr::V6(v6) => add_static_entry(&mut ctx, interface, v6, mac),
                     };
-                    responder.send(result.map_err(|e| e.into_raw()))
+                    responder.send(result)
                 }
                 ControllerRequest::RemoveEntry { interface, neighbor, responder } => {
                     let result = match neighbor.into_ext() {
                         IpAddr::V4(v4) => remove_entry(&mut ctx, interface, v4),
                         IpAddr::V6(v6) => remove_entry(&mut ctx, interface, v6),
                     };
-                    responder.send(result.map_err(|e| e.into_raw()))
+                    responder.send(result)
                 }
                 ControllerRequest::ClearEntries { interface, ip_version, responder } => {
                     let result = match ip_version {
                         fnet::IpVersion::V4 => clear_entries::<Ipv4>(&mut ctx, interface),
                         fnet::IpVersion::V6 => clear_entries::<Ipv6>(&mut ctx, interface),
                     };
-                    responder.send(result.map_err(|e| e.into_raw()))
+                    responder.send(result)
                 }
             }
         })

@@ -554,7 +554,9 @@ async fn neigh_wrong_interface<N: Netstack>(
     fidl_method: fn(
         &fidl_fuchsia_net_neighbor::ControllerProxy,
         u64,
-    ) -> fidl::client::QueryResponseFut<std::result::Result<(), i32>>,
+    ) -> fidl::client::QueryResponseFut<
+        std::result::Result<(), fidl_fuchsia_net_neighbor::ControllerError>,
+    >,
 ) {
     let sandbox = TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("net").await.expect("failed to create network");
@@ -575,19 +577,13 @@ async fn neigh_wrong_interface<N: Netstack>(
         .expect("failed to connect to Controller");
     // Clearing neighbors on loopback interface is not supported.
     assert_eq!(
-        fidl_method(&controller, loopback_id)
-            .await
-            .expect("clear_entries FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_SUPPORTED)
+        fidl_method(&controller, loopback_id).await.expect("clear_entries FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotSupported)
     );
     // Clearing neighbors on non-existing interface returns the proper error.
     assert_eq!(
-        fidl_method(&controller, ep.id() + 100)
-            .await
-            .expect("clear_entries FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_FOUND)
+        fidl_method(&controller, ep.id() + 100).await.expect("clear_entries FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotFound)
     );
 }
 
@@ -640,7 +636,6 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
         .clear_entries(alice.ep.id(), I::VERSION.into_ext())
         .await
         .expect("clear_entries FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("clear_entries failed");
 
     assert_entries(
@@ -665,7 +660,6 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
         .add_entry(bob.ep.id(), &alice_ip, &ALICE_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry failed");
 
     const MAX_RETRIES: usize = 5;
@@ -687,7 +681,6 @@ async fn neigh_clear_entries<N: Netstack, I: Ip>(name: &str) {
                 .clear_entries(alice.ep.id(), I::VERSION.into_ext())
                 .await
                 .expect("clear_entries FIDL error")
-                .map_err(zx::Status::from_raw)
                 .expect("clear_entries failed")
         }
     }
@@ -733,9 +726,8 @@ async fn neigh_add_remove_entry_invalid_addr<N: Netstack>(
         controller
             .add_entry(alice.ep.id(), &invalid_addr, &BOB_MAC)
             .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::INVALID_ARGS),
+            .expect("add_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InvalidIpAddress),
         "{} is an invalid neighbor addr and add_entry should fail",
         net_types::ip::IpAddr::from_ext(invalid_addr)
     );
@@ -743,9 +735,8 @@ async fn neigh_add_remove_entry_invalid_addr<N: Netstack>(
         controller
             .remove_entry(alice.ep.id(), &invalid_addr)
             .await
-            .expect("remove_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::INVALID_ARGS),
+            .expect("remove_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InvalidIpAddress),
         "{} is an invalid neighbor addr and remove_entry should fail",
         net_types::ip::IpAddr::from_ext(invalid_addr)
     );
@@ -782,9 +773,8 @@ async fn neigh_add_entry_invalid_mac<N: Netstack>(
             controller
                 .add_entry(alice.ep.id(), &valid_addr, &invalid_mac)
                 .await
-                .expect("add_entry FIDL error")
-                .map_err(zx::Status::from_raw),
-            Err(zx::Status::INVALID_ARGS),
+                .expect("add_entry FIDL error"),
+            Err(fidl_fuchsia_net_neighbor::ControllerError::MacAddressNotUnicast),
             "{} is not a unicast mac addr and add_entry should fail",
             net_types::ethernet::Mac::from_ext(invalid_mac)
         );
@@ -816,12 +806,8 @@ async fn neigh_remove_entry_not_found<N: Netstack>(name: &str) {
         .expect("failed to connect to Controller");
 
     assert_eq!(
-        controller
-            .remove_entry(alice.ep.id(), &BOB_IP)
-            .await
-            .expect("remove_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_FOUND)
+        controller.remove_entry(alice.ep.id(), &BOB_IP).await.expect("remove_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::NeighborNotFound)
     );
 }
 
@@ -871,43 +857,32 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
         controller
             .add_entry(alice.loopback_id, &bob_ip, &BOB_MAC)
             .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_SUPPORTED)
+            .expect("add_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotSupported)
     );
     assert_eq!(
-        controller
-            .remove_entry(alice.loopback_id, &bob_ip)
-            .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_SUPPORTED)
+        controller.remove_entry(alice.loopback_id, &bob_ip).await.expect("remove_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotSupported)
     );
     // Add entry and remove entry return not found on non-existing interface.
     assert_eq!(
         controller
             .add_entry(alice.ep.id() + 100, &bob_ip, &BOB_MAC)
             .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_FOUND)
+            .expect("add_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotFound)
     );
     assert_eq!(
         controller
             .remove_entry(alice.ep.id() + 100, &bob_ip)
             .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_FOUND)
+            .expect("remove_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::InterfaceNotFound)
     );
     // Remove entry returns not found for non-existing entry.
     assert_eq!(
-        controller
-            .remove_entry(alice.ep.id(), &bob_ip)
-            .await
-            .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw),
-        Err(zx::Status::NOT_FOUND)
+        controller.remove_entry(alice.ep.id(), &bob_ip).await.expect("remove_entry FIDL error"),
+        Err(fidl_fuchsia_net_neighbor::ControllerError::NeighborNotFound)
     );
 
     // Add a static entry and verify that it is listable.
@@ -915,7 +890,6 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
         .add_entry(alice.ep.id(), &bob_ip, &BOB_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry failed");
     let static_entry = EntryMatch {
         interface: alice.ep.id(),
@@ -941,7 +915,6 @@ async fn neigh_add_remove_entry<N: Netstack, I: Ip>(name: &str) {
         .remove_entry(alice.ep.id(), &bob_ip)
         .await
         .expect("remove_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("remove_entry failed");
     assert_entries(&mut alice_iter, [ItemMatch::Removed(static_entry.clone())]).await;
 
@@ -1106,13 +1079,11 @@ async fn channel_is_closed_if_not_polled<N: Netstack>(name: &str) {
             .add_entry(alice.ep.id(), &BOB_IP, &BOB_MAC)
             .await
             .expect("add_entry FIDL error")
-            .map_err(zx::Status::from_raw)
             .expect("add_entry failed");
         controller
             .remove_entry(alice.ep.id(), &BOB_IP)
             .await
             .expect("remove_entry FIDL error")
-            .map_err(zx::Status::from_raw)
             .expect("remove_entry failed");
     };
 
@@ -1161,7 +1132,6 @@ async fn remove_device_clears_neighbors<N: Netstack>(name: &str) {
         .add_entry(ep.id(), &BOB_IP, &BOB_MAC)
         .await
         .expect("add_entry FIDL error")
-        .map_err(zx::Status::from_raw)
         .expect("add_entry failed");
 
     let interface = ep.id();
@@ -1244,7 +1214,6 @@ async fn neighbor_with_many_addresses_disconnects<N: Netstack>(name: &str) {
                 .add_entry(ep.id(), &addr, &BOB_MAC)
                 .await
                 .expect("add_entry FIDL error")
-                .map_err(zx::Status::from_raw)
                 .expect("add_entry failed");
             assert_entries(
                 &mut iter,

@@ -40,7 +40,6 @@
 library fuchsia.net.neighbor;
 
 using fuchsia.net;
-using zx;
 
 /// Returns entries and events from the neighbor table. Clients can open an
 /// iterator using the [`fuchsia.net.neighbor/View.EntryIterator`] method.
@@ -119,8 +118,22 @@ closed protocol View {
     });
 };
 
-// TODO(https://fxbug.dev/42085349): Define and use domain-specific error enum
-// instead of zx.Status.
+/// Errors associated with the neighbor table `Controller` protocol.
+type ControllerError = flexible enum {
+    /// The specified interface does not exist.
+    INTERFACE_NOT_FOUND = 1;
+    /// The specified interface does not keep a neighbor table (e.g.
+    /// point-to-point links).
+    INTERFACE_NOT_SUPPORTED = 2;
+    /// The specified neighbor does not exist in the provided interface's
+    /// neighbor table.
+    NEIGHBOR_NOT_FOUND = 3;
+    /// The provided IP address is not a valid neighbor address.
+    INVALID_IP_ADDRESS = 4;
+    /// The provided MAC address is not a unicast MAC address.
+    MAC_ADDRESS_NOT_UNICAST = 5;
+};
+
 /// Modify the neighbor table.
 @discoverable
 closed protocol Controller {
@@ -132,43 +145,29 @@ closed protocol Controller {
     ///     communicating with the neighbor.
     /// + request `neighbor` IP address of the neighbor.
     /// + request `mac` MAC address of the neighbor.
-    /// * error `ZX_ERR_INVALID_ARGS` if `neighbor` is not a valid
-    ///   neighbor address or `mac` is not a unicast MAC address.
-    /// * error `ZX_ERR_NOT_FOUND` if `interface` does not exist.
-    /// * error `ZX_ERR_NOT_SUPPORTED` if `interface` does not keep a neighbor
-    ///     table (e.g. point-to-point links).
     strict AddEntry(struct {
         interface fuchsia.net.InterfaceId;
         neighbor fuchsia.net.IpAddress;
         mac fuchsia.net.MacAddress;
-    }) -> () error zx.Status;
+    }) -> () error ControllerError;
 
     /// Delete a dynamic or static entry.
     ///
     /// + request `interface` identifier for the interface associated with the
     ///     entry to be deleted.
     /// + request `neighbor` IP address of the entry to be deleted.
-    /// * error `ZX_ERR_INVALID_ARGS` if `neighbor` is not a valid neighbor
-    ///   address.
-    /// * error `ZX_ERR_NOT_FOUND` if no entries match `interface` and
-    ///   `neighbor`.
-    /// * error `ZX_ERR_NOT_SUPPORTED` if `interface` does not keep a neighbor
-    ///     table (e.g. point-to-point links).
     strict RemoveEntry(struct {
         interface fuchsia.net.InterfaceId;
         neighbor fuchsia.net.IpAddress;
-    }) -> () error zx.Status;
+    }) -> () error ControllerError;
 
     /// Delete all dynamic and static entries belonging to an interface.
     ///
     /// + request `interface` identifier for the interface associated with the
     ///     entries to be deleted.
     /// + request `ip_version` the IP version to clear entries from.
-    /// * error `ZX_ERR_NOT_FOUND` if `interface` does not exist.
-    /// * error `ZX_ERR_NOT_SUPPORTED` if `interface` does not keep a neighbor
-    ///     table (e.g. point-to-point links).
     strict ClearEntries(struct {
         interface fuchsia.net.InterfaceId;
         ip_version fuchsia.net.IpVersion;
-    }) -> () error zx.Status;
+    }) -> () error ControllerError;
 };
