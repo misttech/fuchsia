@@ -16,13 +16,11 @@ pub struct FuzzCtlCommand {
 }
 
 /// Individual subcommands that can be run from the command line.
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, FromArgs, PartialEq)]
 #[argh(subcommand)]
 pub enum FuzzCtlSubcommand {
     Reset(ResetSubcommand),
-    RunLibFuzzer(RunLibFuzzerSubcommand),
+    RunLibFuzzer(Box<RunLibFuzzerSubcommand>),
     ResumeLibFuzzer(ResumeLibFuzzerSubcommand),
 }
 
@@ -217,4 +215,16 @@ impl RunLibFuzzerSubcommand {
             ..Default::default()
         }
     }
+}
+
+impl FromArgs for Box<RunLibFuzzerSubcommand> {
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
+        let val = RunLibFuzzerSubcommand::from_args(command_name, args)?;
+        Ok(Box::new(val))
+    }
+}
+
+impl argh::SubCommand for Box<RunLibFuzzerSubcommand> {
+    const COMMAND: &'static argh::CommandInfo =
+        <RunLibFuzzerSubcommand as argh::SubCommand>::COMMAND;
 }
