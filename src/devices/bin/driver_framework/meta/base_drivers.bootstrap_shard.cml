@@ -137,7 +137,6 @@
                 "fuchsia.input.report.Service",
                 "fuchsia.power.battery.ChargerService",
                 "fuchsia.power.battery.InfoService",
-                "fuchsia.storage.ftl.Service",
                 "google.powerstats.Service",
             ],
             from: "#base-drivers",

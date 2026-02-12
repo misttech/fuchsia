@@ -320,7 +320,6 @@
                 "fuchsia.hardware.trippoint.DebugService",
                 "fuchsia.hardware.vsock.Service",
                 "fuchsia.power.broker.ElementInfoProviderService",
-                "fuchsia.storage.ftl.Service",
 
                 // These duplicate a service advertised by devfs, below.
                 // "fuchsia.gpu.magma.Service",
