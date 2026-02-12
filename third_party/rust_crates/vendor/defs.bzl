@@ -611,7 +611,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.27.2:strum_macros"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
-            "indoc": Label("//third_party/rust_crates/vendor/indoc-2.0.6:indoc"),
+            "indoc": Label("//third_party/rust_crates/vendor/indoc-2.0.7:indoc"),
         },
     },
 }

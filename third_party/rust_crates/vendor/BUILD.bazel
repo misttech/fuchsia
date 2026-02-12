@@ -1237,14 +1237,14 @@ alias(
 )
 
 alias(
-    name = "indoc-2.0.6",
-    actual = "//third_party/rust_crates/vendor/indoc-2.0.6:indoc",
+    name = "indoc-2.0.7",
+    actual = "//third_party/rust_crates/vendor/indoc-2.0.7:indoc",
     tags = ["manual"],
 )
 
 alias(
     name = "indoc",
-    actual = "//third_party/rust_crates/vendor/indoc-2.0.6:indoc",
+    actual = "//third_party/rust_crates/vendor/indoc-2.0.7:indoc",
     tags = ["manual"],
 )
 

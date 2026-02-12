@@ -1,14 +1,11 @@
+#[cfg(indoc_test_cstr)]
+mod test_cstr;
+
 use indoc::indoc;
 
 const HELP: &str = indoc! {"
     Usage: ./foo
 "};
-
-#[test]
-fn test_global() {
-    let expected = "Usage: ./foo\n";
-    assert_eq!(HELP, expected);
-}
 
 #[test]
 fn byte_string() {
@@ -36,21 +33,22 @@ fn carriage_return() {
 }
 
 #[test]
-fn trailing_comma() {
-    let indoc = indoc! {
-        "
-        test
-        ",
-    };
-    let expected = "test\n";
-    assert_eq!(indoc, expected);
-}
-
-#[test]
 fn empty_string() {
     let indoc = indoc! {""};
     let expected = "";
     assert_eq!(indoc, expected);
+}
+
+#[test]
+fn global() {
+    let expected = "Usage: ./foo\n";
+    assert_eq!(HELP, expected);
+}
+
+#[test]
+fn indoc_as_format_string() {
+    let s = format!(indoc! {"{}"}, true);
+    assert_eq!(s, "true");
 }
 
 #[test]
@@ -72,6 +70,21 @@ fn joined_lines() {
         e"
     };
     let expected = "ab\ncd\ne";
+    assert_eq!(indoc, expected);
+}
+
+#[test]
+fn metavariable() {
+    macro_rules! indoc_wrapper {
+        ($e:expr) => {
+            indoc!($e)
+        };
+    }
+
+    let indoc = indoc_wrapper! {"
+        macros, how do they work
+    "};
+    let expected = "macros, how do they work\n";
     assert_eq!(indoc, expected);
 }
 
@@ -140,6 +153,17 @@ fn string_trailing_newline() {
 }
 
 #[test]
+fn trailing_comma() {
+    let indoc = indoc! {
+        "
+        test
+        ",
+    };
+    let expected = "test\n";
+    assert_eq!(indoc, expected);
+}
+
+#[test]
 fn trailing_whitespace() {
     let indoc = indoc! {"
         2 below
@@ -151,26 +175,5 @@ fn trailing_whitespace() {
         end"
     };
     let expected = "2 below\n  \n0 below\n\n-2 below\n\nend";
-    assert_eq!(indoc, expected);
-}
-
-#[test]
-fn indoc_as_format_string() {
-    let s = format!(indoc! {"{}"}, true);
-    assert_eq!(s, "true");
-}
-
-#[test]
-fn test_metavariable() {
-    macro_rules! indoc_wrapper {
-        ($e:expr) => {
-            indoc!($e)
-        };
-    }
-
-    let indoc = indoc_wrapper! {"
-        macros, how do they work
-    "};
-    let expected = "macros, how do they work\n";
     assert_eq!(indoc, expected);
 }
