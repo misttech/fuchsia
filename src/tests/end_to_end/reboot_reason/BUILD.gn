@@ -4,16 +4,27 @@
 
 import("//build/testing/environments.gni")
 
+import("//build/python/python_library.gni")
 import("//build/python/python_mobly_test.gni")
 
 assert(is_host, "the Python driver of the e2e test can only be run on the host")
 
-python_mobly_test("reboot_reason_test") {
-  main_source = "test.py"
-  libraries = [
+python_library("suite") {
+  library_name = "reboot_reason_suite"
+  sources = [
+    "__init__.py",
+    "suite.py",
+  ]
+  testonly = true
+  library_deps = [
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
   ]
+}
+
+python_mobly_test("reboot_reason_test") {
+  main_source = "test.py"
+  libraries = [ ":suite" ]
 
   environments = [ nelson_env ]
 
