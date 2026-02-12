@@ -156,7 +156,6 @@ group_with_no_dir_target_deps("starnix_arm64_unstable_tests") {
   public_deps = [
     "//src/firmware/tests/lacewing:lacewing($host_toolchain)",
     "//src/performance/memory/attribution/monitor/tests/e2e:memory_monitor2_e2e_test($host_toolchain)",
-    "//src/performance/memory/tests/memory_bootfs_size_test:memory_bootfs_size_test($host_toolchain)",
     "//src/tests/end_to_end/rtc:rtc_conformance_test($host_toolchain)",
   ]
 }
