@@ -386,6 +386,13 @@ impl FileSystem {
         Ok(stat)
     }
 
+    pub fn sync<L>(&self, locked: &mut Locked<L>, current_task: &CurrentTask) -> Result<(), Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        self.ops.sync(locked.cast_locked::<FileOpsCore>(), self, current_task)
+    }
+
     pub fn did_create_dir_entry(&self, entry: &DirEntryHandle) {
         match &self.dcache {
             DirEntryCache::Permanent(p) => {
@@ -546,6 +553,15 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// Returns the crypt service associated with this filesystem, if any.
     fn crypt_service(&self) -> Option<Arc<CryptService>> {
         None
+    }
+
+    fn sync(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _fs: &FileSystem,
+        _current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        Ok(())
     }
 }
 

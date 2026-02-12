@@ -101,6 +101,7 @@ syscall_tests = [
   "suid_test",
   "sw_breakpoint_test",
   "symlink_test",
+  "sync_test",
   "sysctl_test",
   "sysfs_kernel_test",
   "sysfs_power_test",

@@ -2780,19 +2780,17 @@ pub fn sys_flock(
     file.flock(locked, current_task, operation)
 }
 
-pub fn sys_sync(_locked: &mut Locked<Unlocked>, _current_task: &CurrentTask) -> Result<(), Errno> {
-    track_stub!(TODO("https://fxbug.dev/322875826"), "sync()");
-    Ok(())
+pub fn sys_sync(locked: &mut Locked<Unlocked>, current_task: &CurrentTask) -> Result<(), Errno> {
+    current_task.kernel().mounts.sync_all(locked, current_task)
 }
 
 pub fn sys_syncfs(
-    _locked: &mut Locked<Unlocked>,
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     fd: FdNumber,
 ) -> Result<(), Errno> {
-    let _file = current_task.files.get(fd)?;
-    track_stub!(TODO("https://fxbug.dev/322875646"), "syncfs");
-    Ok(())
+    let file = current_task.files.get(fd)?;
+    file.fs.sync(locked, current_task)
 }
 
 pub fn sys_fsync(
@@ -3845,7 +3843,8 @@ mod arch32 {
         sys_setxattr as sys_arch32_setxattr, sys_splice as sys_arch32_splice,
         sys_statfs as sys_arch32_statfs, sys_statx as sys_arch32_statx,
         sys_symlinkat as sys_arch32_symlinkat, sys_sync as sys_arch32_sync,
-        sys_tee as sys_arch32_tee, sys_timerfd_create as sys_arch32_timerfd_create,
+        sys_syncfs as sys_arch32_syncfs, sys_tee as sys_arch32_tee,
+        sys_timerfd_create as sys_arch32_timerfd_create,
         sys_timerfd_gettime as sys_arch32_timerfd_gettime,
         sys_timerfd_settime as sys_arch32_timerfd_settime, sys_truncate as sys_arch32_truncate,
         sys_umask as sys_arch32_umask, sys_utimensat as sys_arch32_utimensat,
@@ -4105,5 +4104,25 @@ mod tests {
             assert_eq!(error, errno!(EEXIST));
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_sys_sync() -> Result<(), Errno> {
+        spawn_kernel_and_run(async |locked, current_task| {
+            sys_sync(locked, current_task)?;
+            Ok(())
+        })
+        .await
+    }
+
+    #[::fuchsia::test]
+    async fn test_sys_syncfs() -> Result<(), Errno> {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let file_handle = current_task.open_file(locked, ".".into(), OpenFlags::RDONLY)?;
+            let fd = current_task.add_file(locked, file_handle, FdFlags::empty())?;
+            sys_syncfs(locked, current_task, fd)?;
+            Ok(())
+        })
+        .await
     }
 }

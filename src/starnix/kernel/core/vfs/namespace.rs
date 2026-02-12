@@ -1795,6 +1795,32 @@ impl Mounts {
             }
         }
     }
+
+    pub fn sync_all(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        let mut filesystems = Vec::new();
+        {
+            let scope = RcuReadScope::new();
+            let mut seen = HashSet::new();
+            for (_dir_entry, m_list) in self.mounts.iter(&scope) {
+                for m in m_list {
+                    if seen.insert(Arc::as_ptr(&m.fs)) {
+                        filesystems.push(m.fs.clone());
+                    }
+                }
+            }
+        }
+
+        for fs in filesystems {
+            if let Err(e) = fs.sync(locked, current_task) {
+                log_warn!("sync failed for filesystem {:?}: {:?}", fs.name(), e);
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A RAII object that unregisters a mount when dropped.

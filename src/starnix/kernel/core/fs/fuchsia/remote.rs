@@ -249,6 +249,18 @@ impl FileSystemOps for RemoteFs {
             .map_err(map_sync_io_client_error)
     }
 
+    fn sync(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _fs: &FileSystem,
+        _current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        self.root_proxy
+            .sync(zx::MonotonicInstant::INFINITE)
+            .map_err(|_| errno!(EIO))?
+            .map_err(|status| map_sync_error(zx::Status::from_raw(status)))
+    }
+
     fn manages_timestamps(&self) -> bool {
         true
     }
