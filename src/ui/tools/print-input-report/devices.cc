@@ -9,6 +9,8 @@
 #include <lib/trace/event.h>
 #include <zircon/status.h>
 
+#include <cinttypes>
+
 namespace print_input_report {
 
 zx_status_t PrintFeatureReports(std::string filename, Printer* printer,
@@ -148,22 +150,38 @@ void PrintDeviceInfo(Printer* printer,
 
   printer->Print("Vendor ID:\n");
   printer->IncreaseIndent();
-  printer->Print("0x%x\n", device_info.vendor_id());
+  if (device_info.has_vendor_id()) {
+    printer->Print("0x%" PRIx32 "\n", device_info.vendor_id());
+  } else {
+    printer->Print("No vendor ID available\n");
+  }
   printer->DecreaseIndent();
 
   printer->Print("Product ID:\n");
   printer->IncreaseIndent();
-  printer->Print("0x%x\n", device_info.product_id());
+  if (device_info.has_product_id()) {
+    printer->Print("0x%" PRIx32 "\n", device_info.product_id());
+  } else {
+    printer->Print("No product ID available\n");
+  }
   printer->DecreaseIndent();
 
   printer->Print("Version:\n");
   printer->IncreaseIndent();
-  printer->Print("0x%x\n", device_info.version());
+  if (device_info.has_version()) {
+    printer->Print("0x%" PRIx32 "\n", device_info.version());
+  } else {
+    printer->Print("No version available\n");
+  }
   printer->DecreaseIndent();
 
   printer->Print("Polling Rate:\n");
   printer->IncreaseIndent();
-  printer->Print("%lu usec\n", device_info.polling_rate());
+  if (device_info.has_polling_rate()) {
+    printer->Print("%" PRIi64 " usec\n", device_info.polling_rate());
+  } else {
+    printer->Print("No polling rate available\n");
+  }
   printer->DecreaseIndent();
 
   printer->DecreaseIndent();
