@@ -53,14 +53,6 @@ closed protocol Admin {
 
     /// Asks the device to reboot.
     ///
-    /// Replaced by `PerformReboot`.
-    @available(deprecated=26, removed=27)
-    strict Reboot(struct {
-        reason RebootReason;
-    }) -> () error zx.Status;
-
-    /// Asks the device to reboot.
-    ///
     /// Arguments:
     ///   - options: The options with which to perform this requests.
     ///              `ZX_ERR_INVALID_ARGS` is returned if the options are
@@ -165,22 +157,6 @@ type ShutdownOptions = table {
 @discoverable(server="platform")
 @available(deprecated=29, removed=NEXT, note="use ShutdownWatcherRegister")
 closed protocol RebootMethodsWatcherRegister {
-    /// Register a watcher to be notified when a Reboot method is called.
-    ///
-    /// Replaced by `RegisterWatcher`.
-    @available(deprecated=26, removed=27)
-    strict Register(resource struct {
-        watcher client_end:RebootMethodsWatcher;
-    });
-
-    /// Registers a watcher to be notified when a Reboot method is called.
-    ///
-    /// Replaced by `RegisterWatcher`.
-    @available(added=26, deprecated=26, removed=27)
-    strict RegisterWithAck(resource struct {
-        watcher client_end:RebootMethodsWatcher;
-    }) -> ();
-
     /// Registers a watcher to be notified when a Reboot method is called.
     ///
     /// Once the watcher has been successfully registered with the server, then
@@ -226,16 +202,6 @@ open protocol ShutdownWatcherRegister {
     /// Watchers can unregister by closing their `ShutdownWatcher` channel.
     flexible RegisterWatcher(resource struct {
         watcher client_end:ShutdownWatcher;
-    }) -> ();
-};
-
-/// Allows components to be notified when Reboot related methods are called.
-///
-/// Replaced by `RebootWatcher`
-@available(deprecated=26, removed=27)
-closed protocol RebootMethodsWatcher {
-    strict OnReboot(struct {
-        reason RebootReason;
     }) -> ();
 };
 
