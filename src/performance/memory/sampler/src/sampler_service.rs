@@ -160,8 +160,16 @@ async fn run_sampler_service(
     mut tx: mpsc::Sender<ProfileReport>,
 ) -> Result<(), Error> {
     let profile = process_sampler_requests(stream, &mut tx).await?;
-    log::debug!("Profiling for {} done, queuing final report", profile.get_process_name());
-    tx.send(profile).await?;
+    let process_name = profile.get_process_name().to_string();
+    log::debug!("Profiling for {} done, queuing final report", process_name);
+    {
+        let res = tx.try_send(profile);
+        if let Err(ref e) = res
+            && e.is_full()
+        {
+            log::warn!("{}: Failed to send final profile, channel is full", process_name);
+        };
+    }
     Ok(())
 }
 
