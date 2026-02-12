@@ -187,6 +187,7 @@ impl PeerTask {
                 _ = on_sco_closed => {
                     info!("SCO connection closed for peer {:}", self.peer_id);
                     drop(sco_state);
+                    self.calls.set_sco_connected(false);
                     self.await_remote_sco();
                 }
             }
@@ -477,6 +478,7 @@ impl PeerTask {
     fn close_sco(&mut self) {
         // Drop SCO connection before awaiting a new one.
         self.sco_state.iset(sco::State::Inactive);
+        self.calls.set_sco_connected(false);
         self.await_remote_sco();
     }
 
@@ -486,8 +488,6 @@ impl PeerTask {
     }
 
     fn await_remote_sco(&mut self) {
-        self.calls.set_sco_connected(false);
-
         let codecs = vec![self.get_selected_codec()];
         let fut = self.sco_connector.accept(self.peer_id.clone(), codecs);
         self.sco_state.iset(sco::State::AwaitingRemote(Box::pin(fut)));

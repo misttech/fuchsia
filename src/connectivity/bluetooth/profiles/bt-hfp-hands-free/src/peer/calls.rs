@@ -314,7 +314,7 @@ impl Call {
         }
         self.set_and_report_state(state);
 
-        if number != self.number && self.state.is_some() && number.is_some() {
+        if number != self.number && self.number.is_some() && number.is_some() {
             // Number is some
             error!(
                 "Queried call info for call {:?} has different number {:?}",
