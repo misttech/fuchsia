@@ -807,6 +807,32 @@ macro_rules! assert_input_report_sequence_generates_events {
         // The type of device generating the events.
         device_type: $DeviceType:ty,
     ) => {
+        $crate::assert_input_report_sequence_generates_events_with_feature_flags!(
+            input_reports: $input_reports,
+            expected_events: $expected_events,
+            device_descriptor: $device_descriptor,
+            device_type: $DeviceType,
+            feature_flags: input_device::InputPipelineFeatureFlags::default(),
+        );
+    };
+}
+
+/// Asserts that the given sequence of input reports generates the provided input events
+/// when the reports are processed by the given device type, with the given feature flags.
+#[macro_export]
+macro_rules! assert_input_report_sequence_generates_events_with_feature_flags {
+    (
+        // The input reports to process.
+        input_reports: $input_reports:expr,
+        // The events which are expected.
+        expected_events: $expected_events:expr,
+        // The descriptor for the device that is sent to the input processor.
+        device_descriptor: $device_descriptor:expr,
+        // The type of device generating the events.
+        device_type: $DeviceType:ty,
+        // The feature flags.
+        feature_flags: $feature_flags:expr,
+    ) => {
         let previous_report: Option<fidl_fuchsia_input_report::InputReport> = None;
         let num_reports = $input_reports.len();
         let num_events = $expected_events.len();
@@ -835,7 +861,7 @@ macro_rules! assert_input_report_sequence_generates_events {
             &mut event_sender.clone(),
             &inspect_status,
             &metrics::MetricsLogger::default(),
-            &input_device::InputPipelineFeatureFlags::default(),
+            &$feature_flags,
         );
 
         // If a report generates multiple events asynchronously, we send them over a mpsc channel
@@ -849,7 +875,6 @@ macro_rules! assert_input_report_sequence_generates_events {
             },
             None => (),
         };
-
 
         let mut received_events = vec![];
         while received_events.len() < num_events {

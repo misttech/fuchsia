@@ -584,6 +584,32 @@ impl TouchBinding {
     }
 }
 
+fn is_move_only(event: &InputEvent) -> bool {
+    matches!(
+        &event.device_event,
+        input_device::InputDeviceEvent::TouchScreen(event)
+            if event
+                .injector_contacts
+                .get(&pointerinjector::EventPhase::Add)
+                .map_or(true, |c| c.is_empty())
+                && event
+                    .injector_contacts
+                    .get(&pointerinjector::EventPhase::Remove)
+                    .map_or(true, |c| c.is_empty())
+                && event
+                    .injector_contacts
+                    .get(&pointerinjector::EventPhase::Cancel)
+                    .map_or(true, |c| c.is_empty())
+    )
+}
+
+fn has_pressed_buttons(event: &InputEvent) -> bool {
+    match &event.device_event {
+        input_device::InputDeviceEvent::TouchScreen(event) => !event.pressed_buttons.is_empty(),
+        _ => false,
+    }
+}
+
 fn process_touch_screen_reports(
     reports: Vec<InputReport>,
     mut previous_report: Option<InputReport>,
@@ -593,27 +619,87 @@ fn process_touch_screen_reports(
     metrics_logger: &metrics::MetricsLogger,
     enable_merge_touch_events: bool,
 ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-    // TODO: b/475285439 - impl merge touch events
-    if enable_merge_touch_events {
-        log::debug!("Enabling merge touch events");
-    }
-
-    let mut batch: Vec<InputEvent> = Vec::new();
+    let num_reports = reports.len();
+    let mut batch: Vec<InputEvent> = Vec::with_capacity(num_reports);
     for report in reports {
         inspect_status.count_received_report(&report);
-        let (prev_report, events) = process_single_touch_screen_report(
+        let (prev_report, event) = process_single_touch_screen_report(
             report,
             previous_report,
             device_descriptor,
             inspect_status,
         );
         previous_report = prev_report;
-        batch.extend(events);
+        if let Some(event) = event {
+            batch.push(event);
+        }
     }
 
     if !batch.is_empty() {
-        let events_to_send: Vec<InputEvent> =
-            batch.iter().map(|e| e.clone_with_wake_lease()).collect();
+        if enable_merge_touch_events {
+            // Pre-calculate move-only status for all events
+            let mut is_event_move_only: Vec<bool> = Vec::with_capacity(batch.len());
+            let mut pressed_buttons: Vec<bool> = Vec::with_capacity(batch.len());
+            for event in &batch {
+                is_event_move_only.push(is_move_only(event));
+                pressed_buttons.push(has_pressed_buttons(event));
+            }
+            let size_of_batch = batch.len();
+
+            // Merge consecutive move-only events into a single event.
+            let mut merged_batch = Vec::with_capacity(size_of_batch);
+
+            // Use into_iter().enumerate() to move elements without cloning
+            for (i, current_event) in batch.into_iter().enumerate() {
+                let current_is_move = is_event_move_only[i];
+                let current_pressed_buttons = pressed_buttons[i];
+                let is_last_event = i == size_of_batch - 1;
+
+                // Check if the NEXT event is also move-only
+                let next_is_move =
+                    if i + 1 < size_of_batch { is_event_move_only[i + 1] } else { false };
+
+                let next_pressed_buttons = if i + 1 < size_of_batch {
+                    pressed_buttons[i + 1]
+                } else {
+                    current_pressed_buttons
+                };
+
+                // If both are move-only, skip the current one (it's redundant).
+                // always keep the last event
+                if !is_last_event
+                    // both are move-only
+                    && (current_is_move && next_is_move)
+                    // same pressed buttons
+                    && (current_pressed_buttons == next_pressed_buttons)
+                {
+                    continue;
+                }
+
+                merged_batch.push(current_event);
+            }
+
+            batch = merged_batch;
+        }
+
+        let events_to_send: Vec<InputEvent> = batch
+            .iter()
+            .map(|e| {
+                let event = e.clone_with_wake_lease();
+                // Unwrap is safe because trace_id is set when the event is created.
+                // This unwrap will not move the trace_id out of the event because trace_id has Copy trait.
+                let trace_id: fuchsia_trace::Id = event.trace_id.unwrap();
+                fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
+                event
+            })
+            .collect();
+        fuchsia_trace::instant!(
+            "input",
+            "events_to_input_handlers",
+            fuchsia_trace::Scope::Thread,
+            "num_reports" => num_reports,
+            "num_events_generated" => events_to_send.len()
+        );
         match input_event_sender.unbounded_send(events_to_send) {
             Err(e) => {
                 metrics_logger.log_error(
@@ -634,7 +720,7 @@ fn process_single_touch_screen_report(
     previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     inspect_status: &InputDeviceStatus,
-) -> (Option<InputReport>, Vec<InputEvent>) {
+) -> (Option<InputReport>, Option<InputEvent>) {
     fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
@@ -642,7 +728,7 @@ fn process_single_touch_screen_report(
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
-            return (previous_report, vec![]);
+            return (previous_report, None);
         }
     };
 
@@ -666,7 +752,7 @@ fn process_single_touch_screen_report(
         && current_buttons.is_empty()
     {
         inspect_status.count_filtered_report();
-        return (Some(report), vec![]);
+        return (Some(report), None);
     }
 
     // A touch input report containing button state should persist prior contact state,
@@ -704,7 +790,6 @@ fn process_single_touch_screen_report(
         }));
 
     let trace_id = fuchsia_trace::Id::random();
-    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
     let event = create_touch_screen_event(
         hashmap! {
             fidl_ui_input::PointerEventPhase::Add => added_contacts.clone(),
@@ -724,7 +809,7 @@ fn process_single_touch_screen_report(
         report.wake_lease.take(),
     );
 
-    (Some(report), vec![event])
+    (Some(report), Some(event))
 }
 
 fn process_touchpad_reports(
@@ -1575,8 +1660,10 @@ mod tests {
 
     // Tests that a pressed button with no contacts generates an event with the
     // button.
+    #[test_case(true; "merge touch events enabled")]
+    #[test_case(false; "merge touch events disabled")]
     #[fasync::run_singlethreaded(test)]
-    async fn send_pressed_button_no_contact() {
+    async fn send_pressed_button_no_contact(enable_merge_touch_events: bool) {
         let descriptor =
             input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
                 device_id: 1,
@@ -1597,18 +1684,24 @@ mod tests {
             &descriptor,
         )];
 
-        assert_input_report_sequence_generates_events!(
+        assert_input_report_sequence_generates_events_with_feature_flags!(
             input_reports: reports,
             expected_events: expected_events,
             device_descriptor: descriptor,
             device_type: TouchBinding,
+            feature_flags: input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events,
+                ..Default::default()
+            },
         );
     }
 
     // Tests that a pressed button with a contact generates an event with
     // contact and button.
+    #[test_case(true; "merge touch events enabled")]
+    #[test_case(false; "merge touch events disabled")]
     #[fasync::run_singlethreaded(test)]
-    async fn send_pressed_button_with_contact() {
+    async fn send_pressed_button_with_contact(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
         let descriptor =
@@ -1645,18 +1738,24 @@ mod tests {
             &descriptor,
         )];
 
-        assert_input_report_sequence_generates_events!(
+        assert_input_report_sequence_generates_events_with_feature_flags!(
             input_reports: reports,
             expected_events: expected_events,
             device_descriptor: descriptor,
             device_type: TouchBinding,
+            feature_flags: input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events,
+                ..Default::default()
+            },
         );
     }
 
     // Tests that multiple pressed buttons with contacts generates an event
     // with contact and buttons.
+    #[test_case(true; "merge touch events enabled")]
+    #[test_case(false; "merge touch events disabled")]
     #[fasync::run_singlethreaded(test)]
-    async fn send_multiple_pressed_buttons_with_contact() {
+    async fn send_multiple_pressed_buttons_with_contact(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
         let descriptor =
@@ -1699,17 +1798,23 @@ mod tests {
             &descriptor,
         )];
 
-        assert_input_report_sequence_generates_events!(
+        assert_input_report_sequence_generates_events_with_feature_flags!(
             input_reports: reports,
             expected_events: expected_events,
             device_descriptor: descriptor,
             device_type: TouchBinding,
+            feature_flags: input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events,
+                ..Default::default()
+            },
         );
     }
 
     // Tests that no buttons and no contacts generates no events.
+    #[test_case(true; "merge touch events enabled")]
+    #[test_case(false; "merge touch events disabled")]
     #[fasync::run_singlethreaded(test)]
-    async fn send_no_buttons_no_contacts() {
+    async fn send_no_buttons_no_contacts(enable_merge_touch_events: bool) {
         let descriptor =
             input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
                 device_id: 1,
@@ -1721,17 +1826,23 @@ mod tests {
 
         let expected_events: Vec<input_device::InputEvent> = vec![];
 
-        assert_input_report_sequence_generates_events!(
+        assert_input_report_sequence_generates_events_with_feature_flags!(
             input_reports: reports,
             expected_events: expected_events,
             device_descriptor: descriptor,
             device_type: TouchBinding,
+            feature_flags: input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events,
+                ..Default::default()
+            },
         );
     }
 
     // Tests a buttons event after a contact event does not remove contacts.
+    #[test_case(true; "merge touch events enabled")]
+    #[test_case(false; "merge touch events disabled")]
     #[fasync::run_singlethreaded(test)]
-    async fn send_button_does_not_remove_contacts() {
+    async fn send_button_does_not_remove_contacts(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
         let descriptor =
@@ -1786,11 +1897,15 @@ mod tests {
             ),
         ];
 
-        assert_input_report_sequence_generates_events!(
+        assert_input_report_sequence_generates_events_with_feature_flags!(
             input_reports: reports,
             expected_events: expected_events,
             device_descriptor: descriptor,
             device_type: TouchBinding,
+            feature_flags: input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events,
+                ..Default::default()
+            },
         );
     }
 
@@ -1846,5 +1961,158 @@ mod tests {
 
         // Verify no more batches.
         assert!(event_receiver.try_next().is_err());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn process_reports_merges_touch_events_when_enabled() {
+        const TOUCH_ID: u32 = 2;
+        let descriptor =
+            input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
+                device_id: 1,
+                contacts: vec![],
+            });
+        let (event_time_i64, _) = testing_utilities::event_times();
+
+        let contact_add = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(0),
+            position_y: Some(0),
+            ..Default::default()
+        };
+        let contact_move1 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(10),
+            position_y: Some(10),
+            ..Default::default()
+        };
+        let contact_move2 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(20),
+            position_y: Some(20),
+            ..Default::default()
+        };
+        let contact_move3 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(30),
+            position_y: Some(30),
+            ..Default::default()
+        };
+        let reports = vec![
+            create_touch_input_report(vec![contact_add], None, event_time_i64),
+            create_touch_input_report(vec![contact_move1], None, event_time_i64),
+            create_touch_input_report(vec![contact_move2], None, event_time_i64),
+            create_touch_input_report(vec![contact_move3], None, event_time_i64),
+            create_touch_input_report(vec![], None, event_time_i64),
+        ];
+
+        let (mut event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let mut inspect_status =
+            InputDeviceStatus::new(inspector.root().create_child("TestDevice_Touch"));
+        inspect_status.health_node.set_ok();
+
+        let _ = TouchBinding::process_reports(
+            reports,
+            None,
+            &descriptor,
+            &mut event_sender,
+            &inspect_status,
+            &metrics::MetricsLogger::default(),
+            &input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events: true,
+                ..Default::default()
+            },
+        );
+
+        let batch = event_receiver.try_next().unwrap().unwrap();
+
+        // Expected events: Add, Move(30), Remove.
+        assert_eq!(batch.len(), 3);
+
+        // Verify Add event
+        assert_matches!(
+            &batch[0].device_event,
+            input_device::InputDeviceEvent::TouchScreen(event)
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Add).is_some()
+        );
+        // Verify Move event (merged to the last one)
+        assert_matches!(
+            &batch[1].device_event,
+            input_device::InputDeviceEvent::TouchScreen(event)
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Change).map(|c| c[0].position.x) == Some(30.0)
+        );
+        // Verify Remove event
+        assert_matches!(
+            &batch[2].device_event,
+            input_device::InputDeviceEvent::TouchScreen(event)
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Remove).is_some()
+        );
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn process_reports_does_not_merge_touch_events_when_disabled() {
+        const TOUCH_ID: u32 = 2;
+        let descriptor =
+            input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
+                device_id: 1,
+                contacts: vec![],
+            });
+        let (event_time_i64, _) = testing_utilities::event_times();
+
+        let contact_add = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(0),
+            position_y: Some(0),
+            ..Default::default()
+        };
+        let contact_move1 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(10),
+            position_y: Some(10),
+            ..Default::default()
+        };
+        let contact_move2 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(20),
+            position_y: Some(20),
+            ..Default::default()
+        };
+        let contact_move3 = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(30),
+            position_y: Some(30),
+            ..Default::default()
+        };
+        let reports = vec![
+            create_touch_input_report(vec![contact_add], None, event_time_i64),
+            create_touch_input_report(vec![contact_move1], None, event_time_i64),
+            create_touch_input_report(vec![contact_move2], None, event_time_i64),
+            create_touch_input_report(vec![contact_move3], None, event_time_i64),
+            create_touch_input_report(vec![], None, event_time_i64),
+        ];
+
+        let (mut event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let mut inspect_status =
+            InputDeviceStatus::new(inspector.root().create_child("TestDevice_Touch"));
+        inspect_status.health_node.set_ok();
+
+        let _ = TouchBinding::process_reports(
+            reports,
+            None,
+            &descriptor,
+            &mut event_sender,
+            &inspect_status,
+            &metrics::MetricsLogger::default(),
+            &input_device::InputPipelineFeatureFlags {
+                enable_merge_touch_events: false,
+                ..Default::default()
+            },
+        );
+
+        let batch = event_receiver.try_next().unwrap().unwrap();
+
+        // Expected events: Add, Move(10), Move(20), Move(30), Remove.
+        assert_eq!(batch.len(), 5);
     }
 }
