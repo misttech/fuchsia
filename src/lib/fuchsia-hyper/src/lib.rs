@@ -5,9 +5,9 @@
 use futures::future::{Future, FutureExt};
 use futures::io::{self, AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
-use hyper::client::connect::{Connected, Connection};
-use hyper::client::Client;
 use hyper::Body;
+use hyper::client::Client;
+use hyper::client::connect::{Connected, Connection};
 #[cfg(not(target_os = "fuchsia"))]
 use netext::MultithreadedTokioAsyncWrapper;
 use std::marker::PhantomData;
@@ -18,6 +18,9 @@ use tokio::io::ReadBuf;
 
 #[cfg(not(target_os = "fuchsia"))]
 use tokio::net;
+
+#[cfg(target_os = "fuchsia")]
+use fidl_fuchsia_posix_socket as fposix_socket;
 
 #[cfg(target_os = "fuchsia")]
 use fuchsia_async::net;
@@ -164,11 +167,7 @@ impl TcpOptions {
             any = true;
             keepalive = keepalive.with_retries(count);
         }
-        if any {
-            stream.set_tcp_keepalive(&keepalive)
-        } else {
-            Ok(())
-        }
+        if any { stream.set_tcp_keepalive(&keepalive) } else { Ok(()) }
     }
 }
 
@@ -363,17 +362,20 @@ where
 }
 
 #[cfg(target_os = "fuchsia")]
-pub(crate) fn connect_and_bind_device<D: AsRef<[u8]>>(
+pub(crate) fn connect_and_bind_device<D: AsRef<[u8]>, T: ProviderConnector>(
+    provider: &T,
     addr: SocketAddr,
     bind_device: Option<D>,
 ) -> io::Result<net::TcpConnector> {
-    let socket = socket2::Socket::new(
+    // TODO(https://fxbug.dev/477371935): Specify a network to use to
+    // route the socket traffic using marks rather than bind_to_device.
+    let socket = stream_socket(
+        provider,
         match addr {
-            SocketAddr::V4(_) => socket2::Domain::IPV4,
-            SocketAddr::V6(_) => socket2::Domain::IPV6,
+            SocketAddr::V4(_) => fposix_socket::Domain::Ipv4,
+            SocketAddr::V6(_) => fposix_socket::Domain::Ipv6,
         },
-        socket2::Type::STREAM,
-        Some(socket2::Protocol::TCP),
+        fposix_socket::StreamSocketProtocol::Tcp,
     )?;
     if let Some(bind_device) = bind_device {
         socket.bind_device(Some(bind_device.as_ref()))?;

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::connect_and_bind_device;
-use fuchsia_async::{net, MonotonicInstant, Timer};
+use crate::{ProviderConnector, connect_and_bind_device};
+use fuchsia_async::{MonotonicInstant, Timer, net};
 
 use futures::future::{Fuse, Future, FutureExt};
 use futures::stream::{FuturesUnordered, Stream};
@@ -25,13 +25,20 @@ pub(crate) trait SocketConnector {
     fn connect(&mut self, addr: SocketAddr, bind_device: Option<&str>) -> io::Result<Self::Fut>;
 }
 
-pub(crate) struct RealSocketConnector;
-impl SocketConnector for RealSocketConnector {
+pub(crate) struct RealSocketConnector<T: ProviderConnector>(T);
+
+impl<T: ProviderConnector> RealSocketConnector<T> {
+    pub fn new(provider: T) -> Self {
+        Self(provider)
+    }
+}
+
+impl<T: ProviderConnector> SocketConnector for RealSocketConnector<T> {
     type Connection = net::TcpStream;
     type Fut = net::TcpConnector;
 
     fn connect(&mut self, addr: SocketAddr, bind_device: Option<&str>) -> io::Result<Self::Fut> {
-        connect_and_bind_device(addr, bind_device)
+        connect_and_bind_device(&self.0, addr, bind_device)
     }
 }
 

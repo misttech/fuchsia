@@ -7,9 +7,10 @@ use crate::{
     HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream, connect_and_bind_device,
     parse_ip_addr,
 };
+use fidl::endpoints::{ClientEnd, create_endpoints};
 use fidl_connector::{Connect, ServiceReconnector};
 use fidl_fuchsia_net_name::{LookupIpOptions, LookupMarker, LookupProxy, LookupResult};
-use fidl_fuchsia_posix_socket::{ProviderMarker, ProviderProxy};
+use fidl_fuchsia_posix_socket::{Domain, ProviderMarker, StreamSocketProtocol};
 use fuchsia_async::net;
 
 use futures::future::{Future, FutureExt};
@@ -101,9 +102,13 @@ impl HyperConnector {
             }
         };
 
-        let stream =
-            connect_to_addr(&self.provider, host, port, self.socket_options.bind_device.as_deref())
-                .await?;
+        let stream = connect_to_addr(
+            self.provider.clone(),
+            host,
+            port,
+            self.socket_options.bind_device.as_deref(),
+        )
+        .await?;
         let () = self.tcp_options.apply(stream.std())?;
 
         Ok(TcpStream { stream })
@@ -130,8 +135,8 @@ impl<F: Future + 'static> hyper::rt::Executor<F> for LocalExecutor {
     }
 }
 
-trait ProviderConnector {
-    fn connect(&self) -> Result<ProviderProxy, io::Error>;
+pub(crate) trait ProviderConnector {
+    fn connect(&self) -> Result<ClientEnd<ProviderMarker>, io::Error>;
 }
 
 trait LookupConnector {
@@ -140,24 +145,23 @@ trait LookupConnector {
 
 #[derive(Clone)]
 struct RealServiceConnector {
-    socket_provider_connector: ServiceReconnector<ProviderMarker>,
     name_lookup_connector: ServiceReconnector<LookupMarker>,
 }
 
 impl RealServiceConnector {
     fn new() -> Self {
-        RealServiceConnector {
-            socket_provider_connector: ServiceReconnector::<ProviderMarker>::new(),
-            name_lookup_connector: ServiceReconnector::<LookupMarker>::new(),
-        }
+        RealServiceConnector { name_lookup_connector: ServiceReconnector::<LookupMarker>::new() }
     }
 }
 
 impl ProviderConnector for RealServiceConnector {
-    fn connect(&self) -> Result<ProviderProxy, io::Error> {
-        self.socket_provider_connector.connect().map_err(|err| {
-            io::Error::other(format!("failed to connect to socket provider service: {}", err))
-        })
+    fn connect(&self) -> Result<ClientEnd<ProviderMarker>, io::Error> {
+        let (client_end, server_end) = create_endpoints::<ProviderMarker>();
+        fuchsia_component::client::connect_channel_to_protocol::<ProviderMarker>(server_end.into())
+            .map_err(|err| {
+                io::Error::other(format!("failed to connect to socket provider service: {}", err))
+            })?;
+        Ok(client_end)
     }
 }
 
@@ -169,19 +173,19 @@ impl LookupConnector for RealServiceConnector {
     }
 }
 
-async fn connect_to_addr<T: ProviderConnector + LookupConnector>(
-    provider: &T,
+async fn connect_to_addr<T: ProviderConnector + LookupConnector + 'static>(
+    provider: T,
     host: &str,
     port: u16,
     bind_device: Option<&str>,
 ) -> Result<net::TcpStream, io::Error> {
-    if let Some(addr) = parse_ip_addr_with_provider(provider, host, port).await? {
-        return connect_and_bind_device(addr, bind_device)?.await;
+    if let Some(addr) = parse_ip_addr_with_provider(&provider, host, port).await? {
+        return connect_and_bind_device(&provider, addr, bind_device)?.await;
     }
 
     happy_eyeballs::happy_eyeballs(
-        resolve_ip_addr(provider, host, port).await?,
-        RealSocketConnector,
+        resolve_ip_addr(&provider, host, port).await?,
+        RealSocketConnector::new(provider),
         happy_eyeballs::RECOMMENDED_MIN_CONN_ATT_DELAY,
         happy_eyeballs::RECOMMENDED_CONN_ATT_DELAY,
         bind_device,
@@ -189,11 +193,11 @@ async fn connect_to_addr<T: ProviderConnector + LookupConnector>(
     .await
 }
 
-async fn resolve_ip_addr(
-    name_lookup: &impl LookupConnector,
+async fn resolve_ip_addr<T: LookupConnector>(
+    name_lookup: &T,
     host: &str,
     port: u16,
-) -> Result<impl Iterator<Item = SocketAddr>, io::Error> {
+) -> Result<impl Iterator<Item = SocketAddr> + use<T>, io::Error> {
     let proxy = name_lookup.connect()?;
     let LookupResult { addresses, .. } = proxy
         .lookup_ip(
@@ -228,7 +232,7 @@ async fn parse_ip_addr_with_provider(
     port: u16,
 ) -> Result<Option<SocketAddr>, io::Error> {
     parse_ip_addr(host, port, |zone_id| async {
-        let proxy = provider.connect()?;
+        let proxy = provider.connect()?.into_proxy();
         let id = proxy
             .interface_name_to_index(zone_id)
             .await
@@ -248,12 +252,26 @@ async fn parse_ip_addr_with_provider(
     .await
 }
 
+pub(crate) fn stream_socket<T: ProviderConnector>(
+    provider: &T,
+    domain: Domain,
+    proto: StreamSocketProtocol,
+) -> io::Result<socket2::Socket> {
+    let socket_provider = provider.connect()?.into_sync_proxy();
+    let sock = socket_provider
+        .stream_socket(domain, proto, zx::MonotonicInstant::INFINITE)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        .map_err(|e| std::io::Error::from_raw_os_error(e.into_primitive()))?;
+
+    Ok(fdio::create_fd(sock.into())?.into())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy_and_stream;
+    use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_net_name::{LookupError, LookupRequest};
     use fidl_fuchsia_posix_socket::ProviderRequest;
     use fuchsia_async::net::TcpListener;
@@ -264,7 +282,7 @@ mod test {
     struct PanicConnector;
 
     impl ProviderConnector for PanicConnector {
-        fn connect(&self) -> Result<ProviderProxy, io::Error> {
+        fn connect(&self) -> Result<ClientEnd<ProviderMarker>, io::Error> {
             panic!("should not be trying to talk to the Provider service")
         }
     }
@@ -353,7 +371,7 @@ mod test {
         struct ErrorConnector;
 
         impl ProviderConnector for ErrorConnector {
-            fn connect(&self) -> Result<ProviderProxy, io::Error> {
+            fn connect(&self) -> Result<ClientEnd<ProviderMarker>, io::Error> {
                 Err(io::Error::other("something bad happened"))
             }
         }
@@ -364,7 +382,7 @@ mod test {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_parse_ipv6_addr_handles_large_interface_indices() {
-        let (proxy, mut stream) = create_proxy_and_stream::<ProviderMarker>();
+        let (client_end, mut stream) = create_request_stream::<ProviderMarker>();
 
         let provider_fut = async move {
             while let Some(req) = stream.try_next().await.unwrap_or(None) {
@@ -378,17 +396,17 @@ mod test {
         };
 
         struct ErrorConnector {
-            proxy: RefCell<Option<ProviderProxy>>,
+            client_end: RefCell<Option<ClientEnd<ProviderMarker>>>,
         }
 
         impl ProviderConnector for ErrorConnector {
-            fn connect(&self) -> Result<ProviderProxy, io::Error> {
-                let proxy = self.proxy.borrow_mut().take().unwrap();
-                Ok(proxy)
+            fn connect(&self) -> Result<ClientEnd<ProviderMarker>, io::Error> {
+                let client_end = self.client_end.borrow_mut().take().unwrap();
+                Ok(client_end)
             }
         }
 
-        let connector = ErrorConnector { proxy: RefCell::new(Some(proxy)) };
+        let connector = ErrorConnector { client_end: RefCell::new(Some(client_end)) };
 
         let parse_ip_fut = parse_ip_addr_with_provider(&connector, "[fe80::1:2:3:4%25lo]", 8080);
 
