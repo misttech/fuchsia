@@ -3,16 +3,19 @@
 // found in the LICENSE file.
 
 #include <lib/fpromise/result.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
-#include <fbl/algorithm.h>
-#include <fbl/ref_ptr.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -25,6 +28,7 @@
 #include "src/storage/volume_image/ftl/options.h"
 #include "src/storage/volume_image/ftl/raw_nand_image.h"
 #include "src/storage/volume_image/ftl/raw_nand_image_utils.h"
+#include "src/storage/volume_image/options.h"
 #include "src/storage/volume_image/partition.h"
 #include "src/storage/volume_image/utils/block_utils.h"
 #include "src/storage/volume_image/utils/reader.h"
@@ -196,8 +200,8 @@ TEST(FtlImageBootstrapTest, FtlDriverBootstrapsFromImageIsOk) {
   EXPECT_THAT(std::span<uint8_t>(page_buffer).subspan(0, 8192), testing::Each(testing::Eq(0)));
 
   // Third mapping.
-  std::fill(expected_page_buffer.begin(), expected_page_buffer.end(), 0);
-  std::fill(page_buffer.begin(), page_buffer.end(), 0xFF);
+  std::ranges::fill(expected_page_buffer, 0);
+  std::ranges::fill(page_buffer, 0xFF);
   expected_page_buffer.resize(81920, 0);
   page_buffer.resize(81920, 0xFF);
   ASSERT_TRUE(partition.reader()->Read(20000, expected_page_buffer).is_ok());
@@ -217,14 +221,14 @@ std::unique_ptr<InMemoryRawNand> CombinePages(uint32_t logical_pages_per_physica
   stitched_raw_nand->options.pages_per_block /= logical_pages_per_physical_pages;
   stitched_raw_nand->options.page_count /= logical_pages_per_physical_pages;
 
-  for (auto [key, _] : raw_nand->page_data) {
+  for (const auto& [key, _] : raw_nand->page_data) {
     uint32_t page_number = key / logical_pages_per_physical_pages;
     uint32_t page_relative_offset = key % logical_pages_per_physical_pages;
 
     const auto& original_data = raw_nand->page_data[key];
     const auto& original_oob = raw_nand->page_oob[key];
 
-    if (stitched_raw_nand->page_data.find(page_number) == stitched_raw_nand->page_data.end()) {
+    if (!stitched_raw_nand->page_data.contains(page_number)) {
       stitched_raw_nand->page_data[page_number].resize(stitched_raw_nand->options.page_size, 0xFF);
       stitched_raw_nand->page_oob[page_number].resize(stitched_raw_nand->options.oob_bytes_size,
                                                       0xFF);
@@ -250,24 +254,18 @@ class InMemoryWriterWithHeader : public Writer {
 
   fpromise::result<void, std::string> Write(uint64_t offset,
                                             std::span<const uint8_t> buffer) final {
-    if (offset < sizeof(RawNandImageHeader)) {
-      size_t leading_header_bytes =
-          std::min(static_cast<size_t>(sizeof(RawNandImageHeader) - offset), buffer.size());
-      memcpy(reinterpret_cast<uint8_t*>(&header_) + offset, buffer.data(), leading_header_bytes);
-      if (leading_header_bytes == buffer.size()) {
-        return fpromise::ok();
-      }
-      buffer = buffer.subspan(leading_header_bytes);
-      offset = sizeof(RawNandImageHeader);
+    constexpr size_t kRawNandImageHeaderSize = sizeof(RawNandImageHeader);
+    if (offset < kRawNandImageHeaderSize) {
+      // The header is always written with a single write call and with no extra data.
+      ZX_ASSERT(offset == 0);
+      ZX_ASSERT(buffer.size() == kRawNandImageHeaderSize);
+      return fpromise::ok();
     }
 
-    return writer_->Write(offset - sizeof(RawNandImageHeader), buffer);
+    return writer_->Write(offset - kRawNandImageHeaderSize, buffer);
   }
 
-  const auto& header() { return header_; }
-
  private:
-  RawNandImageHeader header_;
   InMemoryWriter* writer_ = nullptr;
 };
 
@@ -319,8 +317,8 @@ TEST(FtlImageBootstrapTest, FtlDriverBootstrapsFromImageWithPageDoubleIsOk) {
   EXPECT_THAT(std::span<uint8_t>(page_buffer).subspan(0, 8192), testing::Each(testing::Eq(0)));
 
   // Third mapping.
-  std::fill(expected_page_buffer.begin(), expected_page_buffer.end(), 0);
-  std::fill(page_buffer.begin(), page_buffer.end(), 0xFF);
+  std::ranges::fill(expected_page_buffer, 0);
+  std::ranges::fill(page_buffer, 0xFF);
   expected_page_buffer.resize(81920, 0);
   page_buffer.resize(81920, 0xFF);
   ASSERT_TRUE(partition.reader()->Read(20000, expected_page_buffer).is_ok());
