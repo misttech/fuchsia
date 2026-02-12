@@ -770,7 +770,7 @@ func (m *fakeModules) ProductBundles() []build.ProductBundle { return m.productB
 func (m *fakeModules) Tools() build.Tools {
 	var tools build.Tools
 	for _, tool := range []string{
-		"ffx", "botanist", "bootserver_new", "ssh", "llvm-profdata", "fvm", "zbi", "llvm-symbolizer", "symbolizer", "tefmocheck", "triage", "resultdb", "perfcompare",
+		"ffx", "botanist", "ssh", "llvm-profdata", "fvm", "zbi", "llvm-symbolizer", "symbolizer", "tefmocheck", "triage", "resultdb", "perfcompare",
 	} {
 		tools = append(tools, build.Tool{
 			Name: tool,

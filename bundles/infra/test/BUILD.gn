@@ -57,7 +57,6 @@ group("host_tools") {
     "//src/developer/ffx:ffx_bin",
     "//src/developer/ffx/tools:bins",
     "//src/storage/bin/fvm",
-    "//tools/bootserver",
     "//tools/botanist",
     "//zircon/tools/zbi",
   ]

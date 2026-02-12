@@ -28,7 +28,6 @@
 ##
 ##  MODE          One of the following:
 ##                `images` -- returns the list of images
-##                `netboot`-- returns the list of images needed to netboot
 ##                `flash`-- returns the list of images needed to flash
 ##                `mkzedboot` -- returns the list of images needed to mkzedboot
 ##                `tools` -- returns the list of host tools
@@ -133,10 +132,6 @@ name_regex=false
 path_key="path"
 if [[ "${mode}" == images ]]; then
   manifest="${IMAGES_JSON}"
-elif [[ "${mode}" == netboot ]]; then
-  manifest="${IMAGES_JSON}"
-  paths+=("netboot.sh")
-  jq_filter+=" | select(.bootserver_netboot != null)"
 elif [[ "${mode}" == flash ]]; then
   manifest="${IMAGES_JSON}"
   paths+=("flash.sh")

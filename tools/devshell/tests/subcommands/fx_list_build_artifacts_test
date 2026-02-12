@@ -212,10 +212,6 @@ TEST_fx-list-build-artifacts-images-by-name-and-type() {
   BT_EXPECT_EQ "$(${fx} list-build-artifacts images --name zircon-a --type zbi)"  "fuchsia.zbi"
 }
 
-TEST_fx-list-build-artifacts-netboot() {
-  BT_EXPECT_EQ "$(${fx} list-build-artifacts netboot)" "netboot.sh netboot.zbi"
-}
-
 TEST_fx-list-build-artifacts-flash() {
   BT_EXPECT_EQ "$(${fx} list-build-artifacts flash)" "flash.sh fuchsia.zbi fuchsia.vbmeta obj/build/images/fvm.sparse.blk unlock_creds/unlock_creds.zip gpt.fuchsia.bin"
 }
