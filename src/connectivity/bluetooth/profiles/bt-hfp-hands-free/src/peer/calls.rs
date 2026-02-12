@@ -24,7 +24,7 @@
 //! `Call` structs.  Similarly, the `Calls` struct has several public methods to
 //! set `Call` state that are routed to the proper `Call`.
 
-use anyhow::{Error, format_err};
+use anyhow::{Error, bail, format_err};
 use async_helpers::maybe_stream::MaybeStream;
 use bt_hfp::call::list::{Idx as CallIndex, List as CallList};
 use bt_hfp::call::{Direction, Number, indicators as call_indicators};
@@ -372,7 +372,7 @@ impl Call {
     ) -> Poll<Option<CallOutput>> {
         match call_request {
             // TODO(https://fxbug.dev/135119) Handle multiple calls
-            CallRequest::RequestHold { control_handle: _ } => unimplemented!(),
+            CallRequest::RequestHold { control_handle: _ } => Poll::Pending,
             // TODO(https://fxbug.dev/135119) Handle multiple calls
             CallRequest::RequestActive { control_handle: _ } => match self.state {
                 Some(CallState::IncomingRinging) => Poll::Ready(Some(CallOutput::ProcedureInput(
@@ -580,7 +580,7 @@ impl Calls {
     fn insert_new_call_inner(&mut self, query_calls_afterwards: bool) -> anyhow::Result<CallIndex> {
         // TODO(https://fxbug.dev/135119) Handle multiparty calls
         if self.call_list.len() > 0 {
-            unimplemented!(
+            bail!(
                 "Inserting new call for peer {:} when calls currently exist: {:?}",
                 self.peer_id,
                 self.call_list
