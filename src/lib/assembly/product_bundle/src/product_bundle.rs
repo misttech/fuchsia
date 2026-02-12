@@ -23,7 +23,8 @@ fn try_load_product_bundle(r: impl BufRead) -> Result<ProductBundle> {
         SerializationHelper::V1 { schema_id: _ } => {
             bail!("Product Bundle v1 is no longer supported")
         }
-        SerializationHelper::V2(SerializationHelperVersioned::V2(data)) => {
+        SerializationHelper::V2(v2) => {
+            let SerializationHelperVersioned::V2(data) = *v2;
             Ok(ProductBundle::V2(data))
         }
     }
@@ -193,13 +194,11 @@ pub enum ProductBundle {
 /// Private helper for serializing the ProductBundle. A ProductBundle cannot be deserialized
 /// without going through `try_from_path` in order to require that we use this helper, and the
 /// `directory` field gets populated.
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 enum SerializationHelper {
     V1 { schema_id: String },
-    V2(SerializationHelperVersioned),
+    V2(Box<SerializationHelperVersioned>),
 }
 
 /// Helper for serializing the new system of versioning product bundles using the "version" tag.
@@ -229,7 +228,7 @@ impl ProductBundle {
             Self::V2(data) => {
                 let mut data = data.clone();
                 data.relativize_paths(path.as_ref())?;
-                SerializationHelper::V2(SerializationHelperVersioned::V2(data))
+                SerializationHelper::V2(Box::new(SerializationHelperVersioned::V2(data)))
             }
         };
         let product_bundle_path = path.as_ref().join("product_bundle.json");
