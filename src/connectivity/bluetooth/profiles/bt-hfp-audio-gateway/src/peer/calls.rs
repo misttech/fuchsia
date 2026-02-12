@@ -49,7 +49,7 @@ impl TryFrom<NextCall> for CallEntry {
                 call: Some(c), remote: Some(n), state: Some(s), direction: Some(d), ..
             } => {
                 let proxy = c.into_proxy();
-                Ok(CallEntry::new(proxy, n.into(), s, d.into()))
+                Ok(CallEntry::new(proxy, Number::from_non_at_string(&n), s, d.into()))
             }
             _ => Err(Error::MissingParameter("Missing fidl in NextCall table".into())),
         }
@@ -750,7 +750,7 @@ mod tests {
 
         let mut call = CallEntry::new(
             proxy,
-            "1".into(),
+            Number::from_non_at_string("1"),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );
@@ -766,11 +766,11 @@ mod tests {
     /// `number`. Uses the most common test values for `state` and `direction`.
     fn new_next_call_fidl(
         client_end: impl Into<Option<ClientEnd<CallMarker>>>,
-        number: impl Into<String>,
+        number: &str,
     ) -> NextCall {
         NextCall {
             call: client_end.into(),
-            remote: Some(number.into()),
+            remote: Some(String::from(number)),
             state: Some(CallState::OngoingActive),
             direction: Some(CallDirection::MobileTerminated),
             ..Default::default()
@@ -785,8 +785,8 @@ mod tests {
         let (proxy, peer_stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
         let mut calls = Calls::new(Some(proxy));
         let (client_end, call_stream) = fidl::endpoints::create_request_stream();
-        let num = Number::from("1");
-        let mut next_call = new_next_call_fidl(client_end, num.clone());
+        let num = "1";
+        let mut next_call = new_next_call_fidl(client_end, num);
         next_call.state = Some(CallState::IncomingRinging);
         let _ = calls.handle_new_call(next_call).expect("success handling new call");
         let expected = CallIndicators {
@@ -796,7 +796,7 @@ mod tests {
             callheld: indicators::CallHeld::None,
         };
         assert_eq!(calls.indicators(), expected);
-        (calls, peer_stream, call_stream, 1, num)
+        (calls, peer_stream, call_stream, 1, Number::from_non_at_string(num))
     }
 
     #[fuchsia::test]

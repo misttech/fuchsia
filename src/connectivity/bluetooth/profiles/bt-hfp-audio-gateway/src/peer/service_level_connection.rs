@@ -1066,7 +1066,9 @@ pub(crate) mod tests {
         // That's the end of the SLCI process, We should emit to the peer that we are initialized.
         let slc_next_poll = exec.run_until_stalled(&mut slc.next());
         let Poll::Ready(Some(Ok(SlcRequest::Initialized))) = slc_next_poll else {
-            panic!("Expected Initialized from connection after initialization but got {slc_next_poll:?}");
+            panic!(
+                "Expected Initialized from connection after initialization but got {slc_next_poll:?}"
+            );
         };
         expect_peer_ready(&mut exec, &mut remote, None);
 

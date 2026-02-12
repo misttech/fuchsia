@@ -94,7 +94,8 @@ impl Inspect for &mut CallEntryInspect {
 
 impl CallEntryInspect {
     pub fn set_number(&mut self, number: Number) {
-        self.number.set(String::from(number).as_str());
+        // Keep the delimiting quotes for inspect nodes.
+        self.number.set(number.to_at_string().as_str());
     }
 
     pub fn set_call_direction(&mut self, direction: Direction) {
@@ -283,7 +284,7 @@ mod tests {
         let inspect = inspect::Inspector::default();
         let mut call_entry =
             CallEntryInspect::default().with_inspect(inspect.root(), "call").unwrap();
-        call_entry.set_number(Number::from("1234567"));
+        call_entry.set_number(Number::from_non_at_string("1234567"));
         call_entry.set_call_direction(Direction::MobileTerminated);
         call_entry.set_call_state(CallState::IncomingRinging);
         assert_data_tree!(inspect, root: {

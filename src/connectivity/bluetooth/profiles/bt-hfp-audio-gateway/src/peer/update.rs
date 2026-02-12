@@ -167,14 +167,14 @@ impl From<AgUpdate> for ProcedureRequest {
                     at::success(at::Success::Ring {}),
                     at::success(at::Success::Clip {
                         ty: call.number.type_(),
-                        number: call.number.into(),
+                        number: call.number.to_at_string(),
                     }),
                 ]
             }
             AgUpdate::CallWaiting(call) => {
                 vec![at::success(at::Success::Ccwa {
                     ty: call.number.type_(),
-                    number: call.number.into(),
+                    number: call.number.to_at_string(),
                 })]
             }
             AgUpdate::SpeakerVolumeControl(gain) => {

@@ -39,12 +39,14 @@ parenthesized_argument_lists = { ("(" ~ argument_list ~ ")")+ }
 argument_list = {  ((argument ~ ",")* ~ argument)? }
 argument = { key_value_argument | primitive_argument }
 key_value_argument = { primitive_argument ~ "=" ~ primitive_argument }
-primitive_argument = @{ (!(WHITE_SPACE | "," | "=" | ")" | ";") ~ ASCII)* }
+
+primitive_argument = { quoted_string | token_argument }
+quoted_string = @{ "\"" ~ ((!"\"") ~ ANY)* ~ "\"" }
+token_argument = @{ (!(WHITE_SPACE | "," | "=" | ">" | ")" | ";") ~ ASCII)* }
 
 command_name = @{ ASCII_ALPHA_UPPER+ }
 
 WHITESPACE = _{ WHITE_SPACE }
-COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
 "##]
 

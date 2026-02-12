@@ -79,6 +79,24 @@ fn exec_one_int_arg_no_comma() {
         },
     )
 }
+// Extension execute command with one quoted argument
+#[test]
+fn exec_one_quoted_arg_no_comma() {
+    test_parse(
+        "AT+TEST=\"a b\"",
+        Command::Execute {
+            name: String::from("TEST"),
+            is_extension: true,
+            arguments: DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: Arguments::ArgumentList(vec![Argument::PrimitiveArgument(
+                    String::from("\"a b\""),
+                )]),
+                terminator: None,
+            },
+        },
+    )
+}
 
 // Extension execute command with one argument and no delimiter
 #[test]

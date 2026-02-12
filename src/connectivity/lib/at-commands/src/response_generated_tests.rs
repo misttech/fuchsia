@@ -308,6 +308,26 @@ fn one_string_arg() {
     )
 }
 
+// Extension response with one quoted string argument
+#[test]
+fn one_quoted_string_arg() {
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Tests { field: String::from("\"ab c\"") }),
+        lowlevel::Response::Success {
+            name: String::from("TESTS"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("\"ab c\"")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+TESTS: \"ab c\""),
+    )
+}
+
 // Extension response with one key-value argument
 #[test]
 fn one_kv_arg() {

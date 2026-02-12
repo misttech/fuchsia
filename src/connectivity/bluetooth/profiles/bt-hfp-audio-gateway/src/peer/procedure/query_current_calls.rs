@@ -125,7 +125,7 @@ pub fn build_clcc_response(call: Call) -> Option<at::Response> {
         mode: 0,
         multiparty: 0,
         ty: Some(call.number.type_()),
-        number: Some(call.number.into()),
+        number: Some(call.number.to_at_string()),
         alpha: None,
         priority: None,
     }))
@@ -175,11 +175,11 @@ mod tests {
     fn procedure_with_calls_response() {
         // A terminated call will not be sent to the HF
         let terminated =
-            Call::new(1, Number::from("1"), CallState::Terminated, Direction::MobileTerminated);
+            Call::new(1, Number::from_non_at_string("1"), CallState::Terminated, Direction::MobileTerminated);
         // An ongoing call will be sent to the HF.
         let ongoing = Call::new(
             2,
-            Number::from("2"),
+            Number::from_non_at_string("2"),
             CallState::IncomingRinging,
             Direction::MobileTerminated,
         );

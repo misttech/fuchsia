@@ -104,7 +104,10 @@ pub fn next_match_rep<'a, Rule: RuleType>(
 /// Parse a pair to a string.  The caller must ensure that this is actually matched by a
 /// rule that can be parsed to a valid AT command string.
 pub fn parse_string<Rule: RuleType>(string: Pair<'_, Rule>) -> ParseResult<String, Rule> {
-    Ok(string.as_span().as_str().to_string())
+    let string = string.as_span().as_str().to_string();
+    // If the string is quote delimited, don't strip the quotes; clients can if they
+    // need to.  Similarly, unescaping is the responsibility of clients.
+    Ok(string)
 }
 
 /// Parse a pair to a string.  The caller must ensure that this is actually matched by a

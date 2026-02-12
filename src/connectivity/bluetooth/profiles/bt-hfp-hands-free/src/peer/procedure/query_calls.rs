@@ -96,7 +96,7 @@ fn at_response_to_output(
     let direction = i64_to_direction(direction_int)?;
     let state = i64_to_call_state(state_int)?;
     let multiparty = i64_to_bool(multiparty_int)?;
-    let number = number_string.map(|s| Number::from(s));
+    let number = number_string.map(|s| Number::from_at_string(&s));
 
     Ok(ProcedureOutput::CommandToHf(CommandToHf::QueryCallsResponse {
         index,

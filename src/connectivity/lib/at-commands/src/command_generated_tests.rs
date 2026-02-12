@@ -182,6 +182,26 @@ fn exec_one_string_arg() {
     )
 }
 
+// Extension execute command with one quoted string argument
+#[test]
+fn exec_one_quoted_string_arg() {
+    test_roundtrips(
+        highlevel::Command::Testexextfs { field: String::from("\"ab c\"") },
+        lowlevel::Command::Execute {
+            name: String::from("TESTEXEXTFS"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("\"ab c\"")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTEXEXTFS=\"ab c\""),
+    )
+}
+
 // Extension execute command with one integer argument and a nonstandard delimiter >
 #[test]
 fn exec_nonstandard_delimiter() {

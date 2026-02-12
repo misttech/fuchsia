@@ -121,7 +121,7 @@ impl Argument {
 impl WriteTo for Argument {
     fn write_to<W: io::Write>(&self, sink: &mut W) -> io::Result<()> {
         match self {
-            Argument::PrimitiveArgument(argument) => sink.write_all(argument.as_bytes())?,
+            Argument::PrimitiveArgument(argument) => write_string(sink, argument)?,
             Argument::KeyValueArgument { key, value } => {
                 sink.write_all(key.as_bytes())?;
                 sink.write_all(b"=")?;
@@ -130,4 +130,10 @@ impl WriteTo for Argument {
         }
         Ok(())
     }
+}
+
+/// Wraites a string, converting it bytes first. Quoting and escaping strings
+/// is the responsibility of clients.
+fn write_string<W: io::Write>(sink: &mut W, string: &String) -> io::Result<()> {
+    sink.write_all(string.as_bytes())
 }

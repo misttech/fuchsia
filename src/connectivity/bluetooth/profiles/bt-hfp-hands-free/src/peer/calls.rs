@@ -328,7 +328,7 @@ impl Call {
         // we probably won't get it and so set it to the empty string so as to
         // be able to respond to WatchNextCall.
         if self.number.is_none() {
-            self.number = Some(Number::from(""));
+            self.number = Some(Number::from_non_at_string(""));
         }
     }
 
@@ -427,7 +427,7 @@ impl Call {
                 let (client_end, server_end) = fidl::endpoints::create_endpoints::<CallMarker>();
                 self.request_stream.set(server_end.into_stream());
 
-                let number = String::from(self.number.clone().expect("Number should be set."));
+                let number = self.number.as_ref().expect("Number should be set.").to_non_at_string();
                 let state = self.state.expect("State should be set.");
                 let direction =
                     CallDirection::from(self.direction.expect("Direction should be set"));

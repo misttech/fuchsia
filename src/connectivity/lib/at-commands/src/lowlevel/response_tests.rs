@@ -161,6 +161,25 @@ fn one_kv_arg() {
     )
 }
 
+// Extension response with one quoted string argument
+#[test]
+fn one_quoted_string_arg() {
+    test_write(
+        Response::Success {
+            name: String::from("TEST"),
+            is_extension: true,
+            arguments: DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: Arguments::ArgumentList(vec![Argument::PrimitiveArgument(
+                    String::from("\"ab c\""),
+                )]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+TEST: \"ab c\""),
+    )
+}
+
 // Extension response with multiple arguments
 #[test]
 fn args() {

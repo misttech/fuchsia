@@ -111,6 +111,25 @@ fn exec_one_string_arg() {
     )
 }
 
+// Extension execute command with one string argument
+#[test]
+fn exec_one_quoted_string_arg() {
+    test_write(
+        Command::Execute {
+            name: String::from("TEST"),
+            is_extension: true,
+            arguments: DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: Arguments::ArgumentList(vec![Argument::PrimitiveArgument(
+                    String::from("\"ab c\""),
+                )]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TEST=\"ab c\""),
+    )
+}
+
 // Extension execute command with one key-value argument
 #[test]
 fn exec_one_kv_arg() {

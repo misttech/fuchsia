@@ -199,6 +199,24 @@ fn one_string_arg_no_comma() {
         },
     )
 }
+// Extension response with one string argument
+#[test]
+fn one_quoted_arg_no_comma() {
+    test_parse(
+        "+TEST: \"ab c\"",
+        Response::Success {
+            name: String::from("TEST"),
+            is_extension: true,
+            arguments: DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: Arguments::ArgumentList(vec![Argument::PrimitiveArgument(
+                    String::from("\"ab c\""),
+                )]),
+                terminator: None,
+            },
+        },
+    )
+}
 
 // Extension response with one key-value argument
 #[test]
