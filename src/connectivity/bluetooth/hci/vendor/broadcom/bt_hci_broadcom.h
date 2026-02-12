@@ -104,6 +104,9 @@ class BtHciBroadcom final
       fuchsia_hardware_bluetooth::wire::VendorSetAclPriorityParams params, void* out_buffer);
 
   void OnReceivePacket(std::vector<uint8_t>& packet);
+  template <typename CmdView>
+  fpromise::promise<std::vector<uint8_t>, zx_status_t> SendCommand(CmdView view);
+
   fpromise::promise<std::vector<uint8_t>, zx_status_t> SendCommand(const void* command,
                                                                    size_t length);
 
@@ -120,8 +123,8 @@ class BtHciBroadcom final
   // The controller may sleep after host_idle_threshold duration passes with no
   // outgoing data and device_idle_threshold with no incoming data.
   // Wake pins can prevent this.
-  fpromise::promise<void, zx_status_t> EnableLowPowerMode(zx::duration host_idle_threshhold,
-                                                          zx::duration device_idle_threshhold);
+  fpromise::promise<void, zx_status_t> EnableLowPowerMode(zx::duration host_idle_threshold,
+                                                          zx::duration device_idle_threshold);
 
   fpromise::promise<void, zx_status_t> DisableLowPowerMode();
 

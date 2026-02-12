@@ -34,10 +34,60 @@
 #include "lib/fit/function.h"
 #include "lib/fpromise/promise.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
+#include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.emb.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "tools/power_config/lib/cpp/power_config.h"
 
 namespace bt_hci_broadcom {
+namespace {
+
+template <typename Container>
+WriteSleepModeCmdView DisableLowPowerModeCmd(Container* container) {
+  auto view = MakeWriteSleepModeCmdView(container);
+  ZX_ASSERT(view.IsComplete());
+  view.header().opcode().Write(BroadcomOpCode::WRITE_SLEEP_MODE);
+  view.header().parameter_total_size().Write(WriteSleepModeCmd::parameter_size());
+  view.mode().Write(SleepMode::DISABLED);
+  view.idle_threshold_host().Write(0);
+  view.idle_threshold_device().Write(0);
+  view.bt_wake_polarity().Write(0);
+  view.host_wake_polarity().Write(0);
+  view.sleep_during_sco().Write(0);
+  view.combine_sleep_and_lpm().Write(0);
+  view.tri_state_uart_before_sleep().Write(0);
+  for (auto usb_flag : view.usb_flags()) {
+    usb_flag.Write(0);
+  }
+  view.pulsed_host_wake().Write(0);
+  ZX_ASSERT(view.Ok());
+  return view;
+}
+
+template <typename Container>
+WriteSleepModeCmdView EnableLowPowerModeCmd(Container* container, zx::duration host_idle_threshold,
+                                            zx::duration device_idle_threshold) {
+  uint8_t host_idle_units = static_cast<uint8_t>(host_idle_threshold.to_nsecs() / 12500000);
+  uint8_t device_idle_units = static_cast<uint8_t>(device_idle_threshold.to_nsecs() / 12500000);
+  auto view = MakeWriteSleepModeCmdView(container);
+  ZX_ASSERT(view.IsComplete());
+  view.header().opcode().Write(BroadcomOpCode::WRITE_SLEEP_MODE);
+  view.header().parameter_total_size().Write(WriteSleepModeCmd::parameter_size());
+  view.mode().Write(SleepMode::UART);
+  view.idle_threshold_host().Write(host_idle_units);
+  view.idle_threshold_device().Write(device_idle_units);
+  view.bt_wake_polarity().Write(1);
+  view.host_wake_polarity().Write(1);
+  view.sleep_during_sco().Write(1);
+  view.combine_sleep_and_lpm().Write(1);
+  view.tri_state_uart_before_sleep().Write(0);
+  for (auto usb_flag : view.usb_flags()) {
+    usb_flag.Write(0);
+  }
+  view.pulsed_host_wake().Write(0);
+  ZX_ASSERT(view.Ok());
+  return view;
+}
+
 namespace fhbt = fuchsia_hardware_bluetooth;
 namespace fhsi = fuchsia_hardware_serialimpl::wire;
 
@@ -49,6 +99,8 @@ constexpr zx::duration kFirmwareDownloadDelay = zx::msec(50);
 // Hardcoded. Better to parameterize on chipset. Broadcom chips need a few hundred msec delay after
 // firmware load.
 constexpr zx::duration kBaudRateSwitchDelay = zx::msec(200);
+
+}  // namespace
 
 const std::unordered_map<uint16_t, std::string> BtHciBroadcom::kFirmwareMap = {
     {PDEV_PID_BCM43458, "BCM4345C5.hcd"},
@@ -385,6 +437,13 @@ void BtHciBroadcom::OnReceivePacket(std::vector<uint8_t>& packet) {
   }
 }
 
+template <typename CmdView>
+fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::SendCommand(CmdView view) {
+  ZX_ASSERT(view.Ok());
+  auto storage = view.BackingStorage();
+  return SendCommand(storage.data(), view.IntrinsicSizeInBytes().Read());
+}
+
 fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::SendCommand(const void* command,
                                                                                 size_t length) {
   // send HCI command
@@ -450,27 +509,9 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::EnableLowPowerMode(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
   // These are in 12.5ms increments.
-  uint8_t host_idle_units = static_cast<uint8_t>(host_idle_threshold.to_nsecs() / 12500000);
-  uint8_t device_idle_units = static_cast<uint8_t>(device_idle_threshold.to_nsecs() / 12500000);
-  BcmWriteSleepModeCmd command = {
-      .header =
-          {
-              .opcode = kBcmWriteSleepModeCmdOpCode,
-              .parameter_total_size = sizeof(BcmWriteSleepModeCmd) - sizeof(HciCommandHeader),
-          },
-      .mode = BcmSleepMode::kUart,
-      .idle_threshold_host = host_idle_units,
-      .idle_threshold_device = device_idle_units,
-      .bt_wake_polarity = 1,
-      .host_wake_polarity = 1,
-      .sleep_during_sco = 1,
-      .combine_sleep_and_lpm = 1,
-      .tri_state_uart_before_sleep = 0,
-      .usb_flags = {0, 0, 0},  // unused
-      .pulsed_host_wake = 0,
-  };
 
-  return SendCommand(&command, sizeof(command))
+  std::array<std::byte, WriteSleepModeCmd::MaxSizeInBytes()> storage;
+  return SendCommand(EnableLowPowerModeCmd(&storage, host_idle_threshold, device_idle_threshold))
       .and_then([](const std::vector<uint8_t>& cmd_complete) {
         if (sizeof(HciCommandComplete) <= cmd_complete.size()) {
           HciCommandComplete event;
@@ -493,7 +534,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
     return fpromise::make_promise(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
-  return SendCommand(&kDisableLowPowerModeCmd, sizeof(kDisableLowPowerModeCmd))
+  std::array<std::byte, WriteSleepModeCmd::MaxSizeInBytes()> storage;
+  return SendCommand(DisableLowPowerModeCmd(&storage))
       .and_then([](const std::vector<uint8_t>& cmd_complete) {
         if (sizeof(HciCommandComplete) <= cmd_complete.size()) {
           HciCommandComplete event;

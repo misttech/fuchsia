@@ -29,6 +29,7 @@
 #include "lib/fidl/cpp/unified_messaging_declarations.h"
 #include "lib/fidl/cpp/wire/unknown_interaction_handler.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
+#include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.emb.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
@@ -613,13 +614,17 @@ TEST_F(BtHciBroadcomTest, EnablesLowPowerMode) {
   ASSERT_TRUE(StartDriver().is_ok());
 
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    auto packet = env.transport_device_.LastPacketByOpCode(kBcmWriteSleepModeCmdOpCode);
+    auto packet = env.transport_device_.LastPacketByOpCode(
+        static_cast<uint16_t>(BroadcomOpCode::WRITE_SLEEP_MODE));
     ASSERT_TRUE(packet.has_value());
     // We should have calculated the sleep ticks correctly - this is 300ms / 12.5ms
-    BcmWriteSleepModeCmd sleep_cmd;
-    std::memcpy(&sleep_cmd, packet->data(), sizeof(BcmWriteSleepModeCmd));
-    ASSERT_EQ(sleep_cmd.idle_threshold_device, 24);
-    ASSERT_EQ(sleep_cmd.idle_threshold_host, 24);
+    auto sleep_cmd = MakeWriteSleepModeCmdView(packet->data(), packet->size());
+    ASSERT_TRUE(sleep_cmd.Ok());
+    ASSERT_EQ(sleep_cmd.IntrinsicSizeInBytes().Read(), 15);
+    ASSERT_EQ(sleep_cmd.parameter_size().Read(), 12);
+    ASSERT_EQ(sleep_cmd.mode().Read(), SleepMode::UART);
+    ASSERT_EQ(sleep_cmd.idle_threshold_device().Read(), 24);
+    ASSERT_EQ(sleep_cmd.idle_threshold_host().Read(), 24);
   });
 }
 

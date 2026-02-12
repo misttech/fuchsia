@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import "pw_bluetooth/hci_common.emb" as hci
+
+[$default byte_order: "LittleEndian"]
+[(cpp) namespace: "bt_hci_broadcom"]
+
+
+enum BroadcomOpCode:
+  [maximum_bits: 16]
+  WRITE_SLEEP_MODE = 0xFC27
+
+
+struct CommandHeader:
+  -- HCI Command packet header.
+  0     [+2]  BroadcomOpCode  opcode
+  $next [+1]  UInt            parameter_total_size
+
+
+enum SleepMode:
+  [maximum_bits: 8]
+  DISABLED = 0x00
+  UART     = 0x01
+  RESERVED = 0x02
+  USB      = 0x03
+
+
+struct WriteSleepModeCmd:
+  let hdr_size = CommandHeader.$size_in_bytes
+  let parameter_size = $size_in_bytes-hdr_size
+  0     [+hdr_size]  CommandHeader  header
+  $next [+1]         SleepMode      mode
+  $next [+1]         UInt           idle_threshold_host
+  $next [+1]         UInt           idle_threshold_device
+  $next [+1]         UInt           bt_wake_polarity
+  $next [+1]         UInt           host_wake_polarity
+  $next [+1]         UInt           sleep_during_sco
+  $next [+1]         UInt           combine_sleep_and_lpm
+  $next [+1]         UInt           tri_state_uart_before_sleep
+  $next [+3]         UInt:8[3]      usb_flags
+  $next [+1]         UInt           pulsed_host_wake

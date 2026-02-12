@@ -9,7 +9,9 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
+import("//build_overrides/pigweed.gni")
 import("//tools/power_config/build/config.gni")
+import("$dir_pigweed/third_party/emboss/build_defs.gni")
 
 driver_bind_rules("bcm_hci_bind") {
   rules = "meta/bcm_hci.bind"
@@ -43,6 +45,7 @@ source_set("common") {
 
   deps = [
     ":bcm_hci_bind",
+    ":emboss",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -136,6 +139,7 @@ cc_test_executable("tests_executable") {
 
   deps = [
     ":common",
+    ":emboss",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/component/outgoing/cpp",
@@ -172,4 +176,12 @@ group("tests") {
     ":bcm_hci_bind_test",
     ":bt-hci-broadcom-tests",
   ]
+}
+
+emboss_cc_library("emboss") {
+  # public_configs = [ ":emboss_include_path" ]
+  source = "packets.emb"
+  imports = [ "$dir_pw_bluetooth/public/pw_bluetooth/hci_common.emb" ]
+  import_dirs = [ "$dir_pw_bluetooth/public" ]
+  public_deps = [ "$dir_pw_bluetooth:emboss_hci_common" ]
 }
