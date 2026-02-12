@@ -52,8 +52,24 @@ inline cpu_num_t arch_spin_lock_holder_cpu(const arch_spin_lock_t* lock) {
   return lock->value.load(ktl::memory_order_relaxed) - 1;
 }
 
+// Returns true if the current CPU holds the lock. In practice, this value is
+// only useful if migration to another CPU is prevented, by disabling preemption
+// or interrupts, while the value is being used.
+//
+// Note that this predicate does not synchronize other memory operations (i.e.
+// it has relaxed atomic semantics).
 inline bool arch_spin_lock_held(const arch_spin_lock_t* lock) {
   return arch_spin_lock_holder_cpu(lock) == arch_curr_cpu_num();
+}
+
+// Returns true if unlocked (i.e. not held by any CPU). Primarity useful for
+// asserting that locks are not being accessed incorrectly in destructors and
+// cleanup paths.
+//
+// Note that this predicate does not synchronize other memory operations (i.e.
+// it has relaxed atomic semantics).
+inline bool arch_spin_lock_unlocked(const arch_spin_lock_t* lock) {
+  return lock->value.load(ktl::memory_order_relaxed) == 0;
 }
 
 #endif  // ZIRCON_KERNEL_ARCH_INCLUDE_ARCH_SPINLOCK_H_

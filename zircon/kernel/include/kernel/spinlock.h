@@ -115,6 +115,14 @@ class TA_CAP("mutex") SpinLockBase
     return arch_spin_lock_held(&spinlock_);
   }
 
+  // Returns true if unlocked (i.e. not held by any CPU). Primarity useful for
+  // asserting that locks are not being accessed incorrectly in destructors and
+  // cleanup paths.
+  //
+  // Note that this predicate does not synchronize other memory operations (i.e.
+  // it has relaxed atomic semantics).
+  bool IsUnlocked() const { return arch_spin_lock_unlocked(&spinlock_); }
+
   // Just like |Acquire|, but saves interrupt state and disables interrupts.
   void AcquireIrqSave(interrupt_saved_state_t& state) TA_ACQ() {
     state = arch_interrupt_save();
