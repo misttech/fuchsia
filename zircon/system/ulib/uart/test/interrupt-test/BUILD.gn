@@ -54,7 +54,7 @@ if (is_host) {
   }
 
   go_test("uart-interrupt-host-test") {
-    library = ":lib"
+    embed = [ ":lib" ]
     non_go_deps = [ ":uart-interrupt-test-zbi($default_toolchain)" ]
   }
 }

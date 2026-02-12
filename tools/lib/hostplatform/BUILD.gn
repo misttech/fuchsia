@@ -13,6 +13,6 @@ go_library("hostplatform") {
 }
 
 go_test("tests") {
-  library = ":hostplatform"
+  embed = [ ":hostplatform" ]
   output_name = "hostplatform_tests"
 }

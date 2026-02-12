@@ -26,7 +26,7 @@ if (is_linux) {
   }
 
   go_test("kernel_lockup_detector_tests") {
-    library = ":lib"
+    embed = [ ":lib" ]
     non_go_deps = [ "//build/images/fuchsia:fuchsia_zbi_for_host_tests" ]
   }
 }

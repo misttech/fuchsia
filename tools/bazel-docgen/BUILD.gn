@@ -38,7 +38,7 @@ if (is_host) {
   }
 
   go_test("bazel_docgen_lib_tests") {
-    library = ":bazel_docgen_lib"
+    embed = [ ":bazel_docgen_lib" ]
   }
 
   go_library("main") {
@@ -54,7 +54,7 @@ if (is_host) {
 
   go_binary("bin") {
     output_name = "bazel-docgen"
-    library = ":main"
+    embed = [ ":main" ]
   }
 
   compiled_action("generate_goldens") {

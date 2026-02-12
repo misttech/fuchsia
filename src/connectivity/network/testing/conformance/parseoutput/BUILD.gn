@@ -13,7 +13,7 @@ go_library("parseoutput") {
 }
 
 go_test("parseoutput_test") {
-  library = ":parseoutput"
+  embed = [ ":parseoutput" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

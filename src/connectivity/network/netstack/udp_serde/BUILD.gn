@@ -90,7 +90,7 @@ go_library("golib") {
 }
 
 go_test("udp_serde_test") {
-  library = ":golib"
+  embed = [ ":golib" ]
 }
 
 fuchsia_unittest_package("udp_serde-gotests") {

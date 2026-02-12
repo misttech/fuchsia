@@ -22,5 +22,5 @@ go_library("generator") {
 }
 
 go_test("breakpad_tests") {
-  library = ":breakpad"
+  embed = [ ":breakpad" ]
 }

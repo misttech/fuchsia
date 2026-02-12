@@ -31,7 +31,7 @@ if (is_linux) {
     }
 
     go_test("recovery_simulator_${split_name}") {
-      library = ":$split_name"
+      embed = [ ":$split_name" ]
       non_go_deps = [ "//build/images/recovery:test_data($host_toolchain)" ]
     }
   }

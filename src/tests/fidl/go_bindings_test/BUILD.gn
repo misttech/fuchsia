@@ -24,7 +24,7 @@ go_library("gopkg") {
 }
 
 go_test("fidl-go-bindings-test") {
-  library = ":gopkg"
+  embed = [ ":gopkg" ]
 }
 
 fidl("fidl.go.types") {

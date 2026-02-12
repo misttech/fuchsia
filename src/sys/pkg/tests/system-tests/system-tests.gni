@@ -396,7 +396,7 @@ template("system_test_upgrade_suite") {
     }
 
     go_test(_host_test_target_name) {
-      library = "//src/sys/pkg/tests/system-tests/upgrade_test:gopkg"
+      embed = [ "//src/sys/pkg/tests/system-tests/upgrade_test:gopkg" ]
       args = _args
       forward_variables_from(invoker, [ "timeout" ])
 
@@ -561,7 +561,7 @@ template("system_test_reboot_suite") {
     }
 
     go_test(_host_test_target_name) {
-      library = "//src/sys/pkg/tests/system-tests/reboot_test:gopkg"
+      embed = [ "//src/sys/pkg/tests/system-tests/reboot_test:gopkg" ]
       args = _args
       forward_variables_from(invoker, [ "timeout" ])
 
@@ -712,7 +712,7 @@ template("system_test_recovery_suite") {
     }
 
     go_test(_host_test_target_name) {
-      library = "//src/sys/pkg/tests/system-tests/recovery_test:gopkg"
+      embed = [ "//src/sys/pkg/tests/system-tests/recovery_test:gopkg" ]
       args = _args
       forward_variables_from(invoker, [ "timeout" ])
 

@@ -29,11 +29,11 @@ if (is_host) {
   }
 
   go_binary("fx-set") {
-    library = ":main"
+    embed = [ ":main" ]
   }
 
   go_test("fx_set_tests") {
-    library = ":main"
+    embed = [ ":main" ]
     output_name = "fx_set_tests"
   }
 }

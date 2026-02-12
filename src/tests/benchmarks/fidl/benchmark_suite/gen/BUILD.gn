@@ -22,7 +22,7 @@ go_library("main") {
 }
 
 go_binary("regen_fidl_benchmark_suite") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 install_host_tools("host") {

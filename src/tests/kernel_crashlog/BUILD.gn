@@ -25,7 +25,7 @@ if (is_linux) {
   }
 
   go_test("kernel_crashlog_tests") {
-    library = ":lib"
+    embed = [ ":lib" ]
     deps = [
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

@@ -9,7 +9,7 @@ import("//build/go/toolchain.gni")
 
 go_binary("bin") {
   testonly = true
-  library = ":lib"
+  embed = [ ":lib" ]
   output_name = "client_suite_under_test_go"
 }
 

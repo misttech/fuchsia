@@ -17,5 +17,5 @@ go_library("gcsutil") {
 }
 
 go_test("gcsutil_tests") {
-  library = ":gcsutil"
+  embed = [ ":gcsutil" ]
 }

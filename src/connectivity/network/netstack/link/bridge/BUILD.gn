@@ -26,7 +26,7 @@ go_library("bridge") {
 }
 
 go_test("bridge_test") {
-  library = ":bridge"
+  embed = [ ":bridge" ]
 }
 
 fuchsia_unittest_package("netstack-bridge-gotests") {

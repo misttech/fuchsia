@@ -20,7 +20,7 @@ go_library("syslog") {
 }
 
 go_test("syslog_tests") {
-  library = ":syslog"
+  embed = [ ":syslog" ]
 }
 
 go_library("constants") {

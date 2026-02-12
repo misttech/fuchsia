@@ -16,11 +16,11 @@ if (is_host) {
   }
 
   go_binary("gidl-format") {
-    library = ":gopkg"
+    embed = [ ":gopkg" ]
   }
 
   go_test("gidl_format_tests") {
-    library = ":gopkg"
+    embed = [ ":gopkg" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 }  # is_host

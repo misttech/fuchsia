@@ -37,11 +37,11 @@ if (is_host) {
   }
 
   go_binary("fidlgen_go") {
-    library = ":main"
+    embed = [ ":main" ]
   }
 
   fidlgentest_go_test("fidlgen_go_lib_tests") {
-    library = ":codegen"
+    embed = [ ":codegen" ]
   }
 
   golden_files("fidlgen_go_golden_tests") {
@@ -129,7 +129,7 @@ template("fidlgen_go_golden_compilation_test") {
   }
 
   go_binary(compilation_check_target) {
-    library = ":$main_library_target"
+    embed = [ ":$main_library_target" ]
     visibility = [ ":*" ]
     testonly = true
   }

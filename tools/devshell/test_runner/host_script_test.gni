@@ -120,7 +120,7 @@ template("host_script_test") {
   } else {
     # Wrapper for running test. This runs the test_script in the test_root directory.
     go_test(target_name) {
-      library = "//tools/devshell/test_runner:host_runner_test_lib"
+      embed = [ "//tools/devshell/test_runner:host_runner_test_lib" ]
       args = [ "-testscript=${test_script}" ]
       if (defined(test_root)) {
         args += [ "--testroot=${test_root}" ]

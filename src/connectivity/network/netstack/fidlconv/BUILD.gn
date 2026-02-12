@@ -27,7 +27,7 @@ go_library("fidlconv") {
 }
 
 go_test("fidlconv_test") {
-  library = ":fidlconv"
+  embed = [ ":fidlconv" ]
 }
 
 fuchsia_unittest_package("netstack-fidlconv-gotests") {

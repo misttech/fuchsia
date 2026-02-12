@@ -13,6 +13,6 @@ go_library("ignores") {
 }
 
 go_test("pm_ignores_test") {
-  library = ":ignores"
+  embed = [ ":ignores" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

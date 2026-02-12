@@ -16,7 +16,7 @@ go_library("echo_go_test_lib") {
 }
 
 go_test("echo_go_client") {
-  library = ":echo_go_test_lib"
+  embed = [ ":echo_go_test_lib" ]
 }
 
 fuchsia_component("echo_go_client_component") {

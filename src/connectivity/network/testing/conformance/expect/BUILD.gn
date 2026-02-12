@@ -13,7 +13,7 @@ go_library("expect") {
 }
 
 go_test("expect_test") {
-  library = ":expect"
+  embed = [ ":expect" ]
 }
 
 group("tests") {

@@ -64,7 +64,7 @@ if (is_linux) {
 
   # TODO(scottmg): Colocate this test with netsvc when it moves out of //zircon.
   go_test("limited_netsvc_tests") {
-    library = ":lib"
+    embed = [ ":lib" ]
     deps = [
       "//tools/net/netutil",
       "//tools/net/tftp",

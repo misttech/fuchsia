@@ -21,6 +21,6 @@ go_library("parser") {
 }
 
 go_test("gidl_parser_tests") {
-  library = ":parser"
+  embed = [ ":parser" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }

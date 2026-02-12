@@ -9,9 +9,9 @@ import("//build/testing/host_test.gni")
 
 # Parameters: same as go_build, along with
 #
-#   library (optional)
-#     The go_library this test target is for.
-#     Type: label
+#   embed (optional)
+#     The go_library this test target is for. Should contain exactly one element.
+#     Type: list of labels
 #
 #   use_prebuilt_go (optional)
 #     If true, use a prebuilt go toolchain, rather than building the toolchain.
@@ -43,17 +43,10 @@ import("//build/testing/host_test.gni")
 #     See https://golang.org/pkg/time/#ParseDuration for duration format.
 #     Type: string.
 #
-#   embed (optional)
-#     Only used by Bazel-converted go_tests.
-#     Alternative to library, should contain exactly one element.
-#     Type: list of labels
-#
 #   embedsrcs (optional)
 #     For sources used by go:embed.
 #
 #   sources: Usual GN meaning.
-#
-#   Deprecated: gopackages
 #
 template("go_test") {
   _output_name = target_name
@@ -121,24 +114,11 @@ template("go_test") {
     if (defined(invoker.sources)) {
       go_sources = invoker.sources
     }
-    assert(
-        !(defined(invoker.library) && defined(invoker.embed)),
-        "embed and library cannot be defined at the same time, use library if you are uncertain, embed is for Bazel-converted go_tests")
-    if (defined(invoker.library)) {
-      library = invoker.library
-    }
-    if (defined(invoker.embed)) {
-      embed = invoker.embed
-      assert(embed == [ embed[0] ], "embed must be have exactly one element")
-      library = embed[0]
-    }
     forward_variables_from(invoker,
                            "*",
                            [
                              "args",
-                             "embed",
                              "environments",
-                             "library",
                              "package_deps",
                              "sources",
                              "timeout",

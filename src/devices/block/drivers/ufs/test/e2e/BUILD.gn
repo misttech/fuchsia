@@ -28,7 +28,7 @@ if (is_linux) {
   }
 
   go_test("qemu_ufs_test") {
-    library = ":lib"
+    embed = [ ":lib" ]
     deps = [
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

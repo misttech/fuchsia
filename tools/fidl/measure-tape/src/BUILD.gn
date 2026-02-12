@@ -17,7 +17,7 @@ go_library("main") {
 }
 
 go_binary("measure-tape") {
-  library = ":main"
+  embed = [ ":main" ]
 }
 
 install_host_tools("host") {

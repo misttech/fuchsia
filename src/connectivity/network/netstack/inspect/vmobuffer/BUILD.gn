@@ -15,7 +15,7 @@ go_library("vmobuffer") {
 }
 
 go_test("vmobuffer_test") {
-  library = ":vmobuffer"
+  embed = [ ":vmobuffer" ]
   deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 }
 

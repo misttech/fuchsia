@@ -14,7 +14,7 @@ go_library("go-benchmarking") {
 }
 
 go_test("go_benchmarking_test") {
-  library = ":go-benchmarking"
+  embed = [ ":go-benchmarking" ]
 }
 
 fuchsia_unittest_package("go_benchmarking_tests") {

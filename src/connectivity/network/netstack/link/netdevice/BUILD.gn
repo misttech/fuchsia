@@ -36,7 +36,7 @@ go_library("netdevice") {
 }
 
 go_test("link_netdevice_test") {
-  library = ":netdevice"
+  embed = [ ":netdevice" ]
   include_dirs = netdevice_include_dirs
 }
 

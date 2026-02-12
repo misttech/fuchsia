@@ -38,7 +38,7 @@ if (is_host) {
   }
 
   go_test("host-target-testing-packages-test") {
-    library = ":packages"
+    embed = [ ":packages" ]
     data_deps = [
       "//src/developer/ffx:test_data",
       "//src/developer/ffx/lib/pkg:empty-repo-keys",

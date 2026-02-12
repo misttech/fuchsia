@@ -41,7 +41,7 @@ if (is_host) {
   }
 
   go_test("fstar_integration_test") {
-    library = ":fstar_integration_lib"
+    embed = [ ":fstar_integration_lib" ]
     output_name = "fstar_integration_test"
     non_go_deps = [ ":copy_host_tools" ]
     environments = []
