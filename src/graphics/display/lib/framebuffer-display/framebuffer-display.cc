@@ -292,14 +292,14 @@ display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
     cpp20::span<const display::DriverLayer> layers) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
 
-  // TODO(https://fxbug.dev/412450577): Remove the single-layer assumption.
-  ZX_DEBUG_ASSERT(layers.size() == 1);
+  if (layers.size() > kEngineInfo.max_layer_count()) {
+    return display::ConfigCheckResult::kUnsupportedConfig;
+  }
 
   if (display_mode_id != kDisplayModeId) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
 
-  const display::DriverLayer& layer = layers[0];
   const display::Rectangle display_area({
       .x = 0,
       .y = 0,
@@ -307,20 +307,22 @@ display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
       .height = properties_.height_px,
   });
 
-  if (layer.display_destination() != display_area) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.image_source() != layer.display_destination()) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.image_metadata().dimensions() != layer.image_source().dimensions()) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.alpha_mode() != display::AlphaMode::kDisable) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
+  for (const display::DriverLayer& layer : layers) {
+    if (layer.display_destination() != display_area) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.image_source() != layer.display_destination()) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.image_metadata().dimensions() != layer.image_source().dimensions()) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.alpha_mode() != display::AlphaMode::kDisable) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
   }
   return display::ConfigCheckResult::kOk;
 }
@@ -332,7 +334,8 @@ void FramebufferDisplay::ApplyConfiguration(display::DisplayId display_id,
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
   ZX_DEBUG_ASSERT(display_mode_id == kDisplayModeId);
 
-  ZX_DEBUG_ASSERT(layers.size() == 1);
+  ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
+                      layers.size());
   has_image_ = true;
   {
     std::lock_guard lock(mtx_);
