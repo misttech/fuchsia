@@ -474,7 +474,7 @@ struct ArmIdAa64Pfr1El1 : public SysRegBase<ArmIdAa64Pfr1El1> {
   DEF_ENUM_FIELD(Rndr_trap, 31, 28, rndr_trap);
   DEF_ENUM_FIELD(Sme, 27, 24, sme);
   DEF_RSVDZ_FIELD(23, 20);
-  DEF_FIELD(35, 32, mpam_frac);
+  DEF_FIELD(19, 16, mpam_frac);
   DEF_FIELD(15, 12, ras_frac);
   DEF_ENUM_FIELD(Mte, 11, 8, mte);
   DEF_ENUM_FIELD(Ssbs, 7, 4, ssbs);
