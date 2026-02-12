@@ -586,6 +586,33 @@ pub fn fs_node_init_on_create(
     })
 }
 
+/// Called by specialist file-system implementations before creating a new `FsNode`, to obtain the
+/// SID with which the code will be labeled, in advance.
+///
+/// The computed SID will be applied to the `fscreate_sid` field of the supplied `new_creds`, which
+/// may then be used with `CurrentTask::override_creds()` to later create the new node.
+///
+/// Corresponds to the `dentry_create_files_as()` LSM hook.
+pub fn dentry_create_files_as(
+    current_task: &CurrentTask,
+    parent: &FsNode,
+    new_node_mode: FileMode,
+    new_node_name: &FsStr,
+    new_creds: &mut FullCredentials,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.dentry_create_files_as");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::fs_node::dentry_create_files_as(
+            security_server,
+            current_task,
+            parent,
+            new_node_mode,
+            new_node_name,
+            new_creds,
+        )
+    })
+}
+
 /// Called on creation of anonymous [`crate::vfs::FsNode`]s. APIs that create file-descriptors that
 /// are not linked into any filesystem directory structure create anonymous nodes, labeled by this
 /// hook rather than `fs_node_init_on_create()` above.
@@ -868,23 +895,21 @@ pub fn check_file_ioctl_access(
     })
 }
 
-/// Sets the security context of `CurrentTask` to be appropriate for a copy up operation
-/// on `fs_node`, then call `do_copy_up`.
-/// The task's security context will be reset before returning.
+/// Updates the supplied `new_creds` with the necessary FS and LSM credentials to correctly label
+/// a new `FsNode` on copy-up, to match the existing `fs_node`.
 ///
 /// Corresponds to the `security_inode_copy_up()` LSM hook.
-pub fn fs_node_copy_up<R>(
+pub fn fs_node_copy_up(
     current_task: &CurrentTask,
     fs_node: &FsNode,
-    do_copy_up: impl FnOnce() -> R,
-) -> R {
-    if_selinux_else_with_context(
-        do_copy_up,
+    new_creds: &mut FullCredentials,
+) {
+    if_selinux_else(
         current_task,
-        |do_copy_up, _security_server| {
-            selinux_hooks::fs_node::fs_node_copy_up(current_task, fs_node, do_copy_up)
+        |_security_server| {
+            selinux_hooks::fs_node::fs_node_copy_up(current_task, fs_node, new_creds)
         },
-        |do_copy_up| do_copy_up(),
+        || {},
     )
 }
 
@@ -2145,6 +2170,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security;
     use crate::security::selinux_hooks::get_cached_sid;
     use crate::security::selinux_hooks::testing::{
         self, spawn_kernel_with_selinux_hooks_test_policy_and_run,
@@ -3071,20 +3097,23 @@ mod tests {
                 )
                 .expect("set_xattr(security.selinux) failed");
 
-                let dir_entry = fs_node_copy_up(current_task, source_node, || {
-                    current_task
-                        .fs()
-                        .root()
-                        .create_node(
-                            locked,
-                            &current_task,
-                            "test_file2".into(),
-                            FileMode::IFREG,
-                            DeviceType::NONE,
-                        )
-                        .unwrap()
-                })
-                .entry;
+                let mut creds = current_task.full_current_creds();
+                security::fs_node_copy_up(current_task, source_node, &mut creds);
+                let dir_entry = current_task
+                    .override_creds(creds, || {
+                        current_task
+                            .fs()
+                            .root()
+                            .create_node(
+                                locked,
+                                &current_task,
+                                "test_file2".into(),
+                                FileMode::IFREG,
+                                DeviceType::NONE,
+                            )
+                            .unwrap()
+                    })
+                    .entry;
 
                 assert_eq!(get_cached_sid(&dir_entry.node), Some(sid));
             },

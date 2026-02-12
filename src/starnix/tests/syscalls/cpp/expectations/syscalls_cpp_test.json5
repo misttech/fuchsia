@@ -100,14 +100,6 @@
                 "ProcSelfMemProts.CanWriteToPrivateAnonymousMappings/Read",
                 "ProcSelfMemProts.CanWriteToPrivateAnonymousMappings/ReadExecute",
 
-                // TODO(https://fxbug.dev/355404941)
-                "OverlayFs/FsMountTest.CantBypassDirectoryPermissions/0",
-                "OverlayFs/FsMountTest.ChmodWithDifferentModes/0",
-                "OverlayFs/FsMountTest.CreateWithDifferentModes/0",
-
-                // TODO(https://fxbug.dev/368658840)
-                "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
-
                 // TODO(https://fxbug.dev/335701084)
                 "VmspliceTest.FileInPipe",
 

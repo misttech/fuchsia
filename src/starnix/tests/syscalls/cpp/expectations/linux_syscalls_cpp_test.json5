@@ -114,6 +114,7 @@
 
                 // TODO(https://fxbug.dev/436982276): OverlayFS is failing to mount in Machina.
                 "OverlayFsTest.*",
+                "OverlayFsAccessTest.*",
                 "OverlayFs/FsMountTest.ChownMinusOneOnSIDFileFails/0",
                 "OverlayFs/FsMountTest.ChownSameOwnerAndGroupFails/0",
                 "OverlayFs/FsMountTest.OpenWithTruncAndCreatOnReadOnlyFsReturnsEROFS/0",

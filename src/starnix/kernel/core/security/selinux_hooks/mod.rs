@@ -19,7 +19,7 @@ pub(super) mod task;
 pub(super) mod testing;
 
 use super::{PermissionFlags, TaskState};
-use crate::task::{CurrentCreds, CurrentTask, FullCredentials};
+use crate::task::{CurrentCreds, CurrentTask};
 use crate::vfs::{
     Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
 };
@@ -649,16 +649,6 @@ pub(in crate::security) fn task_consistent_attrs(
 ) -> MutexGuard<'_, TaskAttrs> {
     assert!(!current_task.has_overridden_creds());
     current_task.security_state.lock()
-}
-
-/// Creates a copy of the credentials with the given `fscreate_sid`.
-pub fn creds_with_fscreate_sid(
-    current_task: &CurrentTask,
-    fscreate_sid: SecurityId,
-) -> FullCredentials {
-    let creds = current_task.full_current_creds();
-    creds.security_state.lock().fscreate_sid = Some(fscreate_sid);
-    creds
 }
 
 /// Security state for a [`crate::vfs::FileObject`] instance. This currently just holds the SID

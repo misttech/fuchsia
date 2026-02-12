@@ -14,7 +14,6 @@
 
 #include <gtest/gtest.h>
 
-#include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
@@ -639,6 +638,117 @@ TEST_F(OverlayFsTest, RenameDir) {
   // Lower FS should not change.
   EXPECT_EQ(ReadDir(lower_), (std::vector{DirEntry::Dir("d1")}));
   EXPECT_EQ(ReadFileContent(lower_ + "/d1/a"), "a");
+}
+
+class OverlayFsAccessTest : public OverlayFsTest {
+ protected:
+  void SetUp() override {
+    OverlayFsTest::SetUp();
+    if (IsSkipped()) {
+      return;
+    }
+
+    // Allow users other than the mounter to traverse to the overlay directory, and write to it.
+    ASSERT_THAT(chmod(temp_dir_.path().c_str(), 0711), SyscallSucceeds());
+    ASSERT_THAT(chmod(overlay_.c_str(), 0777), SyscallSucceeds());
+  }
+
+  void MountWithReadableAndWritableFiles() {
+    ASSERT_TRUE(files::WriteFile(lower_ + "/readable", "readable"));
+    ASSERT_THAT(chmod((lower_ + "/readable").c_str(), 0644), SyscallSucceeds());
+    ASSERT_TRUE(files::WriteFile(lower_ + "/lower_readable", "lower_readable"));
+    ASSERT_THAT(chmod((lower_ + "/lower_readable").c_str(), 0644), SyscallSucceeds());
+    ASSERT_TRUE(files::WriteFile(lower_ + "/upper_readable", "upper_readable"));
+    ASSERT_THAT(chmod((lower_ + "/upper_readable").c_str(), 0600), SyscallSucceeds());
+
+    ASSERT_TRUE(files::WriteFile(lower_ + "/writable", "writable"));
+    ASSERT_THAT(chmod((lower_ + "/writable").c_str(), 0666), SyscallSucceeds());
+    ASSERT_TRUE(files::WriteFile(lower_ + "/lower_writable", "lower_writable"));
+    ASSERT_THAT(chmod((lower_ + "/lower_writable").c_str(), 0666), SyscallSucceeds());
+    ASSERT_TRUE(files::WriteFile(lower_ + "/upper_writable", "upper_writable"));
+    ASSERT_THAT(chmod((lower_ + "/upper_writable").c_str(), 0600), SyscallSucceeds());
+
+    ASSERT_NO_FATAL_FAILURE(Mount());
+
+    ASSERT_THAT(chmod((overlay_ + "/lower_readable").c_str(), 0600), SyscallSucceeds());
+    ASSERT_THAT(chmod((overlay_ + "/upper_readable").c_str(), 0644), SyscallSucceeds());
+    ASSERT_THAT(chmod((lower_ + "/lower_writable").c_str(), 0600), SyscallSucceeds());
+    ASSERT_THAT(chmod((lower_ + "/upper_writable").c_str(), 0666), SyscallSucceeds());
+  }
+
+  static constexpr unsigned int kOtherUid = 65534;
+  static constexpr unsigned int kOtherGid = 65534;
+};
+
+// Verify that access checks are made against the overlay permissions for the caller, but use the
+// mounter credentials to check the underlying filesystems.
+TEST_F(OverlayFsAccessTest, MounterAndOtherAccessChecks) {
+  ASSERT_NO_FATAL_FAILURE(MountWithReadableAndWritableFiles());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setgid(kOtherGid));
+    SAFE_SYSCALL(setuid(kOtherUid));
+
+    ASSERT_NE(getuid(), 0u);
+
+    std::string content;
+
+    // Other UID can read if it has access in the overlay, even if it could not read directly from
+    // `lower_`.
+    EXPECT_TRUE(files::ReadFileToString(overlay_ + "/readable", &content));
+    EXPECT_FALSE(files::ReadFileToString(overlay_ + "/lower_readable", &content));
+    EXPECT_TRUE(files::ReadFileToString(overlay_ + "/upper_readable", &content));
+
+    // Other UID can write if it has access in the overlay, even if it could not write directly via
+    // `lower_`.
+    EXPECT_TRUE(files::WriteFile(overlay_ + "/writable", "written:writable"));
+    EXPECT_FALSE(files::WriteFile(overlay_ + "/lower_writable", "written:lower_writable"));
+    EXPECT_TRUE(files::WriteFile(overlay_ + "/upper_writable", "written:upper_writable"));
+
+    // Other UID can create a new file, which should be owned by them.
+    EXPECT_TRUE(files::WriteFile(overlay_ + "/new_file", "written:new_file"));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  struct stat stats;
+  // The new file should be owned by the other UID.
+  ASSERT_THAT(stat((overlay_ + "/new_file").c_str(), &stats), SyscallSucceeds());
+  EXPECT_EQ(stats.st_uid, kOtherUid);
+  EXPECT_EQ(stats.st_gid, kOtherGid);
+
+  // Existing files that are copied-up should not change ownership.
+  ASSERT_THAT(stat((overlay_ + "/writable").c_str(), &stats), SyscallSucceeds());
+  EXPECT_EQ(stats.st_uid, 0u);
+  EXPECT_EQ(stats.st_gid, 0u);
+}
+
+// Verify that the `access()` API correctly reflects caller and mounter access check results.
+TEST_F(OverlayFsAccessTest, LockedDownLowerAndWorkdirPermissions) {
+  ASSERT_NO_FATAL_FAILURE(MountWithReadableAndWritableFiles());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(setgid(kOtherGid));
+    SAFE_SYSCALL(setuid(kOtherUid));
+
+    ASSERT_NE(getuid(), 0u);
+
+    // Other UID can read if it has access in the overlay, even if it could not read directly from
+    // `lower_`.
+    EXPECT_THAT(access((overlay_ + "/readable").c_str(), R_OK), SyscallSucceeds());
+    EXPECT_THAT(access((overlay_ + "/lower_readable").c_str(), R_OK),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(access((overlay_ + "/upper_readable").c_str(), R_OK), SyscallSucceeds());
+
+    // Other UID can write if it has access in the overlay, even if it could not write directly via
+    // `lower_`.
+    EXPECT_THAT(access((overlay_ + "/writable").c_str(), W_OK), SyscallSucceeds());
+    EXPECT_THAT(access((overlay_ + "/lower_writable").c_str(), W_OK),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(access((overlay_ + "/upper_writable").c_str(), W_OK), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 }  // namespace

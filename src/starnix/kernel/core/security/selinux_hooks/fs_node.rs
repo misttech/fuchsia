@@ -5,15 +5,14 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
+use super::super::{FsNodeSecurityXattr, check_task_capable};
 use super::{
     Auditable, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs, check_permission,
-    creds_with_fscreate_sid, current_task_state, fs_node_effective_sid_and_class,
-    fs_node_ensure_class, fs_node_set_label_with_task, has_fs_node_permissions,
+    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
+    fs_node_set_label_with_task, has_fs_node_permissions, has_fs_node_permissions_dontaudit,
     permissions_from_flags, set_cached_sid,
 };
-use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
-use crate::security::{FsNodeSecurityXattr, check_task_capable};
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, FullCredentials};
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
 };
@@ -135,6 +134,8 @@ pub(in crate::security) fn fs_node_init_with_dentry(
             match (fs_use_type, locked_or_no_xattr) {
                 (FsUseType::Xattr, Some(locked)) => {
                     // Determine the SID from the "security.selinux" attribute.
+                    // TODO: Ensure that this `get_xattr` bypasses access-checks, so that label
+                    // assignment cannot fail.
                     let attr = fs_node.ops().get_xattr(
                         locked.cast_locked::<FileOpsCore>(),
                         fs_node,
@@ -142,6 +143,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                         XATTR_NAME_SELINUX.to_bytes().into(),
                         SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE,
                     );
+
                     let maybe_sid = match attr {
                         Ok(ValueOrSize::Value(security_context)) => Some(
                             security_server
@@ -469,6 +471,37 @@ pub(in crate::security) fn fs_node_init_on_create(
     set_cached_sid(new_node, sid);
 
     Ok(xattr)
+}
+
+pub fn dentry_create_files_as(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    parent: &FsNode,
+    new_node_mode: FileMode,
+    new_node_name: &FsStr,
+    new_creds: &mut FullCredentials,
+) -> Result<(), Errno> {
+    assert!(!Anon::is_private(parent));
+
+    // Determine the security class of the new node, and the SID with which it would be labeled.
+    let fs = parent.fs();
+    let new_node_class = file_class_from_file_mode(new_node_mode)?.into();
+    let new_node_sid = if let Some(fs_label) = fs.security_state.state.label() {
+        compute_new_fs_node_sid(
+            security_server,
+            current_task,
+            fs_label,
+            Some(parent),
+            new_node_class,
+            new_node_name.into(),
+        )?
+    } else {
+        InitialSid::File.into()
+    };
+
+    new_creds.security_state.lock().fscreate_sid = Some(new_node_sid);
+
+    Ok(())
 }
 
 /// Called to label file nodes not linked in any filesystem's directory structure, e.g.
@@ -1117,6 +1150,7 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
         let task_sid = current_task_state(current_task).lock().current_sid;
         let FsNodeSidAndClass { sid: old_sid, class: fs_node_class } =
             fs_node_effective_sid_and_class(fs_node);
+
         let permission_check = security_server.as_permission_check();
         check_permission(
             &permission_check,
@@ -1310,15 +1344,14 @@ where
     Ok(())
 }
 
-/// Temporarily sets the fscreate sid to match `fs_node` and runs `do_copy_up`.
-pub(in crate::security) fn fs_node_copy_up<R>(
-    current_task: &CurrentTask,
+/// Updates `new_creds` with the credentials required to copy-up `fs_node` into a new node.
+pub(in crate::security) fn fs_node_copy_up(
+    _current_task: &CurrentTask,
     fs_node: &FsNode,
-    do_copy_up: impl FnOnce() -> R,
-) -> R {
+    new_creds: &mut FullCredentials,
+) {
     let new_sid = fs_node_effective_sid_and_class(fs_node).sid;
-    let temporary_creds = creds_with_fscreate_sid(current_task, new_sid);
-    current_task.override_creds(temporary_creds, do_copy_up)
+    new_creds.security_state.lock().fscreate_sid = Some(new_sid);
 }
 
 #[cfg(test)]
