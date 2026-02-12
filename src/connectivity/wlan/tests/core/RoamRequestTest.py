@@ -18,12 +18,7 @@ import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
 import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib.hostapd_constants import (
-    AP_DEFAULT_CHANNEL_2G,
-    AP_DEFAULT_CHANNEL_5G,
-    AP_SSID_LENGTH_2G,
-    BandType,
-)
+from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
@@ -54,9 +49,9 @@ TEST_WEP_PASSWORD_LITERAL = "1234567891234"
 class TestParams:
     dut_security_mode: SecurityMode
     origin_security_mode: SecurityMode
-    origin_band: BandType
+    origin_band: hostapd_constants.BandType
     target_security_mode: SecurityMode
-    target_band: BandType
+    target_band: hostapd_constants.BandType
     should_roam_succeed: bool
 
 
@@ -129,9 +124,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                         TestParams(
                             dut_security_mode=dut_mode,
                             origin_security_mode=ap_mode,
-                            origin_band=BandType.BAND_2G,
+                            origin_band=hostapd_constants.BandType.BAND_2G,
                             target_security_mode=ap_mode,
-                            target_band=BandType.BAND_5G,
+                            target_band=hostapd_constants.BandType.BAND_5G,
                             should_roam_succeed=True,
                         ),
                     ),
@@ -142,9 +137,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                         TestParams(
                             dut_security_mode=dut_mode,
                             origin_security_mode=ap_mode,
-                            origin_band=BandType.BAND_5G,
+                            origin_band=hostapd_constants.BandType.BAND_5G,
                             target_security_mode=ap_mode,
-                            target_band=BandType.BAND_2G,
+                            target_band=hostapd_constants.BandType.BAND_2G,
                             should_roam_succeed=True,
                         ),
                     ),
@@ -156,9 +151,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                             TestParams(
                                 dut_security_mode=dut_mode,
                                 origin_security_mode=ap_mode,
-                                origin_band=BandType.BAND_2G,
+                                origin_band=hostapd_constants.BandType.BAND_2G,
                                 target_security_mode=incompatible_mode,
-                                target_band=BandType.BAND_5G,
+                                target_band=hostapd_constants.BandType.BAND_5G,
                                 should_roam_succeed=False,
                             ),
                         ),
@@ -187,7 +182,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
     def setup_aps(
         self, test_params: TestParams
     ) -> tuple[str, Security, Security]:
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         origin_password = None
         target_password = None
         if test_params.origin_security_mode is not SecurityMode.OPEN:
@@ -206,14 +201,17 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
         # Ensure the bands are a 2.4GHz and 5GHz pair. This test uses a single AP, and therefore
         # does not support the the same origin and target band.
-        expected_bands = {BandType.BAND_2G, BandType.BAND_5G}
+        expected_bands = {
+            hostapd_constants.BandType.BAND_2G,
+            hostapd_constants.BandType.BAND_5G,
+        }
         actual_bands = {test_params.origin_band, test_params.target_band}
         abort_class_if(
             actual_bands != expected_bands,
             f"Test expects one 2.4GHz AP and one 5GHz AP. Got origin: {test_params.origin_band}, target {test_params.target_band}",
         )
 
-        if test_params.origin_band == BandType.BAND_2G:
+        if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
             security_2g = origin_ap_security_config
             security_5g = target_ap_security_config
         else:
@@ -224,7 +222,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
         setup_ap(
             access_point=self.test_kit.access_point,
             profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_2G,
+            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=ssid,
             security=security_2g,
         )
@@ -233,7 +231,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
         setup_ap(
             access_point=self.test_kit.access_point,
             profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_5G,
+            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=ssid,
             security=security_5g,
         )
@@ -282,13 +280,13 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             scanned_ssid = read_ssid(bytes(scan_result.bss_description.ies))
             if scanned_ssid == ssid:
                 channel = scan_result.bss_description.channel.primary
-                if channel == AP_DEFAULT_CHANNEL_2G:
+                if channel in hostapd_constants.US_CHANNELS_2G:
                     bss_desc_2g = scan_result.bss_description
-                elif channel == AP_DEFAULT_CHANNEL_5G:
+                elif channel in hostapd_constants.US_CHANNELS_5G:
                     bss_desc_5g = scan_result.bss_description
                 else:
                     raise signals.TestError(
-                        f"BSS for test network SSID '{ssid}' found on unexpected primary channel: {channel}"
+                        f"BSS for test network SSID '{ssid}' found on unexpected channel: {channel}"
                     )
 
         # Verify there are two BSSs seen for the test network
@@ -301,7 +299,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 f"Failed to see 5GHz BSS for SSID '{ssid}' in scan results"
             )
 
-        if test_params.origin_band == BandType.BAND_2G:
+        if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
             origin_bss_desc = bss_desc_2g
             target_bss_desc = bss_desc_5g
         else:
@@ -414,7 +412,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
             # Verify that DUT is actually associated (as seen from AP).
             client_mac = await self._get_client_mac()
-            if test_params.origin_band == BandType.BAND_2G:
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
                 origin_iface = self.test_kit.access_point.wlan_2g
                 target_iface = self.test_kit.access_point.wlan_5g
             else:
