@@ -19,14 +19,23 @@ static int print_power_help() {
   return 0;
 }
 
-template <typename Func>
-static int send_statecontrol_admin_command(Func f) {
+static int send_statecontrol_admin_command(
+    fuchsia_hardware_power_statecontrol::ShutdownAction action) {
   auto client_end = component::Connect<fuchsia_hardware_power_statecontrol::Admin>();
   if (client_end.is_error()) {
     return client_end.status_value();
   }
   auto client = fidl::WireSyncClient(std::move(*client_end));
-  auto response = f(std::move(client));
+
+  fidl::Arena arena;
+  auto builder = fuchsia_hardware_power_statecontrol::wire::ShutdownOptions::Builder(arena);
+  fuchsia_hardware_power_statecontrol::ShutdownReason reasons[] = {
+      fuchsia_hardware_power_statecontrol::ShutdownReason::kDeveloperRequest};
+  auto vector_view =
+      fidl::VectorView<fuchsia_hardware_power_statecontrol::ShutdownReason>::FromExternal(reasons);
+  builder.reasons(vector_view);
+  builder.action(action);
+  auto response = client->Shutdown(builder.Build());
 
   if (response.status() != ZX_OK) {
     printf("Command failed: %s (%d)\n", response.status_string(), response.status());
@@ -79,35 +88,17 @@ int zxc_power(int argc, char** argv) {
 
   } else if (command_cmp("reboot", NULL, argv[1], &command_length)) {
     return send_statecontrol_admin_command(
-        [](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          fidl::Arena arena;
-          auto builder = fuchsia_hardware_power_statecontrol::wire::RebootOptions::Builder(arena);
-          std::vector<fuchsia_hardware_power_statecontrol::RebootReason2> reasons = {
-              fuchsia_hardware_power_statecontrol::RebootReason2::kDeveloperRequest};
-          auto vector_view =
-              fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(
-                  reasons);
-          builder.reasons(vector_view);
-          return client->PerformReboot(builder.Build());
-        });
-
+        fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot);
   } else if (command_cmp("reboot-bootloader", "rb", argv[1], &command_length)) {
     return send_statecontrol_admin_command(
-        [](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->RebootToBootloader();
-        });
-
+        fuchsia_hardware_power_statecontrol::ShutdownAction::kRebootToBootloader);
   } else if (command_cmp("reboot-recovery", "rr", argv[1], &command_length)) {
     return send_statecontrol_admin_command(
-        [](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->RebootToRecovery();
-        });
+        fuchsia_hardware_power_statecontrol::ShutdownAction::kRebootToRecovery);
   } else if (command_cmp("off", NULL, argv[1], &command_length) ||
              command_cmp("shutdown", NULL, argv[1], &command_length)) {
     return send_statecontrol_admin_command(
-        [](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->Poweroff();
-        });
+        fuchsia_hardware_power_statecontrol::ShutdownAction::kPoweroff);
 
   } else {
     printf("Unknown command '%s'\n\n", argv[1]);
