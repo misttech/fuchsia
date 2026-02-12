@@ -38,7 +38,7 @@ type RebootReason = strict enum {
 /// Why the system reboots.
 ///
 /// Replaced by `ShutdownReason`.
-@available(added=26, deprecated=29, note="use ShutdownReason")
+@available(added=26, deprecated=29, removed=NEXT, note="use ShutdownReason")
 type RebootReason2 = flexible enum {
     /// The device rebooted because the end user of the device initiated the reboot.
     ///
