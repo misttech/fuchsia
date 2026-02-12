@@ -102,38 +102,6 @@ class CxxLinkRemoteActionTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         mock_call.assert_called_once()
 
-    def test_linker_direct_files(self) -> None:
-        fake_root = Path("/home/project")
-        fake_builddir = Path("out/really-not-default")
-        fake_cwd = fake_root / fake_builddir
-        compiler = Path("clang++")
-        sources = [
-            Path("hello.o"),
-            Path("baz.a"),
-            Path("bar.so"),
-            Path("foo/bar.ld"),
-        ]
-        output = Path("hello.a")
-        target = "riscv64-apple-darwin21"
-        command = _strs(
-            [
-                compiler,
-                f"--target={target}",
-                *sources,
-                "-o",
-                output,
-            ]
-        )
-        c = cxx_link_remote_wrapper.CxxLinkRemoteAction(
-            ["--", *command],
-            exec_root=fake_root,
-            working_dir=fake_cwd,
-            host_platform=fuchsia.REMOTE_PLATFORM,  # host = remote exec
-            auto_reproxy=False,
-        )
-        linker = c._linker_invocation()
-        self.assertEqual(linker.direct_files, sources)
-
     def test_remote_action_paths(self) -> None:
         fake_root = Path("/home/project")
         fake_builddir = Path("out/not-default")

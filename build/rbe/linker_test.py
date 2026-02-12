@@ -431,26 +431,6 @@ class LinkerInvocationResolveTests(unittest.TestCase):
 
         self.assertEqual(resolved, libdir / lib)
 
-    def test_resolve_path_relative_to_linker_script(self) -> None:
-        libdir = Path("raz/lib/foo")
-        lib = Path("libbar.ld")
-        libdir2 = Path("raz/lib")
-        lib2 = Path("quux.o")
-
-        with tempfile.TemporaryDirectory() as td:
-            tdp = Path(td)
-            (tdp / libdir).mkdir(parents=True, exist_ok=True)
-            (tdp / libdir / lib).write_text("INPUT(../quux.o)\n")
-            (tdp / libdir2).mkdir(parents=True, exist_ok=True)
-            (tdp / libdir2 / lib2).touch()
-
-            link = linker.LinkerInvocation(
-                working_dir_abs=tdp,
-            )
-            expanded = list(link.expand_possible_linker_script(libdir / lib))
-
-        self.assertEqual(expanded, [libdir / lib, libdir / ".." / lib2])
-
     def test_resolve_path_success_in_sysroot(self) -> None:
         libdir = Path("raz/lib/foo")
         sysroot = Path("quuz/sysroot")

@@ -224,8 +224,7 @@ def _compile_action_sources(command: Iterable[str]) -> Iterable[Source]:
 def _link_direct_inputs(command: Iterable[str]) -> Iterable[Path]:
     for tok in command:
         if any(
-            tok.endswith(ext)
-            for ext in (".o", ".obj", ".so", ".a", ".dylib", ".ld")
+            tok.endswith(ext) for ext in (".o", ".obj", ".so", ".a", ".dylib")
         ):
             yield Path(tok)
 
