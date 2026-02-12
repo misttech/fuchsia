@@ -57,6 +57,12 @@ constexpr uint32_t GL_BGRA_EXT = 0x80E1;
 // we use a placeholder ID 1.
 constexpr display::ModeId kModeId(1);
 
+constexpr display::EngineInfo kEngineInfo({
+    .max_layer_count = 1,
+    .max_connected_display_count = 1,
+    .is_capture_supported = false,
+});
+
 }  // namespace
 
 DisplayEngine::DisplayEngine(fidl::ClientEnd<fuchsia_hardware_goldfish::ControlDevice> control,
@@ -133,11 +139,7 @@ display::EngineInfo DisplayEngine::CompleteCoordinatorConnection() {
   };
   engine_events_->OnDisplayAdded(kPrimaryDisplayId, cpp20::span(&preferred_mode, 1), pixel_formats);
 
-  return display::EngineInfo{{
-      .max_layer_count = 1,
-      .max_connected_display_count = 1,
-      .is_capture_supported = false,
-  }};
+  return kEngineInfo;
 }
 
 namespace {
@@ -354,49 +356,49 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
     fdf::warn("Color Correction not supported.");
   }
 
-  const display::DriverLayer& layer0 = layers[0];
-  if (layer0.image_source().width() == 0 || layer0.image_source().height() == 0) {
-    // Solid color fill layers are not yet supported.
-    // TODO(https://fxbug.dev/406525464): add support.
+  // If the number of layers exceeds the maximum supported, the rest need to be
+  // merged into the base layer.
+  if (layers.size() > kEngineInfo.max_layer_count()) {
     return display::ConfigCheckResult::kUnsupportedConfig;
   }
 
-  // Scaling is allowed if destination frame match display and
-  // source frame match image.
-  const display::Rectangle display_area = {{
-      .x = 0,
-      .y = 0,
-      .width = primary_display_device_.width_px,
-      .height = primary_display_device_.height_px,
-  }};
-  const display::Rectangle image_area = {{
-      .x = 0,
-      .y = 0,
-      .width = layer0.image_metadata().width(),
-      .height = layer0.image_metadata().height(),
-  }};
-  if (layer0.display_destination() != display_area) {
-    // TODO(https://fxbug.dev/42111727): Need to provide proper flag to indicate driver only
-    // accepts full screen dest frame.
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-  if (layer0.image_source() != image_area) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
+  for (const display::DriverLayer& layer : layers) {
+    if (layer.image_source().width() == 0 || layer.image_source().height() == 0) {
+      // Solid color fill layers are not yet supported.
+      // TODO(https://fxbug.dev/406525464): add support.
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
 
-  if (layer0.alpha_mode() != display::AlphaMode::kDisable) {
-    // Alpha is not supported.
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-
-  if (layer0.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
-    // Transformation is not supported.
-    return display::ConfigCheckResult::kUnsupportedConfig;
-  }
-
-  // If there is more than one layer, the rest need to be merged into the base layer.
-  if (layers.size() > 1) {
-    return display::ConfigCheckResult::kUnsupportedConfig;
+    // Scaling is allowed if destination frame match display and
+    // source frame match image.
+    const display::Rectangle display_area = {{
+        .x = 0,
+        .y = 0,
+        .width = primary_display_device_.width_px,
+        .height = primary_display_device_.height_px,
+    }};
+    const display::Rectangle image_area = {{
+        .x = 0,
+        .y = 0,
+        .width = layer.image_metadata().width(),
+        .height = layer.image_metadata().height(),
+    }};
+    if (layer.display_destination() != display_area) {
+      // TODO(https://fxbug.dev/42111727): Need to provide proper flag to indicate driver only
+      // accepts full screen dest frame.
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.image_source() != image_area) {
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.alpha_mode() != display::AlphaMode::kDisable) {
+      // Alpha is not supported.
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
+    if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
+      // Transformation is not supported.
+      return display::ConfigCheckResult::kUnsupportedConfig;
+    }
   }
 
   return display::ConfigCheckResult::kOk;
@@ -500,6 +502,9 @@ void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
                                        display::ColorConversion color_conversion,
                                        cpp20::span<const display::DriverLayer> layers,
                                        display::DriverConfigStamp config_stamp) {
+  ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
+                      layers.size());
+
   display::DriverImageId driver_image_id = display::kInvalidDriverImageId;
 
   if (display_id == kPrimaryDisplayId) {
