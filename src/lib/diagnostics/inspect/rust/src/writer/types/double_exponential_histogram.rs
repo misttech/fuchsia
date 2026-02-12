@@ -44,13 +44,20 @@ impl DoubleExponentialHistogramProperty {
     }
 
     fn get_index(&self, value: f64) -> usize {
-        let mut bucket_end = self.floor; // The exclusive end of a bucket's range.
-        let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index();
+        if value < self.floor {
+            return ArrayFormat::ExponentialHistogram.underflow_bucket_index();
+        }
+
+        let mut index = ArrayFormat::ExponentialHistogram.underflow_bucket_index() + 1;
         let overflow_index = ArrayFormat::ExponentialHistogram.overflow_bucket_index(self.buckets);
+
+        // Exclusive bucket end is: initial_step * step_multiplier^i + floor
+        // where i is the bucket index, excluding underflow and overflow.
+        let mut bucket_end = self.initial_step + self.floor;
+        let mut multiplier = 1.0;
+
         while value >= bucket_end && index < overflow_index {
-            let multiplier = self
-                .step_multiplier
-                .powi((index - ArrayFormat::ExponentialHistogram.underflow_bucket_index()) as i32);
+            multiplier *= self.step_multiplier;
             // mul_add is necessary when a bucket's exclusive end is f64::MAX.
             bucket_end = self.initial_step.mul_add(multiplier, self.floor);
             index += 1;
