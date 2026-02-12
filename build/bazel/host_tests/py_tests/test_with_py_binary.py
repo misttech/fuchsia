@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 
-from bazel_tools.tools.python.runfiles import runfiles
+import python.runfiles.runfiles as runfiles
 
 r = runfiles.Create()
 test_location = r.Rlocation(
