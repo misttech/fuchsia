@@ -354,16 +354,33 @@ where
                     discovery_sources: sources,
                 })
                 .await?;
+
+            // If there are no devices and we specify something that can be interpreted as an
+            // address, then add it to the discovered list.
+            //
+            // This should include addresses, VSock, USB, and will likely include things that will
+            // be added in the future.
+            if targets.is_empty()
+                && let Some(addr) = input.get_target_addr()
+            {
+                let handle = TargetHandle {
+                    node_name: None,
+                    state: TargetState::Product { addrs: vec![addr], serial: None },
+                    manual: true,
+                };
+                targets.push(handle);
+            }
+
             if targets.is_empty() {
                 notifier.info(format!(
-                    "{}{}No matching devices were found.{} Ensure the diagnostics logs don't contain your device before proceeding to debugging.",
-                    termion::style::Bold,
-                    termion::color::Fg(termion::color::Red),
-                    termion::style::Reset
-                ))?;
+                        "{}{}No matching devices were found.{} Ensure the diagnostics logs don't contain your device before proceeding to debugging.",
+                        termion::style::Bold,
+                        termion::color::Fg(termion::color::Red),
+                        termion::style::Reset
+                    ))?;
                 notifier.info(
-                    format!("The following link contains steps for general network debugging: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity")
-                )?;
+                        format!("The following link contains steps for general network debugging: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity")
+                    )?;
                 for (name, source) in sources.iter_names() {
                     // TODO(b/427299969): Style hinting should be supported here to remove the need
                     // for this caller to implement styling. For certain displays styling should
