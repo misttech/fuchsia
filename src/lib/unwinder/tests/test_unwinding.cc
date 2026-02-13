@@ -139,6 +139,13 @@ class FakeAsyncMemory : public AsyncMemory::Delegate {
     return memory_.ReadBytes(addr, size, dst);
   }
 
+  // TODO(https://fxbug.dev/484331669): Make this test work without requiring this to be
+  // synchronous.
+  void PostTask(fit::callback<void()> callback) override {
+    ASSERT_TRUE(callback);
+    callback();
+  }
+
   Memory* GetLocalMemory() { return &memory_; }
 
  private:

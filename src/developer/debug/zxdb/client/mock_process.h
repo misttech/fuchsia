@@ -71,6 +71,7 @@ class MockProcess : public Process {
     FX_NOTIMPLEMENTED();
     return unwinder::Success();
   }
+  void PostTask(fit::callback<void()> callback) override { FX_NOTIMPLEMENTED(); }
 
  private:
   Target* target_ = nullptr;

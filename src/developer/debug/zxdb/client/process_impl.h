@@ -98,6 +98,7 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   // unwinder::AsyncMemory::Delegate implementation.
   void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,
                          fit::callback<void()> done) override;
+  void PostTask(fit::callback<void()> callback) override;
   unwinder::Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override;
 
  private:

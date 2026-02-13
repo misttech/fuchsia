@@ -610,6 +610,13 @@ void ProcessImpl::FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> r
   });
 }
 
+void ProcessImpl::PostTask(fit::callback<void()> callback) {
+  debug::MessageLoop::Current()->PostTask(FROM_HERE, [cb = std::move(callback)]() mutable {
+    FX_DCHECK(cb);
+    cb();
+  });
+}
+
 unwinder::Error ProcessImpl::ReadBytes(uint64_t addr, uint64_t size, void* dst) {
   unwinder::Error err = unwinder::Success();
 

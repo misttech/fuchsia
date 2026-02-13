@@ -336,8 +336,14 @@ void AsyncUnwinder::OnUnwinderStep(const Error& err, Frame next) {
     return;
   }
 
-  TryAsyncUnwinder(unwinder, stack_.get(), result_.back(),
-                   [this](const Error& err, Frame next) { OnUnwinderStep(err, std::move(next)); });
+  // TODO: Maybe allow the caller to configure this?
+  // Safe to capture |unwinder| because the pointer location is stable in |this|, which is owned
+  // by the caller.
+  stack_->delegate()->PostTask([this, unwinder]() {
+    TryAsyncUnwinder(unwinder, stack_.get(), result_.back(), [this](const Error& err, Frame next) {
+      OnUnwinderStep(err, std::move(next));
+    });
+  });
 }
 
 void AsyncUnwinder::OnStep(Frame next) {

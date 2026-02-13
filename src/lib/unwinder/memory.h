@@ -79,6 +79,12 @@ class AsyncMemory : public Memory {
     // requested memory has been received and is usable with |ReadBytes|.
     virtual void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,
                                    fit::callback<void()> cb) = 0;
+
+    // Yields control of the unwinding operation to the delegate to be continued later (by calling
+    // |cb|). This is useful when unwinding deep stacks that will involve many synchronous callback
+    // invocations within the unwinder. This gives users a chance to process other relevant events
+    // in their async implementations and resume the unwinder later.
+    virtual void PostTask(fit::callback<void()> cb) = 0;
   };
 
   explicit AsyncMemory(Delegate* delegate) : delegate_(delegate) {}
@@ -94,6 +100,8 @@ class AsyncMemory : public Memory {
   Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override {
     return delegate_->ReadBytes(addr, size, dst);
   }
+
+  Delegate* delegate() const { return delegate_; }
 
  private:
   Delegate* delegate_;
