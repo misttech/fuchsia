@@ -21,7 +21,7 @@ use argh::FromArgs;
 /// Display PCI information
 pub struct Args {
     #[argh(positional)]
-    /// [[<bus>]:][slot][.[<func>]]    Show only devices in selected slots
+    /// format: [[<bus>]:][slot][.[<func>]]    Show only devices in selected slots
     pub filter: Option<filter::Filter>,
 
     #[argh(option, default = "String::from(\"/dev/sys/platform/pt/\")")]
