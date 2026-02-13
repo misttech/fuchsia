@@ -938,15 +938,5 @@
         "package": "perfetto/trace_processor_shell/linux-amd64",
         "version": "git_tag:v52.0",
         "instance_id": "mQWEXbUHtEfAkP19qogDuLM6EIncyw3ve2KToc5pzOIC"
-    },
-    {
-        "package": "skia/tools/goldctl/linux-amd64",
-        "version": "git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c",
-        "instance_id": "gEqE2FO6iRIbYzXJtbhu6FRkrdGqtPx6XrU4h8pmwEEC"
-    },
-    {
-        "package": "skia/tools/goldctl/linux-arm64",
-        "version": "git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c",
-        "instance_id": "U7GMP8Fy4ep9MCIS_PRseyq19O895oyIp56KjjCM1GsC"
     }
 ]

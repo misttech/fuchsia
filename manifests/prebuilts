@@ -254,11 +254,6 @@
              version="version:2024a"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/zoneinfo"/>
-    <!--   Skia Gold -->
-    <package name="skia/tools/goldctl/${platform}"
-             version="git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c"
-             platforms="linux-amd64,linux-arm64"
-             path="prebuilt/third_party/goldctl"/>
     <!--   Unicode UCD datafiles -->
     <package name="fuchsia/third_party/ucd"
              version="version:12.1.0rc1"
