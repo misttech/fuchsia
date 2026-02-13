@@ -5020,7 +5020,7 @@ mod test {
         NeighbourHeader { family: AddressFamily::Local, ..Default::default() },
         vec![],
         None,
-        Some(ExpectedResponse::Error(Errno::EINVAL)); "dump invalid request")]
+        Some(ExpectedResponse::Error(Errno::EAFNOSUPPORT)); "dump invalid request")]
     #[test_case(
         0,
         NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
@@ -5044,7 +5044,7 @@ mod test {
         NeighbourHeader::default(),
         vec![],
         None,
-        Some(ExpectedResponse::Error(Errno::EINVAL)); "get invalid request")]
+        Some(ExpectedResponse::Error(Errno::EAFNOSUPPORT)); "get invalid request")]
     #[fuchsia::test]
     async fn get_neighbor_with_faked_response(
         flags: u16,

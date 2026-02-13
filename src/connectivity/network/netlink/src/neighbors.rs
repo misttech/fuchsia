@@ -5,7 +5,7 @@
 //! A module for managing neighbor information by receiving RTM_*NEIGH Netlink
 //! messages and maintaining neighbor table state from Netstack.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::IpAddr;
 use std::num::NonZeroU64;
 
@@ -31,6 +31,7 @@ use thiserror::Error;
 
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_neighbor_ext as fnet_neighbor_ext,
 };
 
@@ -122,6 +123,27 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
     }
 }
 
+fn neighbor_fidl_ip(
+    family: AddressFamily,
+    address: Option<&NeighbourAddress>,
+) -> Result<fnet::IpAddress, RequestError> {
+    match family {
+        AddressFamily::Inet => match address {
+            Some(NeighbourAddress::Inet(addr)) => Ok(fnet_ext::IpAddress(IpAddr::V4(*addr)).into()),
+            Some(_) => Err(RequestError::AddressFamilyMismatch(family)),
+            None => Err(RequestError::MissingAddress),
+        },
+        AddressFamily::Inet6 => match address {
+            Some(NeighbourAddress::Inet6(addr)) => {
+                Ok(fnet_ext::IpAddress(IpAddr::V6(*addr)).into())
+            }
+            Some(_) => Err(RequestError::AddressFamilyMismatch(family)),
+            None => Err(RequestError::MissingAddress),
+        },
+        _ => Err(RequestError::InvalidAddressFamily(family)),
+    }
+}
+
 /// Arguments for an RTM_GETNEIGH [`Request`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GetNeighborArgs {
@@ -138,8 +160,10 @@ impl GetNeighborArgs {
     ) -> Result<Self, RequestError> {
         if is_dump {
             Self::dump_request_from_rtnl_neighbor(message)
+                .inspect_err(|e| log_warn!("{e} in dump neighbors request"))
         } else {
             Self::get_request_from_rtnl_neighbor(message)
+                .inspect_err(|e| log_warn!("{e} in get neighbors request"))
         }
     }
 
@@ -147,8 +171,7 @@ impl GetNeighborArgs {
         let NeighbourHeader { family, flags, .. } = &message.header;
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
-            log_warn!("unsupported flags in header for dump neighbor request: {flags:?}");
-            return Err(RequestError::UnsupportedRequest);
+            return Err(RequestError::UnsupportedFlags(*flags));
         }
         // TODO(https://fxbug.dev/456508664): Support strict validation of dump
         // requests.
@@ -157,8 +180,7 @@ impl GetNeighborArgs {
             AddressFamily::Inet => Some(IpVersion::V4),
             AddressFamily::Inet6 => Some(IpVersion::V6),
             family => {
-                log_warn!("invalid address family ({family:?}) in dump neighbors request");
-                return Err(RequestError::InvalidRequest);
+                return Err(RequestError::InvalidAddressFamily(*family));
             }
         };
         // Note that the interface index is pulled from the attribute here,
@@ -180,21 +202,17 @@ impl GetNeighborArgs {
     fn get_request_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
         let NeighbourHeader { ifindex, family, state, flags, kind } = &message.header;
         if *state != NeighbourState::None {
-            log_warn!("invalid state in header for get neighbor request: {state:?}");
-            return Err(RequestError::InvalidRequest);
+            return Err(RequestError::InvalidState(*state));
         }
         if *kind != RouteType::Unspec {
-            log_warn!("invalid kind in header for get neighbor request: {kind:?}");
-            return Err(RequestError::InvalidRequest);
+            return Err(RequestError::InvalidKind(*kind));
         }
         if flags.intersects(!NeighbourFlags::Proxy) {
-            log_warn!("invalid flags in header for get neighbor request: {flags:?}");
-            return Err(RequestError::InvalidRequest);
+            return Err(RequestError::InvalidFlags(*flags));
         }
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
-            log_warn!("unsupported flags in header for get neighbor request: {flags:?}");
-            return Err(RequestError::UnsupportedRequest);
+            return Err(RequestError::UnsupportedFlags(*flags));
         }
 
         let (address, unsupported) = message.attributes.iter().fold(
@@ -220,38 +238,14 @@ impl GetNeighborArgs {
             },
         );
         if unsupported {
-            return Err(RequestError::InvalidRequest);
+            return Err(RequestError::InvalidAttribute);
         }
-        let ip = match address {
-            Some(NeighbourAddress::Inet(addr)) => fnet_ext::IpAddress(IpAddr::V4(*addr)).into(),
-            Some(NeighbourAddress::Inet6(addr)) => fnet_ext::IpAddress(IpAddr::V6(*addr)).into(),
-            Some(_) => {
-                log_warn!("invalid neighbor address: {address:?} in get neighbor request");
-                return Err(RequestError::InvalidRequest);
-            }
-            None => {
-                log_warn!("get neighbor request missing required `DST` attribute");
-                return Err(RequestError::InvalidRequest);
-            }
-        };
-        let expected_family = match ip {
-            fnet::IpAddress::Ipv4(_) => AddressFamily::Inet,
-            fnet::IpAddress::Ipv6(_) => AddressFamily::Inet6,
-        };
-        if *family != expected_family {
-            log_warn!(
-                "address family mismatch in get neighbor request;\
-                destination={ip:?} family={family:?}"
-            );
-            return Err(RequestError::InvalidRequest);
-        }
+        let ip = neighbor_fidl_ip(*family, address)?;
         // Note that the interface index is pulled from the header here, whereas
         // it's pulled from the attribute for dump requests. This is
         // intentional, in order to maintain consistency with Linux's behavior.
-        let interface = u64::from(*ifindex).try_into().map_err(|_| {
-            log_warn!("get neighbor request header must specify interface");
-            RequestError::InvalidRequest
-        })?;
+        let interface =
+            u64::from(*ifindex).try_into().map_err(|_| RequestError::MissingInterface)?;
         Ok(GetNeighborArgs::Get { ip, interface })
     }
 }
@@ -264,23 +258,82 @@ pub(crate) enum NeighborRequestArgs {
 }
 
 /// An error encountered while handling a [`Request`].
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub(crate) enum RequestError {
-    /// Unsupported request.
-    UnsupportedRequest,
-    /// Invalid request.
-    InvalidRequest,
+    /// Invalid state in neighbor header.
+    #[error("invalid state: {0:?}")]
+    InvalidState(NeighbourState),
+    /// Invalid kind in neighbor header.
+    #[error("invalid kind: {0:?}")]
+    InvalidKind(RouteType),
+    /// Invalid flags in neighbor header.
+    #[error("invalid flags: {0:?}")]
+    InvalidFlags(NeighbourFlags),
+    /// Unsupported flags.
+    #[error("unsupported flags: {0:?}")]
+    UnsupportedFlags(NeighbourFlags),
+    /// Invalid address family.
+    #[error("invalid address family: {0:?}")]
+    InvalidAddressFamily(AddressFamily),
+    /// Address family in request header doesn't match family of address.
+    // In practice this should never be encountered:
+    // `NeighbourAddress::parse_with_param` parses the address based on the
+    // address family from the header, and a discrepancy between the expected
+    // and actual address length results in a parsing failure.
+    #[error("address family mismatch; expected={0:?}")]
+    AddressFamilyMismatch(AddressFamily),
+    /// Request doesn't specify required neighbor address.
+    #[error("missing required `DST` attribute")]
+    MissingAddress,
+    /// Request doesn't specify required interface.
+    #[error("missing required interface")]
+    MissingInterface,
+    /// Request specifies invalid attribute(s).
+    #[error("invalid request attribute")]
+    InvalidAttribute,
     /// No such neighbor.
-    NotFound,
+    #[error("no such neighbor")]
+    NeighborNotFound,
+    /// Interface not found.
+    #[error("no such interface")]
+    InterfaceNotFound,
 }
 
 impl From<RequestError> for Errno {
     fn from(value: RequestError) -> Self {
         match value {
-            RequestError::UnsupportedRequest => Errno::ENOTSUP,
-            RequestError::InvalidRequest => Errno::EINVAL,
-            RequestError::NotFound => Errno::ENOENT,
+            RequestError::InvalidState(_) => Errno::EINVAL,
+            RequestError::InvalidKind(_) => Errno::EINVAL,
+            RequestError::InvalidFlags(_) => Errno::EINVAL,
+            RequestError::UnsupportedFlags(_) => Errno::ENOTSUP,
+            RequestError::InvalidAddressFamily(_) => Errno::EAFNOSUPPORT,
+            RequestError::AddressFamilyMismatch(_) => Errno::EINVAL,
+            RequestError::MissingAddress => Errno::EINVAL,
+            RequestError::MissingInterface => Errno::EINVAL,
+            RequestError::InvalidAttribute => Errno::EINVAL,
+            RequestError::NeighborNotFound => Errno::ENOENT,
+            RequestError::InterfaceNotFound => Errno::ENODEV,
         }
+    }
+}
+
+/// Trait abstracting the ability to check if an interface exists.
+pub(crate) trait LookupIfInterfaceExists {
+    /// Returns whether an interface exists at the provided index.
+    fn exists(&self, interface: NonZeroU64) -> bool;
+}
+
+type InterfaceMap = BTreeMap<
+    u64,
+    fnet_interfaces_ext::PropertiesAndState<
+        crate::interfaces::InterfaceState,
+        fnet_interfaces_ext::AllInterest,
+    >,
+>;
+
+impl LookupIfInterfaceExists for InterfaceMap {
+    fn exists(&self, interface: NonZeroU64) -> bool {
+        self.contains_key(&interface.get())
     }
 }
 
@@ -414,6 +467,7 @@ impl NeighborsWorker {
     pub(crate) fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &mut self,
         Request { args, mut client, sequence_number, completer }: Request<S>,
+        interface_lookup: &impl LookupIfInterfaceExists,
     ) {
         let result = match args {
             NeighborRequestArgs::Get(args) => match args {
@@ -444,7 +498,14 @@ impl NeighborsWorker {
                             client.send_unicast(msg.into_rtnl_new_neighbor(sequence_number, false));
                             Ok(())
                         }
-                        None => Err(RequestError::NotFound),
+                        None => {
+                            let err = if interface_lookup.exists(interface) {
+                                RequestError::NeighborNotFound
+                            } else {
+                                RequestError::InterfaceNotFound
+                            };
+                            Err(err)
+                        }
                     }
                 }
             },
@@ -457,6 +518,7 @@ impl NeighborsWorker {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::ClientTable;
     use crate::client::testutil::{CLIENT_ID_1, new_fake_client};
     use crate::interfaces::testutil::FakeInterfacesHandler;
     use crate::messaging::testutil::FakeSender;
@@ -468,15 +530,20 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net as fnet;
     use fidl_fuchsia_net_neighbor::ViewRequest;
     use fidl_fuchsia_net_neighbor_ext::testutil::EventSpec;
     use futures::channel::mpsc;
-    use futures::{FutureExt, SinkExt};
+    use futures::{FutureExt as _, SinkExt as _, TryStreamExt as _};
+    use maplit::hashset;
     use net_declare::{fidl_ip, std_ip_v4, std_ip_v6};
     use netlink_packet_core::NetlinkPayload;
     use netlink_packet_route::neighbour::{NeighbourAddress, NeighbourFlags};
+    use std::collections::HashSet;
     use test_case::test_case;
+    use {
+        fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
+        fidl_fuchsia_net_root as fnet_root,
+    };
 
     fn valid_neighbor_entry() -> fnet_neighbor_ext::Entry {
         fnet_neighbor_ext::Entry {
@@ -993,8 +1060,22 @@ mod tests {
         }
     }
 
+    impl LookupIfInterfaceExists for HashSet<u64> {
+        fn exists(&self, idx: NonZeroU64) -> bool {
+            self.contains(&idx.get())
+        }
+    }
+
+    #[test_case(HashSet::new(), RequestError::InterfaceNotFound; "interface does not exist")]
+    #[test_case(
+        hashset!{1}, RequestError::NeighborNotFound;
+        "interface exists"
+    )]
     #[fuchsia::test]
-    async fn neighbors_worker_handle_get_neighbor_not_found() {
+    async fn neighbors_worker_handle_get_neighbor_not_found(
+        interface_lookup: HashSet<u64>,
+        expected_error: RequestError,
+    ) {
         let (mut sender_sink, client, _async_work_drain_task) =
             new_fake_client(CLIENT_ID_1, vec![]);
         let (completer, completer_rcv) = oneshot::channel();
@@ -1033,10 +1114,10 @@ mod tests {
         let worker_fut = NeighborsWorker::create(&view);
         let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
 
-        worker.handle_request(request);
+        worker.handle_request(request, &interface_lookup);
 
         let result = completer_rcv.await.expect("completer channel should not be closed");
-        assert_matches!(result, Err(RequestError::NotFound));
+        assert_matches!(result, Err(e) if e == expected_error);
         assert_eq!(&sender_sink.take_messages()[..], &[]);
     }
 
@@ -1131,7 +1212,7 @@ mod tests {
         let worker_fut = NeighborsWorker::create(&view);
         let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
 
-        worker.handle_request(request);
+        worker.handle_request(request, &BTreeMap::new());
 
         completer_rcv
             .await
@@ -1193,7 +1274,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::InvalidState(NeighbourState::Reachable));
         "get invalid request state"
     )]
     #[test_case(
@@ -1206,7 +1287,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::InvalidKind(RouteType::Broadcast));
         "get invalid request kind"
     )]
     #[test_case(
@@ -1219,7 +1300,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::InvalidFlags(NeighbourFlags::Router));
         "get invalid request flag"
     )]
     #[test_case(
@@ -1232,7 +1313,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::UnsupportedRequest);
+        ] => Err(RequestError::UnsupportedFlags(NeighbourFlags::Proxy));
         "get unsupported request flag"
     )]
     #[test_case(
@@ -1244,7 +1325,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::AddressFamilyMismatch(AddressFamily::Inet6));
         "get address family mismatch"
     )]
     #[test_case(
@@ -1255,7 +1336,7 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::MissingInterface);
         "get interface unspecified"
     )]
     #[test_case(
@@ -1265,7 +1346,7 @@ mod tests {
             family: AddressFamily::Inet,
             ..Default::default()
         },
-        &[] => Err(RequestError::InvalidRequest);
+        &[] => Err(RequestError::MissingAddress);
         "get destination unspecified"
     )]
     #[test_case(
@@ -1278,7 +1359,7 @@ mod tests {
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
             NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
-        ] => Err(RequestError::InvalidRequest);
+        ] => Err(RequestError::InvalidAttribute);
         "get invalid attribute"
     )]
     #[test_case(
@@ -1342,7 +1423,7 @@ mod tests {
             family: AddressFamily::Local,
             ..Default::default()
         },
-        &[] => Err(RequestError::InvalidRequest);
+        &[] => Err(RequestError::InvalidAddressFamily(AddressFamily::Local));
         "dump invalid address family"
     )]
     #[test_case(
@@ -1362,7 +1443,7 @@ mod tests {
             flags: NeighbourFlags::Proxy,
             ..Default::default()
         },
-        &[] => Err(RequestError::UnsupportedRequest);
+        &[] => Err(RequestError::UnsupportedFlags(NeighbourFlags::Proxy));
         "dump unsupported request flag"
     )]
     #[fuchsia::test]
@@ -1377,9 +1458,32 @@ mod tests {
         GetNeighborArgs::try_from_rtnl_neighbor(&message, is_dump)
     }
 
-    #[test_case(RequestError::UnsupportedRequest => Errno::ENOTSUP; "unsupported request")]
-    #[test_case(RequestError::InvalidRequest => Errno::EINVAL; "invalid request")]
-    #[test_case(RequestError::NotFound => Errno::ENOENT; "not found")]
+    #[test_case(
+        RequestError::InvalidState(NeighbourState::Reachable) => Errno::EINVAL;
+        "invalid state"
+    )]
+    #[test_case(RequestError::InvalidKind(RouteType::Broadcast) => Errno::EINVAL; "invalid kind")]
+    #[test_case(
+        RequestError::InvalidFlags(NeighbourFlags::Router) => Errno::EINVAL;
+        "invalid flags"
+    )]
+    #[test_case(
+        RequestError::UnsupportedFlags(NeighbourFlags::Proxy) => Errno::ENOTSUP;
+        "unsupported flags"
+    )]
+    #[test_case(
+        RequestError::InvalidAddressFamily(AddressFamily::Local) => Errno::EAFNOSUPPORT;
+        "invalid address family"
+    )]
+    #[test_case(
+        RequestError::AddressFamilyMismatch(AddressFamily::Inet6) => Errno::EINVAL;
+        "address family mismatch"
+    )]
+    #[test_case(RequestError::MissingInterface => Errno::EINVAL; "interface unspecified")]
+    #[test_case(RequestError::MissingAddress => Errno::EINVAL; "destination unspecified")]
+    #[test_case(RequestError::InvalidAttribute => Errno::EINVAL; "invalid attribute")]
+    #[test_case(RequestError::NeighborNotFound => Errno::ENOENT; "neighbor not found")]
+    #[test_case(RequestError::InterfaceNotFound => Errno::ENODEV; "interface not found")]
     #[fuchsia::test]
     fn request_error_into_errno(error: RequestError) -> Errno {
         error.into()
@@ -1415,7 +1519,7 @@ mod tests {
         let included_workers = IncludedWorkers {
             routes_v4: EventLoopComponent::Absent(Optional),
             routes_v6: EventLoopComponent::Absent(Optional),
-            interfaces: EventLoopComponent::Absent(Optional),
+            interfaces: EventLoopComponent::Present(()),
             rules_v4: EventLoopComponent::Absent(Optional),
             rules_v6: EventLoopComponent::Absent(Optional),
             neighbors: EventLoopComponent::Present(()),
@@ -1423,10 +1527,10 @@ mod tests {
         };
         let (mut request_sink, request_stream) = mpsc::channel(1);
 
-        // Configure the fake watch events.
+        // Configure fake neighbor watch events.
 
         let scope = fuchsia_async::Scope::new();
-        let (neighbors_view, event_sender) = {
+        let (neighbors_view, neighbor_event_sender) = {
             use fnet_neighbor_ext::testutil::EventSpec::*;
             let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
                 Existing(1),
@@ -1443,6 +1547,44 @@ mod tests {
             (neighbors_view, event_sender)
         };
 
+        // Configure fake interface watch events.
+
+        let (interfaces_handler, _interfaces_handler_sink) =
+            crate::interfaces::testutil::FakeInterfacesHandler::new();
+        let (interfaces_proxy, _interfaces) =
+            fidl::endpoints::create_proxy::<fnet_root::InterfacesMarker>();
+        let (interfaces_state_proxy, interfaces_state) =
+            fidl::endpoints::create_proxy::<fnet_interfaces::StateMarker>();
+        let route_clients = ClientTable::default();
+
+        let interface_event_sender = {
+            let if_stream = interfaces_state.into_stream();
+            let if_watcher_stream = if_stream
+                .and_then(|req| match req {
+                    fnet_interfaces::StateRequest::GetWatcher {
+                        options: _,
+                        watcher,
+                        control_handle: _,
+                    } => futures::future::ready(Ok(watcher.into_stream())),
+                })
+                .try_flatten()
+                .map(|res| res.expect("watcher stream error"));
+            let (event_sender, event_receiver) = mpsc::unbounded();
+            event_sender
+                .unbounded_send(fnet_interfaces::Event::Idle(fnet_interfaces::Empty))
+                .expect("failed to send event");
+            let interfaces_fut =
+                if_watcher_stream.zip(event_receiver).for_each(|(req, update)| async move {
+                    match req {
+                        fnet_interfaces::WatcherRequest::Watch { responder } => {
+                            responder.send(&update).expect("send watch response")
+                        }
+                    }
+                });
+            let _join_handle = scope.spawn(interfaces_fut);
+            event_sender
+        };
+
         // Set up the event loop.
 
         let (_async_work_sink, async_work_receiver) = mpsc::unbounded();
@@ -1453,12 +1595,13 @@ mod tests {
         > = EventLoopInputs {
             neighbors_view: EventLoopComponent::Present(neighbors_view),
 
+            route_clients: EventLoopComponent::Present(route_clients),
+            interfaces_handler: EventLoopComponent::Present(interfaces_handler),
+            interfaces_proxy: EventLoopComponent::Present(interfaces_proxy),
+            interfaces_state_proxy: EventLoopComponent::Present(interfaces_state_proxy),
+
             async_work_receiver,
 
-            interfaces_handler: EventLoopComponent::Absent(Optional),
-            route_clients: EventLoopComponent::Absent(Optional),
-            interfaces_proxy: EventLoopComponent::Absent(Optional),
-            interfaces_state_proxy: EventLoopComponent::Absent(Optional),
             v4_routes_state: EventLoopComponent::Absent(Optional),
             v6_routes_state: EventLoopComponent::Absent(Optional),
             v4_main_route_table: EventLoopComponent::Absent(Optional),
@@ -1511,7 +1654,8 @@ mod tests {
             );
         }
 
-        event_sender.close_channel();
+        neighbor_event_sender.close_channel();
+        interface_event_sender.close_channel();
         drop(neighbor_client);
         scope.join().await;
     }

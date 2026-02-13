@@ -360,7 +360,7 @@ class NetlinkEncoder {
   std::vector<uint8_t> data_;
 };
 
-// A RRAI classes than handles a memory mapping. The container will ensure the
+// An RAII class that handles a memory mapping. The container will ensure the
 // mapping is destroyed when the object is deleted.
 class ScopedMMap {
  public:
@@ -411,7 +411,7 @@ class ScopedMMap {
   size_t length_;
 };
 
-// A RRAI classes than handles a mount. The container will ensure the
+// An RAII class that handles a mount. The container will ensure the
 // unmount when the object is deleted.
 class ScopedMount {
  public:

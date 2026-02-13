@@ -70,6 +70,7 @@ rustc_library("netlink") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/proptest-support",
+    "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:proptest",
     "//third_party/rust_crates:proptest-derive",

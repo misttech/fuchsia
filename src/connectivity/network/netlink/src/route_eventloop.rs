@@ -827,7 +827,10 @@ impl<
                     },
                     UnifiedRequest::NeighborsRequest(request) => {
                         neighbors_worker.get_mut()
-                            .handle_request(request);
+                            .handle_request(
+                                request,
+                                &interfaces_worker.get_ref().interface_properties
+                            );
                         Cleanup::None
                     },
                 }

@@ -26,6 +26,7 @@
 #include <linux/genetlink.h>
 #include <linux/if_link.h>
 #include <linux/if_tun.h>
+#include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sockios.h>
@@ -480,6 +481,158 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<RouteNetlinkSocketNewAddr::ParamType>& info) {
       return std::format("{}_prefix_{}", info.param.family == AF_INET ? "v4" : "v6",
                          info.param.prefix);
+    });
+
+struct RouteNetlinkSocketGetNeighParam {
+  std::string test_case_name;
+  ndmsg header;
+  std::optional<std::pair<std::string, uint8_t>> addr_and_family;
+  int expected_err;
+};
+
+class RouteNetlinkSocketGetNeigh
+    : public NetlinkRouteTest,
+      public testing::WithParamInterface<RouteNetlinkSocketGetNeighParam> {};
+
+TEST_P(RouteNetlinkSocketGetNeigh, GetNeighErrors) {
+  test_helper::NetlinkEncoder encoder(RTM_GETNEIGH, NLM_F_REQUEST);
+
+  const auto& [name, header, addr_and_family, expected_err] = GetParam();
+
+  // Neighbor header.
+  encoder.Write(header);
+
+  // Add attribute: destination address (NDA_DST)
+  if (addr_and_family) {
+    const auto& [addr, addr_family] = *addr_and_family;
+    switch (addr_family) {
+      case AF_INET: {
+        in_addr dst_addr;
+        inet_pton(AF_INET, addr.c_str(), &dst_addr);
+        encoder.AddRtAttr(NDA_DST, dst_addr);
+        break;
+      }
+      case AF_INET6: {
+        in6_addr dst_addr;
+        inet_pton(AF_INET6, addr.c_str(), &dst_addr);
+        encoder.AddRtAttr(NDA_DST, dst_addr);
+        break;
+      }
+      default:
+        FAIL() << "unknown address family: " << addr_family;
+    }
+  }
+
+  // Send the message.
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+
+  // Receive and verify the reply.
+  char recv_buf[4096];
+  ssize_t result;
+  ASSERT_GT(result = recv(nl_sock_.get(), &recv_buf, sizeof(recv_buf), 0), 0) << strerror(errno);
+
+  // Verify that we've received exactly one message that contains the expected
+  // error.
+  nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(recv_buf);
+  uint32_t len = static_cast<uint32_t>(result);
+  ASSERT_TRUE(NLMSG_OK(nlmsg, len));
+  EXPECT_EQ(nlmsg->nlmsg_type, NLMSG_ERROR);
+  nlmsgerr* err_data = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlmsg));
+  EXPECT_EQ(err_data->error, expected_err);
+
+  nlmsg = NLMSG_NEXT(nlmsg, len);
+  EXPECT_FALSE(NLMSG_OK(nlmsg, len));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RouteNetlinkSocket, RouteNetlinkSocketGetNeigh,
+    testing::Values(
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "invalid_state",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_REACHABLE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -EINVAL,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "invalid_type",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_BROADCAST,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -EINVAL,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "missing_address",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::nullopt,
+            .expected_err = -EINVAL,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "invalid_address_family",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_LOCAL,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -EAFNOSUPPORT,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "address_family_mismatch",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET6,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -EINVAL,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "interface_not_found",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET,
+                    .ndm_ifindex = 99999,
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -ENODEV,
+        },
+        RouteNetlinkSocketGetNeighParam{
+            .test_case_name = "neighbor_not_found",
+            .header =
+                ndmsg{
+                    .ndm_family = AF_INET,
+                    .ndm_ifindex = static_cast<int32_t>(if_nametoindex("lo")),
+                    .ndm_state = NUD_NONE,
+                    .ndm_type = RTN_UNSPEC,
+                },
+            .addr_and_family = std::optional(std::make_pair("192.0.2.1", AF_INET)),
+            .expected_err = -ENOENT,
+        }),
+    [](const testing::TestParamInfo<RouteNetlinkSocketGetNeigh::ParamType>& info) {
+      return info.param.test_case_name;
     });
 
 TEST(NetlinkSocket, RecvMsg) {
