@@ -30,7 +30,7 @@ pub fn ext4_extract(path: &str, out_dir: &str) -> Result<HashMap<String, String>
     };
     let parser = ExtParser::new(reader);
 
-    let inode = parser.inode(ROOT_INODE_NUM as u32).unwrap();
+    let inode = parser.inode(ROOT_INODE_NUM as u32).context("Failed to read root inode")?;
     let root_xattrs: ExtendedAttributes = parser
         .inode_xattrs(ROOT_INODE_NUM as u32)?
         .into_iter()
@@ -44,41 +44,43 @@ pub fn ext4_extract(path: &str, out_dir: &str) -> Result<HashMap<String, String>
         root_xattrs,
     )?;
 
-    parser.index(
-        parser.root_inode()?,
-        vec![],
-        &mut |parser: &ExtParser, path: Vec<&str>, entry: &DirEntry2| {
-            let xattr: ExtendedAttributes = parser
-                .inode_xattrs(entry.e2d_ino.get())?
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect();
+    parser.index(parser.root_inode()?, vec![], &mut |parser: &ExtParser,
+                                                      path: Vec<&str>,
+                                                      entry: &DirEntry2|
+     -> Result<bool, Error> {
+        let xattr: ExtendedAttributes = parser
+            .inode_xattrs(entry.e2d_ino.get())?
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect();
 
-            let inode_num = entry.e2d_ino.get();
-            let inode = parser.inode(inode_num).unwrap();
-            let mode = inode.e2di_mode.get();
-            let owner = Owner::from_inode(&inode);
+        let inode_num = entry.e2d_ino.get();
+        let inode =
+            parser.inode(inode_num).with_context(|| format!("Failed to read inode {inode_num}"))?;
+        let mode = inode.e2di_mode.get();
+        let owner = Owner::from_inode(&inode);
 
-            match EntryType::from_u8(entry.e2d_type)? {
-                EntryType::RegularFile => {
-                    let data = parser.read_data(inode_num)?;
-                    let mut cursor = Cursor::new(data);
-                    writer
-                        .add_file(&path, &mut cursor, inode_num as u64, mode, owner, xattr)
-                        .unwrap();
-                }
-                EntryType::SymLink => {
-                    let data = parser.read_data(inode_num)?;
-                    writer.add_symlink(&path, data, inode_num as u64, mode, owner, xattr).unwrap();
-                }
-                EntryType::Directory => {
-                    writer.add_directory(&path, inode_num as u64, mode, owner, xattr);
-                }
-                _ => {}
+        match EntryType::from_u8(entry.e2d_type)? {
+            EntryType::RegularFile => {
+                let data = parser.read_data(inode_num)?;
+                let mut cursor = Cursor::new(data);
+                writer
+                    .add_file(&path, &mut cursor, inode_num as u64, mode, owner, xattr)
+                    .context("Failed to add file")?;
             }
-            Ok(true)
-        },
-    )?;
+            EntryType::SymLink => {
+                let data = parser.read_data(inode_num)?;
+                writer
+                    .add_symlink(&path, data, inode_num as u64, mode, owner, xattr)
+                    .context("Failed to add symlink")?;
+            }
+            EntryType::Directory => {
+                writer.add_directory(&path, inode_num as u64, mode, owner, xattr);
+            }
+            _ => {}
+        }
+        Ok(true)
+    })?;
 
     Ok(writer.export()?)
 }

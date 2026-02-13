@@ -495,14 +495,10 @@ impl Parser {
     ///
     /// Returns Ok(true) if it has indexed its subtree successfully. Otherwise, if the receiver
     /// chooses to cancel indexing early, an Ok(false) is returned and propagated up.
-    pub fn index<R>(
-        &self,
-        inode: INode,
-        prefix: Vec<&str>,
-        receiver: &mut R,
-    ) -> Result<bool, ParsingError>
+    pub fn index<R, E>(&self, inode: INode, prefix: Vec<&str>, receiver: &mut R) -> Result<bool, E>
     where
-        R: FnMut(&Parser, Vec<&str>, &DirEntry2) -> Result<bool, ParsingError>,
+        E: From<ParsingError>,
+        R: FnMut(&Parser, Vec<&str>, &DirEntry2) -> Result<bool, E>,
     {
         let entries = self.entries_from_inode(&inode)?;
         for entry in entries {
@@ -672,7 +668,7 @@ impl Parser {
 mod tests {
     use crate::parser::Parser;
     use crate::readers::VecReader;
-    use crate::structs::EntryType;
+    use crate::structs::{EntryType, ParsingError};
     use maplit::hashmap;
     use sha2::{Digest, Sha256};
     use std::collections::{HashMap, HashSet};
@@ -772,7 +768,7 @@ mod tests {
                 assert_ne!(entries.contains(&entry.e2d_ino.get()), true);
                 entries.insert(entry.e2d_ino.get());
 
-                Ok(true)
+                Ok::<bool, ParsingError>(true)
             })
             .expect("Index");
 
@@ -829,7 +825,7 @@ mod tests {
                     }
                     _ => {}
                 }
-                Ok(true)
+                Ok::<bool, ParsingError>(true)
             })
             .expect("Index");
 
@@ -924,7 +920,7 @@ mod tests {
                         assert!(false, "No other types should exist in this image.");
                     }
                 }
-                Ok(true)
+                Ok::<bool, ParsingError>(true)
             })
             .expect("Index");
         assert!(file_hashes.is_empty(), "Expected files were not found {:?}", file_hashes);

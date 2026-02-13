@@ -59,8 +59,9 @@ impl StarnixContainerGenerator {
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
             .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
-        let image_files = ext4_extract(image_path.as_str(), image_outdir.as_str())
-            .context("Extracting system files")?;
+        let image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
+            || format!("Failed to extract EXT4 image from {}. Please ensure the file is a valid EXT4 filesystem image.", image_path),
+        )?;
         for (dst, src) in &image_files {
             let dst = format!("data/{}/{}", name, dst);
             builder
@@ -99,7 +100,9 @@ impl StarnixContainerGenerator {
                 .with_context(|| format!("Unable to open `{:?}'", ramdisk_path))?;
             let mut file_reader = GzDecoder::new(file);
             loop {
-                let mut cpio_reader = cpio::NewcReader::new(file_reader).unwrap();
+                let mut cpio_reader = cpio::NewcReader::new(file_reader).with_context(
+                    || format!("Failed to parse ramdisk at {}. Please ensure the file is a valid GZIP-compressed CPIO archive.", ramdisk_path),
+                )?;
                 let entry = cpio_reader.entry();
 
                 if cpio_reader.entry().is_trailer() {
@@ -794,5 +797,65 @@ tmpfs   /data       tmpfs   defaults            wait
         let init = m.lookup(etc_init, "test.rc").expect("test.rc not found");
         let init = m.get(init).expect("test.rc not found");
         assert_matches!(init.info(), NodeInfo::File(_));
+    }
+
+    #[test]
+    fn test_invalid_system_image() {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create an invalid image file
+        let invalid_image_path = outdir.join("invalid.img");
+        std::fs::write(&invalid_image_path, "not an ext4 image").unwrap();
+
+        let container = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path,
+            system: invalid_image_path,
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            depfile: None,
+            fstab: None,
+            init: vec![],
+            skip_subpackages: false,
+        };
+
+        let result = container.build();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(format!("{:#}", err).contains("Failed to extract EXT4 image"));
+    }
+
+    #[test]
+    fn test_invalid_ramdisk() {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create an invalid ramdisk file
+        let invalid_ramdisk_path = outdir.join("invalid_ramdisk");
+        std::fs::write(&invalid_ramdisk_path, "not a cpio archive").unwrap();
+
+        let container = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path,
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![invalid_ramdisk_path],
+            hals: vec![],
+            depfile: None,
+            fstab: None,
+            init: vec![],
+            skip_subpackages: false,
+        };
+
+        let result = container.build();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(format!("{:#}", err).contains("Failed to parse ramdisk"));
     }
 }
