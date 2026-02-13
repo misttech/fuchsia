@@ -133,7 +133,7 @@ pub struct ListCommand {
     pub with_url: bool,
 
     #[argh(option)]
-    /// A selector specifying what `fuchsia.diagnostics.ArchiveAccessor` to connect to.
+    /// a selector specifying what `fuchsia.diagnostics.ArchiveAccessor` to connect to.
     /// The selector will be in the form of:
     /// <moniker>:fuchsia.diagnostics.ArchiveAccessor(.pipeline_name)?
     ///

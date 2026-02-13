@@ -31,7 +31,7 @@ pub struct SelectorsCommand {
     pub data: Vec<String>,
 
     #[argh(option)]
-    /// A string specifying what `fuchsia.diagnostics.ArchiveAccessor` to connect to.
+    /// a string specifying what `fuchsia.diagnostics.ArchiveAccessor` to connect to.
     /// This can be copied from the output of `ffx inspect list-accessors`.
     /// The selector will be in the form of:
     /// <moniker>:fuchsia.diagnostics.ArchiveAccessor.pipeline_name
