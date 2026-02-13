@@ -2240,3 +2240,12 @@ libc_test_executable("libc-hello-world") {
   sources = [ "libc-hello-world.cc" ]
   deps = [ "//sdk/lib/fdio" ]
 }
+
+libc_test_executable("libcxx-hello-world") {
+  sources = [ "libcxx-hello-world.cc" ]
+  remove_configs = [
+    "//build/config/fuchsia:no_cpp_standard_library",
+    ":nostdlibs",
+  ]
+  deps = [ "//sdk/lib/fdio" ]
+}

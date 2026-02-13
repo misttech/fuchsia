@@ -18,6 +18,9 @@ TYPED_TEST_SUITE(LdLoadLibcTests, TestTypes<>);
 namespace {
 
 constexpr std::string_view kLibcSoname = "libc.so";
+constexpr std::string_view kLibcxxSoname = "libc++.so.2";
+constexpr std::string_view kLibcxxabiSoname = "libc++abi.so.1";
+constexpr std::string_view kLibunwindSoname = "libunwind.so.1";
 constexpr std::string_view kFdioSoname = "libfdio.so";
 
 // This is just running an empty main() function using the vanilla system libc.
@@ -85,6 +88,34 @@ TYPED_TEST(LdLoadLibcTests, LibcHelloWorld) {
 
   std::string test_stdout_contents = std::move(test_stdout_pipe).Finish();
   EXPECT_EQ(test_stdout_contents, "Hello, world!\n");
+}
+
+TYPED_TEST(LdLoadLibcTests, LibcxxHelloWorld) {
+  ASSERT_NO_FATAL_FAILURE(this->Init());
+
+  // Give the test a stdout pipe and capture what it writes.
+  elfldltl::testing::TestPipeReader test_stdout_pipe;
+  {
+    fbl::unique_fd test_stdout_fd;
+    ASSERT_NO_FATAL_FAILURE(test_stdout_pipe.Init(test_stdout_fd));
+    ASSERT_NO_FATAL_FAILURE(this->RedirectFd(STDOUT_FILENO, std::move(test_stdout_fd)));
+  }
+
+  ASSERT_NO_FATAL_FAILURE(this->Needed({
+      kFdioSoname,
+      kLibcSoname,
+      kLibcxxSoname,
+      kLibcxxabiSoname,
+      kLibunwindSoname,
+  }));
+  ASSERT_NO_FATAL_FAILURE(this->Load("libcxx-hello-world"));
+
+  EXPECT_EQ(this->Run(), 0);
+
+  this->ExpectLog("");
+
+  std::string test_stdout_contents = std::move(test_stdout_pipe).Finish();
+  EXPECT_EQ(test_stdout_contents, "Hello, C++ world!\n");
 }
 
 }  // namespace

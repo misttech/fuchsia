@@ -238,6 +238,7 @@ if (is_fuchsia) {
       ":libc-noop-test.test-data",
       "modules:libc-hello-world.test-data",
       "modules:libc-start-main.test-data",
+      "modules:libcxx-hello-world.test-data",
     ]
   }
 
