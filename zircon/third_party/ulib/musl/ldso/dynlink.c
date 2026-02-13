@@ -2804,38 +2804,6 @@ LIBC_NO_SAFESTACK static void error(const char* fmt, ...) {
   va_end(ap);
 }
 
-zx_status_t __sanitizer_change_code_protection(uintptr_t addr, size_t len, bool writable) {
-  static const char kBadDepsMessage[] =
-      "module compiled with -fxray-instrument loaded in process without it";
-
-  if (!KEEP_DSO_VMAR) {
-    __sanitizer_log_write(kBadDepsMessage, sizeof(kBadDepsMessage) - 1);
-    CRASH_WITH_UNIQUE_BACKTRACE();
-  }
-
-  struct dso* p;
-  _dlfcn_lock();
-  p = addr2dso((size_t)__builtin_return_address(0));
-  _dlfcn_unlock();
-
-  if (!p) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  if (addr < saddr(p, p->code_start) || len > saddr(p, p->code_end) - addr) {
-    debugmsg("Cannot change protection outside of the code range\n");
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  uint32_t options = ZX_VM_PERM_READ | ZX_VM_PERM_EXECUTE | (writable ? ZX_VM_PERM_WRITE : 0);
-  zx_status_t status = _zx_vmar_protect(p->vmar, options, (zx_vaddr_t)addr, len);
-  if (status != ZX_OK) {
-    debugmsg("Failed to change protection of [%p, %p): %s\n", addr, addr + len,
-             _zx_status_get_string(status));
-  }
-  return status;
-}
-
 // The _dl_rdlock is held or equivalent.
 void _dl_locked_report_globals(sanitizer_memory_snapshot_callback_t* callback, void* callback_arg) {
   for (struct dso* mod = head; mod != NULL; mod = dso_next(mod)) {
