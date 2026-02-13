@@ -10,25 +10,32 @@ use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
 use fxfs::blob_metadata::{BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
-use fxfs::object_handle::WriteBytes;
+use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::journal::RESERVED_SPACE;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions, ObjectStore,
+    DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions, ObjectStore, StoreOptions,
 };
 use fxfs::round::round_up;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::io::{BufWriter, Read};
+use sparse::unsparse;
+use std::fs;
+use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::PathBuf;
 use storage_device::DeviceHolder;
 use storage_device::file_backed_device::FileBackedDevice;
+use zstd::stream::read::Decoder;
 
 pub const BLOB_VOLUME_NAME: &str = "blob";
+
+const BLOCK_SIZE: u32 = 4096;
+
+const READ_BUFFER_SIZE: u64 = 512;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct BlobsJsonOutputEntry {
@@ -72,7 +79,6 @@ pub async fn make_blob_image(
 
     let mut target_size = target_size.unwrap_or_default();
 
-    const BLOCK_SIZE: u32 = 4096;
     if target_size > 0 && target_size < BLOCK_SIZE as u64 {
         return Err(anyhow!("Size {} is too small", target_size));
     }
@@ -439,9 +445,84 @@ fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize)
     }
 }
 
+/// Extract blobs from the Fxfs image in the product bundle to the output directory.
+pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<()> {
+    if out_dir.exists() {
+        fs::remove_dir_all(&out_dir).context("Failed to remove output directory")?;
+    }
+    fs::create_dir_all(&out_dir)?;
+
+    // TODO (https://fxbug.dev/483735826):
+    // Update the fxfs crate so that you can hand it a sparse image and
+    // it will be able to parse that and iterate over the contents
+    let image_bytes = fs::read(&image)?;
+    let mut source = Cursor::new(image_bytes);
+    let mut unsparsed = Cursor::new(Vec::<u8>::new());
+    let mut non_sparse_image = tempfile::NamedTempFile::new_in(&out_dir)?;
+    unsparse(&mut source, &mut unsparsed)?;
+    non_sparse_image.write_all(&unsparsed.into_inner())?;
+
+    let device = DeviceHolder::new(FileBackedDevice::new(non_sparse_image.reopen()?, BLOCK_SIZE));
+    let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
+    let vol =
+        root_volume(fs.clone()).await?.volume(BLOB_VOLUME_NAME, StoreOptions::default()).await?;
+    let root_dir = Directory::open(&vol, vol.root_directory_object_id()).await?;
+    let layer_set = root_dir.store().tree().layer_set();
+    let mut merger = layer_set.merger();
+    let mut iter = root_dir.iter(&mut merger).await?;
+
+    while let Some((name, object_id, descriptor)) = iter.get() {
+        if *descriptor == fxfs::object_store::ObjectDescriptor::File {
+            let handle = fxfs::object_store::ObjectStore::open_object(
+                root_dir.owner(),
+                object_id,
+                fxfs::object_store::HandleOptions::default(),
+                None,
+            )
+            .await?;
+
+            let out_path = out_dir.join(name);
+            let mut file = std::fs::File::create(&out_path)?;
+            let mut read_buf = Vec::new();
+            let mut offset = 0;
+            let mut buf =
+                handle.allocate_buffer((handle.block_size() * READ_BUFFER_SIZE) as usize).await;
+            loop {
+                let bytes = handle.read(offset, buf.as_mut()).await?;
+                if bytes == 0 {
+                    break;
+                }
+                offset += bytes as u64;
+                read_buf.write_all(&buf.as_slice()[..bytes])?;
+            }
+
+            // We can bulk decompress all chunks since the payload of a
+            // chunked archive is still a valid zstd stream.
+            let metadata = BlobMetadata::read_from(&handle).await?;
+            match metadata.format {
+                BlobFormat::ChunkedZstd { uncompressed_size, .. } => {
+                    let mut decoder = Decoder::new(&read_buf[..])?;
+                    let decompressed_size = std::io::copy(&mut decoder, &mut file)?;
+                    if decompressed_size != uncompressed_size {
+                        return Err(anyhow!(
+                            "The decompressed size does not match
+                        the expected size from the blob metadata."
+                        ));
+                    }
+                }
+                BlobFormat::Uncompressed => {
+                    file.write_all(&read_buf)?;
+                }
+            }
+        }
+        iter.advance().await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BlobsJsonOutput, BlobsJsonOutputEntry, make_blob_image};
+    use super::{BlobsJsonOutput, BlobsJsonOutputEntry, extract_blobs, make_blob_image};
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fxfs::filesystem::FxFilesystem;
@@ -450,12 +531,58 @@ mod tests {
     use fxfs::object_store::volume::root_volume;
     use sparse::reader::SparseReader;
     use std::fs::File;
-    use std::io::{Seek as _, SeekFrom, Write as _};
+    use std::io::{Seek as _, SeekFrom, Write};
     use std::path::Path;
     use std::str::from_utf8;
     use storage_device::DeviceHolder;
     use storage_device::file_backed_device::FileBackedDevice;
     use tempfile::TempDir;
+
+    #[fasync::run(10, test)]
+    async fn test_extract_blobs() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+
+        let input_blob_path = dir.join("input.txt");
+        let image_path = dir.join("fxfs1.blk");
+        let sparse_path = dir.join("fxfs1.sparse.blk");
+        let out_dir = dir.join("extracted_out");
+
+        let data = "C".repeat(128 * 1024);
+        std::fs::write(&input_blob_path, &data).unwrap();
+
+        let merkle_hash = fuchsia_merkle::root_from_slice(data.as_bytes());
+
+        make_blob_image(
+            image_path.to_str().unwrap(),
+            Some(sparse_path.to_str().unwrap()),
+            vec![(merkle_hash, input_blob_path.clone())],
+            dir.join("blobs1.json").to_str().unwrap(),
+            None,
+            true, // Enable compression
+        )
+        .await
+        .expect("make_blob_image failed");
+
+        extract_blobs(sparse_path, out_dir.clone())
+            .await
+            .expect("Extraction failed inside extract_blobs");
+
+        let mut extracted_files = std::fs::read_dir(&out_dir).expect("out_dir should exist");
+        let first_entry = extracted_files
+            .next()
+            .expect("No files were extracted!")
+            .expect("Failed to read directory entry");
+
+        let extracted_blob_path = first_entry.path();
+        let final_len = std::fs::metadata(&extracted_blob_path).unwrap().len();
+
+        assert_eq!(
+            final_len,
+            data.len() as u64,
+            "Decompressed data size does not match original size",
+        );
+    }
 
     #[fasync::run(10, test)]
     async fn test_make_blob_image() {

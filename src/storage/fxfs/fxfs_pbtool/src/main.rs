@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Error;
 use argh::FromArgs;
+use fxfs_make_blob_image;
 use std::path::PathBuf;
 
 /// A tool to interact with Fxfs images within product bundles.
 #[derive(FromArgs, Debug)]
 struct FxfsToolArgs {
     #[argh(subcommand)]
-    subcommand: SubCommand,
+    command: Command,
 }
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
-enum SubCommand {
+enum Command {
     Extract(ExtractArgs),
 }
 
@@ -32,13 +33,11 @@ struct ExtractArgs {
     out: PathBuf,
 }
 
-fn main() -> anyhow::Result<()> {
+#[fuchsia::main]
+async fn main() -> Result<(), Error> {
     let args: FxfsToolArgs = argh::from_env();
 
-    match args.subcommand {
-        SubCommand::Extract(extract_args) => {
-            println!("Extracting from: {:?} to: {:?}", extract_args.image, extract_args.out);
-            // TODO b/472511115: Implement extraction logic here
-        }
+    match args.command {
+        Command::Extract(args) => fxfs_make_blob_image::extract_blobs(args.image, args.out).await,
     }
 }

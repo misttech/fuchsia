@@ -11,4 +11,11 @@ rustc_binary("fxfs_pbtool") {
   edition = "2024"
 
   sources = [ "src/main.rs" ]
+
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/storage/fxfs/make-blob-image",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+  ]
 }
