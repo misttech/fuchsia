@@ -2,22 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
+use fuchsia_async::Task;
 use fuchsia_sync::Mutex;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use {fidl_fuchsia_bluetooth_hfp as hfp, fuchsia_async as fasync};
 
 pub type LocalCallId = u64;
 
 #[derive(Clone)]
-pub struct CallInfo {
+pub struct Call {
     pub local_id: LocalCallId,
 
     number: String,
@@ -28,11 +26,6 @@ pub struct CallInfo {
     pub proxy: hfp::CallProxy,
 }
 
-pub struct Call {
-    pub info: CallInfo,
-    task: fasync::Task<LocalCallId>,
-}
-
 struct CallProxyTask {
     local_id: LocalCallId,
 
@@ -40,15 +33,7 @@ struct CallProxyTask {
     proxy: hfp::CallProxy,
 }
 
-impl Future for Call {
-    type Output = LocalCallId;
-
-    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
-        self.task.poll_unpin(context)
-    }
-}
-
-impl fmt::Debug for CallInfo {
+impl fmt::Debug for Call {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -58,27 +43,21 @@ impl fmt::Debug for CallInfo {
     }
 }
 
-impl fmt::Debug for Call {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.info)
-    }
-}
-
 impl Call {
-    pub fn new(
+    pub fn new_call_with_task(
         local_id: LocalCallId,
         number: String,
         direction: hfp::CallDirection,
         state: hfp::CallState,
         calls: Arc<Mutex<HashMap<LocalCallId, Call>>>,
         proxy: hfp::CallProxy,
-    ) -> Call {
+    ) -> (Call, Task<LocalCallId>) {
         let call_task = CallProxyTask { local_id, calls, proxy: proxy.clone() };
         let call_fut = call_task.run();
         let task = fasync::Task::local(call_fut);
 
-        let info = CallInfo { local_id, number, direction, state, proxy };
-        Self { info, task }
+        let call = Call { local_id, number, direction, state, proxy };
+        (call, task)
     }
 }
 
@@ -92,14 +71,16 @@ impl CallProxyTask {
         self.local_id
     }
 
-    async fn run_inner(&mut self) -> Result<LocalCallId> {
+    async fn run_inner(&mut self) -> Result<()> {
         let mut call_state_stream =
             HangingGetStream::new(self.proxy.clone(), hfp::CallProxy::watch_state);
         loop {
             let new_call_state = call_state_stream.next().await;
-            let new_call_state = new_call_state
-                .ok_or_else(|| format_err!("Call stream closed."))?
-                .map_err(|e| format_err!("FIDL error: {e}"))?;
+            let new_call_state = match new_call_state {
+                Some(Ok(state)) => state,
+                Some(Err(fidl::Error::ClientChannelClosed { .. })) | None => return Ok(()),
+                Some(Err(err)) => Err(format_err!("FIDL error: {err}"))?,
+            };
 
             self.handle_new_call_state(new_call_state);
         }
@@ -116,9 +97,9 @@ impl CallProxyTask {
             Some(call) => {
                 println!(
                     "Got state update for call {}: {:?} -> {:?})",
-                    call.info.local_id, call.info.state, new_state
+                    call.local_id, call.state, new_state
                 );
-                call.info.state = new_state;
+                call.state = new_state;
             }
         }
     }

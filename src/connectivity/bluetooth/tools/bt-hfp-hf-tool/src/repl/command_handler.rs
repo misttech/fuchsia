@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use super::commands::Command;
 
-use crate::fidl::call::{Call, CallInfo, LocalCallId};
-use crate::fidl::peer::{LocalPeerId, Peer, PeerInfo};
+use crate::fidl::call::{Call, LocalCallId};
+use crate::fidl::peer::{LocalPeerId, Peer};
 
 #[allow(unused)]
 pub struct CommandHandler {
@@ -44,7 +44,7 @@ impl CommandHandler {
         Ok(())
     }
 
-    fn get_peer_info_by_str_id(&self, str: &str) -> Option<PeerInfo> {
+    fn get_peer_by_str_id(&self, str: &str) -> Option<Peer> {
         let Ok(id) = str.parse() else {
             println!("Invalid local peer ID: \"{str}\".");
             return None;
@@ -58,20 +58,18 @@ impl CommandHandler {
             return None;
         };
 
-        Some(peer.info.clone())
+        Some(peer.clone())
     }
 
-    fn get_all_peer_infos(&self) -> Vec<PeerInfo> {
-        let peers = self.peers.lock();
-        let mut peer_infos: Vec<PeerInfo> =
-            peers.iter().map(|id_and_peer| id_and_peer.1.info.clone()).collect();
+    fn get_all_peers(&self) -> Vec<Peer> {
+        let mut peers: Vec<Peer> =
+            self.peers.lock().iter().map(|id_and_peer| id_and_peer.1.clone()).collect();
+        peers.sort_by_key(|p| p.local_id);
 
-        peer_infos.sort_by_key(|info| info.local_id);
-
-        peer_infos
+        peers
     }
 
-    fn get_call_info_by_str_id(&self, str: &str) -> Option<CallInfo> {
+    fn get_call_by_str_id(&self, str: &str) -> Option<Call> {
         let id_result = str.parse();
         let id = match id_result {
             Err(_) => {
@@ -92,33 +90,32 @@ impl CommandHandler {
             Some(call) => call,
         };
 
-        Some(call.info.clone())
+        Some(call.clone())
     }
 
-    fn get_all_call_infos(&self) -> Vec<CallInfo> {
+    fn get_all_calls(&self) -> Vec<Call> {
         let calls = self.calls.lock();
-        let mut call_infos: Vec<CallInfo> =
-            calls.iter().map(|id_and_call| id_and_call.1.info.clone()).collect();
+        let mut calls: Vec<Call> = calls.iter().map(|id_and_call| id_and_call.1.clone()).collect();
 
-        call_infos.sort_by_key(|info| info.local_id);
+        calls.sort_by_key(|c| c.local_id);
 
-        call_infos
+        calls
     }
 
     fn list_peers(&mut self, command: Command, args: Vec<&str>) {
         let len = args.len();
         match len {
             0 => {
-                let peer_infos = self.get_all_peer_infos();
-                for peer_info in peer_infos {
-                    println!("{peer_info:?}");
+                let peers = self.get_all_peers();
+                for peer in peers {
+                    println!("{peer:?}");
                 }
             }
             1 => {
                 let str_id = args[0];
-                let peer_info_option = self.get_peer_info_by_str_id(str_id);
-                if let Some(peer_info) = peer_info_option {
-                    println!("{peer_info:?}");
+                let peer_option = self.get_peer_by_str_id(str_id);
+                if let Some(peer) = peer_option {
+                    println!("{peer:?}");
                 }
                 // Else the errors have already been printed.
             }
@@ -130,16 +127,16 @@ impl CommandHandler {
         let len = args.len();
         match len {
             0 => {
-                let call_infos = self.get_all_call_infos();
-                for call_info in call_infos {
-                    println!("{call_info:?}");
+                let calls = self.get_all_calls();
+                for call in calls {
+                    println!("{call:?}");
                 }
             }
             1 => {
                 let str_id = args[0];
-                let call_info_option = self.get_call_info_by_str_id(str_id);
-                if let Some(call_info) = call_info_option {
-                    println!("{call_info:?}");
+                let call_option = self.get_call_by_str_id(str_id);
+                if let Some(call) = call_option {
+                    println!("{call:?}");
                 }
                 // Else the errors have already been printed.
             }
@@ -148,8 +145,8 @@ impl CommandHandler {
     }
 
     async fn request_outgoing_call(&self, peer_id_str: &str, call_action: hfp::CallAction) {
-        if let Some(peer_info) = self.get_peer_info_by_str_id(peer_id_str) {
-            let call_result = peer_info.proxy.request_outgoing_call(&call_action).await;
+        if let Some(peer) = self.get_peer_by_str_id(peer_id_str) {
+            let call_result = peer.proxy.request_outgoing_call(&call_action).await;
             match call_result {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) => println!("HFP error: {err}"),
@@ -214,8 +211,8 @@ impl CommandHandler {
         match len {
             0 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
             1 => {
-                if let Some(call_info) = self.get_call_info_by_str_id(args[0]) {
-                    if let Err(err) = call_info.proxy.request_active() {
+                if let Some(call) = self.get_call_by_str_id(args[0]) {
+                    if let Err(err) = call.proxy.request_active() {
                         println!("Error: {:?}", err);
                     }
                 }
@@ -230,8 +227,8 @@ impl CommandHandler {
         match len {
             0 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
             1 => {
-                if let Some(call_info) = self.get_call_info_by_str_id(args[0]) {
-                    if let Err(err) = call_info.proxy.request_transfer_audio() {
+                if let Some(call) = self.get_call_by_str_id(args[0]) {
+                    if let Err(err) = call.proxy.request_transfer_audio() {
                         println!("Error: {:?}", err);
                     }
                 }
@@ -246,8 +243,8 @@ impl CommandHandler {
         match len {
             0 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
             1 => {
-                if let Some(call_info) = self.get_call_info_by_str_id(args[0]) {
-                    if let Err(err) = call_info.proxy.request_terminate() {
+                if let Some(call) = self.get_call_by_str_id(args[0]) {
+                    if let Err(err) = call.proxy.request_terminate() {
                         println!("Error: {:?}", err);
                     }
                 }

@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
 use fuchsia_async::Task;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_sync::Mutex;
 use futures::stream::FuturesUnordered;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use std::collections::HashMap;
 use std::future::Future;
 use std::ops::RangeFrom;
@@ -122,14 +122,20 @@ impl HandsFreeProxyTask {
         let canonical_id: PeerId = canonical_id.into();
         let proxy: hfp::PeerHandlerProxy = client_end.into_proxy();
 
-        let peer = Peer::new(local_id, canonical_id, next_local_call_id, self.calls.clone(), proxy);
+        let (peer, task) = Peer::new_peer_and_task(
+            local_id,
+            canonical_id,
+            next_local_call_id,
+            self.calls.clone(),
+            proxy,
+        );
         println!("New peer connected: {peer:?}");
 
-        let mut peers = self.peers.lock();
-        let no_previous_peer = peers.insert(local_id, peer);
-
+        let no_previous_peer = self.peers.lock().insert(local_id, peer);
         // This should be impossible as we increment the peer id every time.
         assert!(no_previous_peer.is_none(), "Reused local peer ID.");
+
+        self.peer_tasks.push(task);
 
         Ok(())
     }
