@@ -59,7 +59,8 @@ __asm__(
     // a call would move the SP.  The posix-startup.S entry point code expects
     // the StartupStack at the SP, not a return address.  Note this saves and
     // restores %rbx so that the entry point code can clobber it.
-    // TODO(mcgrathr): For now, it then returns at the end, popping the stack.
+    // TODO(https://fxbug.dev/479517175): For now, it then returns at the end,
+    // popping the stack.
     R"""(
       push %rbp
       .cfi_adjust_cfa_offset 8
