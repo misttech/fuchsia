@@ -366,6 +366,7 @@ VkRenderer::SetConstraintsAndCreateVulkanBufferCollection(
       vk_result != vk::Result::eSuccess) {
     FX_LOGS(ERROR) << "Cannot set vulkan constraints: " << vk::to_string(vk_result)
                    << "; The client may have invalidated the token.";
+    vk_device.destroyBufferCollectionFUCHSIA(vk_collection, nullptr, vk_loader);
     return std::nullopt;
   }
 
@@ -465,6 +466,9 @@ bool VkRenderer::ImportBufferCollection(
   if (!emplace_success) {
     FX_LOGS(WARNING) << "Could not store buffer collection, because an entry already existed for "
                      << collection_id;
+    auto vk_device = escher_->vk_device();
+    auto vk_loader = escher_->device()->dispatch_loader();
+    vk_device.destroyBufferCollectionFUCHSIA(vk_collection, nullptr, vk_loader);
     return false;
   }
 
@@ -730,6 +734,7 @@ escher::ImagePtr VkRenderer::ExtractImage(const allocation::ImageMetadata& metad
           vk_device.allocateMemory(&alloc_info.get<vk::MemoryAllocateInfo>(), nullptr, &memory);
       err != vk::Result::eSuccess) {
     FX_LOGS(ERROR) << "Could not successfully allocate memory: " << vk::to_string(err);
+    vk_device.destroyImage(image, nullptr);
     return nullptr;
   }
 
@@ -744,6 +749,7 @@ escher::ImagePtr VkRenderer::ExtractImage(const allocation::ImageMetadata& metad
   if (memory_requirements.size > gpu_mem->size()) {
     FX_LOGS(ERROR) << "Memory requirements for image exceed available memory: "
                    << memory_requirements.size << " " << gpu_mem->size();
+    vk_device.destroyImage(image, nullptr);
     return nullptr;
   }
 
