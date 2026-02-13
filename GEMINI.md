@@ -259,26 +259,15 @@ and it will print the symbolized text to stdout.
 Fuchsia tracks bugs and feature requests using Buganizer. If the user has
 `bugged` installed you can run `bugged help` to learn how to read bug state.
 
+### Fetching Change List (CL) diffs
+
+Use `fx fetch-cl-diff --help` to see how to read the diff for a CL.
+
+### Fetching Change List (CL) comments
+
+Use `fx fetch-cl-comments --help` to see how to read the comments for a CL.
+
 # Code reviews
-
-## Fetching Change List (CL) diffs
-
-Fuchsia development happens on Gerrit. When the user
-asks for you to read a CL for them, do the following:
-
-1. Parse the change id from the CL URL. If the URL is `fxr/1234`, then
-   the id is 1234. If the URL is
-   `https://fuchsia-review.git.corp.google.com/c/fuchsia/+/1299104`,
-   then the ID is `1299104`.
-2. Use the `gerrit_` tools from the pndMcp MCP server to fetch the patch
-   contents. If this MCP server is not available, instead use the following:
-   If the user asked for a CL hosted at `https://fuchsia-review.git.corp.google.com` or
-   `https://fuchsia-review.googlesource.com`, run this shell command to get
-   the diff from the changelist: `curl -L
-   https://fuchsia-review.googlesource.com/changes/<ID>/revisions/current/patch?raw`. If
-   the user asked for a CL from
-   `https://turquoise-internal-review.git.corp.google.com/` or `tqr/`, then use
-   `gob-curl https://turquoise-internal-review.googlesource.com/changes<ID>/revisions/current/patch?raw`
 
 ## Enhancing agent guidance
 
