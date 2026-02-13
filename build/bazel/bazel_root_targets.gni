@@ -57,6 +57,7 @@ if (current_toolchain == default_toolchain) {
       no_sdk = true
       host = true
       subtargets = _subtargets
+      update_rust_project = true
     }
 
     # This template doesn't take any arguments, ensure GN doesn't

@@ -74,6 +74,10 @@ declare_args() {
 #     scope items of `copy_outputs`, `directory_outputs`, etc..
 #     Default value is `target_out_dir`.
 #
+#   update_rust_project: (optional)
+#     A boolean (default=false) to update rust_project.json with the Rust
+#     targets contained within this Bazel action.
+#
 #   copy_outputs: (optional)
 #     A list of scopes, where each item describes a Bazel output and a
 #     corresponding Ninja output location (where the Bazel build artifact
@@ -292,6 +296,9 @@ template("bazel_action") {
       _bazel_platform_config = "fuchsia_config_args"
       _bazel_platform_label = "//build/bazel/platforms:fuchsia_${current_cpu}"
     }
+
+    _update_rust_project =
+        defined(invoker.update_rust_project) && invoker.update_rust_project
 
     _copy_outputs = []
     if (defined(invoker.copy_outputs)) {
@@ -648,8 +655,11 @@ template("bazel_action") {
     _rebased_debug_symbols_manifest =
         rebase_path(_debug_symbols_manifest, root_build_dir)
 
-    _rust_project_json = "${target_out_dir}/${target_name}.rust-project.json"
-    _rebased_rust_project_json = rebase_path(_rust_project_json, root_build_dir)
+    if (_update_rust_project) {
+      _rust_project_json = "${target_out_dir}/${target_name}.rust-project.json"
+      _rebased_rust_project_json =
+          rebase_path(_rust_project_json, root_build_dir)
+    }
 
     action(target_name) {
       forward_variables_from(invoker,
@@ -717,9 +727,11 @@ template("bazel_action") {
         _bazel_command_file,
         _bazel_explain_file,
         _debug_symbols_manifest,
-        _rust_project_json,
         _timings_file,
       ]
+      if (_update_rust_project) {
+        outputs += [ _rust_project_json ]
+      }
 
       # bazel_gn_target_action.py always checks the rbe_settings.json file to see if
       # RBE is enabled or not.
@@ -784,11 +796,16 @@ template("bazel_action") {
                _rebased_bazel_explain_file,
                "--debug-symbols-manifest",
                _rebased_debug_symbols_manifest,
-               "--rust-sysroot",
-               rebased_rustc_prefix,
-               "--rust-project-json",
-               _rebased_rust_project_json,
              ]
+
+      if (_update_rust_project) {
+        args += [
+          "--rust-sysroot",
+          rebased_rustc_prefix,
+          "--rust-project-json",
+          _rebased_rust_project_json,
+        ]
+      }
 
       if (bazel_auto_refresh_compdb) {
         _compdb_file =
@@ -872,7 +889,10 @@ template("bazel_action") {
               bazel_explain_file = _rebased_bazel_explain_file
               timings_file = _rebased_timings_file
               build_events_log_json = _rebased_bazel_build_events_log_json
-              bazel_rust_project_json = _rebased_rust_project_json
+
+              if (_update_rust_project) {
+                bazel_rust_project_json = _rebased_rust_project_json
+              }
 
               if (bazel_auto_refresh_compdb) {
                 bazel_compdb_file = _rebased_compdb_file
