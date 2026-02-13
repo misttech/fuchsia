@@ -6,6 +6,7 @@ use anyhow::{Error, Result};
 use at_commands as at;
 use bt_hfp::call::list::Idx as CallIndex;
 use bt_hfp::call::{Direction, Number};
+use bt_hfp::dtmf::Code as DtmfCode;
 use fidl_fuchsia_bluetooth_hfp::CallState;
 use std::fmt;
 use std::fmt::Debug;
@@ -27,6 +28,9 @@ use audio_connection_setup::AudioConnectionSetupProcedure;
 
 pub mod codec_connection_setup;
 use codec_connection_setup::CodecConnectionSetupProcedure;
+
+pub mod send_dtmf_code;
+use send_dtmf_code::SendDtmfCodeProcedure;
 
 pub mod hang_up;
 use hang_up::HangUpProcedure;
@@ -97,6 +101,7 @@ pub enum CommandFromHf {
     HangUpCall,
     QueryCalls,
     StartAudioConnection,
+    SendDtmfCode { code: DtmfCode },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,6 +181,10 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
 
             at_resp!(Bcs) => Some(Box::new(CodecConnectionSetupProcedure::new())),
 
+            ProcedureInput::CommandFromHf(CommandFromHf::SendDtmfCode { .. }) => {
+                Some(Box::new(SendDtmfCodeProcedure::new()))
+            }
+
             _ => None,
         }
     }
@@ -190,7 +199,8 @@ impl ProcedureInputT<ProcedureOutput> for ProcedureInput {
             | ProcedureInput::CommandFromHf(CommandFromHf::CallActionRedialLast)
             | ProcedureInput::CommandFromHf(CommandFromHf::AnswerIncoming)
             | ProcedureInput::CommandFromHf(CommandFromHf::HangUpCall)
-            | ProcedureInput::CommandFromHf(CommandFromHf::QueryCalls) => true,
+            | ProcedureInput::CommandFromHf(CommandFromHf::QueryCalls)
+            | ProcedureInput::CommandFromHf(CommandFromHf::SendDtmfCode { .. }) => true,
             _ => false,
         }
     }

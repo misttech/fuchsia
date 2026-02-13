@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use bt_hfp::dtmf::Code as DtmfCode;
 use fidl_fuchsia_bluetooth_hfp as hfp;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
@@ -39,6 +40,7 @@ impl CommandHandler {
             Command::RequestActive => self.request_active(command, args).await,
             Command::RequestTransferToAg => self.request_transfer_to_ag(command, args).await,
             Command::RequestTerminate => self.request_terminate(command, args).await,
+            Command::SendDtmfCode => self.send_dtmf_code(command, args).await,
             command => println! {"{command} not implemented!"},
         }
         Ok(())
@@ -100,6 +102,16 @@ impl CommandHandler {
         calls.sort_by_key(|c| c.local_id);
 
         calls
+    }
+
+    fn dtmf_code_from_str(str: &str) -> Option<DtmfCode> {
+        match str.try_into() {
+            Ok(dtmf_code) => Some(dtmf_code),
+            Err(()) => {
+                println!("Invalid DTMF code: \"{str}\".");
+                None
+            }
+        }
     }
 
     fn list_peers(&mut self, command: Command, args: Vec<&str>) {
@@ -249,6 +261,27 @@ impl CommandHandler {
                     }
                 }
                 // Else the errors have already been printed.
+            }
+            _ => println!("Too many argments for {command}:\n\t{}", command.cmd_help()),
+        }
+    }
+
+    async fn send_dtmf_code(&mut self, command: Command, args: Vec<&str>) {
+        let len = args.len();
+        match len {
+            0 | 1 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
+            2 => {
+                let call = match self.get_call_by_str_id(args[0]) {
+                    Some(call) => call,
+                    None => return, // Errors have already been printed.
+                };
+                let dtmf_code = match Self::dtmf_code_from_str(args[1]) {
+                    Some(dtmf_code) => dtmf_code,
+                    None => return, // Errors have already been printed.
+                };
+                if let Err(err) = call.proxy.send_dtmf_code(dtmf_code.into()).await {
+                    println!("Error: {:?}", err);
+                }
             }
             _ => println!("Too many argments for {command}:\n\t{}", command.cmd_help()),
         }

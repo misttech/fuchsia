@@ -13,7 +13,7 @@ use crate::sco;
 
 use super::dai::DaiControl;
 use super::inband::InbandControl;
-use super::{Error, Control, ControlEvent};
+use super::{Control, ControlEvent, Error};
 
 /// A Control that either sends the audio directly to the controller (using an offload
 /// Control) or encodes audio locally and sends it in the SCO channel, depending on

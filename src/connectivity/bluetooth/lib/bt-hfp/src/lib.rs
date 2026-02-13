@@ -6,4 +6,5 @@ pub mod a2dp;
 pub mod audio;
 pub mod call;
 pub mod codec_id;
+pub mod dtmf;
 pub mod sco;

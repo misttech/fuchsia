@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_bluetooth::types::{PeerId};
+use crate::codec_id::CodecId;
+use crate::sco;
+use fuchsia_bluetooth::types::PeerId;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::codec_id::CodecId;
-use crate::sco;
 
-use super::{Error, Control, ControlEvent};
+use super::{Control, ControlEvent, Error};
 
 struct TestControlInner {
     started: HashSet<PeerId>,

@@ -9,9 +9,9 @@ use crate::peer::calls::{Call, CallAction};
 use crate::peer::gain_control::Gain;
 use crate::peer::indicators::{AgIndicators, HfIndicator};
 use crate::peer::procedure::ProcedureMarker;
-use crate::peer::procedure::dtmf::DtmfCode;
 use crate::peer::procedure::hold::CallHoldAction;
 use crate::peer::update::AgUpdate;
+use bt_hfp::dtmf::Code as DtmfCode;
 
 /// A request made by the Service Level Connection for more information from the
 /// HFP component, or report from the ServiceLevelConnection

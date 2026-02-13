@@ -58,6 +58,6 @@
         offload_type: {
             type: "string",
             max_size: 8,
-                },
+        },
     },
 }

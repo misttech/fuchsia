@@ -8,100 +8,7 @@ use crate::peer::service_level_connection::SlcState;
 use crate::peer::slc_request::SlcRequest;
 use crate::peer::update::AgUpdate;
 
-use {at_commands as at, fidl_fuchsia_bluetooth_hfp as fidl};
-
-/// Represents a single Dual-tone multi-frequency signaling code.
-/// This is a native representation of the FIDL enum `fuchsia.bluetooth.hfp.DtmfCode`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum DtmfCode {
-    One,
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Seven,
-    Eight,
-    Nine,
-    NumberSign,
-    Zero,
-    Asterisk,
-    A,
-    B,
-    C,
-    D,
-}
-
-impl TryFrom<&str> for DtmfCode {
-    type Error = ();
-    fn try_from(x: &str) -> Result<Self, Self::Error> {
-        match x {
-            "1" => Ok(Self::One),
-            "2" => Ok(Self::Two),
-            "3" => Ok(Self::Three),
-            "4" => Ok(Self::Four),
-            "5" => Ok(Self::Five),
-            "6" => Ok(Self::Six),
-            "7" => Ok(Self::Seven),
-            "8" => Ok(Self::Eight),
-            "9" => Ok(Self::Nine),
-            "#" => Ok(Self::NumberSign),
-            "0" => Ok(Self::Zero),
-            "*" => Ok(Self::Asterisk),
-            "A" => Ok(Self::A),
-            "B" => Ok(Self::B),
-            "C" => Ok(Self::C),
-            "D" => Ok(Self::D),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<fidl::DtmfCode> for DtmfCode {
-    fn from(x: fidl::DtmfCode) -> Self {
-        match x {
-            fidl::DtmfCode::One => Self::One,
-            fidl::DtmfCode::Two => Self::Two,
-            fidl::DtmfCode::Three => Self::Three,
-            fidl::DtmfCode::Four => Self::Four,
-            fidl::DtmfCode::Five => Self::Five,
-            fidl::DtmfCode::Six => Self::Six,
-            fidl::DtmfCode::Seven => Self::Seven,
-            fidl::DtmfCode::Eight => Self::Eight,
-            fidl::DtmfCode::Nine => Self::Nine,
-            fidl::DtmfCode::NumberSign => Self::NumberSign,
-            fidl::DtmfCode::Zero => Self::Zero,
-            fidl::DtmfCode::Asterisk => Self::Asterisk,
-            fidl::DtmfCode::A => Self::A,
-            fidl::DtmfCode::B => Self::B,
-            fidl::DtmfCode::C => Self::C,
-            fidl::DtmfCode::D => Self::D,
-        }
-    }
-}
-
-impl From<DtmfCode> for fidl::DtmfCode {
-    fn from(x: DtmfCode) -> Self {
-        match x {
-            DtmfCode::One => Self::One,
-            DtmfCode::Two => Self::Two,
-            DtmfCode::Three => Self::Three,
-            DtmfCode::Four => Self::Four,
-            DtmfCode::Five => Self::Five,
-            DtmfCode::Six => Self::Six,
-            DtmfCode::Seven => Self::Seven,
-            DtmfCode::Eight => Self::Eight,
-            DtmfCode::Nine => Self::Nine,
-            DtmfCode::NumberSign => Self::NumberSign,
-            DtmfCode::Zero => Self::Zero,
-            DtmfCode::Asterisk => Self::Asterisk,
-            DtmfCode::A => Self::A,
-            DtmfCode::B => Self::B,
-            DtmfCode::C => Self::C,
-            DtmfCode::D => Self::D,
-        }
-    }
-}
+use at_commands as at;
 
 /// Represents the current state of the HF request to transmit a DTMF Code as defined in HFP v1.8,
 /// Section 4.28.
@@ -190,6 +97,7 @@ impl Procedure for DtmfProcedure {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use bt_hfp::dtmf::Code as DtmfCode;
 
     #[test]
     fn correct_marker() {

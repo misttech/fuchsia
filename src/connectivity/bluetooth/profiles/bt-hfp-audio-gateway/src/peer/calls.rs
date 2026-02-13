@@ -4,13 +4,13 @@
 
 use crate::error::{CallError, Error};
 use crate::inspect::CallEntryInspect;
-use crate::peer::procedure::dtmf::DtmfCode;
 use crate::peer::procedure::hold::CallHoldAction;
 use async_utils::hanging_get::client::HangingGetStream;
 use async_utils::stream::{StreamItem, StreamMap, StreamWithEpitaph, Tagged, WithEpitaph, WithTag};
 use bt_hfp::call::indicators::{self, CallIndicators, CallIndicatorsUpdates};
 use bt_hfp::call::list::{Idx as CallIdx, List as CallList};
 use bt_hfp::call::{Direction, Number};
+use bt_hfp::dtmf::Code as DtmfCode;
 use fidl_fuchsia_bluetooth_hfp::{
     CallAction as FidlCallAction, CallProxy, CallState, NextCall, PeerHandlerProxy, RedialLast,
     TransferActive,

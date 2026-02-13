@@ -23,6 +23,7 @@ rustc_library("bt-hfp") {
     "src/call/list.rs",
     "src/call/number.rs",
     "src/codec_id.rs",
+    "src/dtmf.rs",
     "src/lib.rs",
     "src/sco.rs",
     "src/sco/connector.rs",

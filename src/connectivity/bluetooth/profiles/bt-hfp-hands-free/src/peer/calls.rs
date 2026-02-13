@@ -493,11 +493,11 @@ impl Stream for Call {
                 self.handle_watch_state(responder);
                 Poll::Pending
             }
-            Poll::Ready(Some(Ok(CallRequest::SendDtmfCode { code: _, responder }))) => {
-                // TODO(https://fxbug.dev/129577) Implement DTMF codes.
-                warn!("Unimplemented: send DTMF command");
+            Poll::Ready(Some(Ok(CallRequest::SendDtmfCode { code: fidl_code, responder }))) => {
                 let _result = responder.send(Ok(()));
-                Poll::Pending
+                Poll::Ready(Some(CallOutput::ProcedureInput(ProcedureInput::CommandFromHf(
+                    CommandFromHf::SendDtmfCode { code: fidl_code.into() },
+                ))))
             }
             Poll::Ready(Some(Ok(state_update_request))) => {
                 self.call_request_to_call_output(state_update_request)
@@ -889,7 +889,6 @@ mod test {
             .expect("Set queried call info");
 
         calls.handle_watch_next_call(watch_next_call_responder);
-
 
         // Pump stream to respond to WatchNextCall
         let call_output_option = calls.next().now_or_never();

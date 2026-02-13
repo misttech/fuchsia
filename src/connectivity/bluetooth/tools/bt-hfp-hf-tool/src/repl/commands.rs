@@ -196,7 +196,7 @@ gen_commands! {
         ),
         SendDtmfCode = (
             "send-dtmf-code",
-            vec![Required("code")],
+            vec![Required("call_id"), Required("code")],
             "Send a DTMF code"
         ),
         GainContol = (

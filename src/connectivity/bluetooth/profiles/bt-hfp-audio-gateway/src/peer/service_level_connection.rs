@@ -774,8 +774,8 @@ pub(crate) mod tests {
     use crate::peer::indicators::{
         AgIndicator, BATT_CHG_INDICATOR_INDEX, CALL_HELD_INDICATOR_INDEX, CALL_INDICATOR_INDEX,
     };
-    use crate::peer::procedure::dtmf::DtmfCode;
     use assert_matches::assert_matches;
+    use bt_hfp::dtmf::Code as DtmfCode;
     use fuchsia_async as fasync;
     use std::mem::Discriminant;
 
