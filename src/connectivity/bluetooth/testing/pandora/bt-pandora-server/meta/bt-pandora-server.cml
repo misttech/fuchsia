@@ -24,6 +24,7 @@
                 "fuchsia.bluetooth.sys.Access",
                 "fuchsia.bluetooth.sys.HostWatcher",
                 "fuchsia.bluetooth.sys.Pairing",
+                "fuchsia.intl.PropertyProvider",
                 "fuchsia.posix.socket.Provider",
             ],
         },

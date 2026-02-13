@@ -44,5 +44,11 @@
             to: "self/toolbox",
             target_availability: "unknown",
         },
+        {
+            protocol: [ "fuchsia.intl.PropertyProvider" ],
+            from: "#intl",
+            to: "#bt-pandora-server",
+            source_availability: "unknown",
+        },
     ],
 }
