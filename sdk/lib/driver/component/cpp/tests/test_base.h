@@ -24,11 +24,6 @@ class Directory : public fuchsia::io::testing::Directory_TestBase {
   void SetOpenHandler(OpenHandler open_handler) { open_handler_ = std::move(open_handler); }
 
  private:
-  void DeprecatedOpen(fuchsia::io::OpenFlags flags, fuchsia::io::ModeType mode, std::string path,
-                      fidl::InterfaceRequest<fuchsia::io::Node> object) override {
-    open_handler_(std::move(path), std::move(object));
-  }
-
   void Open(std::string path, fuchsia::io::Flags flags, fuchsia::io::Options options,
             zx::channel object) override {
     open_handler_(std::move(path), fidl::InterfaceRequest<fuchsia::io::Node>(std::move(object)));

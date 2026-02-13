@@ -794,10 +794,6 @@ void TestIntrospector::GetMoniker(GetMonikerRequest& request,
 void TestDirectory::Bind(fidl::ServerEnd<fio::Directory> request) {
   bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
 }
-void TestDirectory::DeprecatedOpen(DeprecatedOpenRequest& request,
-                                   DeprecatedOpenCompleter::Sync& completer) {
-  open_handler_(request.path(), std::move(request.object()));
-}
 void TestDirectory::Open(OpenRequest& request, OpenCompleter::Sync& completer) {
   open_handler_(request.path(), fidl::ServerEnd<fio::Node>(std::move(request.object())));
 }

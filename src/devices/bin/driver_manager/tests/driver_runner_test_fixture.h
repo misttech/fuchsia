@@ -248,9 +248,6 @@ class TestDirectory final : public fidl::testing::TestBase<fio::Directory> {
   void SetOpenHandler(OpenHandler open_handler) { open_handler_ = std::move(open_handler); }
 
  private:
-  void DeprecatedOpen(DeprecatedOpenRequest& request,
-                      DeprecatedOpenCompleter::Sync& completer) override;
-
   void Open(OpenRequest& request, OpenCompleter::Sync& completer) override;
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fio::Directory>,
