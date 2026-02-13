@@ -925,14 +925,14 @@
         "instance_id": "z7NxYHTtqKoGQldJ03AkN_Z4gRNGOiyV5TmZa-uQUkwC"
     },
     {
-        "package": "infra/tools/luci/vpython/linux-amd64",
+        "package": "infra/tools/luci/vpython3/linux-amd64",
         "version": "git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c",
-        "instance_id": "xXOnEl5_-2TmD8PQi7498o_voFYpaM-Y_Iqxk34-F-sC"
+        "instance_id": "3o3XGLlfd2yeAAURzdahuWiH8wG2AJ3EXFPeHA7OHz8C"
     },
     {
-        "package": "infra/tools/luci/vpython/linux-arm64",
+        "package": "infra/tools/luci/vpython3/linux-arm64",
         "version": "git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c",
-        "instance_id": "23oWr19FsV2KAK1yEC94k_PNP-1p0Iv9LBXhn0N0PDMC"
+        "instance_id": "ArloyGWzYTEydPwV_UtasYfuwjtJPjILqml-cFXrIV8C"
     },
     {
         "package": "perfetto/trace_processor_shell/linux-amd64",
