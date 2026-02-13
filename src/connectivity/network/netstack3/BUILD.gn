@@ -10,6 +10,7 @@ declare_args() {
 }
 
 import("//build/components.gni")
+import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
@@ -268,6 +269,11 @@ rustc_binary("bin-instrumented") {
 
   sources = common_sources
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
+
+  # This target needs more memory to build remotely, see b/484091776.
+  _concurrent_jobs = concurrent_jobs.rust_highmem
+  configs += _concurrent_jobs.configs
+  forward_variables_from(_concurrent_jobs.vars, "*")
 }
 
 fuchsia_component_manifest("component_manifest") {
