@@ -330,6 +330,35 @@ template("assembly_input_bundle") {
     compiled_packages = "${assembly_input_bundle_dir}.compiled_packages"
   }
 
+  _allowed_on_user = false
+  _allowed_in = []
+  if (defined(invoker.allowed_in)) {
+    _allowed_in += invoker.allowed_in
+  }
+  if (defined(invoker.scrutiny_required)) {
+    _allowed_in += invoker.scrutiny_required
+  }
+  if (defined(invoker.auto_include_in)) {
+    _allowed_in += invoker.auto_include_in
+  }
+  if (_allowed_in == []) {
+    _allowed_on_user = true
+  } else {
+    foreach(allow_rule, _allowed_in) {
+      if (allow_rule == "standard" || allow_rule == "utility" ||
+          allow_rule == "bootstrap" || allow_rule == "embeddable" ||
+          allow_rule == "user" || allow_rule == "everything") {
+        _allowed_on_user = true
+      } else {
+        _allow_rule_parts = []
+        _allow_rule_parts = string_split(allow_rule, "::")
+        if (_allow_rule_parts + [ "user" ] - [ "user" ] != _allow_rule_parts) {
+          _allowed_on_user = true
+        }
+      }
+    }
+  }
+
   creation_args = []
   creation_inputs = []
   creation_deps = []
@@ -1042,6 +1071,9 @@ template("assembly_input_bundle") {
     }
     public_deps = [ ":${labels.assembly_input_bundle}" ]
     metadata = {
+      if (!_allowed_on_user) {
+        applicable_licenses_host_barrier = []
+      }
       assembly_input_bundles = [
         {
           name = target_name

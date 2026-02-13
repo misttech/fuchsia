@@ -6,7 +6,6 @@ import("//build/assembly/product_bundle.gni")
 import("//build/images/args.gni")
 import("//build/images/paths.gni")
 import("//build/product.gni")
-import("//build/security.gni")
 
 assert(current_toolchain == default_toolchain,
        "//build/images/* are only valid in the Fuchsia toolchain")
@@ -22,7 +21,7 @@ assert(
 # If a target requires the outputs of the full-fuchsia assembly implementation,
 # it should directly use it (//build/images/fuchsia).
 group("main_assembly") {
-  testonly = use_bringup_assembly || fuchsia_zbi_testonly
+  testonly = true
   public_deps = [ labels.images ]
 }
 
@@ -81,22 +80,22 @@ action("check_vtables_in_rodata") {
 }
 
 group("fvm.sparse.blk") {
-  testonly = fuchsia_zbi_testonly
+  testonly = true
   public_deps = [ labels.images ]
 }
 
 group("fvm.fastboot.blk") {
-  testonly = fuchsia_zbi_testonly
+  testonly = true
   public_deps = [ labels.images ]
 }
 
 group("fuchsia") {
-  testonly = fuchsia_zbi_testonly
+  testonly = true
   public_deps = [ labels.images ]
 }
 
 group("fuchsia.vbmeta") {
-  testonly = fuchsia_zbi_testonly
+  testonly = true
   public_deps = [ labels.images ]
 }
 

@@ -151,6 +151,7 @@ template("bazel_product_bundle") {
          "bazel_inputs_from_gn is required")
   assert(defined(invoker.product_bundle_name),
          "product_bundle_name is required")
+  invoker.testonly = true
 
   targets = {
     bazel_build_group = "${target_name}_bazel_build_group"
