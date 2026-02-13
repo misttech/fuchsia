@@ -41,7 +41,8 @@ fuchsia::feedback::LastReboot GetLastRebootUnGraceful(
     const feedback::ZirconRebootReason reboot_reason,
     const std::optional<zx::duration> uptime = std::nullopt,
     const std::optional<zx::duration> runtime = std::nullopt) {
-  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(reboot_reason);
+  auto final_shutdown_info = std::make_unique<feedback::FinalZirconShutdownInfo>(
+      reboot_reason, /*graceful_shutdown_action=*/std::nullopt);
   const feedback::RebootLog reboot_log(std::move(final_shutdown_info), "",
                                        /*dlog=*/std::nullopt, uptime, runtime,
                                        /*critical_process=*/std::nullopt);

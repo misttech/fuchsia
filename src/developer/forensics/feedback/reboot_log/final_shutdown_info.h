@@ -79,7 +79,8 @@ enum class ZirconRebootReason : std::uint8_t {
 class FinalZirconShutdownInfo : public FinalShutdownInfo {
  public:
   // |zircon_reason| cannot be kNotSet nor kNoCrash.
-  explicit FinalZirconShutdownInfo(ZirconRebootReason zircon_reason);
+  explicit FinalZirconShutdownInfo(ZirconRebootReason zircon_reason,
+                                   std::optional<GracefulShutdownAction> graceful_shutdown_action);
 
   bool IsOom() const override;
 
@@ -92,7 +93,7 @@ class FinalZirconShutdownInfo : public FinalShutdownInfo {
   std::optional<bool> OptionallyPlanned() const override;
 
   std::optional<GracefulShutdownAction> ToGracefulShutdownAction() const override {
-    return std::nullopt;
+    return graceful_shutdown_action_;
   }
 
   std::string ToRebootReasonString() const override;
@@ -109,6 +110,7 @@ class FinalZirconShutdownInfo : public FinalShutdownInfo {
 
  private:
   ZirconRebootReason zircon_reason_;
+  std::optional<GracefulShutdownAction> graceful_shutdown_action_;
 };
 
 class FinalGracefulShutdownInfo : public FinalShutdownInfo {

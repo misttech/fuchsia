@@ -13,21 +13,27 @@ namespace forensics::feedback {
 namespace {
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationSpontaneous) {
-  EXPECT_EQ(LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown),
-                                       SpontaneousRebootReason::kSpontaneous),
-            "spontaneous");
+  EXPECT_EQ(
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+                                                         /*graceful_shutdown_action=*/std::nullopt),
+                                 SpontaneousRebootReason::kSpontaneous),
+      "spontaneous");
 }
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationBriefPowerLoss) {
-  EXPECT_EQ(LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown),
-                                       SpontaneousRebootReason::kBriefPowerLoss),
-            "brief loss of power");
+  EXPECT_EQ(
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+                                                         /*graceful_shutdown_action=*/std::nullopt),
+                                 SpontaneousRebootReason::kBriefPowerLoss),
+      "brief loss of power");
 }
 
 TEST(AnnotationsTest, LastRebootReasonAnnotationHardReset) {
-  EXPECT_EQ(LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown),
-                                       SpontaneousRebootReason::kHardReset),
-            "hard reset");
+  EXPECT_EQ(
+      LastRebootReasonAnnotation(FinalZirconShutdownInfo(ZirconRebootReason::kUnknown,
+                                                         /*graceful_shutdown_action=*/std::nullopt),
+                                 SpontaneousRebootReason::kHardReset),
+      "hard reset");
 }
 
 }  // namespace

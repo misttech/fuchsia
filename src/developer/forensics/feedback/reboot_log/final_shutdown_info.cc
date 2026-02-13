@@ -28,8 +28,10 @@ std::string GetSpontaneousRebootCrashSignature(
 
 }  // namespace
 
-FinalZirconShutdownInfo::FinalZirconShutdownInfo(const ZirconRebootReason zircon_reason)
-    : zircon_reason_(zircon_reason) {
+FinalZirconShutdownInfo::FinalZirconShutdownInfo(
+    const ZirconRebootReason zircon_reason,
+    std::optional<GracefulShutdownAction> graceful_shutdown_action)
+    : zircon_reason_(zircon_reason), graceful_shutdown_action_(graceful_shutdown_action) {
   FX_CHECK(zircon_reason_ != ZirconRebootReason::kNoCrash);
   FX_CHECK(zircon_reason_ != ZirconRebootReason::kNotSet);
 }

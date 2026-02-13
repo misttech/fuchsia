@@ -245,24 +245,24 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ColdBootTest,
                              {
                                  "Reboot",
                                  ShutdownAction::REBOOT,
-                                 std::nullopt,
+                                 GracefulShutdownAction::kReboot,
                              },
                              {
                                  "RebootToRecovery",
                                  ShutdownAction::REBOOT_TO_RECOVERY,
-                                 std::nullopt,
+                                 GracefulShutdownAction::kRebootToRecovery,
                              },
                              {
                                  "RebootToBootloader",
                                  ShutdownAction::REBOOT_TO_BOOTLOADER,
-                                 std::nullopt,
+                                 GracefulShutdownAction::kRebootToBootloader,
                              },
                          })),
                          [](const testing::TestParamInfo<ShutdownActionTestParam>& info) {
                            return info.param.test_name;
                          });
 
-TEST_P(ColdBootTest, OnlyPoweroffOverridesColdBoot) {
+TEST_P(ColdBootTest, ActionPreservedForColdBoot) {
   const ShutdownActionTestParam& param = GetParam();
 
   WriteGracefulShutdownInfoContents(
@@ -272,7 +272,8 @@ TEST_P(ColdBootTest, OnlyPoweroffOverridesColdBoot) {
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
-  EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction().has_value());
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
+            param.output_shutdown_action);
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "COLD");
 }
 
