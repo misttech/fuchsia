@@ -87,6 +87,26 @@ void MockLoaderService::Init() {
   auto endpoints = fidl::Endpoints<fuchsia_ldsvc::Loader>::Create();
   ASSERT_NO_FATAL_FAILURE(mock_server_->Init(std::move(endpoints.server)));
   mock_client_ = std::move(endpoints.client);
+
+  // Provide protocol-valid default responses for unexpected calls.  These will
+  // make the code under test reach its normal error paths instead of doing
+  // something that could never really happen (looking at a default-constructed
+  // zx::result).  With StrictMock, these don't prevent reporting unexpected
+  // calls as test failures.
+
+  ON_CALL(*mock_server_, MockConfig)
+      // An unexpected Config just succeeds.
+      .WillByDefault(Return(zx::ok()));
+
+  // An unexpected LoadObject fails as if for a missing file.  This cannot
+  // just use ::testing::Return() since that needs to copy its value.
+  // Even though this error value could be copied, zx::result<zx::vmo> is a
+  // move-only type and so can't be stored by ::testing::Return().
+  constexpr auto load_object_not_found = []() -> zx::result<zx::vmo> {
+    return zx::error{ZX_ERR_NOT_FOUND};
+  };
+  ON_CALL(*mock_server_, MockLoadObject)
+      .WillByDefault(::testing::InvokeWithoutArgs(load_object_not_found));
 }
 
 void MockLoaderService::ExpectLoadObject(std::string_view name,

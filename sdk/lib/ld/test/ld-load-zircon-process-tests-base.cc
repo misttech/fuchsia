@@ -108,7 +108,9 @@ zx::channel LdLoadZirconProcessTestsBase::Start(bool custom_bootstrap) {
     // resets the procargs_ object so it can be used for the second message.
     procargs_.PackBootstrap();
   }
-  if (!custom_bootstrap) {
+  if (custom_bootstrap) {
+    EXPECT_THAT(procargs_deferred_, ::testing::IsEmpty());
+  } else {
     // The log fd must be consumed here so as not to keep the TestPipeReader
     // alive from the other end after the process dies or otherwise drops it.
     EXPECT_TRUE(process_log_fd_);
@@ -119,8 +121,11 @@ zx::channel LdLoadZirconProcessTestsBase::Start(bool custom_bootstrap) {
         .AddStackVmo(std::move(stack_vmo))
         .AddFd(STDERR_FILENO, std::move(process_log_fd_))
         .SetArgs(argv())
-        .SetEnv(envp())
-        .PackBootstrap();
+        .SetEnv(envp());
+    for (auto& f : std::exchange(procargs_deferred_, {})) {
+      std::move(f)(procargs_);
+    }
+    procargs_.PackBootstrap();
   }
 
   EXPECT_EQ(this->process().start(thread(), entry_, sp, std::move(bootstrap_receiver), vdso_base_),
@@ -215,6 +220,15 @@ void LdLoadZirconProcessTestsBase::CheckVmar() {
   if (status != ZX_ERR_BUFFER_TOO_SMALL) {
     ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
   }
+}
+
+void LdLoadZirconProcessTestsBase::RedirectFd(int target_number, fbl::unique_fd transfer_fd) {
+  // This is for the second message, not the first.  So defer doing the work
+  // until that message is being packed.
+  procargs_deferred_.emplace_back(
+      [target_number, fd = std::move(transfer_fd)](TestProcessArgs& procargs) mutable {
+        procargs.AddFd(target_number, std::move(fd));
+      });
 }
 
 }  // namespace ld::testing

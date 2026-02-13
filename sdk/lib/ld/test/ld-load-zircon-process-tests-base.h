@@ -6,10 +6,13 @@
 #define LIB_LD_TEST_LD_LOAD_ZIRCON_PROCESS_TESTS_BASE_H_
 
 #include <lib/elfldltl/soname.h>
+#include <lib/fit/function.h>
 #include <lib/ld/testing/test-processargs.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
+
+#include <vector>
 
 #include "ld-load-zircon-ldsvc-tests-base.h"
 
@@ -50,6 +53,11 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   void CheckProcess();
 
   void LegacyAddressSpaceReservation();
+
+  // Use transfer_fd as the child's target_number fd in the main (libc)
+  // bootstrap message.  STDERR_FILENO is already implicitly redirected to
+  // process_log_fd() before this is applied.
+  void RedirectFd(int target_number, fbl::unique_fd transfer_fd);
 
  protected:
   const zx::process& process() const { return process_; }
@@ -103,6 +111,7 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   zx::vmar legacy_reserve_vmar_;
   zx::thread thread_;
   TestProcessArgs procargs_;
+  std::vector<fit::function<void(TestProcessArgs&)>> procargs_deferred_;
   uintptr_t entry_ = 0;
   uintptr_t vdso_base_ = 0;
   std::optional<size_t> stack_size_;

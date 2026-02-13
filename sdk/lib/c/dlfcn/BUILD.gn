@@ -21,6 +21,7 @@ llvm_libc_source_set("dlfcn") {
   local_deps = [
     ":dlfcn-abi",
     ":thread-cleanup",
+    ":zircon",
     "..:weak",
     "//sdk/lib/ld:headers",
   ]
@@ -58,6 +59,17 @@ libc_source_set("thread-cleanup") {
 
   sources = [ "thread-cleanup.cc" ]
   deps = [ "../threads:thread" ]
+}
+
+# <zircon/dlfcn.h> functions.
+libc_source_set("zircon") {
+  sources = []
+  non_test_deps = [ ":ldsvc" ]
+}
+
+libc_source_set("ldsvc") {
+  visibility = [ ":*" ]
+  sources = [ "dl_clone_loader_service.cc" ]
 }
 
 # This never needs to go into a boot test, so it can use gtest.  It's defined

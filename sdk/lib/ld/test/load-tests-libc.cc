@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/elfldltl/testing/test-pipe-reader.h>
+#include <unistd.h>
+
 #include "load-tests.h"
 
 namespace ld::testing {
@@ -14,7 +17,8 @@ TYPED_TEST_SUITE(LdLoadLibcTests, TestTypes<>);
 
 namespace {
 
-constexpr std::string_view kLibcSoname = "libnew-libc.so";
+constexpr std::string_view kLibcSoname = "libc.so";
+constexpr std::string_view kFdioSoname = "libfdio.so";
 
 // This is just running an empty main() function using the vanilla system libc.
 // It's really just testing that the test harness itself launches a PT_INTERP
@@ -56,6 +60,31 @@ TYPED_TEST(LdLoadLibcTests, LibcStartMain) {
   EXPECT_EQ(this->Run(), 0);
 
   this->ExpectLog("");
+}
+
+TYPED_TEST(LdLoadLibcTests, LibcHelloWorld) {
+  ASSERT_NO_FATAL_FAILURE(this->Init());
+
+  // Give the test a stdout pipe and capture what it writes.
+  elfldltl::testing::TestPipeReader test_stdout_pipe;
+  {
+    fbl::unique_fd test_stdout_fd;
+    ASSERT_NO_FATAL_FAILURE(test_stdout_pipe.Init(test_stdout_fd));
+    ASSERT_NO_FATAL_FAILURE(this->RedirectFd(STDOUT_FILENO, std::move(test_stdout_fd)));
+  }
+
+  ASSERT_NO_FATAL_FAILURE(this->Needed({
+      kFdioSoname,
+      kLibcSoname,
+  }));
+  ASSERT_NO_FATAL_FAILURE(this->Load("libc-hello-world"));
+
+  EXPECT_EQ(this->Run(), 0);
+
+  this->ExpectLog("");
+
+  std::string test_stdout_contents = std::move(test_stdout_pipe).Finish();
+  EXPECT_EQ(test_stdout_contents, "Hello, world!\n");
 }
 
 }  // namespace

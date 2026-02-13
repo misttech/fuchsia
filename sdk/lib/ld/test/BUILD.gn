@@ -236,6 +236,7 @@ if (is_fuchsia) {
     testonly = true
     deps = [
       ":libc-noop-test.test-data",
+      "modules:libc-hello-world.test-data",
       "modules:libc-start-main.test-data",
     ]
   }

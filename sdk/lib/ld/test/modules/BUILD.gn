@@ -2235,3 +2235,8 @@ template("libc_test_executable") {
 libc_test_executable("libc-start-main") {
   sources = [ "libc-start-main.cc" ]
 }
+
+libc_test_executable("libc-hello-world") {
+  sources = [ "libc-hello-world.cc" ]
+  deps = [ "//sdk/lib/fdio" ]
+}
