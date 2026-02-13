@@ -20,9 +20,8 @@ guest_prebuilt("kernel") {
 }
 
 guest_package("android_guest") {
-  if (target_cpu != "x64") {
-    panic("Unsupported architecture ${target_cpu}")
-  }
+  assert(target_cpu == "x64" || target_cpu == "arm64",
+         "Unsupported architecture ${target_cpu}")
 
   default_net = true
   virtio_balloon = true
