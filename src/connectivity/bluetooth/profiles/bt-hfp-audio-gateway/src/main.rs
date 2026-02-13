@@ -1,13 +1,10 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#![recursion_limit = "1024"]
-
-use anyhow::{Context, Error, anyhow};
+use anyhow::Error;
 use battery_client::BatteryClient;
 use bt_hfp::codec_id::CodecId;
 use bt_hfp::{audio, sco};
-use fidl_fuchsia_media as media;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect_derive::Inspect;
 use futures::channel::mpsc;
@@ -43,27 +40,11 @@ fn controller_codecs(config: &hfp_profile_config::Config) -> HashSet<CodecId> {
 }
 
 async fn setup_audio(
-    config: &hfp_profile_config::Config,
     controller_codecs: HashSet<CodecId>,
+    config: &hfp_profile_config::Config,
 ) -> Result<Box<dyn audio::Control>, Error> {
-    if config.offload_type == "dai" {
-        let audio_proxy =
-            fuchsia_component::client::connect_to_protocol::<media::AudioDeviceEnumeratorMarker>()
-                .with_context(|| format!("Error connecting to audio_core"))?;
-        Ok(Box::new(
-            audio::PartialOffloadControl::setup_audio_core(audio_proxy, controller_codecs).await?,
-        ))
-    } else if config.offload_type == "codec" {
-        let provider = fuchsia_component::client::connect_to_protocol::<
-            fidl_fuchsia_audio_device::ProviderMarker,
-        >()
-        .with_context(|| format!("Error connecting to audio_device_registry"))?;
-        let codec = audio::CodecControl::new(provider);
-        Ok(Box::new(codec))
-    } else {
-        error!(r#type = config.offload_type.as_str(); "Unrecognized offload type");
-        Err(anyhow!("Can't setup audio"))
-    }
+    let offload_type = config.offload_type.as_str().parse::<audio::OffloadType>()?;
+    audio::setup_audio(offload_type, controller_codecs).await
 }
 
 #[fuchsia::main(logging_tags = ["bt-hfp-ag"])]
@@ -77,7 +58,7 @@ async fn main() -> Result<(), Error> {
     let config = hfp_profile_config::Config::take_from_startup_handle();
     let controller_codecs = controller_codecs(&config);
 
-    let audio = setup_audio(&config, controller_codecs.clone()).await?;
+    let audio = setup_audio(controller_codecs.clone(), &config).await?;
 
     let feature_support = AudioGatewayFeatureSupport::load_from_config(config);
     debug!(feature_support:?; "Starting HFP Audio Gateway");

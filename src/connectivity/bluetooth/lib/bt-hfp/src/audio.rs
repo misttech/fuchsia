@@ -2,10 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_bluetooth_bredr as bredr;
+use anyhow::{Context, format_err};
 use fuchsia_bluetooth::types::{PeerId, Uuid};
 use futures::stream::BoxStream;
+use std::collections::HashSet;
+use std::str::FromStr;
 use thiserror::Error;
+use {
+    fidl_fuchsia_audio_device as audio_device, fidl_fuchsia_bluetooth_bredr as bredr,
+    fidl_fuchsia_media as media,
+};
 
 use crate::codec_id::CodecId;
 use crate::sco;
@@ -127,4 +133,45 @@ pub trait Control: Send {
     /// `request` should be the request that failed.  If a request was not made by this audio
     /// control the failure shall be ignored.
     fn failed_request(&self, request: ControlEvent, error: Error);
+}
+
+pub enum OffloadType {
+    Dai,
+    Codec,
+}
+
+impl FromStr for OffloadType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "dai" => Ok(OffloadType::Dai),
+            "codec" => Ok(OffloadType::Codec),
+            _ => Err(format_err!("Invalid offload type: {}", s)),
+        }
+    }
+}
+
+pub async fn setup_audio(
+    offload_type: OffloadType,
+    controller_codecs: HashSet<CodecId>,
+) -> Result<Box<dyn Control>, anyhow::Error> {
+    match offload_type {
+        OffloadType::Dai => {
+            let audio_proxy = fuchsia_component::client::connect_to_protocol::<
+                media::AudioDeviceEnumeratorMarker,
+            >()
+            .with_context(|| format!("Error connecting to audio_core"))?;
+            Ok(Box::new(
+                PartialOffloadControl::setup_audio_core(audio_proxy, controller_codecs).await?,
+            ))
+        }
+        OffloadType::Codec => {
+            let provider =
+                fuchsia_component::client::connect_to_protocol::<audio_device::ProviderMarker>()
+                    .with_context(|| format!("Error connecting to audio_device_registry"))?;
+            let codec = CodecControl::new(provider);
+            Ok(Box::new(codec))
+        }
+    }
 }
