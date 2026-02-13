@@ -167,6 +167,7 @@ async fn route(
     Ok(join_all(route_futs).await)
 }
 
+#[allow(clippy::needless_collect)]
 fn generate_route_requests(
     resolved: &ResolvedInstanceState,
     targets: Vec<fsys::RouteTarget>,
