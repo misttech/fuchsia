@@ -507,7 +507,7 @@ impl Inspect for &mut IProcedure {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::DiagnosticsHierarchyGetter;
     use test_util::assert_lt;
 

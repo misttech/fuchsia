@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
+use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alpha1, char, digit1};
@@ -10,9 +11,8 @@ use nom::combinator::map_res;
 use nom::error::ErrorKind;
 use nom::multi::separated_list0;
 use nom::sequence::{delimited, preceded, separated_pair};
-use nom::Parser;
 
-use crate::peer::ag_indicators::{check_ag_indicator_range_allowed, AgIndicatorIndex};
+use crate::peer::ag_indicators::{AgIndicatorIndex, check_ag_indicator_range_allowed};
 use crate::peer::at_connection::Response as AtResponse;
 
 // TODO(b/417756085) Evaluate rewriting this without nom.

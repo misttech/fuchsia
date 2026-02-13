@@ -8,9 +8,9 @@ use crate::features::AgFeatures;
 use crate::peer::calls::{Call, CallAction};
 use crate::peer::gain_control::Gain;
 use crate::peer::indicators::{AgIndicators, HfIndicator};
+use crate::peer::procedure::ProcedureMarker;
 use crate::peer::procedure::dtmf::DtmfCode;
 use crate::peer::procedure::hold::CallHoldAction;
-use crate::peer::procedure::ProcedureMarker;
 use crate::peer::update::AgUpdate;
 
 /// A request made by the Service Level Connection for more information from the

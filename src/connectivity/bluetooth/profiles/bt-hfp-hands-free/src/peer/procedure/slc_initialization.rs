@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use at_commands as at;
 use log::info;
 
 use super::{
-    at_cmd, at_ok, at_resp, CommandFromHf, CommandToHf, Procedure, ProcedureInput, ProcedureOutput,
+    CommandFromHf, CommandToHf, Procedure, ProcedureInput, ProcedureOutput, at_cmd, at_ok, at_resp,
 };
 
-use crate::features::{extract_features_from_command, AgFeatures, HfFeatures};
+use crate::features::{AgFeatures, HfFeatures, extract_features_from_command};
 use crate::peer::ag_indicators::AgIndicatorIndex;
 use crate::peer::at_connection::Response as AtResponse;
 use crate::peer::hf_indicators::{BATTERY_LEVEL, ENHANCED_SAFETY, INDICATOR_REPORTING_MODE};

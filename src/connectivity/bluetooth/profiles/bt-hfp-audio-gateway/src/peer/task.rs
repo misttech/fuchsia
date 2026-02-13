@@ -1619,8 +1619,10 @@ mod tests {
 
         let raw_number = "1234567";
         let number = Number::from_non_at_string(raw_number);
-        let expected_ccwa =
-            vec![at::success(at::Success::Ccwa { ty: number.type_(), number: number.to_at_string() })];
+        let expected_ccwa = vec![at::success(at::Success::Ccwa {
+            ty: number.type_(),
+            number: number.to_at_string(),
+        })];
         let expected_ciev = vec![AgIndicator::CallSetup(1).into()];
 
         // Setup the peer task with the specified SlcState to enable indicator events.

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
-use hfp_hands_free_profile_config::Config;
 use bt_hfp::audio;
+use hfp_hands_free_profile_config::Config;
 
 #[derive(Clone, Copy, Default)]
 pub struct HandsFreeFeatureSupport {
@@ -70,11 +70,8 @@ impl AudioConfig {
             "codec" => offload_type = audio::OffloadType::Codec,
             _ => return Err(format_err!("Unknown offload type: {}", str_config.offload_type)),
         }
-        let config = AudioConfig {
-            controller_encoding_cvsd,
-            controller_encoding_msbc,
-            offload_type,
-        };
+        let config =
+            AudioConfig { controller_encoding_cvsd, controller_encoding_msbc, offload_type };
         Ok(config)
     }
 }
@@ -116,23 +113,13 @@ mod tests {
         let audio_config = configs.audio;
 
         assert_eq!(hands_free_config.ec_or_nr, true);
-        assert_eq!(
-            hands_free_config.call_waiting_or_three_way_calling,
-            true
-        );
+        assert_eq!(hands_free_config.call_waiting_or_three_way_calling, true);
         assert_eq!(hands_free_config.cli_presentation_capability, true);
-        assert_eq!(
-            hands_free_config.voice_recognition_activation,
-            true
-        );
+        assert_eq!(hands_free_config.voice_recognition_activation, true);
         assert_eq!(hands_free_config.remote_volume_control, true);
         assert_eq!(hands_free_config.wide_band_speech, true);
         assert_eq!(hands_free_config.enhanced_voice_recognition, true);
-        assert_eq!(
-            hands_free_config.enhanced_voice_recognition_with_text,
-            true
-        );
-
+        assert_eq!(hands_free_config.enhanced_voice_recognition_with_text, true);
 
         assert_eq!(audio_config.controller_encoding_cvsd, true);
         assert_eq!(audio_config.controller_encoding_msbc, true);

@@ -44,11 +44,7 @@ enum State {
 
 impl State {
     fn is_start(&self) -> bool {
-        if let Self::Start = self {
-            true
-        } else {
-            false
-        }
+        if let Self::Start = self { true } else { false }
     }
     /// Transition to the next state in the QOS procedure.
     /// If `skip_set_format` is set, the transition will skip the `SetFormat` state.

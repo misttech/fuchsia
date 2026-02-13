@@ -63,7 +63,7 @@ fn controller_codecs(config: config::AudioConfig) -> HashSet<CodecId> {
     let mut controller_codecs = HashSet::new();
     if config.controller_encoding_cvsd {
         let _ = controller_codecs.insert(CodecId::CVSD);
-}
+    }
     if config.controller_encoding_msbc {
         let _ = controller_codecs.insert(CodecId::MSBC);
     }

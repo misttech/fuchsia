@@ -108,11 +108,7 @@ impl Procedure for CodecConnectionSetupProcedure {
             }
             (Self::SynchronousConnectionRequestReply { codec_changed }, AgUpdate::Ok) => {
                 *self = Self::SynchronousConnectionSetup;
-                if codec_changed {
-                    AgUpdate::Ok.into()
-                } else {
-                    ProcedureRequest::None
-                }
+                if codec_changed { AgUpdate::Ok.into() } else { ProcedureRequest::None }
             }
             (Self::SynchronousConnectionSetup, AgUpdate::Ok) => {
                 *self = Self::Terminated(Ok(()));

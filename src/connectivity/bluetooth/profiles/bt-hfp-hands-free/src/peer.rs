@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use bt_hfp::{audio, sco};
 use bt_rfcomm::profile as rfcomm;
-use fidl::endpoints::{create_request_stream, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_request_stream};
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::Mutex;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use bt_hfp::call::indicators as call_indicators;
 use fidl_fuchsia_bluetooth_hfp::SignalStrength;
 use std::collections::HashMap;

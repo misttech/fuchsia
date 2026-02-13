@@ -5,7 +5,7 @@
 use super::super::procedure_manipulated_state::ProcedureManipulatedState;
 use super::{Procedure, ProcedureInputT, ProcedureOutputT};
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use paste::paste;
 
 #[allow(unused)]

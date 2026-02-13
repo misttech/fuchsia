@@ -6,10 +6,10 @@ use anyhow::format_err;
 use fidl_fuchsia_hardware_audio::{self as audio, DaiFormat, PcmFormat};
 use fidl_fuchsia_media as media;
 use fuchsia_audio_dai::{self as dai, DaiAudioDevice, DigitalAudioInterface};
-use fuchsia_bluetooth::types::{peer_audio_stream_id, PeerId};
+use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
 use fuchsia_sync::Mutex;
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use log::{info, warn};
 use media::AudioDeviceEnumeratorProxy;
 
@@ -145,7 +145,7 @@ impl Control for DaiControl {
             _ => {
                 return Err(Error::UnsupportedParameters {
                     source: format_err!("Unsupported frame_rate"),
-                })
+                });
             }
         };
         let pcm_format = PcmFormat {
@@ -203,8 +203,8 @@ mod tests {
 
     use fidl::endpoints::Proxy;
     use fuchsia_async as fasync;
-    use futures::channel::mpsc;
     use futures::SinkExt;
+    use futures::channel::mpsc;
 
     use crate::sco::test_utils::connection_for_codec;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use async_helpers::maybe_stream::MaybeStream;
 use async_utils::stream::FutureMap;
 use bt_hfp::{audio, sco};
@@ -11,7 +11,7 @@ use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_sync::Mutex;
 use futures::stream::{FusedStream, FuturesUnordered};
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use log::{debug, info, warn};
 use profile_client::{ProfileClient, ProfileEvent};
 use std::future::Future;
@@ -283,7 +283,9 @@ where
 
     fn handle_hands_free_request_stream(&mut self, stream: fidl_hfp::HandsFreeRequestStream) {
         if self.hands_free_request_maybe_stream.is_some() {
-            info!("Got new HandsFree request stream while one already exists. Closing the new stream.");
+            info!(
+                "Got new HandsFree request stream while one already exists. Closing the new stream."
+            );
             let control_handle = stream.control_handle();
             control_handle.shutdown_with_epitaph(zx::Status::ALREADY_BOUND);
         } else {

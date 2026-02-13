@@ -5,13 +5,13 @@
 // TODO(https://fxbug.dev/42077657) Use this in task.rs.
 #![allow(unused)]
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use at_commands as at;
 use at_commands::{DeserializeBytes, SerDe};
 use fuchsia_bluetooth::types::{Channel, PeerId};
+use futures::Stream;
 use futures::io::AsyncWriteExt;
 use futures::stream::FusedStream;
-use futures::Stream;
 use log::{debug, warn};
 use std::collections::VecDeque;
 use std::io::Cursor;

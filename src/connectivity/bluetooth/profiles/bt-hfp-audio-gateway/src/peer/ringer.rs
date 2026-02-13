@@ -6,8 +6,8 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use fuchsia_async::{self as fasync, DurationExt};
 
-use futures::stream::{FusedStream, Stream};
 use futures::FutureExt;
+use futures::stream::{FusedStream, Stream};
 
 /// Default frequency used for rings.
 const DEFAULT_FREQUENCY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);

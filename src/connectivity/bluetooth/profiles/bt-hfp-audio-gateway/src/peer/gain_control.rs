@@ -43,22 +43,14 @@ impl From<Gain> for i64 {
 impl TryFrom<u8> for Gain {
     type Error = Error;
     fn try_from(x: u8) -> Result<Self, Self::Error> {
-        if x <= 15 {
-            Ok(Gain(x))
-        } else {
-            Err(Error::OutOfRange)
-        }
+        if x <= 15 { Ok(Gain(x)) } else { Err(Error::OutOfRange) }
     }
 }
 
 impl TryFrom<i64> for Gain {
     type Error = Error;
     fn try_from(x: i64) -> Result<Self, Self::Error> {
-        if 0 <= x && x <= 15 {
-            Ok(Gain(x as u8))
-        } else {
-            Err(Error::OutOfRange)
-        }
+        if 0 <= x && x <= 15 { Ok(Gain(x as u8)) } else { Err(Error::OutOfRange) }
     }
 }
 

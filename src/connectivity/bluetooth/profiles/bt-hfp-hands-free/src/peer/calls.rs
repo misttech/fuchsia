@@ -427,7 +427,8 @@ impl Call {
                 let (client_end, server_end) = fidl::endpoints::create_endpoints::<CallMarker>();
                 self.request_stream.set(server_end.into_stream());
 
-                let number = self.number.as_ref().expect("Number should be set.").to_non_at_string();
+                let number =
+                    self.number.as_ref().expect("Number should be set.").to_non_at_string();
                 let state = self.state.expect("State should be set.");
                 let direction =
                     CallDirection::from(self.direction.expect("Direction should be set"));

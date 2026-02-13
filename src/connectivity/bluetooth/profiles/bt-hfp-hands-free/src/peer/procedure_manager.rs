@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fuchsia_bluetooth::types::PeerId;
-use futures::stream::FusedStream;
 use futures::Stream;
+use futures::stream::FusedStream;
 use log::warn;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -114,7 +114,7 @@ impl<I: ProcedureInputT<O>, O: ProcedureOutputT> ProcedureManager<I, O> {
                     "Unable to match procedure for input {:?} from peer {:}",
                     input,
                     self.peer_id
-                )))
+                )));
             }
         };
 

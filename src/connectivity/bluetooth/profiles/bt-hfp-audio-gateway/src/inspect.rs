@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use bt_hfp::call::{Direction, Number};
-use bt_hfp::codec_id::{codecs_to_string, CodecId};
+use bt_hfp::codec_id::{CodecId, codecs_to_string};
 use fidl_fuchsia_bluetooth_hfp::{CallState, NetworkInformation};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
@@ -275,7 +275,7 @@ impl HfFeaturesInspect {
 mod tests {
     use super::*;
 
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_bluetooth_hfp::SignalStrength;
     use fuchsia_inspect_derive::WithInspect;
 

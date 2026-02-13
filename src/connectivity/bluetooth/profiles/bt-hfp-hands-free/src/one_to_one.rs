@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 #![allow(unused)]
 
-use futures::stream::FusedStream;
 use futures::Stream;
+use futures::stream::FusedStream;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};

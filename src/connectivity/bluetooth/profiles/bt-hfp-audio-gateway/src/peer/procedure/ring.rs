@@ -100,12 +100,19 @@ mod tests {
 
         assert!(!procedure.is_terminated());
 
-        let call =
-            Call::new(1, Number::from_non_at_string("123"), CallState::IncomingRinging, Direction::MobileTerminated);
+        let call = Call::new(
+            1,
+            Number::from_non_at_string("123"),
+            CallState::IncomingRinging,
+            Direction::MobileTerminated,
+        );
         let update = AgUpdate::Ring(call.clone());
         let expected_messages = vec![
             at::success(at::Success::Ring {}),
-            at::success(at::Success::Clip { ty: call.number.type_(), number: call.number.to_at_string() }),
+            at::success(at::Success::Clip {
+                ty: call.number.type_(),
+                number: call.number.to_at_string(),
+            }),
         ];
         assert_matches!(
             procedure.ag_update(update, &mut state),
@@ -121,8 +128,12 @@ mod tests {
 
         assert!(!procedure.is_terminated());
 
-        let call =
-            Call::new(1, Number::from_non_at_string("123"), CallState::IncomingRinging, Direction::MobileTerminated);
+        let call = Call::new(
+            1,
+            Number::from_non_at_string("123"),
+            CallState::IncomingRinging,
+            Direction::MobileTerminated,
+        );
         let update = AgUpdate::Ring(call.clone());
         let expected_messages = vec![at::success(at::Success::Ring {})];
         assert_matches!(

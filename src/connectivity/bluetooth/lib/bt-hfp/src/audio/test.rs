@@ -4,8 +4,8 @@
 
 use fuchsia_bluetooth::types::{PeerId};
 use fuchsia_sync::Mutex;
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use crate::codec_id::CodecId;

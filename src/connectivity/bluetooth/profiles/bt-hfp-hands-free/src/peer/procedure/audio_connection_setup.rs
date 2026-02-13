@@ -4,10 +4,10 @@
 
 #![allow(dead_code)]
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use at_commands as at;
 
-use super::{at_cmd, at_ok, CommandFromHf, Procedure, ProcedureInput, ProcedureOutput};
+use super::{CommandFromHf, Procedure, ProcedureInput, ProcedureOutput, at_cmd, at_ok};
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 
@@ -52,7 +52,8 @@ impl Procedure<ProcedureInput, ProcedureOutput> for AudioConnectionSetupProcedur
             (_, input) => {
                 return Err(format_err!(
                     "Received invalid response {:?} during an audio connection setup procedure in state {:?}.",
-                    input, self
+                    input,
+                    self
                 ));
             }
         }

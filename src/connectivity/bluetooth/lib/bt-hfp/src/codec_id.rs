@@ -130,7 +130,7 @@ impl TryFrom<CodecId> for fidl_fuchsia_hardware_audio::Format {
             _ => {
                 return Err(audio::Error::UnsupportedParameters {
                     source: format_err!("Unsupported CodecID {value}"),
-                })
+                });
             }
         };
         Ok(Self {

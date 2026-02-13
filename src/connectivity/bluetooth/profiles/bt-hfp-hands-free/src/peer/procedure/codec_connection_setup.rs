@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use at_commands as at;
 use bt_hfp::codec_id::CodecId;
 use log::warn;
 
-use super::{at_cmd, at_ok, at_resp, CommandToHf, Procedure, ProcedureInput, ProcedureOutput};
+use super::{CommandToHf, Procedure, ProcedureInput, ProcedureOutput, at_cmd, at_ok, at_resp};
 
 use crate::peer::procedure_manipulated_state::ProcedureManipulatedState;
 

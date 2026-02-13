@@ -7,8 +7,8 @@ use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_bluetooth::types::PeerId;
 
 use crate::codec_id::CodecId;
-use crate::sco::connector::parameter_sets_for_codec;
 use crate::sco::Connection;
+use crate::sco::connector::parameter_sets_for_codec;
 
 #[track_caller]
 pub fn connection_for_codec(

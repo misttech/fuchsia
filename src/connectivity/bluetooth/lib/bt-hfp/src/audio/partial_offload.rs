@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_bluetooth::types::{PeerId};
-use futures::stream::BoxStream;
+use fidl_fuchsia_media as media;
+use fuchsia_bluetooth::types::PeerId;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use std::collections::{HashMap, HashSet};
-use {fidl_fuchsia_media as media};
 
 use crate::codec_id::CodecId;
 use crate::sco;

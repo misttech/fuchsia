@@ -45,8 +45,8 @@ pub(crate) mod test_server {
     use futures::StreamExt;
 
     /// Register a new Profile object, and create an associated test server.
-    pub(crate) fn setup_profile_and_test_server(
-    ) -> (ProfileClient, bredr::ProfileProxy, LocalProfileTestServer) {
+    pub(crate) fn setup_profile_and_test_server()
+    -> (ProfileClient, bredr::ProfileProxy, LocalProfileTestServer) {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<bredr::ProfileMarker>();
 
         let profile = register(proxy.clone(), Default::default()).expect("register profile");

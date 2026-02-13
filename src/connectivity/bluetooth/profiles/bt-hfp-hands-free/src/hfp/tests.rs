@@ -12,12 +12,12 @@ use async_utils::PollExt;
 use bt_hfp::{audio, sco};
 use fidl::endpoints::ServerEnd;
 use fuchsia_bluetooth::types::{Channel, PeerId};
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use profile_client::ProfileClient;
 use std::collections::HashSet;
 use std::future::Future;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::task::Poll;
 use test_profile_server::{ConnectChannel, TestProfileServer, TestProfileServerEndpoints};
 use {

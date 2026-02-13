@@ -9,10 +9,10 @@ use std::iter::once;
 use super::calls::Call;
 use super::gain_control::Gain;
 use super::indicators::{AgIndicator, AgIndicators, HfIndicators};
+use super::procedure::ProcedureRequest;
 use super::procedure::hold::CallHoldAction;
 use super::procedure::query_current_calls::build_clcc_response;
 use super::procedure::subscriber_number_information::build_cnum_response;
-use super::procedure::ProcedureRequest;
 
 use crate::features::AgFeatures;
 
@@ -194,10 +194,6 @@ impl From<AgUpdate> for ProcedureRequest {
 
 impl From<Result<(), ()>> for AgUpdate {
     fn from(r: Result<(), ()>) -> Self {
-        if r.is_ok() {
-            AgUpdate::Ok
-        } else {
-            AgUpdate::Error
-        }
+        if r.is_ok() { AgUpdate::Ok } else { AgUpdate::Error }
     }
 }

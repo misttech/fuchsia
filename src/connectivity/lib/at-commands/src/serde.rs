@@ -269,7 +269,7 @@ impl<T: internal::SerDeOne + Clone> SerDe for T {
                         remaining: iter.cloned().collect(),
                         failed: value.clone(),
                         cause,
-                    })
+                    });
                 }
             }
         }
