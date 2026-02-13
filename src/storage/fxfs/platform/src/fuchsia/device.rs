@@ -405,10 +405,7 @@ impl BlockServer {
         Ok(())
     }
 
-    async fn handle_requests(
-        &self,
-        server: fidl::endpoints::ServerEnd<BlockMarker>,
-    ) -> Result<(), Error> {
+    async fn handle_requests(&self, server: ServerEnd<BlockMarker>) -> Result<(), Error> {
         server
             .into_stream()
             .map_err(|e| e.into())
@@ -470,12 +467,12 @@ mod tests {
     use crate::fuchsia::testing::{TestFixture, open_file_checked};
     use block_client::{BlockClient, BlockIoFlag, BlockOpcode, RemoteBlockClient, VmoId};
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
-    use fidl::endpoints::{ClientEnd, ServerEnd};
+    use fidl::endpoints::ServerEnd;
     use fidl_fuchsia_fxfs::{
         BlobCreatorMarker, BlobReaderMarker, FileBackedVolumeProviderMarker,
         FileBackedVolumeProviderProxy,
     };
-    use fidl_fuchsia_io::{self as fio, DirectoryProxy};
+    use fidl_fuchsia_io::{self as fio};
     use fidl_fuchsia_storage_block::{BlockMarker, SessionMarker};
     use fs_management::Blobfs;
     use fs_management::filesystem::{BlockConnector as _, Filesystem};
@@ -484,29 +481,35 @@ mod tests {
     use rustc_hash::FxHashSet as HashSet;
     use zx::HandleBased as _;
 
-    struct BlockConnector(FileBackedVolumeProviderProxy, zx::NullableHandle, &'static str);
+    const TEST_DEVICE_FILE_SIZE: u64 = 4 * 1024 * 1024;
+    const TEST_DEVICE_FILE_NAME: &'static str = "block_device";
 
-    impl BlockConnector {
-        async fn new(fixture: &TestFixture, dir: &DirectoryProxy, name: &'static str) -> Self {
+    struct TestFileBackedVolume {
+        proxy: FileBackedVolumeProviderProxy,
+        token: zx::NullableHandle,
+    }
+
+    impl TestFileBackedVolume {
+        async fn new(fixture: &TestFixture) -> Self {
             let proxy = fuchsia_component_client::connect_to_protocol_at_dir_svc::<
                 FileBackedVolumeProviderMarker,
             >(fixture.volume_out_dir())
             .unwrap();
-            let (status, token) = dir.get_token().await.expect("FIDL error");
+            let (status, token) = fixture.root().get_token().await.expect("FIDL error");
             zx::ok(status).expect("get_token error");
-            Self(proxy, token.unwrap(), name)
+            Self { proxy, token: token.unwrap() }
         }
     }
 
-    impl fs_management::filesystem::BlockConnector for BlockConnector {
+    impl fs_management::filesystem::BlockConnector for TestFileBackedVolume {
         fn connect_channel_to_block(
             &self,
             server_end: ServerEnd<BlockMarker>,
         ) -> Result<(), anyhow::Error> {
-            self.0
+            self.proxy
                 .open(
-                    self.1.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
-                    self.2,
+                    self.token.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
+                    TEST_DEVICE_FILE_NAME,
                     server_end.into_channel().into(),
                 )
                 .expect("open failed");
@@ -514,28 +517,29 @@ mod tests {
         }
     }
 
+    async fn serve_test_file_backed_volume(fixture: &TestFixture) -> TestFileBackedVolume {
+        let file = open_file_checked(
+            fixture.root(),
+            TEST_DEVICE_FILE_NAME,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+        file.resize(TEST_DEVICE_FILE_SIZE).await.expect("FIDL error").expect("resize error");
+        let () = file.close().await.expect("FIDL error").expect("close error");
+        TestFileBackedVolume::new(&fixture).await
+    }
+
     #[fuchsia::test(threads = 10)]
     async fn test_block_server() {
         let fixture = TestFixture::new().await;
-        let connector = {
-            let root = fixture.root();
-            let file = open_file_checked(
-                &root,
-                "block_device",
-                fio::Flags::FLAG_MAYBE_CREATE
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE
-                    | fio::Flags::PROTOCOL_FILE,
-                &Default::default(),
-            )
-            .await;
-            file.resize(2 * 1024 * 1024).await.expect("FIDL error").expect("resize error");
-            let () = file.close().await.expect("FIDL error").expect("close error");
-            BlockConnector::new(&fixture, &root, "block_device").await
-        };
+        let volume = serve_test_file_backed_volume(&fixture).await;
 
         {
-            let mut blobfs = Filesystem::new(connector, Blobfs::default());
+            let mut blobfs = Filesystem::new(volume, Blobfs::default());
             blobfs.format().await.expect("format blobfs failed");
             blobfs.fsck().await.expect("fsck failed");
         }
@@ -545,16 +549,12 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_attach_vmo() {
         let fixture = TestFixture::new().await;
-        let (client_channel, server_channel) = zx::Channel::create();
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         join!(
             async {
-                let block_client = RemoteBlockClient::new(
-                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy(),
-                )
-                .await
-                .expect("RemoteBlockClient::new failed");
+                let block_client = RemoteBlockClient::new(volume).await.unwrap();
                 let mut vmo_set = HashSet::default();
-                let vmo = zx::Vmo::create(1).expect("Vmo::create failed");
+                let vmo = zx::Vmo::create(1).unwrap();
                 for _ in 1..5 {
                     match block_client.attach_vmo(&vmo).await {
                         Ok(vmo_id) => {
@@ -569,18 +569,8 @@ mod tests {
                 }
             },
             async {
-                let root = fixture.root();
-                // TODO(https://fxbug.dev/397501864): Migrate to new Open method.
-                root.deprecated_open(
-                    fio::OpenFlags::CREATE
-                        | fio::OpenFlags::RIGHT_READABLE
-                        | fio::OpenFlags::RIGHT_WRITABLE
-                        | fio::OpenFlags::BLOCK_DEVICE,
-                    fio::ModeType::empty(),
-                    "foo",
-                    ServerEnd::new(server_channel),
-                )
-                .expect("open failed");
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
             }
         );
         fixture.close().await;
@@ -589,33 +579,19 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_detach_vmo() {
         let fixture = TestFixture::new().await;
-        let (client_channel, server_channel) = zx::Channel::create();
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         join!(
             async {
-                let block_client = RemoteBlockClient::new(
-                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy(),
-                )
-                .await
-                .expect("RemoteBlockClient::new failed");
-                let vmo = zx::Vmo::create(1).expect("Vmo::create failed");
+                let block_client = RemoteBlockClient::new(volume).await.unwrap();
+                let vmo = zx::Vmo::create(1).unwrap();
                 let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
                 let vmo_id_copy = VmoId::new(vmo_id.id());
                 block_client.detach_vmo(vmo_id).await.expect("detach failed");
                 block_client.detach_vmo(vmo_id_copy).await.expect_err("detach succeeded");
             },
             async {
-                let root = fixture.root();
-                // TODO(https://fxbug.dev/397501864): Migrate to new Open method.
-                root.deprecated_open(
-                    fio::OpenFlags::CREATE
-                        | fio::OpenFlags::RIGHT_READABLE
-                        | fio::OpenFlags::RIGHT_WRITABLE
-                        | fio::OpenFlags::BLOCK_DEVICE,
-                    fio::ModeType::empty(),
-                    "foo",
-                    ServerEnd::new(server_channel),
-                )
-                .expect("open failed");
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
             }
         );
         fixture.close().await;
@@ -624,15 +600,11 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_read_write_files() {
         let fixture = TestFixture::new().await;
-        let (client_channel, server_channel) = zx::Channel::create();
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         join!(
             async {
-                let block_client = RemoteBlockClient::new(
-                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy(),
-                )
-                .await
-                .expect("RemoteBlockClient::new failed");
-                let vmo = zx::Vmo::create(131072).expect("create vmo failed");
+                let block_client = RemoteBlockClient::new(volume).await.unwrap();
+                let vmo = zx::Vmo::create(131072).unwrap();
                 let vmo_id = block_client.attach_vmo(&vmo).await.expect("attach_vmo failed");
 
                 // Must write with length as a multiple of the block_size
@@ -665,18 +637,8 @@ mod tests {
                 block_client.detach_vmo(vmo_id).await.expect("detach failed");
             },
             async {
-                let root = fixture.root();
-                // TODO(https://fxbug.dev/397501864): Migrate to new Open method.
-                root.deprecated_open(
-                    fio::OpenFlags::CREATE
-                        | fio::OpenFlags::RIGHT_READABLE
-                        | fio::OpenFlags::RIGHT_WRITABLE
-                        | fio::OpenFlags::BLOCK_DEVICE,
-                    fio::ModeType::empty(),
-                    "foo",
-                    ServerEnd::new(server_channel),
-                )
-                .expect("open failed");
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
             }
         );
         fixture.close().await;
@@ -685,29 +647,15 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_flush_is_called() {
         let fixture = TestFixture::new().await;
-        let (client_channel, server_channel) = zx::Channel::create();
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         join!(
             async {
-                let block_client = RemoteBlockClient::new(
-                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy(),
-                )
-                .await
-                .expect("RemoteBlockClient::new failed");
+                let block_client = RemoteBlockClient::new(volume).await.unwrap();
                 block_client.flush().await.expect("flush failed");
             },
             async {
-                let root = fixture.root();
-                // TODO(https://fxbug.dev/397501864): Migrate to new Open method.
-                root.deprecated_open(
-                    fio::OpenFlags::CREATE
-                        | fio::OpenFlags::RIGHT_READABLE
-                        | fio::OpenFlags::RIGHT_WRITABLE
-                        | fio::OpenFlags::BLOCK_DEVICE,
-                    fio::ModeType::empty(),
-                    "foo",
-                    ServerEnd::new(server_channel),
-                )
-                .expect("open failed");
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
             }
         );
         fixture.close().await;
@@ -716,55 +664,20 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_get_info() {
         let fixture = TestFixture::new().await;
-        let (client_channel, server_channel) = zx::Channel::create();
-        let file_size = 2 * 1024 * 1024;
+        let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
         join!(
             async {
-                let original_block_device =
-                    ClientEnd::<BlockMarker>::new(client_channel).into_proxy();
-                let info = original_block_device
+                let info = volume
                     .get_info()
                     .await
                     .expect("get_info failed")
                     .map_err(zx::Status::from_raw)
                     .expect("block get_info failed");
-                assert_eq!(info.block_count * u64::from(info.block_size), file_size);
+                assert_eq!(info.block_count * u64::from(info.block_size), TEST_DEVICE_FILE_SIZE);
             },
             async {
-                let root = fixture.root();
-                let file = open_file_checked(
-                    &root,
-                    "block_device",
-                    fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE
-                        | fio::Flags::PROTOCOL_FILE,
-                    &Default::default(),
-                )
-                .await;
-                let () = file
-                    .resize(file_size)
-                    .await
-                    .expect("resize failed")
-                    .map_err(zx::Status::from_raw)
-                    .expect("resize error");
-                let () = file
-                    .close()
-                    .await
-                    .expect("close failed")
-                    .map_err(zx::Status::from_raw)
-                    .expect("close error");
-
-                // TODO(https://fxbug.dev/397501864): Migrate to new Open method.
-                root.deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE
-                        | fio::OpenFlags::RIGHT_WRITABLE
-                        | fio::OpenFlags::BLOCK_DEVICE,
-                    fio::ModeType::empty(),
-                    "block_device",
-                    ServerEnd::new(server_channel),
-                )
-                .expect("open failed");
+                let provider = serve_test_file_backed_volume(&fixture).await;
+                provider.connect_channel_to_block(server).unwrap();
             }
         );
         fixture.close().await;
@@ -773,29 +686,14 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_blobfs() {
         let fixture = TestFixture::new().await;
-        let connector = {
-            let root = fixture.root();
-            let file = open_file_checked(
-                &root,
-                "block_device",
-                fio::Flags::FLAG_MAYBE_CREATE
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE
-                    | fio::Flags::PROTOCOL_FILE,
-                &Default::default(),
-            )
-            .await;
-            file.resize(5 * 1024 * 1024).await.expect("FIDL error").expect("resize error");
-            let () = file.close().await.expect("FIDL error").expect("close error");
-            BlockConnector::new(&fixture, &root, "block_device").await
-        };
+        let volume = serve_test_file_backed_volume(&fixture).await;
 
         {
             let content = b"Hello world!";
             let merkle_root_hash = fuchsia_merkle::root_from_slice(content);
             let delivery_blob =
                 delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Never);
-            let mut blobfs = Filesystem::new(connector, Blobfs::default());
+            let mut blobfs = Filesystem::new(volume, Blobfs::default());
             blobfs.format().await.expect("format blobfs failed");
             blobfs.fsck().await.expect("fsck failed");
             // Mount blobfs
@@ -815,10 +713,9 @@ mod tests {
             serving.shutdown().await.expect("shutdown blobfs failed");
 
             // Re-open Blobfs and verify the contents persisted.
-            let connector = BlockConnector::new(&fixture, fixture.root(), "block_device").await;
+            let volume = TestFileBackedVolume::new(&fixture).await;
 
-            let blobfs =
-                Filesystem::new(connector, Blobfs { readonly: true, ..Default::default() });
+            let blobfs = Filesystem::new(volume, Blobfs { readonly: true, ..Default::default() });
             let serving = blobfs.serve().await.expect("serve blobfs failed");
             {
                 let reader = fuchsia_component_client::connect_to_protocol_at_dir_root::<
@@ -839,25 +736,8 @@ mod tests {
     async fn test_groups() {
         let fixture = TestFixture::new().await;
         let (volume, server) = fidl::endpoints::create_proxy::<BlockMarker>();
-        {
-            let root = fixture.root();
-            let file = open_file_checked(
-                &root,
-                "block_device",
-                fio::Flags::FLAG_MAYBE_CREATE
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE
-                    | fio::Flags::PROTOCOL_FILE,
-                &Default::default(),
-            )
-            .await;
-            file.resize(5 * 1024 * 1024).await.expect("FIDL error").expect("resize error");
-            file.close().await.expect("FIDL error").expect("close error");
-            BlockConnector::new(&fixture, &root, "block_device")
-                .await
-                .connect_channel_to_block(server)
-                .unwrap();
-        };
+        let provider = serve_test_file_backed_volume(&fixture).await;
+        provider.connect_channel_to_block(server).unwrap();
 
         let (session_proxy, server) = fidl::endpoints::create_proxy::<SessionMarker>();
         volume.open_session(server).unwrap();
