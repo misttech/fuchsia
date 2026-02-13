@@ -135,6 +135,7 @@ pub trait Control: Send {
     fn failed_request(&self, request: ControlEvent, error: Error);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OffloadType {
     Dai,
     Codec,

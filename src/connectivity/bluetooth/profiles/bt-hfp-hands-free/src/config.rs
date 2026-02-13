@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use anyhow::{Error, format_err};
 use hfp_hands_free_profile_config::Config;
+use bt_hfp::audio;
 
 #[derive(Clone, Copy, Default)]
 pub struct HandsFreeFeatureSupport {
@@ -17,13 +18,34 @@ pub struct HandsFreeFeatureSupport {
     pub enhanced_voice_recognition_with_text: bool,
 }
 
-impl HandsFreeFeatureSupport {
+#[derive(Clone, Copy)]
+pub struct AudioConfig {
+    pub controller_encoding_cvsd: bool,
+    pub controller_encoding_msbc: bool,
+    pub offload_type: audio::OffloadType,
+}
+
+#[derive(Clone, Copy)]
+pub struct Configs {
+    pub hands_free_features: HandsFreeFeatureSupport,
+    pub audio: AudioConfig,
+}
+
+impl Configs {
     pub fn load() -> Result<Self, Error> {
         let config = Config::take_from_startup_handle();
-        Self::load_default_with_config(config)
+        Self::from_raw_config(&config)
     }
 
-    pub fn load_default_with_config(str_config: Config) -> Result<Self, Error> {
+    fn from_raw_config(str_config: &Config) -> Result<Self, Error> {
+        let hands_free_features = HandsFreeFeatureSupport::from_raw_config(str_config)?;
+        let audio = AudioConfig::from_raw_config(str_config)?;
+        Ok(Self { hands_free_features, audio })
+    }
+}
+
+impl HandsFreeFeatureSupport {
+    fn from_raw_config(str_config: &Config) -> Result<Self, Error> {
         let mut config = Self::default();
         config.ec_or_nr = str_config.ec_or_nr;
         config.call_waiting_or_three_way_calling = str_config.call_waiting_or_three_way_calling;
@@ -38,12 +60,31 @@ impl HandsFreeFeatureSupport {
     }
 }
 
+impl AudioConfig {
+    fn from_raw_config(str_config: &Config) -> Result<Self, Error> {
+        let controller_encoding_cvsd = str_config.controller_encoding_cvsd;
+        let controller_encoding_msbc = str_config.controller_encoding_msbc;
+        let offload_type;
+        match str_config.offload_type.as_str() {
+            "dai" => offload_type = audio::OffloadType::Dai,
+            "codec" => offload_type = audio::OffloadType::Codec,
+            _ => return Err(format_err!("Unknown offload type: {}", str_config.offload_type)),
+        }
+        let config = AudioConfig {
+            controller_encoding_cvsd,
+            controller_encoding_msbc,
+            offload_type,
+        };
+        Ok(config)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[fuchsia::test]
-    fn proper_creation_default_features() {
+    fn default_features() {
         let config = HandsFreeFeatureSupport::default();
         assert!(!config.ec_or_nr);
         assert!(!config.call_waiting_or_three_way_calling);
@@ -54,37 +95,47 @@ mod tests {
         assert!(!config.enhanced_voice_recognition);
         assert!(!config.enhanced_voice_recognition_with_text);
     }
-    #[fuchsia::test]
-    fn proper_creation_from_config() {
-        let config = Config {
-            ec_or_nr: false,
-            call_waiting_or_three_way_calling: false,
-            cli_presentation_capability: false,
-            voice_recognition_activation: false,
-            remote_volume_control: false,
-            wide_band_speech: true,
-            enhanced_voice_recognition: false,
-            enhanced_voice_recognition_with_text: false,
-        };
-        let loaded_config = HandsFreeFeatureSupport::load_default_with_config(config).unwrap();
-        let default = HandsFreeFeatureSupport::default();
 
-        assert_eq!(loaded_config.ec_or_nr, default.ec_or_nr);
+    #[fuchsia::test]
+    fn load_from_config() {
+        let config = Config {
+            ec_or_nr: true,
+            call_waiting_or_three_way_calling: true,
+            cli_presentation_capability: true,
+            voice_recognition_activation: true,
+            remote_volume_control: true,
+            wide_band_speech: true,
+            enhanced_voice_recognition: true,
+            enhanced_voice_recognition_with_text: true,
+            controller_encoding_cvsd: true,
+            controller_encoding_msbc: true,
+            offload_type: "dai".to_string(),
+        };
+        let configs = Configs::from_raw_config(&config).unwrap();
+        let hands_free_config = configs.hands_free_features;
+        let audio_config = configs.audio;
+
+        assert_eq!(hands_free_config.ec_or_nr, true);
         assert_eq!(
-            loaded_config.call_waiting_or_three_way_calling,
-            default.call_waiting_or_three_way_calling
+            hands_free_config.call_waiting_or_three_way_calling,
+            true
         );
-        assert_eq!(loaded_config.cli_presentation_capability, default.cli_presentation_capability);
+        assert_eq!(hands_free_config.cli_presentation_capability, true);
         assert_eq!(
-            loaded_config.voice_recognition_activation,
-            default.voice_recognition_activation
+            hands_free_config.voice_recognition_activation,
+            true
         );
-        assert_eq!(loaded_config.remote_volume_control, default.remote_volume_control);
-        assert_ne!(loaded_config.wide_band_speech, default.wide_band_speech);
-        assert_eq!(loaded_config.enhanced_voice_recognition, default.enhanced_voice_recognition);
+        assert_eq!(hands_free_config.remote_volume_control, true);
+        assert_eq!(hands_free_config.wide_band_speech, true);
+        assert_eq!(hands_free_config.enhanced_voice_recognition, true);
         assert_eq!(
-            loaded_config.enhanced_voice_recognition_with_text,
-            default.enhanced_voice_recognition_with_text
+            hands_free_config.enhanced_voice_recognition_with_text,
+            true
         );
+
+
+        assert_eq!(audio_config.controller_encoding_cvsd, true);
+        assert_eq!(audio_config.controller_encoding_msbc, true);
+        assert_eq!(audio_config.offload_type, audio::OffloadType::Dai);
     }
 }

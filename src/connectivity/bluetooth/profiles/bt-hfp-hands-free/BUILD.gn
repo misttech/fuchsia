@@ -12,7 +12,6 @@ rustc_binary("bin") {
 
   deps = [
     ":hfp_hands_free_profile_config",
-    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
     "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
     "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_rust",
@@ -103,6 +102,9 @@ fuchsia_structured_config_values("default_config_values") {
     wide_band_speech = false
     enhanced_voice_recognition = false
     enhanced_voice_recognition_with_text = false
+    controller_encoding_cvsd = true
+    controller_encoding_msbc = true
+    offload_type = "codec"
   }
 }
 

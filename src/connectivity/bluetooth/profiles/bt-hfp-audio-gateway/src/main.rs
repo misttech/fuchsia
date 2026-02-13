@@ -28,17 +28,6 @@ mod peer;
 mod profile;
 mod service_definitions;
 
-fn controller_codecs(config: &hfp_profile_config::Config) -> HashSet<CodecId> {
-    let mut controller_codecs = HashSet::new();
-    if config.controller_encoding_cvsd {
-        let _ = controller_codecs.insert(CodecId::CVSD);
-    }
-    if config.controller_encoding_msbc {
-        let _ = controller_codecs.insert(CodecId::MSBC);
-    }
-    controller_codecs
-}
-
 async fn setup_audio(
     controller_codecs: HashSet<CodecId>,
     config: &hfp_profile_config::Config,
@@ -56,7 +45,7 @@ async fn main() -> Result<(), Error> {
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
     let config = hfp_profile_config::Config::take_from_startup_handle();
-    let controller_codecs = controller_codecs(&config);
+    let controller_codecs = config::controller_codecs(&config);
 
     let audio = setup_audio(controller_codecs.clone(), &config).await?;
 

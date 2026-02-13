@@ -6,13 +6,12 @@ use anyhow::{Context, Error};
 use bt_hfp::codec_id::CodecId;
 use bt_hfp::{audio, sco};
 use fidl_fuchsia_bluetooth_hfp as fidl_hfp;
-use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::StreamExt;
 use log::{debug, error, info};
 use std::collections::HashSet;
 
-use crate::config::HandsFreeFeatureSupport;
+use crate::config::Configs;
 use crate::hfp::Hfp;
 
 mod config;
@@ -33,15 +32,14 @@ async fn main() -> Result<(), Error> {
 
     let _inspect_server_task = start_inspect();
 
-    let feature_support = HandsFreeFeatureSupport::load()?;
+    let configs = Configs::load()?;
+    let feature_support = configs.hands_free_features;
+    let audio_config = configs.audio;
     let (profile_client, profile_proxy) = profile::register_hands_free(feature_support)?;
 
-    let controller_codecs = controller_codecs();
+    let controller_codecs = controller_codecs(audio_config);
     let sco_connector = sco::Connector::build(profile_proxy.clone(), controller_codecs.clone());
-
-    let provider_proxy = connect_to_protocol::<fidl_fuchsia_audio_device::ProviderMarker>()?;
-    // TODO(b/416737099) Support other audio connection types.
-    let audio = Box::new(audio::CodecControl::new(provider_proxy));
+    let audio = setup_audio(audio_config, controller_codecs).await?;
 
     serve_fidl(&mut fs)?;
 
@@ -61,6 +59,25 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
+fn controller_codecs(config: config::AudioConfig) -> HashSet<CodecId> {
+    let mut controller_codecs = HashSet::new();
+    if config.controller_encoding_cvsd {
+        let _ = controller_codecs.insert(CodecId::CVSD);
+}
+    if config.controller_encoding_msbc {
+        let _ = controller_codecs.insert(CodecId::MSBC);
+    }
+    controller_codecs
+}
+
+async fn setup_audio(
+    config: config::AudioConfig,
+    controller_codecs: HashSet<CodecId>,
+) -> Result<Box<dyn audio::Control>, Error> {
+    let offload_type = config.offload_type;
+    audio::setup_audio(offload_type, controller_codecs).await
+}
+
 fn start_inspect() -> Option<inspect_runtime::PublishedInspectController> {
     // TODO(https://fxbug.dev/136817): Add inspect.
     let inspector = fuchsia_inspect::Inspector::default();
@@ -72,14 +89,4 @@ fn serve_fidl(fs: &mut HandsFreeFidlService) -> Result<(), Error> {
     let _ = fs.take_and_serve_directory_handle().context("Failed to serve ServiceFs directory")?;
 
     Ok(())
-}
-
-fn controller_codecs() -> HashSet<CodecId> {
-    let mut controller_codecs = HashSet::new();
-
-    // TODO(b/323584284) Read support for these codecs from config.
-    let _ = controller_codecs.insert(CodecId::CVSD);
-    let _ = controller_codecs.insert(CodecId::MSBC);
-
-    controller_codecs
 }

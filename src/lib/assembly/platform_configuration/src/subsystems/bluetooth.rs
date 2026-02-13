@@ -8,7 +8,8 @@ use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::bluetooth_config::{
     A2dpConfig, A2dpSinkAndSource, A2dpSinkAndSourceConfig, A2dpSinkAndSourceDefaultEnabled,
-    A2dpSourceOnly, AudioGatewayConfig, BluetoothConfig, HandsFreeConfig, HfpCodecId, Snoop,
+    A2dpSourceOnly, AudioGatewayConfig, BluetoothConfig, BluetoothProfilesConfig, HandsFreeConfig,
+    HfpCodecId, Snoop,
 };
 use assembly_config_schema::platform_settings::media_config::{AudioConfig, PlatformMediaConfig};
 
@@ -23,6 +24,40 @@ fn get_source_type_str(sink_and_source: &A2dpSinkAndSourceConfig) -> String {
         }
         _ => "none".to_owned(),
     }
+}
+
+// Common values from BT and media configs used by HFP AG and HF
+struct HfpAudioConfig {
+    hfp_supported_codecs: Vec<HfpCodecId>,
+    controller_encodes: Vec<HfpCodecId>,
+    offload_type: String,
+}
+
+fn get_hfp_audio_config(
+    profiles: &BluetoothProfilesConfig,
+    media_config: &PlatformMediaConfig,
+) -> anyhow::Result<HfpAudioConfig> {
+    // TODO(https://fxbug.dev/362573469): Bail if the features don't make sense
+    // (VoiceRecognitionText without EnhancedVoiceRecognitionStatus, for example)
+    let hfp_supported_codecs = if profiles.hfp.codecs_supported.is_empty() {
+        vec![HfpCodecId::Cvsd, HfpCodecId::Msbc, HfpCodecId::Lc3Swb]
+    } else {
+        profiles.hfp.codecs_supported.clone()
+    };
+
+    let controller_encodes = if profiles.hfp.controller_encodes.is_empty() {
+        vec![HfpCodecId::Cvsd, HfpCodecId::Msbc]
+    } else {
+        profiles.hfp.controller_encodes.clone()
+    };
+
+    let offload_type = match media_config.audio {
+        Some(AudioConfig::FullStack(_)) => String::from("dai"),
+        Some(AudioConfig::DeviceRegistry(_)) => String::from("codec"),
+        None => return Err(format_err!("Bluetooth HFP requires an audio stack")),
+    };
+
+    Ok(HfpAudioConfig { hfp_supported_codecs, controller_encodes, offload_type })
 }
 
 pub(crate) struct BluetoothSubsystemConfig;
@@ -130,28 +165,9 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 )?;
         }
 
-        // TODO(https://fxbug.dev/362573469): Bail if the features don't make sense
-        // (VoiceRecognitionText without EnhancedVoiceRecognitionStatus, for example)
-        let hfp_supported_codecs = if profiles.hfp.codecs_supported.is_empty() {
-            vec![HfpCodecId::Cvsd, HfpCodecId::Msbc, HfpCodecId::Lc3Swb]
-        } else {
-            profiles.hfp.codecs_supported.clone()
-        };
         if let AudioGatewayConfig::Enabled(hfp_ag_features) = &profiles.hfp.audio_gateway {
+            let audio_config = get_hfp_audio_config(profiles, media_config)?;
             builder.platform_bundle("bluetooth_hfp_ag")?;
-
-            let controller_encodes = if profiles.hfp.controller_encodes.is_empty() {
-                vec![HfpCodecId::Cvsd, HfpCodecId::Msbc]
-            } else {
-                profiles.hfp.controller_encodes.clone()
-            };
-
-            let offload_type = match media_config.audio {
-                Some(AudioConfig::FullStack(_)) => "dai",
-                Some(AudioConfig::DeviceRegistry(_)) => "codec",
-                None => return Err(format_err!("Bluetooth HFP requires an audio stack")),
-            };
-
             let mut hfp_ag_config = builder
                 .package("bt-hfp-audio-gateway")
                 .component("meta/bt-hfp-audio-gateway.cm")?;
@@ -177,12 +193,22 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                     "enhanced_voice_recognition_with_text",
                     hfp_ag_features.voice_recognition_text,
                 )?
-                .field("controller_encoding_cvsd", controller_encodes.contains(&HfpCodecId::Cvsd))?
-                .field("controller_encoding_msbc", controller_encodes.contains(&HfpCodecId::Msbc))?
-                .field("wide_band_speech", hfp_supported_codecs.contains(&HfpCodecId::Msbc))?
-                .field("offload_type", offload_type)?;
+                .field(
+                    "controller_encoding_cvsd",
+                    audio_config.controller_encodes.contains(&HfpCodecId::Cvsd),
+                )?
+                .field(
+                    "controller_encoding_msbc",
+                    audio_config.controller_encodes.contains(&HfpCodecId::Msbc),
+                )?
+                .field(
+                    "wide_band_speech",
+                    audio_config.hfp_supported_codecs.contains(&HfpCodecId::Msbc),
+                )?
+                .field("offload_type", audio_config.offload_type)?;
         }
         if let HandsFreeConfig::Enabled(hfp_hf_features) = &profiles.hfp.hands_free {
+            let audio_config = get_hfp_audio_config(profiles, media_config)?;
             builder.platform_bundle("bluetooth_hfp_hf")?;
 
             let mut hfp_hf_config =
@@ -193,12 +219,24 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                 .field("cli_presentation_capability", hfp_hf_features.calling_line_identification)?
                 .field("voice_recognition_activation", hfp_hf_features.voice_recognition)?
                 .field("remote_volume_control", hfp_hf_features.remote_volume_control)?
-                .field("wide_band_speech", hfp_supported_codecs.contains(&HfpCodecId::Msbc))?
+                .field(
+                    "wide_band_speech",
+                    audio_config.hfp_supported_codecs.contains(&HfpCodecId::Msbc),
+                )?
                 .field("enhanced_voice_recognition", hfp_hf_features.enhanced_voice_recognition)?
                 .field(
                     "enhanced_voice_recognition_with_text",
                     hfp_hf_features.voice_recognition_text,
-                )?;
+                )?
+                .field(
+                    "controller_encoding_cvsd",
+                    audio_config.controller_encodes.contains(&HfpCodecId::Cvsd),
+                )?
+                .field(
+                    "controller_encoding_msbc",
+                    audio_config.controller_encodes.contains(&HfpCodecId::Msbc),
+                )?
+                .field("offload_type", audio_config.offload_type)?;
         }
         if profiles.map.mce_enabled {
             builder.platform_bundle("bluetooth_map_mce")?;

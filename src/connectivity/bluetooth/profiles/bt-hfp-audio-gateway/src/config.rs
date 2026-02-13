@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use bt_hfp::codec_id::CodecId;
 use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
+use std::collections::HashSet;
 
 /// Configuration of optional feature support.
 /// This list of features is derived from the optional features in HFP v1.8, Table 3.1.
@@ -80,6 +82,17 @@ impl AudioGatewayFeatureSupport {
     pub fn load_from_config(config: hfp_profile_config::Config) -> Self {
         config.into()
     }
+}
+
+pub fn controller_codecs(config: &hfp_profile_config::Config) -> HashSet<CodecId> {
+    let mut controller_codecs = HashSet::new();
+    if config.controller_encoding_cvsd {
+        let _ = controller_codecs.insert(CodecId::CVSD);
+    }
+    if config.controller_encoding_msbc {
+        let _ = controller_codecs.insert(CodecId::MSBC);
+    }
+    controller_codecs
 }
 
 #[cfg(test)]
