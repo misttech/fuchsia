@@ -411,7 +411,7 @@ impl SmeClientIface {
         static NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE: usize = 100;
         let recorder = match power_observability_state_recorder::EnumStateRecorder::new(
             element_name,
-            power_observability_state_recorder::lazy_static_cstr("power").unwrap(),
+            c"power",
             power_observability_state_recorder::RecorderOptions {
                 capacity: NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
                 lazy_record: true,
@@ -1458,7 +1458,7 @@ mod tests {
                 recorder: Some(
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
-                        power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
+                        c"test",
                         power_observability_state_recorder::RecorderOptions {
                             capacity: 1,
                             lazy_record: true,
@@ -1719,7 +1719,7 @@ mod tests {
                 recorder: Some(
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
-                        power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
+                        c"test",
                         power_observability_state_recorder::RecorderOptions {
                             capacity: 1,
                             lazy_record: true,

@@ -40,13 +40,10 @@ static CSTR_POOL: LazyLock<Mutex<HashMap<String, &'static CStr>>> =
 /// to achieve static lifetime. Each value is indexed by its corresponding `str` value, so a given
 /// value will only be created once.
 ///
-/// This function is public for the convenience of clients using Rust versions that predate the
-/// introduction of C-string literals in the 2021 edition.
-///
 /// Errors:
 ///  - StateRecorderError::IncompatibleString: The provided string could not be converted to a
 ///    CString.
-pub fn lazy_static_cstr(s: &str) -> Result<&'static CStr, StateRecorderError> {
+fn lazy_static_cstr(s: &str) -> Result<&'static CStr, StateRecorderError> {
     let mut pool = CSTR_POOL.lock();
 
     // If the string is already in our pool, return the existing CStr.
@@ -55,9 +52,45 @@ pub fn lazy_static_cstr(s: &str) -> Result<&'static CStr, StateRecorderError> {
     }
 
     // Create the CString and leak it in a box to give it static lifetime.
-    let c_string =
-        CString::new(s).map_err(|_| StateRecorderError::IncompatibleString(s.to_owned()))?;
-    let static_cstr: &'static CString = Box::leak(Box::new(c_string));
+    let c_string = CString::new(s)
+        .map_err(|_| StateRecorderError::IncompatibleString(s.to_owned()))?
+        .into_boxed_c_str();
+
+    // We are going to leak the `c_string`, which may trip up the LeakSanitizer. So we need to
+    // explicitly disable and enable when we're running in the sanitizer variant.
+    //
+    // Note that the variant is named variant_asan (for AddressSanitizer), but the specific
+    // sanitizer we are targeting is lsan (LeakSanitizer), which is enabled as part of the asan
+    // variant.
+    #[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
+    fn disable_lsan() {
+        unsafe extern "C" {
+            fn __lsan_disable();
+        }
+        unsafe {
+            __lsan_disable();
+        }
+    }
+
+    #[cfg(not(any(feature = "variant_asan", feature = "variant_hwasan")))]
+    fn disable_lsan() {}
+
+    #[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
+    fn enable_lsan() {
+        unsafe extern "C" {
+            fn __lsan_enable();
+        }
+        unsafe {
+            __lsan_enable();
+        }
+    }
+
+    #[cfg(not(any(feature = "variant_asan", feature = "variant_hwasan")))]
+    fn enable_lsan() {}
+
+    disable_lsan();
+    let static_cstr: &'static CStr = Box::leak(c_string);
+    enable_lsan();
 
     pool.insert(s.to_owned(), static_cstr);
 
