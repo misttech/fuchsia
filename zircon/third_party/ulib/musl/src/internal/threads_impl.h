@@ -9,15 +9,25 @@
 #include <locale.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <sys/uio.h>
 #include <threads.h>
 #include <zircon/assert.h>
+#include <zircon/compiler.h>
 #include <zircon/tls.h>
+#include <zircon/types.h>
 
 #include "libc.h"
 #include "pthread_arch.h"
-#include "threads/zxr-thread.h"
 #include "threads/zxr-tls.h"
+
+#ifdef __cplusplus
+#include <lib/zx/thread.h>
+
+#include <atomic>
+#include <optional>
+#endif
 
 __BEGIN_CDECLS
 
@@ -54,6 +64,60 @@ struct tls_dtor;
 #define HAVE_SHADOW_CALL_STACK 1
 #define HAVE_UNSAFE_STACK 0
 #endif
+
+typedef struct zxr_thread {
+#ifdef __cplusplus
+  // A zxr_thread_t starts its life JOINABLE.
+  // - If someone calls zxr_thread_join on it, it transitions to JOINED.
+  // - If someone calls ThreadDetach on it, it transitions to DETACHED.
+  // - When it begins exiting, the EXITING state is entered.
+  // - When it is no longer using its memory and handle resources, it transitions
+  //   to DONE.  If the thread was DETACHED prior to EXITING, this transition MAY
+  //   not happen.
+  // No other transitions occur.
+  enum class State : int {
+    JOINABLE,
+    DETACHED,
+    JOINED,
+    EXITING,
+    DONE,
+    FREED,
+  };
+
+  zx_futex_t* StateFutex() { return reinterpret_cast<zx_futex_t*>(&state); }
+
+  // Claim the thread as JOINED or DETACHED.  Returns std::nullopt on success,
+  // which only happens if the previous state was JOINABLE.  On failure, it
+  // returns the actual previous state.
+  std::optional<State> JoinOrDetachState(State new_state) {
+    if (State old_state = State::JOINABLE; !state.compare_exchange_strong(
+            old_state, new_state, std::memory_order_acq_rel, std::memory_order_acquire))
+        [[unlikely]] {
+      return old_state;
+    }
+    return std::nullopt;
+  }
+
+  // Extract the thread handle.  Synchronizes with readers by setting the state
+  // to FREED and checks the given expected state for consistency.
+  zx::thread TakeHandle(State expected_state) {
+    zx::thread taken{std::exchange(handle, ZX_HANDLE_INVALID)};
+    if (!state.compare_exchange_strong(expected_state, State::FREED, std::memory_order_acq_rel,
+                                       std::memory_order_acquire)) {
+      CRASH_WITH_UNIQUE_BACKTRACE();
+    }
+    return taken;
+  }
+#endif
+
+  zx_handle_t handle;
+#ifdef __cplusplus
+  std::atomic<State> state;
+#else
+  _Atomic(int) state;
+#endif
+} zxr_thread_t;
+static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 
 struct pthread {
 #ifndef TLS_ABOVE_TP

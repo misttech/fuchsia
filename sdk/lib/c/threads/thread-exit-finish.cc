@@ -15,7 +15,6 @@
 #include "thread-storage.h"
 #include "thread.h"
 #include "threads_impl.h"
-#include "zxr-thread.h"
 
 // This file is compiled in the basic machine ABI (user.basic) environment.
 // It switches off of, and then frees, the thread's main stacks.

@@ -13,7 +13,6 @@
 #include <mutex>
 
 #include "../threads/thread-list.h"
-#include "../threads/zxr-thread.h"
 #include "asan_impl.h"
 #include "src/stdlib/exit.h"
 #include "threads_impl.h"

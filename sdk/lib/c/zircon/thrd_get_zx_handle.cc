@@ -8,7 +8,6 @@
 #include <thread>
 #include <type_traits>
 
-#include "../threads/zxr-thread.h"
 #include "threads_impl.h"
 
 namespace {
