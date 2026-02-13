@@ -20,6 +20,7 @@ class Memory;
 class UnwinderBase {
  public:
   explicit UnwinderBase(CfiUnwinder* cfi_unwinder) : cfi_unwinder_(cfi_unwinder) {}
+  virtual ~UnwinderBase() = default;
 
   // Unwind one frame, populating |next| with the new register values. |next| is invalid if an error
   // is returned.
