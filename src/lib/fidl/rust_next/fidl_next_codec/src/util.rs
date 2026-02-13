@@ -7,14 +7,20 @@
 use core::hint::unreachable_unchecked;
 use core::mem::MaybeUninit;
 
-use crate::{Constrained, Encode, EncodeError, Unconstrained};
+use crate::{Constrained, Encode, EncodeError, Slot, ValidationError, Wire};
 
 /// A type which cannot be constructed.
 pub enum Never {}
 
-impl Unconstrained for Never {}
+impl Constrained for Never {
+    type Constraint = ();
 
-unsafe impl<W: Constrained, E: ?Sized> Encode<W, E> for Never {
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
+unsafe impl<W: Wire, E: ?Sized> Encode<W, E> for Never {
     fn encode(
         self,
         _: &mut E,

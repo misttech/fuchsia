@@ -8,9 +8,10 @@ use core::ptr::NonNull;
 
 use munge::munge;
 
+use crate::wire::WirePointer;
 use crate::{
     Constrained, Decode, DecodeError, Decoder, DecoderExt as _, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, WirePointer,
+    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
 };
 
 /// A boxed (optional) FIDL value.
@@ -37,7 +38,7 @@ impl<T> Drop for WireBox<'_, T> {
 }
 
 unsafe impl<T: Wire> Wire for WireBox<'static, T> {
-    type Owned<'de> = WireBox<'de, T::Owned<'de>>;
+    type Narrowed<'de> = WireBox<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -87,18 +88,18 @@ impl<T: fmt::Debug> fmt::Debug for WireBox<'_, T> {
     }
 }
 
-unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireBox<'static, T> {
+unsafe impl<'de, D: Decoder<'de> + ?Sized, T: Decode<D>> Decode<D> for WireBox<'de, T> {
     fn decode(
         slot: Slot<'_, Self>,
-        mut decoder: &mut D,
-        constraint: <Self as Constrained>::Constraint,
+        decoder: &mut D,
+        constraint: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { mut ptr } = slot);
 
         if WirePointer::is_encoded_present(ptr.as_mut())? {
             let mut value = decoder.take_slot::<T>()?;
             T::decode(value.as_mut(), decoder, constraint)?;
-            WirePointer::set_decoded(ptr, value.as_mut_ptr());
+            WirePointer::set_decoded(ptr, value);
         }
 
         Ok(())
@@ -131,5 +132,51 @@ impl<T: Constrained> Constrained for WireBox<'_, T> {
         let ptr = ptr.as_ptr();
         let member_slot = unsafe { Slot::new_unchecked(ptr) };
         T::validate(member_slot, constraint)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WireBox;
+
+    use crate::wire::WireU64;
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_box() {
+        assert_eq!(
+            chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireBox<'_, WireU64>>()
+                .unwrap()
+                .as_ref(),
+            None,
+        );
+        assert_eq!(
+            chunks![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56,
+                0x34, 0x12,
+            ]
+            .as_mut_slice()
+            .decode::<WireBox<'_, WireU64>>()
+            .unwrap()
+            .as_ref(),
+            Some(&WireU64(0x123456789abcdef0u64)),
+        );
+    }
+
+    #[test]
+    fn encode_box() {
+        assert_eq!(
+            Vec::encode(None::<u64>).unwrap(),
+            chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        );
+        assert_eq!(
+            Vec::encode(Some(0x123456789abcdef0u64)).unwrap(),
+            chunks![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56,
+                0x34, 0x12,
+            ],
+        );
     }
 }

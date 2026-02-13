@@ -5,6 +5,8 @@
 #[cfg(not(target_endian = "little"))]
 compile_error!("only little-endian targets are supported by FIDL");
 
+// Standard library traits
+
 macro_rules! impl_unop {
     ($trait:ident:: $fn:ident for $name:ident : $prim:ty) => {
         impl ::core::ops::$trait for $name {
@@ -310,6 +312,221 @@ macro_rules! impl_product_and_sum {
     };
 }
 
+macro_rules! impl_fidl_convert {
+    (for $name:ty : $prim:ty) => {
+        impl $crate::FromWire<$name> for $prim {
+            const COPY_OPTIMIZATION: $crate::CopyOptimization<$name, $prim> =
+                $crate::CopyOptimization::<$name, $prim>::PRIMITIVE;
+
+            #[inline]
+            fn from_wire(wire: $name) -> Self {
+                wire.into()
+            }
+        }
+
+        impl $crate::FromWireRef<$name> for $prim {
+            #[inline]
+            fn from_wire_ref(wire: &$name) -> Self {
+                (*wire).into()
+            }
+        }
+
+        impl $crate::IntoNatural for $name {
+            type Natural = $prim;
+        }
+    };
+}
+
+macro_rules! impl_fidl_constrained {
+    (for $name:ty) => {
+        impl $crate::Constrained for $name {
+            type Constraint = ();
+
+            fn validate(
+                _: $crate::Slot<'_, Self>,
+                _: Self::Constraint,
+            ) -> Result<(), $crate::ValidationError> {
+                Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! impl_fidl_copy_optimize {
+    (for $name:ty) => {
+        impl $crate::CopyOptimization<$name, $name> {
+            /// Whether copy optimization between the two primitive types is
+            /// enabled.
+            pub const PRIMITIVE: Self = Self::identity();
+        }
+    };
+
+    (for $name:ty : $prim:ty) => {
+        impl_fidl_copy_optimize!(for $name);
+
+        impl $crate::CopyOptimization<$prim, $name> {
+            /// Whether copy optimization between the two primitive types is
+            /// enabled.
+            pub const PRIMITIVE: Self =
+                // SAFETY: Copy optimization for primitives is enabled if their
+                // size <= 1 or the target is little-endian.
+                unsafe {
+                    $crate::CopyOptimization::enable_if(
+                        size_of::<Self>() <= 1 || cfg!(target_endian = "little"),
+                    )
+                };
+        }
+
+        impl $crate::CopyOptimization<$name, $prim> {
+            /// Whether copy optimization between the two primitive types is
+            /// enabled.
+            pub const PRIMITIVE: Self =
+                // SAFETY: Copy optimization between these two primitives is
+                // commutative.
+                unsafe {
+                    $crate::CopyOptimization::enable_if(
+                        $crate::CopyOptimization::<$prim, $name>::PRIMITIVE.is_enabled(),
+                    )
+                };
+        }
+    }
+}
+
+macro_rules! impl_fidl_decode {
+    (for $name:ty) => {
+        unsafe impl<D: ?Sized> $crate::Decode<D> for $name {
+            #[inline]
+            fn decode(
+                _: $crate::Slot<'_, Self>,
+                _: &mut D,
+                _: (),
+            ) -> Result<(), $crate::DecodeError> {
+                Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! impl_fidl_encode {
+    (for $name:ty : $prim:ty) => {
+        unsafe impl<E: ?Sized> $crate::Encode<$name, E> for $prim {
+            const COPY_OPTIMIZATION: $crate::CopyOptimization<$prim, $name> =
+                $crate::CopyOptimization::<$prim, $name>::PRIMITIVE;
+
+            #[inline]
+            fn encode(
+                self,
+                encoder: &mut E,
+                out: &mut ::core::mem::MaybeUninit<$name>,
+                constraint: <$name as $crate::Constrained>::Constraint,
+            ) -> Result<(), $crate::EncodeError> {
+                $crate::Encode::encode(&self, encoder, out, constraint)
+            }
+        }
+
+        unsafe impl<E: ?Sized> $crate::Encode<$name, E> for &$prim {
+            #[inline]
+            fn encode(
+                self,
+                _: &mut E,
+                out: &mut ::core::mem::MaybeUninit<$name>,
+                _: <$name as $crate::Constrained>::Constraint,
+            ) -> Result<(), $crate::EncodeError> {
+                out.write(<$name>::from(*self));
+                Ok(())
+            }
+        }
+
+        unsafe impl<E> $crate::EncodeOption<$crate::wire::WireBox<'static, $name>, E> for $prim
+        where
+            E: $crate::Encoder + ?Sized,
+        {
+            #[inline]
+            fn encode_option(
+                this: Option<Self>,
+                encoder: &mut E,
+                out: &mut ::core::mem::MaybeUninit<$crate::wire::WireBox<'static, $name>>,
+                constraint: <$name as $crate::Constrained>::Constraint,
+            ) -> Result<(), $crate::EncodeError> {
+                if let Some(value) = this {
+                    $crate::EncoderExt::encode_next_with_constraint(encoder, value, constraint)?;
+                    $crate::wire::WireBox::encode_present(out);
+                } else {
+                    $crate::wire::WireBox::encode_absent(out);
+                }
+
+                Ok(())
+            }
+        }
+
+        unsafe impl<E> $crate::EncodeOption<$crate::wire::WireBox<'static, $name>, E> for &$prim
+        where
+            E: $crate::Encoder + ?Sized,
+        {
+            #[inline]
+            fn encode_option(
+                this: Option<Self>,
+                encoder: &mut E,
+                out: &mut ::core::mem::MaybeUninit<$crate::wire::WireBox<'static, $name>>,
+                constraint: <$name as $crate::Constrained>::Constraint,
+            ) -> Result<(), $crate::EncodeError> {
+                <$prim>::encode_option(this.cloned(), encoder, out, constraint)
+            }
+        }
+    };
+}
+
+macro_rules! impl_fidl_wire {
+    (for $name:ty) => {
+        unsafe impl $crate::Wire for $name {
+            type Narrowed<'de> = Self;
+
+            #[inline]
+            fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {}
+        }
+    };
+}
+
+// Builtins
+
+macro_rules! impl_builtin_primitive {
+    (for $name:ty) => {
+        impl_fidl_convert!(for $name : $name);
+        impl_fidl_constrained!(for $name);
+        impl_fidl_copy_optimize!(for $name);
+        impl_fidl_decode!(for $name);
+        impl_fidl_encode!(for $name : $name);
+        impl_fidl_wire!(for $name);
+    };
+}
+
+impl_builtin_primitive!(for ());
+impl_builtin_primitive!(for u8);
+impl_builtin_primitive!(for i8);
+
+// Bool
+
+impl_fidl_convert!(for bool: bool);
+impl_fidl_constrained!(for bool);
+impl_fidl_copy_optimize!(for bool);
+
+unsafe impl<D: ?Sized> crate::Decode<D> for bool {
+    #[inline]
+    fn decode(slot: crate::Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), crate::DecodeError> {
+        let value = unsafe { slot.as_ptr().cast::<u8>().read() };
+        match value {
+            0 | 1 => (),
+            invalid => return Err(crate::DecodeError::InvalidBool(invalid)),
+        }
+        Ok(())
+    }
+}
+
+impl_fidl_encode!(for bool: bool);
+impl_fidl_wire!(for bool);
+
+// Integers
+
 macro_rules! impl_signed_integer_traits {
     ($name:ident: $prim:ident) => {
         impl_binop!(Add::add for $name: $prim);
@@ -350,6 +567,14 @@ macro_rules! impl_signed_integer_traits {
         impl_binassign!(SubAssign::sub_assign for $name: $prim);
         impl_fmt!(UpperExp for $name);
         impl_fmt!(UpperHex for $name);
+
+        impl_fidl_convert!(for $name: $prim);
+        impl_fidl_constrained!(for $name);
+        impl_fidl_copy_optimize!(for $name: $prim);
+        impl_fidl_decode!(for $name);
+        impl_fidl_encode!(for $name: $prim);
+        impl_fidl_encode!(for $name: $name);
+        impl_fidl_wire!(for $name);
     };
 }
 
@@ -392,6 +617,14 @@ macro_rules! impl_unsigned_integer_traits {
         impl_binassign!(SubAssign::sub_assign for $name: $prim);
         impl_fmt!(UpperExp for $name);
         impl_fmt!(UpperHex for $name);
+
+        impl_fidl_convert!(for $name: $prim);
+        impl_fidl_constrained!(for $name);
+        impl_fidl_copy_optimize!(for $name: $prim);
+        impl_fidl_decode!(for $name);
+        impl_fidl_encode!(for $name: $prim);
+        impl_fidl_encode!(for $name: $name);
+        impl_fidl_wire!(for $name);
     };
 }
 
@@ -418,6 +651,14 @@ macro_rules! impl_float_traits {
         impl_binop!(Sub::sub for $name: $prim);
         impl_binassign!(SubAssign::sub_assign for $name: $prim);
         impl_fmt!(UpperExp for $name);
+
+        impl_fidl_convert!(for $name: $prim);
+        impl_fidl_constrained!(for $name);
+        impl_fidl_copy_optimize!(for $name: $prim);
+        impl_fidl_decode!(for $name);
+        impl_fidl_encode!(for $name: $prim);
+        impl_fidl_encode!(for $name: $name);
+        impl_fidl_wire!(for $name);
     };
 }
 
@@ -475,3 +716,184 @@ macro_rules! define_float {
 
 define_float!(WireF32: f32, 4);
 define_float!(WireF64: f64, 8);
+
+#[cfg(test)]
+mod tests {
+    use super::{WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64};
+
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_unit() {
+        assert_eq!(chunks![].as_mut_slice().decode::<()>().unwrap(), ());
+    }
+
+    #[test]
+    fn encode_unit() {
+        assert_eq!(Vec::encode(()).unwrap(), chunks![]);
+    }
+
+    #[test]
+    fn decode_bool() {
+        #![allow(clippy::bool_assert_comparison)]
+
+        assert_eq!(
+            chunks![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<bool>()
+                .unwrap(),
+            true,
+        );
+        assert_eq!(
+            chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<bool>()
+                .unwrap(),
+            false,
+        );
+    }
+
+    #[test]
+    fn encode_bool() {
+        assert_eq!(
+            Vec::encode(true).unwrap(),
+            chunks![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            Vec::encode(false).unwrap(),
+            chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn decode_ints() {
+        assert_eq!(
+            chunks![0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<u8>()
+                .unwrap(),
+            0xa3u8,
+        );
+        assert_eq!(
+            chunks![0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<i8>()
+                .unwrap(),
+            -0x45i8,
+        );
+
+        assert_eq!(
+            chunks![0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireU16>()
+                .unwrap(),
+            0x1234u16,
+        );
+        assert_eq!(
+            chunks![0xcc, 0xed, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireI16>()
+                .unwrap(),
+            -0x1234i16,
+        );
+
+        assert_eq!(
+            chunks![0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireU32>()
+                .unwrap(),
+            0x12345678u32,
+        );
+        assert_eq!(
+            chunks![0x88, 0xa9, 0xcb, 0xed, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireI32>()
+                .unwrap(),
+            -0x12345678i32,
+        );
+
+        assert_eq!(
+            chunks![0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
+                .as_mut_slice()
+                .decode::<WireU64>()
+                .unwrap(),
+            0x123456789abcdef0u64,
+        );
+        assert_eq!(
+            chunks![0x10, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed]
+                .as_mut_slice()
+                .decode::<WireI64>()
+                .unwrap(),
+            -0x123456789abcdef0i64,
+        );
+    }
+
+    #[test]
+    fn encode_ints() {
+        assert_eq!(
+            Vec::encode(0xa3u8).unwrap(),
+            chunks![0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            Vec::encode(-0x45i8).unwrap(),
+            chunks![0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+
+        assert_eq!(
+            Vec::encode(0x1234u16).unwrap(),
+            chunks![0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            Vec::encode(-0x1234i16).unwrap(),
+            chunks![0xcc, 0xed, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+
+        assert_eq!(
+            Vec::encode(0x12345678u32).unwrap(),
+            chunks![0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            Vec::encode(-0x12345678i32).unwrap(),
+            chunks![0x88, 0xa9, 0xcb, 0xed, 0x00, 0x00, 0x00, 0x00]
+        );
+
+        assert_eq!(
+            Vec::encode(0x123456789abcdef0u64).unwrap(),
+            chunks![0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12],
+        );
+        assert_eq!(
+            Vec::encode(-0x123456789abcdef0i64).unwrap(),
+            chunks![0x10, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed],
+        );
+    }
+
+    #[test]
+    fn decode_floats() {
+        assert_eq!(
+            chunks![0xdb, 0x0f, 0x49, 0x40, 0x00, 0x00, 0x00, 0x00]
+                .as_mut_slice()
+                .decode::<WireF32>()
+                .unwrap(),
+            ::core::f32::consts::PI,
+        );
+        assert_eq!(
+            chunks![0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40]
+                .as_mut_slice()
+                .decode::<WireF64>()
+                .unwrap(),
+            ::core::f64::consts::PI,
+        );
+    }
+
+    #[test]
+    fn encode_floats() {
+        assert_eq!(
+            Vec::encode(::core::f32::consts::PI).unwrap(),
+            chunks![0xdb, 0x0f, 0x49, 0x40, 0x00, 0x00, 0x00, 0x00],
+        );
+        assert_eq!(
+            Vec::encode(::core::f64::consts::PI).unwrap(),
+            chunks![0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40],
+        );
+    }
+}

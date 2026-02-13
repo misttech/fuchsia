@@ -11,9 +11,10 @@ use core::num::NonZero;
 use fdf_channel::channel::Channel;
 use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
+use fidl_next::wire::WireU32;
 use fidl_next::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge,
 };
 
 use crate::DriverChannel;
@@ -39,11 +40,19 @@ impl Drop for WireDriverChannel {
     }
 }
 
+impl Constrained for WireDriverChannel {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 // SAFETY:
 // - `WireDriverHandle` doesn't reference any other decoded data.
 // - `WireDriverHandle` does not have any padding bytes.
 unsafe impl Wire for WireDriverChannel {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -95,8 +104,6 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireDriverChannel {
     }
 }
 
-impl Unconstrained for WireDriverChannel {}
-
 /// The FIDL wire type for optional [`DriverChannel`]s.
 ///
 /// This type follows the FIDL wire format for handles, and is separate from the
@@ -121,11 +128,19 @@ impl Drop for WireOptionalDriverChannel {
     }
 }
 
+impl Constrained for WireOptionalDriverChannel {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 // SAFETY:
 // - `WireOptionalDriverHandle` doesn't reference any other decoded data.
 // - `WireOptionalDriverHandle` does not have any padding bytes.
 unsafe impl Wire for WireOptionalDriverChannel {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -189,8 +204,6 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
         Ok(())
     }
 }
-
-impl Unconstrained for WireOptionalDriverChannel {}
 
 // SAFETY: `encode` calls `set_encoded_present`, which initializes all of the
 // bytes of `out`.
@@ -280,7 +293,7 @@ mod tests {
     use fdf_channel::arena::Arena;
     use fdf_channel::message::Message;
     use fdf_core::handle::MixedHandleType;
-    use fidl_next::{Chunk, DecoderExt as _, EncoderExt as _, chunks};
+    use fidl_next::{AsDecoderExt as _, Chunk, EncoderExt as _, chunks};
 
     use crate::{RecvBuffer, SendBuffer};
 
@@ -293,8 +306,7 @@ mod tests {
         let handle_raw = unsafe { channel.driver_handle().get_raw() };
         let driver_channel = DriverChannel::new(channel);
 
-        let mut encoder = SendBuffer::new();
-        encoder.encode_next(driver_channel, ()).unwrap();
+        let encoder = SendBuffer::encode(driver_channel).unwrap();
 
         assert_eq!(encoder.handles.len(), 1);
         let driver_ref = encoder.handles[0].as_ref().unwrap().resolve_ref();
@@ -308,9 +320,9 @@ mod tests {
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
-        let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
+        let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.decode::<WireDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<WireDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), handle_raw.get());
 
         let handle = decoded.take();
@@ -325,8 +337,7 @@ mod tests {
         let handle_raw = unsafe { channel.driver_handle().get_raw() };
         let driver_channel = DriverChannel::new(channel);
 
-        let mut encoder = SendBuffer::new();
-        encoder.encode_next(Some(driver_channel), ()).unwrap();
+        let encoder = SendBuffer::encode(Some(driver_channel)).unwrap();
 
         assert_eq!(encoder.handles.len(), 1);
         let driver_ref = encoder.handles[0].as_ref().unwrap().resolve_ref();
@@ -340,9 +351,9 @@ mod tests {
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
-        let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
+        let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<WireOptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), Some(handle_raw.get()));
 
         let handle = decoded.take();
@@ -352,8 +363,7 @@ mod tests {
 
     #[test]
     fn roundtrip_none() {
-        let mut encoder = SendBuffer::new();
-        encoder.encode_next(Option::<DriverChannel>::None, ()).unwrap();
+        let encoder = SendBuffer::encode(None::<DriverChannel>).unwrap();
 
         assert_eq!(encoder.handles.len(), 0);
         assert_eq!(encoder.data, chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],);
@@ -362,9 +372,9 @@ mod tests {
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
-        let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
+        let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<WireOptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), None);
 
         let handle = decoded.take();

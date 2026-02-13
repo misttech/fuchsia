@@ -1,7 +1,7 @@
 /// The wire type corresponding to [`{{ name }}`].
 #[repr(C)]
 pub struct {{ name }}<'de> {
-    pub(crate) table: ::fidl_next::WireTable<'de>,
+    pub(crate) table: ::fidl_next::wire::WireTable<'de>,
 }
 
 impl<'de> Drop for {{ name }}<'de> {
@@ -15,19 +15,30 @@ impl<'de> Drop for {{ name }}<'de> {
     }
 }
 
+impl ::fidl_next::Constrained for {{ name }}<'_> {
+    type Constraint = ();
+
+    fn validate(
+        _: ::fidl_next::Slot<'_, Self>,
+        _: Self::Constraint,
+    ) -> Result<(), ::fidl_next::ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl ::fidl_next::Wire for {{ name }}<'static> {
-    type Owned<'de> = {{ name }}<'de>;
+    type Narrowed<'de> = {{ name }}<'de>;
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge!(let Self { table } = out);
-        ::fidl_next::WireTable::zero_padding(table);
+        ::fidl_next::wire::WireTable::zero_padding(table);
     }
 }
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for {{ name }}<'static>
+unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for {{ name }}<'de>
 where
-    ___D: ::fidl_next::Decoder + ?Sized,
+    ___D: ::fidl_next::Decoder<'de> + ?Sized,
     {% if table.is_resource %}
         ___D: {{ self.decode_trait_path() }},
     {% endif %}
@@ -39,16 +50,16 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { table } = slot);
 
-        ::fidl_next::WireTable::decode_with(
+        ::fidl_next::wire::WireTable::decode_with(
             table,
             decoder,
             |ordinal, mut slot, decoder| match ordinal {
                 0 => unsafe { ::core::hint::unreachable_unchecked() },
                 {% for member in table.members %}
                     {{ member.ordinal }} => {
-                        ::fidl_next::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::WireEnvelope::decode_as::<
                             ___D,
-                            {{ self.static_wire_type(member.ty) }},
+                            {{ self.wire_type(member.ty) }},
                         >(slot.as_mut(), decoder, {{ self.constraint(member.ty) }})?;
                         {# type check #}
                         {% match member.ty.kind -%}
@@ -103,7 +114,7 @@ where
                         Ok(())
                     }
                 {% endfor %}
-                _ => ::fidl_next::WireEnvelope::decode_unknown(slot, decoder),
+                _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
             }
         )
     }
@@ -138,5 +149,3 @@ impl<'de> {{ name }}<'de> {
 impl<'de> ::fidl_next::IntoNatural for {{ name }}<'de> {
     type Natural = crate::natural::{{ name }};
 }
-
-impl ::fidl_next::Unconstrained for {{ name }}<'_> {}

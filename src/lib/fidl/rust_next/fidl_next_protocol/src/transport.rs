@@ -6,7 +6,7 @@ use core::error::Error;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::{Decoder, Encoder};
+use fidl_next_codec::{AsDecoder, Encoder};
 
 /// A transport backend which can send and receive messages.
 ///
@@ -89,7 +89,7 @@ pub trait Transport {
     /// The future state for receive operations.
     type RecvFutureState: Send;
     /// The buffer type for receivers.
-    type RecvBuffer: Decoder + Send;
+    type RecvBuffer: for<'de> AsDecoder<'de> + Send;
 
     /// Begins receiving a `RecvBuffer` over this transport backend.
     ///

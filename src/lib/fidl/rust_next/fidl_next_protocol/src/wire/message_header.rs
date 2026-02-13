@@ -4,12 +4,14 @@
 
 use core::mem::MaybeUninit;
 
+use fidl_constants::MAGIC_NUMBER_INITIAL;
+use fidl_next_codec::wire::{WireU32, WireU64};
 use fidl_next_codec::{
-    Decode, DecodeError, Encode, EncodeError, Slot, Unconstrained, Wire, WireI32, WireU32, WireU64,
-    bitflags,
+    Constrained, Decode, DecodeError, Encode, EncodeError, Slot, ValidationError, Wire, bitflags,
 };
-
 use zerocopy::IntoBytes;
+
+use crate::Flexibility;
 
 /// The transactional message header flags in byte 0.
 #[derive(Clone, Copy, Debug, IntoBytes)]
@@ -59,8 +61,43 @@ pub struct WireMessageHeader {
     pub ordinal: WireU64,
 }
 
+impl WireMessageHeader {
+    /// Returns a new message header with the given transaction ID, ordinal, and
+    /// flexibility.
+    pub fn new(txid: u32, ordinal: u64, flexibility: Flexibility) -> Self {
+        Self {
+            txid: WireU32(txid),
+            flags_0: MessageHeaderFlags0::WIRE_FORMAT_V2,
+            flags_1: MessageHeaderFlags1::empty(),
+            flags_2: match flexibility {
+                Flexibility::Strict => MessageHeaderFlags2::empty(),
+                Flexibility::Flexible => MessageHeaderFlags2::FLEXIBLE_METHOD,
+            },
+            magic_number: MAGIC_NUMBER_INITIAL,
+            ordinal: WireU64(ordinal),
+        }
+    }
+
+    /// Returns the flexibility of the message header.
+    pub fn flexibility(&self) -> Flexibility {
+        if self.flags_2.contains(MessageHeaderFlags2::FLEXIBLE_METHOD) {
+            Flexibility::Flexible
+        } else {
+            Flexibility::Strict
+        }
+    }
+}
+
+impl Constrained for WireMessageHeader {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireMessageHeader {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -93,60 +130,7 @@ unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for &WireMessageHeader {
     }
 }
 
-impl Unconstrained for WireMessageHeader {}
-
 unsafe impl<D: ?Sized> Decode<D> for WireMessageHeader {
-    #[inline]
-    fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
-        Ok(())
-    }
-}
-
-/// A FIDL protocol epitaph.
-#[derive(Clone, Copy, Debug, IntoBytes)]
-#[repr(C)]
-pub struct WireEpitaph {
-    /// The error status.
-    pub error: WireI32,
-}
-
-unsafe impl Wire for WireEpitaph {
-    type Owned<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut MaybeUninit<Self>) {
-        // Wire epitaphs have no padding
-    }
-}
-
-unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for WireEpitaph {
-    #[inline]
-    fn encode(
-        self,
-        _: &mut E,
-        out: &mut MaybeUninit<WireEpitaph>,
-        _: (),
-    ) -> Result<(), EncodeError> {
-        out.write(self);
-        Ok(())
-    }
-}
-
-unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for &WireEpitaph {
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<WireEpitaph>,
-        constraint: (),
-    ) -> Result<(), EncodeError> {
-        Encode::encode(*self, encoder, out, constraint)
-    }
-}
-
-impl Unconstrained for WireEpitaph {}
-
-unsafe impl<D: ?Sized> Decode<D> for WireEpitaph {
     #[inline]
     fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         Ok(())

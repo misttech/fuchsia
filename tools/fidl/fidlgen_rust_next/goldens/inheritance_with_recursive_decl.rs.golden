@@ -25,7 +25,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -55,7 +55,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::ParentFirstRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::ParentFirstRequest>,
             ___E,
         > for ParentFirstRequest
     where
@@ -67,15 +67,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ParentFirstRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ParentFirstRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -91,7 +91,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>>
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -122,7 +122,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -152,7 +152,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::ChildSecondRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::ChildSecondRequest>,
             ___E,
         > for ChildSecondRequest
     where
@@ -164,15 +164,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ChildSecondRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ChildSecondRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -188,7 +188,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>>
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -209,7 +209,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ParentFirstRequest {
-        pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+        pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ParentFirstRequest>(), 4);
@@ -217,8 +217,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(ParentFirstRequest, request), 0);
 
+    impl ::fidl_next::Constrained for ParentFirstRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ParentFirstRequest {
-        type Owned<'de> = ParentFirstRequest;
+        type Narrowed<'de> = ParentFirstRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -264,13 +275,11 @@ pub mod wire {
         type Natural = crate::natural::ParentFirstRequest;
     }
 
-    impl ::fidl_next::Unconstrained for ParentFirstRequest {}
-
     /// The wire type corresponding to [`ChildSecondRequest`].
     #[derive(Debug)]
     #[repr(C)]
     pub struct ChildSecondRequest {
-        pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+        pub request: ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ChildSecondRequest>(), 4);
@@ -278,8 +287,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(ChildSecondRequest, request), 0);
 
+    impl ::fidl_next::Constrained for ChildSecondRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ChildSecondRequest {
-        type Owned<'de> = ChildSecondRequest;
+        type Narrowed<'de> = ChildSecondRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -324,8 +344,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ChildSecondRequest {
         type Natural = crate::natural::ChildSecondRequest;
     }
-
-    impl ::fidl_next::Unconstrained for ChildSecondRequest {}
 }
 
 pub mod wire_optional {
@@ -347,7 +365,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
                 ___E,
             >,
     {
@@ -382,7 +400,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+                ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
                 ___E,
             >,
     {
@@ -462,7 +480,7 @@ pub mod parent {
                 &self,
 
                 request: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -521,7 +539,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -548,20 +566,22 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Parent
 where
     ___H: ParentServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <parent::First as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+    for<'de> crate::wire::ParentFirstRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
+            3973163707930985819 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
                 Ok(decoded) => {
                     handler.first(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -580,7 +600,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
@@ -658,7 +678,7 @@ pub mod child {
                 &self,
 
                 request: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -688,7 +708,7 @@ pub mod child {
                 &self,
 
                 request: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::fuchsia::WireChannel>,
+                    ::fidl_next::ServerEnd<crate::Parent, ::fidl_next::wire::fuchsia::WireChannel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -746,7 +766,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -779,22 +799,26 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Child
 where
     ___H: ChildServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <child::First as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <child::Second as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+    for<'de> crate::wire::ParentFirstRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ChildSecondRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
+            3973163707930985819 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
                 Ok(decoded) => {
                     handler.first(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -805,7 +829,7 @@ where
                 }),
             },
 
-            2545123272820824165 => match ::fidl_next::DecoderExt::decode(buffer) {
+            2545123272820824165 => match ::fidl_next::AsDecoderExt::into_decoded(body) {
                 Ok(decoded) => {
                     handler.second(::fidl_next::Request::from_decoded(decoded)).await;
                     Ok(())
@@ -824,7 +848,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),

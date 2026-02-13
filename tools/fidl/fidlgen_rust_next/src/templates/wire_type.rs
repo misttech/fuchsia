@@ -48,16 +48,20 @@ impl fmt::Display for WireTypeTemplate<'_> {
             TypeKind::Vector { element_type, nullable, .. } => {
                 let wire_ty = Self::new(element_type, self.lifetime, self.context);
                 if *nullable {
-                    write!(f, "::fidl_next::WireOptionalVector<{}, {wire_ty}>", self.lifetime)?;
+                    write!(
+                        f,
+                        "::fidl_next::wire::WireOptionalVector<{}, {wire_ty}>",
+                        self.lifetime
+                    )?;
                 } else {
-                    write!(f, "::fidl_next::WireVector<{}, {wire_ty}>", self.lifetime)?;
+                    write!(f, "::fidl_next::wire::WireVector<{}, {wire_ty}>", self.lifetime)?;
                 }
             }
             TypeKind::String { nullable, .. } => {
                 if *nullable {
-                    write!(f, "::fidl_next::WireOptionalString<{}>", self.lifetime)?;
+                    write!(f, "::fidl_next::wire::WireOptionalString<{}>", self.lifetime)?;
                 } else {
-                    write!(f, "::fidl_next::WireString<{}>", self.lifetime)?;
+                    write!(f, "::fidl_next::wire::WireString<{}>", self.lifetime)?;
                 }
             }
             TypeKind::Handle { nullable, subtype, resource_identifier, .. } => {
@@ -108,7 +112,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                     DeclType::Table => write!(f, "{wire_id}<{}>", self.lifetime)?,
                     DeclType::Struct => {
                         if *nullable {
-                            write!(f, "::fidl_next::WireBox<{}, ", self.lifetime)?;
+                            write!(f, "::fidl_next::wire::WireBox<{}, ", self.lifetime)?;
                         }
 
                         write!(f, "{wire_id}")?;
@@ -141,7 +145,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
             }
             TypeKind::Internal { subtype } => match subtype {
                 InternalSubtype::FrameworkError => {
-                    write!(f, "::fidl_next::WireFrameworkError")?;
+                    write!(f, "::fidl_next::wire::WireFrameworkError")?;
                 }
             },
         }

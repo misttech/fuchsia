@@ -10,7 +10,7 @@
 #[repr(C)]
 pub struct {{ name }}{{ de }} {
     {% if is_empty %}
-        pub(crate) _empty: fidl_next::WireEmptyStructPlaceholder,
+        pub(crate) _empty: fidl_next::wire::WireEmptyStructPlaceholder,
     {% endif %}
     {% for member in strct.members %}
         pub {{ member.name.snake() }}: {{ self.wire_type(member.ty) }},
@@ -23,8 +23,19 @@ static_assertions::const_assert_eq!(std::mem::align_of::<{{ name }}{{ infer }}>(
     static_assertions::const_assert_eq!(std::mem::offset_of!({{ name }}{{ infer }}, {{ member.name.snake() }}), {{ member.field_shape.offset }});
 {% endfor %}
 
+impl ::fidl_next::Constrained for {{ name }}{{ infer }} {
+    type Constraint = ();
+
+    fn validate(
+        _: ::fidl_next::Slot<'_, Self>,
+        _: Self::Constraint,
+    ) -> Result<(), ::fidl_next::ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
-    type Owned<'de> = {{ name }}{{ de }};
+    type Narrowed<'de> = {{ name }}{{ de }};
 
     #[inline]
     fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -49,11 +60,16 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
     }
 }
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for {{ name }}{{ static_ }}
+unsafe impl<
+    {% if !is_static %}
+        'de,
+    {% endif %}
+    ___D
+> ::fidl_next::Decode<___D> for {{ name }}{{ de }}
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
     {% if !is_static %}
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {% endif %}
     {% if strct.is_resource %}
         ___D: {{ self.decode_trait_path() }},
@@ -139,6 +155,3 @@ where
 impl{{ de }} ::fidl_next::IntoNatural for {{ name }}{{ de }} {
     type Natural = crate::natural::{{ name }};
 }
-
-impl ::fidl_next::Unconstrained for {{ name }}{{ static_ }} {}
-

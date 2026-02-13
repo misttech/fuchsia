@@ -60,16 +60,16 @@ impl fmt::Display for WirePrimTemplate {
             "{}",
             match self.0 {
                 PrimSubtype::Bool => "bool",
-                PrimSubtype::Float32 => "::fidl_next::WireF32",
-                PrimSubtype::Float64 => "::fidl_next::WireF64",
+                PrimSubtype::Float32 => "::fidl_next::wire::WireF32",
+                PrimSubtype::Float64 => "::fidl_next::wire::WireF64",
                 PrimSubtype::Int8 => "i8",
-                PrimSubtype::Int16 => "::fidl_next::WireI16",
-                PrimSubtype::Int32 => "::fidl_next::WireI32",
-                PrimSubtype::Int64 => "::fidl_next::WireI64",
+                PrimSubtype::Int16 => "::fidl_next::wire::WireI16",
+                PrimSubtype::Int32 => "::fidl_next::wire::WireI32",
+                PrimSubtype::Int64 => "::fidl_next::wire::WireI64",
                 PrimSubtype::Uint8 => "u8",
-                PrimSubtype::Uint16 => "::fidl_next::WireU16",
-                PrimSubtype::Uint32 => "::fidl_next::WireU32",
-                PrimSubtype::Uint64 => "::fidl_next::WireU64",
+                PrimSubtype::Uint16 => "::fidl_next::wire::WireU16",
+                PrimSubtype::Uint32 => "::fidl_next::wire::WireU32",
+                PrimSubtype::Uint64 => "::fidl_next::wire::WireU64",
             }
         )
     }
@@ -84,13 +84,13 @@ impl fmt::Display for WireIntTemplate {
             "{}",
             match self.0 {
                 IntType::Int8 => "i8",
-                IntType::Int16 => "::fidl_next::WireI16",
-                IntType::Int32 => "::fidl_next::WireI32",
-                IntType::Int64 => "::fidl_next::WireI64",
+                IntType::Int16 => "::fidl_next::wire::WireI16",
+                IntType::Int32 => "::fidl_next::wire::WireI32",
+                IntType::Int64 => "::fidl_next::wire::WireI64",
                 IntType::Uint8 => "u8",
-                IntType::Uint16 => "::fidl_next::WireU16",
-                IntType::Uint32 => "::fidl_next::WireU32",
-                IntType::Uint64 => "::fidl_next::WireU64",
+                IntType::Uint16 => "::fidl_next::wire::WireU16",
+                IntType::Uint32 => "::fidl_next::wire::WireU32",
+                IntType::Uint64 => "::fidl_next::wire::WireU64",
             }
         )
     }

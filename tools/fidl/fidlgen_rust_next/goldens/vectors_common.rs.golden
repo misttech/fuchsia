@@ -108,7 +108,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
             ___E,
         > for ExampleUseOfVectors
     where
@@ -120,15 +120,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -137,7 +137,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
             ___E,
         > for &'a ExampleUseOfVectors
     where
@@ -150,15 +150,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -198,10 +198,10 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ExampleUseOfVectors<'de> {
-        pub vector_of_uint8: ::fidl_next::WireVector<'de, u8>,
+        pub vector_of_uint8: ::fidl_next::wire::WireVector<'de, u8>,
 
         pub vector_of_vector_of_bool:
-            ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, bool>>,
+            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireVector<'de, bool>>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ExampleUseOfVectors<'_>>(), 32);
@@ -217,8 +217,19 @@ pub mod wire {
         16
     );
 
+    impl ::fidl_next::Constrained for ExampleUseOfVectors<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ExampleUseOfVectors<'static> {
-        type Owned<'de> = ExampleUseOfVectors<'de>;
+        type Narrowed<'de> = ExampleUseOfVectors<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -237,10 +248,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for ExampleUseOfVectors<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for ExampleUseOfVectors<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
@@ -275,8 +286,6 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for ExampleUseOfVectors<'de> {
         type Natural = crate::natural::ExampleUseOfVectors;
     }
-
-    impl ::fidl_next::Unconstrained for ExampleUseOfVectors<'static> {}
 }
 
 pub mod wire_optional {}
@@ -294,9 +303,12 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<::fidl_next::WireVector<'static, u8>, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireVector<'static, u8>, ___E>,
         T1: ::fidl_next::Encode<
-                ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, bool>>,
+                ::fidl_next::wire::WireVector<
+                    'static,
+                    ::fidl_next::wire::WireVector<'static, bool>,
+                >,
                 ___E,
             >,
     {

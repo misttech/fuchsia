@@ -80,7 +80,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<
+            ::fidl_next::wire::WireBox<
                 'static,
                 crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>,
             >,
@@ -98,7 +98,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<
+                ::fidl_next::wire::WireBox<
                     'static,
                     crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>,
                 >,
@@ -106,10 +106,10 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -118,7 +118,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<
+            ::fidl_next::wire::WireBox<
                 'static,
                 crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>,
             >,
@@ -136,7 +136,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<
+                ::fidl_next::wire::WireBox<
                     'static,
                     crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>,
                 >,
@@ -144,10 +144,10 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -195,9 +195,13 @@ pub mod natural {
             crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <i64 as ::fidl_next::Encode<::fidl_next::WireI64, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    i64 as ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -257,7 +261,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<
+            ::fidl_next::wire::WireBox<
                 'static,
                 crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
             >,
@@ -273,7 +277,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<
+                ::fidl_next::wire::WireBox<
                     'static,
                     crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
                 >,
@@ -281,10 +285,10 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -293,7 +297,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<
+            ::fidl_next::wire::WireBox<
                 'static,
                 crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
             >,
@@ -309,7 +313,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<
+                ::fidl_next::wire::WireBox<
                     'static,
                     crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
                 >,
@@ -317,10 +321,10 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -335,9 +339,13 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <i64 as ::fidl_next::FromWire<::fidl_next::WireI64>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    i64 as ::fidl_next::FromWire<::fidl_next::wire::WireI64>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -364,7 +372,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de> {
-        pub s: ::fidl_next::WireString<'de>,
+        pub s: ::fidl_next::wire::WireString<'de>,
     }
 
     static_assertions::const_assert_eq!(
@@ -381,8 +389,19 @@ pub mod wire {
         0
     );
 
+    impl ::fidl_next::Constrained for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static> {
-        type Owned<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
+        type Narrowed<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -398,11 +417,11 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D>
-        for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D>
+        for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
@@ -429,13 +448,11 @@ pub mod wire {
         type Natural = crate::natural::ExampleUseOfErrorSyntaxCallWhichMayFailRequest;
     }
 
-    impl ::fidl_next::Unconstrained for ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'static> {}
-
     /// The wire type corresponding to [`ExampleUseOfErrorSyntaxCallWhichMayFailResponse`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
-        pub value: ::fidl_next::WireI64,
+        pub value: ::fidl_next::wire::WireI64,
     }
 
     static_assertions::const_assert_eq!(
@@ -452,8 +469,19 @@ pub mod wire {
         0
     );
 
+    impl ::fidl_next::Constrained for ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
-        type Owned<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
+        type Narrowed<'de> = ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -497,8 +525,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ExampleUseOfErrorSyntaxCallWhichMayFailResponse {
         type Natural = crate::natural::ExampleUseOfErrorSyntaxCallWhichMayFailResponse;
     }
-
-    impl ::fidl_next::Unconstrained for ExampleUseOfErrorSyntaxCallWhichMayFailResponse {}
 }
 
 pub mod wire_optional {}
@@ -517,7 +543,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<::fidl_next::WireString<'static>, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireString<'static>, ___E>,
     {
         #[inline]
         fn encode(
@@ -551,7 +577,7 @@ pub mod generic {
         for ExampleUseOfErrorSyntaxCallWhichMayFailResponse<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
     {
         #[inline]
         fn encode(

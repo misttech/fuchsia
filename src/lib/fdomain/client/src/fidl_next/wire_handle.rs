@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_next::ValidationError;
 use fuchsia_sync::RwLock;
 use std::cell::UnsafeCell;
 use std::fmt;
@@ -9,9 +10,10 @@ use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use super::codec::{HandleDecoder, HandleEncoder};
+use fidl_next_codec::wire::WireU32;
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    Slot, Unconstrained, Wire, WireU32, munge,
+    Slot, Wire, munge,
 };
 
 use crate::{Client, Handle};
@@ -94,8 +96,16 @@ impl Drop for WireHandle {
     }
 }
 
+impl Constrained for WireHandle {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireHandle {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -179,8 +189,6 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
     }
 }
 
-impl Unconstrained for WireHandle {}
-
 /// An optional Zircon handle.
 #[derive(Debug)]
 #[repr(transparent)]
@@ -188,8 +196,16 @@ pub struct WireOptionalHandle {
     pub(crate) handle: WireHandle,
 }
 
+impl Constrained for WireOptionalHandle {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireOptionalHandle {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -238,8 +254,6 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
         WireHandle::decode(handle, decoder, constraint)
     }
 }
-
-impl Unconstrained for WireOptionalHandle {}
 
 unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for Handle {
     fn encode(

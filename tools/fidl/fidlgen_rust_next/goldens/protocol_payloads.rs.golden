@@ -106,10 +106,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayComposedWithError {
-        type Response = ::fidl_next::WireResult<
+        type Response = ::fidl_next::wire::WireResult<
             'static,
             ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
-            ::fidl_next::WireU32,
+            ::fidl_next::wire::WireU32,
         >;
     }
 
@@ -197,8 +197,11 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayLocalWithError {
-        type Response =
-            ::fidl_next::WireResult<'static, crate::wire::LocalStructPayload, ::fidl_next::WireU32>;
+        type Response = ::fidl_next::wire::WireResult<
+            'static,
+            crate::wire::LocalStructPayload,
+            ::fidl_next::wire::WireU32,
+        >;
     }
 
     impl<___R> ::fidl_next::Respond<___R> for TwoWayLocalWithError {
@@ -279,10 +282,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayImportWithError {
-        type Response = ::fidl_next::WireResult<
+        type Response = ::fidl_next::wire::WireResult<
             'static,
             ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
-            ::fidl_next::WireU32,
+            ::fidl_next::wire::WireU32,
         >;
     }
 
@@ -370,10 +373,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnonWithError {
-        type Response = ::fidl_next::WireResult<
+        type Response = ::fidl_next::wire::WireResult<
             'static,
             crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
-            ::fidl_next::WireU32,
+            ::fidl_next::wire::WireU32,
         >;
     }
 
@@ -429,7 +432,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -463,7 +466,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayComposed, ___T>
@@ -497,7 +500,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayComposedWithError, ___T>
@@ -531,12 +534,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -568,12 +571,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayLocal, ___T>
@@ -605,12 +608,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayLocalWithError, ___T>
@@ -642,7 +645,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -676,7 +679,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayImport, ___T>
@@ -710,7 +713,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayImportWithError, ___T>
@@ -744,12 +747,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -781,12 +784,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayAnon, ___T>
@@ -818,12 +821,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayAnonWithError, ___T>
@@ -868,7 +871,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -899,12 +902,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -933,7 +936,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireI32,
+                    ::fidl_next::wire::WireI32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -964,12 +967,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU32,
+                    ::fidl_next::wire::WireU32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -1047,67 +1050,189 @@ impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MainProtocol
 where
     ___H: MainProtocolClientHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <main_protocol::OnComposed as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OnLocal as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OnImport as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OnAnon as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+
+
+
+
+
+
+
+
+
+                for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                    <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                    Constraint = (),
+                >,
+
+
+
+
+
+
+
+
+
+
+
+                for<'de> crate::wire::LocalStructPayload: ::fidl_next::Decode<
+                    <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                    Constraint = (),
+                >,
+
+
+
+
+
+
+
+
+
+
+
+                for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                    <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                    Constraint = (),
+                >,
+
+
+
+
+
+
+
+
+
+
+
+                for<'de> crate::wire::MainProtocolOnAnonRequest: ::fidl_next::Decode<
+                    <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                    Constraint = (),
+                >,
+
+
+
 {
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            1872339328378152762 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.on_composed(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 1872339328378152762,
-                    error,
-                }),
-            },
 
-            5135782819583756313 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.on_local(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 5135782819583756313,
-                    error,
-                }),
-            },
 
-            1996489653379631369 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.on_import(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 1996489653379631369,
-                    error,
-                }),
-            },
 
-            4815229650203439104 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.on_anon(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 4815229650203439104,
-                    error,
-                }),
-            },
 
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+
+
+
+
+
+
+
+
+                    1872339328378152762 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.on_composed(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 1872339328378152762,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    5135782819583756313 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.on_local(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 5135782819583756313,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    1996489653379631369 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.on_import(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 1996489653379631369,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    4815229650203439104 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.on_anon(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 4815229650203439104,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+            ordinal => {
+
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+
+            }
         }
     }
 }
@@ -1213,86 +1338,221 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for MainProtocol
 where
     ___H: MainProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <main_protocol::OneWayComposed as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayComposed as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayComposedWithError as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OneWayLocal as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayLocal as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayLocalWithError as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OneWayImport as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayImport as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayImportWithError as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::OneWayAnon as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayAnon as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <main_protocol::TwoWayAnonWithError as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+
+
+            for<'de> crate::wire::LocalStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> crate::wire::LocalStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> crate::wire::LocalStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+
+
+            for<'de> crate::wire::MainProtocolOneWayAnonRequest: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> crate::wire::MainProtocolTwoWayAnonRequest: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+            for<'de> crate::wire::MainProtocolTwoWayAnonWithErrorRequest: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
-            2602591870026304272 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.one_way_composed(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 2602591870026304272,
-                    error,
-                }),
-            },
 
-            7755175439334311701 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.one_way_local(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 7755175439334311701,
-                    error,
-                }),
-            },
 
-            3344777159365288972 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.one_way_import(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 3344777159365288972,
-                    error,
-                }),
-            },
 
-            811587311021806764 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.one_way_anon(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 811587311021806764,
-                    error,
-                }),
-            },
+                    2602591870026304272 => {
 
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.one_way_composed(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 2602591870026304272,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    7755175439334311701 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.one_way_local(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 7755175439334311701,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    3344777159365288972 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.one_way_import(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 3344777159365288972,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    811587311021806764 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.one_way_anon(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 811587311021806764,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+
+
+
+
+
+
+
+            ordinal => {
+
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+
+            }
         }
     }
 
@@ -1300,165 +1560,192 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
-            2542459230546612144 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_composed(
-                                ::fidl_next::Request::from_decoded(decoded),
-                                responder,
-                            )
-                            .await;
-                        Ok(())
+
+
+
+
+
+                    2542459230546612144 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_composed(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 2542459230546612144,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 2542459230546612144,
-                        error,
-                    }),
-                }
-            }
 
-            7681984876526769495 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_composed_with_error(
-                                ::fidl_next::Request::from_decoded(decoded),
-                                responder,
-                            )
-                            .await;
-                        Ok(())
+
+
+                    7681984876526769495 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_composed_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 7681984876526769495,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 7681984876526769495,
-                        error,
-                    }),
-                }
-            }
 
-            8374292137648566031 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_local(::fidl_next::Request::from_decoded(decoded), responder)
-                            .await;
-                        Ok(())
+
+
+
+
+
+
+
+
+                    8374292137648566031 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_local(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 8374292137648566031,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 8374292137648566031,
-                        error,
-                    }),
-                }
-            }
 
-            2898559119954589948 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_local_with_error(
-                                ::fidl_next::Request::from_decoded(decoded),
-                                responder,
-                            )
-                            .await;
-                        Ok(())
+
+
+                    2898559119954589948 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_local_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 2898559119954589948,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 2898559119954589948,
-                        error,
-                    }),
-                }
-            }
 
-            2374708679656510579 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_import(::fidl_next::Request::from_decoded(decoded), responder)
-                            .await;
-                        Ok(())
+
+
+
+
+
+
+
+
+                    2374708679656510579 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_import(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 2374708679656510579,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 2374708679656510579,
-                        error,
-                    }),
-                }
-            }
 
-            4286143084949642173 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_import_with_error(
-                                ::fidl_next::Request::from_decoded(decoded),
-                                responder,
-                            )
-                            .await;
-                        Ok(())
+
+
+                    4286143084949642173 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_import_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 4286143084949642173,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 4286143084949642173,
-                        error,
-                    }),
-                }
-            }
 
-            629880979996923737 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_anon(::fidl_next::Request::from_decoded(decoded), responder)
-                            .await;
-                        Ok(())
+
+
+
+
+
+
+
+
+                    629880979996923737 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_anon(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 629880979996923737,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 629880979996923737,
-                        error,
-                    }),
-                }
-            }
 
-            6368863385719175734 => {
-                let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => {
-                        handler
-                            .two_way_anon_with_error(
-                                ::fidl_next::Request::from_decoded(decoded),
-                                responder,
-                            )
-                            .await;
-                        Ok(())
+
+
+                    6368863385719175734 => {
+                        let responder = ::fidl_next::Responder::from_untyped(responder);
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.two_way_anon_with_error(::fidl_next::Request::from_decoded(decoded), responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 6368863385719175734,
+                                    error,
+                                }),
+                            }
+
                     }
-                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                        ordinal: 6368863385719175734,
-                        error,
-                    }),
-                }
-            }
 
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+
+
+
+
+            ordinal => {
+
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+
+            }
         }
     }
 }

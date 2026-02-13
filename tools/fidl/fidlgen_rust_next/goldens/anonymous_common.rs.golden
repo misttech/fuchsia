@@ -40,7 +40,7 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::BitsMember { value } = out);
 
-            let _ = value.write(::fidl_next::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
             Ok(())
         }
     }
@@ -112,7 +112,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Op { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 Op::Add => 1,
 
                 Op::Mul => 2,
@@ -241,7 +241,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::OverrideTest<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::OverrideTest<'static>>,
             ___E,
         > for OverrideTest
     where
@@ -253,15 +253,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::OverrideTest<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::OverrideTest<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -270,7 +270,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::OverrideTest<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::OverrideTest<'static>>,
             ___E,
         > for &'a OverrideTest
     where
@@ -282,15 +282,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::OverrideTest<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::OverrideTest<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -358,7 +358,7 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Flags { value } = out);
 
-            let _ = value.write(::fidl_next::WireU16::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::WireU16::from(self.bits()));
             Ok(())
         }
     }
@@ -428,31 +428,32 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
-            let mut preallocated =
-                ::fidl_next::EncoderExt::preallocate::<::fidl_next::WireEnvelope>(encoder, max_ord);
+            let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
+                ::fidl_next::wire::WireEnvelope,
+            >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     4 => {
                         if let Some(value) = self.flags.take() {
-                            ::fidl_next::WireEnvelope::encode_value::<crate::wire::Flags, ___E>(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                crate::wire::Flags,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
                     3 => {
                         if let Some(value) = self.args.take() {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireVector<
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireVector<
                                     'static,
                                     crate::wire_optional::Expression<'static>,
                                 >,
@@ -461,31 +462,31 @@ pub mod natural {
                                 value, preallocated.encoder, &mut out, (5, ())
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
                     1 => {
                         if let Some(value) = self.func.take() {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireString<'static>,
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireString<'static>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, 100
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -507,31 +508,32 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
-            let mut preallocated =
-                ::fidl_next::EncoderExt::preallocate::<::fidl_next::WireEnvelope>(encoder, max_ord);
+            let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
+                ::fidl_next::wire::WireEnvelope,
+            >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     4 => {
                         if let Some(value) = &self.flags {
-                            ::fidl_next::WireEnvelope::encode_value::<crate::wire::Flags, ___E>(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                crate::wire::Flags,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
                     3 => {
                         if let Some(value) = &self.args {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireVector<
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireVector<
                                     'static,
                                     crate::wire_optional::Expression<'static>,
                                 >,
@@ -540,31 +542,31 @@ pub mod natural {
                                 value, preallocated.encoder, &mut out, (5, ())
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
                     1 => {
                         if let Some(value) = &self.func {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireString<'static>,
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireString<'static>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, 100
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -582,23 +584,27 @@ pub mod natural {
             let flags = wire_.table.get(4);
 
             Self {
+                func: func.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<::fidl_next::wire::WireString<'de>>()
+                    })
+                }),
 
+                args: args.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<::fidl_next::wire::WireVector<
+                            'de,
+                            crate::wire_optional::Expression<'de>,
+                        >>()
+                    })
+                }),
 
-                func: func.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<::fidl_next::WireString<'de>>() }
-                )),
-
-
-                args: args.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<::fidl_next::WireVector<'de, crate::wire_optional::Expression<'de>>>() }
-                )),
-
-
-                flags: flags.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<crate::wire::Flags>() }
-                )),
-
-        }
+                flags: flags.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<crate::wire::Flags>()
+                    })
+                }),
+            }
         }
     }
 
@@ -606,26 +612,27 @@ pub mod natural {
         #[inline]
         fn from_wire_ref(wire: &crate::wire::FunctionApplication<'de>) -> Self {
             Self {
+                func: wire.table.get(1).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<::fidl_next::wire::WireString<'de>>()
+                    })
+                }),
 
+                args: wire.table.get(3).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<::fidl_next::wire::WireVector<
+                            'de,
+                            crate::wire_optional::Expression<'de>,
+                        >>()
+                    })
+                }),
 
-                func: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::WireString<'de>>() }
-                    )),
-
-
-                args: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::WireVector<'de, crate::wire_optional::Expression<'de>>>() }
-                    )),
-
-
-                flags: wire.table.get(4)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<crate::wire::Flags>() }
-                    )),
-
-        }
+                flags: wire.table.get(4).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<crate::wire::Flags>()
+                    })
+                }),
+            }
         }
     }
 
@@ -665,17 +672,17 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::Expression { raw, _phantom: _ } = out);
 
             match self {
-                Self::Value(value) => ::fidl_next::RawWireUnion::encode_as::<
+                Self::Value(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
                     ___E,
-                    ::fidl_next::WireU64,
+                    ::fidl_next::wire::WireU64,
                 >(value, 1, encoder, raw, ())?,
 
-                Self::BinOp(value) => ::fidl_next::RawWireUnion::encode_as::<
+                Self::BinOp(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
                     ___E,
                     crate::wire::OverrideTest<'static>,
                 >(value, 2, encoder, raw, ())?,
 
-                Self::FunctionApplication(value) => ::fidl_next::RawWireUnion::encode_as::<
+                Self::FunctionApplication(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
                     ___E,
                     crate::wire::FunctionApplication<'static>,
                 >(value, 3, encoder, raw, ())?,
@@ -704,18 +711,18 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::Expression { raw, _phantom: _ } = out);
 
             match self {
-                Expression::Value(value) => ::fidl_next::RawWireUnion::encode_as::<
+                Expression::Value(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
                     ___E,
-                    ::fidl_next::WireU64,
+                    ::fidl_next::wire::WireU64,
                 >(value, 1, encoder, raw, ())?,
 
-                Expression::BinOp(value) => ::fidl_next::RawWireUnion::encode_as::<
+                Expression::BinOp(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
                     ___E,
                     crate::wire::OverrideTest<'static>,
                 >(value, 2, encoder, raw, ())?,
 
                 Expression::FunctionApplication(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<
+                    ::fidl_next::wire::RawWireUnion::encode_as::<
                         ___E,
                         crate::wire::FunctionApplication<'static>,
                     >(value, 3, encoder, raw, ())?
@@ -749,7 +756,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
             }
 
             Ok(())
@@ -775,7 +782,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
             }
 
             Ok(())
@@ -788,7 +795,7 @@ pub mod natural {
             let wire = ::core::mem::ManuallyDrop::new(wire);
             match wire.raw.ordinal() {
                 1 => Self::Value(::fidl_next::FromWire::from_wire(unsafe {
-                    wire.raw.get().read_unchecked::<::fidl_next::WireU64>()
+                    wire.raw.get().read_unchecked::<::fidl_next::wire::WireU64>()
                 })),
 
                 2 => Self::BinOp(::fidl_next::FromWire::from_wire(unsafe {
@@ -809,7 +816,7 @@ pub mod natural {
         fn from_wire_ref(wire: &crate::wire::Expression<'de>) -> Self {
             match wire.raw.ordinal() {
                 1 => Self::Value(::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                    wire.raw.get().deref_unchecked::<::fidl_next::WireU64>()
+                    wire.raw.get().deref_unchecked::<::fidl_next::wire::WireU64>()
                 })),
 
                 2 => Self::BinOp(::fidl_next::FromWireRef::from_wire_ref(unsafe {
@@ -896,9 +903,13 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::UnionMember { raw, _phantom: _ } = out);
 
             match self {
-                Self::UnionData(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, u8>(value, 2, encoder, raw, ())?
-                }
+                Self::UnionData(value) => ::fidl_next::wire::RawWireUnion::encode_as::<___E, u8>(
+                    value,
+                    2,
+                    encoder,
+                    raw,
+                    (),
+                )?,
 
                 Self::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
@@ -925,9 +936,10 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::UnionMember { raw, _phantom: _ } = out);
 
             match self {
-                UnionMember::UnionData(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, u8>(value, 2, encoder, raw, ())?
-                }
+                UnionMember::UnionData(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
+                    ___E,
+                    u8,
+                >(value, 2, encoder, raw, ())?,
 
                 UnionMember::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
@@ -957,7 +969,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
             }
 
             Ok(())
@@ -984,7 +996,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
             }
 
             Ok(())
@@ -1123,7 +1135,7 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::TableData>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::TableData>, ___E>
         for TableData
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -1134,15 +1146,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TableData>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TableData>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1150,7 +1162,7 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::TableData>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::TableData>, ___E>
         for &'a TableData
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -1161,15 +1173,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TableData>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TableData>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1226,35 +1238,36 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
-            let mut preallocated =
-                ::fidl_next::EncoderExt::preallocate::<::fidl_next::WireEnvelope>(encoder, max_ord);
+            let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
+                ::fidl_next::wire::WireEnvelope,
+            >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     2 => {
                         if let Some(value) = self.table_data.take() {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireVector<'static, crate::wire::TableData>,
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireVector<'static, crate::wire::TableData>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (10, ())
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -1276,35 +1289,36 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
-            let mut preallocated =
-                ::fidl_next::EncoderExt::preallocate::<::fidl_next::WireEnvelope>(encoder, max_ord);
+            let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
+                ::fidl_next::wire::WireEnvelope,
+            >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     2 => {
                         if let Some(value) = &self.table_data {
-                            ::fidl_next::WireEnvelope::encode_value::<
-                                ::fidl_next::WireVector<'static, crate::wire::TableData>,
+                            ::fidl_next::wire::WireEnvelope::encode_value::<
+                                ::fidl_next::wire::WireVector<'static, crate::wire::TableData>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (10, ())
                             )?;
                         } else {
-                            ::fidl_next::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -1318,14 +1332,13 @@ pub mod natural {
             let table_data = wire_.table.get(2);
 
             Self {
-                table_data: table_data.map(|envelope| {
-                    ::fidl_next::FromWire::from_wire(unsafe {
-                        envelope
-                            .read_unchecked::<::fidl_next::WireVector<'de, crate::wire::TableData>>(
-                            )
-                    })
-                }),
-            }
+
+
+                table_data: table_data.map(|envelope| ::fidl_next::FromWire::from_wire(
+                    unsafe { envelope.read_unchecked::<::fidl_next::wire::WireVector<'de, crate::wire::TableData>>() }
+                )),
+
+        }
         }
     }
 
@@ -1337,7 +1350,7 @@ pub mod natural {
 
                 table_data: wire.table.get(2)
                     .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::WireVector<'de, crate::wire::TableData>>() }
+                        unsafe { envelope.deref_unchecked::<::fidl_next::wire::WireVector<'de, crate::wire::TableData>>() }
                     )),
 
         }
@@ -1425,7 +1438,10 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodRequest<'static>>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::SomeProtocolSomeMethodRequest<'static>,
+            >,
             ___E,
         > for SomeProtocolSomeMethodRequest
     where
@@ -1438,15 +1454,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodRequest<'static>>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::SomeProtocolSomeMethodRequest<'static>,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1455,7 +1474,10 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodRequest<'static>>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::SomeProtocolSomeMethodRequest<'static>,
+            >,
             ___E,
         > for &'a SomeProtocolSomeMethodRequest
     where
@@ -1468,15 +1490,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodRequest<'static>>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::SomeProtocolSomeMethodRequest<'static>,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1585,7 +1610,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
             ___E,
         > for SomeProtocolSomeMethodResponse
     where
@@ -1598,15 +1623,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1615,7 +1640,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
             ___E,
         > for &'a SomeProtocolSomeMethodResponse
     where
@@ -1628,15 +1653,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::SomeProtocolSomeMethodResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1720,7 +1745,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::SomeProtocolSomeMethodError { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 SomeProtocolSomeMethodError::ErrorOne => 1,
 
                 SomeProtocolSomeMethodError::ErrorTwo => 2,
@@ -1771,11 +1796,22 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct BitsMember {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for BitsMember {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for BitsMember {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1798,7 +1834,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::BitsMember> for BitsMember {
         fn from(natural: crate::natural::BitsMember) -> Self {
-            Self { value: ::fidl_next::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
         }
     }
 
@@ -1806,17 +1842,26 @@ pub mod wire {
         type Natural = crate::natural::BitsMember;
     }
 
-    impl ::fidl_next::Unconstrained for BitsMember {}
-
     /// The wire type corresponding to [`Op`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct Op {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for Op {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for Op {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1825,11 +1870,11 @@ pub mod wire {
     }
 
     impl Op {
-        pub const ADD: Op = Op { value: ::fidl_next::WireU32(1) };
+        pub const ADD: Op = Op { value: ::fidl_next::wire::WireU32(1) };
 
-        pub const MUL: Op = Op { value: ::fidl_next::WireU32(2) };
+        pub const MUL: Op = Op { value: ::fidl_next::wire::WireU32(2) };
 
-        pub const DIV: Op = Op { value: ::fidl_next::WireU32(3) };
+        pub const DIV: Op = Op { value: ::fidl_next::wire::WireU32(3) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for Op
@@ -1855,7 +1900,7 @@ pub mod wire {
                 crate::natural::Op::Div => Op::DIV,
 
                 crate::natural::Op::UnknownOrdinal_(value) => {
-                    Op { value: ::fidl_next::WireU32::from(value) }
+                    Op { value: ::fidl_next::wire::WireU32::from(value) }
                 }
             }
         }
@@ -1864,8 +1909,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for Op {
         type Natural = crate::natural::Op;
     }
-
-    impl ::fidl_next::Unconstrained for Op {}
 
     /// The wire type corresponding to [`OverrideTest`].
     #[derive(Debug)]
@@ -1887,8 +1930,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(OverrideTest<'_>, right), 24);
 
+    impl ::fidl_next::Constrained for OverrideTest<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for OverrideTest<'static> {
-        type Owned<'de> = OverrideTest<'de>;
+        type Narrowed<'de> = OverrideTest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1914,10 +1968,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for OverrideTest<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for OverrideTest<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
@@ -1958,17 +2012,26 @@ pub mod wire {
         type Natural = crate::natural::OverrideTest;
     }
 
-    impl ::fidl_next::Unconstrained for OverrideTest<'static> {}
-
     /// The wire type corresponding to [`Flags`](crate::natural::Flags).
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct Flags {
-        pub(crate) value: ::fidl_next::WireU16,
+        pub(crate) value: ::fidl_next::wire::WireU16,
+    }
+
+    impl ::fidl_next::Constrained for Flags {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for Flags {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1991,7 +2054,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::Flags> for Flags {
         fn from(natural: crate::natural::Flags) -> Self {
-            Self { value: ::fidl_next::WireU16::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::WireU16::from(natural.bits()) }
         }
     }
 
@@ -1999,23 +2062,21 @@ pub mod wire {
         type Natural = crate::natural::Flags;
     }
 
-    impl ::fidl_next::Unconstrained for Flags {}
-
     /// The wire type corresponding to [`FunctionApplication`].
     #[repr(C)]
     pub struct FunctionApplication<'de> {
-        pub(crate) table: ::fidl_next::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
     }
 
     impl<'de> Drop for FunctionApplication<'de> {
         fn drop(&mut self) {
             let _ = self.table.get(1).map(|envelope| unsafe {
-                envelope.read_unchecked::<::fidl_next::WireString<'de>>()
+                envelope.read_unchecked::<::fidl_next::wire::WireString<'de>>()
             });
 
             let _ = self.table.get(3)
                 .map(|envelope| unsafe {
-                    envelope.read_unchecked::<::fidl_next::WireVector<'de, crate::wire_optional::Expression<'de>>>()
+                    envelope.read_unchecked::<::fidl_next::wire::WireVector<'de, crate::wire_optional::Expression<'de>>>()
                 });
 
             let _ = self
@@ -2025,19 +2086,30 @@ pub mod wire {
         }
     }
 
+    impl ::fidl_next::Constrained for FunctionApplication<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for FunctionApplication<'static> {
-        type Owned<'de> = FunctionApplication<'de>;
+        type Narrowed<'de> = FunctionApplication<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::WireTable::zero_padding(table);
+            ::fidl_next::wire::WireTable::zero_padding(table);
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for FunctionApplication<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for FunctionApplication<'de>
     where
-        ___D: ::fidl_next::Decoder + ?Sized,
+        ___D: ::fidl_next::Decoder<'de> + ?Sized,
     {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
@@ -2046,18 +2118,21 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::WireTable::decode_with(table, decoder, |ordinal, mut slot, decoder| {
-                match ordinal {
+            ::fidl_next::wire::WireTable::decode_with(
+                table,
+                decoder,
+                |ordinal, mut slot, decoder| match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
                     1 => {
-                        ::fidl_next::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::WireEnvelope::decode_as::<
                             ___D,
-                            ::fidl_next::WireString<'static>,
+                            ::fidl_next::wire::WireString<'de>,
                         >(slot.as_mut(), decoder, 100)?;
 
                         let value = unsafe {
-                            slot.deref_unchecked().deref_unchecked::<::fidl_next::WireString<'_>>()
+                            slot.deref_unchecked()
+                                .deref_unchecked::<::fidl_next::wire::WireString<'_>>()
                         };
 
                         if value.len() > 100 {
@@ -2071,20 +2146,19 @@ pub mod wire {
                     }
 
                     3 => {
-                        ::fidl_next::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::WireEnvelope::decode_as::<
                             ___D,
-                            ::fidl_next::WireVector<
-                                'static,
-                                crate::wire_optional::Expression<'static>,
+                            ::fidl_next::wire::WireVector<
+                                'de,
+                                crate::wire_optional::Expression<'de>,
                             >,
                         >(slot.as_mut(), decoder, (5, ()))?;
 
                         let value = unsafe {
-                            slot
-                                            .deref_unchecked()
-                                            .deref_unchecked::<
-                                                ::fidl_next::WireVector<'_, crate::wire_optional::Expression<'_>>
-                                            >()
+                            slot.deref_unchecked().deref_unchecked::<::fidl_next::wire::WireVector<
+                                '_,
+                                crate::wire_optional::Expression<'_>,
+                            >>()
                         };
 
                         if value.len() > 5 {
@@ -2098,7 +2172,7 @@ pub mod wire {
                     }
 
                     4 => {
-                        ::fidl_next::WireEnvelope::decode_as::<___D, crate::wire::Flags>(
+                        ::fidl_next::wire::WireEnvelope::decode_as::<___D, crate::wire::Flags>(
                             slot.as_mut(),
                             decoder,
                             (),
@@ -2107,21 +2181,21 @@ pub mod wire {
                         Ok(())
                     }
 
-                    _ => ::fidl_next::WireEnvelope::decode_unknown(slot, decoder),
-                }
-            })
+                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
+                },
+            )
         }
     }
 
     impl<'de> FunctionApplication<'de> {
-        pub fn func(&self) -> ::core::option::Option<&::fidl_next::WireString<'de>> {
+        pub fn func(&self) -> ::core::option::Option<&::fidl_next::wire::WireString<'de>> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
         pub fn args(
             &self,
         ) -> ::core::option::Option<
-            &::fidl_next::WireVector<'de, crate::wire_optional::Expression<'de>>,
+            &::fidl_next::wire::WireVector<'de, crate::wire_optional::Expression<'de>>,
         > {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
@@ -2148,12 +2222,10 @@ pub mod wire {
         type Natural = crate::natural::FunctionApplication;
     }
 
-    impl ::fidl_next::Unconstrained for FunctionApplication<'_> {}
-
     /// The wire type corresponding to [`Expression`].
     #[repr(transparent)]
     pub struct Expression<'de> {
-        pub(crate) raw: ::fidl_next::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -2161,7 +2233,8 @@ pub mod wire {
         fn drop(&mut self) {
             match self.raw.ordinal() {
                 1 => {
-                    let _ = unsafe { self.raw.get().read_unchecked::<::fidl_next::WireU64>() };
+                    let _ =
+                        unsafe { self.raw.get().read_unchecked::<::fidl_next::wire::WireU64>() };
                 }
 
                 2 => {
@@ -2181,19 +2254,30 @@ pub mod wire {
         }
     }
 
+    impl ::fidl_next::Constrained for Expression<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Expression<'static> {
-        type Owned<'de> = Expression<'de>;
+        type Narrowed<'de> = Expression<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
         }
     }
 
     pub mod expression {
         pub enum Ref<'de> {
-            Value(&'de ::fidl_next::WireU64),
+            Value(&'de ::fidl_next::wire::WireU64),
 
             BinOp(&'de crate::wire::OverrideTest<'de>),
 
@@ -2207,7 +2291,7 @@ pub mod wire {
         pub fn as_ref(&self) -> crate::wire::expression::Ref<'_> {
             match self.raw.ordinal() {
                 1 => crate::wire::expression::Ref::Value(unsafe {
-                    self.raw.get().deref_unchecked::<::fidl_next::WireU64>()
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::WireU64>()
                 }),
 
                 2 => crate::wire::expression::Ref::BinOp(unsafe {
@@ -2223,10 +2307,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for Expression<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for Expression<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
@@ -2234,24 +2318,26 @@ pub mod wire {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::WireU64>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+                1 => {
+                    ::fidl_next::wire::RawWireUnion::decode_as::<___D, ::fidl_next::wire::WireU64>(
+                        raw,
+                        decoder,
+                        (),
+                    )?
+                }
 
-                2 => ::fidl_next::RawWireUnion::decode_as::<
+                2 => ::fidl_next::wire::RawWireUnion::decode_as::<
                     ___D,
-                    crate::wire::OverrideTest<'static>,
+                    crate::wire::OverrideTest<'de>,
                 >(raw, decoder, ())?,
 
-                3 => ::fidl_next::RawWireUnion::decode_as::<
+                3 => ::fidl_next::wire::RawWireUnion::decode_as::<
                     ___D,
-                    crate::wire::FunctionApplication<'static>,
+                    crate::wire::FunctionApplication<'de>,
                 >(raw, decoder, ())?,
 
-                _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
+                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -2261,7 +2347,9 @@ pub mod wire {
     impl<'de> ::core::fmt::Debug for Expression<'de> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self.raw.ordinal() {
-                1 => unsafe { self.raw.get().deref_unchecked::<::fidl_next::WireU64>().fmt(f) },
+                1 => unsafe {
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::WireU64>().fmt(f)
+                },
                 2 => unsafe {
                     self.raw.get().deref_unchecked::<crate::wire::OverrideTest<'_>>().fmt(f)
                 },
@@ -2277,12 +2365,10 @@ pub mod wire {
         type Natural = crate::natural::Expression;
     }
 
-    impl ::fidl_next::Unconstrained for Expression<'static> {}
-
     /// The wire type corresponding to [`UnionMember`].
     #[repr(transparent)]
     pub struct UnionMember<'de> {
-        pub(crate) raw: ::fidl_next::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -2298,13 +2384,24 @@ pub mod wire {
         }
     }
 
+    impl ::fidl_next::Constrained for UnionMember<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for UnionMember<'static> {
-        type Owned<'de> = UnionMember<'de>;
+        type Narrowed<'de> = UnionMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
         }
     }
 
@@ -2328,10 +2425,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for UnionMember<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for UnionMember<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
@@ -2339,10 +2436,10 @@ pub mod wire {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                2 => ::fidl_next::RawWireUnion::decode_as::<___D, u8>(raw, decoder, ())?,
+            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+                2 => ::fidl_next::wire::RawWireUnion::decode_as::<___D, u8>(raw, decoder, ())?,
 
-                _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
+                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -2362,8 +2459,6 @@ pub mod wire {
         type Natural = crate::natural::UnionMember;
     }
 
-    impl ::fidl_next::Unconstrained for UnionMember<'static> {}
-
     /// The wire type corresponding to [`TableData`].
     #[derive(Clone, Debug)]
     #[repr(C)]
@@ -2376,8 +2471,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(TableData, data), 0);
 
+    impl ::fidl_next::Constrained for TableData {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for TableData {
-        type Owned<'de> = TableData;
+        type Narrowed<'de> = TableData;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2422,35 +2528,45 @@ pub mod wire {
         type Natural = crate::natural::TableData;
     }
 
-    impl ::fidl_next::Unconstrained for TableData {}
-
     /// The wire type corresponding to [`TableMember`].
     #[repr(C)]
     pub struct TableMember<'de> {
-        pub(crate) table: ::fidl_next::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
     }
 
     impl<'de> Drop for TableMember<'de> {
         fn drop(&mut self) {
-            let _ = self.table.get(2).map(|envelope| unsafe {
-                envelope.read_unchecked::<::fidl_next::WireVector<'de, crate::wire::TableData>>()
-            });
+            let _ = self.table.get(2)
+                .map(|envelope| unsafe {
+                    envelope.read_unchecked::<::fidl_next::wire::WireVector<'de, crate::wire::TableData>>()
+                });
+        }
+    }
+
+    impl ::fidl_next::Constrained for TableMember<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
         }
     }
 
     unsafe impl ::fidl_next::Wire for TableMember<'static> {
-        type Owned<'de> = TableMember<'de>;
+        type Narrowed<'de> = TableMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::WireTable::zero_padding(table);
+            ::fidl_next::wire::WireTable::zero_padding(table);
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for TableMember<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for TableMember<'de>
     where
-        ___D: ::fidl_next::Decoder + ?Sized,
+        ___D: ::fidl_next::Decoder<'de> + ?Sized,
     {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
@@ -2459,21 +2575,23 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::WireTable::decode_with(table, decoder, |ordinal, mut slot, decoder| {
-                match ordinal {
+            ::fidl_next::wire::WireTable::decode_with(
+                table,
+                decoder,
+                |ordinal, mut slot, decoder| match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
                     2 => {
-                        ::fidl_next::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::WireEnvelope::decode_as::<
                             ___D,
-                            ::fidl_next::WireVector<'static, crate::wire::TableData>,
+                            ::fidl_next::wire::WireVector<'de, crate::wire::TableData>,
                         >(slot.as_mut(), decoder, (10, ()))?;
 
                         let value = unsafe {
                             slot
                                             .deref_unchecked()
                                             .deref_unchecked::<
-                                                ::fidl_next::WireVector<'_, crate::wire::TableData>
+                                                ::fidl_next::wire::WireVector<'_, crate::wire::TableData>
                                             >()
                         };
 
@@ -2487,16 +2605,17 @@ pub mod wire {
                         Ok(())
                     }
 
-                    _ => ::fidl_next::WireEnvelope::decode_unknown(slot, decoder),
-                }
-            })
+                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
+                },
+            )
         }
     }
 
     impl<'de> TableMember<'de> {
         pub fn table_data(
             &self,
-        ) -> ::core::option::Option<&::fidl_next::WireVector<'de, crate::wire::TableData>> {
+        ) -> ::core::option::Option<&::fidl_next::wire::WireVector<'de, crate::wire::TableData>>
+        {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
         }
     }
@@ -2513,8 +2632,6 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for TableMember<'de> {
         type Natural = crate::natural::TableMember;
     }
-
-    impl ::fidl_next::Unconstrained for TableMember<'_> {}
 
     /// The wire type corresponding to [`SomeProtocolSomeMethodRequest`].
     #[derive(Debug)]
@@ -2544,8 +2661,19 @@ pub mod wire {
         16
     );
 
+    impl ::fidl_next::Constrained for SomeProtocolSomeMethodRequest<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodRequest<'static> {
-        type Owned<'de> = SomeProtocolSomeMethodRequest<'de>;
+        type Narrowed<'de> = SomeProtocolSomeMethodRequest<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2564,10 +2692,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for SomeProtocolSomeMethodRequest<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for SomeProtocolSomeMethodRequest<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
@@ -2599,8 +2727,6 @@ pub mod wire {
         type Natural = crate::natural::SomeProtocolSomeMethodRequest;
     }
 
-    impl ::fidl_next::Unconstrained for SomeProtocolSomeMethodRequest<'static> {}
-
     /// The wire type corresponding to [`SomeProtocolSomeMethodResponse`].
     #[derive(Clone, Debug)]
     #[repr(C)]
@@ -2616,8 +2742,19 @@ pub mod wire {
         0
     );
 
+    impl ::fidl_next::Constrained for SomeProtocolSomeMethodResponse {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodResponse {
-        type Owned<'de> = SomeProtocolSomeMethodResponse;
+        type Narrowed<'de> = SomeProtocolSomeMethodResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2662,17 +2799,26 @@ pub mod wire {
         type Natural = crate::natural::SomeProtocolSomeMethodResponse;
     }
 
-    impl ::fidl_next::Unconstrained for SomeProtocolSomeMethodResponse {}
-
     /// The wire type corresponding to [`SomeProtocolSomeMethodError`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct SomeProtocolSomeMethodError {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for SomeProtocolSomeMethodError {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for SomeProtocolSomeMethodError {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2682,10 +2828,10 @@ pub mod wire {
 
     impl SomeProtocolSomeMethodError {
         pub const ERROR_ONE: SomeProtocolSomeMethodError =
-            SomeProtocolSomeMethodError { value: ::fidl_next::WireU32(1) };
+            SomeProtocolSomeMethodError { value: ::fidl_next::wire::WireU32(1) };
 
         pub const ERROR_TWO: SomeProtocolSomeMethodError =
-            SomeProtocolSomeMethodError { value: ::fidl_next::WireU32(2) };
+            SomeProtocolSomeMethodError { value: ::fidl_next::wire::WireU32(2) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for SomeProtocolSomeMethodError
@@ -2715,7 +2861,7 @@ pub mod wire {
                 }
 
                 crate::natural::SomeProtocolSomeMethodError::UnknownOrdinal_(value) => {
-                    SomeProtocolSomeMethodError { value: ::fidl_next::WireU32::from(value) }
+                    SomeProtocolSomeMethodError { value: ::fidl_next::wire::WireU32::from(value) }
                 }
             }
         }
@@ -2724,25 +2870,34 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for SomeProtocolSomeMethodError {
         type Natural = crate::natural::SomeProtocolSomeMethodError;
     }
-
-    impl ::fidl_next::Unconstrained for SomeProtocolSomeMethodError {}
 }
 
 pub mod wire_optional {
 
     #[repr(transparent)]
     pub struct Expression<'de> {
-        pub(crate) raw: ::fidl_next::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
+    impl ::fidl_next::Constrained for Expression<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Expression<'static> {
-        type Owned<'de> = Expression<'de>;
+        type Narrowed<'de> = Expression<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
         }
     }
 
@@ -2771,10 +2926,10 @@ pub mod wire_optional {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for Expression<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for Expression<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
@@ -2782,25 +2937,27 @@ pub mod wire_optional {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::WireU64>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+                1 => {
+                    ::fidl_next::wire::RawWireUnion::decode_as::<___D, ::fidl_next::wire::WireU64>(
+                        raw,
+                        decoder,
+                        (),
+                    )?
+                }
 
-                2 => ::fidl_next::RawWireUnion::decode_as::<
+                2 => ::fidl_next::wire::RawWireUnion::decode_as::<
                     ___D,
-                    crate::wire::OverrideTest<'static>,
+                    crate::wire::OverrideTest<'de>,
                 >(raw, decoder, ())?,
 
-                3 => ::fidl_next::RawWireUnion::decode_as::<
+                3 => ::fidl_next::wire::RawWireUnion::decode_as::<
                     ___D,
-                    crate::wire::FunctionApplication<'static>,
+                    crate::wire::FunctionApplication<'de>,
                 >(raw, decoder, ())?,
 
-                0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-                _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
+                0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
+                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -2817,21 +2974,30 @@ pub mod wire_optional {
         type Natural = ::core::option::Option<crate::natural::Expression>;
     }
 
-    impl ::fidl_next::Unconstrained for Expression<'static> {}
-
     #[repr(transparent)]
     pub struct UnionMember<'de> {
-        pub(crate) raw: ::fidl_next::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
+    impl ::fidl_next::Constrained for UnionMember<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for UnionMember<'static> {
-        type Owned<'de> = UnionMember<'de>;
+        type Narrowed<'de> = UnionMember<'de>;
 
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
         }
     }
 
@@ -2860,10 +3026,10 @@ pub mod wire_optional {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for UnionMember<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for UnionMember<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
@@ -2871,11 +3037,11 @@ pub mod wire_optional {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                2 => ::fidl_next::RawWireUnion::decode_as::<___D, u8>(raw, decoder, ())?,
+            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+                2 => ::fidl_next::wire::RawWireUnion::decode_as::<___D, u8>(raw, decoder, ())?,
 
-                0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-                _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
+                0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
+                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -2891,8 +3057,6 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for UnionMember<'de> {
         type Natural = ::core::option::Option<crate::natural::UnionMember>;
     }
-
-    impl ::fidl_next::Unconstrained for UnionMember<'static> {}
 }
 
 pub mod generic {
@@ -3081,7 +3245,7 @@ pub mod some_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for SomeMethod {
-        type Response = ::fidl_next::WireResult<
+        type Response = ::fidl_next::wire::WireResult<
             'static,
             crate::wire::SomeProtocolSomeMethodResponse,
             crate::wire::SomeProtocolSomeMethodError,
@@ -3206,7 +3370,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -3235,14 +3399,16 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for SomeProtocol
 where
     ___H: SomeProtocolServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <some_protocol::SomeMethod as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+    for<'de> crate::wire::SomeProtocolSomeMethodRequest<'de>: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
@@ -3256,7 +3422,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
@@ -3266,7 +3432,7 @@ where
             2515914517457749720 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
                     Ok(decoded) => {
                         handler
                             .some_method(::fidl_next::Request::from_decoded(decoded), responder)

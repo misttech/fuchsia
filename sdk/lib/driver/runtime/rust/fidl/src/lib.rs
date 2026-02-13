@@ -12,9 +12,10 @@ use std::marker::PhantomData;
 use std::num::NonZero;
 use std::pin::Pin;
 use std::ptr::NonNull;
+use std::slice;
 use std::task::{Context, Poll};
 
-use fidl_next::{Chunk, HasExecutor};
+use fidl_next::{AsDecoder, Chunk, HasExecutor};
 use zx::Status;
 
 use fdf_channel::arena::{Arena, ArenaBox};
@@ -144,6 +145,7 @@ pub fn create_channel<P>()
 }
 
 /// A channel buffer.
+#[derive(Default)]
 pub struct SendBuffer {
     handles: Vec<Option<MixedHandle>>,
     data: Vec<Chunk>,
@@ -218,18 +220,31 @@ impl fidl_next::fuchsia::HandleEncoder for SendBuffer {
 
 #[doc(hidden)] // Internal implementation detail of the fidl bindings.
 pub struct RecvBuffer {
-    buffer: Option<Message<[Chunk]>>,
+    message: Option<Message<[Chunk]>>,
+}
+
+unsafe impl<'de> AsDecoder<'de> for RecvBuffer {
+    type Decoder = RecvBufferDecoder<'de>;
+
+    fn as_decoder(&'de mut self) -> Self::Decoder {
+        RecvBufferDecoder { buffer: self, data_offset: 0, handle_offset: 0 }
+    }
+}
+
+#[doc(hidden)] // Internal implementation detail of the fidl bindings.
+pub struct RecvBufferDecoder<'de> {
+    buffer: &'de mut RecvBuffer,
     data_offset: usize,
     handle_offset: usize,
 }
 
-impl RecvBuffer {
+impl RecvBufferDecoder<'_> {
     fn next_handle(&self) -> Result<&MixedHandle, fidl_next::DecodeError> {
-        let Some(buffer) = &self.buffer else {
+        let Some(message) = &self.buffer.message else {
             return Err(fidl_next::DecodeError::InsufficientHandles);
         };
 
-        let Some(handles) = buffer.handles() else {
+        let Some(handles) = message.handles() else {
             return Err(fidl_next::DecodeError::InsufficientHandles);
         };
         if handles.len() < self.handle_offset + 1 {
@@ -239,19 +254,13 @@ impl RecvBuffer {
     }
 }
 
-// SAFETY: The decoder implementation stores the data buffer in a [`Message`] tied to an [`Arena`],
-// and the memory in an [`Arena`] is guaranteed not to move while the arena is valid.
-// Also, since we own the [`Message`] and nothing else can, it is ok to treat its contents
-// as mutable through an `&mut self` reference to the struct.
-unsafe impl fidl_next::Decoder for RecvBuffer {
-    // SAFETY: if the caller requests a number of [`Chunk`]s that we can't supply, we return
-    // `InsufficientData`.
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, fidl_next::DecodeError> {
-        let Some(buffer) = &mut self.buffer else {
+impl<'de> fidl_next::Decoder<'de> for RecvBufferDecoder<'de> {
+    fn take_chunks(&mut self, count: usize) -> Result<&'de mut [Chunk], fidl_next::DecodeError> {
+        let Some(message) = &mut self.buffer.message else {
             return Err(fidl_next::DecodeError::InsufficientData);
         };
 
-        let Some(data) = buffer.data_mut() else {
+        let Some(data) = message.data_mut() else {
             return Err(fidl_next::DecodeError::InsufficientData);
         };
         if data.len() < self.data_offset + count {
@@ -259,11 +268,13 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
         }
         let pos = self.data_offset;
         self.data_offset += count;
-        Ok(unsafe { NonNull::new_unchecked((data[pos..(pos + count)]).as_mut_ptr()) })
+
+        let ptr = data.as_mut_ptr();
+        Ok(unsafe { slice::from_raw_parts_mut(ptr.add(pos), count) })
     }
 
     fn commit(&mut self) {
-        if let Some(handles) = self.buffer.as_mut().and_then(Message::handles_mut) {
+        if let Some(handles) = self.buffer.message.as_mut().and_then(Message::handles_mut) {
             for handle in handles.iter_mut().take(self.handle_offset) {
                 core::mem::forget(handle.take());
             }
@@ -271,14 +282,14 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
     }
 
     fn finish(&self) -> Result<(), fidl_next::DecodeError> {
-        if let Some(buffer) = &self.buffer {
-            let data_len = buffer.data().unwrap_or(&[]).len();
+        if let Some(message) = &self.buffer.message {
+            let data_len = message.data().unwrap_or(&[]).len();
             if self.data_offset != data_len {
                 return Err(fidl_next::DecodeError::ExtraBytes {
                     num_extra: data_len - self.data_offset,
                 });
             }
-            let handle_len = buffer.handles().unwrap_or(&[]).len();
+            let handle_len = message.handles().unwrap_or(&[]).len();
             if self.handle_offset != handle_len {
                 return Err(fidl_next::DecodeError::ExtraHandles {
                     num_extra: handle_len - self.handle_offset,
@@ -290,9 +301,9 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
     }
 }
 
-impl fidl_next::decoder::InternalHandleDecoder for RecvBuffer {
+impl fidl_next::decoder::InternalHandleDecoder for RecvBufferDecoder<'_> {
     fn __internal_take_handles(&mut self, count: usize) -> Result<(), fidl_next::DecodeError> {
-        let Some(handles) = self.buffer.as_mut().and_then(Message::handles_mut) else {
+        let Some(handles) = self.buffer.message.as_mut().and_then(Message::handles_mut) else {
             return Err(fidl_next::DecodeError::InsufficientHandles);
         };
         if handles.len() < self.handle_offset + count {
@@ -305,13 +316,14 @@ impl fidl_next::decoder::InternalHandleDecoder for RecvBuffer {
 
     fn __internal_handles_remaining(&self) -> usize {
         self.buffer
+            .message
             .as_ref()
             .map(|buffer| buffer.handles().unwrap_or(&[]).len() - self.handle_offset)
             .unwrap_or(0)
     }
 }
 
-impl fidl_next::fuchsia::HandleDecoder for RecvBuffer {
+impl fidl_next::fuchsia::HandleDecoder for RecvBufferDecoder<'_> {
     fn take_raw_handle(&mut self) -> Result<zx::sys::zx_handle_t, fidl_next::DecodeError> {
         let result = {
             let handle = self.next_handle()?.resolve_ref();
@@ -455,7 +467,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
                     })
                 });
 
-                Ready(Ok(RecvBuffer { buffer, data_offset: 0, handle_offset: 0 }))
+                Ready(Ok(RecvBuffer { message: buffer }))
             }
             Ready(Err(err)) => {
                 if err == Status::PEER_CLOSED {

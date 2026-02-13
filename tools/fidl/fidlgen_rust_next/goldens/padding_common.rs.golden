@@ -76,8 +76,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding1ByteEnd>, ___E>
-        for Padding1ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteEnd>,
+            ___E,
+        > for Padding1ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding1ByteEnd: ::fidl_next::Encode<crate::wire::Padding1ByteEnd, ___E>,
@@ -87,15 +89,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding1ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -103,8 +105,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding1ByteEnd>, ___E>
-        for &'a Padding1ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteEnd>,
+            ___E,
+        > for &'a Padding1ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding1ByteEnd: ::fidl_next::Encode<crate::wire::Padding1ByteEnd, ___E>,
@@ -114,15 +118,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding1ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -224,7 +228,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding1ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteMiddle>,
             ___E,
         > for Padding1ByteMiddle
     where
@@ -236,15 +240,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding1ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -253,7 +257,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding1ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteMiddle>,
             ___E,
         > for &'a Padding1ByteMiddle
     where
@@ -265,15 +269,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding1ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding1ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -388,7 +392,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
             ___E,
         > for Padding2ByteAlignmentLength6
     where
@@ -401,15 +405,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -418,7 +422,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
             ___E,
         > for &'a Padding2ByteAlignmentLength6
     where
@@ -431,15 +435,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteAlignmentLength6>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -548,8 +552,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding2ByteEnd>, ___E>
-        for Padding2ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteEnd>,
+            ___E,
+        > for Padding2ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding2ByteEnd: ::fidl_next::Encode<crate::wire::Padding2ByteEnd, ___E>,
@@ -559,15 +565,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -575,8 +581,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding2ByteEnd>, ___E>
-        for &'a Padding2ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteEnd>,
+            ___E,
+        > for &'a Padding2ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding2ByteEnd: ::fidl_next::Encode<crate::wire::Padding2ByteEnd, ___E>,
@@ -586,15 +594,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -696,7 +704,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding2ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteMiddle>,
             ___E,
         > for Padding2ByteMiddle
     where
@@ -708,15 +716,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -725,7 +733,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding2ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteMiddle>,
             ___E,
         > for &'a Padding2ByteMiddle
     where
@@ -737,15 +745,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding2ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding2ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -846,8 +854,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding3ByteEnd>, ___E>
-        for Padding3ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteEnd>,
+            ___E,
+        > for Padding3ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding3ByteEnd: ::fidl_next::Encode<crate::wire::Padding3ByteEnd, ___E>,
@@ -857,15 +867,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding3ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -873,8 +883,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding3ByteEnd>, ___E>
-        for &'a Padding3ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteEnd>,
+            ___E,
+        > for &'a Padding3ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding3ByteEnd: ::fidl_next::Encode<crate::wire::Padding3ByteEnd, ___E>,
@@ -884,15 +896,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding3ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -994,7 +1006,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding3ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteMiddle>,
             ___E,
         > for Padding3ByteMiddle
     where
@@ -1006,15 +1018,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding3ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1023,7 +1035,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding3ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteMiddle>,
             ___E,
         > for &'a Padding3ByteMiddle
     where
@@ -1035,15 +1047,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding3ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding3ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1170,7 +1182,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
             ___E,
         > for Padding4ByteAlignmentLength12
     where
@@ -1183,15 +1195,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1200,7 +1212,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
             ___E,
         > for &'a Padding4ByteAlignmentLength12
     where
@@ -1213,15 +1225,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteAlignmentLength12>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1334,8 +1346,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding4ByteEnd>, ___E>
-        for Padding4ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteEnd>,
+            ___E,
+        > for Padding4ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding4ByteEnd: ::fidl_next::Encode<crate::wire::Padding4ByteEnd, ___E>,
@@ -1345,15 +1359,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1361,8 +1375,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding4ByteEnd>, ___E>
-        for &'a Padding4ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteEnd>,
+            ___E,
+        > for &'a Padding4ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding4ByteEnd: ::fidl_next::Encode<crate::wire::Padding4ByteEnd, ___E>,
@@ -1372,15 +1388,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1482,7 +1498,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding4ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteMiddle>,
             ___E,
         > for Padding4ByteMiddle
     where
@@ -1494,15 +1510,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1511,7 +1527,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding4ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteMiddle>,
             ___E,
         > for &'a Padding4ByteMiddle
     where
@@ -1523,15 +1539,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding4ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding4ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1644,8 +1660,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding5ByteEnd>, ___E>
-        for Padding5ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteEnd>,
+            ___E,
+        > for Padding5ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding5ByteEnd: ::fidl_next::Encode<crate::wire::Padding5ByteEnd, ___E>,
@@ -1655,15 +1673,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding5ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1671,8 +1689,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding5ByteEnd>, ___E>
-        for &'a Padding5ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteEnd>,
+            ___E,
+        > for &'a Padding5ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding5ByteEnd: ::fidl_next::Encode<crate::wire::Padding5ByteEnd, ___E>,
@@ -1682,15 +1702,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding5ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1808,7 +1828,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding5ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteMiddle>,
             ___E,
         > for Padding5ByteMiddle
     where
@@ -1820,15 +1840,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding5ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1837,7 +1857,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding5ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteMiddle>,
             ___E,
         > for &'a Padding5ByteMiddle
     where
@@ -1849,15 +1869,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding5ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding5ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1962,8 +1982,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding6ByteEnd>, ___E>
-        for Padding6ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteEnd>,
+            ___E,
+        > for Padding6ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding6ByteEnd: ::fidl_next::Encode<crate::wire::Padding6ByteEnd, ___E>,
@@ -1973,15 +1995,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding6ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1989,8 +2011,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding6ByteEnd>, ___E>
-        for &'a Padding6ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteEnd>,
+            ___E,
+        > for &'a Padding6ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding6ByteEnd: ::fidl_next::Encode<crate::wire::Padding6ByteEnd, ___E>,
@@ -2000,15 +2024,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding6ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2110,7 +2134,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding6ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteMiddle>,
             ___E,
         > for Padding6ByteMiddle
     where
@@ -2122,15 +2146,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding6ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2139,7 +2163,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding6ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteMiddle>,
             ___E,
         > for &'a Padding6ByteMiddle
     where
@@ -2151,15 +2175,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding6ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding6ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2260,8 +2284,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding7ByteEnd>, ___E>
-        for Padding7ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteEnd>,
+            ___E,
+        > for Padding7ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Padding7ByteEnd: ::fidl_next::Encode<crate::wire::Padding7ByteEnd, ___E>,
@@ -2271,15 +2297,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding7ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2287,8 +2313,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Padding7ByteEnd>, ___E>
-        for &'a Padding7ByteEnd
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteEnd>,
+            ___E,
+        > for &'a Padding7ByteEnd
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Padding7ByteEnd: ::fidl_next::Encode<crate::wire::Padding7ByteEnd, ___E>,
@@ -2298,15 +2326,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding7ByteEnd>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteEnd>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2408,7 +2436,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding7ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteMiddle>,
             ___E,
         > for Padding7ByteMiddle
     where
@@ -2420,15 +2448,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding7ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2437,7 +2465,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::Padding7ByteMiddle>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteMiddle>,
             ___E,
         > for &'a Padding7ByteMiddle
     where
@@ -2449,15 +2477,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Padding7ByteMiddle>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Padding7ByteMiddle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -2493,7 +2521,7 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding1ByteEnd {
-        pub a: ::fidl_next::WireU16,
+        pub a: ::fidl_next::wire::WireU16,
 
         pub b: u8,
     }
@@ -2505,8 +2533,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding1ByteEnd, b), 2);
 
+    impl ::fidl_next::Constrained for Padding1ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding1ByteEnd {
-        type Owned<'de> = Padding1ByteEnd;
+        type Narrowed<'de> = Padding1ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2567,15 +2606,13 @@ pub mod wire {
         type Natural = crate::natural::Padding1ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding1ByteEnd {}
-
     /// The wire type corresponding to [`Padding1ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding1ByteMiddle {
         pub a: u8,
 
-        pub b: ::fidl_next::WireU16,
+        pub b: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding1ByteMiddle>(), 4);
@@ -2585,8 +2622,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding1ByteMiddle, b), 2);
 
+    impl ::fidl_next::Constrained for Padding1ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding1ByteMiddle {
-        type Owned<'de> = Padding1ByteMiddle;
+        type Narrowed<'de> = Padding1ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2647,15 +2695,13 @@ pub mod wire {
         type Natural = crate::natural::Padding1ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding1ByteMiddle {}
-
     /// The wire type corresponding to [`Padding2ByteAlignmentLength6`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding2ByteAlignmentLength6 {
         pub a: u8,
 
-        pub b: ::fidl_next::WireU16,
+        pub b: ::fidl_next::wire::WireU16,
 
         pub c: u8,
     }
@@ -2669,8 +2715,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteAlignmentLength6, c), 4);
 
+    impl ::fidl_next::Constrained for Padding2ByteAlignmentLength6 {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding2ByteAlignmentLength6 {
-        type Owned<'de> = Padding2ByteAlignmentLength6;
+        type Narrowed<'de> = Padding2ByteAlignmentLength6;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2747,15 +2804,13 @@ pub mod wire {
         type Natural = crate::natural::Padding2ByteAlignmentLength6;
     }
 
-    impl ::fidl_next::Unconstrained for Padding2ByteAlignmentLength6 {}
-
     /// The wire type corresponding to [`Padding2ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding2ByteEnd {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU16,
+        pub b: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding2ByteEnd>(), 8);
@@ -2765,8 +2820,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteEnd, b), 4);
 
+    impl ::fidl_next::Constrained for Padding2ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding2ByteEnd {
-        type Owned<'de> = Padding2ByteEnd;
+        type Narrowed<'de> = Padding2ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2827,15 +2893,13 @@ pub mod wire {
         type Natural = crate::natural::Padding2ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding2ByteEnd {}
-
     /// The wire type corresponding to [`Padding2ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding2ByteMiddle {
-        pub a: ::fidl_next::WireU16,
+        pub a: ::fidl_next::wire::WireU16,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding2ByteMiddle>(), 8);
@@ -2845,8 +2909,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding2ByteMiddle, b), 4);
 
+    impl ::fidl_next::Constrained for Padding2ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding2ByteMiddle {
-        type Owned<'de> = Padding2ByteMiddle;
+        type Narrowed<'de> = Padding2ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2907,13 +2982,11 @@ pub mod wire {
         type Natural = crate::natural::Padding2ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding2ByteMiddle {}
-
     /// The wire type corresponding to [`Padding3ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding3ByteEnd {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
         pub b: u8,
     }
@@ -2925,8 +2998,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding3ByteEnd, b), 4);
 
+    impl ::fidl_next::Constrained for Padding3ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding3ByteEnd {
-        type Owned<'de> = Padding3ByteEnd;
+        type Narrowed<'de> = Padding3ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -2987,15 +3071,13 @@ pub mod wire {
         type Natural = crate::natural::Padding3ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding3ByteEnd {}
-
     /// The wire type corresponding to [`Padding3ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding3ByteMiddle {
         pub a: u8,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding3ByteMiddle>(), 8);
@@ -3005,8 +3087,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding3ByteMiddle, b), 4);
 
+    impl ::fidl_next::Constrained for Padding3ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding3ByteMiddle {
-        type Owned<'de> = Padding3ByteMiddle;
+        type Narrowed<'de> = Padding3ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3067,19 +3160,17 @@ pub mod wire {
         type Natural = crate::natural::Padding3ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding3ByteMiddle {}
-
     /// The wire type corresponding to [`Padding4ByteAlignmentLength12`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding4ByteAlignmentLength12 {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
         pub b: u8,
 
-        pub c: ::fidl_next::WireU16,
+        pub c: ::fidl_next::wire::WireU16,
 
-        pub d: ::fidl_next::WireU16,
+        pub d: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding4ByteAlignmentLength12>(), 12);
@@ -3093,8 +3184,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteAlignmentLength12, d), 8);
 
+    impl ::fidl_next::Constrained for Padding4ByteAlignmentLength12 {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding4ByteAlignmentLength12 {
-        type Owned<'de> = Padding4ByteAlignmentLength12;
+        type Narrowed<'de> = Padding4ByteAlignmentLength12;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3179,15 +3281,13 @@ pub mod wire {
         type Natural = crate::natural::Padding4ByteAlignmentLength12;
     }
 
-    impl ::fidl_next::Unconstrained for Padding4ByteAlignmentLength12 {}
-
     /// The wire type corresponding to [`Padding4ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding4ByteEnd {
-        pub a: ::fidl_next::WireU64,
+        pub a: ::fidl_next::wire::WireU64,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding4ByteEnd>(), 16);
@@ -3197,8 +3297,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteEnd, b), 8);
 
+    impl ::fidl_next::Constrained for Padding4ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding4ByteEnd {
-        type Owned<'de> = Padding4ByteEnd;
+        type Narrowed<'de> = Padding4ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3259,15 +3370,13 @@ pub mod wire {
         type Natural = crate::natural::Padding4ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding4ByteEnd {}
-
     /// The wire type corresponding to [`Padding4ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding4ByteMiddle {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU64,
+        pub b: ::fidl_next::wire::WireU64,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding4ByteMiddle>(), 16);
@@ -3277,8 +3386,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding4ByteMiddle, b), 8);
 
+    impl ::fidl_next::Constrained for Padding4ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding4ByteMiddle {
-        type Owned<'de> = Padding4ByteMiddle;
+        type Narrowed<'de> = Padding4ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3339,15 +3459,13 @@ pub mod wire {
         type Natural = crate::natural::Padding4ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding4ByteMiddle {}
-
     /// The wire type corresponding to [`Padding5ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding5ByteEnd {
-        pub a: ::fidl_next::WireU64,
+        pub a: ::fidl_next::wire::WireU64,
 
-        pub b: ::fidl_next::WireU16,
+        pub b: ::fidl_next::wire::WireU16,
 
         pub c: u8,
     }
@@ -3361,8 +3479,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding5ByteEnd, c), 10);
 
+    impl ::fidl_next::Constrained for Padding5ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding5ByteEnd {
-        type Owned<'de> = Padding5ByteEnd;
+        type Narrowed<'de> = Padding5ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3431,17 +3560,15 @@ pub mod wire {
         type Natural = crate::natural::Padding5ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding5ByteEnd {}
-
     /// The wire type corresponding to [`Padding5ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding5ByteMiddle {
-        pub a: ::fidl_next::WireU16,
+        pub a: ::fidl_next::wire::WireU16,
 
         pub b: u8,
 
-        pub c: ::fidl_next::WireU64,
+        pub c: ::fidl_next::wire::WireU64,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding5ByteMiddle>(), 16);
@@ -3453,8 +3580,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding5ByteMiddle, c), 8);
 
+    impl ::fidl_next::Constrained for Padding5ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding5ByteMiddle {
-        type Owned<'de> = Padding5ByteMiddle;
+        type Narrowed<'de> = Padding5ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3523,15 +3661,13 @@ pub mod wire {
         type Natural = crate::natural::Padding5ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding5ByteMiddle {}
-
     /// The wire type corresponding to [`Padding6ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding6ByteEnd {
-        pub a: ::fidl_next::WireU64,
+        pub a: ::fidl_next::wire::WireU64,
 
-        pub b: ::fidl_next::WireU16,
+        pub b: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding6ByteEnd>(), 16);
@@ -3541,8 +3677,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding6ByteEnd, b), 8);
 
+    impl ::fidl_next::Constrained for Padding6ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding6ByteEnd {
-        type Owned<'de> = Padding6ByteEnd;
+        type Narrowed<'de> = Padding6ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3603,15 +3750,13 @@ pub mod wire {
         type Natural = crate::natural::Padding6ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding6ByteEnd {}
-
     /// The wire type corresponding to [`Padding6ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding6ByteMiddle {
-        pub a: ::fidl_next::WireU16,
+        pub a: ::fidl_next::wire::WireU16,
 
-        pub b: ::fidl_next::WireU64,
+        pub b: ::fidl_next::wire::WireU64,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding6ByteMiddle>(), 16);
@@ -3621,8 +3766,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding6ByteMiddle, b), 8);
 
+    impl ::fidl_next::Constrained for Padding6ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding6ByteMiddle {
-        type Owned<'de> = Padding6ByteMiddle;
+        type Narrowed<'de> = Padding6ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3683,13 +3839,11 @@ pub mod wire {
         type Natural = crate::natural::Padding6ByteMiddle;
     }
 
-    impl ::fidl_next::Unconstrained for Padding6ByteMiddle {}
-
     /// The wire type corresponding to [`Padding7ByteEnd`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding7ByteEnd {
-        pub a: ::fidl_next::WireU64,
+        pub a: ::fidl_next::wire::WireU64,
 
         pub b: u8,
     }
@@ -3701,8 +3855,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding7ByteEnd, b), 8);
 
+    impl ::fidl_next::Constrained for Padding7ByteEnd {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding7ByteEnd {
-        type Owned<'de> = Padding7ByteEnd;
+        type Narrowed<'de> = Padding7ByteEnd;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3763,15 +3928,13 @@ pub mod wire {
         type Natural = crate::natural::Padding7ByteEnd;
     }
 
-    impl ::fidl_next::Unconstrained for Padding7ByteEnd {}
-
     /// The wire type corresponding to [`Padding7ByteMiddle`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Padding7ByteMiddle {
         pub a: u8,
 
-        pub b: ::fidl_next::WireU64,
+        pub b: ::fidl_next::wire::WireU64,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Padding7ByteMiddle>(), 16);
@@ -3781,8 +3944,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Padding7ByteMiddle, b), 8);
 
+    impl ::fidl_next::Constrained for Padding7ByteMiddle {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Padding7ByteMiddle {
-        type Owned<'de> = Padding7ByteMiddle;
+        type Narrowed<'de> = Padding7ByteMiddle;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -3842,8 +4016,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for Padding7ByteMiddle {
         type Natural = crate::natural::Padding7ByteMiddle;
     }
-
-    impl ::fidl_next::Unconstrained for Padding7ByteMiddle {}
 }
 
 pub mod wire_optional {}
@@ -3860,7 +4032,7 @@ pub mod generic {
         for Padding1ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
         T1: ::fidl_next::Encode<u8, ___E>,
     {
         #[inline]
@@ -3898,7 +4070,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         T0: ::fidl_next::Encode<u8, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -3938,7 +4110,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         T0: ::fidl_next::Encode<u8, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
         T2: ::fidl_next::Encode<u8, ___E>,
     {
         #[inline]
@@ -3978,8 +4150,8 @@ pub mod generic {
         for Padding2ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -4015,8 +4187,8 @@ pub mod generic {
         for Padding2ByteMiddle<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -4052,7 +4224,7 @@ pub mod generic {
         for Padding3ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
         T1: ::fidl_next::Encode<u8, ___E>,
     {
         #[inline]
@@ -4090,7 +4262,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         T0: ::fidl_next::Encode<u8, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -4131,10 +4303,10 @@ pub mod generic {
         for Padding4ByteAlignmentLength12<T0, T1, T2, T3>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
         T1: ::fidl_next::Encode<u8, ___E>,
-        T2: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
-        T3: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T2: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
+        T3: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -4176,8 +4348,8 @@ pub mod generic {
         for Padding4ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -4213,8 +4385,8 @@ pub mod generic {
         for Padding4ByteMiddle<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
     {
         #[inline]
         fn encode(
@@ -4252,8 +4424,8 @@ pub mod generic {
         for Padding5ByteEnd<T0, T1, T2>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
         T2: ::fidl_next::Encode<u8, ___E>,
     {
         #[inline]
@@ -4295,9 +4467,9 @@ pub mod generic {
         for Padding5ByteMiddle<T0, T1, T2>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
         T1: ::fidl_next::Encode<u8, ___E>,
-        T2: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
+        T2: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
     {
         #[inline]
         fn encode(
@@ -4336,8 +4508,8 @@ pub mod generic {
         for Padding6ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -4373,8 +4545,8 @@ pub mod generic {
         for Padding6ByteMiddle<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
     {
         #[inline]
         fn encode(
@@ -4410,7 +4582,7 @@ pub mod generic {
         for Padding7ByteEnd<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
         T1: ::fidl_next::Encode<u8, ___E>,
     {
         #[inline]
@@ -4448,7 +4620,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         T0: ::fidl_next::Encode<u8, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU64, ___E>,
     {
         #[inline]
         fn encode(

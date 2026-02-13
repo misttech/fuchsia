@@ -11,10 +11,10 @@ use core::{fmt, slice};
 use munge::munge;
 
 use super::raw::RawWireVector;
+use crate::wire::WirePointer;
 use crate::{
     Chunk, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
     Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
-    WirePointer,
 };
 
 /// A FIDL vector
@@ -24,7 +24,7 @@ pub struct WireVector<'de, T> {
 }
 
 unsafe impl<T: Wire> Wire for WireVector<'static, T> {
-    type Owned<'de> = WireVector<'de, T::Owned<'de>>;
+    type Narrowed<'de> = WireVector<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -43,7 +43,7 @@ impl<T> Drop for WireVector<'_, T> {
     }
 }
 
-impl<T> WireVector<'_, T> {
+impl<'de, T> WireVector<'de, T> {
     /// Encodes that a vector is present in a slot.
     pub fn encode_present(out: &mut MaybeUninit<Self>, len: u64) {
         munge!(let Self { raw } = out);
@@ -78,11 +78,11 @@ impl<T> WireVector<'_, T> {
     /// valid.
     pub unsafe fn decode_raw<D>(
         mut slot: Slot<'_, Self>,
-        mut decoder: &mut D,
+        decoder: &mut D,
         max_len: u64,
     ) -> Result<(), DecodeError>
     where
-        D: Decoder + ?Sized,
+        D: Decoder<'de> + ?Sized,
         T: Decode<D>,
     {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
@@ -98,8 +98,8 @@ impl<T> WireVector<'_, T> {
             }));
         }
 
-        let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
-        WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
+        let slice = decoder.take_slice_slot::<T>(**len as usize)?;
+        WirePointer::set_decoded_slice(ptr, slice);
 
         Ok(())
     }
@@ -192,11 +192,42 @@ impl<T: fmt::Debug> fmt::Debug for WireVector<'_, T> {
     }
 }
 
-unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static, T> {
+impl<T, U: ?Sized> PartialEq<&U> for WireVector<'_, T>
+where
+    for<'de> WireVector<'de, T>: PartialEq<U>,
+{
+    fn eq(&self, other: &&U) -> bool {
+        self == *other
+    }
+}
+
+impl<T: PartialEq<U>, U, const N: usize> PartialEq<[U; N]> for WireVector<'_, T> {
+    fn eq(&self, other: &[U; N]) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T: PartialEq<U>, U> PartialEq<[U]> for WireVector<'_, T> {
+    fn eq(&self, other: &[U]) -> bool {
+        self.as_slice() == other
+    }
+}
+
+impl<T: PartialEq<U>, U> PartialEq<WireVector<'_, U>> for WireVector<'_, T> {
+    fn eq(&self, other: &WireVector<'_, U>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+unsafe impl<'de, D, T> Decode<D> for WireVector<'de, T>
+where
+    D: Decoder<'de> + ?Sized,
+    T: Decode<D>,
+{
     fn decode(
         mut slot: Slot<'_, Self>,
-        mut decoder: &mut D,
-        constraint: <Self as Constrained>::Constraint,
+        decoder: &mut D,
+        constraint: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
 
@@ -217,7 +248,7 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static,
         for i in 0..**len as usize {
             T::decode(slice.index(i), decoder, member_constraint)?;
         }
-        WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
+        WirePointer::set_decoded_slice(ptr, slice);
 
         Ok(())
     }
@@ -227,14 +258,14 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static,
 fn encode_to_vector<V, W, E, T>(
     value: V,
     encoder: &mut E,
-    out: &mut MaybeUninit<WireVector<'_, W>>,
+    out: &mut MaybeUninit<WireVector<'static, W>>,
     constraint: VectorConstraint<W>,
 ) -> Result<(), EncodeError>
 where
     V: AsRef<[T]> + IntoIterator,
     V::IntoIter: ExactSizeIterator,
     V::Item: Encode<W, E>,
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -257,7 +288,7 @@ where
         encoder.write(bytes);
         // TODO: copy-optimized encodings don't currently check constraints
     } else {
-        encoder.encode_next_iter(value.into_iter(), member_constraint)?;
+        encoder.encode_next_iter_with_constraint(value.into_iter(), member_constraint)?;
     }
     WireVector::encode_present(out, len as u64);
     Ok(())
@@ -265,7 +296,7 @@ where
 
 unsafe impl<W, E, T> Encode<WireVector<'static, W>, E> for Vec<T>
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -281,7 +312,7 @@ where
 
 unsafe impl<'a, W, E, T> Encode<WireVector<'static, W>, E> for &'a Vec<T>
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -298,7 +329,7 @@ where
 
 unsafe impl<W, E, T, const N: usize> Encode<WireVector<'static, W>, E> for [T; N]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -314,7 +345,7 @@ where
 
 unsafe impl<'a, W, E, T, const N: usize> Encode<WireVector<'static, W>, E> for &'a [T; N]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -331,7 +362,7 @@ where
 
 unsafe impl<'a, W, E, T> Encode<WireVector<'static, W>, E> for &'a [T]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -386,5 +417,58 @@ impl<T: FromWireRef<W>, W> FromWireRef<WireVector<'_, W>> for Vec<T> {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WireVector;
+
+    use crate::wire::WireU32;
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_vec() {
+        assert_eq!(
+            chunks![
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0x78, 0x56, 0x34, 0x12, 0xf0, 0xde, 0xbc, 0x9a,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireVector<'_, WireU32>>((1000, ()))
+            .unwrap()
+            .as_slice(),
+            &[WireU32(0x12345678), WireU32(0x9abcdef0)],
+        );
+        assert_eq!(
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireVector<'_, WireU32>>((1000, ()))
+            .unwrap()
+            .as_ref(),
+            <[WireU32; _]>::as_slice(&[]),
+        );
+    }
+
+    #[test]
+    fn encode_vec() {
+        assert_eq!(
+            Vec::encode_with_constraint(Some(vec![0x12345678u32, 0x9abcdef0u32]), (1000, ()))
+                .unwrap(),
+            chunks![
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0x78, 0x56, 0x34, 0x12, 0xf0, 0xde, 0xbc, 0x9a,
+            ],
+        );
+        assert_eq!(
+            Vec::encode_with_constraint(Some(Vec::<u32>::new()), (1000, ())).unwrap(),
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ],
+        );
     }
 }

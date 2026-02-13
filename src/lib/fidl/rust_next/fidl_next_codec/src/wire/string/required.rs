@@ -9,9 +9,10 @@ use core::str::{from_utf8, from_utf8_unchecked};
 
 use munge::munge;
 
+use crate::wire::WireVector;
 use crate::{
     Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire, WireVector,
+    IntoNatural, Slot, ValidationError, Wire,
 };
 
 /// A FIDL string
@@ -21,7 +22,7 @@ pub struct WireString<'de> {
 }
 
 unsafe impl Wire for WireString<'static> {
-    type Owned<'de> = WireString<'de>;
+    type Narrowed<'de> = WireString<'de>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -93,7 +94,28 @@ impl fmt::Debug for WireString<'_> {
     }
 }
 
-unsafe impl<D: Decoder + ?Sized> Decode<D> for WireString<'static> {
+impl<U: ?Sized> PartialEq<&U> for WireString<'_>
+where
+    for<'de> WireString<'de>: PartialEq<U>,
+{
+    fn eq(&self, other: &&U) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq for WireString<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<str> for WireString<'_> {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireString<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
@@ -176,5 +198,54 @@ impl FromWireRef<WireString<'_>> for String {
     #[inline]
     fn from_wire_ref(wire: &WireString<'_>) -> Self {
         unsafe { String::from_utf8_unchecked(Vec::from_wire_ref(&wire.vec)) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WireString;
+
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_string() {
+        assert_eq!(
+            chunks![
+                0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireString<'_>>(1000)
+            .unwrap(),
+            "0123",
+        );
+        assert_eq!(
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireString<'_>>(1000)
+            .unwrap(),
+            "",
+        );
+    }
+
+    #[test]
+    fn encode_string() {
+        assert_eq!(
+            Vec::encode_with_constraint(Some("0123".to_string()), 1000).unwrap(),
+            chunks![
+                0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00,
+            ],
+        );
+        assert_eq!(
+            Vec::encode_with_constraint(Some(String::new()), 1000).unwrap(),
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ],
+        );
     }
 }

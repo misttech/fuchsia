@@ -2,47 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use core::mem::MaybeUninit;
+use fidl_next_codec::wire::WireString;
 use fidl_next_codec::{
-    Chunk, Constrained, Decode, Decoded, Decoder, DecoderExt as _, Encode, EncodeError, Encoder,
-    EncoderExt as _, Unconstrained, Wire, WireString, munge,
+    AsDecoderExt as _, Constrained, Decode, Decoder, Encode, EncodeError, Encoder, Slot,
+    ValidationError, Wire, munge,
 };
 use fuchsia_async::Task;
 
 use crate::{
-    Client, ClientDispatcher, ClientHandler, Flexibility, NonBlockingTransport, ProtocolError,
-    Responder, ServerDispatcher, ServerHandler, Transport,
+    Body, Client, ClientDispatcher, ClientHandler, Flexibility, NonBlockingTransport,
+    ProtocolError, Responder, ServerDispatcher, ServerHandler, Transport,
 };
 
-pub fn assert_encoded<W>(value: impl Encode<W, Vec<Chunk>>, chunks: &[Chunk])
-where
-    W: Constrained<Constraint = ()> + Wire,
-{
-    let mut encoded_chunks = Vec::new();
-    encoded_chunks.encode_next(value, ()).unwrap();
-    assert_eq!(encoded_chunks, chunks, "encoded chunks did not match");
-}
-
-pub fn assert_decoded<T: for<'a> Decode<&'a mut [Chunk]> + Constrained<Constraint = ()>>(
-    mut chunks: &mut [Chunk],
-    f: impl FnOnce(Decoded<T, &mut [Chunk]>),
-) {
-    let value = (&mut chunks).decode::<T>().expect("failed to decode");
-    f(value)
-}
-
 #[repr(transparent)]
-struct WireTestMessage<'a>(WireString<'a>);
+struct WireTestMessage<'de>(WireString<'de>);
 
-impl<'a> WireTestMessage<'a> {
-    fn as_str(&'a self) -> &'a str {
+impl<'de> WireTestMessage<'de> {
+    fn as_str(&'de self) -> &'de str {
         self.0.as_str()
     }
 }
 
-impl Unconstrained for WireTestMessage<'_> {}
+impl Constrained for WireTestMessage<'_> {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
 
 unsafe impl Wire for WireTestMessage<'static> {
-    type Owned<'de> = WireTestMessage<'de>;
+    type Narrowed<'de> = WireTestMessage<'de>;
 
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self (s) = out);
@@ -50,9 +40,9 @@ unsafe impl Wire for WireTestMessage<'static> {
     }
 }
 
-unsafe impl<D: Decoder> Decode<D> for WireTestMessage<'static> {
+unsafe impl<'de, D: Decoder<'de>> Decode<D> for WireTestMessage<'de> {
     fn decode(
-        slot: fidl_next_codec::Slot<'_, Self>,
+        slot: Slot<'_, Self>,
         decoder: &mut D,
         _: (),
     ) -> Result<(), fidl_next_codec::DecodeError> {
@@ -87,7 +77,7 @@ impl<T: Transport> ClientHandler<T> for IgnoreEvents {
         &mut self,
         _: u64,
         _: Flexibility,
-        _: T::RecvBuffer,
+        _: Body<T>,
     ) -> Result<(), ProtocolError<T::Error>> {
         Ok(())
     }
@@ -99,12 +89,12 @@ where
 {
     struct TestServer;
 
-    impl<T: Transport + 'static> ServerHandler<T> for TestServer {
+    impl<T: Transport> ServerHandler<T> for TestServer {
         async fn on_one_way(
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
@@ -113,10 +103,11 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'static>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
             assert_eq!(message.as_str(), "Ping");
 
@@ -143,7 +134,7 @@ where
         .expect("client failed to send request")
         .await
         .expect("client failed to receive response")
-        .decode::<WireTestMessage<'_>>()
+        .into_decoded::<WireTestMessage<'_>>()
         .expect("failed to decode response");
     assert_eq!(message.as_str(), "Pong");
 
@@ -165,10 +156,11 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(message.as_str(), "Hello world");
 
             Ok(())
@@ -178,7 +170,7 @@ where
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected two-way message");
@@ -209,12 +201,12 @@ where
 {
     struct TestServer;
 
-    impl<T: Transport + 'static> ServerHandler<T> for TestServer {
+    impl<T: Transport> ServerHandler<T> for TestServer {
         async fn on_one_way(
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
@@ -223,11 +215,12 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(message.as_str(), "Ping");
 
             responder
@@ -253,7 +246,7 @@ where
         .expect("client failed to send request")
         .await
         .expect("client failed to receive response")
-        .decode::<WireTestMessage<'_>>()
+        .into_decoded::<WireTestMessage<'_>>()
         .expect("failed to decode response");
     assert_eq!(message.as_str(), "Pong");
 
@@ -269,12 +262,12 @@ where
 {
     struct TestServer;
 
-    impl<T: Transport + 'static> ServerHandler<T> for TestServer {
+    impl<T: Transport> ServerHandler<T> for TestServer {
         async fn on_one_way(
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
@@ -283,10 +276,11 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'_>>().expect("failed to decode request");
 
             let response = match ordinal {
                 1 => "One",
@@ -333,19 +327,19 @@ where
 
     let message_one = response_one
         .expect("client failed to receive response")
-        .decode::<WireTestMessage<'_>>()
+        .into_decoded::<WireTestMessage<'_>>()
         .expect("failed to decode response");
     assert_eq!(message_one.as_str(), "One");
 
     let message_two = response_two
         .expect("client failed to receive response")
-        .decode::<WireTestMessage<'_>>()
+        .into_decoded::<WireTestMessage<'_>>()
         .expect("failed to decode response");
     assert_eq!(message_two.as_str(), "Two");
 
     let message_three = response_three
         .expect("client failed to receive response")
-        .decode::<WireTestMessage<'_>>()
+        .into_decoded::<WireTestMessage<'_>>()
         .expect("failed to decode response");
     assert_eq!(message_three.as_str(), "Three");
 
@@ -368,10 +362,11 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 10);
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(message.as_str(), "Surprise!");
 
             self.client.close();
@@ -387,7 +382,7 @@ where
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             Ok(())
         }
@@ -396,7 +391,7 @@ where
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             Ok(())
@@ -432,10 +427,11 @@ where
             &mut self,
             ordinal: u64,
             _: Flexibility,
-            buffer: T::RecvBuffer,
+            body: Body<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
-            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            let message =
+                body.into_decoded::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(message.as_str(), "Hello world");
 
             Ok(())
@@ -445,7 +441,7 @@ where
             &mut self,
             _: u64,
             _: Flexibility,
-            _: T::RecvBuffer,
+            _: Body<T>,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected two-way message");

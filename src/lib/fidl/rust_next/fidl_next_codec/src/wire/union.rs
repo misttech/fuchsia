@@ -8,9 +8,10 @@ use munge::munge;
 
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;
+use crate::wire::{WireEnvelope, WireU64};
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, Slot, Unconstrained,
-    Wire, WireEnvelope, WireU64,
+    Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, Slot, ValidationError,
+    Wire,
 };
 
 /// A raw FIDL union
@@ -20,16 +21,22 @@ pub struct RawWireUnion {
     envelope: WireEnvelope,
 }
 
+impl Constrained for RawWireUnion {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for RawWireUnion {
-    type Owned<'de> = RawWireUnion;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
         // Wire unions have no padding
     }
 }
-
-impl Unconstrained for RawWireUnion {}
 
 impl RawWireUnion {
     /// Encodes that a union is absent in a slot.
@@ -43,7 +50,7 @@ impl RawWireUnion {
 
     /// Encodes a `'static` value and ordinal in a slot.
     #[inline]
-    pub fn encode_as_static<E: InternalHandleEncoder + ?Sized, W: Constrained + Wire>(
+    pub fn encode_as_static<E: InternalHandleEncoder + ?Sized, W: Wire>(
         value: impl Encode<W, E>,
         ord: u64,
         encoder: &mut E,
@@ -58,7 +65,7 @@ impl RawWireUnion {
 
     /// Encodes a value and ordinal in a slot.
     #[inline]
-    pub fn encode_as<E: Encoder + ?Sized, W: Constrained + Wire>(
+    pub fn encode_as<E: Encoder + ?Sized, W: Wire>(
         value: impl Encode<W, E>,
         ord: u64,
         encoder: &mut E,
@@ -104,7 +111,7 @@ impl RawWireUnion {
     ///
     /// The handles owned by the unknown value are discarded.
     #[inline]
-    pub fn decode_unknown<D: Decoder + ?Sized>(
+    pub fn decode_unknown<'de, D: Decoder<'de> + ?Sized>(
         slot: Slot<'_, Self>,
         decoder: &mut D,
     ) -> Result<(), DecodeError> {
@@ -117,7 +124,7 @@ impl RawWireUnion {
     pub fn decode_as_static<D: InternalHandleDecoder + ?Sized, T: Decode<D>>(
         slot: Slot<'_, Self>,
         decoder: &mut D,
-        constraint: <T as Constrained>::Constraint,
+        constraint: T::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { ordinal: _, envelope } = slot);
         WireEnvelope::decode_as_static::<D, T>(envelope, decoder, constraint)
@@ -125,10 +132,10 @@ impl RawWireUnion {
 
     /// Decodes the typed value in a union.
     #[inline]
-    pub fn decode_as<D: Decoder + ?Sized, T: Decode<D>>(
+    pub fn decode_as<'de, D: Decoder<'de> + ?Sized, T: Decode<D>>(
         slot: Slot<'_, Self>,
         decoder: &mut D,
-        constraint: <T as Constrained>::Constraint,
+        constraint: T::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { ordinal: _, envelope } = slot);
         WireEnvelope::decode_as::<D, T>(envelope, decoder, constraint)

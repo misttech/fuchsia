@@ -70,8 +70,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::ByteAndBytes>, ___E>
-        for ByteAndBytes
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::ByteAndBytes>,
+            ___E,
+        > for ByteAndBytes
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         ByteAndBytes: ::fidl_next::Encode<crate::wire::ByteAndBytes, ___E>,
@@ -81,15 +83,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ByteAndBytes>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ByteAndBytes>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -97,8 +99,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::ByteAndBytes>, ___E>
-        for &'a ByteAndBytes
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::ByteAndBytes>,
+            ___E,
+        > for &'a ByteAndBytes
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a ByteAndBytes: ::fidl_next::Encode<crate::wire::ByteAndBytes, ___E>,
@@ -108,15 +112,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ByteAndBytes>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ByteAndBytes>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -158,8 +162,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(ByteAndBytes, single_byte), 0);
 
+    impl ::fidl_next::Constrained for ByteAndBytes {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ByteAndBytes {
-        type Owned<'de> = ByteAndBytes;
+        type Narrowed<'de> = ByteAndBytes;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -203,8 +218,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ByteAndBytes {
         type Natural = crate::natural::ByteAndBytes;
     }
-
-    impl ::fidl_next::Unconstrained for ByteAndBytes {}
 }
 
 pub mod wire_optional {}

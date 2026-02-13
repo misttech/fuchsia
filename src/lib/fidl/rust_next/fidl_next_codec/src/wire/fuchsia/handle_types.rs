@@ -4,10 +4,11 @@
 
 use core::mem::MaybeUninit;
 
-use crate::fuchsia::{HandleDecoder, HandleEncoder, WireHandle, WireOptionalHandle};
+use crate::fuchsia::{HandleDecoder, HandleEncoder};
+use crate::wire::fuchsia::{WireHandle, WireOptionalHandle};
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, Unconstrained, Wire, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge,
 };
 
 use zx::NullableHandle;
@@ -25,8 +26,17 @@ macro_rules! define_wire_handle_types {
             handle: WireHandle,
         }
 
+        // TODO: validate handle rights.
+        impl Constrained for $wire {
+            type Constraint = ();
+
+            fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+                Ok(())
+            }
+        }
+
         unsafe impl Wire for $wire {
-            type Owned<'de> = Self;
+            type Narrowed<'de> = Self;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -58,7 +68,7 @@ macro_rules! define_wire_handle_types {
             fn decode(
                 mut slot: Slot<'_, Self>,
                 decoder: &mut D,
-                constraint: <Self as Constrained>::Constraint,
+                constraint: Self::Constraint,
             ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
                 WireHandle::decode(handle, decoder, constraint)
@@ -72,8 +82,17 @@ macro_rules! define_wire_handle_types {
             handle: WireOptionalHandle,
         }
 
+        // TODO: validate handle rights.
+        impl Constrained for $wire_optional {
+            type Constraint = ();
+
+            fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+                Ok(())
+            }
+        }
+
         unsafe impl Wire for $wire_optional {
-            type Owned<'de> = Self;
+            type Narrowed<'de> = Self;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -115,7 +134,7 @@ macro_rules! define_wire_handle_types {
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire_optional {
             fn decode(
                 mut slot: Slot<'_, Self>,
-                decoder: &mut D, constraint: <Self as Constrained>::Constraint,
+                decoder: &mut D, constraint: Self::Constraint,
             ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
                 WireOptionalHandle::decode(handle, decoder, constraint)
@@ -175,10 +194,6 @@ macro_rules! define_wire_handle_types {
         impl IntoNatural for $wire_optional {
             type Natural = Option<zx::$natural>;
         }
-
-        // TODO: validate handle rights.
-        impl Unconstrained for $wire {}
-        impl Unconstrained for $wire_optional {}
     )* };
 }
 

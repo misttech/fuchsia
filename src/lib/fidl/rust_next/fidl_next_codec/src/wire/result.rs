@@ -6,9 +6,10 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
+use crate::wire::RawWireUnion;
 use crate::{
     Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
-    FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
+    FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge,
 };
 
 /// A FIDL result union.
@@ -32,19 +33,30 @@ impl<T, E> Drop for WireResult<'_, T, E> {
     }
 }
 
-unsafe impl<T: Wire, E: Wire> Wire for WireResult<'static, T, E> {
-    type Owned<'de> = WireResult<'de, T::Owned<'de>, E::Owned<'de>>;
+impl<T, E> Constrained for WireResult<'_, T, E>
+where
+    T: Constrained<Constraint = ()>,
+    E: Constrained<Constraint = ()>,
+{
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
+unsafe impl<T, E> Wire for WireResult<'static, T, E>
+where
+    T: Wire<Constraint = ()>,
+    E: Wire<Constraint = ()>,
+{
+    type Narrowed<'de> = WireResult<'de, T::Narrowed<'de>, E::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { raw, _phantom: _ } = out);
         RawWireUnion::zero_padding(raw);
     }
-}
-
-impl<T: Constrained<Constraint = ()>, E: Constrained<Constraint = ()>> Unconstrained
-    for WireResult<'_, T, E>
-{
 }
 
 const ORD_OK: u64 = 1;
@@ -128,11 +140,11 @@ where
     }
 }
 
-unsafe impl<D, T, E> Decode<D> for WireResult<'static, T, E>
+unsafe impl<'de, D, T, E> Decode<D> for WireResult<'de, T, E>
 where
-    D: Decoder + ?Sized,
-    T: Decode<D> + Constrained<Constraint = ()>,
-    E: Decode<D> + Constrained<Constraint = ()>,
+    D: Decoder<'de> + ?Sized,
+    T: Decode<D, Constraint = ()>,
+    E: Decode<D, Constraint = ()>,
 {
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { mut raw, _phantom: _ } = slot);
@@ -150,15 +162,15 @@ where
 unsafe impl<Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for Result<T, E>
 where
     Enc: Encoder + ?Sized,
-    WT: Constrained<Constraint = ()> + Wire,
+    WT: Wire<Constraint = ()>,
     T: Encode<WT, Enc>,
-    WE: Constrained<Constraint = ()> + Wire,
+    WE: Wire<Constraint = ()>,
     E: Encode<WE, Enc>,
 {
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<WireResult<'static, WT, WE>>,
+        out: &mut MaybeUninit<WireResult<'_, WT, WE>>,
         _: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireResult { raw, _phantom: _ } = out);
@@ -175,9 +187,9 @@ where
 unsafe impl<'a, Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for &'a Result<T, E>
 where
     Enc: Encoder + ?Sized,
-    WT: Constrained<Constraint = ()> + Wire,
+    WT: Wire<Constraint = ()>,
     &'a T: Encode<WT, Enc>,
-    WE: Constrained<Constraint = ()> + Wire,
+    WE: Wire<Constraint = ()>,
     &'a E: Encode<WE, Enc>,
 {
     fn encode(

@@ -5,31 +5,24 @@
 //! Safe bindings for using FIDL with the libasync C API
 #![deny(unsafe_op_in_unsafe_fn, missing_docs)]
 
-use std::mem::replace;
 use std::pin::Pin;
-use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
-use fidl_next::decoder::InternalHandleDecoder;
-use fidl_next::encoder::InternalHandleEncoder;
-use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
 use fidl_next::protocol::NonBlockingTransport;
-use fidl_next::{
-    CHUNK_SIZE, Chunk, ClientEnd, DecodeError, Decoder, EncodeError, Encoder, Executor,
-    HasExecutor, ServerEnd, Transport,
-};
+use fidl_next::protocol::fuchsia::channel::Buffer;
+use fidl_next::{CHUNK_SIZE, ClientEnd, Executor, HasExecutor, ServerEnd, Transport};
 use futures::task::AtomicWaker;
 use libasync::callback_state::CallbackSharedState;
 use libasync::{JoinHandle, OnDispatcher};
 use libasync_sys::{async_begin_wait, async_dispatcher, async_wait};
 use zx::sys::{
     ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_CANCELED,
-    ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read, zx_channel_write, zx_handle_t,
+    ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read, zx_channel_write,
     zx_packet_signal_t, zx_status_t,
 };
-use zx::{Channel, NullableHandle, Status};
+use zx::{Channel, Status};
 
 /// A fidl-compatible channel that uses a [`libasync`] dispatcher.
 #[derive(Debug, PartialEq)]
@@ -92,7 +85,7 @@ impl<D: OnDispatcher> Transport for AsyncChannel<D> {
     type SendBuffer = Buffer;
     type SendFutureState = SendFutureState;
     type RecvFutureState = RecvFutureState;
-    type RecvBuffer = RecvBuffer;
+    type RecvBuffer = Buffer;
 
     fn split(self) -> (Self::Shared, Self::Exclusive) {
         let channel = self.channel;
@@ -175,11 +168,7 @@ impl<D: OnDispatcher> Transport for AsyncChannel<D> {
                         buffer.chunks.set_len(actual_bytes as usize / CHUNK_SIZE);
                         buffer.handles.set_len(actual_handles as usize);
                     }
-                    return Poll::Ready(Ok(RecvBuffer {
-                        buffer: future_state.buffer.take().unwrap(),
-                        chunks_taken: 0,
-                        handles_taken: 0,
-                    }));
+                    return Poll::Ready(Ok(future_state.buffer.take().unwrap()));
                 }
                 ZX_ERR_PEER_CLOSED => return Poll::Ready(Err(None)),
                 ZX_ERR_BUFFER_TOO_SMALL => {
@@ -345,173 +334,6 @@ impl Drop for RecvFutureState {
 /// The state for a channel send future.
 pub struct SendFutureState {
     buffer: Buffer,
-}
-
-/// A channel buffer.
-#[derive(Default)]
-pub struct Buffer {
-    handles: Vec<NullableHandle>,
-    chunks: Vec<Chunk>,
-}
-
-impl Buffer {
-    /// New buffer.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Retrieve the handles.
-    pub fn handles(&self) -> &[NullableHandle] {
-        &self.handles
-    }
-
-    /// Retrieve the bytes.
-    pub fn bytes(&self) -> Vec<u8> {
-        self.chunks.iter().flat_map(|chunk| chunk.to_le_bytes()).collect()
-    }
-
-    /// Make a buffer out of handles and chunks.
-    pub fn from_raw(handles: Vec<NullableHandle>, chunks: Vec<Chunk>) -> Self {
-        Self { handles, chunks }
-    }
-
-    /// Make a buffer out of handles and bytes. The bytes will be copied.
-    pub fn from_raw_bytes(handles: Vec<NullableHandle>, bytes: impl AsRef<[u8]>) -> Self {
-        let bytes = bytes.as_ref();
-        assert!(bytes.len() % CHUNK_SIZE == 0);
-        let chunks = bytes
-            .chunks_exact(CHUNK_SIZE)
-            .map(|c| fidl_next::WireU64(u64::from_le_bytes(c.try_into().unwrap())))
-            .collect();
-        Self::from_raw(handles, chunks)
-    }
-}
-
-impl InternalHandleEncoder for Buffer {
-    #[inline]
-    fn __internal_handle_count(&self) -> usize {
-        self.handles.len()
-    }
-}
-
-impl Encoder for Buffer {
-    #[inline]
-    fn bytes_written(&self) -> usize {
-        Encoder::bytes_written(&self.chunks)
-    }
-
-    #[inline]
-    fn write_zeroes(&mut self, len: usize) {
-        Encoder::write_zeroes(&mut self.chunks, len)
-    }
-
-    #[inline]
-    fn write(&mut self, bytes: &[u8]) {
-        Encoder::write(&mut self.chunks, bytes)
-    }
-
-    #[inline]
-    fn rewrite(&mut self, pos: usize, bytes: &[u8]) {
-        Encoder::rewrite(&mut self.chunks, pos, bytes)
-    }
-}
-
-impl HandleEncoder for Buffer {
-    fn push_handle(&mut self, handle: NullableHandle) -> Result<(), EncodeError> {
-        self.handles.push(handle);
-        Ok(())
-    }
-
-    fn handles_pushed(&self) -> usize {
-        self.handles.len()
-    }
-}
-
-/// A channel receive buffer.
-pub struct RecvBuffer {
-    buffer: Buffer,
-    chunks_taken: usize,
-    handles_taken: usize,
-}
-
-impl RecvBuffer {
-    /// Create a new receive buffer from a buffer.
-    pub fn new(buffer: Buffer) -> Self {
-        Self { buffer, chunks_taken: 0, handles_taken: 0 }
-    }
-}
-
-unsafe impl Decoder for RecvBuffer {
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError> {
-        if count > self.buffer.chunks.len() - self.chunks_taken {
-            return Err(DecodeError::InsufficientData);
-        }
-
-        let chunks = unsafe { self.buffer.chunks.as_mut_ptr().add(self.chunks_taken) };
-        self.chunks_taken += count;
-
-        unsafe { Ok(NonNull::new_unchecked(chunks)) }
-    }
-
-    fn commit(&mut self) {
-        for handle in &mut self.buffer.handles[0..self.handles_taken] {
-            // This handle was taken. To commit the current changes, we need to forget it.
-            let _ = replace(handle, NullableHandle::invalid()).into_raw();
-        }
-    }
-
-    fn finish(&self) -> Result<(), DecodeError> {
-        if self.chunks_taken != self.buffer.chunks.len() {
-            return Err(DecodeError::ExtraBytes {
-                num_extra: (self.buffer.chunks.len() - self.chunks_taken) * CHUNK_SIZE,
-            });
-        }
-
-        if self.handles_taken != self.buffer.handles.len() {
-            return Err(DecodeError::ExtraHandles {
-                num_extra: self.buffer.handles.len() - self.handles_taken,
-            });
-        }
-
-        Ok(())
-    }
-}
-
-impl InternalHandleDecoder for RecvBuffer {
-    fn __internal_take_handles(&mut self, count: usize) -> Result<(), DecodeError> {
-        if count > self.buffer.handles.len() - self.handles_taken {
-            return Err(DecodeError::InsufficientHandles);
-        }
-
-        for i in self.handles_taken..self.handles_taken + count {
-            let handle = replace(&mut self.buffer.handles[i], NullableHandle::invalid());
-            drop(handle);
-        }
-        self.handles_taken += count;
-
-        Ok(())
-    }
-
-    fn __internal_handles_remaining(&self) -> usize {
-        self.buffer.handles.len() - self.handles_taken
-    }
-}
-
-impl HandleDecoder for RecvBuffer {
-    fn take_raw_handle(&mut self) -> Result<zx_handle_t, DecodeError> {
-        if self.handles_taken >= self.buffer.handles.len() {
-            return Err(DecodeError::InsufficientHandles);
-        }
-
-        let handle = self.buffer.handles[self.handles_taken].raw_handle();
-        self.handles_taken += 1;
-
-        Ok(handle)
-    }
-
-    fn handles_remaining(&mut self) -> usize {
-        self.buffer.handles.len() - self.handles_taken
-    }
 }
 
 #[cfg(test)]

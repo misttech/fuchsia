@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_next_codec::{Decoded, FromWire, IntoNatural, Wire};
-use fidl_next_protocol::Transport;
+use fidl_next_protocol::{Body, Transport};
 
 use crate::HasTransport;
 
@@ -11,26 +11,26 @@ use super::Method;
 
 /// A received FIDL message that will be handled by a client or server handler.
 pub struct Request<M: Method, T: Transport = <<M as Method>::Protocol as HasTransport>::Transport> {
-    decoded: Decoded<M::Request, T::RecvBuffer>,
+    decoded: Decoded<M::Request, Body<T>>,
 }
 
 impl<M: Method, T: Transport> Request<M, T> {
     /// Creates a new `Request` from a decoded buffer.
-    pub fn from_decoded(decoded: Decoded<M::Request, T::RecvBuffer>) -> Self {
+    pub fn from_decoded(decoded: Decoded<M::Request, Body<T>>) -> Self {
         Self { decoded }
     }
 
     /// Returns the payload of the request.
     pub fn payload(self) -> <M::Request as IntoNatural>::Natural
     where
-        M::Request: Wire + IntoNatural,
-        <M::Request as IntoNatural>::Natural: for<'de> FromWire<<M::Request as Wire>::Owned<'de>>,
+        M::Request:
+            Wire + for<'de> IntoNatural<Natural: FromWire<<M::Request as Wire>::Narrowed<'de>>>,
     {
         self.decoded.take()
     }
 
     /// Returns the payload of the request as a wire type.
-    pub fn wire_payload(self) -> Decoded<M::Request, T::RecvBuffer> {
+    pub fn wire_payload(self) -> Decoded<M::Request, Body<T>> {
         self.decoded
     }
 }

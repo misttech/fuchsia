@@ -5,14 +5,11 @@
 //! A basic [`Transport`] implementation based on MPSC channels.
 
 use core::fmt;
-use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, take};
 use core::pin::Pin;
-use core::ptr::NonNull;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::decoder::InternalHandleDecoder;
-use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder};
+use fidl_next_codec::Chunk;
 
 use crate::concurrency::future::AtomicWaker;
 use crate::concurrency::sync::atomic::{AtomicBool, Ordering};
@@ -93,54 +90,6 @@ pub struct Exclusive {
     receiver: mpsc::Receiver<Vec<Chunk>>,
 }
 
-/// The receive future for a paired mpsc transport.
-pub struct RecvFutureState {
-    _phantom: PhantomData<()>,
-}
-
-/// A received message buffer.
-pub struct RecvBuffer {
-    chunks: Vec<Chunk>,
-    chunks_taken: usize,
-}
-
-impl InternalHandleDecoder for RecvBuffer {
-    fn __internal_take_handles(&mut self, _: usize) -> Result<(), DecodeError> {
-        Err(DecodeError::InsufficientHandles)
-    }
-
-    fn __internal_handles_remaining(&self) -> usize {
-        0
-    }
-}
-
-unsafe impl Decoder for RecvBuffer {
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError> {
-        if count > self.chunks.len() - self.chunks_taken {
-            return Err(DecodeError::InsufficientData);
-        }
-
-        let chunks = unsafe { self.chunks.as_mut_ptr().add(self.chunks_taken) };
-        self.chunks_taken += count;
-
-        unsafe { Ok(NonNull::new_unchecked(chunks)) }
-    }
-
-    fn commit(&mut self) {
-        // No resources to take, so commit is a no-op
-    }
-
-    fn finish(&self) -> Result<(), DecodeError> {
-        if self.chunks_taken != self.chunks.len() {
-            return Err(DecodeError::ExtraBytes {
-                num_extra: (self.chunks.len() - self.chunks_taken) * CHUNK_SIZE,
-            });
-        }
-
-        Ok(())
-    }
-}
-
 impl Transport for Mpsc {
     type Error = Error;
 
@@ -169,12 +118,10 @@ impl Transport for Mpsc {
     }
 
     type Exclusive = Exclusive;
-    type RecvFutureState = RecvFutureState;
-    type RecvBuffer = RecvBuffer;
+    type RecvFutureState = ();
+    type RecvBuffer = Vec<Chunk>;
 
-    fn begin_recv(_: &Self::Shared, _: &mut Self::Exclusive) -> Self::RecvFutureState {
-        RecvFutureState { _phantom: PhantomData }
-    }
+    fn begin_recv(_: &Self::Shared, _: &mut Self::Exclusive) -> Self::RecvFutureState {}
 
     fn poll_recv(
         _: Pin<&mut Self::RecvFutureState>,
@@ -188,7 +135,7 @@ impl Transport for Mpsc {
         }
 
         match exclusive.receiver.try_recv() {
-            Ok(chunks) => Poll::Ready(Ok(RecvBuffer { chunks, chunks_taken: 0 })),
+            Ok(chunks) => Poll::Ready(Ok(chunks)),
             Err(mpsc::TryRecvError::Empty) => Poll::Pending,
             Err(mpsc::TryRecvError::Disconnected) => Poll::Ready(Err(None)),
         }

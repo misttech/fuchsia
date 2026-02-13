@@ -6,10 +6,8 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::{
-    DecodeError, Decoder, DecoderExt as _, Slot, Unconstrained, Wire, WireEnvelope, WirePointer,
-    WireU64,
-};
+use crate::wire::{WireEnvelope, WirePointer, WireU64};
+use crate::{Constrained, DecodeError, Decoder, DecoderExt as _, Slot, ValidationError, Wire};
 
 /// A FIDL table
 #[repr(C)]
@@ -18,8 +16,16 @@ pub struct WireTable<'de> {
     ptr: WirePointer<'de, WireEnvelope>,
 }
 
+impl Constrained for WireTable<'_> {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireTable<'static> {
-    type Owned<'de> = WireTable<'de>;
+    type Narrowed<'de> = WireTable<'de>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -27,9 +33,7 @@ unsafe impl Wire for WireTable<'static> {
     }
 }
 
-impl Unconstrained for WireTable<'_> {}
-
-impl WireTable<'static> {
+impl<'de> WireTable<'de> {
     /// Encodes that a table contains `len` values in a slot.
     #[inline]
     pub fn encode_len(out: &mut MaybeUninit<Self>, len: usize) {
@@ -42,16 +46,15 @@ impl WireTable<'static> {
     ///
     /// The decoding function receives the ordinal of the field, its slot, and the decoder.
     #[inline]
-    pub fn decode_with<D: Decoder + ?Sized>(
+    pub fn decode_with<D: Decoder<'de> + ?Sized>(
         slot: Slot<'_, Self>,
-        mut decoder: &mut D,
+        decoder: &mut D,
         f: impl Fn(i64, Slot<'_, WireEnvelope>, &mut D) -> Result<(), DecodeError>,
     ) -> Result<(), DecodeError> {
         munge!(let Self { len, mut ptr } = slot);
 
         if WirePointer::is_encoded_present(ptr.as_mut())? {
             let mut envelopes = decoder.take_slice_slot::<WireEnvelope>(**len as usize)?;
-            let envelopes_ptr = envelopes.as_mut_ptr().cast::<WireEnvelope>();
 
             for i in 0..**len as usize {
                 let mut envelope = envelopes.index(i);
@@ -60,7 +63,7 @@ impl WireTable<'static> {
                 }
             }
 
-            WirePointer::set_decoded(ptr, envelopes_ptr);
+            WirePointer::set_decoded_slice(ptr, envelopes);
         } else if **len != 0 {
             return Err(DecodeError::InvalidOptionalSize(**len));
         }

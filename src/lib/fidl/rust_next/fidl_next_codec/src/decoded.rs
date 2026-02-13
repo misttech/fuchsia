@@ -7,7 +7,90 @@ use core::mem::{ManuallyDrop, forget};
 use core::ops::Deref;
 use core::ptr::NonNull;
 
-use crate::{FromWire, IntoNatural, Wire};
+use crate::{Chunk, Decode, DecodeError, Decoder, DecoderExt as _, FromWire, IntoNatural, Wire};
+
+/// A type that can be borrowed as a decoder.
+///
+/// # Safety
+///
+/// Moving a value of this type must not invalidate any references to chunks
+/// returned from `take_chunks`. This usually means that the chunks returned
+/// from `take_chunks` point to non-local memory (e.g. on the heap, elsewhere on
+/// the stack).
+pub unsafe trait AsDecoder<'de> {
+    /// The borrowed decoder type.
+    type Decoder: Decoder<'de>;
+
+    /// Borrowes this value as a decoder.
+    fn as_decoder(&'de mut self) -> Self::Decoder;
+}
+
+unsafe impl<'de> AsDecoder<'de> for Vec<Chunk> {
+    type Decoder = &'de mut [Chunk];
+
+    fn as_decoder(&'de mut self) -> Self::Decoder {
+        self.as_mut_slice()
+    }
+}
+
+/// Extension methods for `AsDecoder`.
+pub trait AsDecoderExt: for<'de> AsDecoder<'de> {
+    /// Decodes a value from the decoder and finishes it.
+    ///
+    /// On success, returns `Ok` of a `Decoded` value with the decoder. Returns `Err` if decoding
+    /// failed or the decoder finished with an error.
+    fn into_decoded<T>(self) -> Result<Decoded<T, Self>, DecodeError>
+    where
+        Self: for<'de> AsDecoder<'de> + Sized,
+        T: Wire<Constraint = ()>,
+        for<'de> T::Narrowed<'de>: Decode<<Self as AsDecoder<'de>>::Decoder, Constraint = ()>;
+
+    /// Decodes a value from the decoder and finishes it.
+    ///
+    /// On success, returns `Ok` of a `Decoded` value with the decoder. Returns `Err` if decoding
+    /// failed or the decoder finished with an error.
+    fn into_decoded_with_constraint<T>(
+        self,
+        constraint: T::Constraint,
+    ) -> Result<Decoded<T, Self>, DecodeError>
+    where
+        Self: for<'de> AsDecoder<'de> + Sized,
+        T: Wire,
+        for<'de> T::Narrowed<'de>:
+            Decode<<Self as AsDecoder<'de>>::Decoder, Constraint = T::Constraint>;
+}
+
+impl<D: for<'de> AsDecoder<'de>> AsDecoderExt for D {
+    fn into_decoded<T>(self) -> Result<Decoded<T, Self>, DecodeError>
+    where
+        Self: for<'de> AsDecoder<'de> + Sized,
+        T: Wire<Constraint = ()>,
+        for<'de> T::Narrowed<'de>: Decode<<Self as AsDecoder<'de>>::Decoder, Constraint = ()>,
+    {
+        Self::into_decoded_with_constraint::<T>(self, ())
+    }
+
+    fn into_decoded_with_constraint<T>(
+        mut self,
+        constraint: T::Constraint,
+    ) -> Result<Decoded<T, Self>, DecodeError>
+    where
+        Self: for<'de> AsDecoder<'de> + Sized,
+        T: Wire,
+        for<'de> T::Narrowed<'de>:
+            Decode<<Self as AsDecoder<'de>>::Decoder, Constraint = T::Constraint>,
+    {
+        let mut decoder = self.as_decoder();
+        let mut slot = decoder.take_slot::<T::Narrowed<'_>>()?;
+        T::Narrowed::decode(slot.as_mut(), &mut decoder, constraint)?;
+        decoder.commit();
+        decoder.finish()?;
+
+        let ptr = unsafe { NonNull::new_unchecked(slot.as_mut_ptr().cast()) };
+        drop(decoder);
+        Ok(Decoded { ptr, decoder: ManuallyDrop::new(self) })
+    }
+}
 
 /// A decoded value and the decoder which contains it.
 pub struct Decoded<T: ?Sized, D> {
@@ -37,20 +120,6 @@ impl<T: ?Sized, D> Drop for Decoded<T, D> {
 }
 
 impl<T: ?Sized, D> Decoded<T, D> {
-    /// Creates an owned value contained within a decoder.
-    ///
-    /// `Decoded` drops `ptr`, but does not free the backing memory. `decoder` should free the
-    /// memory backing `ptr` when dropped.
-    ///
-    /// # Safety
-    ///
-    /// - `ptr` must be non-null, properly-aligned, and valid for reads and writes.
-    /// - `ptr` must be valid for dropping.
-    /// - `ptr` must remain valid until `decoder` is dropped.
-    pub unsafe fn new_unchecked(ptr: *mut T, decoder: D) -> Self {
-        Self { ptr: unsafe { NonNull::new_unchecked(ptr) }, decoder: ManuallyDrop::new(decoder) }
-    }
-
     /// Returns the raw pointer and decoder used to create this `Decoded`.
     pub fn into_raw_parts(mut self) -> (*mut T, D) {
         let ptr = self.ptr.as_ptr();
@@ -68,7 +137,7 @@ impl<T: ?Sized, D> Decoded<T, D> {
     pub fn take(self) -> T::Natural
     where
         T: Wire + IntoNatural,
-        T::Natural: for<'de> FromWire<T::Owned<'de>>,
+        T::Natural: for<'de> FromWire<T::Narrowed<'de>>,
     {
         self.take_as::<T::Natural>()
     }
@@ -79,7 +148,7 @@ impl<T: ?Sized, D> Decoded<T, D> {
     pub fn take_as<U>(self) -> U
     where
         T: Wire,
-        U: for<'de> FromWire<T::Owned<'de>>,
+        U: for<'de> FromWire<T::Narrowed<'de>>,
     {
         self.take_with(|wire| U::from_wire(wire))
     }
@@ -87,12 +156,12 @@ impl<T: ?Sized, D> Decoded<T, D> {
     /// Takes the value out of this `Decoded` and passes it to the given function.
     ///
     /// This consumes the `Decoded`.
-    pub fn take_with<U>(self, f: impl FnOnce(T::Owned<'_>) -> U) -> U
+    pub fn take_with<U>(self, f: impl for<'de> FnOnce(T::Narrowed<'de>) -> U) -> U
     where
         T: Wire,
     {
         let (ptr, decoder) = self.into_raw_parts();
-        let value = unsafe { ptr.cast::<T::Owned<'_>>().read() };
+        let value = unsafe { ptr.cast::<T::Narrowed<'_>>().read() };
         let result = f(value);
         drop(decoder);
         result

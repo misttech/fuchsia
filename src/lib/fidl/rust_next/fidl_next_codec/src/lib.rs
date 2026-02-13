@@ -230,13 +230,10 @@
 )]
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-#[cfg(test)]
-#[macro_use]
-mod testing;
-
 mod chunk;
 #[cfg(feature = "compat")]
 mod compat;
+mod convert;
 mod copy_optimization;
 mod decode;
 mod decoded;
@@ -245,15 +242,13 @@ pub mod decoder;
 pub mod driver;
 mod encode;
 pub mod encoder;
-mod from_wire;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
-mod into_natural;
-mod primitives;
 mod slot;
 pub mod util;
 mod validate;
-mod wire;
+pub mod wire;
+mod wire_type;
 
 pub use bitflags;
 pub use munge::munge;
@@ -261,15 +256,13 @@ pub use munge::munge;
 pub use self::chunk::*;
 #[cfg(feature = "compat")]
 pub use self::compat::*;
+pub use self::convert::*;
 pub use self::copy_optimization::*;
 pub use self::decode::*;
 pub use self::decoded::*;
 pub use self::decoder::{Decoder, DecoderExt};
 pub use self::encode::*;
 pub use self::encoder::{Encoder, EncoderExt};
-pub use self::from_wire::*;
-pub use self::into_natural::*;
-pub use self::primitives::*;
 pub use self::slot::*;
 pub use self::validate::*;
-pub use self::wire::*;
+pub use self::wire_type::*;

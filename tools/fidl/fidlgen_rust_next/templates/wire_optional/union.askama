@@ -1,16 +1,27 @@
 #[repr(transparent)]
 pub struct {{ name }}{{ de }} {
-    pub(crate) raw: ::fidl_next::RawWireUnion,
+    pub(crate) raw: ::fidl_next::wire::RawWireUnion,
     pub(crate) _phantom: ::core::marker::PhantomData<{{ phantom }}>,
 }
 
+impl ::fidl_next::Constrained for {{ name }}{{ infer }} {
+    type Constraint = ();
+
+    fn validate(
+        _: ::fidl_next::Slot<'_, Self>,
+        _: Self::Constraint,
+    ) -> Result<(), ::fidl_next::ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
-    type Owned<'de> = {{ name }}{{ de }};
+    type Narrowed<'de> = {{ name }}{{ de }};
 
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-        ::fidl_next::RawWireUnion::zero_padding(raw);
+        ::fidl_next::wire::RawWireUnion::zero_padding(raw);
     }
 }
 
@@ -48,7 +59,7 @@ impl{{ de }} {{ name }}{{ de }} {
         fn clone(&self) -> Self {
             if self.is_none() {
                 return {{ name }} {
-                    raw: ::fidl_next::RawWireUnion::absent(),
+                    raw: ::fidl_next::wire::RawWireUnion::absent(),
                     _phantom: ::core::marker::PhantomData,
                 };
             }
@@ -73,11 +84,16 @@ impl{{ de }} {{ name }}{{ de }} {
     }
 {% endif %}
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for {{ name }}{{ static_ }}
+unsafe impl<
+    {% if !is_static %}
+        'de,
+    {% endif %}
+    ___D,
+> ::fidl_next::Decode<___D> for {{ name }}{{ de }}
 where
     ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
     {% if !is_static %}
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {% endif %}
     {% if union_.is_resource %}
         ___D: {{ self.decode_trait_path() }},
@@ -89,12 +105,12 @@ where
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-        match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+        match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::RawWireUnion::{{ decode_as }}::<___D, {{ self.static_wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
+                {{ member.ordinal }} => ::fidl_next::wire::RawWireUnion::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
-            0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::RawWireUnion::{{ decode_unknown}}(
+            0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
+            _ => ::fidl_next::wire::RawWireUnion::{{ decode_unknown}}(
                 raw,
                 decoder,
             )?,
@@ -118,5 +134,3 @@ where
 impl{{ de }} ::fidl_next::IntoNatural for {{ name }}{{ de }} {
     type Natural = ::core::option::Option<crate::natural::{{ name }}>;
 }
-
-impl ::fidl_next::Unconstrained for {{ name }}{{ static_ }} {}

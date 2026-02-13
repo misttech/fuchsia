@@ -8,10 +8,11 @@ use core::{fmt, slice};
 use munge::munge;
 
 use super::raw::RawWireVector;
+use crate::wire::{WirePointer, WireVector};
 use crate::{
     Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, EncodeOption,
     Encoder, EncoderExt as _, FromWire, FromWireOption, FromWireOptionRef, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire, WirePointer, WireVector,
+    IntoNatural, Slot, ValidationError, Wire,
 };
 
 /// An optional FIDL vector
@@ -21,7 +22,7 @@ pub struct WireOptionalVector<'de, T> {
 }
 
 unsafe impl<T: Wire> Wire for WireOptionalVector<'static, T> {
-    type Owned<'de> = WireOptionalVector<'de, T::Owned<'de>>;
+    type Narrowed<'de> = WireOptionalVector<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -85,11 +86,11 @@ impl<'de, T> WireOptionalVector<'de, T> {
     /// valid.
     pub unsafe fn decode_raw<D>(
         mut slot: Slot<'_, Self>,
-        mut decoder: &mut D,
+        decoder: &mut D,
         max_len: u64,
     ) -> Result<(), DecodeError>
     where
-        D: Decoder + ?Sized,
+        D: Decoder<'de> + ?Sized,
         T: Decode<D>,
     {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
@@ -102,8 +103,8 @@ impl<'de, T> WireOptionalVector<'de, T> {
                 }));
             }
 
-            let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
-            WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
+            let slice = decoder.take_slice_slot::<T>(**len as usize)?;
+            WirePointer::set_decoded_slice(ptr, slice);
         } else if *len != 0 {
             return Err(DecodeError::InvalidOptionalSize(**len));
         }
@@ -145,11 +146,28 @@ impl<T: fmt::Debug> fmt::Debug for WireOptionalVector<'_, T> {
     }
 }
 
-unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireOptionalVector<'static, T> {
+impl<T, U> PartialEq<Option<U>> for WireOptionalVector<'_, T>
+where
+    for<'de> WireVector<'de, T>: PartialEq<U>,
+{
+    fn eq(&self, other: &Option<U>) -> bool {
+        match (self.as_ref(), other.as_ref()) {
+            (Some(lhs), Some(rhs)) => lhs == rhs,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+unsafe impl<'de, D, T> Decode<D> for WireOptionalVector<'de, T>
+where
+    D: Decoder<'de> + ?Sized,
+    T: Decode<D>,
+{
     fn decode(
         mut slot: Slot<'_, Self>,
-        mut decoder: &mut D,
-        constraint: <Self as Constrained>::Constraint,
+        decoder: &mut D,
+        constraint: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
 
@@ -167,7 +185,7 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireOptionalVector<
             for i in 0..**len as usize {
                 T::decode(slice.index(i), decoder, member_constraint)?;
             }
-            WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
+            WirePointer::set_decoded_slice(ptr, slice);
         } else if *len != 0 {
             return Err(DecodeError::InvalidOptionalSize(**len));
         }
@@ -187,7 +205,7 @@ where
     V: AsRef<[T]> + IntoIterator,
     V::IntoIter: ExactSizeIterator,
     V::Item: Encode<W, E>,
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -211,7 +229,7 @@ where
             let bytes = unsafe { slice::from_raw_parts(slice.as_ptr().cast(), size_of_val(slice)) };
             encoder.write(bytes);
         } else {
-            encoder.encode_next_iter(value.into_iter(), member_constraint)?;
+            encoder.encode_next_iter_with_constraint(value.into_iter(), member_constraint)?;
         }
         WireOptionalVector::encode_present(out, len as u64);
     } else {
@@ -222,7 +240,7 @@ where
 
 unsafe impl<W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for Vec<T>
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -230,7 +248,7 @@ where
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<WireOptionalVector<'static, W>>,
-        constraint: <WireOptionalVector<'static, W> as Constrained>::Constraint,
+        constraint: VectorConstraint<W>,
     ) -> Result<(), EncodeError> {
         encode_to_optional_vector(this, encoder, out, constraint)
     }
@@ -238,7 +256,7 @@ where
 
 unsafe impl<'a, W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for &'a Vec<T>
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -255,7 +273,7 @@ where
 
 unsafe impl<W, E, T, const N: usize> EncodeOption<WireOptionalVector<'static, W>, E> for [T; N]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
 {
@@ -272,7 +290,7 @@ where
 unsafe impl<'a, W, E, T, const N: usize> EncodeOption<WireOptionalVector<'static, W>, E>
     for &'a [T; N]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -289,7 +307,7 @@ where
 
 unsafe impl<'a, W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for &'a [T]
 where
-    W: Constrained + Wire,
+    W: Wire,
     E: Encoder + ?Sized,
     T: Encode<W, E>,
     &'a T: Encode<W, E>,
@@ -317,5 +335,39 @@ impl<T: IntoNatural> IntoNatural for WireOptionalVector<'_, T> {
 impl<T: FromWireRef<W>, W> FromWireOptionRef<WireOptionalVector<'_, W>> for Vec<T> {
     fn from_wire_option_ref(wire: &WireOptionalVector<'_, W>) -> Option<Self> {
         wire.as_ref().map(Vec::from_wire_ref)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WireOptionalVector;
+
+    use crate::wire::WireU32;
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_optional_vec() {
+        assert_eq!(
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireOptionalVector<'_, WireU32>>((1000, ()))
+            .unwrap()
+            .as_ref(),
+            None,
+        );
+    }
+
+    #[test]
+    fn encode_optional_vec() {
+        assert_eq!(
+            Vec::encode_with_constraint(None::<Vec<u32>>, (1000, ())).unwrap(),
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+        );
     }
 }

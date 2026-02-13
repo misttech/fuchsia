@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Fuchsia-specific extensions to the FIDL codec.
+//! Fuchsia-specific FIDL wire type definitions and implementations.
 
 mod handle;
 mod handle_types;

@@ -8,7 +8,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use fidl_constants::EPITAPH_ORDINAL;
 
-use fidl_next_codec::EncodeError;
+use fidl_next_codec::{EncodeError, EncoderExt as _};
 use pin_project::pin_project;
 
 use crate::concurrency::cell::UnsafeCell;
@@ -16,9 +16,8 @@ use crate::concurrency::future::AtomicWaker;
 use crate::concurrency::hint::unreachable_unchecked;
 use crate::concurrency::sync::Mutex;
 use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
-use crate::{
-    Flexibility, NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header,
-};
+use crate::wire::{WireEpitaph, WireMessageHeader};
+use crate::{Flexibility, NonBlockingTransport, ProtocolError, Transport};
 
 // Indicates that the connection has been requested to stop. Connections are
 // always stopped as they are terminated.
@@ -266,8 +265,10 @@ impl<T: Transport> Connection<T> {
         let shared = unsafe { self.get_shared_unchecked() };
 
         let mut buffer = T::acquire(shared);
-        encode_header::<T>(&mut buffer, 0, EPITAPH_ORDINAL, Flexibility::Strict).unwrap();
-        encode_epitaph::<T>(&mut buffer, error).unwrap();
+        buffer
+            .encode_next(WireMessageHeader::new(0, EPITAPH_ORDINAL, Flexibility::Strict))
+            .unwrap();
+        buffer.encode_next(WireEpitaph::new(error)).unwrap();
         let future_state = T::begin_send(shared, buffer);
 
         SendEpitaphFuture { shared, future_state }

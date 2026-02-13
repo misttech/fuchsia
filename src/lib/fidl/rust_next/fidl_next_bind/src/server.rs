@@ -6,8 +6,10 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_codec::{Constrained, Encode, Wire};
-use fidl_next_protocol::{self as protocol, Flexibility, ProtocolError, ServerHandler, Transport};
+use fidl_next_codec::{Encode, Wire};
+use fidl_next_protocol::{
+    self as protocol, Body, Flexibility, ProtocolError, ServerHandler, Transport,
+};
 
 use crate::{
     HasConnectionHandles, HasTransport, Method, Respond, RespondErr, RespondFuture, ServerEnd,
@@ -68,7 +70,7 @@ pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
         handler: &mut H,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received server two-way message with the given handler.
@@ -76,7 +78,7 @@ pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
         handler: &mut H,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -105,19 +107,19 @@ where
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_one_way(&mut self.handler, ordinal, flexibility, buffer)
+        P::on_one_way(&mut self.handler, ordinal, flexibility, body)
     }
 
     fn on_two_way(
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: <T as Transport>::RecvBuffer,
+        body: Body<T>,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_two_way(&mut self.handler, ordinal, flexibility, buffer, responder)
+        P::on_two_way(&mut self.handler, ordinal, flexibility, body, responder)
     }
 }
 
@@ -186,7 +188,7 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond<R>(self, response: R) -> RespondFuture<T>
     where
         M: TwoWayMethod + Respond<R>,
-        M::Response: Constrained<Constraint = ()> + Wire,
+        M::Response: Wire<Constraint = ()>,
         <M as Respond<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
         self.respond_with(M::respond(response))
@@ -196,7 +198,7 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond_err<R>(self, response: R) -> RespondFuture<T>
     where
         M: TwoWayMethod + RespondErr<R>,
-        M::Response: Constrained<Constraint = ()> + Wire,
+        M::Response: Wire<Constraint = ()>,
         <M as RespondErr<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
         self.respond_with(M::respond_err(response))
@@ -206,7 +208,7 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond_with<R>(self, response: R) -> RespondFuture<T>
     where
         M: TwoWayMethod,
-        M::Response: Constrained<Constraint = ()> + Wire,
+        M::Response: Wire<Constraint = ()>,
         R: Encode<M::Response, T::SendBuffer>,
     {
         RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, M::FLEXIBILITY, response))

@@ -4,7 +4,7 @@
 
 use core::mem::MaybeUninit;
 
-use crate::{Unconstrained, Wire};
+use crate::{Constrained, Slot, ValidationError, Wire};
 
 /// An empty struct's wire representation. C/C++ memory layout rules (and hence
 /// FIDL wire rules) require every object to have a unique address so we have to
@@ -16,13 +16,20 @@ pub enum WireEmptyStructPlaceholder {
     Zero = 0,
 }
 
+impl Constrained for WireEmptyStructPlaceholder {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireEmptyStructPlaceholder {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
-impl Unconstrained for WireEmptyStructPlaceholder {}
 
 impl core::fmt::Debug for WireEmptyStructPlaceholder {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

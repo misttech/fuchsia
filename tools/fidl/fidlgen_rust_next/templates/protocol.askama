@@ -71,9 +71,9 @@ pub mod {{ module_name }} {
                 type Response =
                     {% if method.has_error %}
                         {% if !method.is_strict %}
-                            ::fidl_next::WireFlexibleResult
+                            ::fidl_next::wire::WireFlexibleResult
                         {% else %}
-                            ::fidl_next::WireResult
+                            ::fidl_next::wire::WireResult
                         {% endif %}
                         <
                             'static,
@@ -89,7 +89,7 @@ pub mod {{ module_name }} {
                         {% endif %}
                         >
                     {% else if !method.is_strict %}
-                        ::fidl_next::WireFlexible<
+                        ::fidl_next::wire::WireFlexible<
                             'static,
                         {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
                             {{ self.static_wire_type(success) }}
@@ -559,10 +559,13 @@ where
     ___H: {{ client_handler_name }}<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
-        {% if method.kind == ProtocolMethodKind::Event && method.maybe_response_payload.is_some() %}
-            {% let method_type_name = method.name.camel() %}
-            <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Request:
-                ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+        {% if method.kind == ProtocolMethodKind::Event %}
+            {% if let Some(response) = method.maybe_response_payload %}
+                for<'de> {{ self.wire_type(response) }}: ::fidl_next::Decode<
+                    <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                    Constraint = (),
+                >,
+            {% endif %}
         {% endif %}
     {% endfor %}
 {
@@ -570,7 +573,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
@@ -578,7 +581,7 @@ where
                 {% if method.kind == ProtocolMethodKind::Event %}
                     {{ method.ordinal }} => {
                         {% if method.maybe_response_payload.is_some() %}
-                            match ::fidl_next::DecoderExt::decode(buffer) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -663,10 +666,11 @@ where
     ___H: {{ server_handler_name }}<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
-        {% if method.maybe_request_payload.is_some() %}
-            {% let method_type_name = method.name.camel() %}
-            <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Request:
-                ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+        {% if let Some(request) = method.maybe_request_payload %}
+            for<'de> {{ self.wire_type(request) }}: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
         {% endif %}
     {% endfor %}
 {
@@ -674,7 +678,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
@@ -682,7 +686,7 @@ where
                 {% if method.kind == ProtocolMethodKind::OneWay %}
                     {{ method.ordinal }} => {
                         {% if let Some(request) = method.maybe_request_payload %}
-                            match ::fidl_next::DecoderExt::decode(buffer) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded)).await;
                                     Ok(())
@@ -718,7 +722,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
@@ -728,7 +732,7 @@ where
                     {{ method.ordinal }} => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);
                         {% if let Some(request) = method.maybe_request_payload %}
-                            match ::fidl_next::DecoderExt::decode(buffer) {
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
                                 Ok(decoded) => {
                                     handler.{{ method_name }}(::fidl_next::Request::from_decoded(decoded), responder).await;
                                     Ok(())

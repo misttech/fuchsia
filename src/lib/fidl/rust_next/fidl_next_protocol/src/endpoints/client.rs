@@ -9,19 +9,18 @@ use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
 use fidl_constants::EPITAPH_ORDINAL;
-use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt, Wire};
+use fidl_next_codec::{AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt, Wire};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
 use crate::endpoints::connection::Connection;
 use crate::endpoints::lockers::{LockerError, Lockers};
-use crate::{
-    Flexibility, ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header,
-};
+use crate::wire::{WireEpitaph, WireMessageHeader};
+use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
 
 struct ClientInner<T: Transport> {
     connection: Connection<T>,
-    responses: Mutex<Lockers<T::RecvBuffer>>,
+    responses: Mutex<Lockers<Body<T>>>,
 }
 
 impl<T: Transport> ClientInner<T> {
@@ -59,7 +58,7 @@ impl<T: Transport> Client<T> {
         request: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        W: Constrained<Constraint = ()> + Wire,
+        W: Wire<Constraint = ()>,
     {
         self.send_message(0, ordinal, flexibility, request)
     }
@@ -72,7 +71,7 @@ impl<T: Transport> Client<T> {
         request: impl Encode<W, T::SendBuffer>,
     ) -> Result<TwoWayRequestFuture<'_, T>, EncodeError>
     where
-        W: Constrained<Constraint = ()> + Wire,
+        W: Wire<Constraint = ()>,
     {
         let index = self.inner.responses.lock().unwrap().alloc(ordinal);
 
@@ -96,11 +95,11 @@ impl<T: Transport> Client<T> {
         message: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        W: Constrained<Constraint = ()> + Wire,
+        W: Wire<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            encode_header::<T>(buffer, txid, ordinal, flexibility)?;
-            buffer.encode_next(message, ())
+            buffer.encode_next(WireMessageHeader::new(txid, ordinal, flexibility))?;
+            buffer.encode_next(message)
         })
     }
 }
@@ -130,7 +129,7 @@ impl<T: Transport> Drop for TwoWayResponseFuture<'_, T> {
 }
 
 impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
-    type Output = Result<T::RecvBuffer, ProtocolError<T::Error>>;
+    type Output = Result<Body<T>, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = Pin::into_inner(self);
@@ -209,7 +208,7 @@ pub trait ClientHandler<T: Transport> {
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
@@ -307,28 +306,51 @@ impl<T: Transport> ClientDispatcher<T> {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
-        let (txid, ordinal, flexibility) =
-            decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
+        // This expression is really awkward due to a limitation in rustc's
+        // liveness analysis for local variables. We need to avoid holding
+        // `decoder` across `.await`s because it may not be `Send` and tasks may
+        // migrate threads between polls. We should be able to just
+        // `drop(decoder)` before any `.await`, but rustc is overly conservative
+        // and still considers `decoder` as live at the `.await` for that
+        // analysis. The only way to convince rustc that `decoder` is not live
+        // at that await point is to keep the lexical scope containing `decoder`
+        // free of `.await`s.
+        //
+        // See https://github.com/rust-lang/rust/issues/63768 for more details.
+        let header = {
+            let mut decoder = buffer.as_decoder();
 
-        if ordinal == EPITAPH_ORDINAL {
-            let epitaph =
-                decode_epitaph::<T>(&mut buffer).map_err(ProtocolError::InvalidEpitaphBody)?;
-            return Err(ProtocolError::PeerClosedWithEpitaph(epitaph));
-        } else if txid == 0 {
-            handler.on_event(ordinal, flexibility, buffer).await?;
+            let header = decoder
+                .decode_prefix::<WireMessageHeader>()
+                .map_err(ProtocolError::InvalidMessageHeader)?;
+
+            // Check if the ordinal is the epitaph so we can immediately decode
+            // and return it. We do this before dropping `decoder` so that we
+            // don't have to re-acquire it and wrap it in `Body`.
+            if header.ordinal == EPITAPH_ORDINAL {
+                let epitaph =
+                    decoder.decode::<WireEpitaph>().map_err(ProtocolError::InvalidEpitaphBody)?;
+                return Err(ProtocolError::PeerClosedWithEpitaph(*epitaph.error));
+            }
+
+            header
+        };
+
+        if header.txid == 0 {
+            handler.on_event(*header.ordinal, header.flexibility(), Body::new(buffer)).await?;
         } else {
             let mut responses = self.inner.responses.lock().unwrap();
             let locker = responses
-                .get(txid - 1)
-                .ok_or_else(|| ProtocolError::UnrequestedResponse { txid })?;
+                .get(*header.txid - 1)
+                .ok_or_else(|| ProtocolError::UnrequestedResponse { txid: *header.txid })?;
 
-            match locker.write(ordinal, buffer) {
+            match locker.write(*header.ordinal, Body::new(buffer)) {
                 // Reader didn't cancel
                 Ok(false) => (),
                 // Reader canceled, we can drop the entry
-                Ok(true) => responses.free(txid - 1),
+                Ok(true) => responses.free(*header.txid - 1),
                 Err(LockerError::NotWriteable) => {
-                    return Err(ProtocolError::UnrequestedResponse { txid });
+                    return Err(ProtocolError::UnrequestedResponse { txid: *header.txid });
                 }
                 Err(LockerError::MismatchedOrdinal { expected, actual }) => {
                     return Err(ProtocolError::InvalidResponseOrdinal { expected, actual });

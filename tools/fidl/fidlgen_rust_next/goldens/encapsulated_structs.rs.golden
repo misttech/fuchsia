@@ -49,7 +49,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
             ___E,
         > for NonInlineStructTestStruct
     where
@@ -62,15 +62,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::NonInlineStructTestStruct<'static>,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -132,7 +135,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
             ___E,
         > for TopLevelStruct
     where
@@ -144,15 +147,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -179,9 +182,9 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct NonInlineStructTestStruct<'de> {
-        pub element: ::fidl_next::WireBox<'de, crate::wire::Int16Int8>,
+        pub element: ::fidl_next::wire::WireBox<'de, crate::wire::Int16Int8>,
 
-        pub h: ::fidl_next::fuchsia::WireNullableHandle,
+        pub h: ::fidl_next::wire::fuchsia::WireNullableHandle,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<NonInlineStructTestStruct<'_>>(), 16);
@@ -194,8 +197,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(NonInlineStructTestStruct<'_>, h), 8);
 
+    impl ::fidl_next::Constrained for NonInlineStructTestStruct<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for NonInlineStructTestStruct<'static> {
-        type Owned<'de> = NonInlineStructTestStruct<'de>;
+        type Narrowed<'de> = NonInlineStructTestStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -218,10 +232,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for NonInlineStructTestStruct<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for NonInlineStructTestStruct<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
         ___D: ::fidl_next::fuchsia::HandleDecoder,
     {
         fn decode(
@@ -258,8 +272,6 @@ pub mod wire {
         type Natural = crate::natural::NonInlineStructTestStruct;
     }
 
-    impl ::fidl_next::Unconstrained for NonInlineStructTestStruct<'static> {}
-
     /// The wire type corresponding to [`TopLevelStruct`].
     #[derive(Debug)]
     #[repr(C)]
@@ -276,8 +288,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(TopLevelStruct<'_>, b), 24);
 
+    impl ::fidl_next::Constrained for TopLevelStruct<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for TopLevelStruct<'static> {
-        type Owned<'de> = TopLevelStruct<'de>;
+        type Narrowed<'de> = TopLevelStruct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -296,10 +319,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for TopLevelStruct<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for TopLevelStruct<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
         ___D: ::fidl_next::fuchsia::HandleDecoder,
     {
         fn decode(
@@ -331,8 +354,6 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for TopLevelStruct<'de> {
         type Natural = crate::natural::TopLevelStruct;
     }
-
-    impl ::fidl_next::Unconstrained for TopLevelStruct<'static> {}
 }
 
 pub mod wire_optional {
@@ -357,8 +378,8 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::WireBox<'static, crate::wire::Int16Int8>, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::fuchsia::WireNullableHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireBox<'static, crate::wire::Int16Int8>, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
     {
         #[inline]
         fn encode(

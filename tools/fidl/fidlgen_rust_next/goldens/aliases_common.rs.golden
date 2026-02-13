@@ -57,7 +57,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 ObjType::None => 0,
 
                 ObjType::Channel => 4,
@@ -97,23 +97,36 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`U32`](crate::natural::U32).
-    pub type U32 = ::fidl_next::WireU32;
+    pub type U32 = ::fidl_next::wire::WireU32;
 
     /// The wire type corresponding to [`VecOfStrings`](crate::natural::VecOfStrings).
-    pub type VecOfStrings<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
+    pub type VecOfStrings<'de> =
+        ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireString<'de>>;
 
     /// The wire type corresponding to [`VecOfStringsAtMost5`](crate::natural::VecOfStringsAtMost5).
-    pub type VecOfStringsAtMost5<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
+    pub type VecOfStringsAtMost5<'de> =
+        ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireString<'de>>;
 
     /// The wire type corresponding to [`ObjType`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct ObjType {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for ObjType {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for ObjType {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -122,9 +135,9 @@ pub mod wire {
     }
 
     impl ObjType {
-        pub const NONE: ObjType = ObjType { value: ::fidl_next::WireU32(0) };
+        pub const NONE: ObjType = ObjType { value: ::fidl_next::wire::WireU32(0) };
 
-        pub const CHANNEL: ObjType = ObjType { value: ::fidl_next::WireU32(4) };
+        pub const CHANNEL: ObjType = ObjType { value: ::fidl_next::wire::WireU32(4) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for ObjType
@@ -162,8 +175,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ObjType {
         type Natural = crate::natural::ObjType;
     }
-
-    impl ::fidl_next::Unconstrained for ObjType {}
 }
 
 pub mod wire_optional {}

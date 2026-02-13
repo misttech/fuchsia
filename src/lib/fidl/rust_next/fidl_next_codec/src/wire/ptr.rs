@@ -7,7 +7,8 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::{Chunk, DecodeError, Slot, WireU64};
+use crate::wire::WireU64;
+use crate::{Chunk, DecodeError, Slot};
 use fidl_constants::{ALLOC_ABSENT_U64, ALLOC_PRESENT_U64};
 
 /// A raw FIDL pointer
@@ -21,10 +22,15 @@ pub union WirePointer<'de, T> {
 unsafe impl<T: Send> Send for WirePointer<'_, T> {}
 unsafe impl<T: Sync> Sync for WirePointer<'_, T> {}
 
-impl<T> WirePointer<'_, T> {
+impl<'de, T> WirePointer<'de, T> {
     /// Returns whether the wire pointer was encoded present.
     pub fn is_encoded_present(slot: Slot<'_, Self>) -> Result<bool, DecodeError> {
-        munge!(let Self { encoded } = slot);
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = slot);
+            encoded
+        };
         match **encoded {
             ALLOC_ABSENT_U64 => Ok(false),
             ALLOC_PRESENT_U64 => Ok(true),
@@ -34,23 +40,53 @@ impl<T> WirePointer<'_, T> {
 
     /// Encodes that a pointer is present in an output.
     pub fn encode_present(out: &mut MaybeUninit<Self>) {
-        munge!(let Self { encoded } = out);
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = out);
+            encoded
+        };
         encoded.write(WireU64(ALLOC_PRESENT_U64));
     }
 
     /// Encodes that a pointer is absent in a slot.
     pub fn encode_absent(out: &mut MaybeUninit<Self>) {
-        munge!(let Self { encoded } = out);
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = out);
+            encoded
+        };
         encoded.write(WireU64(ALLOC_ABSENT_U64));
     }
 
     /// Sets the decoded value of the pointer.
-    pub fn set_decoded(slot: Slot<'_, Self>, ptr: *mut T) {
-        munge!(let Self { mut decoded } = slot);
+    pub fn set_decoded(slot: Slot<'_, Self>, mut value: Slot<'de, T>) {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let mut decoded = unsafe {
+            munge!(let Self { decoded } = slot);
+            decoded
+        };
         // SAFETY: Identical to `decoded.write(ptr.into_raw())`, but raw
         // pointers don't currently implement `IntoBytes`.
         unsafe {
-            *decoded.as_mut_ptr() = ptr;
+            *decoded.as_mut_ptr() = value.as_mut_ptr();
+        }
+    }
+
+    /// Sets the decoded value of the pointer to the first element of a slice.
+    pub fn set_decoded_slice(slot: Slot<'_, Self>, mut slice: Slot<'de, [T]>) {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let mut decoded = unsafe {
+            munge!(let Self { decoded } = slot);
+            decoded
+        };
+        // SAFETY: Identical to `decoded.write(ptr.into_raw())`, but raw
+        // pointers don't currently implement `IntoBytes`.
+        unsafe {
+            *decoded.as_mut_ptr() = slice.as_mut_ptr().cast();
         }
     }
 

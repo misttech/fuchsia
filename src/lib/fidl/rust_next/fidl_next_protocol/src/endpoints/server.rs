@@ -11,13 +11,16 @@ use core::pin::Pin;
 use core::ptr;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt as _, Wire};
+use fidl_next_codec::{
+    AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt as _, Wire,
+};
 use pin_project::pin_project;
 
 use crate::concurrency::sync::Arc;
 use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
-use crate::{Flexibility, ProtocolError, SendFuture, Transport, decode_header, encode_header};
+use crate::wire::WireMessageHeader;
+use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
 
 struct ServerInner<T: Transport> {
     connection: Connection<T>,
@@ -68,11 +71,11 @@ impl<T: Transport> Server<T> {
         event: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        W: Constrained<Constraint = ()> + Wire,
+        W: Wire<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            encode_header::<T>(buffer, 0, ordinal, flexibility)?;
-            buffer.encode_next(event, ())
+            buffer.encode_next(WireMessageHeader::new(0, ordinal, flexibility))?;
+            buffer.encode_next(event)
         })
     }
 }
@@ -98,7 +101,7 @@ pub trait ServerHandler<T: Transport> {
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received two-way server message.
@@ -110,7 +113,7 @@ pub trait ServerHandler<T: Transport> {
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -207,13 +210,18 @@ impl<T: Transport> ServerDispatcher<T> {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
-        let (txid, ordinal, flexibility) =
-            decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
-        if let Some(txid) = NonZeroU32::new(txid) {
+        let header = buffer
+            .as_decoder()
+            .decode_prefix::<WireMessageHeader>()
+            .map_err(ProtocolError::InvalidMessageHeader)?;
+
+        if let Some(txid) = NonZeroU32::new(*header.txid) {
             let responder = Responder { server: self.server(), txid };
-            handler.on_two_way(ordinal, flexibility, buffer, responder).await?;
+            handler
+                .on_two_way(*header.ordinal, header.flexibility(), Body::new(buffer), responder)
+                .await?;
         } else {
-            handler.on_one_way(ordinal, flexibility, buffer).await?;
+            handler.on_one_way(*header.ordinal, header.flexibility(), Body::new(buffer)).await?;
         }
 
         Ok(())
@@ -242,11 +250,11 @@ impl<T: Transport> Responder<T> {
         response: impl Encode<W, T::SendBuffer>,
     ) -> Result<RespondFuture<T>, EncodeError>
     where
-        W: Constrained<Constraint = ()> + Wire,
+        W: Wire<Constraint = ()>,
     {
         let state = self.server.inner.connection.send_message_raw(|buffer| {
-            encode_header::<T>(buffer, self.txid.get(), ordinal, flexibility)?;
-            buffer.encode_next(response, ())
+            buffer.encode_next(WireMessageHeader::new(self.txid.get(), ordinal, flexibility))?;
+            buffer.encode_next(response)
         })?;
 
         let this = ManuallyDrop::new(self);

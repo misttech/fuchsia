@@ -34,26 +34,9 @@ pub trait Constrained {
     /// Type of constraint information for this type.
     type Constraint: Copy;
 
-    /// Validate a value of this type against a constraint. Can be called when
+    /// Validate a slot of this type against a constraint. Can be called when
     /// pointers/envelopes are just presence markers.
-    fn validate(value: Slot<'_, Self>, constraint: Self::Constraint)
-    -> Result<(), ValidationError>;
-}
-
-/// Implemented by types that can't have constraints.
-///
-/// Note: this is intended as an implementation helper, not as a where clause
-/// bound. If you want bound a type on being unconstrained you must use
-/// something like: `T: Constrained<Constraint=()>``
-pub trait Unconstrained {}
-
-impl<T: Unconstrained> Constrained for T {
-    type Constraint = ();
-
-    #[inline]
-    fn validate(_: Slot<'_, Self>, _: ()) -> Result<(), ValidationError> {
-        Ok(())
-    }
+    fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError>;
 }
 
 // Arrays have the constraints of their member.

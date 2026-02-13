@@ -8,7 +8,8 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::slice::from_raw_parts;
 
-use crate::{CHUNK_SIZE, Chunk, Constrained, Encode, EncodeError, Slot, Wire, WireU64};
+use crate::wire::WireU64;
+use crate::{CHUNK_SIZE, Chunk, Encode, EncodeError, Slot, Wire};
 
 /// An encoder for FIDL handles (internal).
 pub trait InternalHandleEncoder {
@@ -110,20 +111,63 @@ pub trait EncoderExt {
     /// Encodes an iterator of elements.
     ///
     /// Returns `Err` if encoding failed.
-    fn encode_next_iter<W: Constrained + Wire, T: Encode<W, Self>>(
+    fn encode_next_iter<W, T>(
+        &mut self,
+        values: impl ExactSizeIterator<Item = T>,
+    ) -> Result<(), EncodeError>
+    where
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>;
+
+    /// Encodes an iterator of elements.
+    ///
+    /// Returns `Err` if encoding failed.
+    fn encode_next_iter_with_constraint<W, T>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
         constraint: W::Constraint,
-    ) -> Result<(), EncodeError>;
+    ) -> Result<(), EncodeError>
+    where
+        W: Wire,
+        T: Encode<W, Self>;
 
     /// Encodes a value.
     ///
     /// Returns `Err` if encoding failed.
-    fn encode_next<W: Constrained + Wire, T: Encode<W, Self>>(
+    fn encode_next<W, T>(&mut self, value: T) -> Result<(), EncodeError>
+    where
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>;
+
+    /// Encodes a value with a constraint.
+    ///
+    /// Returns `Err` if encoding failed.
+    fn encode_next_with_constraint<W: Wire, T: Encode<W, Self>>(
         &mut self,
         value: T,
         constraint: W::Constraint,
     ) -> Result<(), EncodeError>;
+
+    /// Encodes a value into a new instance of the encoder.
+    ///
+    /// Returns `Err` if encoding failed.
+    fn encode<W, T>(value: T) -> Result<Self, EncodeError>
+    where
+        Self: Default,
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>;
+
+    /// Encodes a value with a constraint into a new instance of the encoder.
+    ///
+    /// Returns `Err` if encoding failed.
+    fn encode_with_constraint<W, T>(
+        value: T,
+        constraint: W::Constraint,
+    ) -> Result<Self, EncodeError>
+    where
+        Self: Default,
+        W: Wire,
+        T: Encode<W, Self>;
 }
 
 impl<E: Encoder + ?Sized> EncoderExt for E {
@@ -142,22 +186,34 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         }
     }
 
-    fn encode_next_iter<W: Constrained + Wire, T: Encode<W, Self>>(
+    fn encode_next_iter<W, T>(
+        &mut self,
+        values: impl ExactSizeIterator<Item = T>,
+    ) -> Result<(), EncodeError>
+    where
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>,
+    {
+        self.encode_next_iter_with_constraint(values, ())
+    }
+
+    fn encode_next_iter_with_constraint<W, T>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
         constraint: W::Constraint,
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), EncodeError>
+    where
+        W: Wire,
+        T: Encode<W, Self>,
+    {
         let mut outputs = self.preallocate::<W>(values.len());
 
         let mut out = MaybeUninit::<W>::uninit();
         <W as Wire>::zero_padding(&mut out);
         for value in values {
             value.encode(outputs.encoder, &mut out, constraint)?;
-            <W as Constrained>::validate(
-                unsafe { Slot::new_unchecked_from_maybe_uninit(&mut out) },
-                constraint,
-            )
-            .map_err(EncodeError::Validation)?;
+            W::validate(unsafe { Slot::new_unchecked_from_maybe_uninit(&mut out) }, constraint)
+                .map_err(EncodeError::Validation)?;
             unsafe {
                 outputs.write_next(out.assume_init_ref());
             }
@@ -166,12 +222,47 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         Ok(())
     }
 
-    fn encode_next<W: Constrained + Wire, T: Encode<W, Self>>(
+    fn encode_next<W, T>(&mut self, value: T) -> Result<(), EncodeError>
+    where
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>,
+    {
+        self.encode_next_with_constraint(value, ())
+    }
+
+    fn encode_next_with_constraint<W, T>(
         &mut self,
         value: T,
         constraint: W::Constraint,
-    ) -> Result<(), EncodeError> {
-        self.encode_next_iter(core::iter::once(value), constraint)
+    ) -> Result<(), EncodeError>
+    where
+        W: Wire,
+        T: Encode<W, Self>,
+    {
+        self.encode_next_iter_with_constraint(core::iter::once(value), constraint)
+    }
+
+    fn encode<W, T>(value: T) -> Result<Self, EncodeError>
+    where
+        Self: Default,
+        W: Wire<Constraint = ()>,
+        T: Encode<W, Self>,
+    {
+        Self::encode_with_constraint(value, ())
+    }
+
+    fn encode_with_constraint<W, T>(
+        value: T,
+        constraint: W::Constraint,
+    ) -> Result<Self, EncodeError>
+    where
+        Self: Default,
+        W: Wire,
+        T: Encode<W, Self>,
+    {
+        let mut result = Self::default();
+        result.encode_next_with_constraint(value, constraint)?;
+        Ok(result)
     }
 }
 

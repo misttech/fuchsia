@@ -6,6 +6,7 @@ use super::wire_handle::WireHandle;
 use crate::responder::Responder;
 use crate::{AsHandleRef, Channel, ChannelMessageStream, ChannelWriter, Error, Handle};
 use fidl_fuchsia_fdomain as proto;
+use fidl_next::AsDecoder;
 use fidl_next_codec::decoder::InternalHandleDecoder;
 use fidl_next_codec::encoder::InternalHandleEncoder;
 use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder, EncodeError, Encoder};
@@ -13,8 +14,8 @@ use fidl_next_protocol::Transport;
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 
+use core::slice;
 use std::pin::Pin;
-use std::ptr::NonNull;
 use std::task::{Context, Poll, ready};
 
 /// A decoder which supports FDomain handles.
@@ -100,38 +101,50 @@ impl HandleEncoder for SendBuffer {
 pub struct RecvBuffer {
     handles: Vec<WireHandle>,
     chunks: Vec<Chunk>,
+}
+
+pub struct BufferDecoder<'de> {
+    buffer: &'de mut RecvBuffer,
     chunks_taken: usize,
     handles_taken: usize,
 }
 
-unsafe impl Decoder for RecvBuffer {
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError> {
-        if count > self.chunks.len() - self.chunks_taken {
+unsafe impl<'de> AsDecoder<'de> for RecvBuffer {
+    type Decoder = BufferDecoder<'de>;
+
+    fn as_decoder(&'de mut self) -> Self::Decoder {
+        BufferDecoder { buffer: self, chunks_taken: 0, handles_taken: 0 }
+    }
+}
+
+impl<'de> Decoder<'de> for BufferDecoder<'de> {
+    fn take_chunks(&mut self, count: usize) -> Result<&'de mut [Chunk], DecodeError> {
+        if count > self.buffer.chunks.len() - self.chunks_taken {
             return Err(DecodeError::InsufficientData);
         }
 
-        let chunks = unsafe { self.chunks.as_mut_ptr().add(self.chunks_taken) };
+        let chunks = unsafe { self.buffer.chunks.as_mut_ptr().add(self.chunks_taken) };
         self.chunks_taken += count;
 
-        unsafe { Ok(NonNull::new_unchecked(chunks)) }
+        unsafe { Ok(slice::from_raw_parts_mut(chunks, count)) }
     }
 
     fn commit(&mut self) {
-        for handle in &mut self.handles[0..self.handles_taken] {
+        for handle in &mut self.buffer.handles[0..self.handles_taken] {
             handle.invalidate();
         }
     }
 
     fn finish(&self) -> Result<(), DecodeError> {
-        if self.chunks_taken != self.chunks.len() {
+        if self.chunks_taken != self.buffer.chunks.len() {
             return Err(DecodeError::ExtraBytes {
-                num_extra: (self.chunks.len() - self.chunks_taken) * CHUNK_SIZE,
+                num_extra: (self.buffer.chunks.len() - self.chunks_taken) * CHUNK_SIZE,
             });
         }
 
-        if self.handles_taken != self.handles.len() {
+        if self.handles_taken != self.buffer.handles.len() {
             return Err(DecodeError::ExtraHandles {
-                num_extra: self.handles.len() - self.handles_taken,
+                num_extra: self.buffer.handles.len() - self.handles_taken,
             });
         }
 
@@ -139,14 +152,14 @@ unsafe impl Decoder for RecvBuffer {
     }
 }
 
-impl InternalHandleDecoder for RecvBuffer {
+impl InternalHandleDecoder for BufferDecoder<'_> {
     fn __internal_take_handles(&mut self, count: usize) -> Result<(), DecodeError> {
-        if count > self.handles.len() - self.handles_taken {
+        if count > self.buffer.handles.len() - self.handles_taken {
             return Err(DecodeError::InsufficientHandles);
         }
 
         for i in self.handles_taken..self.handles_taken + count {
-            drop(self.handles[i].take_handle());
+            drop(self.buffer.handles[i].take_handle());
         }
         self.handles_taken += count;
 
@@ -154,24 +167,24 @@ impl InternalHandleDecoder for RecvBuffer {
     }
 
     fn __internal_handles_remaining(&self) -> usize {
-        self.handles.len() - self.handles_taken
+        self.buffer.handles.len() - self.handles_taken
     }
 }
 
-impl HandleDecoder for RecvBuffer {
+impl HandleDecoder for BufferDecoder<'_> {
     fn take_raw_handle(&mut self) -> Result<u32, DecodeError> {
-        if self.handles_taken >= self.handles.len() {
+        if self.handles_taken >= self.buffer.handles.len() {
             return Err(DecodeError::InsufficientHandles);
         }
 
-        let handle = self.handles[self.handles_taken].as_raw_handle();
+        let handle = self.buffer.handles[self.handles_taken].as_raw_handle();
         self.handles_taken += 1;
 
         Ok(handle)
     }
 
     fn handles_remaining(&mut self) -> usize {
-        self.handles.len() - self.handles_taken
+        self.buffer.handles.len() - self.handles_taken
     }
 }
 
@@ -290,6 +303,6 @@ impl Transport for Channel {
         };
         let handles = msg.handles.into_iter().map(|x| Handle::from(x.handle).into()).collect();
 
-        Poll::Ready(Ok(RecvBuffer { handles, chunks, chunks_taken: 0, handles_taken: 0 }))
+        Poll::Ready(Ok(RecvBuffer { handles, chunks }))
     }
 }

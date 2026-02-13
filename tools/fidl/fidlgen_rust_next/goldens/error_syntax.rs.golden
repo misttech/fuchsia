@@ -71,7 +71,7 @@ pub mod example_use_of_error_syntax {
         type Response =
 
 
-                            ::fidl_next::WireResult
+                            ::fidl_next::wire::WireResult
 
                         <
                             'static,
@@ -79,7 +79,7 @@ pub mod example_use_of_error_syntax {
                             ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
 
 
-                            ::fidl_next::WireU32,
+                            ::fidl_next::wire::WireU32,
 
                         >
 
@@ -126,10 +126,10 @@ pub mod example_use_of_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for CallWhichMayFail {
-        type Response = ::fidl_next::WireResult<
+        type Response = ::fidl_next::wire::WireResult<
             'static,
             crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
-            ::fidl_next::WireU32,
+            ::fidl_next::wire::WireU32,
         >;
     }
 
@@ -178,7 +178,7 @@ pub mod example_use_of_error_syntax {
                 &self,
 
                 s: impl ::fidl_next::Encode<
-                    ::fidl_next::WireString<'static>,
+                    ::fidl_next::wire::WireString<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ComposedCallWhichMayFail, ___T>
@@ -217,7 +217,7 @@ pub mod example_use_of_error_syntax {
                 &self,
 
                 s: impl ::fidl_next::Encode<
-                    ::fidl_next::WireString<'static>,
+                    ::fidl_next::wire::WireString<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::CallWhichMayFail, ___T>
@@ -283,7 +283,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -323,16 +323,22 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ExampleUseOf
 where
     ___H: ExampleUseOfErrorSyntaxServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <example_use_of_error_syntax::ComposedCallWhichMayFail as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
-    <example_use_of_error_syntax::CallWhichMayFail as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+    for<'de> ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest<
+        'de,
+    >: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
+    for<'de> crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailRequest<'de>: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
@@ -346,7 +352,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
@@ -356,7 +362,7 @@ where
             3565108794310607393 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
                     Ok(decoded) => {
                         handler
                             .composed_call_which_may_fail(
@@ -376,7 +382,7 @@ where
             3757408930698888354 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
                     Ok(decoded) => {
                         handler
                             .call_which_may_fail(

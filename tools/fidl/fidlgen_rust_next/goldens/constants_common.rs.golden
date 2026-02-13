@@ -43,7 +43,7 @@ pub mod natural {
                 return Err(::fidl_next::EncodeError::InvalidStrictBits);
             }
 
-            let _ = value.write(::fidl_next::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
             Ok(())
         }
     }
@@ -109,7 +109,7 @@ pub mod natural {
                 return Err(::fidl_next::EncodeError::InvalidStrictBits);
             }
 
-            let _ = value.write(::fidl_next::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
             Ok(())
         }
     }
@@ -179,7 +179,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Enum { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 Enum::E => 170,
             }));
 
@@ -258,7 +258,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EnumType { value } = out);
-            let _ = value.write(::fidl_next::WireI32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireI32::from(match *self {
                 EnumType::Value => 3,
 
                 EnumType::SecondValue => 4,
@@ -430,8 +430,10 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Struct<'static>>, ___E>
-        for Struct
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Struct<'static>>,
+            ___E,
+        > for Struct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Struct: ::fidl_next::Encode<crate::wire::Struct<'static>, ___E>,
@@ -441,15 +443,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Struct<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Struct<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -457,8 +459,10 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Struct<'static>>, ___E>
-        for &'a Struct
+        ::fidl_next::EncodeOption<
+            ::fidl_next::wire::WireBox<'static, crate::wire::Struct<'static>>,
+            ___E,
+        > for &'a Struct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a Struct: ::fidl_next::Encode<crate::wire::Struct<'static>, ___E>,
@@ -468,15 +472,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::Struct<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::Struct<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -528,11 +532,22 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct Bits {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for Bits {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for Bits {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -564,7 +579,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::Bits> for Bits {
         fn from(natural: crate::natural::Bits) -> Self {
-            Self { value: ::fidl_next::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
         }
     }
 
@@ -572,17 +587,26 @@ pub mod wire {
         type Natural = crate::natural::Bits;
     }
 
-    impl ::fidl_next::Unconstrained for Bits {}
-
     /// The wire type corresponding to [`BitsType`](crate::natural::BitsType).
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct BitsType {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for BitsType {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for BitsType {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -614,7 +638,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::BitsType> for BitsType {
         fn from(natural: crate::natural::BitsType) -> Self {
-            Self { value: ::fidl_next::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
         }
     }
 
@@ -622,17 +646,26 @@ pub mod wire {
         type Natural = crate::natural::BitsType;
     }
 
-    impl ::fidl_next::Unconstrained for BitsType {}
-
     /// The wire type corresponding to [`Enum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct Enum {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for Enum {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for Enum {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -641,7 +674,7 @@ pub mod wire {
     }
 
     impl Enum {
-        pub const E: Enum = Enum { value: ::fidl_next::WireU32(170) };
+        pub const E: Enum = Enum { value: ::fidl_next::wire::WireU32(170) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for Enum
@@ -678,17 +711,26 @@ pub mod wire {
         type Natural = crate::natural::Enum;
     }
 
-    impl ::fidl_next::Unconstrained for Enum {}
-
     /// The wire type corresponding to [`EnumType`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct EnumType {
-        pub(crate) value: ::fidl_next::WireI32,
+        pub(crate) value: ::fidl_next::wire::WireI32,
+    }
+
+    impl ::fidl_next::Constrained for EnumType {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for EnumType {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -697,9 +739,9 @@ pub mod wire {
     }
 
     impl EnumType {
-        pub const VALUE: EnumType = EnumType { value: ::fidl_next::WireI32(3) };
+        pub const VALUE: EnumType = EnumType { value: ::fidl_next::wire::WireI32(3) };
 
-        pub const SECOND_VALUE: EnumType = EnumType { value: ::fidl_next::WireI32(4) };
+        pub const SECOND_VALUE: EnumType = EnumType { value: ::fidl_next::wire::WireI32(4) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for EnumType
@@ -738,15 +780,13 @@ pub mod wire {
         type Natural = crate::natural::EnumType;
     }
 
-    impl ::fidl_next::Unconstrained for EnumType {}
-
     /// The wire type corresponding to [`Struct`].
     #[derive(Debug)]
     #[repr(C)]
     pub struct Struct<'de> {
-        pub int64_with_default: ::fidl_next::WireI64,
+        pub int64_with_default: ::fidl_next::wire::WireI64,
 
-        pub string_with_default: ::fidl_next::WireString<'de>,
+        pub string_with_default: ::fidl_next::wire::WireString<'de>,
 
         pub bool_with_default: bool,
 
@@ -768,8 +808,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(Struct<'_>, bits_with_default), 32);
 
+    impl ::fidl_next::Constrained for Struct<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for Struct<'static> {
-        type Owned<'de> = Struct<'de>;
+        type Narrowed<'de> = Struct<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -805,10 +856,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for Struct<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for Struct<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
     {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
@@ -862,8 +913,6 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for Struct<'de> {
         type Natural = crate::natural::Struct;
     }
-
-    impl ::fidl_next::Unconstrained for Struct<'static> {}
 }
 
 pub mod wire_optional {}
@@ -887,8 +936,8 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireString<'static>, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireString<'static>, ___E>,
         T2: ::fidl_next::Encode<bool, ___E>,
         T3: ::fidl_next::Encode<crate::wire::Enum, ___E>,
         T4: ::fidl_next::Encode<crate::wire::Bits, ___E>,

@@ -11,8 +11,19 @@ pub struct {{ name }} {
     pub(crate) value: {{ wire_subtype }},
 }
 
+impl ::fidl_next::Constrained for {{ name }} {
+    type Constraint = ();
+
+    fn validate(
+        _: ::fidl_next::Slot<'_, Self>,
+        _: Self::Constraint,
+    ) -> Result<(), ::fidl_next::ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl ::fidl_next::Wire for {{ name }} {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -54,5 +65,3 @@ impl ::core::convert::From<crate::natural::{{ name }}> for {{ name }} {
 impl ::fidl_next::IntoNatural for {{ name }} {
     type Natural = crate::natural::{{ name }};
 }
-
-impl ::fidl_next::Unconstrained for {{ name }} {}

@@ -4,8 +4,6 @@
 
 use core::marker::PhantomData;
 
-use crate::{WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64};
-
 /// An optimization hint about whether the conversion from `T` to `U` is equivalent to copying the
 /// raw bytes of `T`.
 pub struct CopyOptimization<T: ?Sized, U: ?Sized>(bool, PhantomData<(*mut T, *mut U)>);
@@ -67,66 +65,4 @@ impl<T: ?Sized> CopyOptimization<T, T> {
     pub const fn identity() -> Self {
         unsafe { Self::enable() }
     }
-}
-
-macro_rules! impl_primitive {
-    ($ty:ty) => {
-        impl CopyOptimization<$ty, $ty> {
-            /// Whether copy optimization between the two primitive types is enabled.
-            pub const PRIMITIVE: Self = Self::identity();
-        }
-    };
-    ($natural:ty, $wire:ty) => {
-        impl_primitive!($wire);
-
-        impl CopyOptimization<$natural, $wire> {
-            /// Whether copy optimization between the two primitive types is enabled.
-            pub const PRIMITIVE: Self =
-                // SAFETY: Copy optimization for primitives is enabled if their size if <= 1 or the
-                // target is little-endian.
-                unsafe {
-                    CopyOptimization::enable_if(
-                        size_of::<Self>() <= 1 || cfg!(target_endian = "little"),
-                    )
-                };
-        }
-
-        impl CopyOptimization<$wire, $natural> {
-            /// Whether copy optimization between the two primitive types is enabled.
-            pub const PRIMITIVE: Self =
-                // SAFETY: Copy optimization between these two primitives is commutative.
-                unsafe {
-                    CopyOptimization::enable_if(
-                        CopyOptimization::<$natural, $wire>::PRIMITIVE.is_enabled(),
-                    )
-                };
-        }
-    };
-}
-
-macro_rules! impl_primitives {
-    ($($natural:ty $(, $wire:ty)?);* $(;)?) => {
-        $(
-            impl_primitive!($natural $(, $wire)?);
-        )*
-    }
-}
-
-impl_primitives! {
-    ();
-
-    bool;
-
-    i8;
-    i16, WireI16;
-    i32, WireI32;
-    i64, WireI64;
-
-    u8;
-    u16, WireU16;
-    u32, WireU32;
-    u64, WireU64;
-
-    f32, WireF32;
-    f64, WireF64;
 }

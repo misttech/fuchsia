@@ -8,10 +8,10 @@ use core::str::from_utf8;
 
 use munge::munge;
 
+use crate::wire::{WireOptionalVector, WireString, WireVector};
 use crate::{
     Constrained, Decode, DecodeError, Decoder, EncodeError, EncodeOption, Encoder, FromWireOption,
-    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire, WireOptionalVector, WireString,
-    WireVector,
+    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire,
 };
 
 /// An optional FIDL string
@@ -21,7 +21,7 @@ pub struct WireOptionalString<'de> {
 }
 
 unsafe impl Wire for WireOptionalString<'static> {
-    type Owned<'de> = WireOptionalString<'de>;
+    type Narrowed<'de> = WireOptionalString<'de>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -91,7 +91,20 @@ impl fmt::Debug for WireOptionalString<'_> {
     }
 }
 
-unsafe impl<D: Decoder + ?Sized> Decode<D> for WireOptionalString<'static> {
+impl<T> PartialEq<Option<T>> for WireOptionalString<'_>
+where
+    for<'de> WireString<'de>: PartialEq<T>,
+{
+    fn eq(&self, other: &Option<T>) -> bool {
+        match (self.as_ref(), other.as_ref()) {
+            (Some(lhs), Some(rhs)) => lhs == rhs,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireOptionalString<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
@@ -178,5 +191,37 @@ impl FromWireOptionRef<WireOptionalString<'_>> for String {
     #[inline]
     fn from_wire_option_ref(wire: &WireOptionalString<'_>) -> Option<Self> {
         Vec::from_wire_option_ref(&wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WireOptionalString;
+
+    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+
+    #[test]
+    fn decode_optional_string() {
+        assert_eq!(
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ]
+            .as_mut_slice()
+            .decode_with_constraint::<WireOptionalString<'_>>(1000)
+            .unwrap(),
+            None::<&str>,
+        );
+    }
+
+    #[test]
+    fn encode_optional_string() {
+        assert_eq!(
+            Vec::encode_with_constraint(None::<String>, 1000).unwrap(),
+            chunks![
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+        );
     }
 }

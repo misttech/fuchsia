@@ -22,26 +22,26 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`AliasOfArray`](crate::natural::AliasOfArray).
-    pub type AliasOfArray = [::fidl_next::WireU64; 1];
+    pub type AliasOfArray = [::fidl_next::wire::WireU64; 1];
 
     /// The wire type corresponding to [`U64`](crate::natural::U64).
-    pub type U64 = ::fidl_next::WireU64;
+    pub type U64 = ::fidl_next::wire::WireU64;
 
     /// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`](crate::natural::AliasOfArrayContainingAliasOfArray).
-    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::WireU64; 2];
+    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::wire::WireU64; 2];
 
     /// The wire type corresponding to [`AliasOfBytes`](crate::natural::AliasOfBytes).
-    pub type AliasOfBytes<'de> = ::fidl_next::WireVector<'de, u8>;
+    pub type AliasOfBytes<'de> = ::fidl_next::wire::WireVector<'de, u8>;
 
     /// The wire type corresponding to [`AliasOfString`](crate::natural::AliasOfString).
-    pub type AliasOfString<'de> = ::fidl_next::WireString<'de>;
+    pub type AliasOfString<'de> = ::fidl_next::wire::WireString<'de>;
 
     /// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`](crate::natural::AliasOfVectorContainingAliasOfVector).
     pub type AliasOfVectorContainingAliasOfVector<'de> =
-        ::fidl_next::WireVector<'de, ::fidl_next::WireU64>;
+        ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireU64>;
 
     /// The wire type corresponding to [`Vector`](crate::natural::Vector).
-    pub type Vector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
+    pub type Vector<'de> = ::fidl_next::wire::WireOptionalVector<'de, ::fidl_next::wire::WireU64>;
 }
 
 pub mod wire_optional {}
@@ -118,7 +118,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -145,7 +145,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
@@ -159,7 +159,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),

@@ -46,7 +46,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyEmptyFlexibleEnum { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 MyEmptyFlexibleEnum::UnknownOrdinal_(value) => value,
             }));
 
@@ -121,7 +121,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnum { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 MyFlexibleEnum::Foo => 1,
 
                 MyFlexibleEnum::Bar => 2,
@@ -208,7 +208,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnumWithCustomUnknown { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 MyFlexibleEnumWithCustomUnknown::Foo => 1,
 
                 MyFlexibleEnumWithCustomUnknown::Bar => 2,
@@ -303,7 +303,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyStrictEnum { value } = out);
-            let _ = value.write(::fidl_next::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
                 MyStrictEnum::Foo => 1,
 
                 MyStrictEnum::Bar => 2,
@@ -346,11 +346,22 @@ pub mod wire {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct MyEmptyFlexibleEnum {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for MyEmptyFlexibleEnum {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for MyEmptyFlexibleEnum {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -377,7 +388,7 @@ pub mod wire {
         fn from(natural: crate::natural::MyEmptyFlexibleEnum) -> Self {
             match natural {
                 crate::natural::MyEmptyFlexibleEnum::UnknownOrdinal_(value) => {
-                    MyEmptyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+                    MyEmptyFlexibleEnum { value: ::fidl_next::wire::WireU32::from(value) }
                 }
             }
         }
@@ -387,17 +398,26 @@ pub mod wire {
         type Natural = crate::natural::MyEmptyFlexibleEnum;
     }
 
-    impl ::fidl_next::Unconstrained for MyEmptyFlexibleEnum {}
-
     /// The wire type corresponding to [`MyFlexibleEnum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct MyFlexibleEnum {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for MyFlexibleEnum {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for MyFlexibleEnum {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -406,9 +426,9 @@ pub mod wire {
     }
 
     impl MyFlexibleEnum {
-        pub const FOO: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::WireU32(1) };
+        pub const FOO: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::wire::WireU32(1) };
 
-        pub const BAR: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::WireU32(2) };
+        pub const BAR: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::wire::WireU32(2) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for MyFlexibleEnum
@@ -432,7 +452,7 @@ pub mod wire {
                 crate::natural::MyFlexibleEnum::Bar => MyFlexibleEnum::BAR,
 
                 crate::natural::MyFlexibleEnum::UnknownOrdinal_(value) => {
-                    MyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+                    MyFlexibleEnum { value: ::fidl_next::wire::WireU32::from(value) }
                 }
             }
         }
@@ -442,17 +462,26 @@ pub mod wire {
         type Natural = crate::natural::MyFlexibleEnum;
     }
 
-    impl ::fidl_next::Unconstrained for MyFlexibleEnum {}
-
     /// The wire type corresponding to [`MyFlexibleEnumWithCustomUnknown`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct MyFlexibleEnumWithCustomUnknown {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for MyFlexibleEnumWithCustomUnknown {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for MyFlexibleEnumWithCustomUnknown {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -462,13 +491,13 @@ pub mod wire {
 
     impl MyFlexibleEnumWithCustomUnknown {
         pub const FOO: MyFlexibleEnumWithCustomUnknown =
-            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(1) };
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::wire::WireU32(1) };
 
         pub const BAR: MyFlexibleEnumWithCustomUnknown =
-            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(2) };
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::wire::WireU32(2) };
 
         pub const CUSTOM_UNKNOWN: MyFlexibleEnumWithCustomUnknown =
-            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(3) };
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::wire::WireU32(3) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for MyFlexibleEnumWithCustomUnknown
@@ -502,7 +531,9 @@ pub mod wire {
                 }
 
                 crate::natural::MyFlexibleEnumWithCustomUnknown::UnknownOrdinal_(value) => {
-                    MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32::from(value) }
+                    MyFlexibleEnumWithCustomUnknown {
+                        value: ::fidl_next::wire::WireU32::from(value),
+                    }
                 }
             }
         }
@@ -512,17 +543,26 @@ pub mod wire {
         type Natural = crate::natural::MyFlexibleEnumWithCustomUnknown;
     }
 
-    impl ::fidl_next::Unconstrained for MyFlexibleEnumWithCustomUnknown {}
-
     /// The wire type corresponding to [`MyStrictEnum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct MyStrictEnum {
-        pub(crate) value: ::fidl_next::WireU32,
+        pub(crate) value: ::fidl_next::wire::WireU32,
+    }
+
+    impl ::fidl_next::Constrained for MyStrictEnum {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
     }
 
     unsafe impl ::fidl_next::Wire for MyStrictEnum {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         #[inline]
         fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -531,9 +571,9 @@ pub mod wire {
     }
 
     impl MyStrictEnum {
-        pub const FOO: MyStrictEnum = MyStrictEnum { value: ::fidl_next::WireU32(1) };
+        pub const FOO: MyStrictEnum = MyStrictEnum { value: ::fidl_next::wire::WireU32(1) };
 
-        pub const BAR: MyStrictEnum = MyStrictEnum { value: ::fidl_next::WireU32(2) };
+        pub const BAR: MyStrictEnum = MyStrictEnum { value: ::fidl_next::wire::WireU32(2) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for MyStrictEnum
@@ -571,8 +611,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for MyStrictEnum {
         type Natural = crate::natural::MyStrictEnum;
     }
-
-    impl ::fidl_next::Unconstrained for MyStrictEnum {}
 }
 
 pub mod wire_optional {}

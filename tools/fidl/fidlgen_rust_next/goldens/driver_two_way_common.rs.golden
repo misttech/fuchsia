@@ -21,11 +21,17 @@ pub mod natural {
             crate::wire::TwoWayAddRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u16 as ::fidl_next::Encode<::fidl_next::WireU16, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u16 as ::fidl_next::Encode<::fidl_next::WireU16, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u16 as ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u16 as ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -90,7 +96,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::TwoWayAddRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddRequest>,
             ___E,
         > for TwoWayAddRequest
     where
@@ -102,15 +108,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TwoWayAddRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -119,7 +125,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::TwoWayAddRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddRequest>,
             ___E,
         > for &'a TwoWayAddRequest
     where
@@ -131,15 +137,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TwoWayAddRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -152,11 +158,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u16 as ::fidl_next::FromWire<::fidl_next::WireU16>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u16 as ::fidl_next::FromWire<::fidl_next::WireU16>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u16 as ::fidl_next::FromWire<::fidl_next::wire::WireU16>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u16 as ::fidl_next::FromWire<::fidl_next::wire::WireU16>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -195,9 +207,13 @@ pub mod natural {
             crate::wire::TwoWayAddResponse,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u16 as ::fidl_next::Encode<::fidl_next::WireU16, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    u16 as ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -252,7 +268,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::TwoWayAddResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddResponse>,
             ___E,
         > for TwoWayAddResponse
     where
@@ -264,15 +280,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TwoWayAddResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -281,7 +297,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::TwoWayAddResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddResponse>,
             ___E,
         > for &'a TwoWayAddResponse
     where
@@ -293,15 +309,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::TwoWayAddResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::TwoWayAddResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -314,9 +330,13 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u16 as ::fidl_next::FromWire<::fidl_next::WireU16>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    u16 as ::fidl_next::FromWire<::fidl_next::wire::WireU16>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -339,9 +359,9 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct TwoWayAddRequest {
-        pub addend1: ::fidl_next::WireU16,
+        pub addend1: ::fidl_next::wire::WireU16,
 
-        pub addend2: ::fidl_next::WireU16,
+        pub addend2: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<TwoWayAddRequest>(), 4);
@@ -351,8 +371,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(TwoWayAddRequest, addend2), 2);
 
+    impl ::fidl_next::Constrained for TwoWayAddRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for TwoWayAddRequest {
-        type Owned<'de> = TwoWayAddRequest;
+        type Narrowed<'de> = TwoWayAddRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -405,13 +436,11 @@ pub mod wire {
         type Natural = crate::natural::TwoWayAddRequest;
     }
 
-    impl ::fidl_next::Unconstrained for TwoWayAddRequest {}
-
     /// The wire type corresponding to [`TwoWayAddResponse`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct TwoWayAddResponse {
-        pub sum: ::fidl_next::WireU16,
+        pub sum: ::fidl_next::wire::WireU16,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<TwoWayAddResponse>(), 2);
@@ -419,8 +448,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(TwoWayAddResponse, sum), 0);
 
+    impl ::fidl_next::Constrained for TwoWayAddResponse {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for TwoWayAddResponse {
-        type Owned<'de> = TwoWayAddResponse;
+        type Narrowed<'de> = TwoWayAddResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -464,8 +504,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for TwoWayAddResponse {
         type Natural = crate::natural::TwoWayAddResponse;
     }
-
-    impl ::fidl_next::Unconstrained for TwoWayAddResponse {}
 }
 
 pub mod wire_optional {}
@@ -482,8 +520,8 @@ pub mod generic {
         for TwoWayAddRequest<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -517,7 +555,7 @@ pub mod generic {
         for TwoWayAddResponse<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU16, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU16, ___E>,
     {
         #[inline]
         fn encode(
@@ -609,12 +647,12 @@ pub mod two_way {
                 &self,
 
                 addend1: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU16,
+                    ::fidl_next::wire::WireU16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 addend2: impl ::fidl_next::Encode<
-                    ::fidl_next::WireU16,
+                    ::fidl_next::wire::WireU16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::Add, ___T>
@@ -675,7 +713,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -704,14 +742,16 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for TwoWay
 where
     ___H: TwoWayServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <two_way::Add as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+    for<'de> crate::wire::TwoWayAddRequest: ::fidl_next::Decode<
+            <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+            Constraint = (),
+        >,
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
@@ -725,7 +765,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
         (),
@@ -735,7 +775,7 @@ where
             989730524426044687 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
-                match ::fidl_next::DecoderExt::decode(buffer) {
+                match ::fidl_next::AsDecoderExt::into_decoded(body) {
                     Ok(decoded) => {
                         handler.add(::fidl_next::Request::from_decoded(decoded), responder).await;
                         Ok(())

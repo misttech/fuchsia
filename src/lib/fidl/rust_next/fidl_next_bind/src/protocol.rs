@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_next_codec::Constrained;
 use fidl_next_protocol::{Flexibility, Transport};
 
 /// A FIDL protocol which has associated connection handles.
@@ -45,7 +44,7 @@ pub trait Method {
 /// A protocol method which has a response.
 pub trait TwoWayMethod: Method {
     /// The response payload for the method.
-    type Response: Constrained;
+    type Response;
 }
 
 /// A method which can be responded to with a single value.

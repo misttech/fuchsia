@@ -143,7 +143,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
             ___E,
         > for ExampleOfUseOfAliases
     where
@@ -156,15 +156,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -213,33 +213,36 @@ pub mod wire {
     pub type ReferenceMe = ::fidl_next_test_someotherlibrary::wire::ReferenceMe;
 
     /// The wire type corresponding to [`Channel`](crate::natural::Channel).
-    pub type Channel = ::fidl_next::fuchsia::WireChannel;
+    pub type Channel = ::fidl_next::wire::fuchsia::WireChannel;
 
     /// The wire type corresponding to [`AliasOfChannel`](crate::natural::AliasOfChannel).
-    pub type AliasOfChannel = ::fidl_next::fuchsia::WireChannel;
+    pub type AliasOfChannel = ::fidl_next::wire::fuchsia::WireChannel;
 
     /// The wire type corresponding to [`ExampleOfUseOfAliases`].
     #[derive(Debug)]
     #[repr(C)]
     pub struct ExampleOfUseOfAliases<'de> {
-        pub field_of_u32: ::fidl_next::WireU32,
+        pub field_of_u32: ::fidl_next::wire::WireU32,
 
-        pub field_of_vec_of_strings: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+        pub field_of_vec_of_strings:
+            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireString<'de>>,
 
         pub field_of_vec_of_strings_at_most_nine:
-            ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireString<'de>>,
 
         pub field_of_vec_of_strings_at_most_5:
-            ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireString<'de>>,
 
-        pub field_of_vec_of_ref_me_at_most_5:
-            ::fidl_next::WireVector<'de, ::fidl_next_test_someotherlibrary::wire::ReferenceMe>,
+        pub field_of_vec_of_ref_me_at_most_5: ::fidl_next::wire::WireVector<
+            'de,
+            ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
+        >,
 
-        pub field_of_channel: ::fidl_next::fuchsia::WireChannel,
+        pub field_of_channel: ::fidl_next::wire::fuchsia::WireChannel,
 
-        pub field_of_client_end: ::fidl_next::fuchsia::WireChannel,
+        pub field_of_client_end: ::fidl_next::wire::fuchsia::WireChannel,
 
-        pub field_of_nullable_client_end: ::fidl_next::fuchsia::WireOptionalChannel,
+        pub field_of_nullable_client_end: ::fidl_next::wire::fuchsia::WireOptionalChannel,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ExampleOfUseOfAliases<'_>>(), 88);
@@ -285,8 +288,19 @@ pub mod wire {
         80
     );
 
+    impl ::fidl_next::Constrained for ExampleOfUseOfAliases<'_> {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for ExampleOfUseOfAliases<'static> {
-        type Owned<'de> = ExampleOfUseOfAliases<'de>;
+        type Narrowed<'de> = ExampleOfUseOfAliases<'de>;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -331,10 +345,10 @@ pub mod wire {
         }
     }
 
-    unsafe impl<___D> ::fidl_next::Decode<___D> for ExampleOfUseOfAliases<'static>
+    unsafe impl<'de, ___D> ::fidl_next::Decode<___D> for ExampleOfUseOfAliases<'de>
     where
         ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::Decoder<'de>,
         ___D: ::fidl_next::fuchsia::HandleDecoder,
     {
         fn decode(
@@ -450,8 +464,6 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for ExampleOfUseOfAliases<'de> {
         type Natural = crate::natural::ExampleOfUseOfAliases;
     }
-
-    impl ::fidl_next::Unconstrained for ExampleOfUseOfAliases<'static> {}
 }
 
 pub mod wire_optional {
@@ -488,29 +500,29 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
         T1: ::fidl_next::Encode<
-                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
                 ___E,
             >,
         T2: ::fidl_next::Encode<
-                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
                 ___E,
             >,
         T3: ::fidl_next::Encode<
-                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
                 ___E,
             >,
         T4: ::fidl_next::Encode<
-                ::fidl_next::WireVector<
+                ::fidl_next::wire::WireVector<
                     'static,
                     ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
                 >,
                 ___E,
             >,
-        T5: ::fidl_next::Encode<::fidl_next::fuchsia::WireChannel, ___E>,
-        T6: ::fidl_next::Encode<::fidl_next::fuchsia::WireChannel, ___E>,
-        T7: ::fidl_next::Encode<::fidl_next::fuchsia::WireOptionalChannel, ___E>,
+        T5: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireChannel, ___E>,
+        T6: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireChannel, ___E>,
+        T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireOptionalChannel, ___E>,
     {
         #[inline]
         fn encode(

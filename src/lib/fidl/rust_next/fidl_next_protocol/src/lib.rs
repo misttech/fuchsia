@@ -86,10 +86,11 @@
 )]
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-mod buffer;
+mod body;
 mod concurrency;
 mod endpoints;
 mod error;
+mod flexibility;
 mod flexible;
 mod flexible_result;
 mod framework_error;
@@ -100,14 +101,14 @@ mod service;
 #[cfg(test)]
 mod testing;
 mod transport;
-mod wire;
+pub mod wire;
 
-pub use self::buffer::*;
+pub use self::body::*;
 pub use self::endpoints::*;
 pub use self::error::*;
+pub use self::flexibility::*;
 pub use self::flexible::*;
 pub use self::flexible_result::*;
 pub use self::framework_error::*;
 pub use self::service::*;
 pub use self::transport::*;
-pub use self::wire::*;

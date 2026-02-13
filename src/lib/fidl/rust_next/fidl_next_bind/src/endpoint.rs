@@ -8,7 +8,7 @@ use core::{concat, stringify};
 
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, Unconstrained, Wire, munge,
+    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge,
 };
 use fidl_next_protocol::{ProtocolError, Transport};
 
@@ -37,6 +37,16 @@ macro_rules! endpoint {
 
         unsafe impl<P, T: Sync> Sync for $name<P, T> {}
 
+        impl<P, T: Constrained> Constrained for $name<P, T> {
+            type Constraint = T::Constraint;
+
+            fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
+                munge!(let Self { transport, _protocol: _ } = slot);
+
+                T::validate(transport, constraint)
+            }
+        }
+
         // SAFETY:
         // - `$name::Owned<'de>` wraps a `T::Owned<'de>`. Because `T: Wire`,
         //   `T::Owned<'de>` does not yield any references to decoded data that
@@ -46,7 +56,7 @@ macro_rules! endpoint {
         //   `zero_padding` calls `T::zero_padding` on `transport`. `_protocol`
         //   is a ZST which does not have any padding bytes to zero-initialize.
         unsafe impl<P: 'static, T: Wire> Wire for $name<P, T> {
-            type Owned<'de> = $name<P, T::Owned<'de>>;
+            type Narrowed<'de> = $name<P, T::Narrowed<'de>>;
 
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -92,10 +102,9 @@ macro_rules! endpoint {
         where
             D: ?Sized,
             P: 'static,
-            T: Decode<D>,
-            T: Constrained<Constraint=()>,
+            T: Decode<D, Constraint=()>,
         {
-            fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
+            fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint:  Self::Constraint) -> Result<(), DecodeError> {
                 munge!(let Self { transport, _protocol: _ } = slot);
                 T::decode(transport, decoder, constraint)
             }
@@ -108,7 +117,7 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: Encode<W, E>,
-            W: Constrained<Constraint = ()> + Wire,
+            W: Wire<Constraint = ()>,
         {
             fn encode(
                 self,
@@ -129,7 +138,7 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             &'a T: Encode<W, E>,
-            W: Constrained<Constraint = ()> + Wire,
+            W: Wire<Constraint = ()>,
         {
             fn encode(
                 self,
@@ -149,7 +158,7 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: EncodeOption<W, E>,
-            W: Constrained<Constraint = ()>
+            W: Wire<Constraint = ()>
         {
             fn encode_option(
                 this: Option<Self>,
@@ -170,7 +179,7 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             &'a T: EncodeOption<W, E>,
-            W: Constrained<Constraint = ()>
+            W: Wire<Constraint = ()>
         {
             fn encode_option(
                 this: Option<Self>,
@@ -182,8 +191,6 @@ macro_rules! endpoint {
                 <&T>::encode_option(this.map(|this| &this.transport), encoder, transport, constraint)
             }
         }
-
-        impl<P, T: Constrained<Constraint = ()>> Unconstrained for $name<P, T> {}
 
         impl<P, T, U> FromWire<$name<P, U>> for $name<P, T>
         where

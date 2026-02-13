@@ -5,86 +5,35 @@
 use core::mem::{MaybeUninit, forget};
 use core::ptr::copy_nonoverlapping;
 
-use crate::{
-    CopyOptimization, WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64,
-};
+use crate::CopyOptimization;
 
-/// A type which is convertible from a wire type.
+/// A type which is convertible from an owned value.
 pub trait FromWire<W>: Sized {
     /// Whether the conversion from `W` to `Self` is equivalent to copying the raw bytes of `W`.
     ///
     /// Copy optimization is disabled by default.
     const COPY_OPTIMIZATION: CopyOptimization<W, Self> = CopyOptimization::disable();
 
-    /// Converts the given `wire` to this type.
+    /// Converts the given owned value to this type.
     fn from_wire(wire: W) -> Self;
 }
 
-/// A type which is convertible from a reference to a wire type.
+/// A type which is convertible from a reference.
 pub trait FromWireRef<W>: FromWire<W> {
-    /// Converts the given `wire` reference to this type.
+    /// Converts the given reference to this type.
     fn from_wire_ref(wire: &W) -> Self;
 }
 
-/// An optional type which is convertible from a wire type.
+/// An optional type which is convertible from an owned value.
 pub trait FromWireOption<W>: Sized {
-    /// Converts the given `wire` to an option of this type.
+    /// Converts the given owned value to an option of this type.
     fn from_wire_option(wire: W) -> Option<Self>;
 }
 
-/// An optional type which is convertible from a reference to a wire type.
+/// An optional type which is convertible from a reference.
 pub trait FromWireOptionRef<W>: FromWireOption<W> {
-    /// Converts the given `wire` reference to an option of this type.
+    /// Converts the given reference to an option of this type.
     fn from_wire_option_ref(wire: &W) -> Option<Self>;
-}
-
-macro_rules! impl_primitive {
-    ($ty:ty) => {
-        impl_primitive!($ty, $ty);
-    };
-    ($ty:ty, $enc:ty) => {
-        impl FromWire<$enc> for $ty {
-            const COPY_OPTIMIZATION: CopyOptimization<$enc, $ty> =
-                CopyOptimization::<$enc, $ty>::PRIMITIVE;
-
-            #[inline]
-            fn from_wire(wire: $enc) -> Self {
-                wire.into()
-            }
-        }
-
-        impl FromWireRef<$enc> for $ty {
-            #[inline]
-            fn from_wire_ref(wire: &$enc) -> Self {
-                (*wire).into()
-            }
-        }
-    };
-}
-
-macro_rules! impl_primitives {
-    ($($ty:ty $(, $enc:ty)?);* $(;)?) => {
-        $(
-            impl_primitive!($ty $(, $enc)?);
-        )*
-    }
-}
-
-impl_primitives! {
-    ();
-
-    bool;
-
-    i8;
-    i16, WireI16; i32, WireI32; i64, WireI64;
-    WireI16; WireI32; WireI64;
-
-    u8;
-    u16, WireU16; u32, WireU32; u64, WireU64;
-    WireU16; WireU32; WireU64;
-
-    f32, WireF32; f64, WireF64;
-    WireF32; WireF64;
 }
 
 impl<T: FromWire<W>, W, const N: usize> FromWire<[W; N]> for [T; N] {

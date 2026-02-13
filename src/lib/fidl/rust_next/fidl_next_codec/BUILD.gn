@@ -12,6 +12,9 @@ rustc_library("fidl_next_codec") {
   sources = [
     "src/chunk.rs",
     "src/compat.rs",
+    "src/convert/from.rs",
+    "src/convert/into.rs",
+    "src/convert/mod.rs",
     "src/copy_optimization.rs",
     "src/decode/error.rs",
     "src/decode/mod.rs",
@@ -20,18 +23,15 @@ rustc_library("fidl_next_codec") {
     "src/encode/error.rs",
     "src/encode/mod.rs",
     "src/encoder.rs",
-    "src/from_wire.rs",
-    "src/into_natural.rs",
     "src/lib.rs",
-    "src/primitives.rs",
     "src/slot.rs",
-    "src/testing.rs",
     "src/util.rs",
     "src/validate.rs",
     "src/wire/boxed.rs",
     "src/wire/empty_struct.rs",
     "src/wire/envelope.rs",
     "src/wire/mod.rs",
+    "src/wire/primitives.rs",
     "src/wire/ptr.rs",
     "src/wire/result.rs",
     "src/wire/string/mod.rs",
@@ -43,6 +43,7 @@ rustc_library("fidl_next_codec") {
     "src/wire/vec/optional.rs",
     "src/wire/vec/raw.rs",
     "src/wire/vec/required.rs",
+    "src/wire_type.rs",
   ]
   deps = [
     "//src/lib/fidl/rust_constants",
@@ -61,11 +62,12 @@ rustc_library("fidl_next_codec") {
   if (is_fuchsia) {
     # "fuchsia" feature
     sources += [
-      "src/fuchsia/handle.rs",
-      "src/fuchsia/handle_types.rs",
-      "src/fuchsia/mod.rs",
-      "src/fuchsia/object_type.rs",
-      "src/fuchsia/rights.rs",
+      "src/fuchsia.rs",
+      "src/wire/fuchsia/handle.rs",
+      "src/wire/fuchsia/handle_types.rs",
+      "src/wire/fuchsia/mod.rs",
+      "src/wire/fuchsia/object_type.rs",
+      "src/wire/fuchsia/rights.rs",
     ]
     deps += [ "//sdk/rust/zx" ]
     features += [ "fuchsia" ]
@@ -92,7 +94,6 @@ group("tests") {
   testonly = true
   deps = [
     ":fidl_next_codec_test($host_toolchain)",
-    # TODO: fix and re-enable device-side tests.
-    # ":fidl_next_codec_test_package",
+    ":fidl_next_codec_test_package",
   ]
 }

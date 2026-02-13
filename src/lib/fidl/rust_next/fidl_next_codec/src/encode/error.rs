@@ -5,7 +5,7 @@
 use thiserror::Error;
 
 /// Errors that can be produced while encoding FIDL messages.
-#[derive(Clone, Error, Debug)]
+#[derive(Clone, Error, Debug, PartialEq)]
 pub enum EncodeError {
     /// A required handle was invalid.
     #[error("required handle was invalid")]

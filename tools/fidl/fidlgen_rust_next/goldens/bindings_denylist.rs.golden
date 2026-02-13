@@ -184,7 +184,7 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
@@ -217,41 +217,70 @@ impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ImportsSameN
 where
     ___H: ImportsSameNameContextServerHandler<___T> + ::core::marker::Send,
     ___T: ::fidl_next::Transport,
-    <imports_same_name_context::AlwaysDenied as ::fidl_next::Method>::Request:
-        ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
+
+
+            for<'de> ::fidl_next_test_dependent::wire::ContainsDeniedAlwaysDeniedRequest: ::fidl_next::Decode<
+                <<___T as ::fidl_next::Transport>::RecvBuffer as ::fidl_next::AsDecoder<'de>>::Decoder,
+                Constraint = (),
+            >,
+
+
+
+
+
+
 {
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
+        body: ::fidl_next::Body<___T>,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
-            6808317417318106526 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => {
-                    handler.always_denied(::fidl_next::Request::from_decoded(decoded)).await;
-                    Ok(())
-                }
-                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
-                    ordinal: 6808317417318106526,
-                    error,
-                }),
-            },
 
-            475191379775102607 => {
-                handler.unattributed().await;
-                Ok(())
+
+
+                    6808317417318106526 => {
+
+                            match ::fidl_next::AsDecoderExt::into_decoded(body) {
+                                Ok(decoded) => {
+                                    handler.always_denied(::fidl_next::Request::from_decoded(decoded)).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: 6808317417318106526,
+                                    error,
+                                }),
+                            }
+
+                    }
+
+
+
+
+                    475191379775102607 => {
+
+                            handler.unattributed().await;
+                            Ok(())
+
+                    }
+
+
+
+
+                    2914965219653596920 => {
+
+                            handler.always_appears_in_importing_library().await;
+                            Ok(())
+
+                    }
+
+
+            ordinal => {
+
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+
             }
-
-            2914965219653596920 => {
-                handler.always_appears_in_importing_library().await;
-                Ok(())
-            }
-
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
@@ -259,14 +288,25 @@ where
         handler: &mut ___H,
         ordinal: u64,
         flexibility: ::fidl_next::protocol::Flexibility,
-        buffer: ___T::RecvBuffer,
+        body: ::fidl_next::Body<___T>,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
+
+
+
+
+
+
+
+
+
+
+            ordinal => {
+
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+
+            }
         }
     }
 }

@@ -10,13 +10,14 @@
 
 use {
     assert_matches::assert_matches,
-    fidl_next::{Chunk, WireU64,
+    fidl_next::{
+        AsDecoderExt as _, Chunk,
         Decode, DecodeError, DecoderExt as _,
         Encode, EncodeError, EncoderExt as _,
         ValidationError,
-        ClientEnd, ServerEnd},
+        ClientEnd, ServerEnd, chunks,
+    },
     fidl_next::fuchsia::channel::Buffer,
-    fidl_next::fuchsia::channel::RecvBuffer,
     fidl_next::fuchsia::zx as zx,
     fidl_next_test_conformance as test_conformance,
     zerocopy::IntoBytes,
@@ -40,16 +41,16 @@ use {
         {{- end }}
         let value = {{ .Value }};
         let mut buffer = Buffer::new();
-        buffer.encode_next(value, ()).unwrap();
-        assert_eq!(&{{ .Bytes }}, buffer.bytes().as_slice());
+        buffer.encode_next(value).unwrap();
+        assert_eq!(chunks!{{ .Bytes }}.as_slice(), buffer.chunks);
         // TODO: support handle dispositions
         {{-  if .RawHandles }}
         assert_eq!(
-            buffer.handles().iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
+            buffer.handles.iter().map(|h| h.raw_handle()).collect::<Vec<_>>(),
             &{{ .RawHandles }}
         );
         {{- else }}
-        assert_eq!(buffer.handles(), &[]);
+        assert_eq!(buffer.handles, &[]);
         {{- end }}
     }
 {{ end }}
@@ -64,9 +65,11 @@ use {
             let mut handle_infos = select_handle_infos(&handle_defs, &{{ .Handles }});
         {{- end }}
 
-        let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
-        let recv_buffer = RecvBuffer::new(buffer);
-        let {{ .ValueVar }}: {{ .ValueType }} = recv_buffer.decode::<{{ .WireValueType }}>().unwrap().take();
+        let buffer = Buffer {
+            chunks: Vec::from(chunks!{{ .Bytes }}),
+            handles: vec!{{ .HandleValues }},
+        };
+        let {{ .ValueVar }}: {{ .ValueType }} = buffer.into_decoded::<{{ .WireValueType }}>().unwrap().take();
         {{ .EqualityCheck }}
         {{- if .UnusedHandles }}
         let unused_handles = select_raw_handle_infos(&handle_defs, &{{ .UnusedHandles }});
@@ -87,7 +90,7 @@ use {
 
         let mut buffer = Buffer::new();
         let value = {{ .Value }};
-        match buffer.encode_next(value, ()) {
+        match buffer.encode_next(value) {
             Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
             Ok(_) => panic!("unexpected successful encoding"),
         }
@@ -106,10 +109,12 @@ use {
             let mut handle_infos = select_handle_infos(&handle_defs, &{{ .Handles }});
         {{- end }}
 
-        let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
-        let recv_buffer = RecvBuffer::new(buffer);
+        let buffer = Buffer {
+            chunks: Vec::from(chunks!{{ .Bytes }}),
+            handles: vec!{{ .HandleValues }}
+        };
 
-        match recv_buffer.decode::<{{ .WireValueType }}>() {
+        match buffer.into_decoded::<{{ .WireValueType }}>() {
             Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
             Ok(value) => panic!("unexpected successful decoding to: {:?}", value.take()),
         }

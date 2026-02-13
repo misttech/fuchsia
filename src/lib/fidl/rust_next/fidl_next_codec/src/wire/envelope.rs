@@ -9,9 +9,10 @@ use munge::munge;
 
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;
+use crate::wire::{WireU16, WireU32};
 use crate::{
     CHUNK_SIZE, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
-    Encoder, EncoderExt as _, Slot, Unconstrained, Wire, WireU16, WireU32,
+    Encoder, EncoderExt as _, Slot, ValidationError, Wire,
 };
 
 #[derive(Clone, Copy)]
@@ -36,13 +37,19 @@ pub union WireEnvelope {
 unsafe impl Send for WireEnvelope {}
 unsafe impl Sync for WireEnvelope {}
 
+impl Constrained for WireEnvelope {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireEnvelope {
-    type Owned<'de> = WireEnvelope;
+    type Narrowed<'de> = Self;
 
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
-
-impl Unconstrained for WireEnvelope {}
 
 impl WireEnvelope {
     const IS_INLINE_BIT: u16 = 1;
@@ -55,20 +62,24 @@ impl WireEnvelope {
 
     /// Encodes a `'static` value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value_static<W: Constrained + Wire, E: InternalHandleEncoder + ?Sized>(
+    pub fn encode_value_static<W: Wire, E: InternalHandleEncoder + ?Sized>(
         value: impl Encode<W, E>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
         constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = out);
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-            } = out;
+            let Encoded {
+                maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         let handles_before = encoder.__internal_handle_count();
@@ -102,20 +113,24 @@ impl WireEnvelope {
 
     /// Encodes a value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value<W: Constrained + Wire, E: Encoder + ?Sized>(
+    pub fn encode_value<W: Wire, E: Encoder + ?Sized>(
         value: impl Encode<W, E>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
         constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = out);
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-            } = out;
+            let Encoded {
+                maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         let handles_before = encoder.__internal_handle_count();
@@ -138,7 +153,7 @@ impl WireEnvelope {
         } else {
             let bytes_before = encoder.bytes_written();
 
-            encoder.encode_next(value, constraint)?;
+            encoder.encode_next_with_constraint(value, constraint)?;
 
             let bytes_count = (encoder.bytes_written() - bytes_before).try_into().unwrap();
             maybe_num_bytes.write(WireU32(bytes_count));
@@ -160,7 +175,12 @@ impl WireEnvelope {
     /// Returns whether a envelope slot is encoded as zero.
     #[inline]
     pub fn is_encoded_zero(slot: Slot<'_, Self>) -> bool {
-        munge!(let Self { zero } = slot);
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let zero = unsafe {
+            munge!(let Self { zero } = slot);
+            zero
+        };
         *zero == [0; 8]
     }
 
@@ -197,14 +217,18 @@ impl WireEnvelope {
         slot: Slot<'_, Self>,
         decoder: &mut D,
     ) -> Result<(), DecodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = slot);
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-            } = slot;
+            let Encoded {
+                maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         if let Some(count) = Self::out_of_line_chunks(maybe_num_bytes, flags)? {
@@ -218,18 +242,22 @@ impl WireEnvelope {
 
     /// Decodes and discards an unknown value in an envelope.
     #[inline]
-    pub fn decode_unknown<D: Decoder + ?Sized>(
+    pub fn decode_unknown<'de, D: Decoder<'de> + ?Sized>(
         slot: Slot<'_, Self>,
-        mut decoder: &mut D,
+        decoder: &mut D,
     ) -> Result<(), DecodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = slot);
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-            } = slot;
+            let Encoded {
+                maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         if let Some(count) = Self::out_of_line_chunks(maybe_num_bytes, flags)? {
@@ -246,16 +274,20 @@ impl WireEnvelope {
     pub fn decode_as_static<D: InternalHandleDecoder + ?Sized, T: Decode<D>>(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
-        constraint: <T as Constrained>::Constraint,
+        constraint: T::Constraint,
     ) -> Result<(), DecodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = slot.as_mut());
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-             } = slot.as_mut();
+            let Encoded {
+                maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         let handles_before = decoder.__internal_handles_remaining();
@@ -269,7 +301,12 @@ impl WireEnvelope {
         if size_of::<T>() > INLINE_SIZE {
             return Err(DecodeError::InlineValueTooBig(size_of::<T>()));
         }
-        munge!(let Self { mut decoded_inline } = slot);
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let mut decoded_inline = unsafe {
+            munge!(let Self { decoded_inline } = slot);
+            decoded_inline
+        };
         let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
         T::decode(slot.as_mut(), decoder, constraint)?;
 
@@ -286,19 +323,23 @@ impl WireEnvelope {
 
     /// Decodes a value of a known type from an envelope.
     #[inline]
-    pub fn decode_as<D: Decoder + ?Sized, T: Decode<D>>(
+    pub fn decode_as<'de, D: Decoder<'de> + ?Sized, T: Decode<D>>(
         mut slot: Slot<'_, Self>,
-        mut decoder: &mut D,
-        constraint: <T as Constrained>::Constraint,
+        decoder: &mut D,
+        constraint: T::Constraint,
     ) -> Result<(), DecodeError> {
+        // `unsafe` block required in the next version of munge
+        #[allow(unused_unsafe)]
+        let encoded = unsafe {
+            munge!(let Self { encoded } = slot.as_mut());
+            encoded
+        };
         munge! {
-            let Self {
-                encoded: Encoded {
-                    mut maybe_num_bytes,
-                    num_handles,
-                    flags,
-                },
-             } = slot.as_mut();
+            let Encoded {
+                mut maybe_num_bytes,
+                num_handles,
+                flags,
+            } = encoded;
         }
 
         let handles_before = decoder.__internal_handles_remaining();
@@ -313,7 +354,12 @@ impl WireEnvelope {
             let value_ptr = value_slot.as_mut_ptr();
             T::decode(value_slot, decoder, constraint)?;
 
-            munge!(let Self { mut decoded_out_of_line } = slot);
+            // `unsafe` block required in the next version of munge
+            #[allow(unused_unsafe)]
+            let mut decoded_out_of_line = unsafe {
+                munge!(let Self { decoded_out_of_line } = slot);
+                decoded_out_of_line
+            };
             // SAFETY: Identical to `ptr.write(value_ptr.cast())`, but raw
             // pointers don't currently implement `IntoBytes`.
             unsafe { decoded_out_of_line.as_mut_ptr().write(value_ptr.cast()) };
@@ -322,7 +368,12 @@ impl WireEnvelope {
             if size_of::<T>() > INLINE_SIZE {
                 return Err(DecodeError::InlineValueTooBig(size_of::<T>()));
             }
-            munge!(let Self { mut decoded_inline } = slot);
+            // `unsafe` block required in the next version of munge
+            #[allow(unused_unsafe)]
+            let mut decoded_inline = unsafe {
+                munge!(let Self { decoded_inline } = slot);
+                decoded_inline
+            };
             let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
             T::decode(slot.as_mut(), decoder, constraint)?;
         }

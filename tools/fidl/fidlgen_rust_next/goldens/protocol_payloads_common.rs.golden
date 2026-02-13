@@ -21,11 +21,17 @@ pub mod natural {
             crate::wire::LocalStructPayload,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -90,7 +96,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::LocalStructPayload>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::LocalStructPayload>,
             ___E,
         > for LocalStructPayload
     where
@@ -102,15 +108,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::LocalStructPayload>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::LocalStructPayload>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -119,7 +125,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::LocalStructPayload>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::LocalStructPayload>,
             ___E,
         > for &'a LocalStructPayload
     where
@@ -131,15 +137,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::LocalStructPayload>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::LocalStructPayload>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -152,11 +158,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -198,11 +210,17 @@ pub mod natural {
             crate::wire::MainProtocolOneWayAnonRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -267,7 +285,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
             ___E,
         > for MainProtocolOneWayAnonRequest
     where
@@ -280,15 +298,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -297,7 +315,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
             ___E,
         > for &'a MainProtocolOneWayAnonRequest
     where
@@ -310,15 +328,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOneWayAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -333,11 +351,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -381,11 +405,17 @@ pub mod natural {
             crate::wire::MainProtocolTwoWayAnonRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -450,7 +480,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
             ___E,
         > for MainProtocolTwoWayAnonRequest
     where
@@ -463,15 +493,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -480,7 +510,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
             ___E,
         > for &'a MainProtocolTwoWayAnonRequest
     where
@@ -493,15 +523,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -516,11 +546,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -564,11 +600,17 @@ pub mod natural {
             crate::wire::MainProtocolTwoWayAnonResponse,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -633,7 +675,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
             ___E,
         > for MainProtocolTwoWayAnonResponse
     where
@@ -646,15 +688,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -663,7 +705,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
             ___E,
         > for &'a MainProtocolTwoWayAnonResponse
     where
@@ -676,15 +718,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolTwoWayAnonResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -699,11 +741,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -747,11 +795,17 @@ pub mod natural {
             crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -821,7 +875,10 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorRequest>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
+            >,
             ___E,
         > for MainProtocolTwoWayAnonWithErrorRequest
     where
@@ -834,15 +891,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorRequest>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -851,7 +911,10 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorRequest>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
+            >,
             ___E,
         > for &'a MainProtocolTwoWayAnonWithErrorRequest
     where
@@ -864,15 +927,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorRequest>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::MainProtocolTwoWayAnonWithErrorRequest,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -887,11 +953,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -936,11 +1008,17 @@ pub mod natural {
             crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -1010,7 +1088,10 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorResponse>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
+            >,
             ___E,
         > for MainProtocolTwoWayAnonWithErrorResponse
     where
@@ -1023,15 +1104,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorResponse>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1040,7 +1124,10 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorResponse>,
+            ::fidl_next::wire::WireBox<
+                'static,
+                crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
+            >,
             ___E,
         > for &'a MainProtocolTwoWayAnonWithErrorResponse
     where
@@ -1053,15 +1140,18 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolTwoWayAnonWithErrorResponse>,
+                ::fidl_next::wire::WireBox<
+                    'static,
+                    crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
+                >,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1076,11 +1166,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -1124,11 +1220,17 @@ pub mod natural {
             crate::wire::MainProtocolOnAnonRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::Encode<::fidl_next::WireU32, ___E>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -1193,7 +1295,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
             ___E,
         > for MainProtocolOnAnonRequest
     where
@@ -1206,15 +1308,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1223,7 +1325,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
+            ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
             ___E,
         > for &'a MainProtocolOnAnonRequest
     where
@@ -1236,15 +1338,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
+                ::fidl_next::wire::WireBox<'static, crate::wire::MainProtocolOnAnonRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-                ::fidl_next::WireBox::encode_present(out);
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::wire::WireBox::encode_present(out);
             } else {
-                ::fidl_next::WireBox::encode_absent(out);
+                ::fidl_next::wire::WireBox::encode_absent(out);
             }
 
             Ok(())
@@ -1257,11 +1359,17 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                    .is_enabled()
-                    && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                        .is_enabled(),
-            )
+            true
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+                && <
+                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -1294,9 +1402,9 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct LocalStructPayload {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<LocalStructPayload>(), 8);
@@ -1306,8 +1414,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(LocalStructPayload, b), 4);
 
+    impl ::fidl_next::Constrained for LocalStructPayload {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for LocalStructPayload {
-        type Owned<'de> = LocalStructPayload;
+        type Narrowed<'de> = LocalStructPayload;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1360,15 +1479,13 @@ pub mod wire {
         type Natural = crate::natural::LocalStructPayload;
     }
 
-    impl ::fidl_next::Unconstrained for LocalStructPayload {}
-
     /// The wire type corresponding to [`MainProtocolOneWayAnonRequest`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolOneWayAnonRequest {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<MainProtocolOneWayAnonRequest>(), 8);
@@ -1378,8 +1495,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolOneWayAnonRequest, b), 4);
 
+    impl ::fidl_next::Constrained for MainProtocolOneWayAnonRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolOneWayAnonRequest {
-        type Owned<'de> = MainProtocolOneWayAnonRequest;
+        type Narrowed<'de> = MainProtocolOneWayAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1432,15 +1560,13 @@ pub mod wire {
         type Natural = crate::natural::MainProtocolOneWayAnonRequest;
     }
 
-    impl ::fidl_next::Unconstrained for MainProtocolOneWayAnonRequest {}
-
     /// The wire type corresponding to [`MainProtocolTwoWayAnonRequest`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonRequest {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<MainProtocolTwoWayAnonRequest>(), 8);
@@ -1450,8 +1576,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolTwoWayAnonRequest, b), 4);
 
+    impl ::fidl_next::Constrained for MainProtocolTwoWayAnonRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonRequest {
-        type Owned<'de> = MainProtocolTwoWayAnonRequest;
+        type Narrowed<'de> = MainProtocolTwoWayAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1504,15 +1641,13 @@ pub mod wire {
         type Natural = crate::natural::MainProtocolTwoWayAnonRequest;
     }
 
-    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonRequest {}
-
     /// The wire type corresponding to [`MainProtocolTwoWayAnonResponse`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonResponse {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<MainProtocolTwoWayAnonResponse>(), 8);
@@ -1522,8 +1657,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolTwoWayAnonResponse, b), 4);
 
+    impl ::fidl_next::Constrained for MainProtocolTwoWayAnonResponse {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonResponse {
-        type Owned<'de> = MainProtocolTwoWayAnonResponse;
+        type Narrowed<'de> = MainProtocolTwoWayAnonResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1576,15 +1722,13 @@ pub mod wire {
         type Natural = crate::natural::MainProtocolTwoWayAnonResponse;
     }
 
-    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonResponse {}
-
     /// The wire type corresponding to [`MainProtocolTwoWayAnonWithErrorRequest`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonWithErrorRequest {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(
@@ -1606,8 +1750,19 @@ pub mod wire {
         4
     );
 
+    impl ::fidl_next::Constrained for MainProtocolTwoWayAnonWithErrorRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorRequest {
-        type Owned<'de> = MainProtocolTwoWayAnonWithErrorRequest;
+        type Narrowed<'de> = MainProtocolTwoWayAnonWithErrorRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1660,15 +1815,13 @@ pub mod wire {
         type Natural = crate::natural::MainProtocolTwoWayAnonWithErrorRequest;
     }
 
-    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonWithErrorRequest {}
-
     /// The wire type corresponding to [`MainProtocolTwoWayAnonWithErrorResponse`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolTwoWayAnonWithErrorResponse {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(
@@ -1690,8 +1843,19 @@ pub mod wire {
         4
     );
 
+    impl ::fidl_next::Constrained for MainProtocolTwoWayAnonWithErrorResponse {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolTwoWayAnonWithErrorResponse {
-        type Owned<'de> = MainProtocolTwoWayAnonWithErrorResponse;
+        type Narrowed<'de> = MainProtocolTwoWayAnonWithErrorResponse;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1744,15 +1908,13 @@ pub mod wire {
         type Natural = crate::natural::MainProtocolTwoWayAnonWithErrorResponse;
     }
 
-    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonWithErrorResponse {}
-
     /// The wire type corresponding to [`MainProtocolOnAnonRequest`].
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct MainProtocolOnAnonRequest {
-        pub a: ::fidl_next::WireU32,
+        pub a: ::fidl_next::wire::WireU32,
 
-        pub b: ::fidl_next::WireU32,
+        pub b: ::fidl_next::wire::WireU32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<MainProtocolOnAnonRequest>(), 8);
@@ -1762,8 +1924,19 @@ pub mod wire {
 
     static_assertions::const_assert_eq!(std::mem::offset_of!(MainProtocolOnAnonRequest, b), 4);
 
+    impl ::fidl_next::Constrained for MainProtocolOnAnonRequest {
+        type Constraint = ();
+
+        fn validate(
+            _: ::fidl_next::Slot<'_, Self>,
+            _: Self::Constraint,
+        ) -> Result<(), ::fidl_next::ValidationError> {
+            Ok(())
+        }
+    }
+
     unsafe impl ::fidl_next::Wire for MainProtocolOnAnonRequest {
-        type Owned<'de> = MainProtocolOnAnonRequest;
+        type Narrowed<'de> = MainProtocolOnAnonRequest;
 
         #[inline]
         fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
@@ -1815,8 +1988,6 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for MainProtocolOnAnonRequest {
         type Natural = crate::natural::MainProtocolOnAnonRequest;
     }
-
-    impl ::fidl_next::Unconstrained for MainProtocolOnAnonRequest {}
 }
 
 pub mod wire_optional {}
@@ -1833,8 +2004,8 @@ pub mod generic {
         for LocalStructPayload<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -1870,8 +2041,8 @@ pub mod generic {
         for MainProtocolOneWayAnonRequest<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -1907,8 +2078,8 @@ pub mod generic {
         for MainProtocolTwoWayAnonRequest<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -1944,8 +2115,8 @@ pub mod generic {
         for MainProtocolTwoWayAnonResponse<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -1982,8 +2153,8 @@ pub mod generic {
         for MainProtocolTwoWayAnonWithErrorRequest<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -2022,8 +2193,8 @@ pub mod generic {
         for MainProtocolTwoWayAnonWithErrorResponse<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(
@@ -2061,8 +2232,8 @@ pub mod generic {
         for MainProtocolOnAnonRequest<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
     {
         #[inline]
         fn encode(

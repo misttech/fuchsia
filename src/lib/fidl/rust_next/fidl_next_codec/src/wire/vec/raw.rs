@@ -7,7 +7,8 @@ use core::ptr::slice_from_raw_parts_mut;
 
 use munge::munge;
 
-use crate::{Unconstrained, Wire, WirePointer, WireU64};
+use crate::wire::{WirePointer, WireU64};
+use crate::{Constrained, Slot, ValidationError, Wire};
 
 #[repr(C)]
 pub struct RawWireVector<'de, T> {
@@ -15,8 +16,16 @@ pub struct RawWireVector<'de, T> {
     pub ptr: WirePointer<'de, T>,
 }
 
+impl<T> Constrained for RawWireVector<'_, T> {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl<T: Wire> Wire for RawWireVector<'static, T> {
-    type Owned<'de> = RawWireVector<'de, T::Owned<'de>>;
+    type Narrowed<'de> = RawWireVector<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -56,5 +65,3 @@ impl<T> RawWireVector<'_, T> {
         slice_from_raw_parts_mut(self.as_ptr(), self.len() as usize)
     }
 }
-
-impl<T: Wire> Unconstrained for RawWireVector<'_, T> {}

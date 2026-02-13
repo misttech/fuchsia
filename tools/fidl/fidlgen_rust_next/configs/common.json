@@ -10,8 +10,8 @@
         "default_handle": "",
         "endpoints": {
             "Channel": {
-                "wire_path": "::fidl_next::fuchsia::WireChannel",
-                "optional_wire_path": "::fidl_next::fuchsia::WireOptionalChannel",
+                "wire_path": "::fidl_next::wire::fuchsia::WireChannel",
+                "optional_wire_path": "::fidl_next::wire::fuchsia::WireOptionalChannel",
                 "natural_path": "::fidl_next::fuchsia::zx::Channel"
             },
             "Driver": {

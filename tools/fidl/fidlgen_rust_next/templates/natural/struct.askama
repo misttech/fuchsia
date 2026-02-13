@@ -100,7 +100,7 @@ where
 }
 {% endif %}
 
-unsafe impl<___E> ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>, ___E> for {{ name }}
+unsafe impl<___E> ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>, ___E> for {{ name }}
 where
     ___E: ::fidl_next::Encoder + ?Sized,
     {{ name }}: ::fidl_next::Encode<crate::wire::{{ name }}{{ static_ }}, ___E>,
@@ -109,14 +109,14 @@ where
     fn encode_option(
         this: ::core::option::Option<Self>,
         encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<::fidl_next::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>>,
+        out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>>,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-            ::fidl_next::WireBox::encode_present(out);
+            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+            ::fidl_next::wire::WireBox::encode_present(out);
         } else {
-            ::fidl_next::WireBox::encode_absent(out);
+            ::fidl_next::wire::WireBox::encode_absent(out);
         }
 
         Ok(())
@@ -124,7 +124,7 @@ where
 }
 
 {% if !strct.is_resource %}
-unsafe impl<'a, ___E> ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>, ___E> for &'a {{ name }}
+unsafe impl<'a, ___E> ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>, ___E> for &'a {{ name }}
 where
     ___E: ::fidl_next::Encoder + ?Sized,
     &'a {{ name }}: ::fidl_next::Encode<crate::wire::{{ name }}{{ static_ }}, ___E>,
@@ -133,14 +133,14 @@ where
     fn encode_option(
         this: ::core::option::Option<Self>,
         encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<::fidl_next::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>>,
+        out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::WireBox<'static, crate::wire::{{ name }}{{ static_ }}>>,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
-            ::fidl_next::WireBox::encode_present(out);
+            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+            ::fidl_next::wire::WireBox::encode_present(out);
         } else {
-            ::fidl_next::WireBox::encode_absent(out);
+            ::fidl_next::wire::WireBox::encode_absent(out);
         }
 
         Ok(())

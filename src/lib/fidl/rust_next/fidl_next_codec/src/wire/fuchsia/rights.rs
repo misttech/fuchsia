@@ -7,9 +7,10 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
+use crate::wire::WireU32;
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
-    Slot, Unconstrained, Wire, WireU32,
+    Slot, ValidationError, Wire,
 };
 
 /// The wire type for [`zx::Rights`].
@@ -19,8 +20,16 @@ pub struct WireRights {
     inner: WireU32,
 }
 
+impl Constrained for WireRights {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireRights {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -28,8 +37,6 @@ unsafe impl Wire for WireRights {
         WireU32::zero_padding(inner);
     }
 }
-
-impl Unconstrained for WireRights {}
 
 impl WireRights {
     /// Returns a `Rights` with the same value as this wire type.
@@ -48,7 +55,7 @@ unsafe impl<D: ?Sized> Decode<D> for WireRights {
     fn decode(
         slot: Slot<'_, Self>,
         decoder: &mut D,
-        _: <Self as Constrained>::Constraint,
+        _: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { inner } = slot);
         WireU32::decode(inner, decoder, ())

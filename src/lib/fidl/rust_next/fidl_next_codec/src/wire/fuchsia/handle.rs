@@ -10,9 +10,10 @@ use zx::NullableHandle;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
+use crate::wire::WireU32;
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge,
 };
 
 /// TODO(https://fxbug.dev/465766514): remove
@@ -33,8 +34,17 @@ impl Drop for WireHandle {
     }
 }
 
+// TODO: validate handle rights
+impl Constrained for WireHandle {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireHandle {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -71,7 +81,7 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
     fn decode(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
-        _constraint: <Self as Constrained>::Constraint,
+        _constraint: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { encoded } = slot.as_mut());
 
@@ -88,18 +98,6 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
     }
 }
 
-impl Constrained for WireHandle {
-    type Constraint = ();
-
-    fn validate(
-        _slot: Slot<'_, Self>,
-        _constraint: Self::Constraint,
-    ) -> Result<(), crate::ValidationError> {
-        // TODO: validate handle rights.
-        Ok(())
-    }
-}
-
 /// TODO(https://fxbug.dev/465766514): remove
 pub type WireOptionalNullableHandle = WireOptionalHandle;
 
@@ -110,8 +108,17 @@ pub struct WireOptionalHandle {
     handle: WireHandle,
 }
 
+// TODO: validate handle rights
+impl Constrained for WireOptionalHandle {
+    type Constraint = ();
+
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+        Ok(())
+    }
+}
+
 unsafe impl Wire for WireOptionalHandle {
-    type Owned<'de> = Self;
+    type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
@@ -226,6 +233,3 @@ impl FromWireOption<WireOptionalHandle> for NullableHandle {
 impl IntoNatural for WireOptionalHandle {
     type Natural = Option<NullableHandle>;
 }
-
-// TODO: validate handle rights
-impl Unconstrained for WireOptionalHandle {}

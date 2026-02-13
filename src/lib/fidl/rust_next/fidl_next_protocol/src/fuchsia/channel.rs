@@ -7,13 +7,13 @@
 use core::marker::PhantomData;
 use core::mem::replace;
 use core::pin::Pin;
-use core::ptr::NonNull;
+use core::slice;
 use core::task::{Context, Poll};
 
 use fidl_next_codec::decoder::InternalHandleDecoder;
 use fidl_next_codec::encoder::InternalHandleEncoder;
 use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder};
-use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder, EncodeError, Encoder};
+use fidl_next_codec::{AsDecoder, CHUNK_SIZE, Chunk, DecodeError, Decoder, EncodeError, Encoder};
 use fuchsia_async::{RWHandle, ReadableHandle as _};
 use zx::sys::{
     ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read,
@@ -35,43 +35,19 @@ impl Shared {
     }
 }
 
-/// A channel buffer.
+/// A channel buffer that contains handles and chunks.
 #[derive(Default)]
 pub struct Buffer {
-    handles: Vec<NullableHandle>,
-    chunks: Vec<Chunk>,
+    /// The chunks of the buffer.
+    pub chunks: Vec<Chunk>,
+    /// The handles of the buffer.
+    pub handles: Vec<NullableHandle>,
 }
 
 impl Buffer {
     /// New buffer.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Retrieve the handles.
-    pub fn handles(&self) -> &[NullableHandle] {
-        &self.handles
-    }
-
-    /// Retrieve the bytes.
-    pub fn bytes(&self) -> Vec<u8> {
-        self.chunks.iter().flat_map(|chunk| chunk.to_le_bytes()).collect()
-    }
-
-    /// Make a buffer out of handles and chunks.
-    pub fn from_raw(handles: Vec<NullableHandle>, chunks: Vec<Chunk>) -> Self {
-        Self { handles, chunks }
-    }
-
-    /// Make a buffer out of handles and bytes. The bytes will be copied.
-    pub fn from_raw_bytes(handles: Vec<NullableHandle>, bytes: impl AsRef<[u8]>) -> Self {
-        let bytes = bytes.as_ref();
-        assert!(bytes.len() % CHUNK_SIZE == 0);
-        let chunks = bytes
-            .chunks_exact(CHUNK_SIZE)
-            .map(|c| fidl_next_codec::WireU64(u64::from_le_bytes(c.try_into().unwrap())))
-            .collect();
-        Self::from_raw(handles, chunks)
     }
 }
 
@@ -115,6 +91,16 @@ impl HandleEncoder for Buffer {
     }
 }
 
+// SAFETY: Moving a `Vec` does not invalidate any references to its elements.
+// The chunks returned from `take_chunks` are located on the heap.
+unsafe impl<'de> AsDecoder<'de> for Buffer {
+    type Decoder = BufferDecoder<'de>;
+
+    fn as_decoder(&'de mut self) -> Self::Decoder {
+        BufferDecoder { buffer: self, chunks_taken: 0, handles_taken: 0 }
+    }
+}
+
 /// The state for a channel send future.
 pub struct SendFutureState {
     buffer: Buffer,
@@ -130,22 +116,35 @@ pub struct RecvFutureState {
     buffer: Option<Buffer>,
 }
 
-/// A channel receive buffer.
-pub struct RecvBuffer {
-    buffer: Buffer,
+/// A decoder for a [`Buffer`].
+pub struct BufferDecoder<'de> {
+    buffer: &'de mut Buffer,
     chunks_taken: usize,
     handles_taken: usize,
 }
 
-impl RecvBuffer {
-    /// Create a new receive buffer from a buffer.
-    pub fn new(buffer: Buffer) -> Self {
-        Self { buffer, chunks_taken: 0, handles_taken: 0 }
+impl InternalHandleDecoder for BufferDecoder<'_> {
+    fn __internal_take_handles(&mut self, count: usize) -> Result<(), DecodeError> {
+        if count > self.buffer.handles.len() - self.handles_taken {
+            return Err(DecodeError::InsufficientHandles);
+        }
+
+        for i in self.handles_taken..self.handles_taken + count {
+            let handle = replace(&mut self.buffer.handles[i], NullableHandle::invalid());
+            drop(handle);
+        }
+        self.handles_taken += count;
+
+        Ok(())
+    }
+
+    fn __internal_handles_remaining(&self) -> usize {
+        self.buffer.handles.len() - self.handles_taken
     }
 }
 
-unsafe impl Decoder for RecvBuffer {
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError> {
+impl<'de> Decoder<'de> for BufferDecoder<'de> {
+    fn take_chunks(&mut self, count: usize) -> Result<&'de mut [Chunk], DecodeError> {
         if count > self.buffer.chunks.len() - self.chunks_taken {
             return Err(DecodeError::InsufficientData);
         }
@@ -153,7 +152,7 @@ unsafe impl Decoder for RecvBuffer {
         let chunks = unsafe { self.buffer.chunks.as_mut_ptr().add(self.chunks_taken) };
         self.chunks_taken += count;
 
-        unsafe { Ok(NonNull::new_unchecked(chunks)) }
+        unsafe { Ok(slice::from_raw_parts_mut(chunks, count)) }
     }
 
     fn commit(&mut self) {
@@ -180,27 +179,7 @@ unsafe impl Decoder for RecvBuffer {
     }
 }
 
-impl InternalHandleDecoder for RecvBuffer {
-    fn __internal_take_handles(&mut self, count: usize) -> Result<(), DecodeError> {
-        if count > self.buffer.handles.len() - self.handles_taken {
-            return Err(DecodeError::InsufficientHandles);
-        }
-
-        for i in self.handles_taken..self.handles_taken + count {
-            let handle = replace(&mut self.buffer.handles[i], NullableHandle::invalid());
-            drop(handle);
-        }
-        self.handles_taken += count;
-
-        Ok(())
-    }
-
-    fn __internal_handles_remaining(&self) -> usize {
-        self.buffer.handles.len() - self.handles_taken
-    }
-}
-
-impl HandleDecoder for RecvBuffer {
+impl HandleDecoder for BufferDecoder<'_> {
     fn take_raw_handle(&mut self) -> Result<zx_handle_t, DecodeError> {
         if self.handles_taken >= self.buffer.handles.len() {
             return Err(DecodeError::InsufficientHandles);
@@ -246,7 +225,7 @@ impl Transport for Channel {
 
     type Exclusive = Exclusive;
     type RecvFutureState = RecvFutureState;
-    type RecvBuffer = RecvBuffer;
+    type RecvBuffer = Buffer;
 
     fn begin_recv(_: &Self::Shared, _: &mut Self::Exclusive) -> Self::RecvFutureState {
         RecvFutureState { buffer: Some(Buffer::new()) }
@@ -283,11 +262,7 @@ impl Transport for Channel {
                         buffer.chunks.set_len(actual_bytes as usize / CHUNK_SIZE);
                         buffer.handles.set_len(actual_handles as usize);
                     }
-                    return Poll::Ready(Ok(RecvBuffer {
-                        buffer: future_state.buffer.take().unwrap(),
-                        chunks_taken: 0,
-                        handles_taken: 0,
-                    }));
+                    return Poll::Ready(Ok(future_state.buffer.take().unwrap()));
                 }
                 ZX_ERR_PEER_CLOSED => return Poll::Ready(Err(None)),
                 ZX_ERR_BUFFER_TOO_SMALL => {
@@ -340,15 +315,16 @@ impl NonBlockingTransport for Channel {
 mod tests {
     use core::mem::MaybeUninit;
 
-    use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder, WireHandle};
+    use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder};
+    use fidl_next_codec::wire::fuchsia::WireHandle;
     use fidl_next_codec::{
-        Decode, DecodeError, DecoderExt as _, Encode, EncodeError, EncoderExt as _, FromWire, Slot,
-        Unconstrained, Wire, munge,
+        AsDecoder as _, Constrained, Decode, DecodeError, DecoderExt as _, Encode, EncodeError,
+        EncoderExt as _, FromWire, Slot, ValidationError, Wire, munge,
     };
     use fuchsia_async as fasync;
     use zx::{Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult};
 
-    use crate::fuchsia::channel::{Buffer, RecvBuffer};
+    use crate::fuchsia::channel::Buffer;
     use crate::testing::*;
 
     #[fasync::run_singlethreaded(test)]
@@ -393,10 +369,16 @@ mod tests {
         boolean: bool,
     }
 
-    impl Unconstrained for WireHandleAndBoolean {}
+    impl Constrained for WireHandleAndBoolean {
+        type Constraint = ();
+
+        fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+            Ok(())
+        }
+    }
 
     unsafe impl Wire for WireHandleAndBoolean {
-        type Owned<'de> = Self;
+        type Narrowed<'de> = Self;
 
         fn zero_padding(out: &mut MaybeUninit<Self>) {
             unsafe {
@@ -438,16 +420,15 @@ mod tests {
     fn partial_decode_drops_handles() {
         let (encode_end, check_end) = Channel::create();
 
-        let mut buffer = Buffer::new();
-        buffer
-            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false }, ())
-            .expect("encoding should succeed");
+        let mut buffer =
+            Buffer::encode(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false })
+                .expect("encoding should succeed");
         // Modify the buffer so that the boolean value is invalid
         *buffer.chunks[0] |= 0x00000002_00000000;
 
-        let mut recv_buffer = RecvBuffer { buffer, chunks_taken: 0, handles_taken: 0 };
-        (&mut recv_buffer)
-            .decode_owned::<WireHandleAndBoolean>()
+        let mut decoder = buffer.as_decoder();
+        decoder
+            .decode::<WireHandleAndBoolean>()
             .expect_err("decoding an invalid boolean should fail");
 
         // Decoding failed, so the handle should still be in the buffer.
@@ -456,7 +437,7 @@ mod tests {
             WaitResult::TimedOut(Signals::CHANNEL_WRITABLE),
         );
 
-        drop(recv_buffer);
+        drop(buffer);
 
         // The handle should have been dropped with the buffer.
         assert_eq!(
@@ -469,14 +450,12 @@ mod tests {
     fn complete_decode_moves_handles() {
         let (encode_end, check_end) = Channel::create();
 
-        let mut buffer = Buffer::new();
-        buffer
-            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false }, ())
-            .expect("encoding should succeed");
+        let mut buffer =
+            Buffer::encode(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false })
+                .expect("encoding should succeed");
 
-        let recv_buffer = RecvBuffer { buffer, chunks_taken: 0, handles_taken: 0 };
-        let decoded =
-            recv_buffer.decode::<WireHandleAndBoolean>().expect("decoding should succeed");
+        let mut decoder = buffer.as_decoder();
+        let decoded = decoder.decode::<WireHandleAndBoolean>().expect("decoding should succeed");
 
         // The handle should remain un-signaled after successful decoding.
         assert_eq!(

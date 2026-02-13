@@ -6,7 +6,9 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_protocol::{self as protocol, ClientHandler, Flexibility, ProtocolError, Transport};
+use fidl_next_protocol::{
+    self as protocol, Body, ClientHandler, Flexibility, ProtocolError, Transport,
+};
 
 use crate::{ClientEnd, HasConnectionHandles, HasTransport};
 
@@ -59,7 +61,7 @@ pub trait DispatchClientMessage<H, T: Transport>: Sized + 'static {
         handler: &mut H,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
@@ -87,9 +89,9 @@ where
         &mut self,
         ordinal: u64,
         flexibility: Flexibility,
-        buffer: T::RecvBuffer,
+        body: Body<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_event(&mut self.handler, ordinal, flexibility, buffer)
+        P::on_event(&mut self.handler, ordinal, flexibility, body)
     }
 }
 

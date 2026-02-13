@@ -5,10 +5,8 @@
 //! The core [`Decoder`] trait.
 
 use core::mem::take;
-use core::ptr::NonNull;
-use core::slice;
 
-use crate::{CHUNK_SIZE, Chunk, Constrained, Decode, DecodeError, Decoded, Slot};
+use crate::{CHUNK_SIZE, Chunk, Decode, DecodeError, Slot};
 
 /// A decoder for FIDL handles (internal).
 pub trait InternalHandleDecoder {
@@ -28,21 +26,9 @@ pub trait InternalHandleDecoder {
 }
 
 /// A decoder for FIDL messages.
-///
-/// # Safety
-///
-/// Pointers returned from `take_chunks` must:
-///
-/// - Point to `count` initialized `Chunk`s
-/// - Be valid for reads and writes
-/// - Remain valid until the decoder is dropped
-///
-/// The decoder **may be moved** without invalidating the returned pointers.
-pub unsafe trait Decoder: InternalHandleDecoder {
-    /// Takes a slice of `Chunk`s from the decoder, returning a pointer to them.
-    ///
-    /// Returns `Err` if the decoder doesn't have enough chunks left.
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError>;
+pub trait Decoder<'de>: InternalHandleDecoder {
+    /// Takes a slice of `Chunk`s from the decoder.
+    fn take_chunks(&mut self, count: usize) -> Result<&'de mut [Chunk], DecodeError>;
 
     /// Commits to any decoding operations which are in progress.
     ///
@@ -68,17 +54,18 @@ impl InternalHandleDecoder for &mut [Chunk] {
     }
 }
 
-unsafe impl Decoder for &mut [Chunk] {
+impl<'de> Decoder<'de> for &'de mut [Chunk] {
     #[inline]
-    fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, DecodeError> {
+    fn take_chunks(&mut self, count: usize) -> Result<&'de mut [Chunk], DecodeError> {
         if count > self.len() {
             return Err(DecodeError::InsufficientData);
         }
 
         let chunks = take(self);
+        // SAFETY: We just checked that `count <= self.len()`.
         let (prefix, suffix) = unsafe { chunks.split_at_mut_unchecked(count) };
         *self = suffix;
-        unsafe { Ok(NonNull::new_unchecked(prefix.as_mut_ptr())) }
+        Ok(prefix)
     }
 
     #[inline]
@@ -97,60 +84,54 @@ unsafe impl Decoder for &mut [Chunk] {
 }
 
 /// Extension methods for [`Decoder`].
-pub trait DecoderExt {
-    /// Takes a slice of `Chunk`s from the decoder.
-    fn take_chunks<'de>(
-        self: &mut &'de mut Self,
-        count: usize,
-    ) -> Result<&'de mut [Chunk], DecodeError>;
-
+pub trait DecoderExt<'de> {
     /// Takes enough chunks for a `T`, returning a `Slot` of the taken value.
-    fn take_slot<'de, T>(self: &mut &'de mut Self) -> Result<Slot<'de, T>, DecodeError>;
+    fn take_slot<T>(&mut self) -> Result<Slot<'de, T>, DecodeError>;
 
-    /// Takes enough chunks for a slice of `T`, returning a `Slot` of the taken slice.
-    fn take_slice_slot<'de, T>(
-        self: &mut &'de mut Self,
-        len: usize,
-    ) -> Result<Slot<'de, [T]>, DecodeError>;
+    /// Takes enough chunks for a slice of `T`, returning a `Slot` of the taken
+    /// slice.
+    fn take_slice_slot<T>(&mut self, len: usize) -> Result<Slot<'de, [T]>, DecodeError>;
 
-    /// Decodes an `Owned` value from the decoder without finishing it.
+    /// Decodes an owned value from the decoder without finishing it.
     ///
-    /// On success, returns `Ok` of an `Owned` value. Returns `Err` if decoding failed.
-    fn decode_owned<'de, T: Decode<Self> + Constrained<Constraint = ()>>(
-        self: &mut &'de mut Self,
-    ) -> Result<T::Owned<'de>, DecodeError>;
-
-    /// Decodes a value from the decoder and finishes it.
-    ///
-    /// On success, returns `Ok` of a `Decoded` value with the decoder. Returns `Err` if decoding
-    /// failed or the decoder finished with an error.
-    fn decode<T>(self) -> Result<Decoded<T, Self>, DecodeError>
+    /// On success, returns `Ok` of an owned value. Returns `Err` if decoding
+    /// failed.
+    fn decode_prefix<T>(&mut self) -> Result<T, DecodeError>
     where
-        T: Decode<Self> + Constrained<Constraint = ()>,
-        Self: Sized;
+        T: Decode<Self, Constraint = ()>;
 
-    /// Decodes a value from the decoder and finishes it.
+    /// Decodes an owned value from the decoder with some constraint without
+    /// finishing it.
     ///
-    /// On success, returns `Ok` of a `Decoded` value with the decoder. Returns `Err` if decoding
-    /// failed or the decoder finished with an error.
-    fn decode_with_constraint<T>(
-        self,
-        constraint: <T as Constrained>::Constraint,
-    ) -> Result<Decoded<T, Self>, DecodeError>
+    /// On success, returns `Ok` of an owned value. Returns `Err` if decoding
+    /// failed.
+    fn decode_prefix_with_constraint<T>(
+        &mut self,
+        constraint: T::Constraint,
+    ) -> Result<T, DecodeError>
     where
-        T: Decode<Self>,
-        Self: Sized;
+        T: Decode<Self>;
+
+    /// Decodes an owned value from the decoder and finishes it.
+    ///
+    /// On success, returns `Ok` of an owned value. Returns `Err` if decoding
+    /// failed.
+    fn decode<T>(&mut self) -> Result<T, DecodeError>
+    where
+        T: Decode<Self, Constraint = ()>;
+
+    /// Decodes an owned value from the decoder with some constraint and
+    /// finishes it.
+    ///
+    /// On success, returns `Ok` of an owned value. Returns `Err` if decoding
+    /// failed.
+    fn decode_with_constraint<T>(&mut self, constraint: T::Constraint) -> Result<T, DecodeError>
+    where
+        T: Decode<Self>;
 }
 
-impl<D: Decoder + ?Sized> DecoderExt for D {
-    fn take_chunks<'de>(
-        self: &mut &'de mut Self,
-        count: usize,
-    ) -> Result<&'de mut [Chunk], DecodeError> {
-        self.take_chunks_raw(count).map(|p| unsafe { slice::from_raw_parts_mut(p.as_ptr(), count) })
-    }
-
-    fn take_slot<'de, T>(self: &mut &'de mut Self) -> Result<Slot<'de, T>, DecodeError> {
+impl<'de, D: Decoder<'de> + ?Sized> DecoderExt<'de> for D {
+    fn take_slot<T>(&mut self) -> Result<Slot<'de, T>, DecodeError> {
         // TODO: might be able to move this into a const for guaranteed const
         // eval
         assert!(
@@ -166,10 +147,7 @@ impl<D: Decoder + ?Sized> DecoderExt for D {
         unsafe { Ok(Slot::new_unchecked(chunks.as_mut_ptr().cast())) }
     }
 
-    fn take_slice_slot<'de, T>(
-        self: &mut &'de mut Self,
-        len: usize,
-    ) -> Result<Slot<'de, [T]>, DecodeError> {
+    fn take_slice_slot<T>(&mut self, len: usize) -> Result<Slot<'de, [T]>, DecodeError> {
         assert!(
             align_of::<T>() <= CHUNK_SIZE,
             "attempted to take a slice slot for a type with an alignment \
@@ -196,40 +174,41 @@ impl<D: Decoder + ?Sized> DecoderExt for D {
         unsafe { Ok(Slot::new_slice_unchecked(chunks_ptr.cast(), len)) }
     }
 
-    fn decode_owned<'de, T: Decode<Self> + Constrained<Constraint = ()>>(
-        self: &mut &'de mut Self,
-    ) -> Result<T::Owned<'de>, DecodeError> {
+    fn decode_prefix<T>(&mut self) -> Result<T, DecodeError>
+    where
+        T: Decode<Self, Constraint = ()>,
+    {
+        self.decode_prefix_with_constraint(())
+    }
+
+    fn decode_prefix_with_constraint<T>(
+        &mut self,
+        constraint: T::Constraint,
+    ) -> Result<T, DecodeError>
+    where
+        T: Decode<Self>,
+    {
         let mut slot = self.take_slot::<T>()?;
-        T::decode(slot.as_mut(), self, ())?;
+        T::decode(slot.as_mut(), self, constraint)?;
         self.commit();
         // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to a
         // valid `T` within the decoder.
-        unsafe { Ok(slot.as_mut_ptr().cast::<T::Owned<'de>>().read()) }
+        unsafe { Ok(slot.as_mut_ptr().read()) }
     }
 
-    fn decode<T>(self) -> Result<Decoded<T, Self>, DecodeError>
+    fn decode<T>(&mut self) -> Result<T, DecodeError>
     where
-        T: Decode<Self> + Constrained<Constraint = ()>,
-        Self: Sized,
+        T: Decode<Self, Constraint = ()>,
     {
         self.decode_with_constraint(())
     }
 
-    fn decode_with_constraint<T>(
-        mut self,
-        constraint: <T as Constrained>::Constraint,
-    ) -> Result<Decoded<T, Self>, DecodeError>
+    fn decode_with_constraint<T>(&mut self, constraint: T::Constraint) -> Result<T, DecodeError>
     where
         T: Decode<Self>,
-        Self: Sized,
     {
-        let mut decoder = &mut self;
-        let mut slot = decoder.take_slot::<T>()?;
-        T::decode(slot.as_mut(), decoder, constraint)?;
-        decoder.commit();
-        decoder.finish()?;
-        // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to a
-        // valid `T` within the decoder.
-        unsafe { Ok(Decoded::new_unchecked(slot.as_mut_ptr(), self)) }
+        let result = self.decode_prefix_with_constraint(constraint)?;
+        self.finish()?;
+        Ok(result)
     }
 }
