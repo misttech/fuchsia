@@ -19,6 +19,11 @@ Error ArmEhAbiModule::Load() {
     return err;
   }
 
+  if (ehdr.e_ident[EI_MAG0] != ELFMAG0 || ehdr.e_ident[EI_MAG1] != ELFMAG1 ||
+      ehdr.e_ident[EI_MAG2] != ELFMAG2 || ehdr.e_ident[EI_MAG3] != ELFMAG3) {
+    return Error("Invalid ELF header!");
+  }
+
   if (!elf_utils::VerifyElfIdentification<Elf32_Ehdr>(ehdr, elf_utils::ElfClass::k32Bit)) {
     return Error("This doesn't look like an ELF module.");
   }
@@ -111,33 +116,49 @@ Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
   return Success();
 }
 
-Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next,
-                           bool pc_is_return_address) {
+fit::result<Error, ArmEhAbiModule::IdxHeader> ArmEhAbiModule::PrepareToStep(
+    const Registers& current) {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
-    return err;
-  }
-
-  // pc_is_return_address indicates whether pc in the current registers is a return address from a
-  // previous "Step". If it is, we need to subtract 1 to find the call site because "call" could
-  // be the last instruction of a nonreturn function and now the PC is pointing outside of the
-  // valid code boundary.
-  //
-  // Subtracting 1 is sufficient here because in |Search| above, we binary search function start
-  // addresses to find the unwinding instructions corresponding to this address. So it's still
-  // correct even if pc is not pointing to the beginning of an instruction.
-  if (pc_is_return_address) {
-    pc -= 1;
+    return fit::error(err);
   }
 
   IdxHeader entry;
   if (auto err = Search(static_cast<uint32_t>(pc), entry); err.has_err()) {
-    return err;
+    return fit::error(err);
+  }
+
+  return fit::ok(entry);
+}
+
+Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next) {
+  IdxHeader entry;
+  if (auto result = PrepareToStep(current); result.is_ok()) {
+    entry = result.value();
+  } else {
+    return result.error_value();
   }
 
   ArmEhAbiParser parser(elf_, entry);
 
   return parser.Step(stack, current, next);
+}
+
+void ArmEhAbiModule::AsyncStep(AsyncMemory* stack, const Registers& current,
+                               fit::callback<void(Error, Registers)> cb) {
+  IdxHeader entry;
+  if (auto result = PrepareToStep(current); result.is_ok()) {
+    entry = result.value();
+  } else {
+    return cb(result.error_value(), Registers(current.arch()));
+  }
+
+  ArmEhAbiParser parser(elf_, entry);
+
+  Registers next(Registers::Arch::kArm32);
+  auto err = parser.Step(stack, current, next);
+
+  cb(err, next);
 }
 
 }  // namespace unwinder

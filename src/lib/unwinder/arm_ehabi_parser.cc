@@ -10,6 +10,8 @@
 #include <span>
 
 #include "src/lib/unwinder/arm_ehabi_module.h"
+#include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 
 #define LOG_DEBUG(...)
@@ -120,6 +122,75 @@ ArmEhAbiParser::ArmEhAbiParser(Memory* elf, const ArmEhAbiModule::IdxHeader& ent
 }
 
 Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& next) {
+  // Create a copy so that if we fail while copying |current| to |next| we don't lose the values
+  // that may already be populated in |next|.
+  Registers maybe_next = next;
+  if (auto err = PrepareToStep(current, maybe_next); err.has_err()) {
+    return err;
+  }
+
+  // Now we can update the out parameter.
+  next = std::move(maybe_next);
+  if (auto result = CollectInstructions(); result.is_ok()) {
+    LOG_DEBUG("Executing %zu instructions\n", result.value().size());
+    if (auto err = ExecuteInstructions(stack, result.value(), next); err.has_err()) {
+      return err;
+    }
+  } else {
+    return result.error_value();
+  }
+
+  auto err = FinalizeStep(next);
+  LOG_DEBUG("%s => %s\n", current.Describe().c_str(), next.Describe().c_str());
+
+  return err;
+}
+
+void ArmEhAbiParser::AsyncStep(AsyncMemory* stack, const Registers& current,
+                               fit::callback<void(Error, Registers)> cb) {
+  Registers next(Registers::Arch::kArm32);
+  if (auto err = PrepareToStep(current, next); err.has_err()) {
+    cb(err, std::move(next));
+    return;
+  }
+
+  auto instructions = CollectInstructions();
+  if (instructions.is_error()) {
+    cb(instructions.error_value(), std::move(next));
+    return;
+  }
+
+  // Now we need to collect some amount of stack memory. Each unwinding operation could pop several
+  // registers from the stack, but we don't know exactly how many yet, so we overestimate and try to
+  // read once.
+  uint64_t sp;
+  if (auto err = current.GetSP(sp); err.has_err()) {
+    cb(err, std::move(next));
+    return;
+  }
+
+  // It is difficult to predict exactly how much data to read here. Because some unwinding operation
+  // could reassign to to SP in the middle of the unwinding instructions, we could have a completely
+  // different SP than when we started. This also means that we cannot exactly predict where we will
+  // be popping registers from. To compensate for this, we read quite a bit more than we probably
+  // need to to ensure that we have a wide enough range to synchronously execute all of our
+  // instructions.
+  constexpr uint32_t kDefaultReadSize = 4096;
+  stack->FetchMemoryRanges({{sp, kDefaultReadSize}}, [=, this, next = std::move(next),
+                                                      instructions = std::move(*instructions),
+                                                      cb = std::move(cb)]() mutable {
+    if (auto err = ExecuteInstructions(stack, instructions, next); err.has_err()) {
+      cb(err, std::move(next));
+      return;
+    }
+
+    auto err = FinalizeStep(next);
+    LOG_DEBUG("%s => %s\n", current.Describe().c_str(), next.Describe().c_str());
+    cb(err, std::move(next));
+  });
+}
+
+Error ArmEhAbiParser::PrepareToStep(const Registers& current, Registers& next) const {
   if (data_ == 0 && extab_offset_ == 0) {
     return Error("Invalid IdxHeaderEntry.");
   } else if (data_ == kExIdxCantUnwind || extab_offset_ == kExIdxCantUnwind) {
@@ -144,15 +215,10 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
     }
   }
 
-  if (auto result = CollectInstructions(); result.is_ok()) {
-    LOG_DEBUG("Executing %zu instructions\n", result.value().size());
-    if (auto err = ExecuteInstructions(stack, result.value(), next); err.has_err()) {
-      return err;
-    }
-  } else {
-    return result.error_value();
-  }
+  return Success();
+}
 
+Error ArmEhAbiParser::FinalizeStep(Registers& next) const {
   Error err = Success();
   // Finally, restore PC to LR if not directly set by the unwinding instructions.
   if (uint64_t pc; next.GetPC(pc).has_err()) {
@@ -167,8 +233,6 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
       err = Error("Could not set PC from LR!");
     }
   }
-
-  LOG_DEBUG("%s => %s\n", current.Describe().c_str(), next.Describe().c_str());
 
   return err;
 }

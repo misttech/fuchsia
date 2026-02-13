@@ -22,8 +22,10 @@ class ArmEhAbiModule {
   // Load the .ARM.exidx binary search table.
   [[nodiscard]] Error Load();
 
-  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next,
-                           bool pc_is_return_address);
+  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
+
+  void AsyncStep(AsyncMemory* stack, const Registers& current,
+                 fit::callback<void(Error, Registers)>);
 
   struct IdxHeaderData {
     uint32_t fn_addr = 0;
@@ -51,6 +53,8 @@ class ArmEhAbiModule {
 
   // Performs an upper bounds search for PC in the exidx table.
   Error Search(uint32_t pc, IdxHeader& entry);
+
+  fit::result<Error, IdxHeader> PrepareToStep(const Registers& current);
 
   Memory* const elf_ = nullptr;
   const uint32_t elf_ptr_ = 0;

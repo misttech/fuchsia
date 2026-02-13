@@ -188,6 +188,8 @@ class Registers {
   std::map<RegisterID, uint64_t> regs_;
 };
 
+std::string ArchToString(Registers::Arch arch);
+
 }  // namespace unwinder
 
 #endif  // SRC_LIB_UNWINDER_REGISTERS_H_

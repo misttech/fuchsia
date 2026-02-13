@@ -238,4 +238,17 @@ std::string Registers::GetRegName(RegisterID reg_id) const {
   return std::to_string(static_cast<size_t>(reg_id));
 }
 
+std::string ArchToString(Registers::Arch arch) {
+  switch (arch) {
+    case Registers::Arch::kArm32:
+      return "Arm32";
+    case Registers::Arch::kArm64:
+      return "Arm64";
+    case Registers::Arch::kX64:
+      return "X64";
+    case Registers::Arch::kRiscv64:
+      return "riscv64";
+  };
+}
+
 }  // namespace unwinder

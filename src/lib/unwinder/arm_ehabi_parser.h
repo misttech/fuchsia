@@ -19,6 +19,8 @@ class ArmEhAbiParser {
   ArmEhAbiParser(Memory* elf, const ArmEhAbiModule::IdxHeader& entry);
 
   [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
+  void AsyncStep(AsyncMemory* stack, const Registers& current,
+                 fit::callback<void(Error, Registers)> cb);
 
  private:
   FRIEND_TEST(ArmEhAbiParser, CollectInstructionsIndexInline);
@@ -36,6 +38,9 @@ class ArmEhAbiParser {
     // https://github.com/llvm/llvm-project/blob/9542d0a0c661be92db950514b5dc9c5ea6d953af/libunwind/src/Unwind-EHABI.cpp#L58
     kLu32 = 0x03,
   };
+
+  Error PrepareToStep(const Registers& current, Registers& next) const;
+  Error FinalizeStep(Registers& next) const;
 
   // Given a mask of registers where the bit index corresponds to the register number, pop from the
   // stack (from low register -> high register), and store them in |next|.
