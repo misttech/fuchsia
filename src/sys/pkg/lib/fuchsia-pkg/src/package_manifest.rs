@@ -756,7 +756,7 @@ impl PartialEq for BlobInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Deserialize, Serialize)]
 pub struct SubpackageInfo {
     /// Path to a PackageManifest for the subpackage.
     pub manifest_path: String,
@@ -766,6 +766,14 @@ pub struct SubpackageInfo {
 
     /// The package hash (meta.far merkle) of the subpackage.
     pub merkle: fuchsia_merkle::Hash,
+}
+
+// Write a custom PartialEq so that we ignore `manifest_path`.
+// Subpackages are identical if their name and merkle are the same.
+impl PartialEq for SubpackageInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.merkle == other.merkle
+    }
 }
 
 fn relativize_blob_source_path(
@@ -1785,12 +1793,15 @@ mod tests {
         let subpackage_dir = temp_dir.join("subpackage_manifests");
         let manifest_dir = temp_dir.join("manifest_dir");
         let manifest_path = manifest_dir.join("package_manifest.json");
+        let manifest_dir_2 = temp_dir.join("subdir").join("other_manifest_dir");
+        let manifest_path_2 = manifest_dir_2.join("package_manifest.json");
         let blob_source_path = data_dir.join("p2").to_string();
         let subpackage_manifest_path = subpackage_dir.join(HASH_1.to_string()).to_string();
 
         std::fs::create_dir_all(&data_dir).unwrap();
         std::fs::create_dir_all(&subpackage_dir).unwrap();
         std::fs::create_dir_all(&manifest_dir).unwrap();
+        std::fs::create_dir_all(&manifest_dir_2).unwrap();
 
         let manifest = PackageManifest(VersionedPackageManifest::Version1(PackageManifestV1 {
             package: PackageMetadata {
@@ -1814,7 +1825,18 @@ mod tests {
             abi_revision: None,
         }));
 
-        let result_manifest = manifest.write_with_relative_paths(&manifest_path).unwrap();
+        let result_manifest = manifest.clone().write_with_relative_paths(&manifest_path).unwrap();
+        let result_manifest_2 =
+            manifest.clone().write_with_relative_paths(&manifest_path_2).unwrap();
+
+        // The manifests should be equivalent, even if the paths have been relativized to
+        // directories at different depths (which results in different manifest_paths).
+        assert_eq!(result_manifest, result_manifest_2);
+        assert_ne!(
+            result_manifest.subpackages()[0].manifest_path,
+            result_manifest_2.subpackages()[0].manifest_path
+        );
+
         let blob = result_manifest.blobs().first().unwrap();
         assert_eq!(blob.source_path, "../data_source/p2");
         let subpackage = result_manifest.subpackages().first().unwrap();
