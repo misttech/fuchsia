@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use errors::ffx_error;
 use ffx_build_version::build_info;
 use ffx_config::EnvironmentContext;
-use ffx_daemon_core::events::{self, EventHandler};
+use ffx_daemon_core::events::{self, EventHandler, StreamClosedExt};
 use ffx_daemon_events::{DaemonEvent, TargetConnectionState, TargetEvent, WireTrafficType};
 use ffx_daemon_protocols::create_protocol_register_map;
 use ffx_daemon_target::target::{self, Target, TargetProtocol, TargetTransport};
@@ -424,11 +424,13 @@ impl Daemon {
         };
         // Ensure auto-connect has at least started.
         target.run_host_pipe(overnet_node);
-        target
-            .events
-            .wait_for(None, |e| e == TargetEvent::RcsActivated)
-            .await
-            .context("waiting for RCS activation")?;
+        let mut stream = target.events.stream().await;
+        loop {
+            let e = stream.next_checked().await?;
+            if e == TargetEvent::RcsActivated {
+                break;
+            }
+        }
         log::debug!("RCS activated for {}@{}", target.nodename_str(), target.id());
         Ok(target)
     }

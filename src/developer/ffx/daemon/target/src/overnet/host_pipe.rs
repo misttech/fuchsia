@@ -611,6 +611,7 @@ mod test {
     use addr::TargetIpAddr;
     use assert_matches::assert_matches;
     use ffx_config::ConfigLevel;
+    use futures::StreamExt;
     use serde_json::json;
     use std::fs;
     use std::net::Ipv4Addr;
@@ -840,13 +841,9 @@ mod test {
         );
         let events = target.events.clone();
         let task = Task::local(async move {
-            events
-                .wait_for(None, |e| {
-                    assert_matches!(e, TargetEvent::SshHostPipeErr(_));
-                    true
-                })
-                .await
-                .unwrap();
+            let mut stream = events.stream().await;
+            let e = stream.next().await.expect("Stream ended");
+            assert_matches!(e, TargetEvent::SshHostPipeErr(_));
         });
         // This is here to allow for the above task to get polled so that the `wait_for` can be
         // placed on at the appropriate time (before the failure occurs in the function below).

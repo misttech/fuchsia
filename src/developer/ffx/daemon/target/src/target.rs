@@ -2033,7 +2033,12 @@ mod test {
         let t = Target::new(&env.context);
         t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
         // This will hang forever if no synthesis happens.
-        t.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await.unwrap();
+        let mut stream = t.events.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == TargetEvent::RcsActivated {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]
@@ -2071,9 +2076,13 @@ mod test {
             &NodeId { id: 1234 },
         );
 
-        let fut = t.events.wait_for(None, |e| e == TargetEvent::RcsActivated);
+        let mut stream = t.events.stream().await;
         t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
-        fut.await.unwrap();
+        while let Some(e) = stream.next().await {
+            if e == TargetEvent::RcsActivated {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]
@@ -2135,15 +2144,15 @@ mod test {
 
         t.expire_state();
 
-        t.events
-            .wait_for(None, move |e| {
-                e == TargetEvent::ConnectionStateChanged(
-                    TargetConnectionState::Mdns(then),
-                    TargetConnectionState::Disconnected,
-                )
-            })
-            .await
-            .unwrap();
+        let mut stream = t.events.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == TargetEvent::ConnectionStateChanged(
+                TargetConnectionState::Mdns(then),
+                TargetConnectionState::Disconnected,
+            ) {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]
@@ -2155,15 +2164,15 @@ mod test {
 
         t.expire_state();
 
-        t.events
-            .wait_for(None, move |e| {
-                e == TargetEvent::ConnectionStateChanged(
-                    TargetConnectionState::Fastboot(then),
-                    TargetConnectionState::Disconnected,
-                )
-            })
-            .await
-            .unwrap();
+        let mut stream = t.events.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == TargetEvent::ConnectionStateChanged(
+                TargetConnectionState::Fastboot(then),
+                TargetConnectionState::Disconnected,
+            ) {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]
@@ -2175,15 +2184,15 @@ mod test {
 
         t.expire_state();
 
-        t.events
-            .wait_for(None, move |e| {
-                e == TargetEvent::ConnectionStateChanged(
-                    TargetConnectionState::Zedboot(then),
-                    TargetConnectionState::Disconnected,
-                )
-            })
-            .await
-            .unwrap();
+        let mut stream = t.events.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == TargetEvent::ConnectionStateChanged(
+                TargetConnectionState::Zedboot(then),
+                TargetConnectionState::Disconnected,
+            ) {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]

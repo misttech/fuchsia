@@ -4,6 +4,7 @@
 
 use crate::reboot;
 use anyhow::{Context as _, Result, anyhow};
+use ffx_daemon_core::events::StreamClosedExt;
 use ffx_daemon_events::TargetEvent;
 use ffx_daemon_target::target::Target;
 use ffx_daemon_target::target_collection::TargetCollection;
@@ -73,19 +74,18 @@ impl TargetHandleInner {
                 let connection_state = self.target.borrow().get_connection_state();
                 if !connection_state.is_product() && !connection_state.is_manual() {
                     let events = self.target.borrow().events.clone();
-                    events
-                        .wait_for(None, |e| {
-                            if let TargetEvent::ConnectionStateChanged(_, state) = e {
-                                // It's not clear if it is possible to change
-                                // the state to `Manual`, but check for it just
-                                // in case.
-                                state.is_product() || state.is_manual()
-                            } else {
-                                false
+                    let mut stream = events.stream().await;
+                    loop {
+                        let e = stream.next_checked().await?;
+                        if let TargetEvent::ConnectionStateChanged(_, state) = e {
+                            // It's not clear if it is possible to change
+                            // the state to `Manual`, but check for it just
+                            // in case.
+                            if state.is_product() || state.is_manual() {
+                                break;
                             }
-                        })
-                        .await
-                        .context("waiting for connection state changes")?;
+                        }
+                    }
                 }
                 // After the event fires it should be guaranteed that the
                 // SSH address is written to the target.
@@ -208,17 +208,18 @@ pub(crate) async fn wait_for_rcs(
 
         let se_clone = seen_event.clone();
 
-        t.events
-            .wait_for(None, move |e| match e {
-                TargetEvent::RcsActivated => true,
+        let mut stream = t.events.stream().await;
+        loop {
+            let e = stream.next_checked().await?;
+            match e {
+                TargetEvent::RcsActivated => break,
                 TargetEvent::SshHostPipeErr(ssh_error) => {
                     *se_clone.borrow_mut() = Some(ssh_error);
-                    true
+                    break;
                 }
-                _ => false,
-            })
-            .await
-            .context("waiting for RCS")?;
+                _ => {}
+            }
+        }
     })
 }
 

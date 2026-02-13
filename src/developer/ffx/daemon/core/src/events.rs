@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use ffx_stream_util::TryStreamUtilExt;
 use fuchsia_async::Task;
 use futures::prelude::*;
-use pin_project::pin_project;
 use std::cmp::Eq;
 use std::fmt::Debug;
 use std::future::Future;
@@ -16,8 +15,6 @@ use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::result;
 use std::task::{Context, Poll};
-use std::time::Duration;
-use timeout::timeout;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -131,73 +128,6 @@ impl<T: EventTrait + 'static> Dispatcher<T> {
         };
 
         inner.event_in.send(e).map_err(|e| anyhow!("error enqueueing event: {:#}", e))
-    }
-}
-
-#[pin_project]
-struct PredicateHandlerFuture<F: Future<Output = Result<()>>> {
-    // Hack to track whether this future has been dropped, so that eventually
-    // the dispatcher will clean the handler up later.
-    _inner: Rc<()>,
-    #[pin]
-    fut: F,
-}
-
-impl<F: Future<Output = Result<()>>> PredicateHandlerFuture<F> {
-    fn new(inner: Rc<()>, fut: F) -> Self {
-        Self { _inner: inner, fut }
-    }
-}
-
-impl<F: Future<Output = Result<()>>> Future for PredicateHandlerFuture<F> {
-    type Output = F::Output;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().fut.poll(cx)
-    }
-}
-
-struct PredicateHandler<T: EventTrait, F>
-where
-    F: Future<Output = bool>,
-{
-    parent_link: Weak<()>,
-    predicate_matched: UnboundedSender<()>,
-    predicate: Box<dyn Fn(T) -> F + 'static>,
-}
-
-impl<T: EventTrait, F> PredicateHandler<T, F>
-where
-    F: Future<Output = bool>,
-{
-    fn new(
-        parent_link: Weak<()>,
-        predicate: impl (Fn(T) -> F) + 'static,
-    ) -> (Self, UnboundedReceiver<()>) {
-        let (tx, rx) = unbounded_channel::<()>();
-        let s = Self { parent_link, predicate_matched: tx, predicate: Box::new(predicate) };
-
-        (s, rx)
-    }
-}
-
-#[async_trait(?Send)]
-impl<T, F> EventHandler<T> for PredicateHandler<T, F>
-where
-    T: EventTrait,
-    F: Future<Output = bool>,
-{
-    async fn on_event(&self, event: T) -> Result<Status> {
-        // This is a bit of a race, but will eventually clean things up by the
-        // time the next event fires (if the wait_for future is dropped).
-        if self.parent_link.upgrade().is_none() {
-            return Ok(Status::Done);
-        }
-        if (self.predicate)(event).await {
-            self.predicate_matched.send(()).context("sending 'done' signal to waiter")?;
-            return Ok(Status::Done);
-        }
-        Ok(Status::Waiting)
     }
 }
 
@@ -358,51 +288,6 @@ impl<T: 'static + EventTrait> Queue<T> {
         handlers.push(dispatcher);
     }
 
-    /// Waits for an event to occur. An event has occurred when the closure
-    /// passed to this function evaluates to `true`.
-    ///
-    /// If timeout is `None`, this will run forever, else this will return an
-    /// `Error` if the timeout is reached (`Error` will only ever be returned
-    /// for a timeout).
-    pub async fn wait_for(
-        &self,
-        timeout: Option<Duration>,
-        predicate: impl Fn(T) -> bool + 'static,
-    ) -> Result<()> {
-        self.wait_for_async(timeout, move |e| future::ready(predicate(e))).await
-    }
-
-    /// The async version of `wait_for` (See: `wait_for`).
-    pub async fn wait_for_async<F1>(
-        &self,
-        timeout_opt: Option<Duration>,
-        predicate: impl Fn(T) -> F1 + 'static,
-    ) -> Result<()>
-    where
-        F1: Future<Output = bool> + 'static,
-    {
-        let link = Rc::new(());
-        let parent_link = Rc::downgrade(&link);
-        let (handler, handler_done) = PredicateHandler::new(parent_link, move |t| predicate(t));
-        let fut = async move {
-            let mut handler_done = UnboundedReceiverStream::new(handler_done);
-            handler_done
-                .next()
-                .await
-                .unwrap_or_else(|| log::warn!("unable to get 'done' signal from handler."));
-            Result::<()>::Ok(())
-        };
-        self.add_handler(handler).await;
-        if let Some(t) = timeout_opt {
-            PredicateHandlerFuture::new(link, async move {
-                timeout(t, fut).await.map_err(|e| anyhow!("waiting for event: {:#}", e))?
-            })
-            .await
-        } else {
-            PredicateHandlerFuture::new(link, fut).await
-        }
-    }
-
     pub fn push(&self, event: T) -> Result<()> {
         self.inner_tx.send(event).map_err(|e| anyhow!("event queue push: {:#}", e))
     }
@@ -441,6 +326,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::time::Duration;
+    use timeout::timeout;
 
     struct TestHookFirst {
         callbacks_done: UnboundedSender<bool>,
@@ -497,13 +384,12 @@ mod test {
         let fake_events = Rc::new(FakeEventStruct {});
         let queue = Queue::new(&fake_events);
         queue.push(5).unwrap();
-        queue
-            .wait_for_async(None, |e| async move {
-                assert_eq!(e, 5);
-                true
-            })
-            .await
-            .unwrap();
+        let mut stream = queue.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == 5 {
+                break;
+            }
+        }
     }
 
     #[fuchsia::test]
@@ -511,7 +397,12 @@ mod test {
         let fake_events = Rc::new(FakeEventStruct {});
         let queue = Queue::new(&fake_events);
         queue.push(5).unwrap();
-        queue.wait_for(None, |e| e == 5).await.unwrap();
+        let mut stream = queue.stream().await;
+        while let Some(e) = stream.next().await {
+            if e == 5 {
+                break;
+            }
+        }
     }
 
     struct FakeEventSynthesizer {}
@@ -527,16 +418,38 @@ mod test {
     async fn test_wait_for_event_synthetic() {
         let fake_events = Rc::new(FakeEventSynthesizer {});
         let queue = Queue::new(&fake_events);
-        let (one, two, three, four) = futures::join!(
-            queue.wait_for(None, |e| e == 7),
-            queue.wait_for(None, |e| e == 6),
-            queue.wait_for(None, |e| e == 2),
-            queue.wait_for(None, |e| e == 3)
+        let (mut s1, mut s2, mut s3, mut s4) =
+            futures::join!(queue.stream(), queue.stream(), queue.stream(), queue.stream());
+        futures::join!(
+            async move {
+                while let Some(e) = s1.next().await {
+                    if e == 7 {
+                        break;
+                    }
+                }
+            },
+            async move {
+                while let Some(e) = s2.next().await {
+                    if e == 6 {
+                        break;
+                    }
+                }
+            },
+            async move {
+                while let Some(e) = s3.next().await {
+                    if e == 2 {
+                        break;
+                    }
+                }
+            },
+            async move {
+                while let Some(e) = s4.next().await {
+                    if e == 3 {
+                        break;
+                    }
+                }
+            }
         );
-        one.unwrap();
-        two.unwrap();
-        three.unwrap();
-        four.unwrap();
     }
 
     // This is mostly here to fool the compiler, as for whatever reason invoking
@@ -642,7 +555,8 @@ mod test {
     async fn event_wait_for_timeout() {
         let fake_events = Rc::new(FakeEventStruct {});
         let queue = Queue::<i32>::new(&fake_events);
-        assert!(queue.wait_for(Some(Duration::from_millis(1)), |_| true).await.is_err());
+        let mut stream = queue.stream().await;
+        assert!(timeout(Duration::from_millis(1), stream.next()).await.is_err());
     }
 
     #[fuchsia::test]
