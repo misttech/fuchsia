@@ -5,9 +5,11 @@
 #ifndef LIB_C_DLFCN_DLFCN_ABI_H_
 #define LIB_C_DLFCN_DLFCN_ABI_H_
 
+#include <lib/ld/abi.h>
 #include <lib/ld/dl-phdr-info.h>
 #include <zircon/compiler.h>
 
+#include <cstdint>
 #include <type_traits>
 
 #include "../weak.h"
@@ -29,8 +31,8 @@ extern "C" {
 // The libdl entrypoints do their own locking for the most part.  But in some
 // places libc needs to exclude libdl (dlopen) changes while doing other things
 // before or after it calls into a _dlfcn_* hook to have libdl do something.
-extern "C" [[gnu::weak]] void _dlfcn_lock();
-extern "C" [[gnu::weak]] void _dlfcn_unlock();
+[[gnu::weak]] void _dlfcn_lock();
+[[gnu::weak]] void _dlfcn_unlock();
 
 // This is used as the only way to call those, so thread-safety annotations
 // always describe it for static checking.
@@ -70,6 +72,11 @@ static_assert(std::is_trivially_destructible_v<ld::DlPhdrInfoCounts>);
 // This is tail-called by libc's dl_iterate_phdr after reporting the startup
 // modules.  If it's undefined, dl_iterate_phdr just returns zero instead.
 [[gnu::weak]] decltype(dl_iterate_phdr) _dlfcn_iterate_phdr __TA_EXCLUDES(kDlfcnLock);
+
+// This finds the module containing the given address, if any.  When present,
+// it's used in lieu of ld::FindModuleByVaddr() on ld::AbiLoadedModules() for
+// dladdr et al.  So it must search all startup, as well as dlopen'd, modules.
+[[gnu::weak]] const ld::abi::Abi<>::Module* _dlfcn_module_by_vaddr(uintptr_t vaddr);
 
 }  // extern "C"
 }  // namespace LIBC_NAMESPACE_DECL

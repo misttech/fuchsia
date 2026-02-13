@@ -35,11 +35,22 @@ struct WeakCall {
 // operator (and thus Weak::Call) have non-templated argument types.
 template <typename R, typename... Args, R (*Symbol)(Args...)>
 struct WeakCall<R(Args...), Symbol> {
-  constexpr void operator()(Args... args) const {
+  using Type = R(Args...);
+
+  constexpr void operator()(Args... args) const
+    requires(std::is_void_v<R>)
+  {
     if (Symbol != nullptr) {
       Symbol(std::forward<Args>(args)...);
     }
   }
+
+  template <Type* Other>
+  struct FallbackTo {
+    constexpr R operator()(Args... args) const {
+      return (Symbol ? Symbol : Other)(std::forward<Args>(args)...);
+    }
+  };
 };
 
 // This facilitates use of a hook interface that libc is a client of.  Each
@@ -61,6 +72,11 @@ struct Weak {
 
   // Weak<Symbol>::Call(...) just calls Symbol(...) or nothing.
   static constexpr WeakCall<Type, Symbol> Call{};
+
+  // Weak<Symbol>::Fallback<Other>(...) calls Symbol(...) or Other(...).
+  template <Type* Other>
+    requires(std::is_function_v<Type>)
+  static constexpr WeakCall<Type, Symbol>::template FallbackTo<Other> Fallback{};
 
   // Weak<Symbol>::Or{value}(...) calls Symbol(...) or returns value.  If it's
   // a variable symbol rather than a function symbol, it just returns (copies)

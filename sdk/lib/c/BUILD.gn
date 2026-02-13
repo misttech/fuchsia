@@ -468,7 +468,6 @@ if (current_toolchain == libc_toolchain) {
     "_dl_debug_addr",
     "dl_clone_loader_service",
     "dl_set_loader_service",
-    "dladdr",
     "dlclose",
     "dlerror",
     "dlinfo",

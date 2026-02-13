@@ -6,13 +6,24 @@ import("//build/test.gni")
 import("../libc.gni")
 
 llvm_libc_source_set("dlfcn") {
-  # Currently llvm-libc has per-function headers and (stub) implementations but
-  # no corresponding tests.  If llvm-libc adds test/src/dlfcn/*_test.cpp files
-  # then they can be used (by listing the functions here).  But they would all
-  # be classed as os_functions anyway.
-  functions = []
+  functions = [
+    "dladdr",
+    # TODO(mcgrathr): "dladdr1",
+  ]
+  os_functions = functions
+  no_test_functions = functions
 
-  local_deps = [ ":thread-cleanup" ]
+  deps = [ "../ld:ld-abi" ]
+  local_sources = [
+    "dladdr-impl.cc",
+    "dladdr-impl.h",
+  ]
+  local_deps = [
+    ":dlfcn-abi",
+    ":thread-cleanup",
+    "..:weak",
+    "//sdk/lib/ld:headers",
+  ]
 }
 
 source_set("dlfcn-abi") {
