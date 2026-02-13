@@ -10,7 +10,10 @@ import("//src/starnix/build/args.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":starnix_core_tests" ]
+  deps = [
+    ":starnix_core_tests",
+    "fs/fuchsia:tests",
+  ]
 }
 
 _starnix_core_edition = "2024"
