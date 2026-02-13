@@ -61,7 +61,7 @@ assert(is_fuchsia,
 # All of the platform assembly input bundles.
 group("assembly") {
   testonly = true
-  deps = [ ":eng" ]
+  deps = [ ":platform" ]
 
   # Coverage, profile and sanitizer builders rename the shared libs, therefore ignore them.
   # RISCV skips some artifacts, therefore we also ignore that.
@@ -77,21 +77,27 @@ platform_artifacts("bringup") {
   version = build_info_version
 }
 
+platform_artifacts("platform") {
+  testonly = true
+  deps = platform_aib_labels
+  version = build_info_version
+}
+
+# TODO(https://fxbug.dev/483063916): Remove these targets by pointing all
+# references to the above :platform target.
 platform_artifacts("eng") {
   testonly = true
-  deps = eng_platform_aib_labels
+  deps = platform_aib_labels
   version = build_info_version
 }
-
 platform_artifacts("userdebug") {
   testonly = true
-  deps = eng_platform_aib_labels
+  deps = platform_aib_labels
   version = build_info_version
 }
-
 platform_artifacts("user") {
   testonly = true
-  deps = eng_platform_aib_labels
+  deps = platform_aib_labels
   version = build_info_version
 }
 
@@ -3836,7 +3842,6 @@ assembly_input_bundle("example_assembly_bundle") {
     # Some host e2e tests use this AIB and are using utility::user.
     "utility::user",
   ]
-  testonly = true
   core_shards = [ "//src/tests/assembly/assemble_image/compiled_package/meta/test.core_shard.cml" ]
   compiled_packages = [
     # Main definition for another package

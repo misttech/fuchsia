@@ -6,10 +6,7 @@ import("//build/icu/config.gni")  # icu_git_info
 
 platform_aibs_dir = get_label_info("//bundles/assembly", "target_out_dir")
 
-# These are the user-buildtype-safe platform AIBs that are used by bootstrap
-# feature-set-level assemblies.  This is a subset of the overall platform AIBs
-# so that these systems (e.g. bringup) don't need to build the entire platform.
-bootstrap_user_platform_aib_names = [
+bringup_platform_aib_names = [
   # The kernel itself
   "zircon",
 
@@ -95,12 +92,7 @@ bootstrap_user_platform_aib_names = [
   "realtek_8211f_driver",
   "xhci_driver",
   "sdhci_driver",
-]
 
-# These are the userdebug platform AIBs that are used by bootstrap
-# feature-set-level assemblies.  This is a subset of the overall platform AIBs
-# so that these systems (e.g. bringup) don't need to build the entire platform.
-bootstrap_userdebug_platform_aib_names = [
   # The embeddable feature-set-level
   "embeddable_userdebug",
 
@@ -145,12 +137,7 @@ bootstrap_userdebug_platform_aib_names = [
 
   # Platform drivers.
   "interconnect_driver",
-]
 
-# These are the eng-buildtype-safe platform AIBs that are used by bootstrap
-# feature-set-level assemblies.  This is a subset of the overall platform AIBs
-# so that these systems (e.g. bringup) don't need to build the entire platform.
-bootstrap_eng_platform_aib_names = [
   # The embeddable feature-set-level
   "embeddable_eng",
 
@@ -187,12 +174,8 @@ bootstrap_eng_platform_aib_names = [
   "ufsutil",
 ]
 
-# The names of all of the platform's 'testonly=false' Assembly Input Bundles
-#
-# These are used by the `utility` and the default feature-set-level assembled
-# systems.
-user_platform_aib_names =
-    bootstrap_user_platform_aib_names + [
+platform_aib_names =
+    bringup_platform_aib_names + [
       ###
       # The common platform bundles
 
@@ -379,68 +362,57 @@ user_platform_aib_names =
 
       # Security / Trusted Execution
       "tee_manager",
-    ]
 
-# The names of all userdebug-allowed platform Assembly Input Bundles
-_userdebug_aib_names = bootstrap_userdebug_platform_aib_names + [
-                         # Needed by both eng and userdebug products, but contains things disallowed in
-                         # user.
-                         "usb_adb_function",
-                         "bluetooth_hfp_hf",
-                         "core_realm_development_access",
-                         "core_realm_development_access_rcs_usb",
-                         "core_realm_development_access_userdebug",
-                         "hvdcp_opti_support",
-                         "session_manager_enable_pkg_cache",
-                         "standard_userdebug",
-                         "standard_userdebug_and_eng",
-                         "cobalt_userdebug_config",
-                         "mdns_fuchsia_device_wired_service",
-                         "nanohub_support",
-                         "fastrpc_support",
-                         "omaha_client_empty_eager_config",
-                         "radar_proxy_with_injector",
-                         "sl4f",
-                         "wlan_development",
+      "usb_adb_function",
+      "bluetooth_hfp_hf",
+      "core_realm_development_access",
+      "core_realm_development_access_rcs_usb",
+      "core_realm_development_access_userdebug",
+      "hvdcp_opti_support",
+      "session_manager_enable_pkg_cache",
+      "standard_userdebug",
+      "standard_userdebug_and_eng",
+      "cobalt_userdebug_config",
+      "mdns_fuchsia_device_wired_service",
+      "nanohub_support",
+      "fastrpc_support",
+      "omaha_client_empty_eager_config",
+      "radar_proxy_with_injector",
+      "sl4f",
+      "wlan_development",
 
-                         # Development and debug tools for connectivity
-                         "development_support_tools_connectivity_networking",
-                         "development_support_tools_connectivity_wlan",
-                         "development_support_tools_connectivity_thread",
+      # Development and debug tools for connectivity
+      "development_support_tools_connectivity_networking",
+      "development_support_tools_connectivity_wlan",
+      "development_support_tools_connectivity_thread",
 
-                         # Driver migration to Platform AIBs, but not needed in user builds.
-                         "fake_battery_driver",
+      # Driver migration to Platform AIBs, but not needed in user builds.
+      "fake_battery_driver",
 
-                         # Memory monitor
-                         "memory_monitor_with_memory_sampler",
-                         "memory_monitor_critical_reports",
-                         "memory_monitor2",
-                         "memory_monitor_page_refaults",
+      # Memory monitor
+      "memory_monitor_with_memory_sampler",
+      "memory_monitor_critical_reports",
+      "memory_monitor2",
+      "memory_monitor_page_refaults",
 
-                         # Development and debug tools for power framework
-                         "power_framework_development_support",
+      # Development and debug tools for power framework
+      "power_framework_development_support",
 
-                         # Sensors support with playback.
-                         "sensors_framework_eng",
+      # Sensors support with playback.
+      "sensors_framework_eng",
 
-                         # Tracing support.
-                         "tracing",
+      # Tracing support.
+      "tracing",
 
-                         # Recovery
-                         "recovery_android",
+      # Recovery
+      "recovery_android",
 
-                         # Userspace fastboot over usb support
-                         "fastbootd_usb_support",
+      # Userspace fastboot over usb support
+      "fastbootd_usb_support",
 
-                         # Location
-                         "gnss",
-                       ]
+      # Location
+      "gnss",
 
-userdebug_platform_aib_names = user_platform_aib_names + _userdebug_aib_names
-
-# The names of all of the platform's Assembly Input Bundles.
-eng_only_platform_aib_names =
-    bootstrap_eng_platform_aib_names + [
       # the core realm additions for eng build-type assemblies
       "core_realm_eng",
 
@@ -504,199 +476,13 @@ eng_only_platform_aib_names =
       # Memory profiling
       "heapdump_global_collector",
     ]
-eng_platform_aib_names =
-    userdebug_platform_aib_names + eng_only_platform_aib_names
-
-# Which AIBs are always present on user standard/utility products.
-required_user_aib_names = [
-  "embeddable",
-  "component_manager",
-  "bootstrap",
-  "core_realm",
-  "core_realm_user_and_userdebug",
-  "driver_framework_common",
-  "driver_framework_rust",
-  "driver_framework_no_instrumentation",
-  "legacy_power_framework",
-  "zircon",
-]
-
-# Which AIBs are always present on userdebug standard/utility products.
-required_userdebug_aib_names = required_user_aib_names + [
-                                 "embeddable_userdebug",
-                                 "bootstrap_userdebug",
-                                 "mdns",
-                                 "core_realm_development_access",
-                               ]
-
-# An allowlist of experimental AIBs.
-#
-# If an AIB is added to this experimental list, it does not require security
-# review, but will be banned from user builds. These AIBs may still be used
-# on userdebug builds as long as scrutiny is not run on those builds.
-#
-# NOTE: This is an allowlist only. To include your AIB,  you must also add it
-# to the appropriate AIB list above.
-experimental_aib_names = [
-  "usb_adb_function",
-  "bootstrap_realm_vsock_development_access",
-
-  # Bluetooth
-  # Bluetooth phone calling as the Hands Free role. Currently in development.
-  "bluetooth_hfp_hf",
-
-  "hvdcp_opti_support",
-  "nanohub_support",
-  "fastrpc_support",
-  "vsock_service_bootstrap",
-  "power_framework_broker",
-  "power_framework_sag",
-  "power_framework_development_support",
-
-  "session_manager_enable_pkg_cache",
-
-  "sensors_framework_eng",
-
-  # Timekeeper
-  # Gives timekeeper some mutable persistent storage. This is optionally
-  # used (1) in tests; and (2) on specific platforms that need
-  # persistence for RTC functionality.
-  "timekeeper_persistence",
-
-  # Wake alarms support: generic and then hardware-specific.
-  "timekeeper_wake_alarms",
-
-  "trusted_execution_environment",
-
-  # Recovery
-  "recovery_android",
-
-  # Userspace fastboot over usb
-  "fastbootd_usb_support",
-
-  # Platform drivers.
-  "interconnect_driver",
-
-  # Location
-  "gnss",
-]
-
-# Ensure that we do not list any experimental AIBs as required
-_experimental_required_aibs = required_userdebug_aib_names -
-                              (required_userdebug_aib_names +
-                               experimental_aib_names - experimental_aib_names)
-if (_experimental_required_aibs != []) {
-  print(
-      "We found experimental AIBs that are marked required. This is not allowed.")
-  print(_experimental_required_aibs)
-  assert(false, "experimental AIBs cannot be marked required")
-}
-
-# Ensure that we do not allow any experimental AIBs in user builds
-_experimental_user_aibs =
-    user_platform_aib_names -
-    (user_platform_aib_names + experimental_aib_names - experimental_aib_names)
-if (_experimental_user_aibs != []) {
-  print("We found user AIBs in the experimental list, which is not allowed.")
-  print("Only userdebug AIBs can be marked experimental.")
-  print("Either move the AIBs to userdebug, or go through security review.")
-  print(_experimental_user_aibs)
-  assert(false, "experimental AIBs cannot be used in user builds")
-}
-
-# Ensure that we do not allow any experimental AIBs in eng builds, because it
-# does not make any sense. The AIBs in the experimental list are blocked from
-# being added to the scrutiny golden files, but scrutiny is never ran on eng
-# products.
-_experimental_eng_aibs = eng_only_platform_aib_names -
-                         (eng_only_platform_aib_names + experimental_aib_names -
-                          experimental_aib_names)
-if (_experimental_eng_aibs != []) {
-  print(
-      "We found eng-only AIBs in the experimental list, which does not make sense.")
-  print("Only userdebug AIBs can be marked experimental.")
-  print(
-      "You probably meant to add these AIBs to userdebug, or should not be marking them experimental.")
-  print(_experimental_eng_aibs)
-  assert(false, "eng-only AIBs cannot be listed as experimental")
-}
 
 bringup_platform_aib_labels = []
-bringup_platform_aib_files = []
-foreach(
-    name,
-    bootstrap_user_platform_aib_names + bootstrap_userdebug_platform_aib_names +
-        bootstrap_eng_platform_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-
-  bringup_platform_aib_labels += [ label ]
-  bringup_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
+foreach(name, bringup_platform_aib_names) {
+  bringup_platform_aib_labels += [ "//bundles/assembly:${name}" ]
 }
 
-user_platform_aib_labels = []
-user_platform_aib_files = []
-foreach(name, user_platform_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-
-  user_platform_aib_labels += [ label ]
-  user_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-required_user_platform_aib_files = []
-foreach(name, required_user_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-  required_user_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-
-userdebug_platform_aib_labels = []
-userdebug_platform_aib_files = []
-foreach(name, userdebug_platform_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-
-  userdebug_platform_aib_labels += [ label ]
-  userdebug_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-required_userdebug_platform_aib_files = []
-foreach(name, required_userdebug_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-  required_userdebug_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-
-experimental_aib_files = []
-foreach(name, experimental_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-  experimental_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-
-eng_platform_aib_labels = []
-eng_platform_aib_files = []
-foreach(name, eng_platform_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-
-  eng_platform_aib_labels += [ label ]
-  eng_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
-}
-
-eng_only_platform_aib_labels = []
-eng_only_platform_aib_files = []
-foreach(name, eng_only_platform_aib_names) {
-  label = "//bundles/assembly:${name}"
-  _target_out_dir = get_label_info(label, "target_out_dir")
-
-  eng_only_platform_aib_labels += [ label ]
-  eng_only_platform_aib_files +=
-      [ "${_target_out_dir}/${name}/assembly_config.json" ]
+platform_aib_labels = []
+foreach(name, platform_aib_names) {
+  platform_aib_labels += [ "//bundles/assembly:${name}" ]
 }

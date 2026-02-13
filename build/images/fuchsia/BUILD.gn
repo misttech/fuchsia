@@ -8,7 +8,6 @@ import("//build/assembly/product_bundle.gni")
 import("//build/assembly/update_package.gni")
 import("//build/board.gni")
 import("//build/product.gni")
-import("//build/security.gni")
 import("//build/testing/host_test_data.gni")
 
 if (is_host) {
@@ -46,7 +45,7 @@ if (is_fuchsia) {
   # To get the list of packages in this assembly, use the
   # `package_list_from_assembly()` GN template.
   group("fuchsia") {
-    testonly = fuchsia_zbi_testonly
+    testonly = true
 
     if (!use_bazel_images_only) {
       public_deps = [
@@ -71,7 +70,7 @@ if (is_fuchsia) {
   # bundle and update packages in GN.
   if (!use_bazel_images_only) {
     assembled_system("fuchsia_assembly") {
-      testonly = fuchsia_zbi_testonly
+      testonly = true
 
       generate_fvm = !fxfs_blob
       generate_fxfs = fxfs_blob
@@ -121,7 +120,7 @@ if (is_fuchsia) {
 
     update_epoch = update_platform_epoch + update_product_epoch
     update_package("update") {
-      testonly = fuchsia_zbi_testonly
+      testonly = true
       deps = [
         ":fuchsia_assembly",
         "//build/info:build_info_files",
@@ -137,7 +136,7 @@ if (is_fuchsia) {
 
     product_bundle_label = "product_bundle"
     product_bundle(product_bundle_label) {
-      testonly = fuchsia_zbi_testonly
+      testonly = true
       name = main_product_bundle_name
       deps = [
         ":fuchsia_assembly",

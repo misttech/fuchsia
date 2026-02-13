@@ -39,6 +39,7 @@ def create_bundle(args: argparse.Namespace) -> None:
     aib_creator = AIBCreator(
         args.outdir,
         args.experimental,
+        args.testonly,
     )
 
     # Set the feature set + build type combinations that we allow the contents
@@ -468,6 +469,11 @@ def main() -> int:
         "--outdir",
         required=True,
         help="Path to the outdir that will contain the AIB",
+    )
+    bundle_creation_parser.add_argument(
+        "--testonly",
+        action="store_true",
+        help="If an AIB is testonly then it can never be allowed on user builds",
     )
     bundle_creation_parser.add_argument(
         "--allowed-in",

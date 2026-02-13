@@ -10,7 +10,7 @@ _goldens_dir =
 _kernel_goldens_dir = "//bundles/assembly/scrutiny/kernel_goldens"
 
 generate_scrutiny_configs("user") {
-  platform_artifacts = "//bundles/assembly:eng"
+  platform_artifacts = "//bundles/assembly:platform"
   build_type = "user"
 
   static_packages_golden = "${_goldens_dir}/static_packages_user.txt"
@@ -20,7 +20,7 @@ generate_scrutiny_configs("user") {
 }
 
 generate_scrutiny_configs("userdebug") {
-  platform_artifacts = "//bundles/assembly:eng"
+  platform_artifacts = "//bundles/assembly:platform"
   build_type = "userdebug"
 
   static_packages_golden = "${_goldens_dir}/static_packages_userdebug.txt"
@@ -31,14 +31,14 @@ generate_scrutiny_configs("userdebug") {
 
 # Build goldens with only the kernel args to require owners from the kernel team.
 generate_scrutiny_configs("user_kernel_args") {
-  platform_artifacts = "//bundles/assembly:eng"
+  platform_artifacts = "//bundles/assembly:platform"
   build_type = "user"
 
   kernel_cmdline_golden = "${_kernel_goldens_dir}/kernel_cmdline_user.txt"
 }
 
 generate_scrutiny_configs("userdebug_kernel_args") {
-  platform_artifacts = "//bundles/assembly:eng"
+  platform_artifacts = "//bundles/assembly:platform"
   build_type = "userdebug"
 
   kernel_cmdline_golden = "${_kernel_goldens_dir}/kernel_cmdline_userdebug.txt"

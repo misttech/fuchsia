@@ -9,7 +9,6 @@
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
-import("//build/security.gni")
 import("//tools/check-licenses/build/license_data.gni")
 
 _excluded_bazel_inputs = [

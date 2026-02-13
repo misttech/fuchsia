@@ -366,6 +366,10 @@ template("assembly_input_bundle") {
     creation_deps += invoker.deps
   }
 
+  if (defined(invoker.testonly) && invoker.testonly) {
+    creation_args += [ "--testonly" ]
+  }
+
   if (defined(invoker.allowed_in)) {
     foreach(include, invoker.allowed_in) {
       creation_args += [

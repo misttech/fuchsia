@@ -430,6 +430,7 @@ class AIBCreator:
         self,
         outdir: FilePath,
         experimental: bool = False,
+        testonly: bool = False,
     ) -> None:
         # The directory to create the AIB in.  The manifest will be placed in
         # the root of this dir.
@@ -454,6 +455,11 @@ class AIBCreator:
         #
         # Experimental AIBs are only allowed in userdebug/eng builds.
         self.experimental = experimental
+
+        # If an AIB is testonly, then we should never allow it on user builds.
+        # This check is done during the construction of the AIB, and not during
+        # assembly.
+        self.testonly = testonly
 
         # The packages (paths to package manifests)
         self.packages: set[PackageDetails] = set()
@@ -584,6 +590,11 @@ class AIBCreator:
         list_attr = getattr(self, attr)
         if feature_set_level not in list_attr:
             list_attr[feature_set_level] = set()
+        if self.testonly and "user" in build_types:
+            raise ValueError(
+                f"AIB is marked as testonly, therefore it cannot be included in 'user' builds\n"
+                f"Use 'allowed_in' to restrict the AIB from 'user' builds."
+            )
         list_attr[feature_set_level].update(build_types)
 
     def build(self) -> tuple[AssemblyInputBundle, FilePath, DepSet]:

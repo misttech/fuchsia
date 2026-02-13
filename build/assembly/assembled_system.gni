@@ -308,7 +308,7 @@ template("assembled_system") {
       # Use only the bringup bundles when that's explicitly set.
       platform_artifacts = "//bundles/assembly:bringup"
     } else {
-      platform_artifacts = "//bundles/assembly:eng"
+      platform_artifacts = "//bundles/assembly:platform"
     }
 
     # This is defined here to save against needing to check against

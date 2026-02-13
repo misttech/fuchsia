@@ -14,7 +14,6 @@ import("//build/info/info.gni")
 import("//build/product.gni")
 import("//build/product_bundles_json.gni")
 import("//build/rust/config.gni")
-import("//build/security.gni")
 import("//build/testing/platforms.gni")
 import("//build/testing/validated_test_types_group.gni")
 import("//build/tests_json.gni")
@@ -2413,7 +2412,7 @@ group("build_only") {
 
 # Universe packages added by the developer, using `fx set` or `fx args`
 group("developer_universe_packages") {
-  testonly = fuchsia_zbi_testonly
+  testonly = true
   visibility = [
     ":test_components",
     ":tests_from_metadata",
