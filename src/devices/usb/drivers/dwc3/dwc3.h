@@ -240,13 +240,57 @@ class Dwc3 : public fdf::DriverBase,
     Ep0& operator=(Ep0&&) = delete;
 
     enum class State {
+      // Controller is not programmed to receive control directives.
       None,
-      Setup,        // Queued setup phase
-      DataOut,      // Queued data on EP0_OUT
-      DataIn,       // Queued data on EP0_IN
-      WaitNrdyOut,  // Waiting for not-ready on EP0_OUT
-      WaitNrdyIn,   // Waiting for not-ready on EP0_IN
-      Status,       // Waiting for status to complete
+
+      // Controller programmed to accept a Setup token from the host. Upon XferComplete, the machine
+      // will transition to one of:
+      //   TwoStage: The control directive is a 2-stage dataless control-write.
+      //   DataOut: The control directive is a 3-stage control-write involving a data stage.
+      //   DataIn: The control directive is a 3-stage control-read involving a data stage.
+      //
+      // In this, and all following states, errors will result in stalling the transfer and
+      // transitioning back to the Setup state.
+      Setup,
+
+      // Two-stage transfer states.
+      //
+      // With two-stage transfers, there is an inherent race between the controller generating an
+      // XferNotReady(Status) event and the effects of the transfer having been applied. These
+      // states account for the race and ensure the Status state is not entered until the stack has
+      // had a chance to apply the incoming control directive.
+      //
+      // Upon entering the TwoStage state, the race will be started. Errors aside, one of the two
+      // following conditions will occur.
+      //   1. The stack applies the effects of the control directive before the controller issues a
+      //      XferNotReady(Status) event. Transition from TwoStage to WaitHost.
+      //   2. The controller issues XferNotReady(Status) before the stack finishes applying the
+      //      control directive. Transition to the WaitFidl state.
+      //
+      // Once in the WaitHost or WaitFidl state, the conditions to transition to the Status state
+      // are different:
+      //   WaitHost: Upon receipt of a XferNotReady(Status) event, transition to the Status state.
+      //   WaitFidl: Upon fully applying the control directive (i.e. the Control() RPC completes),
+      //     transition to the Status state.
+      TwoStage,
+      WaitFidl,
+      WaitHost,
+
+      // Three-stage data states.
+      //
+      // These states serve to move data to/from the host depending on whether the transfer is a
+      // control-read or control-write. Once in one of the data states, data will be exchanged with
+      // the host commensurate with the transfer direction. Upon receipt of the XferComplete event,
+      // the corresponding WaitNreadyOut/In state will be entered and await a further
+      // XferNotReady(Status) for the given endpoint.
+      DataOut,
+      DataIn,
+      WaitNrdyOut,  // Waiting on ep0.
+      WaitNrdyIn,   // Waiting on ep1.
+
+      // Final Status state to either issue or receive an ACK to/from the host depending on transfer
+      // type. Upon XferComplete, transition to the Setup state.
+      Status,
     };
 
     TrbFifo shared_fifo;
@@ -411,27 +455,37 @@ struct std::formatter<dwc3::Dwc3::Ep0::State> : std::formatter<std::string> {
     std::string fmt;
     switch (state) {
       case dwc3::Dwc3::Ep0::State::None:
-        fmt = "NONE";
+        fmt = "None";
         break;
       case dwc3::Dwc3::Ep0::State::Setup:
-        fmt = "SETUP";
+        fmt = "Setup";
+        break;
+      case dwc3::Dwc3::Ep0::State::TwoStage:
+        fmt = "TwoStage";
+        break;
+      case dwc3::Dwc3::Ep0::State::WaitFidl:
+        fmt = "WaitFidl";
+        break;
+      case dwc3::Dwc3::Ep0::State::WaitHost:
+        fmt = "WaitHost";
         break;
       case dwc3::Dwc3::Ep0::State::DataOut:
-        fmt = "DATA_OUT";
+        fmt = "DataOut";
         break;
       case dwc3::Dwc3::Ep0::State::DataIn:
-        fmt = "DATA_IN";
+        fmt = "DataIn";
         break;
       case dwc3::Dwc3::Ep0::State::WaitNrdyOut:
-        fmt = "WAIT_NREDY_OUT";
+        fmt = "WaitNrdyOut";
         break;
       case dwc3::Dwc3::Ep0::State::WaitNrdyIn:
-        fmt = "WAIT_NREDY_IN";
+        fmt = "WaitNrdyIn";
         break;
       case dwc3::Dwc3::Ep0::State::Status:
-        fmt = "STATUS";
+        fmt = "Status";
         break;
       default:
+        // The states changed, but the formatter wasn't updated accordingly
         fmt = "<unknown>";
         break;
     }

@@ -84,19 +84,28 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
                  ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
                  ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
 
-      const bool is_three_stage = ep0_.cur_setup.w_length > 0;
+      const bool is_two_stage = ep0_.cur_setup.w_length == 0;
       const bool is_out = ((ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT);
-      if (is_three_stage && is_out) {
+
+      if (is_two_stage) {
+        ep0_.state = Ep0::State::TwoStage;
+        HandleEp0Setup(0);
+        break;
+      }
+
+      // For out-type three-stage transfers, data is first read from the host and then passed up
+      // through the stack. For all in-type transfers, the stack generates in-data, and then
+      // transfers it to the host.
+      if (is_out) {
         CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
         EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, ep0_.buffer->phys(),
                         ep0_.buffer->size());
         ep0_.transfer_in_progress_ = true;
         ep0_.state = Ep0::State::DataOut;
-        break;
+      } else {
+        ep0_.state = Ep0::State::DataIn;
+        HandleEp0Setup(ep0_.buffer->size());
       }
-
-      ep0_.state = is_three_stage ? Ep0::State::DataIn : Ep0::State::WaitNrdyIn;
-      HandleEp0Setup(is_three_stage ? ep0_.buffer->size() : 0);
       break;
     }
     case Ep0::State::DataOut: {
@@ -114,6 +123,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       Ep0QueueSetup();
       break;
     default:
+      fdf::error("unexpected XferComplete state={}", ep0_.state);
       break;
   }
 }
@@ -128,15 +138,36 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
     case Ep0::State::Setup:
       if ((stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) ||
           (stage == DEPEVT_XFER_NOT_READY_STAGE_STATUS)) {
-        // Stall if we receive xfer not ready data/status while waiting for setup to complete
+        // Stall if we receive XferNotReady(Data/Status) while waiting for setup to complete
         ep0_.shared_fifo.Clear();
         EpSetStall(ep0_.out, true);
         Ep0QueueSetup();
       }
       break;
+    case Ep0::State::TwoStage:
+      ZX_ASSERT(stage);  // Must be 1 or 2.
+      if (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) {
+        ep0_.shared_fifo.Clear();
+        EpSetStall(ep0_.out, true);
+        Ep0QueueSetup();
+      } else {
+        ep0_.state = Ep0::State::WaitFidl;
+      }
+      break;
+    case Ep0::State::WaitHost:
+      ZX_ASSERT(stage);  // Must be 1 or 2.
+      if (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA) {
+        ep0_.shared_fifo.Clear();
+        EpSetStall(ep0_.out, true);
+        Ep0QueueSetup();
+      } else {
+        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
+        ep0_.state = Ep0::State::Status;
+      }
+      break;
     case Ep0::State::DataOut:
       if ((ep_num == kEp0In) && (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA)) {
-        // end transfer and stall if we receive xfer not ready in the opposite direction
+        // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
         ep0_.shared_fifo.Clear();
         CmdEpEndTransfer(ep0_.out);
         EpSetStall(ep0_.out, true);
@@ -145,7 +176,7 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       break;
     case Ep0::State::DataIn:
       if ((ep_num == kEp0Out) && (stage == DEPEVT_XFER_NOT_READY_STAGE_DATA)) {
-        // end transfer and stall if we receive xfer not ready in the opposite direction
+        // End transfer and stall if we receive XferNotReady(Data) in the opposite direction.
         ep0_.shared_fifo.Clear();
         CmdEpEndTransfer(ep0_.in);
         EpSetStall(ep0_.out, true);
@@ -154,16 +185,14 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       break;
     case Ep0::State::WaitNrdyOut:
       if (ep_num == kEp0Out) {
-        EpStartTransfer(ep0_.out, ep0_.shared_fifo,
-                        ep0_.cur_setup.w_length ? TRB_TRBCTL_STATUS_3 : TRB_TRBCTL_STATUS_2, 0, 0);
+        EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
         ep0_.transfer_in_progress_ = true;
         ep0_.state = Ep0::State::Status;
       }
       break;
     case Ep0::State::WaitNrdyIn:
       if (ep_num == kEp0In) {
-        EpStartTransfer(ep0_.in, ep0_.shared_fifo,
-                        ep0_.cur_setup.w_length ? TRB_TRBCTL_STATUS_3 : TRB_TRBCTL_STATUS_2, 0, 0);
+        EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_3, 0, 0);
         ep0_.transfer_in_progress_ = true;
         ep0_.state = Ep0::State::Status;
       }
@@ -177,11 +206,13 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 
 void Dwc3::HandleEp0Setup(size_t length) {
   TRACE_DURATION("dwc3", "Dwc3::HandleEp0Setup", "length", length);
+
   if (ep0_.cur_setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
     // handle some special setup requests in this driver
     switch (ep0_.cur_setup.b_request) {
       case USB_REQ_SET_ADDRESS:
         SetDeviceAddress(ep0_.cur_setup.w_value);
+        ep0_.state = Ep0::State::WaitHost;
         return;
       case USB_REQ_SET_CONFIGURATION:
         ResetConfiguration();
@@ -204,6 +235,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
   }
 
   const bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
+
   fidl::Arena arena;
   dci_intf_.buffer(arena)
       ->Control(ep0_.cur_setup, is_out
@@ -234,25 +266,41 @@ void Dwc3::HandleEp0Setup(size_t length) {
               return;
             }
 
-            if (!is_out) {
-              // A lightweight byte-span is used to make it easier to process the read data.
-              cpp20::span<uint8_t> read_data{result.value()->read.get()};
-              // Don't blow out caller's buffer.
-              if (read_data.size_bytes() > length) {
+            switch (ep0_.state) {
+              case Ep0::State::TwoStage:
+                ep0_.state = Ep0::State::WaitHost;
+                break;
+              case Ep0::State::WaitFidl:
+                EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_STATUS_2, 0, 0);
+                ep0_.state = Ep0::State::Status;
+                break;
+              case Ep0::State::WaitHost:
+                // Nonsensical case that should never happen. See state commentary.
+                fdf::error("Invalid Ep0 state");
                 fail();
-                return;
-              }
+                break;
+              default:
+                if (!is_out) {
+                  // A lightweight byte-span is used to make it easier to process the read data.
+                  cpp20::span<uint8_t> read_data{result.value()->read.get()};
+                  // Don't blow out caller's buffer.
+                  if (read_data.size_bytes() > length) {
+                    fail();
+                    return;
+                  }
 
-              if (!read_data.empty()) {
-                std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
-              }
+                  if (!read_data.empty()) {
+                    std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
+                  }
 
-              fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
-              // queue a write for the data phase
-              CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
-              EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
-                              ep0_.buffer->phys(), read_data.size_bytes());
-              ep0_.transfer_in_progress_ = true;
+                  fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
+                  // queue a write for the data phase
+                  CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
+                  EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
+                                  ep0_.buffer->phys(), read_data.size_bytes());
+                  ep0_.transfer_in_progress_ = true;
+                }
+                break;
             }
           });
 }
