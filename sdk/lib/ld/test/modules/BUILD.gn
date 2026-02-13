@@ -8,6 +8,7 @@ import("//build/testing/host_test_data.gni")
 import("//build/toolchain/generated_ifs_file.gni")
 import("//build/toolchain/ifs_shared_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//sdk/lib/c/libc_toolchain.gni")
 import("//sdk/lib/ld/distribution_manifest_prefix.gni")
 import("//sdk/lib/ld/testing/test_elf_object.gni")
 
@@ -423,6 +424,9 @@ template("_test_link") {
     }
 
     if (defined(invoker.configs)) {
+      # De-duplicate with defaults, and rotate duplicates to last (overriding).
+      configs += invoker.configs
+      configs -= invoker.configs
       configs += invoker.configs
     }
 
@@ -2186,4 +2190,48 @@ source_set("startup-symbols") {
 config("headers.config") {
   visibility = [ ":*" ]
   include_dirs = [ "." ]
+}
+
+template("libc_test_executable") {
+  _test_link(target_name) {
+    target_type = "executable"
+    install_dir = "bin"
+    output_file = target_name
+
+    deps = []
+    configs = []
+    remove_configs = []
+    exclude_toolchain_tags = []
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "install_dir",
+                             "output_file",
+                             "target_type",
+                           ])
+
+    deps += [ "//sdk/lib/c:new-libc-test" ]
+    configs += [
+      "//build/config/zircon:user-executable",
+      "//build/config/fuchsia:no_cpp_standard_library",
+    ]
+    remove_configs += [
+      "//build/config/fuchsia:fdio_config",
+
+      # Remove it so that it's not _before_ user-executable, which passes
+      # --no-dynamic-linker.  The deps to //sdk/lib/ld:startup will reach this
+      # again later, where its --dynamic-linker=... can override.
+      "//sdk/lib/ld:abi-interp",
+    ]
+
+    # Sanitizer support not ready yet for new libc.
+    exclude_toolchain_tags = [ "uses-shadow" ]
+
+    # TODO(https://fxbug.dev/483475945): Work around RBE linking bug.
+    configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]
+  }
+}
+
+libc_test_executable("libc-start-main") {
+  sources = [ "libc-start-main.cc" ]
 }

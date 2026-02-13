@@ -34,7 +34,7 @@ void TakeLegacy(zx::handle handle, zx_handle_t& legacy) {
 
 void TakeUtcClock(zx::clock clock) {
   zx::clock old_clock;
-  _zx_utc_reference_swap(clock.release(), clock.reset_and_get_address());
+  _zx_utc_reference_swap(clock.release(), old_clock.reset_and_get_address());
 }
 
 void Preinit(Processargs& saved) {

@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/ld/abi.h>
 #include <lib/ld/tls.h>
 
 #include "../threads/thread-storage.h"
+#include "ld-abi.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-elfldltl::TlsLayout<> ThreadStorage::GetTlsLayout() { return ld::abi::_ld_abi.static_tls_layout; }
+elfldltl::TlsLayout<> ThreadStorage::GetTlsLayout() { return _ld_abi.static_tls_layout; }
 
 void ThreadStorage::InitializeTls(std::span<std::byte> thread_block, size_t tp_offset) {
-  ld::TlsInitialExecDataInit(ld::abi::_ld_abi, thread_block, tp_offset, true);
+  ld::TlsInitialExecDataInit(_ld_abi, thread_block, tp_offset, true);
 }
 
 }  // namespace LIBC_NAMESPACE_DECL

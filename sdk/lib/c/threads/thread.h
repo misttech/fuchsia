@@ -136,6 +136,9 @@ decltype(Status(std::declval<zx_status_t>())) ThreadCreateAndStart(
 // ThreadExitFinish to do the real tear-down work.
 [[noreturn]] void ThreadExit(intptr_t value);
 
+// This is called by ThreadExit to destroy per-thrad <dlfcn.h> (dlerror) state.
+void ThreadDlfcnCleanup();
+
 // The last phase of exit is compiled using only the basic machine ABI so it
 // can do some stack-switching and then free all the main thread stacks.
 [[noreturn]] void ThreadExitFinish(Thread& self)  //

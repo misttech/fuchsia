@@ -11,6 +11,8 @@ llvm_libc_source_set("dlfcn") {
   # then they can be used (by listing the functions here).  But they would all
   # be classed as os_functions anyway.
   functions = []
+
+  local_deps = [ ":thread-cleanup" ]
 }
 
 source_set("dlfcn-abi") {
@@ -38,6 +40,13 @@ config("dl_phdr_info.config") {
     "-include",
     rebase_path(inputs[0], root_build_dir),
   ]
+}
+
+libc_source_set("thread-cleanup") {
+  visibility = [ ":*" ]
+
+  sources = [ "thread-cleanup.cc" ]
+  deps = [ "../threads:thread" ]
 }
 
 # This never needs to go into a boot test, so it can use gtest.  It's defined

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/init-fini.h>
-#include <lib/ld/abi.h>
 #include <lib/ld/module.h>
 
 #include <algorithm>
@@ -12,6 +11,7 @@
 
 #include "../dlfcn/dlfcn-abi.h"
 #include "../startup/start-main.h"
+#include "ld-abi.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -31,12 +31,12 @@ void StartupCtors() {
   // it's outside the Module.  Run those first.  The bias for CallInit doesn't
   // need to be fetched because that's only used for the legacy pointer when
   // the array is relocated (as it is here), and preinit has no legacy pointer.
-  InitFiniInfo{ld::abi::_ld_abi.preinit_array}.CallInit(0);
+  InitFiniInfo{_ld_abi.preinit_array}.CallInit(0);
 
   // Run normal initializers for all the modules (the executable's run last).
   std::ranges::for_each(
       // Modules get their initializers run in reverse load order.
-      std::views::reverse(ld::AbiLoadedModules(ld::abi::_ld_abi)),
+      std::views::reverse(ld::AbiLoadedModules(_ld_abi)),
       [](const auto& module) { module.init.CallInit(module.link_map.addr); });
 }
 

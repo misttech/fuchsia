@@ -234,7 +234,10 @@ if (is_fuchsia) {
   group("libc-tests.test-data") {
     visibility = [ ":*" ]
     testonly = true
-    deps = [ ":libc-noop-test.test-data" ]
+    deps = [
+      ":libc-noop-test.test-data",
+      "modules:libc-start-main.test-data",
+    ]
   }
 
   # This generates a file that is used via #include to fill in the initializer

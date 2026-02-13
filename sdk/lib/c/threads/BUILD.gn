@@ -125,7 +125,10 @@ source_set("thread-list.headers") {
 # This is linked into the legacy libc.so to implement the entry points used by
 # the legacy implementation.
 libc_source_set("musl-glue") {
-  sources = [ "musl-on-tls-segments.cc" ]
+  sources = [
+    "musl-dlfcn-cleanup.cc",
+    "musl-on-tls-segments.cc",
+  ]
   deps = [
     ":thread",
     "//zircon/third_party/ulib/musl:musl_internal",

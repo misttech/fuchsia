@@ -76,6 +76,7 @@ if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
     deps = [
       ":common-impl",
       "ldso",
+      "src/ldso",
       "src/thread:tls_get_addr",
     ]
   }
@@ -97,7 +98,6 @@ if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
       "src/fcntl",
       "src/internal",
       "src/ipc",
-      "src/ldso",
       "src/legacy",
       "src/linux",
       "src/locale",

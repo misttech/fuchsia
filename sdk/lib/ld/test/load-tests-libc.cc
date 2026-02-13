@@ -14,6 +14,8 @@ TYPED_TEST_SUITE(LdLoadLibcTests, TestTypes<>);
 
 namespace {
 
+constexpr std::string_view kLibcSoname = "libnew-libc.so";
+
 // This is just running an empty main() function using the vanilla system libc.
 // It's really just testing that the test harness itself launches a PT_INTERP
 // executable consistent with what the real system program loader does, for
@@ -39,6 +41,17 @@ TYPED_TEST(LdLoadLibcTests, LibcNoopTest) {
   });
 
   ASSERT_NO_FATAL_FAILURE(this->Load("libc-noop-test"));
+
+  EXPECT_EQ(this->Run(), 0);
+
+  this->ExpectLog("");
+}
+
+TYPED_TEST(LdLoadLibcTests, LibcStartMain) {
+  ASSERT_NO_FATAL_FAILURE(this->Init());
+
+  ASSERT_NO_FATAL_FAILURE(this->Needed({kLibcSoname}));
+  ASSERT_NO_FATAL_FAILURE(this->Load("libc-start-main"));
 
   EXPECT_EQ(this->Run(), 0);
 

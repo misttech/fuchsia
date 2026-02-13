@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/ld/abi.h>
 #include <lib/ld/dl-phdr-info.h>
 #include <lib/ld/module.h>
 #include <lib/ld/tls.h>
 #include <zircon/sanitizer.h>
 
 #include "../startup/start-main.h"
+#include "ld-abi.h"
 
 // This might be defined by a sanitizer runtime, or might be left undefined.
 // NOLINTNEXTLINE(readability-redundant-declaration)
@@ -31,7 +31,7 @@ void StartupSanitizerModuleLoaded() {
   // matter to the callbacks.  If it did, we could keep state of what's been
   // reported so far; and have _dlfcn_module_loaded finish these reports first,
   // updating state so we finish early here.
-  for (const auto& module : ld::AbiLoadedModules(ld::abi::_ld_abi)) {
+  for (const auto& module : ld::AbiLoadedModules(_ld_abi)) {
     // As per <zircon/sanitizer.h>, counts and TLS data are omitted.
     const dl_phdr_info info = ld::MakeDlPhdrInfo(module, nullptr, {});
     __sanitizer_module_loaded(&info, sizeof(info));

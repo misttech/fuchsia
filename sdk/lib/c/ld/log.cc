@@ -4,10 +4,11 @@
 
 #include "log.h"
 
-#include <lib/ld/abi.h>
 #include <lib/ld/module.h>
 #include <lib/symbolizer-markup/line-buffered-sink.h>
 #include <lib/symbolizer-markup/writer.h>
+
+#include "ld-abi.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -23,7 +24,7 @@ void Log::SymbolizerContext() {
   symbolizer_markup::Writer writer{
       symbolizer_markup::LineBuffered<kBufferSize>::Sink{std::ref(*this)}};
 
-  for (const auto& module : ld::AbiLoadedModules(ld::abi::_ld_abi)) {
+  for (const auto& module : ld::AbiLoadedModules(_ld_abi)) {
     ld::ModuleSymbolizerContext(writer, module, zx_system_get_page_size());
   }
 }

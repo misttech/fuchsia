@@ -11,13 +11,15 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+// This is replaced with a real definition when dlerror() code is linked in.
+[[gnu::weak]] void ThreadDlfcnCleanup() {}
+
 // This does the final "normal" work on the exiting thread: running
 // destructors, etc.  This is reached either directly from a call to
 // thrd_exit() or pthread_exit(), or from a thread function returning.
 [[noreturn]] void ThreadExit(intptr_t value) {
-  __tls_run_dtors();
-  __thread_tsd_run_dtors();
-  __dl_thread_cleanup();
+  __tls_run_dtors();         // Run C++ thread_local destructors.
+  __thread_tsd_run_dtors();  // Run tss_create / pthread_key_create destructors.
 
   // It's impossible to determine whether this is "the last thread" until
   // performing the atomic decrement, since multiple threads could exit at the
@@ -30,6 +32,10 @@ namespace LIBC_NAMESPACE_DECL {
     __libc.thread_count.store(1);
     exit(0);
   }
+
+  // Finally, no more user code will run on this thread and call back into
+  // libc, e.g. dlerror().  Clean up any allocation stored for dlerror().
+  ThreadDlfcnCleanup();
 
   // Store the value for ThreadJoin() to find.  Any joiners already waiting
   // will be woken via futex last thing in ThreadExitFinish().

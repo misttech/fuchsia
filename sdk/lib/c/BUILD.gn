@@ -315,7 +315,7 @@ if (toolchain_variant.suffix != "") {
   libc_toolchain = system_libc_toolchain
 }
 
-if (zircon_toolchain != false) {
+if (current_toolchain == libc_toolchain) {
   # This builds the actual shared library.  It's only used indirectly via the
   # "libc" target, see below.
   shared_library("libc.so") {
@@ -337,10 +337,6 @@ if (zircon_toolchain != false) {
     install_name = "ld.so.1"
 
     metadata = {
-      runtime_deps_manifest_lines =
-          [ "lib/${toolchain_variant.libprefix}ld.so.1=" +
-            rebase_path("$root_out_dir/libc.so", root_build_dir) ]
-
       distribution_entries = [
         {
           destination = "lib/${toolchain_variant.libprefix}${install_name}"
@@ -362,7 +358,11 @@ if (zircon_toolchain != false) {
     ]
 
     # These things are only used in the new implementation.
-    assert_no_deps = [ "ld" ]
+    assert_no_deps = [
+      "dlfcn",
+      "ld",
+      "link",
+    ]
 
     if (!is_gcc && current_cpu == "riscv64" &&
         toolchain_variant.tags + [ "instrumented" ] - [ "instrumented" ] !=
@@ -381,6 +381,72 @@ if (zircon_toolchain != false) {
       # outcalls but happens to increase the number of relocs too.
       ldflags = [ "-Wl,-z,rela" ]
     }
+  }
+
+  # TODO(https://fxbug.dev/342469121): This is in an experimental state.
+  shared_library("new-libc") {
+    visibility = [ ":*" ]
+    testonly = true
+
+    public_configs = [ "//build/config/zircon:nolibc" ]
+
+    deps = [
+      ":components",
+      ":legacy-components",
+      "dlfcn",
+      "ld",
+      "link",
+      "startup",
+      "startup:shared-only",
+      "threads",
+      "//zircon/third_party/ulib/musl:common-impl",
+    ]
+
+    # TODO(https://fxbug.dev/483475945): Work around RBE linking bug.
+    configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]
+  }
+
+  # TODO(https://fxbug.dev/342469121): Test targets using :new-libc can do so
+  # via this target to fix up manifest issues when going inside an in-package
+  # sandbox as //sdk/lib/ld/test/modules targets do.  $default_toolchain
+  # targets get implicit deps that always lead to the production libc, and
+  # that's pretty much impossible to avoid.  So instead, this can come into the
+  # explicit deps that are earlier in each target's deps list than other paths
+  # to the production libc.  The metadata walks for distribution_entries will
+  # only touch each target in the whole deps graph once.  So when the path
+  # through this target reaches :libc.so _first_, the metadata collection will
+  # yield its distribution_entries followed by the entry here that defangs it.
+  # Since it's only reached via a data_deps arc, :libc.so won't affect the
+  # dependent's link; but that will still count as the first path to it in the
+  # metadata walk.
+  group("new-libc-test") {
+    testonly = true
+
+    public_deps = [
+      ":new-libc",
+      "//sdk/lib/c/startup:nostartfiles",
+      "//sdk/lib/ld:startup",
+    ]
+
+    data_deps = [ ":libc.so" ]
+    metadata = {
+      # There's no way to elide the file from the manifest entirely.  This
+      # rewrites the entry in :libc.so to a new destination that nothing will
+      # look at.
+      distribution_entries = [
+        {
+          destination = "unused/${toolchain_variant.libprefix}libc.so"
+          renamed_source = rebase_path("$root_out_dir/libc.so", root_build_dir)
+          label = get_label_info(":$target_name", "label_with_toolchain")
+        },
+      ]
+    }
+  }
+} else {
+  # TODO(https://fxbug.dev/342469121): This is in an experimental state.
+  group("new-libc-test") {
+    testonly = true
+    public_deps = [ ":new-libc-test($libc_toolchain)" ]
   }
 }
 

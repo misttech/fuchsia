@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/ld/abi.h>
 #include <lib/ld/module.h>
 
 #include <algorithm>
 
+#include "ld-abi.h"
 #include "libc.h"
 #include "src/__support/common.h"
 
@@ -23,7 +23,7 @@ void ModulesFini() {
 
   // Initializers ran in reverse load order in StartupCtors(), so finalizers
   // are in load order here: the executable's run first.
-  std::ranges::for_each(ld::AbiLoadedModules(ld::abi::_ld_abi), module_fini);
+  std::ranges::for_each(ld::AbiLoadedModules(_ld_abi), module_fini);
 }
 
 }  // namespace

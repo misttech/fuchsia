@@ -2,12 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/ld/abi.h>
+#include <lib/zircon-internal/default_stack_size.h>
 
 #include "../startup/start-main.h"
+#include "ld-abi.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-PageRoundedSize InitialStackSize() { return PageRoundedSize{ld::abi::_ld_abi.stack_size}; }
+PageRoundedSize InitialStackSize() {
+  if (_ld_abi.stack_size == 0) {
+    return PageRoundedSize{ZIRCON_DEFAULT_STACK_SIZE};
+  }
+  return PageRoundedSize{_ld_abi.stack_size};
+}
 
 }  // namespace LIBC_NAMESPACE_DECL

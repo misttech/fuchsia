@@ -11,6 +11,7 @@ libc_source_set("ld") {
   sources = []
   libc_deps = [
     ":ld-fini",
+    ":ld-on-tls-segments",
     ":ld-start-compiler-abi",
     ":ld-start-main",
     ":ld-tls",
@@ -28,6 +29,7 @@ libc_source_set("ld-start-main") {
     "ctors.cc",
     "sanitizer-module-loaded.cc",
   ]
+  libc_deps = [ ":ld-abi" ]
   deps = [
     "../dlfcn:dlfcn-abi",
     "../startup:headers",
@@ -43,9 +45,11 @@ libc_source_set("ld-start-compiler-abi") {
   global_symbols = [ "${libc_namespace}_InitialStackSize" ]
   undefined_symbols = [ "_ld_abi" ]
   sources = [ "initial-stack-size.cc" ]
+  libc_deps = [ ":ld-abi" ]
   deps = [
     "../startup:headers",
     "//sdk/lib/ld:headers",
+    "//zircon/system/ulib/zircon-internal",
   ]
 }
 
@@ -65,14 +69,16 @@ libc_source_set("ld-tls") {
   ]
   sources = [ "ld-tls.cc" ]
   non_test_deps = [ ":log-panic" ]
-  deps = [
+  libc_deps = [
+    ":ld-abi",
     "../threads:thread-storage",
-    "//sdk/lib/ld:headers",
   ]
+  deps = [ "//sdk/lib/ld:headers" ]
 }
 
 libc_source_set("ld-fini") {
   sources = [ "ld-fini.cc" ]
+  libc_deps = [ ":ld-abi" ]
   deps = [
     "//sdk/lib/ld:ld.as-needed",
     "//zircon/third_party/ulib/musl:musl_internal",
@@ -110,6 +116,7 @@ source_set("log.headers") {
 libc_source_set("log") {
   public_deps = [ ":log.headers" ]
   sources = [ "log.cc" ]
+  libc_deps = [ ":ld-abi" ]
   deps = [
     "//sdk/lib/ld:ld.as-needed",
     "//src/lib/symbolizer-markup",
@@ -176,6 +183,15 @@ source_set("writable-segments") {
 libc_source_set("ld-writable-segments") {
   sources = [ "ld-writable-segments.cc" ]
   deps = [ ":writable-segments" ]
+  libc_deps = [ ":ld-abi" ]
+}
+
+libc_source_set("ld-on-tls-segments") {
+  sources = [ "ld-on-tls-segments.cc" ]
+  deps = [
+    "../threads:thread",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
   libc_deps = [ ":ld-abi" ]
 }
 
