@@ -9,13 +9,13 @@ use crate::overnet::usb::spawn_usb;
 use crate::overnet::vsock::spawn_vsock;
 use crate::{FASTBOOT_MAX_AGE, MDNS_MAX_AGE, ZEDBOOT_MAX_AGE};
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use compat_info::{CompatibilityInfo, CompatibilityState};
 use ffx::{TargetIpAddrInfo, TargetIpPort};
 use ffx_config::{EnvironmentContext, keys};
-use ffx_daemon_core::events::{self, EventSynthesizer};
+use ffx_daemon_core::events::{self, EventSynthesizer, StreamClosedExt};
 use ffx_daemon_events::{TargetConnectionState, TargetEvent};
 use ffx_fastboot_connection_factory::{
     ConnectionFactory, FastbootConnectionFactory, FastbootConnectionKind,
@@ -1537,11 +1537,11 @@ impl Target {
 
         // Ensure auto-connect has at least started.
         self.run_host_pipe(overnet_node);
-        match self.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await {
-            Ok(()) => (),
-            Err(e) => {
-                log::warn!("{}", e);
-                bail!("RCS connection issue")
+        let mut event_stream = self.events.stream().await;
+        loop {
+            let e = event_stream.next_checked().await?;
+            if e == TargetEvent::RcsActivated {
+                break;
             }
         }
         self.rcs().ok_or_else(|| anyhow!("rcs dropped after event fired")).map(|r| r.proxy)
@@ -2034,6 +2034,29 @@ mod test {
         t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
         // This will hang forever if no synthesis happens.
         t.events.wait_for(None, |e| e == TargetEvent::RcsActivated).await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_target_event_synthesis_wait_with_stream() {
+        let env = ffx_config::test_init().unwrap();
+        let local_node = overnet_core::Router::new(None).unwrap();
+
+        let conn = RcsConnection::new_with_proxy(
+            local_node,
+            setup_fake_remote_control_service(false, "foo".to_owned()),
+            &NodeId { id: 1234 },
+        );
+        let t = Target::new(&env.context);
+        t.update_connection_state(|_| TargetConnectionState::Rcs(conn));
+        // This will hang forever if no synthesis happens.
+        let mut s = t.events.stream().await;
+        while let Some(e) = s.next().await {
+            if e == TargetEvent::RcsActivated {
+                // Return here so as to prevent a crash.
+                return;
+            }
+        }
+        panic!("stream closed prematurely. This is a bug");
     }
 
     #[fuchsia::test]

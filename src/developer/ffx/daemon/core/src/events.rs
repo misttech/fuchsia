@@ -10,6 +10,7 @@ use futures::prelude::*;
 use pin_project::pin_project;
 use std::cmp::Eq;
 use std::fmt::Debug;
+use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
@@ -202,6 +203,82 @@ where
 
 type Handlers<T> = Rc<Mutex<Vec<Dispatcher<T>>>>;
 
+/// This type is a wrapper around the queue that supports streaming events.
+/// the motivation for it is to support areas that require more typical event streaming
+/// behavior. The only supported handler for this is a simple handler that forwards
+/// everything to the caller.
+pub struct EventStream<T: EventTrait + 'static> {
+    stream: UnboundedReceiver<T>,
+}
+
+impl<T: EventTrait + 'static> Stream for EventStream<T> {
+    type Item = T;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(self).stream.poll_recv(cx)
+    }
+}
+
+impl<T: EventTrait + 'static> EventStream<T> {
+    async fn new(queue: &Queue<T>) -> Self {
+        let (tx, rx) = unbounded_channel();
+        queue.add_handler(tx).await;
+        Self { stream: rx }
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamClosedError;
+
+impl std::fmt::Display for StreamClosedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "event stream closed.")
+    }
+}
+
+impl std::error::Error for StreamClosedError {}
+
+pub struct NextChecked<'a, St: ?Sized> {
+    stream: &'a mut St,
+}
+
+impl<St: ?Sized + Unpin> Unpin for NextChecked<'_, St> {}
+
+impl<'a, St: ?Sized + Stream + Unpin> NextChecked<'a, St> {
+    pub(super) fn new(stream: &'a mut St) -> Self {
+        Self { stream }
+    }
+}
+
+impl<St: ?Sized + Stream + Unpin> Future for NextChecked<'_, St> {
+    type Output = Result<St::Item, StreamClosedError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Ready(std::task::ready!(self.stream.poll_next_unpin(cx)).ok_or(StreamClosedError))
+    }
+}
+
+pub trait StreamClosedExt: Stream {
+    fn next_checked(&mut self) -> NextChecked<'_, Self>
+    where
+        Self: Unpin,
+    {
+        NextChecked::new(self)
+    }
+}
+
+impl<T: ?Sized> StreamClosedExt for T where T: Stream {}
+
+#[async_trait(?Send)]
+impl<T> EventHandler<T> for UnboundedSender<T>
+where
+    T: EventTrait,
+{
+    async fn on_event(&self, event: T) -> Result<Status> {
+        if self.send(event).is_err() { Ok(Status::Done) } else { Ok(Status::Waiting) }
+    }
+}
+
 #[derive(Clone)]
 pub struct Queue<T: EventTrait + 'static> {
     inner_tx: UnboundedSender<T>,
@@ -231,6 +308,12 @@ impl<T: 'static + EventTrait> Queue<T> {
         let proc = Processor::<T> { inner_rx: Some(inner_rx), handlers: handlers.clone() };
         let state = Rc::downgrade(state);
         Self { inner_tx, handlers, state, _processor_task: Rc::new(Task::local(proc.process())) }
+    }
+
+    /// Creates a stream of all events on this queue. It is up to the caller to decide when to drop
+    /// this stream, and what to do with the items it sends.
+    pub async fn stream(&self) -> EventStream<T> {
+        EventStream::new(self).await
     }
 
     /// Creates an event queue (see `new`) with a single handler to start.
@@ -560,5 +643,25 @@ mod test {
         let fake_events = Rc::new(FakeEventStruct {});
         let queue = Queue::<i32>::new(&fake_events);
         assert!(queue.wait_for(Some(Duration::from_millis(1)), |_| true).await.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn checked_stream_test() {
+        let (tx, rx) = unbounded_channel();
+        let mut rx = UnboundedReceiverStream::new(rx);
+        tx.send(1).unwrap();
+        tx.send(1).unwrap();
+        tx.send(1).unwrap();
+        drop(tx);
+        let mut sum = 0;
+        loop {
+            match rx.next_checked().await {
+                Ok(x) => sum += x,
+                Err(_) => {
+                    assert_eq!(sum, 3);
+                    break;
+                }
+            }
+        }
     }
 }
