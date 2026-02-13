@@ -34,8 +34,10 @@ impl CommandHandler {
             Command::ListCalls => self.list_calls(command, args),
             Command::DialFromNumber => self.dial_from_number(command, args).await,
             Command::DialFromMemoryLocation => self.dial_from_memory_location(command, args).await,
+            Command::TransferToHf => self.transfer_to_hf(command, args).await,
             Command::RedialLast => self.redial_last(command, args).await,
             Command::RequestActive => self.request_active(command, args).await,
+            Command::RequestTransferToAg => self.request_transfer_to_ag(command, args).await,
             Command::RequestTerminate => self.request_terminate(command, args).await,
             command => println! {"{command} not implemented!"},
         }
@@ -183,6 +185,18 @@ impl CommandHandler {
         }
     }
 
+    async fn transfer_to_hf(&mut self, command: Command, args: Vec<&str>) {
+        let len = args.len();
+        match len {
+            0 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
+            1 => {
+                let call_action = hfp::CallAction::TransferActive(hfp::TransferActive);
+                self.request_outgoing_call(/* peer_id = */ args[0], call_action).await
+            }
+            _ => println!("Too many argments for {command}:\n\t{}", command.cmd_help()),
+        }
+    }
+
     async fn redial_last(&mut self, command: Command, args: Vec<&str>) {
         let len = args.len();
         match len {
@@ -202,6 +216,22 @@ impl CommandHandler {
             1 => {
                 if let Some(call_info) = self.get_call_info_by_str_id(args[0]) {
                     if let Err(err) = call_info.proxy.request_active() {
+                        println!("Error: {:?}", err);
+                    }
+                }
+                // Else the errors have already been printed.
+            }
+            _ => println!("Too many argments for {command}:\n\t{}", command.cmd_help()),
+        }
+    }
+
+    async fn request_transfer_to_ag(&mut self, command: Command, args: Vec<&str>) {
+        let len = args.len();
+        match len {
+            0 => println!("Not enough arguments for {command}:\n\t{}", command.cmd_help()),
+            1 => {
+                if let Some(call_info) = self.get_call_info_by_str_id(args[0]) {
+                    if let Err(err) = call_info.proxy.request_transfer_audio() {
                         println!("Error: {:?}", err);
                     }
                 }

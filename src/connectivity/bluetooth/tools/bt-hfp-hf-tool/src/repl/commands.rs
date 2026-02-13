@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::Helper;
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -149,10 +149,10 @@ gen_commands! {
             vec![Required("peer_id")],
             "Start a call by redialing the last number"
         ),
-        TransferActive = (
-            "transfer-active",
+        TransferToHf = (
+            "transfer-to-hf",
             vec![Required("peer_id")],
-            "Transfer a call from the AG to the HF"
+            "Transfer a call from the AG to the HF (This is the transfer_active FIDL call action.)"
         ),
         QueryOperator = (
             "query-operator",
@@ -189,10 +189,10 @@ gen_commands! {
             vec![Required("call_id")],
             "Request the AG terminate a call"
         ),
-        RequestTransferAudio = (
-            "request-transfer-audio",
+        RequestTransferToAg = (
+            "request-transfer-to-ag",
             vec![Required("call_id")],
-            "Request the AG transgfer the call to the AG"
+            "Request the AG transfer the call to the AG (This is the RequestTransferAudio FIDL method.)"
         ),
         SendDtmfCode = (
             "send-dtmf-code",
