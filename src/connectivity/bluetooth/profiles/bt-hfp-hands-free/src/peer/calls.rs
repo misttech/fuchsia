@@ -842,9 +842,6 @@ mod test {
 
     static PEER_ID: PeerId = PeerId(1);
 
-    // TODO(https://fxbug.dev/135158, b/432243006). Reactivate this test when we  can set the
-    // direction and number of a call.
-    #[ignore]
     #[fuchsia::test]
     async fn call_created_with_phone_number() {
         let mut calls = Calls::new(PEER_ID);
@@ -873,16 +870,29 @@ mod test {
             req => panic!("Unexpected PeerHandler request {req:?}."),
         };
 
-        let _call_index = calls.insert_new_call();
-        // TODO(https://fxbug.dev/135158, b/432243006). Set the direction and number
+        let call_index = calls.insert_new_call().expect("Insert new call");
+
+        // Pump stream to respond to get the QueryCalls output
+        let call_output_option = calls.next().now_or_never();
+        // No calls have been returned to client yet with WatchNextCall
+        assert_matches!(call_output_option, Some(Some(CallOutput::QueryCalls)));
+
+        calls
+            .set_queried_call_info(
+                call_index,
+                Direction::MobileOriginated,
+                CallState::OutgoingAlerting,
+                /* multiparty */ false,
+                Some(Number::from_non_at_string("+1 212 555 0100")),
+            )
+            .expect("Set queried call info");
 
         calls.handle_watch_next_call(watch_next_call_responder);
 
-        calls.set_call_state_by_indicator(CallIndicator::Call(call_indicators::Call::Some));
 
         // Pump stream to respond to WatchNextCall
         let call_output_option = calls.next().now_or_never();
-        // No calls have been returned to client yet with WatchNextCall
+        // No new output
         assert_matches!(call_output_option, None);
 
         let next_call = watch_next_call_continue_fut
@@ -893,6 +903,21 @@ mod test {
 
         let watch_state_fut = call_proxy.watch_state();
 
+        // Pump stream to respond to WatchState
+        let call_output_option = calls.next().now_or_never();
+        // No FIDL calls causing a procedure update have happened yet.
+        assert_matches!(call_output_option, None);
+
+        let state = watch_state_fut
+            .now_or_never()
+            .expect("watch_state hanging")
+            .expect("FIDL error on watch_state");
+        assert_eq!(state, CallState::OutgoingAlerting);
+
+        // Tell Calls the call was was answered
+        calls.set_call_state_by_indicator(CallIndicator::Call(call_indicators::Call::Some));
+
+        let watch_state_fut = call_proxy.watch_state();
         // Pump stream to respond to WatchState
         let call_output_option = calls.next().now_or_never();
         // No FIDL calls causing a procedure update have happened yet.
@@ -923,15 +948,6 @@ mod test {
             .expect("watch_state hanging")
             .expect("FIDL error on watch_state");
         assert_eq!(state, CallState::TransferredToAg);
-
-        let call_output_option = calls.next().now_or_never();
-        assert_matches!(call_output_option, Some(Some(CallOutput::TransferCallToAg)));
-
-        // test transferring to AG
-        call_proxy.request_transfer_audio().expect("Request transfer audio");
-
-        let call_output_option = calls.next().now_or_never();
-        assert_matches!(call_output_option, Some(Some(CallOutput::TransferCallToAg)));
 
         // Pass through hang up indicator
         call_proxy.request_terminate().expect("Request terminated");
@@ -999,6 +1015,11 @@ mod test {
         // Pump stream to get the QueryCalls
         let call_output_option = calls.next().now_or_never();
         assert_matches!(call_output_option, Some(Some(CallOutput::QueryCalls)));
+
+        // Pump stream to respond to WatchNextCall
+        let call_output_option = calls.next().now_or_never();
+        // No new call output
+        assert_matches!(call_output_option, None);
 
         let next_call_hang = watch_next_call_continue_fut.now_or_never();
         // The NextcCall is never ready to be sent to clients.
