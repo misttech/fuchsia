@@ -40,12 +40,12 @@ use toolbox_fs::toolbox_directory;
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "playground", description = "Directly invoke FIDL services")]
 pub struct PlaygroundCommand {
-    /// A command to run. If passed, the playground will run that one command,
+    /// a command to run. If passed, the playground will run that one command,
     /// display the output, and return immediately.
     #[argh(option, short = 'c')]
     pub command: Option<String>,
 
-    /// A file to run.
+    /// a file to run.
     #[argh(positional)]
     pub file: Option<String>,
 }
