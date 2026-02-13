@@ -538,16 +538,8 @@ class Workspace:
 
         # Setup the integration repository
         if integration_directory.exists():
-            if not (integration_directory / ".git").exists():
-                shutil.rmtree(integration_directory, ignore_errors=True)
-            else:
-                # Pull latest changes from the remote
-                self._run(
-                    ["git", "pull", "origin", "main", "--depth=100"],
-                    cwd=integration_directory,
-                )
+            shutil.rmtree(integration_directory, ignore_errors=True)
 
-        # Clone the integration repository
         logger.emit_status("Cloning integration repo...")
         if not integration_directory.exists():
             self._run(
@@ -639,13 +631,7 @@ class Workspace:
         else:
             self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
             self._run(
-                [
-                    "git",
-                    "fetch",
-                    "origin",
-                    "main:refs/remotes/origin/main",
-                    "--depth=100",
-                ],
+                ["git", "fetch", "origin", "--depth=100"],
                 self.cartfs_fuchsia_dir,
             )
             logger.log_info(
