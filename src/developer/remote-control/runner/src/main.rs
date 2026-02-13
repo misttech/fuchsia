@@ -10,7 +10,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::future::{poll_fn, select};
 use futures::io::BufReader;
 use futures::prelude::*;
-use std::io;
+use std::io::{self, Write as _};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::io::AsRawFd;
 use std::pin::pin;
@@ -134,7 +134,9 @@ fn print_prelude_info(
     };
 
     let encoded_message = serde_json::to_string(&info)?;
-    println!("{encoded_message}");
+    // println!() can panic when it fails to write, which is undesirable.
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{encoded_message}")?;
     Ok(())
 }
 
