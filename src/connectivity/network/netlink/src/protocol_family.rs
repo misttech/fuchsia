@@ -1615,6 +1615,22 @@ mod test {
         Done,
     }
 
+    fn expected_sent_messages(
+        expected_response: Option<ExpectedResponse>,
+        nl_header: NetlinkHeader,
+    ) -> Vec<SentMessage<RouteNetlinkMessage>> {
+        expected_response
+            .into_iter()
+            .map(|expected_response| {
+                SentMessage::unicast(match expected_response {
+                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), nl_header),
+                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), nl_header),
+                    ExpectedResponse::Done => netlink_packet::new_done(nl_header),
+                })
+            })
+            .collect::<Vec<_>>()
+    }
+
     fn header_with_flags(flags: u16) -> NetlinkHeader {
         let mut header = NetlinkHeader::default();
         header.flags = flags;
@@ -1730,29 +1746,8 @@ mod test {
             )
             .await;
 
-        match expected_response {
-            Some(ExpectedResponse::Ack) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_error(Ok(()), header))]
-                )
-            }
-            Some(ExpectedResponse::Error(e)) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_error(Err(e), header))]
-                )
-            }
-            Some(ExpectedResponse::Done) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_done(header))]
-                )
-            }
-            None => {
-                assert_eq!(client_sink.take_messages(), [])
-            }
-        }
+        assert_eq!(client_sink.take_messages(), expected_sent_messages(expected_response, header));
+
         drop(client);
         join_handle.await;
     }
@@ -1924,16 +1919,7 @@ mod test {
                 }),
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|expected_response| {
-                    SentMessage::unicast(match expected_response {
-                        ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                        ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                        ExpectedResponse::Done => netlink_packet::new_done(header),
-                    })
-                })
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header),
         )
     }
 
@@ -2094,16 +2080,7 @@ mod test {
                 }),
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|expected_response| {
-                    SentMessage::unicast(match expected_response {
-                        ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                        ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                        ExpectedResponse::Done => netlink_packet::new_done(header),
-                    })
-                })
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header),
         )
     }
 
@@ -2232,14 +2209,7 @@ mod test {
                 }),
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|expected_response| SentMessage::unicast(match expected_response {
-                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                    ExpectedResponse::Done => netlink_packet::new_done(header),
-                }))
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header)
         )
     }
 
@@ -2928,14 +2898,7 @@ mod test {
                 request,
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|response| SentMessage::unicast(match response {
-                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                    ExpectedResponse::Done => netlink_packet::new_done(header),
-                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                }))
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header),
         )
     }
 
@@ -3168,14 +3131,7 @@ mod test {
                 expected_request_args,
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|expected_response| SentMessage::unicast(match expected_response {
-                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                    ExpectedResponse::Done => netlink_packet::new_done(header),
-                }))
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header)
         )
     }
 
@@ -3520,29 +3476,8 @@ mod test {
             ).fuse() => {},
         }
 
-        match expected_response {
-            Some(ExpectedResponse::Ack) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_error(Ok(()), header))]
-                )
-            }
-            Some(ExpectedResponse::Error(e)) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_error(Err(e), header))]
-                )
-            }
-            Some(ExpectedResponse::Done) => {
-                assert_eq!(
-                    client_sink.take_messages(),
-                    [SentMessage::unicast(netlink_packet::new_done(header))]
-                )
-            }
-            None => {
-                assert_eq!(client_sink.take_messages(), [])
-            }
-        }
+        assert_eq!(client_sink.take_messages(), expected_sent_messages(expected_response, header));
+
         drop(client);
         join_handle.await;
     }
@@ -4944,14 +4879,7 @@ mod test {
                 request,
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|response| SentMessage::unicast(match response {
-                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), header),
-                    ExpectedResponse::Done => netlink_packet::new_done(header),
-                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), header),
-                }))
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, header),
         )
     }
 
@@ -5072,14 +5000,7 @@ mod test {
                 expected_request_args,
             )
             .await,
-            expected_response
-                .into_iter()
-                .map(|expected_response| SentMessage::unicast(match expected_response {
-                    ExpectedResponse::Ack => netlink_packet::new_error(Ok(()), nl_header),
-                    ExpectedResponse::Error(e) => netlink_packet::new_error(Err(e), nl_header),
-                    ExpectedResponse::Done => netlink_packet::new_done(nl_header),
-                }))
-                .collect::<Vec<_>>(),
+            expected_sent_messages(expected_response, nl_header),
         )
     }
 }
