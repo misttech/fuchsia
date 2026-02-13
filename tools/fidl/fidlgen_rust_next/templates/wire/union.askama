@@ -34,18 +34,8 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
     }
 }
 
-{% let access_params %}
-{% let access_args %}
-{% if union_.members.is_empty() %}
-    {% let access_params = "" %}
-    {% let access_args = "" %}
-{% else %}
-    {% let access_params = "<'de>" %}
-    {% let access_args = "<'_>" %}
-{% endif %}
-
 pub mod {{ mod_name }} {
-    pub enum Ref{{ access_params }} {
+    pub enum Ref{% if union_.members.is_empty() %}{% else %}<'de>{% endif %} {
         {% for member in union_.members %}
             {{ member.name.camel() }}(&'de {{ self.wire_type(member.ty) }}),
         {% endfor %}
@@ -56,7 +46,7 @@ pub mod {{ mod_name }} {
 }
 
 impl{{ de }} {{ name }}{{ de }} {
-    pub fn as_ref(&self) -> crate::wire::{{ mod_name }}::Ref{{ access_args }} {
+    pub fn as_ref(&self) -> crate::wire::{{ mod_name }}::Ref{% if union_.members.is_empty() %}{% else %}<'_>{% endif %} {
         match self.raw.ordinal() {
             {% for member in union_.members %}
                 {{ member.ordinal }} => crate::wire::{{ mod_name }}::Ref::{{ member.name.camel() }}(
