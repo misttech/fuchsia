@@ -302,6 +302,13 @@ if (current_cpu == "arm64") {
   }
 }
 
+libc_component_tests += [ ":last-thread-exit-test" ]
+libc_test_manifests += [ "last-thread-exit-test" ]
+test("last-thread-exit-test") {
+  sources = [ "last-thread-exit-test.cc" ]
+  deps = [ "//src/lib/fxl/test:gtest_main" ]
+}
+
 # This set of tests serve as a good smoke test for libc itself and essential
 # kernel support that affect the libc tests, before expecting any of the more
 # demanding core-tests to necessarily work when libc might be suspect.

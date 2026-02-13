@@ -24,11 +24,13 @@ namespace LIBC_NAMESPACE_DECL {
   // It's impossible to determine whether this is "the last thread" until
   // performing the atomic decrement, since multiple threads could exit at the
   // same time.  If it was the last thread, then the whole process exits.
-  if (__libc.thread_count.fetch_sub(1) == 0) {
-    // Put the thread count back to one, "undoing" the thread exit to return to
-    // being a normal single-threaded process while executing the process exit.
-    // The atexit handlers could do anything, including starting new threads or
-    // even reentering here after new threads might be waiting to join this one!
+  if (__libc.thread_count.fetch_sub(1) == 1) {
+    // The old value was one, so now the value is zero: this is the last thread
+    // and should call exit(0).  But first, put the thread count back to one,
+    // "undoing" the thread exit to return to being a normal single-threaded
+    // process while executing the process exit.  The atexit handlers could do
+    // anything, including starting new threads or even reentering here after
+    // new threads might be waiting to join this one!
     __libc.thread_count.store(1);
     exit(0);
   }
