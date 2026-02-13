@@ -676,6 +676,9 @@ template("bazel_action") {
                  # correctly trigger bazel action rebuilds.
                  "//build/bazel/toolchains/rust/rust.BUILD.bazel",
 
+                 # Starlark query files
+                 "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery",
+
                  # Imported by bazel_gn_target_action.py
                  # LINT.IfChange(bazel_gn_target_imports)
                  "//build/api/debug_symbols.py",

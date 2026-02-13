@@ -624,7 +624,15 @@ def main() -> int:
     configured_args = action_result.configured_args
     debug_symbol_manifest_paths = action_result.debug_symbol_manifest_paths
     all_output_files = action_result.output_files
-    all_sources = action_result.source_files
+
+    # Merge all the inputs from all the configured targets together.
+    time_profile.start(
+        "merge_target_source_files",
+        "Merge all of the targets' source files together for a common depfile",
+    )
+    all_sources: set[str] = set()
+    for sources in action_result.source_files.values():
+        all_sources.update(sources)
 
     time_profile.stop()
 

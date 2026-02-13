@@ -67,6 +67,14 @@ class BazelActionError(Exception):
 
 
 @dataclasses.dataclass
+class _InputFileGenQueryInfo(object):
+    """Class for holding info about the genqueries generated for each target."""
+
+    genquery_target_label: str
+    genquery_output_path: Path
+
+
+@dataclasses.dataclass
 class BazelActionOutputs(object):
     """The outputs to copy from Bazel to GN for a given Bazel action."""
 
@@ -110,14 +118,15 @@ class BazelActionResult(object):
         output_files:  A list of the output paths that were actually copied to (updated)
           by this action.
 
-        source_files:  A list of the Bazel build files and input source files that were
-            used by the built targets, as standard filesystem paths.
+        source_files:  A dict of lists of the Bazel build files and input source files
+            that were used by each of the built targets, as standard filesystem paths,
+            keyed by the bazel target.
     """
 
     configured_args: list[str]
     debug_symbol_manifest_paths: list[str]
     output_files: list[Path]
-    source_files: list[str]
+    source_files: dict[str, list[str]]
 
 
 class BazelActionRunner(object):
@@ -191,32 +200,9 @@ class BazelActionRunner(object):
             self.rbe_settings,
         )
 
-        # Create the base command-line from the command to run (build, etc.), the platform
-        # configuration, and the set of targets to run the command against.
-        cmd_args: list[str] = [
-            command,
-            *configured_args,
-        ]
-
-        # To capture the set of dependencies for targets, a genquery that can find
-        # all the BUILD.bazel and .bzl files needed for each target.
-        #
-        # The build file must be deleted after each build command.
-        time_profile.start(
-            "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
-        )
-        (
-            buildfile_genquery_target,
-            genquery_build_file,
-            genquery_output_file,
-        ) = self.create_buildfiles_genquery(targets)
-
-        # Add the genquery target to the list of targets and add those to the
-        # command line for bazel
-        cmd_args += [
-            *targets,
-            buildfile_genquery_target,
-        ]
+        # These are the args that are listed after the command, targets, and configured
+        # args.
+        cmd_args = []
 
         # If a build event json file is requested, tell Bazel to create one.
         if extra_outputs.build_event_json_file:
@@ -306,63 +292,83 @@ class BazelActionRunner(object):
                 + "\n",
             )
 
+        # To capture the set of dependencies for targets, a genquery that can find
+        # all the BUILD.bazel and .bzl files needed for each target.
+        #
+        # The build file must be deleted after each build command.
+        time_profile.start(
+            "input_files_genquery", "Generating buildfiles_genquery/BUILD.bazel"
+        )
+        (
+            input_files_genqueries,
+            genquery_build_file,
+        ) = self._create_buildfiles_genqueries(targets)
+
+        # Add the genquery target to the list of targets and add those to the
+        # command line for bazel
+        cmd_args += targets
+        cmd_args += [
+            genquery.genquery_target_label
+            for genquery in input_files_genqueries.values()
+        ]
+
+        # Construct the entire command (this is done here, as a single block, for
+        # clarity on how the various lists above are brought together to make the
+        # command line that we'll use with Bazel).
+        cmd: list[str] = [command]
+        cmd += configured_args
+        cmd += targets
+        cmd += [
+            genquery.genquery_target_label
+            for genquery in input_files_genqueries.values()
+        ]
+        cmd += cmd_args
+
         with FileCleaner(
             # These files need to be deleted after the running of the action, to make
             # sure that ninja doesn't see them as files that can cause consistency or
             # non-convergence issues.
             [
                 genquery_build_file,
-                genquery_output_file,
+                *[
+                    info.genquery_output_path
+                    for info in input_files_genqueries.values()
+                ],
             ]
         ):
             debug_symbol_manifest_paths = (
                 self._invoke_bazel_and_return_debug_symbols(
                     targets,
-                    cmd_args,
+                    cmd,
                     time_profile,
                 )
             )
 
-            build_file_labels = []
+            input_files = {}
             if command == "build":
-                build_file_labels = (
-                    genquery_output_file.read_text().splitlines()
+                time_profile.start(
+                    "read_genquery_outputs",
+                    "Read the results from the genqueries",
+                )
+                input_files = self._parse_buildfiles_genquery_results_and_query_source_files(
+                    input_files_genqueries,
+                    configured_args,
+                    time_profile,
                 )
 
         # Temporary files have now been deleted by the FileCleaner.
 
-        all_sources = []
-        if command == "build":
-            # If we're building, query to get the paths of all source files.
+        if command == "build" and outputs.packages:
+            # If we have packages, query to get the paths to the package archives,
+            # as they need to be copied to the Ninja outdir along with any other files.
             time_profile.start(
-                "list_sources", "Query the list of Bazel source files"
+                "package_info",
+                "Run cquery to extract Fuchsia package archiveinformation",
             )
-            source_file_labels = self.query_for_source_inputs(
-                configured_args=configured_args,
-                targets=targets,
+            package_archive_files = self.query_for_package_archives(
+                configured_args, outputs.packages
             )
-
-            # Convert the build file and input source file labels into paths
-            mapper = bazel_label_mapper.BazelLabelMapper(
-                str(self.paths.workspace), str(self.paths.ninja_build_dir)
-            )
-            all_sources = list(
-                mapper.get_sources_for_labels(
-                    build_file_labels + source_file_labels
-                )
-            )
-
-            if outputs.packages:
-                # If we have packages, query to get the paths to the package archives,
-                # as they need to be copied to the Ninja outdir along with any other files.
-                time_profile.start(
-                    "package_info",
-                    "Run cquery to extract Fuchsia package archiveinformation",
-                )
-                package_archive_files = self.query_for_package_archives(
-                    configured_args, outputs.packages
-                )
-                outputs.files.extend(package_archive_files)
+            outputs.files.extend(package_archive_files)
 
         # Now copy all the outputs.  This is a separate function to help break up the run()
         # functionality for better clarity.
@@ -373,41 +379,8 @@ class BazelActionRunner(object):
             configured_args=configured_args,
             debug_symbol_manifest_paths=debug_symbol_manifest_paths,
             output_files=all_output_files,
-            source_files=all_sources,
+            source_files=input_files,
         )
-
-    def query_for_source_inputs(
-        self, configured_args: list[str], targets: list[str]
-    ) -> list[str]:
-        """Given a list of Bazel targets, query to find all the input source files each needs."""
-
-        # Perform a cquery to get all source inputs for the targets. This
-        # returns a list of Bazel labels followed by "(null)" because these
-        # are never configured during analysis. E.g.:
-        #
-        #  //build/bazel/examples/hello_world:hello_world (null)
-        #
-        bazel_source_files = run_bazel_query(
-            self.query_cache,
-            self.launcher,
-            "cquery",
-            [
-                "--config=quiet",
-                "--output",
-                "label",
-                f"kind(\"source file\", deps(set({' '.join(targets)})))",
-            ]
-            + configured_args,
-        )
-
-        if bazel_source_files is None:
-            raise BazelActionError("No source files found.")
-
-        if _DEBUG:
-            debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
-
-        # Remove the ' (null)' suffix of each result line and return
-        return [l.partition(" (null)")[0] for l in bazel_source_files]
 
     def query_for_package_archives(
         self,
@@ -457,23 +430,22 @@ class BazelActionRunner(object):
             )
         return package_archive_paths
 
-    def create_buildfiles_genquery(
+    def _create_buildfiles_genqueries(
         self, targets: list[str]
-    ) -> tuple[str, Path, Path]:
+    ) -> tuple[dict[str, _InputFileGenQueryInfo], Path]:
         """Create a BUILD.bazel file that defines a genquery that returns all build files used.
 
         Generate a BUILD.bazel file that defines a genquery() target for listing
         all build files that we need to include in the depfile for this target,
-        i.e. any changes in these build files should trigger a rebuild of this target.
+        i.e. any changes in these files should trigger a rebuild of this target.
 
         Args:
             targets: The list of Bazel targets to create the query for
 
         Returns:
             Tuple of:
-                - Label for the genquery to add to the list of targets to build
+                - Dict of _InputFileGenQueryInfo objects, keyed by the Bazel target the query is for
                 - Path to the generated source file
-                - Path to the output of the query
 
             IMPORTANT: These files should be removed after the Bazel build command below
             to ensure our consistency builders do not flake on it. Otherwise the content
@@ -485,28 +457,147 @@ class BazelActionRunner(object):
             build's relative file path, creating a puzzling consistency error.
         """
 
-        genquery_tmpl = os.path.join(_TEMPLATE_DIR, "template.genrule.bazel")
-        with open(genquery_tmpl, "rt") as tmpl:
-            genquery_build_content = tmpl.read().format(
-                query_expression=f"buildfiles(deps(set({' '.join(targets)})))",
-                query_scopes=",".join((f'"{s}"' for s in targets)),
-                query_opts='"--output=label"',
+        query_buildfile_lines = [
+            "# AUTO-GENERATED - DO NOT EDIT!",
+            "",
+            "",
+        ]
+
+        generated_targets = {}
+        for target in targets:
+            input_files_target_name = filename_from_target_label(
+                target, "buildfiles.txt"
             )
+            query_buildfile_lines += [
+                f"# Generated queries for the target: {target}",
+                f"genquery(",
+                f'    name = "{input_files_target_name}",',
+                f'    expression = "buildfiles(deps({target}))",',
+                f'    scope = ["{target}"],',
+                f'    opts = ["--output=label"],',
+                f")",
+                "",
+                "",
+            ]
+
+            label = f"//buildfiles_genquery:{input_files_target_name}"
+            output_path = (
+                self.paths.workspace
+                / "bazel-bin/buildfiles_genquery"
+                / input_files_target_name
+            )
+
+            generated_targets[target] = _InputFileGenQueryInfo(
+                label,
+                output_path,
+            )
+
+        genquery_build_content = "\n".join(query_buildfile_lines)
 
         genquery_build_file = (
             self.paths.workspace / "buildfiles_genquery/BUILD.bazel"
         )
         write_file_if_changed(genquery_build_file, genquery_build_content)
 
-        genquery_output_file = (
-            self.paths.workspace / "bazel-bin/buildfiles_genquery/genquery"
+        return generated_targets, genquery_build_file
+
+    def _parse_buildfiles_genquery_results_and_query_source_files(
+        self,
+        genqueries: dict[str, _InputFileGenQueryInfo],
+        configured_args: list[str],
+        time_profile: build_utils.TimeProfile,
+    ) -> dict[str, list[str]]:
+        """Parse the output files of the genqueries, then query for each targets source files.
+
+        The source file querying must be done in a cquery, otherwise it doesn't return the correct
+        results.
+        """
+
+        time_profile.start("parse_genquery_results_threadpooled")
+
+        def _parse_labels(
+            target: str,
+            info: _InputFileGenQueryInfo,
+        ) -> tuple[str, list[str]]:
+            """A worker function for the threadpool to read the genquery output
+
+            This reads the output of one query, and maps the labels into file paths.
+            """
+            return (
+                target,
+                info.genquery_output_path.read_text().splitlines(),
+            )
+
+        # Use a thread pool for this to to read and parse all the files in parallel
+        # For smaller sets of targets, this is slower, but as the number of targets
+        # scales up it makes the parsing faster.
+        input_file_labels = dict(
+            thread_pool_helpers.starmap_threaded(
+                _parse_labels, genqueries.items()
+            )
         )
 
-        return (
-            "//buildfiles_genquery:genquery",
-            genquery_build_file,
-            genquery_output_file,
+        time_profile.start(
+            "sourcefiles_query",
+            "Bazel cquery to find all the source files for each target",
         )
+        # genqueries is keyed by Bazel target, so we can use that here.
+        for target in genqueries:
+            source_file_labels = self.query_for_source_inputs(
+                configured_args,
+                target,
+            )
+            input_file_labels[target].extend(source_file_labels)
+
+        time_profile.start("map_labels_to_paths")
+        # now map all the labels into source files.  This is rather slow, so
+        # reuse the same label mapper so that it can cache results that are
+        # in common between the different targets.
+        mapper = bazel_label_mapper.BazelLabelMapper(
+            str(self.paths.workspace), str(self.paths.ninja_build_dir)
+        )
+        input_files = dict(
+            [
+                (target, list(mapper.get_sources_for_labels(labels)))
+                for target, labels in input_file_labels.items()
+            ]
+        )
+        time_profile.stop()
+        return input_files
+
+    def query_for_source_inputs(
+        self,
+        configured_args: list[str],
+        target: str,
+    ) -> list[str]:
+        """Given a Bazel target, query to find all the input source files it needs."""
+
+        # Perform a cquery to get all source inputs for the target. This
+        # returns a list of Bazel labels followed by "(null)" because these
+        # are never configured during analysis. E.g.:
+        #
+        #  //build/bazel/examples/hello_world:hello_world (null)
+        #
+        bazel_source_files = run_bazel_query(
+            self.query_cache,
+            self.launcher,
+            "cquery",
+            [
+                "--config=quiet",
+                "--output",
+                "label",
+                f'kind("source file", deps({target}))',
+            ]
+            + configured_args,
+        )
+        if bazel_source_files is None:
+            raise BazelActionError("No source files found.")
+
+        if _DEBUG:
+            debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
+
+        # Remove the ' (null)' suffix of each result line and return
+        return [l.removesuffix(" (null)") for l in bazel_source_files]
 
     def _invoke_bazel_and_return_debug_symbols(
         self,
@@ -1060,6 +1151,7 @@ class _BazelOutputCopier(object):
         final_symlink_outputs: list[bazel_action_utils.FinalSymlinkOutput],
         time_profile: build_utils.TimeProfile,
     ) -> None:
+        time_profile.start("symlink_outputs", "Symlink output files.")
         final_symlinks: list[tuple[Path, Path]] = []
         for final_symlink_output in final_symlink_outputs:
             src_path = self.paths.workspace / final_symlink_output.bazel_path
@@ -1068,8 +1160,38 @@ class _BazelOutputCopier(object):
             final_symlinks.append((target_path, link_path))
 
         if final_symlinks:
-            time_profile.start("symlink_outputs", "Symlink output files.")
             # This doesn't need to use a thread pool because as of today there's only ever
             # one file, in one action, that uses this codepath.
             for target_path, link_path in final_symlinks:
                 build_utils.force_symlink(link_path, target_path)
+
+
+def filename_from_target_label(
+    target: str, extension: str | None = None
+) -> str:
+    """Convert a target label into string that can be a filename.
+
+    This isn't a reversible function, as the resultant filename can be
+    converted to multiple different targets.
+
+    TODO: consider using a hash instead to ensure that there are not possible
+          name collisions
+
+    Examples:
+        > filename_from_target_label("//foo/bar:baz")
+        "foo_bar_baz"
+
+        > filename_from_target_label("//foo/bar:baz", "txt)
+        "foo_bar_baz.txt"
+
+    Args:
+
+        target - The bazel target to flatten into a filename.
+        extension - An optional extension to add to the filename.
+    """
+    temp = target.removeprefix("//").replace("/", "_").replace(":", "_")
+
+    if extension:
+        return temp + "." + extension
+    else:
+        return temp

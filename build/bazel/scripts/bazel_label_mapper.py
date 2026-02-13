@@ -147,6 +147,10 @@ class BazelLabelMapper(object):
         # string otherwise.
         self._repository_hash_map: dict[str, str] = {}
 
+        # A lookup cache so that if the same mapper is asked to lookup the same
+        # label multiple times, it only does the work once.
+        self._lookup_cache: dict[str, str] = {}
+
     def _get_repository_content_hash(self, repository_name: str) -> str:
         """Check whether a repository name has an associated content hash file.
 
@@ -231,6 +235,15 @@ class BazelLabelMapper(object):
         #    @@<name>//<package>:<target>
         #    @@<name>.<version>//<package>:<target>
         #
+
+        # Check the lookup cache to see if we've already mapped this label with
+        # this object + configuration.
+        cached = self._lookup_cache.get(label)
+        if cached:
+            if relative_to:
+                cached = os.path.relpath(cached, relative_to)
+            return cached
+
         repository, sep, package_label = label.partition("//")
         assert sep == "//", f"Missing // in source label: {label}"
         if repository == "" or repository == "@":
@@ -322,6 +335,9 @@ class BazelLabelMapper(object):
             assert not path.startswith(
                 self._output_base
             ), f"Path should not be in Bazel output_base: {path} (from {label})"
+
+            # Cache the result (the absolute path)
+            self._lookup_cache[label] = path
 
             if relative_to:
                 path = os.path.relpath(path, relative_to)
