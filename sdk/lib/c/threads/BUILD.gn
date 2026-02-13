@@ -169,42 +169,6 @@ source_set("zxr-tls") {
   public_deps = [ "//src/zircon/lib/zircon:headers" ]
 }
 
-source_set("zxr-thread.header") {
-  visibility = [
-    "../*",
-    "//zircon/third_party/ulib/musl/*",
-  ]
-  public = [ "zxr-thread.h" ]
-  public_deps = [
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-  ]
-}
-
-libc_source_set("zxr-thread") {
-  visibility = [
-    "../*",
-    "//zircon/third_party/ulib/musl/*",
-  ]
-
-  public_deps = [ ":zxr-thread.header" ]
-  sources = [ "zxr-thread.cc" ]
-  deps = [ "//src/lib/elfldltl:headers" ]
-
-  # This code is used in early startup, where safe-stack is not ready yet.
-  configs = [ "//build/config/sanitizers:no_sanitizers" ]
-
-  # This might be necessary if something from libc++ didn't get inlined.  A
-  # libc++ ABI symbol that's supposedly the same might be COMDAT'd with another
-  # TU's version that didn't disable the sanitizers.
-  defines = [ "_LIBCPP_HIDE_FROM_ABI_PER_TU=1" ]
-
-  # Make sure the thread_trampoline function has a frame pointer so that
-  # user-visible thread backtraces are consistent across collection methods.
-  remove_configs = [ "//build/config:default_frame_pointers" ]
-  configs += [ "//build/config:frame_pointers" ]
-}
-
 libc_source_set("thread-exit") {
   visibility = [ ":*" ]
 
@@ -243,10 +207,7 @@ libc_source_set("thread-exit-finish") {
     ":thread-list.headers",
     "//src/lib/elfldltl:headers",
   ]
-  libc_deps = [
-    ":thread-storage",
-    ":zxr-thread",
-  ]
+  libc_deps = [ ":thread-storage" ]
   non_test_deps = [ "../ld:log-panic" ]
 }
 

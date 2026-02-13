@@ -323,7 +323,6 @@ libc_source_set("start-main") {
     ":startup-trampoline",
     "../stdlib:exit",
     "../threads:thread-list",
-    "../threads:zxr-thread",
     "//sdk/lib/ld:fuchsia-debugdata",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]

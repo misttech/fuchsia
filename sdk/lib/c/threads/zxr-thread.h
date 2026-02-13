@@ -74,10 +74,6 @@ typedef struct zxr_thread {
 } zxr_thread_t;
 static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
 
-// Indicates whether the thread has been detached.  The result is undefined
-// if the thread is exiting or has exited.
-bool zxr_thread_detached(zxr_thread_t* thread);
-
 __END_CDECLS
 
 #endif  // LIB_C_THREADS_ZXR_THREAD_H_

@@ -14,7 +14,8 @@ LLVM_LIBC_FUNCTION(int, pthread_getattr_np, (pthread_t th, pthread_attr_t* attr)
   *attr = {
       ._a_stacksize = t->safe_stack.iov_len,
       ._a_stackaddr = t->safe_stack.iov_base,
-      ._a_detach = zxr_thread_detached(&t->zxr_thread),
+      ._a_detach =
+          t->zxr_thread.state.load(std::memory_order_acquire) == zxr_thread_t::State::DETACHED,
   };
   return 0;
 }
