@@ -12,7 +12,7 @@ use super::{
     has_file_permissions, permissions_from_flags,
 };
 use crate::bpf::fs::BpfHandle;
-use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
+use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
     ProcessPermission, check_self_permission, has_fs_node_permissions,
 };
@@ -248,16 +248,18 @@ pub(in crate::security) fn file_mprotect(
 ) -> Result<(), Errno> {
     if !mapping.can_exec() && prot.contains(ProtectionFlags::EXEC) {
         let permission = match mapping.name() {
-            MappingName::Heap => Some(ProcessPermission::ExecHeap),
-            // `execstack` is checked when making executable the stack of the initial thread.
-            MappingName::Stack => Some(ProcessPermission::ExecStack),
-            MappingName::None
-            | MappingName::Vdso
-            | MappingName::Vvar
-            | MappingName::File(_)
-            | MappingName::Vma(_)
-            | MappingName::Ashmem(_)
-            | MappingName::AioContext(_) => {
+            MappingNameRef::Heap => Some(ProcessPermission::ExecHeap),
+            MappingNameRef::Stack => {
+                // `execstack` is checked when making executable the stack of the initial thread.
+                Some(ProcessPermission::ExecStack)
+            }
+            MappingNameRef::None
+            | MappingNameRef::Vdso
+            | MappingNameRef::Vvar
+            | MappingNameRef::Vma(_)
+            | MappingNameRef::File(_)
+            | MappingNameRef::AioContext(_)
+            | MappingNameRef::Ashmem(_) => {
                 // TODO(b/409256444): Check `execmod`
 
                 // `execstack` is checked when making executable a mapping that contains
@@ -282,7 +284,7 @@ pub(in crate::security) fn file_mprotect(
             )?;
         }
     }
-    let fs_node = if let MappingName::File(file) = mapping.name() {
+    let fs_node = if let MappingNameRef::File(file) = mapping.name() {
         Some(file.name.entry.node.clone())
     } else {
         None

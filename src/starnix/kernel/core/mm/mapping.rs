@@ -425,21 +425,21 @@ pub struct MappingSummary {
 impl MappingSummary {
     pub fn add(&mut self, mm_state: &MemoryManagerState, mapping: &Mapping) {
         let kind_summary = match mapping.name() {
-            MappingName::None => &mut self.no_kind,
-            MappingName::Stack => &mut self.stack,
-            MappingName::Heap => &mut self.heap,
-            MappingName::Vdso => &mut self.vdso,
-            MappingName::Vvar => &mut self.vvar,
-            MappingName::File(_) => &mut self.file,
-            MappingName::Vma(name) => {
+            MappingNameRef::None => &mut self.no_kind,
+            MappingNameRef::Stack => &mut self.stack,
+            MappingNameRef::Heap => &mut self.heap,
+            MappingNameRef::Vdso => &mut self.vdso,
+            MappingNameRef::Vvar => &mut self.vvar,
+            MappingNameRef::File(_) => &mut self.file,
+            MappingNameRef::Vma(name) => {
                 self.name_lengths.push(name.len());
                 &mut self.vma
             }
-            MappingName::Ashmem(name) => {
+            MappingNameRef::Ashmem(name) => {
                 self.name_lengths.push(name.len());
                 &mut self.ashmem
             }
-            MappingName::AioContext(_) => &mut self.aiocontext,
+            MappingNameRef::AioContext(_) => &mut self.aiocontext,
         };
 
         kind_summary.count += 1;

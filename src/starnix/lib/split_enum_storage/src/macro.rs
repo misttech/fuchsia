@@ -114,15 +114,16 @@ fn generate_container(input: syn::ItemStruct) -> syn::Result<TokenStream> {
 
             let disc_ty = format_ident!("{}Discriminant", field_ty_name.ident);
             let payload_ty = format_ident!("{}Payload", field_ty_name.ident);
+            let ref_ty = format_ident!("{}Ref", field_ty_name.ident);
 
             // TODO(https://fxbug.dev/417769377) make these two fields unsafe to as guardrail to
             // prevent callers from desynchronizing them
             updated_fields.push(quote!(#disc_field_name: #disc_ty));
             updated_fields.push(quote!(#payload_field_name: std::mem::ManuallyDrop<#payload_ty>));
             accessors.push(quote! {
-                pub fn #ident(&self) -> #field_ty {
+                pub fn #ident(&self) -> #ref_ty<'_> {
                     // SAFETY: generated code keeps the discriminant and payload in sync
-                    unsafe { self.#payload_field_name.read(self.#disc_field_name) }
+                    unsafe { self.#payload_field_name.read_ref(self.#disc_field_name) }
                 }
                 pub fn #setter_name(&mut self, new: #field_ty) {
                     use split_enum_storage::SplitStorage;
@@ -264,24 +265,38 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
 
     let discriminant_name = format_ident!("{}Discriminant", ident);
     let payload_name = format_ident!("{}Payload", ident);
+    let ref_name = format_ident!("{}Ref", ident);
 
     let mut discriminant_variants = vec![];
     let mut payload_fields = vec![];
+    let mut ref_variants = vec![];
+    let mut is_methods = vec![];
 
     let mut decompose_arms = vec![];
     let mut clone_arms = vec![];
     let mut read_arms = vec![];
+    let mut read_ref_arms = vec![];
+    let mut to_owned_arms = vec![];
+    let mut to_ref_enum_arms = vec![];
     let mut free_arms = vec![];
 
     for variant in data_enum.variants.iter() {
         let variant_name = &variant.ident;
+        let is_variant_name = format_ident!("is_{}", variant_name.to_string().to_lowercase());
 
         discriminant_variants.push(variant_name);
+
+        is_methods.push(quote! {
+            pub fn #is_variant_name(&self) -> bool {
+                matches!(self, Self::#variant_name { .. })
+            }
+        });
 
         let payload_field_name = format_ident!("{}_data", variant_name.to_string().to_lowercase());
 
         match &variant.fields {
             syn::Fields::Unit => {
+                ref_variants.push(quote!(#variant_name));
                 decompose_arms.push(quote! {
                     #ident::#variant_name => (
                         #discriminant_name::#variant_name,
@@ -293,6 +308,15 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
                 });
                 read_arms.push(quote! {
                     #discriminant_name::#variant_name => #ident::#variant_name
+                });
+                read_ref_arms.push(quote! {
+                    #discriminant_name::#variant_name => #ref_name::#variant_name
+                });
+                to_owned_arms.push(quote! {
+                    #ref_name::#variant_name => #ident::#variant_name
+                });
+                to_ref_enum_arms.push(quote! {
+                    #ident::#variant_name => #ref_name::#variant_name
                 });
                 free_arms.push(quote! {
                     #discriminant_name::#variant_name => ()
@@ -318,6 +342,7 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
                 payload_fields.push(quote! {
                     #payload_field_name: std::mem::ManuallyDrop<#field_type>
                 });
+                ref_variants.push(quote!(#variant_name(&'a #field_type)));
 
                 decompose_arms.push(quote! {
                     #ident::#variant_name(inner) => (
@@ -333,6 +358,21 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
                 read_arms.push(quote! {
                     #discriminant_name::#variant_name => #ident::#variant_name(
                         std::mem::ManuallyDrop::into_inner(self.#payload_field_name.clone())
+                    )
+                });
+                read_ref_arms.push(quote! {
+                    #discriminant_name::#variant_name => #ref_name::#variant_name(
+                        &self.#payload_field_name
+                    )
+                });
+                to_owned_arms.push(quote! {
+                    #ref_name::#variant_name(inner) => #ident::#variant_name(
+                        (*inner).clone()
+                    )
+                });
+                to_ref_enum_arms.push(quote! {
+                    #ident::#variant_name(inner) => #ref_name::#variant_name(
+                        inner
                     )
                 });
                 free_arms.push(quote! {
@@ -380,6 +420,41 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
             #(#discriminant_variants),*
         }
 
+        #[derive(Debug, PartialEq, Eq)]
+        #vis enum #ref_name<'a> {
+            #(#ref_variants),*
+        }
+
+        impl<'a> #ref_name<'a> {
+            #(#is_methods)*
+
+            pub fn to_owned(&self) -> #ident {
+                match self {
+                    #(#to_owned_arms),*
+                }
+            }
+        }
+
+        impl #ident {
+            fn to_ref_enum(&self) -> #ref_name<'_> {
+                match self {
+                    #(#to_ref_enum_arms),*
+                }
+            }
+        }
+
+        impl<'a> ::core::cmp::PartialEq<#ident> for #ref_name<'a> {
+            fn eq(&self, other: &#ident) -> bool {
+                *self == other.to_ref_enum()
+            }
+        }
+
+        impl<'a> ::core::cmp::PartialEq<#ref_name<'a>> for #ident {
+            fn eq(&self, other: &#ref_name<'a>) -> bool {
+                self.to_ref_enum() == *other
+            }
+        }
+
         #vis union #payload_name {
             #(#payload_fields),*
         }
@@ -406,6 +481,18 @@ fn generate_split_storage_impl_inner(input: syn::DeriveInput) -> syn::Result<Tok
             unsafe fn read(&self, disc: #discriminant_name) -> #ident {
                 match disc {
                     #(#read_arms),*
+                }
+            }
+
+            /// Return a reference to `self`'s data, consuming the discriminant.
+            ///
+            /// # Safety
+            ///
+            /// The provided `disc` must be equal to the value that was returned with this payload's
+            /// creation.
+            unsafe fn read_ref<'a>(&'a self, disc: #discriminant_name) -> #ref_name<'a> {
+                match disc {
+                    #(#read_ref_arms),*
                 }
             }
 

@@ -9,8 +9,9 @@ use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
-    MappingBacking, MappingFlags, MappingName, MlockPinFlavor, PrivateFutexKey, ProtectionFlags,
-    UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment, read_to_array,
+    MappingBacking, MappingFlags, MappingName, MappingNameRef, MlockPinFlavor, PrivateFutexKey,
+    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
+    read_to_array,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -844,7 +845,7 @@ impl MemoryManagerState {
                     original_mapping.flags(),
                     original_mapping.max_access(),
                     false,
-                    original_mapping.name(),
+                    original_mapping.name().to_owned(),
                     released_mappings,
                 )?))
             }
@@ -969,14 +970,14 @@ impl MemoryManagerState {
                         new_flags.access_flags(),
                         new_flags.options(),
                         false,
-                        src_mapping.name(),
+                        src_mapping.name().to_owned(),
                         released_mappings,
                     )?;
                 }
 
                 released_mappings.extend(self.mappings.insert(
                     dst_addr..dst_end,
-                    Mapping::new_private_anonymous(new_flags, src_mapping.name()),
+                    Mapping::new_private_anonymous(new_flags, src_mapping.name().to_owned()),
                 ));
 
                 if dst_addr != src_addr && src_length != 0 && !keep_source {
@@ -1001,7 +1002,7 @@ impl MemoryManagerState {
                     src_mapping.flags(),
                     src_mapping.max_access(),
                     false,
-                    src_mapping.name(),
+                    src_mapping.name().to_owned(),
                     released_mappings,
                 )?;
 
@@ -1773,7 +1774,7 @@ impl MemoryManagerState {
             length,
             mapping_to_grow.flags().access_flags(),
             mapping_to_grow.flags().options(),
-            mapping_to_grow.name(),
+            mapping_to_grow.name().to_owned(),
             &mut released_mappings,
         )?;
         // We can't have any released mappings because `find_growsdown_mapping` will return None if
@@ -2012,13 +2013,13 @@ impl MemoryManagerState {
         let Some((range, mapping)) = self.mappings.get(addr) else {
             return None;
         };
-        let MappingName::AioContext(ref aio_context) = mapping.name() else {
+        let MappingNameRef::AioContext(ref aio_context) = mapping.name() else {
             return None;
         };
         if !mapping.can_read() {
             return None;
         }
-        Some((range.clone(), aio_context.clone()))
+        Some((range.clone(), Arc::clone(aio_context)))
     }
 
     fn find_uffd<L>(&self, locked: &mut Locked<L>, addr: UserAddress) -> Option<Arc<UserFault>>
@@ -2457,7 +2458,7 @@ impl MemoryManagerState {
         // combination with merging of adjacent mappings. Instead, make a copy, change the copy,
         // and insert the copy.
         for (mut range, mut mapping) in mappings_in_range {
-            if let MappingName::File(_) = mapping.name() {
+            if mapping.name().is_file() {
                 // It's invalid to assign a name to a file-backed mapping.
                 return error!(EBADF);
             }
@@ -3121,7 +3122,7 @@ impl MemoryManager {
                     let length = range.end - range.start;
 
                     let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
-                        || mapping.name() == MappingName::Vvar
+                        || mapping.name().is_vvar()
                     {
                         // Note that the Vvar is a special mapping that behaves like a shared mapping but
                         // is private to each process.
@@ -3147,7 +3148,7 @@ impl MemoryManager {
                         target_mapping_flags,
                         mapping.max_access(),
                         false,
-                        mapping.name().clone(),
+                        mapping.name().to_owned(),
                         &mut released_mappings,
                     )?;
                     assert!(
@@ -3177,7 +3178,7 @@ impl MemoryManager {
                         range.clone(),
                         Mapping::new_private_anonymous(
                             target_mapping_flags,
-                            mapping.name().clone(),
+                            mapping.name().to_owned(),
                         ),
                     );
                     assert!(
@@ -3569,10 +3570,10 @@ impl MemoryManager {
             };
 
             let name_str = match &map.name() {
-                MappingName::File(file) => {
+                MappingNameRef::File(file) => {
                     String::from_utf8_lossy(&file.name.path(task)).into_owned()
                 }
-                MappingName::None | MappingName::AioContext(_) => {
+                MappingNameRef::None | MappingNameRef::AioContext(_) => {
                     if map.flags().contains(MappingFlags::SHARED)
                         && map.flags().contains(MappingFlags::ANONYMOUS)
                     {
@@ -3581,10 +3582,10 @@ impl MemoryManager {
                         "".to_string()
                     }
                 }
-                MappingName::Stack => "[stack]".to_string(),
-                MappingName::Heap => "[heap]".to_string(),
-                MappingName::Vdso => "[vdso]".to_string(),
-                MappingName::Vvar => "[vvar]".to_string(),
+                MappingNameRef::Stack => "[stack]".to_string(),
+                MappingNameRef::Heap => "[heap]".to_string(),
+                MappingNameRef::Vdso => "[vdso]".to_string(),
+                MappingNameRef::Vvar => "[vvar]".to_string(),
                 _ => format!("{:?}", map.name()),
             };
 
@@ -3827,7 +3828,11 @@ impl MemoryManager {
     ) -> Result<Option<flyweights::FlyByteStr>, Errno> {
         let state = self.state.read();
         let (_, mapping) = state.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
-        if let MappingName::Vma(name) = mapping.name() { Ok(Some(name.clone())) } else { Ok(None) }
+        if let MappingNameRef::Vma(name) = mapping.name() {
+            Ok(Some(name.clone()))
+        } else {
+            Ok(None)
+        }
     }
 
     #[cfg(test)]
@@ -3881,7 +3886,7 @@ impl MemoryManager {
                     stats.rss_shared += zx_details.committed_bytes;
                 } else if mm_mapping.flags().contains(MappingFlags::ANONYMOUS) {
                     stats.rss_anonymous += zx_details.committed_bytes;
-                } else if let MappingName::File(_) = mm_mapping.name() {
+                } else if mm_mapping.name().is_file() {
                     stats.rss_file += zx_details.committed_bytes;
                 }
 
@@ -4070,7 +4075,7 @@ fn write_map(
             MappingBacking::Memory(backing) => backing.address_to_offset(range.start),
             MappingBacking::PrivateAnonymous => 0,
         },
-        if let MappingName::File(file) = &map.name() { file.name.entry.node.ino } else { 0 }
+        if let MappingNameRef::File(file) = &map.name() { file.name.entry.node.ino } else { 0 }
     )?;
     let fill_to_name = |sink: &mut DynamicFileBuf| {
         // The filename goes at >= the 74th column (73rd when zero indexed)
@@ -4079,7 +4084,7 @@ fn write_map(
         }
     };
     match &map.name() {
-        MappingName::None | MappingName::AioContext(_) => {
+        MappingNameRef::None | MappingNameRef::AioContext(_) => {
             if map.flags().contains(MappingFlags::SHARED)
                 && map.flags().contains(MappingFlags::ANONYMOUS)
             {
@@ -4088,23 +4093,23 @@ fn write_map(
                 sink.write(b"/dev/zero (deleted)");
             }
         }
-        MappingName::Stack => {
+        MappingNameRef::Stack => {
             fill_to_name(sink);
             sink.write(b"[stack]");
         }
-        MappingName::Heap => {
+        MappingNameRef::Heap => {
             fill_to_name(sink);
             sink.write(b"[heap]");
         }
-        MappingName::Vdso => {
+        MappingNameRef::Vdso => {
             fill_to_name(sink);
             sink.write(b"[vdso]");
         }
-        MappingName::Vvar => {
+        MappingNameRef::Vvar => {
             fill_to_name(sink);
             sink.write(b"[vvar]");
         }
-        MappingName::File(file) => {
+        MappingNameRef::File(file) => {
             fill_to_name(sink);
             // File names can have newlines that need to be escaped before printing.
             // According to https://man7.org/linux/man-pages/man5/proc.5.html the only
@@ -4116,13 +4121,13 @@ fn write_map(
                     .copied(),
             );
         }
-        MappingName::Vma(name) => {
+        MappingNameRef::Vma(name) => {
             fill_to_name(sink);
             sink.write(b"[anon:");
             sink.write(name.as_bytes());
             sink.write(b"]");
         }
-        MappingName::Ashmem(name) => {
+        MappingNameRef::Ashmem(name) => {
             fill_to_name(sink);
             sink.write(b"/dev/ashmem/");
             sink.write(name.as_bytes());

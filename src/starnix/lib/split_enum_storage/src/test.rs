@@ -21,7 +21,17 @@ fn test_set_drops_old_payload() {
     let alloc = Rc::new(1);
     let weak = Rc::downgrade(&alloc);
     let mut container =
-        ContainerUnsplit { data_enum: DataEnum::VariantWithAlloc(alloc) }.decompose();
+        ContainerUnsplit { data_enum: DataEnum::VariantWithAlloc(alloc.clone()) }.decompose();
+    assert_eq!(container.data_enum(), DataEnumRef::VariantWithAlloc(&alloc));
+    assert!(container.data_enum().is_variantwithalloc());
+
+    // Test PartialEq between owned and ref
+    assert_eq!(container.data_enum(), DataEnum::VariantWithAlloc(alloc.clone()));
+    assert_eq!(DataEnum::VariantWithAlloc(alloc.clone()), container.data_enum());
+
+    // This consumes `alloc`.
+    assert_eq!(container.data_enum().to_owned(), DataEnum::VariantWithAlloc(alloc));
+
     container.set_data_enum(DataEnum::None);
 
     assert!(weak.upgrade().is_none());
