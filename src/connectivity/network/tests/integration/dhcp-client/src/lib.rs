@@ -888,6 +888,16 @@ async fn watch_configuration_handles_interface_removal<N: Netstack>(name: &str) 
     "should decline and restart if duplicate address detected"
 )]
 #[test_case(
+    Some(fnet_interfaces_admin::AddressRemovalReason::Invalid),
+    None;
+    "should decline and restart if Invalid"
+)]
+#[test_case(
+    Some(fnet_interfaces_admin::AddressRemovalReason::InvalidProperties),
+    None;
+    "should decline and restart if InvalidProperties"
+)]
+#[test_case(
     Some(fnet_interfaces_admin::AddressRemovalReason::UserRemoved),
     Some(fnet_dhcp::ClientExitReason::AddressRemovedByUser);
     "should stop client if user removed"

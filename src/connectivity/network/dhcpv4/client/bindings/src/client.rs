@@ -674,10 +674,6 @@ fn into_address_event(
         }
         Err(fnet_interfaces_ext::admin::AddressStateProviderError::AddressRemoved(reason)) => {
             match reason {
-                r @ fnet_interfaces_admin::AddressRemovalReason::Invalid
-                | r @ fnet_interfaces_admin::AddressRemovalReason::InvalidProperties => {
-                    panic!("invalid address removal: {r:?}")
-                }
                 fnet_interfaces_admin::AddressRemovalReason::InterfaceRemoved => {
                     log::warn!("{debug_log_prefix} interface removed");
                     dhcp_client_core::client::AddressEvent::Removed(
@@ -690,7 +686,9 @@ fn into_address_event(
                         ClientExitReason::AddressRemovedByUser,
                     )
                 }
-                r @ fnet_interfaces_admin::AddressRemovalReason::AlreadyAssigned
+                r @ fnet_interfaces_admin::AddressRemovalReason::Invalid
+                | r @ fnet_interfaces_admin::AddressRemovalReason::InvalidProperties
+                | r @ fnet_interfaces_admin::AddressRemovalReason::AlreadyAssigned
                 | r @ fnet_interfaces_admin::AddressRemovalReason::DadFailed
                 | r @ fnet_interfaces_admin::AddressRemovalReason::Forfeited => {
                     log::warn!("{debug_log_prefix} address rejected: {r:?}");
