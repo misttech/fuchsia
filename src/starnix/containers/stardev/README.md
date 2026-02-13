@@ -23,7 +23,11 @@ $ docker save stardev:latest -o local/stardev.tar
 Configure the Fuchsia build to include the `stardev` container:
 
 ```sh
-$ fx set workbench_eng.x64 --release --with //src/starnix/containers/stardev --args 'stardev_path = "//local/stardev.tar"'
+$ fx set workbench_eng.x64 \
+    --release \
+    --with //src/starnix/containers/stardev \
+    --args 'stardev_path = "//local/stardev.tar"' \
+    --args 'starnix_enable_console_tool = true'
 $ fx build
 ```
 

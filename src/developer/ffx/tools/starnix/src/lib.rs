@@ -4,6 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
+use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result};
@@ -24,7 +25,6 @@ mod vmo;
 #[argh(subcommand)]
 pub enum StarnixSubCommand {
     Adb(adb::StarnixAdbCommand),
-    #[cfg(feature = "enable_console_tool")]
     Console(console::StarnixConsoleCommand),
     Vmo(vmo::StarnixVmoCommand),
     Kill(kill::StarnixKillCommand),
@@ -34,7 +34,6 @@ pub enum StarnixSubCommand {
 #[serde(rename_all = "lowercase")]
 pub enum StarnixToolOutput {
     Adb(adb::AdbCommandOutput),
-    #[cfg(feature = "enable_console_tool")]
     Console(console::ConsoleCommandOutput),
     Vmo(vmo::VmoCommandOutput),
     Kill(kill::KillCommandOutput),
@@ -44,7 +43,6 @@ impl std::fmt::Display for StarnixToolOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Adb(o) => write!(f, "{o}"),
-            #[cfg(feature = "enable_console_tool")]
             Self::Console(o) => write!(f, "{o}"),
             Self::Vmo(o) => write!(f, "{o}"),
             Self::Kill(o) => write!(f, "{o}"),
@@ -84,10 +82,17 @@ impl FfxMain for StarnixTool {
                 )
                 .await
                 .map(StarnixToolOutput::Adb),
-            #[cfg(feature = "enable_console_tool")]
             StarnixSubCommand::Console(command) => {
-                let rcs = connect_to_rcs(&self.rcs_connector).await?;
-                console::starnix_console(command, &rcs).await.map(StarnixToolOutput::Console)
+                if cfg!(feature = "enable_console_tool") {
+                    let rcs = connect_to_rcs(&self.rcs_connector).await?;
+                    console::starnix_console(command, &rcs).await.map(StarnixToolOutput::Console)
+                } else {
+                    ffx_bail!(
+                        "The console tool is intended only for developers. Disabled by default to \
+                         prevent automated use. Build with \
+                         \"fx set ... --args 'starnix_enable_console_tool = true'\" to enable it."
+                    );
+                }
             }
             StarnixSubCommand::Vmo(command) => {
                 let rcs = connect_to_rcs(&self.rcs_connector).await?;
