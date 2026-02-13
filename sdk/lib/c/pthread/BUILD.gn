@@ -50,6 +50,8 @@ llvm_libc_source_set("attr") {
     # ABI on Fuchsia, though it exists in upstream llvm-libc.  Nonetheless,
     # pthread_attr_getstack is still supported for use with pthread_getattr_np.
     "pthread_attr_setstacksize",
+
+    "pthread_getattr_np",
   ]
   functions = os_functions + [ "pthread_attr_destroy" ]
   no_test_functions = functions
