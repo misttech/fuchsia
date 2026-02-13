@@ -6,24 +6,37 @@
 
 use fuchsia_rseq::{Rseq, RseqCriticalSection};
 use std::arch::global_asm;
-use zx::sys::{zx_rseq_t, zx_system_get_num_cpus};
+use std::cell::UnsafeCell;
+use zx::sys::{zx_rseq_t, zx_system_barrier, zx_system_get_num_cpus};
+
+// Options for zx_system_barrier
+// source: zircon/system/public/zircon/syscalls-next.h
+// TODO(https://fxbug.dev/297526152): When this API is stabilized, move the definitions for these
+// constants into the zx crate.
+const ZX_SYSTEM_BARRIER_DATA_MEMORY: u32 = 0;
 
 /// Counters for a single CPU.
 ///
 /// This struct is `repr(C)` to ensure a stable layout, which is important for RSEQ operations that
 /// might access these fields from assembly or specific offsets.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 struct PerCpuCount {
     /// The number of times a reader has started a critical section.
-    begin: usize,
+    begin: UnsafeCell<usize>,
 
     /// The number of times a reader has ended a critical section.
-    end: usize,
+    end: UnsafeCell<usize>,
+}
+
+impl PerCpuCount {
+    const fn new() -> Self {
+        Self { begin: UnsafeCell::new(0), end: UnsafeCell::new(0) }
+    }
 }
 
 /// Per-CPU state containing the counters.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[repr(C)]
 struct PerCpuState {
     /// Two sets of counters are maintained, one for even generations and one for odd generations.
@@ -33,17 +46,17 @@ struct PerCpuState {
 impl PerCpuState {
     /// Creates a new `PerCpuState` with zeroed counters.
     const fn new() -> Self {
-        Self { counts: [PerCpuCount { begin: 0, end: 0 }; 2] }
+        Self { counts: [PerCpuCount::new(), PerCpuCount::new()] }
     }
 
     /// Returns a pointer to the `begin` counter for the given index.
     fn begin_counter(&self, index: usize) -> *mut usize {
-        &self.counts[index].begin as *const usize as *mut usize
+        self.counts[index].begin.get()
     }
 
     /// Returns a pointer to the `end` counter for the given index.
     fn end_counter(&self, index: usize) -> *mut usize {
-        &self.counts[index].end as *const usize as *mut usize
+        self.counts[index].end.get()
     }
 }
 
@@ -53,6 +66,11 @@ impl PerCpuState {
 const MAX_CPUS: u32 = 16;
 
 /// Manages RCU read-side critical section counters across all CPUs.
+///
+/// This struct is `Sync` because the `UnsafeCell`s are only written by the owning CPU (guaranteed
+/// by RSEQ) and read by other CPUs using volatile reads, which produces a consistent view of the
+/// counters (with appropriate barriers).
+unsafe impl Sync for RcuReadCounters {}
 pub(crate) struct RcuReadCounters {
     /// Array of per-CPU states.
     per_cpu_counts: [PerCpuState; MAX_CPUS as usize],
@@ -61,7 +79,7 @@ pub(crate) struct RcuReadCounters {
 impl RcuReadCounters {
     /// Creates a new `RcuReadCounters`.
     pub(crate) const fn new() -> Self {
-        Self { per_cpu_counts: [PerCpuState::new(); MAX_CPUS as usize] }
+        Self { per_cpu_counts: [const { PerCpuState::new() }; MAX_CPUS as usize] }
     }
 
     /// Returns the state for a specific CPU.
@@ -114,18 +132,32 @@ impl RcuReadCounters {
     pub(crate) fn has_active(&self, index: usize) -> bool {
         let num_cpus = unsafe { zx_system_get_num_cpus() };
 
-        let mut sum = 0;
+        let mut sum = 0usize;
 
         // Phase 1: Subtract Ends (read before barrier)
         for cpu in 0..num_cpus {
-            sum -= self.get_state(cpu).counts[index].end;
+            let end_ptr = self.get_state(cpu).counts[index].end.get();
+            // SAFETY: Use volatile read to ensure a single instruction loads the data from memory
+            // where it is being written to by another thread without atomic operations.
+            sum = sum.wrapping_sub(unsafe { std::ptr::read_volatile(end_ptr) });
         }
 
-        // TODO: Add a zx_barrier() for RSEQ here.
+        // This barrier ensures that if we see an increment to `end` (in Phase 1), we must also see
+        // the corresponding increment to `begin` (in Phase 2). The `begin` increment is sequenced
+        // before the `end` increment in the reader thread. This barrier forces all stores sequenced
+        // before the interrupt point in the reader to be visible to us after the barrier.
+        // Therefore, we will never underestimate the number of active readers.
+
+        // SAFETY: this is a basic FFI call with no pre- or post-conditions.
+        let status = unsafe { zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+        debug_assert_eq!(status, zx::sys::ZX_OK);
 
         // Phase 2: Add Begins (read after barrier)
         for cpu in 0..num_cpus {
-            sum += self.get_state(cpu).counts[index].begin;
+            let begin_ptr = self.get_state(cpu).counts[index].begin.get();
+            // SAFETY: Use volatile read to ensure a single instruction loads the data from memory
+            // where it is being written to by another thread without atomic operations.
+            sum = sum.wrapping_add(unsafe { std::ptr::read_volatile(begin_ptr) });
         }
 
         sum != 0
@@ -157,6 +189,9 @@ unsafe extern "C" {
     static rcu_rseq_add_start: u8;
     static rcu_rseq_add_post: u8;
     static rcu_rseq_add_abort: u8;
+    // This function must be declared `extern "C"` to ensure the compiler treats it as an opaque
+    // call. This forces the compiler to respect memory ordering by preventing it from assuming
+    // the function doesn't modify memory (i.e., treating it as a compiler barrier).
     fn rcu_rseq_add(counter: *mut usize, val: usize, rseq_ptr: *mut zx_rseq_t, cpu: u32) -> bool;
 }
 
