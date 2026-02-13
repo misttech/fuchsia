@@ -9,6 +9,7 @@ namespace scudo {
 
 struct DefaultConfig {
   static const bool MaySupportMemoryTagging = false;
+  static const bool EnableZeroOnDealloc = true;
   template <class A>
   using TSDRegistryT = TSDRegistrySharedT<A, 8U, 4U>;  // Shared, max 8 TSDs.
 
