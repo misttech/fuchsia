@@ -11,10 +11,7 @@ driver_bind_rules("coordinator_bind") {
   rules = "meta/coordinator.bind"
   bind_output = "display-coordinator.bindbc"
   tests = "meta/bind_tests.json"
-  deps = [
-    "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_bindlib",
-    "//src/devices/bind/fuchsia.display",
-  ]
+  deps = [ "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_bindlib" ]
 }
 
 fuchsia_cc_driver("coordinator-driver") {

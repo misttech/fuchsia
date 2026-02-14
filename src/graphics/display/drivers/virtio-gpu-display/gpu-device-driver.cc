@@ -19,8 +19,6 @@
 #include <memory>
 #include <utility>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/drivers/virtio-gpu-display/display-engine.h"

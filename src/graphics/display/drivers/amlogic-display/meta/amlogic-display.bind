@@ -8,7 +8,6 @@ using fuchsia.hardware.amlogiccanvas;
 using fuchsia.hardware.gpio;
 using fuchsia.gpio;
 using fuchsia.platform;
-using fuchsia.display;
 using fuchsia.amlogic.platform;
 using fuchsia.devicetree;
 

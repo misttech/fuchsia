@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-using fuchsia.display;
 using fuchsia.hardware.display.engine;
 
-if fuchsia.hardware.display.engine.Service == fuchsia.hardware.display.engine.Service.DriverTransport {
-  true;
-} else {
-  fuchsia.BIND_PROTOCOL == fuchsia.display.BIND_PROTOCOL.ENGINE;
-}
+fuchsia.hardware.display.engine.Service == fuchsia.hardware.display.engine.Service.DriverTransport;

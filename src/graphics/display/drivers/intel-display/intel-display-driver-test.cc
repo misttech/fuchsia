@@ -39,7 +39,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <bind/fuchsia/intel/platform/gpucore/cpp/bind.h>
 #include <ddktl/device.h>
 #include <gtest/gtest.h>

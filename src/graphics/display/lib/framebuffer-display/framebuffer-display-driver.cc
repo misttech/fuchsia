@@ -14,8 +14,6 @@
 
 #include <memory>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
@@ -149,15 +147,13 @@ zx::result<> FramebufferDisplayDriver::InitializeFidlServiceNode() {
     return add_service_result.take_error();
   }
 
-  const fuchsia_driver_framework::NodeProperty node_properties[] = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_display::BIND_PROTOCOL_ENGINE),
-  };
   const std::vector<fuchsia_driver_framework::Offer> node_offers = {
       fdf::MakeOffer2<fuchsia_hardware_display_engine::Service>(),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
-      node_controller_client_result = AddChild(name(), node_properties, node_offers);
+      node_controller_client_result = AddChild(
+          name(), cpp20::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
   if (node_controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", node_controller_client_result);
     return node_controller_client_result.take_error();

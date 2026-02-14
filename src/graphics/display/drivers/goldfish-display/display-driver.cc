@@ -22,8 +22,6 @@
 #include <string_view>
 #include <vector>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/drivers/goldfish-display/display-engine.h"

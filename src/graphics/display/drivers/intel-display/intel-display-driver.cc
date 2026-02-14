@@ -22,7 +22,6 @@
 #include <memory>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <bind/fuchsia/intel/platform/gpucore/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 

@@ -20,8 +20,6 @@
 #include <cstdint>
 #include <memory>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/display/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "fidl/fuchsia.driver.framework/cpp/natural_types.h"

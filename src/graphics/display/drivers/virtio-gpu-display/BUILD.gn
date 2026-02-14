@@ -114,8 +114,6 @@ fuchsia_cc_driver("driver") {
     "//sdk/lib/driver/incoming/cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.display:fuchsia.display_cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//src/graphics/display/lib/driver-framework-migration-utils/logging:logging-dfv2",
   ]
