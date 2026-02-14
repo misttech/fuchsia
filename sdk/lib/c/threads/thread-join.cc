@@ -14,16 +14,14 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-using ThreadState = zxr_thread_t::State;
-
 zx::result<intptr_t> ThreadJoin(Thread& thread) {
-  auto wait = [&thread](ThreadState old_state) {
+  auto wait = [&thread](Thread::Lifecycle old_state) {
     do {
-      switch (_zx_futex_wait(thread.zxr_thread.StateFutex(), static_cast<int>(old_state),
+      switch (_zx_futex_wait(thread.LifecycleFutex(), static_cast<int>(old_state),
                              ZX_HANDLE_INVALID, ZX_TIME_INFINITE)) {
         case ZX_ERR_BAD_STATE:  // Never blocked because it had changed.
         case ZX_OK:             // Woke up because it might have changed.
-          old_state = thread.zxr_thread.state.load(std::memory_order_acquire);
+          old_state = thread.lifecycle_.load(std::memory_order_acquire);
           break;
         default:
           CRASH_WITH_UNIQUE_BACKTRACE();
@@ -31,30 +29,30 @@ zx::result<intptr_t> ThreadJoin(Thread& thread) {
 
       // Wait until we reach the DONE state, even if we observe the
       // intermediate EXITING state.
-    } while (old_state == ThreadState::JOINED || old_state == ThreadState::EXITING);
+    } while (old_state == Thread::Lifecycle::JOINED || old_state == Thread::Lifecycle::EXITING);
 
-    if (old_state != ThreadState::DONE)
+    if (old_state != Thread::Lifecycle::DONE)
       CRASH_WITH_UNIQUE_BACKTRACE();
   };
 
   // Try to claim the join slot on this thread.
-  if (auto old_state = thread.zxr_thread.JoinOrDetachState(ThreadState::JOINED); !old_state) {
-    wait(ThreadState::JOINED);
+  if (auto old_state = thread.JoinOrDetachLifecycle(Thread::Lifecycle::JOINED); !old_state) {
+    wait(Thread::Lifecycle::JOINED);
   } else {
     switch (*old_state) {
-      case ThreadState::JOINED:
-      case ThreadState::DETACHED:
+      case Thread::Lifecycle::JOINED:
+      case Thread::Lifecycle::DETACHED:
         return zx::error{ZX_ERR_INVALID_ARGS};
 
-      case ThreadState::EXITING:
+      case Thread::Lifecycle::EXITING:
         // Since it is undefined to call ThreadJoin on a thread that has
         // already been detached or joined, we assume the state prior to
         // EXITING was JOINABLE, and act as if we had successfully transitioned
         // to JOINED.
-        wait(ThreadState::EXITING);
+        wait(Thread::Lifecycle::EXITING);
         [[fallthrough]];
 
-      case ThreadState::DONE:
+      case Thread::Lifecycle::DONE:
         break;
 
       default:
@@ -63,7 +61,7 @@ zx::result<intptr_t> ThreadJoin(Thread& thread) {
   }
 
   // Take the handle and synchronize with readers.  Then close the handle.
-  if (zx::thread handle = thread.zxr_thread.TakeHandle(ThreadState::DONE); !handle) {
+  if (zx::thread handle = thread.TakeHandle(Thread::Lifecycle::DONE); !handle) {
     CRASH_WITH_UNIQUE_BACKTRACE();
   }
 

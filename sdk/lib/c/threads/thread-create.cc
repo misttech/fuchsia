@@ -21,8 +21,6 @@ namespace {
 
 using SanitizerBeforeThreadCreateHook = Weak<__sanitizer_before_thread_create_hook>;
 
-using ThreadState = zxr_thread_t::State;
-
 // TODO(https://fxbug.dev/342469121): This is only needed in this form while
 // using the legacy musl dynamic linker.  The new libdl's implementation of
 // dlopen needs some analogous locking, but it can be done at finer grain.
@@ -100,12 +98,12 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   if (status != ZX_OK) [[unlikely]] {
     return zx::error{status};
   }
-  thread->zxr_thread.handle = thread_handle.release();
+  thread->handle_ = thread_handle.release();
 
-  const ThreadState initial_state =  // State must be set before ThreadStart.
-      attrs.detached ? ThreadState::DETACHED : ThreadState::JOINABLE;
+  const Thread::Lifecycle initial_state =  // State must be set before ThreadStart.
+      attrs.detached ? Thread::Lifecycle::DETACHED : Thread::Lifecycle::JOINABLE;
   // The state update is always ordered after the handle update.
-  thread->zxr_thread.state.store(initial_state, std::memory_order_release);
+  thread->lifecycle_.store(initial_state, std::memory_order_release);
 
   // This is the same in every thread, with the initial thread's slot holding
   // the original source of truth rather than any global location.

@@ -120,10 +120,10 @@ void SetStartHandles(zx::process process_self, zx::vmar allocation_vmar, zx::thr
   // here.  So this is the bare minimum that must be done before more normal
   // operation, even taking locks, is possible.
   pthread* self = __pthread_self();
-  self->zxr_thread.handle = thread_self.release();
+  self->handle_ = thread_self.release();
   // The zero-initialized value is already JOINABLE, so nothing to do there.
-  static_assert(static_cast<int>(zxr_thread_t::State::JOINABLE) == 0);
-  assert(self->zxr_thread.state == zxr_thread_t::State::JOINABLE);
+  static_assert(static_cast<int>(Thread::Lifecycle::JOINABLE) == 0);
+  assert(self->lifecycle_ == Thread::Lifecycle::JOINABLE);
 
   // Initialize the rest of the struct pthread now, since it's simple.
   self->locale = &libc.global_locale;

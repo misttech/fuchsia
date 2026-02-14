@@ -25,7 +25,6 @@ namespace LIBC_NAMESPACE_DECL {
 namespace {
 
 using SanitizerExitHook = Weak<__sanitizer_thread_exit_hook>;
-using ThreadState = zxr_thread_t::State;
 
 constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
 
@@ -61,12 +60,12 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
   // thread-list removal callback before deallocating the TCB.  Hence
   // __sanitizer_memory_snapshot should not consider the thread to be "alive"
   // any more, safely before the memory might be unmapped.
-  const ThreadState old_state =
-      self.zxr_thread.state.exchange(ThreadState::EXITING, std::memory_order_release);
-  switch (old_state) {
-    case ThreadState::DETACHED: {
+  const Thread::Lifecycle old_lifecycle =
+      self.lifecycle_.exchange(Thread::Lifecycle::EXITING, std::memory_order_release);
+  switch (old_lifecycle) {
+    case Thread::Lifecycle::DETACHED: {
       AllThreads().erase(self);
-      zx::thread handle = self.zxr_thread.TakeHandle(ThreadState::EXITING);
+      zx::thread handle = self.TakeHandle(Thread::Lifecycle::EXITING);
       const auto base = reinterpret_cast<uintptr_t>(self.tcb_region.iov_base);
       const size_t size = self.tcb_region.iov_len;
       _zx_vmar_unmap_handle_close_thread_exit(unmap_vmar->get(), base, size, handle.release());
@@ -74,13 +73,13 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
       break;
     }
 
-    case ThreadState::JOINABLE:
+    case Thread::Lifecycle::JOINABLE:
       // Nobody's watching right now, but they might start watching as we
       // exit.  Just in case, behave as if we've been joined and wake the
       // futex on our way out.
       [[fallthrough]];
 
-    case ThreadState::JOINED:
+    case Thread::Lifecycle::JOINED:
       // Somebody loves us!  Or at least intends to inherit when we die.  Wake
       // the _zx_futex_wait in zxr_thread_join, and then die.  This has to be
       // done with the special four-in-one vDSO call because as soon as the
@@ -91,13 +90,13 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
       // unrelated, well, that's why any zx_futex_wait can always have spurious
       // wakeups.
       _zx_futex_wake_handle_close_thread_exit(
-          self.zxr_thread.StateFutex(), 1, static_cast<int>(ThreadState::DONE), ZX_HANDLE_INVALID);
+          self.LifecycleFutex(), 1, static_cast<int>(Thread::Lifecycle::DONE), ZX_HANDLE_INVALID);
       CRASH_WITH_UNIQUE_BACKTRACE();
       break;
 
-    case ThreadState::DONE:
-    case ThreadState::EXITING:
-    case ThreadState::FREED:
+    case Thread::Lifecycle::DONE:
+    case Thread::Lifecycle::EXITING:
+    case Thread::Lifecycle::FREED:
       // Cannot be in DONE, EXITING, or FREED and reach here.
       CRASH_WITH_UNIQUE_BACKTRACE();
       break;

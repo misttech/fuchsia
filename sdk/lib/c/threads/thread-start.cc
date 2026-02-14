@@ -149,7 +149,7 @@ class StartTrampoline {
 #endif
   }
 
-  zx::unowned_thread thread_handle() const { return zx::unowned_thread{thread_.zxr_thread.handle}; }
+  zx::unowned_thread thread_handle() const { return zx::unowned_thread{thread_.handle_}; }
 
   Thread& thread_;
   uint64_t* sp_ = ThreadStackLimit(thread_);
@@ -317,7 +317,7 @@ zx::result<Thread*> ThreadStart(CreatedThread thread, ThreadFunction* func, void
 // to deallocate the stacks and thread block.
 void CreatedThreadDeleter::operator()(Thread* thread) const {
   AllThreads().erase(*thread);
-  zx::thread{thread->zxr_thread.handle}.reset();
+  zx::thread{thread->handle_}.reset();
   auto storage = ThreadStorage::FromThread(*thread, true);
   thread->~Thread();
 }

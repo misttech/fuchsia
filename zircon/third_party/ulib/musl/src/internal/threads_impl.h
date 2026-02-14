@@ -65,17 +65,17 @@ struct tls_dtor;
 #define HAVE_UNSAFE_STACK 0
 #endif
 
-typedef struct zxr_thread {
+struct pthread {
 #ifdef __cplusplus
-  // A zxr_thread_t starts its life JOINABLE.
-  // - If someone calls zxr_thread_join on it, it transitions to JOINED.
-  // - If someone calls ThreadDetach on it, it transitions to DETACHED.
-  // - When it begins exiting, the EXITING state is entered.
-  // - When it is no longer using its memory and handle resources, it transitions
-  //   to DONE.  If the thread was DETACHED prior to EXITING, this transition MAY
-  //   not happen.
+  // A thread starts JOINABLE, or DETACHED via pthread_attr_setdetachstate.
+  //  * If someone calls ThreadJoin on it, it transitions to JOINED.
+  //  * If someone calls ThreadDetach on it, it transitions to DETACHED.
+  //  * When it begins exiting, the EXITING state is entered.
+  //  * When it is no longer using its memory and handle resources, it
+  //   transitions to DONE.  If the thread was DETACHED prior to EXITING, this
+  //   transition MAY not happen.
   // No other transitions occur.
-  enum class State : int {
+  enum class Lifecycle : int {
     JOINABLE,
     DETACHED,
     JOINED,
@@ -84,49 +84,44 @@ typedef struct zxr_thread {
     FREED,
   };
 
-  zx_futex_t* StateFutex() { return reinterpret_cast<zx_futex_t*>(&state); }
+  zx_futex_t* LifecycleFutex() { return reinterpret_cast<zx_futex_t*>(&lifecycle_); }
 
   // Claim the thread as JOINED or DETACHED.  Returns std::nullopt on success,
   // which only happens if the previous state was JOINABLE.  On failure, it
   // returns the actual previous state.
-  std::optional<State> JoinOrDetachState(State new_state) {
-    if (State old_state = State::JOINABLE; !state.compare_exchange_strong(
-            old_state, new_state, std::memory_order_acq_rel, std::memory_order_acquire))
+  std::optional<Lifecycle> JoinOrDetachLifecycle(Lifecycle new_lifecycle) {
+    if (Lifecycle old_lifecycle = Lifecycle::JOINABLE; !lifecycle_.compare_exchange_strong(
+            old_lifecycle, new_lifecycle, std::memory_order_acq_rel, std::memory_order_acquire))
         [[unlikely]] {
-      return old_state;
+      return old_lifecycle;
     }
     return std::nullopt;
   }
 
   // Extract the thread handle.  Synchronizes with readers by setting the state
   // to FREED and checks the given expected state for consistency.
-  zx::thread TakeHandle(State expected_state) {
-    zx::thread taken{std::exchange(handle, ZX_HANDLE_INVALID)};
-    if (!state.compare_exchange_strong(expected_state, State::FREED, std::memory_order_acq_rel,
-                                       std::memory_order_acquire)) {
+  zx::thread TakeHandle(Lifecycle expected_lifecycle) {
+    zx::thread taken{std::exchange(handle_, ZX_HANDLE_INVALID)};
+    if (!lifecycle_.compare_exchange_strong(expected_lifecycle, Lifecycle::FREED,
+                                            std::memory_order_acq_rel, std::memory_order_acquire)) {
       CRASH_WITH_UNIQUE_BACKTRACE();
     }
     return taken;
   }
 #endif
 
-  zx_handle_t handle;
-#ifdef __cplusplus
-  std::atomic<State> state;
-#else
-  _Atomic(int) state;
-#endif
-} zxr_thread_t;
-static_assert(sizeof(zxr_thread_t) == 8, "layout snafu");
-
-struct pthread {
 #ifndef TLS_ABOVE_TP
   // These must be the very first members.
   tcbhead_t head;
   tp_abi_t abi;
 #endif
 
-  zxr_thread_t zxr_thread;
+  zx_handle_t handle_;
+#ifdef __cplusplus
+  std::atomic<Lifecycle> lifecycle_;
+#else
+  _Atomic(int) lifecycle_;
+#endif
 
   struct pthread* next;
   struct pthread** prevp;
@@ -338,7 +333,7 @@ static inline struct pthread* __pthread_self(void) {
 
 static inline thrd_t __thrd_current(void) { return (thrd_t)__pthread_self(); }
 
-static inline pid_t __thread_get_tid(void) { return (int)__pthread_self()->zxr_thread.handle; }
+static inline pid_t __thread_get_tid(void) { return (int)__pthread_self()->handle_; }
 
 // This function maps a zx_handle_t for the thread into an int, similar to
 // __thread_get_tid(). This version is used by FILE::lock to indicate that this
@@ -370,7 +365,7 @@ static inline pid_t __thread_handle_to_filelock_tid(zx_handle_t handle) {
 #undef _MUSL_MIN_FIXED_MASK
 
 static inline pid_t __thread_get_tid_for_filelock(void) {
-  return __thread_handle_to_filelock_tid((int)__pthread_self()->zxr_thread.handle);
+  return __thread_handle_to_filelock_tid((int)__pthread_self()->handle_);
 }
 
 // Signal n (or all, for -1) threads on a pthread_cond_t or cnd_t.

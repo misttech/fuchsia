@@ -14,9 +14,7 @@ namespace {
 
 pthread* ThreadStruct(thrd_t t) { return reinterpret_cast<pthread*>(t); }
 
-zxr_thread_t* ZxrThread(thrd_t t) { return &ThreadStruct(t)->zxr_thread; }
-
-zx_handle_t GetHandle(thrd_t t) { return ZxrThread(t)->handle; }
+zx_handle_t GetHandle(thrd_t t) { return ThreadStruct(t)->handle_; }
 
 }  // namespace
 
@@ -27,5 +25,5 @@ __EXPORT zx_handle_t native_thread_get_zx_handle(std::thread::native_handle_type
   return GetHandle(t);
 }
 
-__EXPORT zx_handle_t _zx_thread_self() { return __pthread_self()->zxr_thread.handle; }
+__EXPORT zx_handle_t _zx_thread_self() { return __pthread_self()->handle_; }
 __EXPORT decltype(zx_thread_self) zx_thread_self [[gnu::weak, gnu::alias("_zx_thread_self")]];

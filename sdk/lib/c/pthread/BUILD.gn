@@ -56,7 +56,10 @@ llvm_libc_source_set("attr") {
   functions = os_functions + [ "pthread_attr_destroy" ]
   no_test_functions = functions
 
-  local_deps = [ ":attr.header" ]
+  local_deps = [
+    ":attr.header",
+    "../threads:thread",
+  ]
 }
 
 llvm_libc_source_set("name") {

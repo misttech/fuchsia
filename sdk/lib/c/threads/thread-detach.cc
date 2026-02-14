@@ -12,23 +12,21 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-using ThreadState = zxr_thread_t::State;
-
 zx::result<> ThreadDetach(Thread& thread) {
   // Try to claim the join slot on this thread on behalf of the thread.
-  auto old_state = thread.zxr_thread.JoinOrDetachState(ThreadState::DETACHED);
+  auto old_state = thread.JoinOrDetachLifecycle(Thread::Lifecycle::DETACHED);
   if (!old_state) {  // Was joinable, is now detached.
     return zx::ok();
   }
 
   // Otherwise, the thread wasn't joinable for some reason.
   switch (*old_state) {
-    case ThreadState::DETACHED:
-    case ThreadState::JOINED:
+    case Thread::Lifecycle::DETACHED:
+    case Thread::Lifecycle::JOINED:
       // The thread isn't joinable.  It was already joined or detached.
       return zx::error{ZX_ERR_INVALID_ARGS};
 
-    case ThreadState::EXITING:
+    case Thread::Lifecycle::EXITING:
       // Since it is undefined behavior to call ThreadDetach on a thread that
       // has already been detached or joined, we assume the state prior to
       // EXITING was JOINABLE.  However, since the thread is already shutting
@@ -46,7 +44,7 @@ zx::result<> ThreadDetach(Thread& thread) {
       }
       return zx::ok();
 
-    case ThreadState::DONE:
+    case Thread::Lifecycle::DONE:
       // It already died before it knew to deallocate itself.
       break;
 
