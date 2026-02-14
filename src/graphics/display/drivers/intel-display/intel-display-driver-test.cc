@@ -326,17 +326,8 @@ struct DeviceNode {
   std::vector<fuchsia_driver_framework::NodeProperty2> properties;
 };
 
-bool IsDisplayEngineBanjoNode(const DeviceNode& node) {
-  const std::vector<fuchsia_driver_framework::NodeProperty2>& properties = node.properties;
-  return properties.end() !=
-         std::find_if(properties.begin(), properties.end(),
-                      [](const fuchsia_driver_framework::NodeProperty2& property) {
-                        if (!property.value().int_value().has_value())
-                          return false;
-                        return property.key() == bind_fuchsia::PROTOCOL &&
-                               property.value().int_value().value() ==
-                                   bind_fuchsia_display::BIND_PROTOCOL_ENGINE;
-                      });
+bool IsDisplayControllerNode(const DeviceNode& node) {
+  return node.name == "intel-display-controller";
 }
 
 bool IsIntelGpuCoreNode(const DeviceNode& node) {
@@ -373,16 +364,16 @@ TEST_F(IntegrationTest, BindAndInit) {
   // and a child "intel-gpu-core" node.
   ASSERT_EQ(nodes.size(), 2u);
 
-  auto display_engine_banjo_node_it =
-      std::find_if(nodes.begin(), nodes.end(), IsDisplayEngineBanjoNode);
-  ASSERT_NE(display_engine_banjo_node_it, nodes.end());
-  fdf::info("Display controller banjo node is: {}", display_engine_banjo_node_it->name);
+  auto display_controller_node_it =
+      std::find_if(nodes.begin(), nodes.end(), IsDisplayControllerNode);
+  ASSERT_NE(display_controller_node_it, nodes.end());
+  fdf::info("Display controller node is: {}", display_controller_node_it->name);
 
   auto intel_gpu_core_node_it = std::find_if(nodes.begin(), nodes.end(), IsIntelGpuCoreNode);
   ASSERT_NE(intel_gpu_core_node_it, nodes.end());
-  fdf::info("Intel GPU node is: {}", display_engine_banjo_node_it->name);
+  fdf::info("Intel GPU node is: {}", intel_gpu_core_node_it->name);
 
-  ASSERT_NE(display_engine_banjo_node_it, intel_gpu_core_node_it);
+  ASSERT_NE(display_controller_node_it, intel_gpu_core_node_it);
 
   zx::result<> stop_result = driver_runtime_.RunToCompletion(
       driver_.SyncCall(&fdf_testing::internal::DriverUnderTest<IntelDisplayDriver>::PrepareStop));

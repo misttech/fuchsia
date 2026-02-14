@@ -258,15 +258,13 @@ zx::result<> IntelDisplayDriver::InitDisplayNode() {
   }
 
   static constexpr std::string_view kDisplayChildNodeName = "intel-display-controller";
-  const std::vector<fuchsia_driver_framework::NodeProperty> node_properties = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_display::BIND_PROTOCOL_ENGINE),
-  };
   const std::vector<fuchsia_driver_framework::Offer> node_offers = {
       fdf::MakeOffer2<fuchsia_hardware_display_engine::Service>(),
   };
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
       display_node_controller_client_result =
-          AddChild(kDisplayChildNodeName, node_properties, node_offers);
+          AddChild(kDisplayChildNodeName,
+                   cpp20::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
   if (display_node_controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", display_node_controller_client_result);
     return display_node_controller_client_result.take_error();

@@ -98,14 +98,11 @@ zx::result<> DisplayDeviceDriver::Start() {
     return add_service_result.take_error();
   }
 
-  const std::vector<fuchsia_driver_framework::NodeProperty> node_properties = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_display::BIND_PROTOCOL_ENGINE),
-  };
   const std::vector<fuchsia_driver_framework::Offer> node_offers = {
       fdf::MakeOffer2<fuchsia_hardware_display_engine::Service>(),
   };
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> controller_client_result =
-      AddChild(name(), node_properties, node_offers);
+      AddChild(name(), cpp20::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
   if (controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", controller_client_result);
     return controller_client_result.take_error();
