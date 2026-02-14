@@ -104,6 +104,7 @@ fuchsia_driver_package("package") {
   package_name = "ufs"
   driver_components = [ ":ufs" ]
   deps = [ ":sc-values" ]
+  export_to_bazel = true
 }
 
 _test_deps = [
