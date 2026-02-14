@@ -30,12 +30,15 @@ class FileSystemTestHelper:
         self.user = user
         self.workspace_name = workspace_name
         self.repo_name = repo_name
+        self.workspace_id = f"{workspace_name}-id"
 
         self.repo_dir = self.cog_dir / user / workspace_name / repo_name
         self.repo_dir.mkdir(exist_ok=True, parents=True)
 
         # Write a .citc file in the workspace
-        (self.repo_dir.parent / ".citc").mkdir(exist_ok=True)
+        citc_dir = self.repo_dir.parent / ".citc"
+        citc_dir.mkdir(exist_ok=True)
+        (citc_dir / "workspace_id").write_text(self.workspace_id)
 
     def __enter__(self) -> "FileSystemTestHelper":
         return self

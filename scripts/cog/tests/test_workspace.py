@@ -21,11 +21,15 @@ class TestCogMetadata(unittest.TestCase):
     def test_to_dict(self) -> None:
         """Test that the dictionary representation is correct."""
         metadata = workspace.CogMetadata(
-            workspace_name="test-ws", repo_name="fuchsia"
+            workspace_name="test-ws", repo_name="fuchsia", workspace_id="ws-id"
         )
         self.assertEqual(
             metadata.to_dict(),
-            {"workspace_name": "test-ws", "repo_name": "fuchsia"},
+            {
+                "workspace_name": "test-ws",
+                "repo_name": "fuchsia",
+                "workspace_id": "ws-id",
+            },
         )
 
     def test_from_file_success(self) -> None:
@@ -36,7 +40,9 @@ class TestCogMetadata(unittest.TestCase):
             )
             os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
             with open(metadata_path, "w") as f:
-                f.write('{"workspace_name": "test-ws", "repo_name": "fuchsia"}')
+                f.write(
+                    '{"workspace_name": "test-ws", "repo_name": "fuchsia", "workspace_id": "ws-id"}'
+                )
 
             metadata = workspace.CogMetadata.from_file(metadata_path)
             self.assertIsNotNone(metadata)
@@ -45,6 +51,7 @@ class TestCogMetadata(unittest.TestCase):
             assert metadata is not None
             self.assertEqual(metadata.workspace_name, "test-ws")
             self.assertEqual(metadata.repo_name, "fuchsia")
+            self.assertEqual(metadata.workspace_id, "ws-id")
 
     def test_from_file_not_found(self) -> None:
         """Test that None is returned when the file does not exist."""
@@ -82,15 +89,30 @@ class TestCogMetadata(unittest.TestCase):
         """Test that metadata can be written to a file."""
         with mock_fs.FileSystemTestHelper() as fs:
             metadata = workspace.CogMetadata(
-                workspace_name="test-ws", repo_name="fuchsia"
+                workspace_name="test-ws",
+                repo_name="fuchsia",
+                workspace_id="ws-id",
             )
             metadata.write(fs.cartfs_dir)
             self.assertEqual(
                 fs.read(
                     workspace.COG_METADATA_FILE_NAME, mock_fs.FSType.CARTFS
                 ),
-                '{\n    "workspace_name": "test-ws",\n    "repo_name": "fuchsia"\n}',
+                '{\n    "workspace_name": "test-ws",\n    "repo_name": "fuchsia",\n    "workspace_id": "ws-id"\n}',
             )
+
+
+class TestCartfs(unittest.TestCase):
+    """Tests for Cartfs."""
+
+    def test_suggest_cartfs_directory_name_sanitizes_id(self) -> None:
+        """Test that the workspace ID is sanitized."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            c = cartfs.Cartfs(fs.cartfs_dir, use_local_mock_cartfs=False)
+            suggested_name = c.suggest_cartfs_directory_name(
+                workspace_name="test-ws", workspace_id="id/with/slashes"
+            )
+            self.assertEqual(str(suggested_name), "test-ws-id_with_slashes")
 
 
 class TestWorkspace(unittest.TestCase):
@@ -123,6 +145,7 @@ class TestWorkspace(unittest.TestCase):
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
                 self.assertEqual(ws.workspace_name, "test-workspace")
+                self.assertEqual(ws.workspace_id, fs.workspace_id)
                 mock_cartfs_create.assert_called_once()
 
     def test_create_with_repo_root(self) -> None:
@@ -149,6 +172,7 @@ class TestWorkspace(unittest.TestCase):
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
                 self.assertEqual(ws.workspace_name, "test-workspace")
+                self.assertEqual(ws.workspace_id, fs.workspace_id)
                 mock_cartfs_create.assert_called_once()
 
     def test_create_not_in_cog_workspace(self) -> None:
@@ -344,11 +368,14 @@ class TestWorkspace(unittest.TestCase):
             workspace.CogMetadata(
                 repo_name=repo_name,
                 workspace_name=workspace_name,
+                workspace_id=fs.workspace_id,
             ).write(fs.cartfs_dir)
 
             actual_dir = (
                 workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG), repo_name
+                    fs.full_path(workspace_name, mock_fs.FSType.COG),
+                    repo_name,
+                    fs.workspace_id,
                 )
             )
             self.assertEqual(actual_dir, fs.cartfs_dir)
@@ -367,11 +394,14 @@ class TestWorkspace(unittest.TestCase):
             workspace.CogMetadata(
                 repo_name=repo_name,
                 workspace_name=workspace_name,
+                workspace_id=fs.workspace_id,
             ).write(fs.cartfs_dir)
 
             actual_dir = (
                 workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG), repo_name
+                    fs.full_path(workspace_name, mock_fs.FSType.COG),
+                    repo_name,
+                    fs.workspace_id,
                 )
             )
             self.assertIsNone(actual_dir)
@@ -397,7 +427,69 @@ class TestWorkspace(unittest.TestCase):
 
             actual_dir = (
                 workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG), repo_name
+                    fs.full_path(workspace_name, mock_fs.FSType.COG),
+                    repo_name,
+                    fs.workspace_id,
+                )
+            )
+            self.assertIsNone(actual_dir)
+
+    def test_get_linked_cartfs_workspace_directory_mismatch_id_fails(
+        self,
+    ) -> None:
+        """Test that None is returned when the workspace ID does not match."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            workspace_name = "test-workspace"
+            repo_name = "fuchsia"
+            fs.mkdir(
+                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
+            )
+            fs.symlink_from_cog_to_cartfs(
+                os.path.join(
+                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
+                ),
+            )
+            workspace.CogMetadata(
+                repo_name=repo_name,
+                workspace_name=workspace_name,
+                workspace_id="a-different-id",
+            ).write(fs.cartfs_dir)
+
+            actual_dir = (
+                workspace.Workspace.get_linked_cartfs_workspace_directory(
+                    fs.full_path(workspace_name, mock_fs.FSType.COG),
+                    repo_name,
+                    fs.workspace_id,
+                )
+            )
+            self.assertIsNone(actual_dir)
+
+    def test_get_linked_cartfs_workspace_directory_old_directory_fails(
+        self,
+    ) -> None:
+        """Test that None is returned when the metadata does NOT have a workspace ID."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            workspace_name = "test-workspace"
+            repo_name = "fuchsia"
+            fs.mkdir(
+                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
+            )
+            fs.symlink_from_cog_to_cartfs(
+                os.path.join(
+                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
+                ),
+            )
+            workspace.CogMetadata(
+                repo_name=repo_name,
+                workspace_name=workspace_name,
+                workspace_id=None,
+            ).write(fs.cartfs_dir)
+
+            actual_dir = (
+                workspace.Workspace.get_linked_cartfs_workspace_directory(
+                    fs.full_path(workspace_name, mock_fs.FSType.COG),
+                    repo_name,
+                    fs.workspace_id,
                 )
             )
             self.assertIsNone(actual_dir)
@@ -429,6 +521,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -465,6 +558,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -482,6 +576,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -518,6 +613,7 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -546,6 +642,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=workspace_dir,
                 repo_name=repo_name,
                 workspace_name=workspace_name,
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -572,6 +669,10 @@ class TestWorkspace(unittest.TestCase):
                 metadata and metadata.workspace_name or "",
                 "test-workspace",
             )
+            self.assertEqual(
+                metadata and metadata.workspace_id or "",
+                fs.workspace_id,
+            )
 
     def test_find_previous_instance_success(self) -> None:
         """Test that the previous instance is found correctly."""
@@ -590,6 +691,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -607,6 +709,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -631,6 +734,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )
@@ -648,6 +752,7 @@ class TestWorkspace(unittest.TestCase):
                 workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
                 repo_name="fuchsia",
                 workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
                 cartfs_directory=None,
                 cartfs_instance=cartfs_instance,
             )

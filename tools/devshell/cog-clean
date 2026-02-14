@@ -40,9 +40,27 @@ for mount_point in "$CARTFS_MOUNT_POINT" "$CARTFS_MOUNT_POINT_LOCAL_MOCK"; do
     fi
 
     workspace_name=$(fx-command-run jq -r .workspace_name "$cog_json_path")
+    metadata_workspace_id=$(fx-command-run jq -r .workspace_id "$cog_json_path")
+    if [[ "$metadata_workspace_id" == "null" ]]; then
+      metadata_workspace_id=""
+    fi
+
     # If the workspace name is not in the list of cog workspaces, remove it from CartFS.
     if ! echo "${cog_workspaces}" | grep -Fxq "${workspace_name}"; then
-      fx-info "Find stale '${cartfs_dir}' from $mount_point"
+      fx-info "Find stale '${cartfs_dir}' from $mount_point (workspace no longer exists)"
+      stale_dirs+=("$mount_point/$cartfs_dir")
+      continue
+    fi
+
+    # Verify the workspace_id matches the current workspace instance.
+    actual_workspace_id_path="/google/cog/cloud/$(id -un)/$workspace_name/.citc/workspace_id"
+    actual_workspace_id=""
+    if [[ -f "$actual_workspace_id_path" ]]; then
+      actual_workspace_id=$(cat "$actual_workspace_id_path")
+    fi
+
+    if [[ "$metadata_workspace_id" != "$actual_workspace_id" ]]; then
+      fx-info "Find stale '${cartfs_dir}' from $mount_point (workspace ID mismatch: '$metadata_workspace_id' != '$actual_workspace_id')"
       stale_dirs+=("$mount_point/$cartfs_dir")
     fi
   done <<< "$(ls -A "$mount_point")"

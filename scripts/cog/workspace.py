@@ -51,21 +51,29 @@ LOCAL_JIRI_MANIFEST_CONTENT: str = """
 class CogMetadata:
     """Represents the metadata stored in the .cog.json file."""
 
-    def __init__(self, workspace_name: str, repo_name: str):
+    def __init__(
+        self,
+        workspace_name: str,
+        repo_name: str,
+        workspace_id: str | None = None,
+    ):
         """Initializes CogMetadata.
 
         Args:
             workspace_name: The name of the cog workspace.
             repo_name: The name of the repository within the workspace.
+            workspace_id: The unique ID for the workspace.
         """
         self.workspace_name = workspace_name
         self.repo_name = repo_name
+        self.workspace_id = workspace_id
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | None]:
         """Returns a dictionary representation of the metadata."""
         return {
             "workspace_name": self.workspace_name,
             "repo_name": self.repo_name,
+            "workspace_id": self.workspace_id,
         }
 
     @classmethod
@@ -85,6 +93,7 @@ class CogMetadata:
             return cls(
                 workspace_name=data["workspace_name"],
                 repo_name=data["repo_name"],
+                workspace_id=data.get("workspace_id"),
             )
         except (
             OSError,
@@ -108,6 +117,7 @@ class Workspace:
         workspace_dir: Path,
         repo_name: str,
         workspace_name: str,
+        workspace_id: str,
         cartfs_directory: Path | None,
         cartfs_instance: cartfs.Cartfs,
     ):
@@ -119,6 +129,7 @@ class Workspace:
         self.workspace_dir = workspace_dir
         self.repo_name = repo_name
         self.workspace_name = workspace_name
+        self.workspace_id = workspace_id
         self.cartfs_directory = cartfs_directory
         self.cartfs_instance = cartfs_instance
         self.cartfs_mount_point = cartfs_instance.mount_point
@@ -179,15 +190,22 @@ class Workspace:
             )
 
         workspace_name = workspace_dir.name
+        workspace_id_file = workspace_dir / ".citc" / "workspace_id"
+        if not workspace_id_file.exists():
+            raise RepoSetupError(
+                f"Could not find workspace ID file: {workspace_id_file}"
+            )
+        workspace_id = workspace_id_file.read_text().strip()
 
         cartfs_directory = cls.get_linked_cartfs_workspace_directory(
-            workspace_dir, repo_name
+            workspace_dir, repo_name, workspace_id
         )
 
         return cls(
             workspace_dir,
             repo_name,
             workspace_name,
+            workspace_id,
             cartfs_directory,
             cartfs_instance,
         )
@@ -217,14 +235,14 @@ class Workspace:
 
     @staticmethod
     def get_linked_cartfs_workspace_directory(
-        workspace_dir: Path, repo_name: str
+        workspace_dir: Path, repo_name: str, workspace_id: str
     ) -> Path | None:
         """Gets the linked cartfs directory for a specific repo in a cog workspace.
 
         A workspace is considered linked if a symlink named `cartfs-dir` exists
         inside the specified repository directory, pointing to a valid cartfs
         directory. This target cartfs directory must contain a `.cog.json` file
-        with a matching `repo_name` and `workspace_name`.
+        with a matching `repo_name`, `workspace_name`, and `workspace_id`.
 
         Args:
             workspace_dir: The absolute path to the cog workspace.
@@ -259,6 +277,11 @@ class Workspace:
         ):
             return None
 
+        # If the workspace_id exists in the metadata, it must match.
+        # If it doesn't exist, we assume it's an old directory and consider it NOT linked.
+        if metadata.workspace_id != workspace_id:
+            return None
+
         return target_path
 
     def snapshot_from_previous_instance(
@@ -274,7 +297,7 @@ class Workspace:
 
         suggested_directory_name = (
             self.cartfs_instance.suggest_cartfs_directory_name(
-                self.workspace_name
+                self.workspace_name, self.workspace_id
             )
         )
         try:
@@ -300,7 +323,7 @@ class Workspace:
         """
         suggested_directory_name = (
             self.cartfs_instance.suggest_cartfs_directory_name(
-                self.workspace_name
+                self.workspace_name, self.workspace_id
             )
         )
         cartfs_directory = (
@@ -313,7 +336,9 @@ class Workspace:
 
         # Write the metadata file in cartfs
         metadata = CogMetadata(
-            workspace_name=self.workspace_name, repo_name=self.repo_name
+            workspace_name=self.workspace_name,
+            repo_name=self.repo_name,
+            workspace_id=self.workspace_id,
         )
         metadata.write(cartfs_directory)
 
@@ -343,7 +368,9 @@ class Workspace:
         symlink_path.symlink_to(cartfs_directory)
 
         metadata = CogMetadata(
-            workspace_name=self.workspace_name, repo_name=self.repo_name
+            workspace_name=self.workspace_name,
+            repo_name=self.repo_name,
+            workspace_id=self.workspace_id,
         )
         metadata.write(cartfs_directory)
 

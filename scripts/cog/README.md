@@ -57,17 +57,39 @@ fx test
 
 ### Why is this not in `fx`?
 
-This script must be run before we can use `fx` because it sets up jiri_root which
+This script must be run before we can use `fx` because it sets up `jiri_root` which
 is used by `fx` to find the Fuchsia source tree. Eventually, this script might be
 integrated into `fx` but at this time it must be run separately.
 
-### Symlink Directory Structure
+### Workspace Linking and Metadata
 
-When this script runs it will create a symlink directory structure which the cog
-workspace will point to. When cog encounters a symlink that points outside of the
-workspace it will ignore it which makes this ideal for working with prebuilts and
-build artifacts.
+To ensure that a Cog workspace is correctly linked to its persistent storage in
+Cartfs, we use a unique `workspace_id`. This ID is sourced from
+`.citc/workspace_id` within the Cog workspace.
 
-/path/to/mount/<workspace_name>
-  - prebuilt/ <-> /cog/path/<workspace>/<repo>/prebuilt
-  - out/ (the out directory)
+When a workspace is linked to a Cartfs directory, a `.cog.json` metadata file is
+created in that directory. This file contains:
+- `workspace_name`: The name of the Cog workspace.
+- `repo_name`: The name of the repository (e.g., `fuchsia`).
+- `workspace_id`: The unique ID for the workspace instance.
+
+The `workspace_id` is used to validate the link. If you attempt to use a
+previously existing Cartfs directory with the same workspace name but a
+different `workspace_id`, the script will consider the link invalid and suggest
+creating a new directory.
+
+### Cartfs Directory Structure
+
+When this script runs, it will create (or link to) a directory in the Cartfs
+mount point. The suggested directory name is `<workspace_name>-<workspace_id>`.
+
+Inside the Cartfs directory:
+- `.cog.json`: Metadata for linking validation.
+- `fuchsia`: The fuchsia source directory.
+- `fuchsia/prebuilt/`: A subdirectory for persistent prebuilts.
+- `integration`: The integration repository.
+- `.integration_commit_hash`: The last known integration hash.
+- `out/`: A subdirectory for build artifacts.
+
+The Cog workspace then points to these directories via symlinks (e.g.,
+`cartfs-dir` symlink in the workspace root).
