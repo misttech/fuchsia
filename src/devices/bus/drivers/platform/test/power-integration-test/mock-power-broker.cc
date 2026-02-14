@@ -55,6 +55,9 @@ class Topology : public fidl::Server<fuchsia_power_broker::Topology>,
 
     completer.Reply(fit::success());
   }
+  void Lease(LeaseRequest& req, LeaseCompleter::Sync& completer) override {
+    completer.Reply(fit::success());
+  }
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 

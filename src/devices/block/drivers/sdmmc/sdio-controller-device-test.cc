@@ -178,6 +178,11 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
 
     completer.Reply(fit::success());
   }
+  void Lease(
+      fidl::Server<fuchsia_power_broker::Topology>::LeaseRequest& req,
+      fidl::Server<fuchsia_power_broker::Topology>::LeaseCompleter::Sync& completer) override {
+    completer.Reply(fit::success());
+  }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
@@ -185,7 +190,8 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
   }
 
   // fuchsia.power.broker/Lessor
-  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+  void Lease(fidl::Server<fuchsia_power_broker::Lessor>::LeaseRequest& request,
+             fidl::Server<fuchsia_power_broker::Lessor>::LeaseCompleter::Sync& completer) override {
     lease_power_levels_.push_back(request.level());
 
     auto [lease_control_client_end, lease_control_server_end] =

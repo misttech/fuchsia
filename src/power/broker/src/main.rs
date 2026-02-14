@@ -22,7 +22,7 @@ use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use zx::Duration;
+use zx::{Duration, Peered};
 
 use crate::broker::{Broker, CurrentLevelSubscriber, LeaseID};
 use crate::topology::{ElementID, IndexedPowerLevel};
@@ -184,6 +184,94 @@ impl BrokerSvc {
             .await
     }
 
+    async fn handle_direct_lease(
+        self: Rc<Self>,
+        lease_token: zx::EventPair,
+        lease_name: String,
+        dependencies: Vec<fpb::LeaseDependency>,
+        should_return_pending_lease: bool,
+    ) -> Result<(), fpb::LeaseError> {
+        use zx::HandleBased;
+        let lease_token_2 = lease_token
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(|_| fpb::LeaseError::Internal)?;
+        let lease_token_koid = lease_token.as_handle_ref().koid().unwrap();
+        let resp = {
+            let mut broker = self.broker.borrow_mut();
+            broker.acquire_direct_lease(lease_name, dependencies, lease_token_koid)
+        };
+        match resp {
+            Ok(lease) => {
+                log::debug!("Direct lease granted: {lease:?}");
+                let lease_id = lease.id.clone();
+                // Task to drop the lease when the token is closed.
+                Task::local({
+                    let svc = self.clone();
+                    let lease_id = lease_id.clone();
+                    async move {
+                        let _ = fuchsia_async::OnSignals::new(
+                            &lease_token,
+                            zx::Signals::EVENTPAIR_PEER_CLOSED,
+                        )
+                        .await;
+                        log::debug!("LeaseToken closed, dropping lease {lease_id}");
+                        let mut broker = svc.broker.borrow_mut();
+                        if let Err(err) = broker.drop_lease(&lease_id) {
+                            log::error!("drop_lease {lease_id} failed: {:?}", err);
+                        }
+                    }
+                })
+                .detach();
+
+                // Task to signal LEASE_SIGNAL_SATISFIED when satisfied.
+                Task::local({
+                    let lease_id = lease_id.clone();
+                    let lease_token = lease_token_2;
+                    let broker = self.broker.clone();
+                    async move {
+                        let mut receiver = {
+                            let mut broker = broker.borrow_mut();
+                            broker.watch_lease_status(&lease_id)
+                        };
+                        while let Some(next) = receiver.next().await {
+                            let (clear_mask, set_mask) = if let Some(LeaseStatus::Satisfied) = next
+                            {
+                                (
+                                    zx::Signals::NONE,
+                                    zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                                )
+                            } else {
+                                (
+                                    zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                                    zx::Signals::NONE,
+                                )
+                            };
+                            if let Err(err) = lease_token.signal_peer(clear_mask, set_mask) {
+                                log::debug!("signal_peer failed for lease {lease_id}: {:?}", err);
+                                break;
+                            }
+                        }
+                    }
+                })
+                .detach();
+
+                if !should_return_pending_lease {
+                    let mut receiver = {
+                        let mut broker = self.broker.borrow_mut();
+                        broker.watch_lease_status(&lease_id)
+                    };
+                    while let Some(status) = receiver.next().await {
+                        if status == Some(LeaseStatus::Satisfied) {
+                            break;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
     async fn run_element_control(
         self: Rc<Self>,
         element_id: ElementID,
@@ -286,6 +374,25 @@ impl BrokerSvc {
         ))
     }
 
+    fn validate_and_unpack_lease_payload(
+        payload: fpb::LeaseSchema,
+    ) -> Result<(zx::EventPair, String, Vec<fpb::LeaseDependency>, bool), fpb::LeaseError> {
+        let Some(lease_token) = payload.lease_token else {
+            return Err(fpb::LeaseError::InvalidArgument);
+        };
+        let Some(lease_name) = payload.lease_name else {
+            return Err(fpb::LeaseError::InvalidArgument);
+        };
+        let dependencies = payload.dependencies.unwrap_or_default();
+        for dep in &dependencies {
+            if dep.requires_level.is_none() && dep.requires_level_by_preference.is_none() {
+                return Err(fpb::LeaseError::InvalidLevel);
+            }
+        }
+        let should_return_pending_lease = payload.should_return_pending_lease.unwrap_or(false);
+        Ok((lease_token, lease_name, dependencies, should_return_pending_lease))
+    }
+
     async fn run_topology(self: Rc<Self>, stream: TopologyRequestStream) -> Result<(), Error> {
         stream
             .map(|result| result.context("failed request"))
@@ -386,6 +493,30 @@ impl BrokerSvc {
                             }
                             Err(err) => responder.send(Err(err.into())).context("send failed"),
                         }
+                    }
+                    TopologyRequest::Lease { payload, responder } => {
+                        log::debug!("Lease({:?})", &payload);
+                        let Ok((
+                            lease_token,
+                            lease_name,
+                            dependencies,
+                            should_return_pending_lease,
+                        )) = Self::validate_and_unpack_lease_payload(payload)
+                        else {
+                            return responder
+                                .send(Err(fpb::LeaseError::Internal))
+                                .context("send failed");
+                        };
+                        let res = self
+                            .clone()
+                            .handle_direct_lease(
+                                lease_token,
+                                lease_name,
+                                dependencies,
+                                should_return_pending_lease,
+                            )
+                            .await;
+                        responder.send(res).context("send failed")
                     }
                     TopologyRequest::_UnknownMethod { ordinal, .. } => {
                         log::warn!("Received unknown TopologyRequest: {ordinal}");

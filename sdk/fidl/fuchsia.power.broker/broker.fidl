@@ -35,7 +35,7 @@ alias DependencyToken = zx.Handle:EVENT;
 /// depends on an element `PowerElement_B` being at `PowerLevel_B2` then we would
 /// fill out the struct to convey the meaning:
 ///   - `dependent_level` = `PowerLevel_A3`
-///   - `requires_token` = `PowerElement_B`,
+///   - `requires_token` = `PowerElement_B`
 ///   - `requires_level_by_preference` = `[PowerLevel_B2]`
 /// (Note the values above are only *symbolic*, eg. `dependent_level` requires
 /// an integer value, not a string.)
@@ -72,6 +72,10 @@ open protocol Topology {
     /// Called by a Power Element owner to register a new Power Element and
     /// open control channels for that element.
     flexible AddElement(ElementSchema) -> () error AddElementError;
+
+    /// Called by a client to directly open a lease on the given dependencies
+    /// without the need for creating and managing a new element.
+    flexible Lease(LeaseSchema) -> () error LeaseError;
 };
 
 /// Passed to Topology.AddElement.
@@ -107,6 +111,56 @@ type ElementSchema = resource table {
     /// protocol implemented by the element's runner.
     10: element_runner client_end:ElementRunner;
 };
+
+/// Passed to Topology.Lease.
+type LeaseSchema = resource table {
+    /// The half of an eventpair to be held by the Power Broker. The other
+    /// half of the pair should be retained by the client. See `LeaseToken`
+    /// below for more usage details.
+    1: lease_token LeaseToken;
+    /// Human-readable name for logging and debug purposes.
+    2: lease_name string:MAX_ELEMENT_NAME_LEN;
+    /// List of dependencies for this lease.
+    3: dependencies vector<LeaseDependency>:MAX_DEPENDENCIES_IN_ADD_ELEMENT;
+    /// (Optional) By default, `Topology.Lease` will wait until the lease is
+    /// `SATISFIED` before returning. If `should_return_pending_lease` is true,
+    /// it will instead return as soon as the lease has been granted by Power
+    /// Broker but it may still be `PENDING`. Clients can listen for
+    /// `LEASE_SIGNAL_SATISFIED` to know when the lease has been `SATISFIED`.
+    4: should_return_pending_lease bool;
+};
+
+type LeaseDependency = resource table {
+    /// Must supply a token registered via the RegisterDependencyToken call of
+    /// the required element's ElementControl protocol.
+    1: requires_token DependencyToken;
+    /// Level of the element required. Most clients will want to use this, but
+    /// for forward compatibility, requires_level_by_preference may be used
+    /// instead.
+    2: requires_level PowerLevel;
+
+    /// Advanced Options
+    ///
+    /// (Optional) For forward compatibility, the list of levels in decreasing
+    /// preferential order that power broker should attempt to make required for
+    /// this dependency to be satisfied. The first level in list that is a valid
+    /// level will become the required level. If this is set, `requires_level`
+    /// will be ignored.
+    ///
+    /// Platform clients can use this list to keep backwards compatibility with
+    /// dependencies by providing multiple levels that the dependency may have
+    /// implemented in older API levels.
+    3: requires_level_by_preference vector<PowerLevel>:MAX_VALID_POWER_LEVELS;
+};
+
+/// A token that represents an open lease. The client's handle should be
+/// dropped to indicate the lease should be closed. This handle may be
+/// duplicated if the lease will be shared; the lease will remain open
+/// until the last handle is dropped.
+alias LeaseToken = zx.Handle:EVENTPAIR;
+
+/// Signal sent by Power Broker on the LeaseToken when the lease is satisfied.
+const LEASE_SIGNAL_SATISFIED zx.Signals = 0x01000000; // Maps to ZX_USER_SIGNAL_0
 
 // Limitations on vector length for the sake of bounding request size.
 const MAX_DEPENDENCIES_IN_ADD_ELEMENT uint16 = 128;
@@ -187,7 +241,7 @@ type Permissions = strict bits : uint32 {
 /// element previously added via Topology.AddElement.
 open protocol Lessor {
     /// Request made to indicate the client wants the element raised to the given
-    /// level. When the call returns this **does** **not** mean the
+    /// level. When the call returns, this **does** **not** mean the
     /// corresponding element is at the requested level, only that the requested
     /// level is valid and request is being worked on.
     ///
@@ -211,6 +265,7 @@ type LeaseError = flexible enum {
     INTERNAL = 1;
     NOT_AUTHORIZED = 2;
     INVALID_LEVEL = 3;
+    INVALID_ARGUMENT = 4;
 };
 
 type LeaseStatus = flexible enum {
@@ -218,9 +273,9 @@ type LeaseStatus = flexible enum {
     /// The dependencies of the leased `PowerLevel` are not at their required
     /// levels.
     PENDING = 1;
-    /// The `PowerElement` is **not** necessarily at the `PowerLevel` leased,
-    /// but the `PowerElement`s requried by the leased `PowerLevel`' are at
-    /// their required `PowerLevel`s.
+    /// The dependencies required by the leased `PowerLevel` are at their
+    /// required `PowerLevel`s, and the leased `PowerElement` has transitioned
+    /// to the requested level.
     SATISFIED = 2;
 };
 

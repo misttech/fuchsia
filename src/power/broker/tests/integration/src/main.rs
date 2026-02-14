@@ -333,6 +333,176 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_topology_lease_wait_for_satisfied() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        let (element_runner_client, element_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut element_runner = element_runner_server.into_stream();
+        let (element_control, element_control_server) = create_proxy::<ElementControlMarker>();
+        let token = zx::Event::create();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(fpb::ElementSchema {
+                    element_name: Some("E".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(element_control_server),
+                    element_runner: Some(element_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+
+            element_control
+                .register_dependency_token(token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        // Initialize level to 0
+        executor.run_singlethreaded(async {
+            let responder =
+                assert_set_level_required_eq_and_return_responder(element_runner.try_next(), 0)
+                    .await;
+            responder.send().unwrap();
+        });
+
+        let (lease_token_client, lease_token_server) = zx::EventPair::create();
+
+        // Call Topology.Lease with should_return_pending_lease = false (default)
+        // It should block until we update current level to 1.
+        let mut lease_fut = Box::pin(topology.lease(fpb::LeaseSchema {
+            lease_token: Some(lease_token_server),
+            lease_name: Some("test_lease".into()),
+            dependencies: Some(vec![fpb::LeaseDependency {
+                requires_token: Some(token),
+                requires_level: Some(1),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }));
+
+        assert!(executor.run_until_stalled(&mut lease_fut).is_pending());
+
+        // Now update current level to 1
+        let responder = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(element_runner.try_next(), 1).await
+        });
+        responder.send().unwrap();
+
+        // Now the lease future should complete
+        executor.run_singlethreaded(async {
+            lease_fut.await.unwrap().unwrap();
+        });
+
+        executor.run_singlethreaded(async {
+            fasync::OnSignals::new(
+                &lease_token_client,
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+            )
+            .await
+            .unwrap();
+        });
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_topology_lease_return_pending() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        let (element_runner_client, element_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut element_runner = element_runner_server.into_stream();
+        let (element_control, element_control_server) = create_proxy::<ElementControlMarker>();
+        let token = zx::Event::create();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(fpb::ElementSchema {
+                    element_name: Some("E".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(element_control_server),
+                    element_runner: Some(element_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+
+            element_control
+                .register_dependency_token(token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        // Initialize level to 0
+        executor.run_singlethreaded(async {
+            let responder =
+                assert_set_level_required_eq_and_return_responder(element_runner.try_next(), 0)
+                    .await;
+            responder.send().unwrap();
+        });
+
+        let (lease_token_client, lease_token_server) = zx::EventPair::create();
+
+        // Call Topology.Lease with should_return_pending_lease = true
+        // It should return immediately.
+        executor.run_singlethreaded(async {
+            topology
+                .lease(fpb::LeaseSchema {
+                    lease_token: Some(lease_token_server),
+                    lease_name: Some("test_lease".into()),
+                    dependencies: Some(vec![fpb::LeaseDependency {
+                        requires_token: Some(token),
+                        requires_level: Some(1),
+                        ..Default::default()
+                    }]),
+                    should_return_pending_lease: Some(true),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        assert_matches!(
+            lease_token_client.wait_one(
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(_)
+        );
+
+        // Now update current level to 1
+        let responder = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(element_runner.try_next(), 1).await
+        });
+        responder.send().unwrap();
+
+        executor.run_singlethreaded(async {
+            fasync::OnSignals::new(
+                &lease_token_client,
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+            )
+            .await
+            .unwrap();
+        });
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
     fn test_transitive() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
