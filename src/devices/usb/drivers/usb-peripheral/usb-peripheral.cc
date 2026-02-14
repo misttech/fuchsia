@@ -826,7 +826,8 @@ zx_status_t UsbPeripheral::CommonControl(const usb_setup_t* setup, const uint8_t
         return ZX_OK;
       } else if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
                  request == USB_REQ_GET_STATUS && length == 2) {
-        read_buffer[1] = 1 << USB_DEVICE_SELF_POWERED;
+        std::memset(read_buffer, 0, length);
+        read_buffer[0] = 1 << USB_DEVICE_SELF_POWERED;
         *out_read_actual = read_size;
         return ZX_OK;
       } else {
