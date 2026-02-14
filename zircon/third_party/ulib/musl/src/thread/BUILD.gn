@@ -24,7 +24,6 @@ source_set("thread") {
     "mtx_timedlock.c",
     "mtx_trylock.c",
     "mtx_unlock.c",
-    "safestack.c",
     "thrd_sleep.c",
     "thrd_yield.c",
     "tss.c",

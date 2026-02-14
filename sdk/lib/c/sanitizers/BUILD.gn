@@ -22,6 +22,7 @@ if (zircon_toolchain != false) {
       "asan-stubs.c",
       "hooks.c",
       "hwasan-stubs.cc",
+      "safestack.cc",
       "ubsan-stubs.cc",
     ]
 
