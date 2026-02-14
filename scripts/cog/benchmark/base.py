@@ -6,6 +6,7 @@ import abc
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import List, Optional
 
 
@@ -31,11 +32,11 @@ class Benchmark(abc.ABC):
         self.description = description
         self.expected_to_pass = expected_to_pass
         self.compare = compare or []
-        self.temp_dir: Optional[str] = None
+        self.temp_dir: Optional[Path] = None
 
     def setup(self) -> None:
         """Sets up the benchmark. This method is not timed."""
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = Path(tempfile.mkdtemp())
 
     def cleanup(self) -> None:
         """Cleans up after the benchmark. This method is not timed."""

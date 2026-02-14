@@ -4,9 +4,9 @@
 
 import argparse
 import importlib
-import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List
 
 from base import Benchmark
@@ -118,14 +118,19 @@ def find_benchmarks() -> List[Benchmark]:
         A list of all found benchmark instances.
     """
     benchmarks: List[Benchmark] = []
-    benchmark_dir = os.path.dirname(__file__)
-    for filename in os.listdir(benchmark_dir):
-        if filename.endswith(".py") and filename not in (
-            "run.py",
-            "base.py",
-            "__init__.py",
+    benchmark_dir = Path(__file__).parent
+    for f in benchmark_dir.iterdir():
+        if (
+            f.is_file()
+            and f.suffix == ".py"
+            and f.name
+            not in (
+                "runner.py",
+                "base.py",
+                "__init__.py",
+            )
         ):
-            module_name = filename[:-3]
+            module_name = f.stem
             importlib.import_module(module_name)
 
     for subclass in Benchmark.__subclasses__():

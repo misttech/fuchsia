@@ -38,7 +38,7 @@ class TestCogMetadata(unittest.TestCase):
             metadata_path = (
                 fs.cartfs_dir / "test-ws" / workspace.COG_METADATA_FILE_NAME
             )
-            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            metadata_path.parent.mkdir(exist_ok=True, parents=True)
             with open(metadata_path, "w") as f:
                 f.write(
                     '{"workspace_name": "test-ws", "repo_name": "fuchsia", "workspace_id": "ws-id"}'
@@ -67,7 +67,7 @@ class TestCogMetadata(unittest.TestCase):
             metadata_path = (
                 fs.cartfs_dir / "test-ws" / workspace.COG_METADATA_FILE_NAME
             )
-            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            metadata_path.parent.mkdir(exist_ok=True, parents=True)
             with open(metadata_path, "w") as f:
                 f.write("invalid-json")
             metadata = workspace.CogMetadata.from_file(metadata_path)
@@ -79,7 +79,7 @@ class TestCogMetadata(unittest.TestCase):
             metadata_path = (
                 fs.cartfs_dir / "test-ws" / workspace.COG_METADATA_FILE_NAME
             )
-            os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+            metadata_path.parent.mkdir(exist_ok=True, parents=True)
             with open(metadata_path, "w") as f:
                 f.write('{"workspace_name": "test-ws"}')
             metadata = workspace.CogMetadata.from_file(metadata_path)
@@ -140,8 +140,8 @@ class TestWorkspace(unittest.TestCase):
             ):
                 ws = workspace.Workspace.create()
                 self.assertEqual(
-                    str(ws.workspace_dir),
-                    os.path.join(fs.cog_dir, "testuser/test-workspace"),
+                    ws.workspace_dir,
+                    fs.cog_dir / "testuser" / "test-workspace",
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
                 self.assertEqual(ws.workspace_name, "test-workspace")
@@ -167,8 +167,8 @@ class TestWorkspace(unittest.TestCase):
                     )
                 )
                 self.assertEqual(
-                    str(ws.workspace_dir),
-                    os.path.join(fs.cog_dir, "testuser/test-workspace"),
+                    ws.workspace_dir,
+                    fs.cog_dir / "testuser" / "test-workspace",
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
                 self.assertEqual(ws.workspace_name, "test-workspace")
@@ -353,15 +353,11 @@ class TestWorkspace(unittest.TestCase):
             # Setup cog workspace
             workspace_name = "test-workspace"
             repo_name = "fuchsia"
-            fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
-            )
+            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
 
             # A symlink points from cog to cartfs
             fs.symlink_from_cog_to_cartfs(
-                os.path.join(
-                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
-                ),
+                Path(workspace_name) / repo_name / workspace.CARTFS_SYMLINK_NAME
             )
 
             # A .cog.json file is created
@@ -387,9 +383,7 @@ class TestWorkspace(unittest.TestCase):
         with mock_fs.FileSystemTestHelper() as fs:
             workspace_name = "test-workspace"
             repo_name = "fuchsia"
-            fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
-            )
+            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
 
             workspace.CogMetadata(
                 repo_name=repo_name,
@@ -413,17 +407,13 @@ class TestWorkspace(unittest.TestCase):
         with mock_fs.FileSystemTestHelper() as fs:
             workspace_name = "test-workspace"
             repo_name = "fuchsia"
-            fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
-            )
+            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
 
             # A symlink points from cog to cartfs
             fs.symlink_from_cog_to_cartfs(
-                os.path.join(
-                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
-                ),
+                Path(workspace_name) / repo_name / workspace.CARTFS_SYMLINK_NAME
             )
-            os.removedirs(fs.cartfs_dir)
+            fs.cartfs_dir.rmdir()
 
             actual_dir = (
                 workspace.Workspace.get_linked_cartfs_workspace_directory(
@@ -511,9 +501,7 @@ class TestWorkspace(unittest.TestCase):
                 _workspace_to_snapshot_to: Path,
                 cartfs_mount_point: Path,
             ) -> None:
-                os.mkdir(
-                    os.path.join(cartfs_mount_point, suggested_directory_name)
-                )
+                (cartfs_mount_point / suggested_directory_name).mkdir()
 
             ws = workspace.Workspace(
                 workspace_dir=fs.full_path(
@@ -539,11 +527,9 @@ class TestWorkspace(unittest.TestCase):
                     / suggested_directory_name,
                 )
                 self.assertTrue(
-                    os.path.isdir(
-                        fs.full_path(
-                            suggested_directory_name, mock_fs.FSType.CARTFS
-                        )
-                    )
+                    fs.full_path(
+                        suggested_directory_name, mock_fs.FSType.CARTFS
+                    ).is_dir()
                 )
 
     def test_snapshot_from_previous_instance_no_previous_instance(
@@ -634,7 +620,7 @@ class TestWorkspace(unittest.TestCase):
             workspace_dir = fs.full_path(workspace_name, mock_fs.FSType.COG)
             repo_name = "fuchsia"
             repo_dir = fs.mkdir(
-                os.path.join(workspace_name, repo_name),
+                Path(workspace_name) / repo_name,
                 mock_fs.FSType.COG,
             )
 
@@ -652,8 +638,8 @@ class TestWorkspace(unittest.TestCase):
             )
             ws.link_to_cartfs(cartfs_directory)
 
-            symlink_path = os.path.join(repo_dir, workspace.CARTFS_SYMLINK_NAME)
-            self.assertTrue(os.path.islink(symlink_path))
+            symlink_path = repo_dir / workspace.CARTFS_SYMLINK_NAME
+            self.assertTrue(symlink_path.is_symlink())
 
             # Ensure that we write the name of the repository in cartfs
             metadata = workspace.CogMetadata.from_file(
