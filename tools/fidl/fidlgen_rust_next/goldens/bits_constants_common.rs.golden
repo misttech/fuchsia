@@ -45,7 +45,7 @@ pub mod natural {
                 return Err(::fidl_next::EncodeError::InvalidStrictBits);
             }
 
-            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint32::from(self.bits()));
             Ok(())
         }
     }
@@ -77,7 +77,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct BitsType {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for BitsType {
@@ -124,7 +124,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::BitsType> for BitsType {
         fn from(natural: crate::natural::BitsType) -> Self {
-            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint32::from(natural.bits()) }
         }
     }
 

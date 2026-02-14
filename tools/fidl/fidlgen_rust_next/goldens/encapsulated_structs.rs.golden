@@ -49,7 +49,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::NonInlineStructTestStruct<'static>>,
             ___E,
         > for NonInlineStructTestStruct
     where
@@ -62,18 +62,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::NonInlineStructTestStruct<'static>,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::NonInlineStructTestStruct<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -135,7 +132,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::TopLevelStruct<'static>>,
             ___E,
         > for TopLevelStruct
     where
@@ -147,15 +144,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+                ::fidl_next::wire::Box<'static, crate::wire::TopLevelStruct<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -182,9 +179,9 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct NonInlineStructTestStruct<'de> {
-        pub element: ::fidl_next::wire::WireBox<'de, crate::wire::Int16Int8>,
+        pub element: ::fidl_next::wire::Box<'de, crate::wire::Int16Int8>,
 
-        pub h: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub h: ::fidl_next::wire::fuchsia::NullableHandle,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<NonInlineStructTestStruct<'_>>(), 16);
@@ -378,8 +375,8 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::WireBox<'static, crate::wire::Int16Int8>, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::Int16Int8>, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
     {
         #[inline]
         fn encode(

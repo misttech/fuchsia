@@ -5,23 +5,22 @@
 use core::fmt;
 use core::mem::MaybeUninit;
 
-use fidl_next_codec::wire::WireI32;
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
     Slot, ValidationError, Wire, munge,
 };
 
-use crate::FrameworkError;
 use crate::concurrency::hint::unreachable_unchecked;
+use crate::wire;
 
 /// An internal framework error.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct WireFrameworkError {
-    inner: WireI32,
+pub struct FrameworkError {
+    inner: wire::Int32,
 }
 
-impl Constrained for WireFrameworkError {
+impl Constrained for FrameworkError {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -29,21 +28,21 @@ impl Constrained for WireFrameworkError {
     }
 }
 
-unsafe impl Wire for WireFrameworkError {
+unsafe impl Wire for FrameworkError {
     type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
 
-impl fmt::Debug for WireFrameworkError {
+impl fmt::Debug for FrameworkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        FrameworkError::from(*self).fmt(f)
+        crate::FrameworkError::from(*self).fmt(f)
     }
 }
 
-impl From<WireFrameworkError> for FrameworkError {
-    fn from(value: WireFrameworkError) -> Self {
+impl From<FrameworkError> for crate::FrameworkError {
+    fn from(value: FrameworkError) -> Self {
         match *value.inner {
             -2 => Self::UnknownMethod,
             _ => unsafe { unreachable_unchecked() },
@@ -51,7 +50,7 @@ impl From<WireFrameworkError> for FrameworkError {
     }
 }
 
-unsafe impl<D: ?Sized> Decode<D> for WireFrameworkError {
+unsafe impl<D: ?Sized> Decode<D> for FrameworkError {
     fn decode(slot: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { inner } = slot);
         match **inner {
@@ -61,47 +60,47 @@ unsafe impl<D: ?Sized> Decode<D> for WireFrameworkError {
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireFrameworkError, E> for FrameworkError {
+unsafe impl<E: ?Sized> Encode<FrameworkError, E> for crate::FrameworkError {
     fn encode(
         self,
         _: &mut E,
-        out: &mut MaybeUninit<WireFrameworkError>,
+        out: &mut MaybeUninit<FrameworkError>,
         _: (),
     ) -> Result<(), EncodeError> {
-        munge!(let WireFrameworkError { inner } = out);
-        inner.write(WireI32(match self {
-            FrameworkError::UnknownMethod => -2,
+        munge!(let FrameworkError { inner } = out);
+        inner.write(wire::Int32(match self {
+            crate::FrameworkError::UnknownMethod => -2,
         }));
 
         Ok(())
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireFrameworkError, E> for &FrameworkError {
+unsafe impl<E: ?Sized> Encode<FrameworkError, E> for &crate::FrameworkError {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireFrameworkError>,
+        out: &mut MaybeUninit<FrameworkError>,
         constraint: (),
     ) -> Result<(), EncodeError> {
         Encode::encode(*self, encoder, out, constraint)
     }
 }
 
-impl FromWire<WireFrameworkError> for FrameworkError {
+impl FromWire<FrameworkError> for crate::FrameworkError {
     #[inline]
-    fn from_wire(wire: WireFrameworkError) -> Self {
+    fn from_wire(wire: FrameworkError) -> Self {
         Self::from_wire_ref(&wire)
     }
 }
 
-impl IntoNatural for WireFrameworkError {
-    type Natural = FrameworkError;
+impl IntoNatural for FrameworkError {
+    type Natural = crate::FrameworkError;
 }
 
-impl FromWireRef<WireFrameworkError> for FrameworkError {
+impl FromWireRef<FrameworkError> for crate::FrameworkError {
     #[inline]
-    fn from_wire_ref(wire: &WireFrameworkError) -> Self {
+    fn from_wire_ref(wire: &FrameworkError) -> Self {
         Self::from(*wire)
     }
 }

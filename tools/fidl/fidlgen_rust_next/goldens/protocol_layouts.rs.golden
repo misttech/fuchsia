@@ -148,7 +148,7 @@ pub mod main_protocol {
         type Response =
 
 
-                            ::fidl_next::wire::WireResult
+                            ::fidl_next::wire::Result
 
                         <
                             'static,
@@ -156,7 +156,7 @@ pub mod main_protocol {
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorResponse,
 
 
-                            ::fidl_next::wire::WireU32,
+                            ::fidl_next::wire::Uint32,
 
                         >
 
@@ -242,10 +242,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayNamedComposedWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             ::fidl_next_test_protocollayouts_imported::wire::ImportUnionPayload,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -327,10 +327,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayImportWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             ::fidl_next_test_protocollayouts_imported::wire::ImportUnionPayload,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -411,10 +411,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayLocalWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::LocalUnionPayload<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -495,10 +495,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnonWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::MainProtocolTwoWayAnonWithErrorResponse<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -1928,7 +1928,7 @@ pub mod open_protocol {
     impl ::fidl_next::TwoWayMethod for FlexibleTwoWayNoError {
         type Response =
 
-                        ::fidl_next::wire::WireFlexible<
+                        ::fidl_next::wire::Flexible<
                             'static,
 
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolFlexibleTwoWayNoErrorResponse
@@ -1976,7 +1976,7 @@ pub mod open_protocol {
         type Response =
 
 
-                            ::fidl_next::wire::WireFlexibleResult
+                            ::fidl_next::wire::FlexibleResult
 
                         <
                             'static,
@@ -1984,7 +1984,7 @@ pub mod open_protocol {
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolFlexibleTwoWayWithErrorResponse,
 
 
-                            ::fidl_next::wire::WireI32,
+                            ::fidl_next::wire::Int32,
 
                         >
 
@@ -2118,7 +2118,7 @@ pub mod open_protocol {
         type Response =
 
 
-                            ::fidl_next::wire::WireResult
+                            ::fidl_next::wire::Result
 
                         <
                             'static,
@@ -2126,7 +2126,7 @@ pub mod open_protocol {
                             ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolStrictTwoWayWithErrorResponse,
 
 
-                            ::fidl_next::wire::WireI32,
+                            ::fidl_next::wire::Int32,
 
                         >
 
@@ -2209,7 +2209,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -2247,7 +2247,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::FlexibleTwoWayNoError, ___T>
@@ -2285,7 +2285,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::FlexibleTwoWayWithError, ___T>
@@ -2323,7 +2323,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -2361,7 +2361,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::StrictTwoWayNoError, ___T>
@@ -2399,7 +2399,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::StrictTwoWayWithError, ___T>
@@ -2437,7 +2437,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -2484,7 +2484,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -2520,7 +2520,7 @@ pub mod open_protocol {
                 &self,
 
                 value: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>

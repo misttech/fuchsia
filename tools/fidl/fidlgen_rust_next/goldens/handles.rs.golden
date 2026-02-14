@@ -28,15 +28,15 @@ pub mod natural {
             true
 
                 && <
-                    ::fdf_fidl::DriverChannel as ::fidl_next::Encode<::fdf_fidl::WireDriverChannel, ___E>
+                    ::fdf_fidl::DriverChannel as ::fidl_next::Encode<::fdf_fidl::wire::DriverChannel, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>, ___E>
+                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>, ___E>
+                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -78,10 +78,8 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::FdfHandles>,
-            ___E,
-        > for FdfHandles
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::FdfHandles>, ___E>
+        for FdfHandles
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         FdfHandles: ::fidl_next::Encode<crate::wire::FdfHandles, ___E>,
@@ -91,15 +89,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::FdfHandles>,
+                ::fidl_next::wire::Box<'static, crate::wire::FdfHandles>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -112,15 +110,15 @@ pub mod natural {
             true
 
                 && <
-                    ::fdf_fidl::DriverChannel as ::fidl_next::FromWire<::fdf_fidl::WireDriverChannel>
+                    ::fdf_fidl::DriverChannel as ::fidl_next::FromWire<::fdf_fidl::wire::DriverChannel>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>>
+                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>>
+                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -228,167 +226,167 @@ pub mod natural {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::Handles> = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled()
                     && <::fidl_next::fuchsia::zx::Bti as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireBti,
+                        ::fidl_next::wire::fuchsia::Bti,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Channel as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Clock as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireClock,
+                        ::fidl_next::wire::fuchsia::Clock,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::DebugLog as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireDebugLog,
+                        ::fidl_next::wire::fuchsia::DebugLog,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Event as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireEvent,
+                        ::fidl_next::wire::fuchsia::Event,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::EventPair as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireEventPair,
+                        ::fidl_next::wire::fuchsia::EventPair,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Exception as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireException,
+                        ::fidl_next::wire::fuchsia::Exception,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Fifo as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireFifo,
+                        ::fidl_next::wire::fuchsia::Fifo,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Guest as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireGuest,
+                        ::fidl_next::wire::fuchsia::Guest,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Interrupt as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireInterrupt,
+                        ::fidl_next::wire::fuchsia::Interrupt,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Iob as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireIob,
+                        ::fidl_next::wire::fuchsia::Iob,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Iommu as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireIommu,
+                        ::fidl_next::wire::fuchsia::Iommu,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Job as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireJob,
+                        ::fidl_next::wire::fuchsia::Job,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Pager as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WirePager,
+                        ::fidl_next::wire::fuchsia::Pager,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Pmt as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WirePmt,
+                        ::fidl_next::wire::fuchsia::Pmt,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Port as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WirePort,
+                        ::fidl_next::wire::fuchsia::Port,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Process as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireProcess,
+                        ::fidl_next::wire::fuchsia::Process,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Profile as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireProfile,
+                        ::fidl_next::wire::fuchsia::Profile,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Resource as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireResource,
+                        ::fidl_next::wire::fuchsia::Resource,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireSocket,
+                        ::fidl_next::wire::fuchsia::Socket,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Stream as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireStream,
+                        ::fidl_next::wire::fuchsia::Stream,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Thread as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireThread,
+                        ::fidl_next::wire::fuchsia::Thread,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Timer as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireTimer,
+                        ::fidl_next::wire::fuchsia::Timer,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vcpu as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVcpu,
+                        ::fidl_next::wire::fuchsia::Vcpu,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmar as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVmar,
+                        ::fidl_next::wire::fuchsia::Vmar,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::Encode<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                         ___E,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
@@ -398,7 +396,7 @@ pub mod natural {
                     > as ::fidl_next::Encode<
                         ::fidl_next::ClientEnd<
                             crate::SomeProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                         ___E,
                     >>::COPY_OPTIMIZATION
@@ -409,7 +407,7 @@ pub mod natural {
                     > as ::fidl_next::Encode<
                         ::fidl_next::ServerEnd<
                             crate::SomeProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                         ___E,
                     >>::COPY_OPTIMIZATION
@@ -656,7 +654,7 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::Handles>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Handles>, ___E>
         for Handles
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -667,15 +665,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Handles>,
+                ::fidl_next::wire::Box<'static, crate::wire::Handles>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -686,135 +684,135 @@ pub mod natural {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Handles, Self> = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                 >>::COPY_OPTIMIZATION
                     .is_enabled()
                     && <::fidl_next::fuchsia::zx::Bti as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireBti,
+                        ::fidl_next::wire::fuchsia::Bti,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Channel as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Clock as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireClock,
+                        ::fidl_next::wire::fuchsia::Clock,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::DebugLog as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireDebugLog,
+                        ::fidl_next::wire::fuchsia::DebugLog,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Event as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireEvent,
+                        ::fidl_next::wire::fuchsia::Event,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::EventPair as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireEventPair,
+                        ::fidl_next::wire::fuchsia::EventPair,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Exception as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireException,
+                        ::fidl_next::wire::fuchsia::Exception,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Fifo as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireFifo,
+                        ::fidl_next::wire::fuchsia::Fifo,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Guest as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireGuest,
+                        ::fidl_next::wire::fuchsia::Guest,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Interrupt as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireInterrupt,
+                        ::fidl_next::wire::fuchsia::Interrupt,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Iob as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireIob,
+                        ::fidl_next::wire::fuchsia::Iob,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Iommu as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireIommu,
+                        ::fidl_next::wire::fuchsia::Iommu,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Job as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireJob,
+                        ::fidl_next::wire::fuchsia::Job,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Pager as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WirePager,
+                        ::fidl_next::wire::fuchsia::Pager,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Pmt as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WirePmt,
+                        ::fidl_next::wire::fuchsia::Pmt,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Port as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WirePort,
+                        ::fidl_next::wire::fuchsia::Port,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Process as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireProcess,
+                        ::fidl_next::wire::fuchsia::Process,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Profile as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireProfile,
+                        ::fidl_next::wire::fuchsia::Profile,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Resource as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireResource,
+                        ::fidl_next::wire::fuchsia::Resource,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireSocket,
+                        ::fidl_next::wire::fuchsia::Socket,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Stream as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireStream,
+                        ::fidl_next::wire::fuchsia::Stream,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Thread as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireThread,
+                        ::fidl_next::wire::fuchsia::Thread,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Timer as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireTimer,
+                        ::fidl_next::wire::fuchsia::Timer,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vcpu as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVcpu,
+                        ::fidl_next::wire::fuchsia::Vcpu,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmar as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVmar,
+                        ::fidl_next::wire::fuchsia::Vmar,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
+                        ::fidl_next::wire::fuchsia::NullableHandle,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
-                        ::fidl_next::wire::fuchsia::WireVmo,
+                        ::fidl_next::wire::fuchsia::Vmo,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
                     && <::fidl_next::ClientEnd<
@@ -823,7 +821,7 @@ pub mod natural {
                     > as ::fidl_next::FromWire<
                         ::fidl_next::ClientEnd<
                             crate::SomeProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
@@ -833,7 +831,7 @@ pub mod natural {
                     > as ::fidl_next::FromWire<
                         ::fidl_next::ServerEnd<
                             crate::SomeProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >>::COPY_OPTIMIZATION
                         .is_enabled(),
@@ -931,13 +929,13 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct FdfHandles {
-        pub fdf_channel_handle: ::fdf_fidl::WireDriverChannel,
+        pub fdf_channel_handle: ::fdf_fidl::wire::DriverChannel,
 
         pub client_end_driver:
-            ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+            ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
 
         pub server_end_driver:
-            ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+            ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<FdfHandles>(), 12);
@@ -1024,89 +1022,89 @@ pub mod wire {
     }
 
     /// The wire type corresponding to [`AliasedPlainHandle`](crate::natural::AliasedPlainHandle).
-    pub type AliasedPlainHandle = ::fidl_next::wire::fuchsia::WireNullableHandle;
+    pub type AliasedPlainHandle = ::fidl_next::wire::fuchsia::NullableHandle;
 
     /// The wire type corresponding to [`AliasedSubtypeHandle`](crate::natural::AliasedSubtypeHandle).
-    pub type AliasedSubtypeHandle = ::fidl_next::wire::fuchsia::WireVmo;
+    pub type AliasedSubtypeHandle = ::fidl_next::wire::fuchsia::Vmo;
 
     /// The wire type corresponding to [`AliasedRightsHandle`](crate::natural::AliasedRightsHandle).
-    pub type AliasedRightsHandle = ::fidl_next::wire::fuchsia::WireVmo;
+    pub type AliasedRightsHandle = ::fidl_next::wire::fuchsia::Vmo;
 
     /// The wire type corresponding to [`Handles`].
     #[derive(Debug)]
     #[repr(C)]
     pub struct Handles {
-        pub plain_handle: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub plain_handle: ::fidl_next::wire::fuchsia::NullableHandle,
 
-        pub bti_handle: ::fidl_next::wire::fuchsia::WireBti,
+        pub bti_handle: ::fidl_next::wire::fuchsia::Bti,
 
-        pub channel_handle: ::fidl_next::wire::fuchsia::WireChannel,
+        pub channel_handle: ::fidl_next::wire::fuchsia::Channel,
 
-        pub clock_handle: ::fidl_next::wire::fuchsia::WireClock,
+        pub clock_handle: ::fidl_next::wire::fuchsia::Clock,
 
-        pub debuglog_handle: ::fidl_next::wire::fuchsia::WireDebugLog,
+        pub debuglog_handle: ::fidl_next::wire::fuchsia::DebugLog,
 
-        pub event_handle: ::fidl_next::wire::fuchsia::WireEvent,
+        pub event_handle: ::fidl_next::wire::fuchsia::Event,
 
-        pub eventpair_handle: ::fidl_next::wire::fuchsia::WireEventPair,
+        pub eventpair_handle: ::fidl_next::wire::fuchsia::EventPair,
 
-        pub exception_handle: ::fidl_next::wire::fuchsia::WireException,
+        pub exception_handle: ::fidl_next::wire::fuchsia::Exception,
 
-        pub fifo_handle: ::fidl_next::wire::fuchsia::WireFifo,
+        pub fifo_handle: ::fidl_next::wire::fuchsia::Fifo,
 
-        pub guest_handle: ::fidl_next::wire::fuchsia::WireGuest,
+        pub guest_handle: ::fidl_next::wire::fuchsia::Guest,
 
-        pub interrupt_handle: ::fidl_next::wire::fuchsia::WireInterrupt,
+        pub interrupt_handle: ::fidl_next::wire::fuchsia::Interrupt,
 
-        pub iob_handle: ::fidl_next::wire::fuchsia::WireIob,
+        pub iob_handle: ::fidl_next::wire::fuchsia::Iob,
 
-        pub iommu_handle: ::fidl_next::wire::fuchsia::WireIommu,
+        pub iommu_handle: ::fidl_next::wire::fuchsia::Iommu,
 
-        pub job_handle: ::fidl_next::wire::fuchsia::WireJob,
+        pub job_handle: ::fidl_next::wire::fuchsia::Job,
 
-        pub msi_handle: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub msi_handle: ::fidl_next::wire::fuchsia::NullableHandle,
 
-        pub pager_handle: ::fidl_next::wire::fuchsia::WirePager,
+        pub pager_handle: ::fidl_next::wire::fuchsia::Pager,
 
-        pub pmt_handle: ::fidl_next::wire::fuchsia::WirePmt,
+        pub pmt_handle: ::fidl_next::wire::fuchsia::Pmt,
 
-        pub port_handle: ::fidl_next::wire::fuchsia::WirePort,
+        pub port_handle: ::fidl_next::wire::fuchsia::Port,
 
-        pub process_handle: ::fidl_next::wire::fuchsia::WireProcess,
+        pub process_handle: ::fidl_next::wire::fuchsia::Process,
 
-        pub profile_handle: ::fidl_next::wire::fuchsia::WireProfile,
+        pub profile_handle: ::fidl_next::wire::fuchsia::Profile,
 
-        pub resource_handle: ::fidl_next::wire::fuchsia::WireResource,
+        pub resource_handle: ::fidl_next::wire::fuchsia::Resource,
 
-        pub socket_handle: ::fidl_next::wire::fuchsia::WireSocket,
+        pub socket_handle: ::fidl_next::wire::fuchsia::Socket,
 
-        pub stream_handle: ::fidl_next::wire::fuchsia::WireStream,
+        pub stream_handle: ::fidl_next::wire::fuchsia::Stream,
 
-        pub suspendtoken_handle: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub suspendtoken_handle: ::fidl_next::wire::fuchsia::NullableHandle,
 
-        pub thread_handle: ::fidl_next::wire::fuchsia::WireThread,
+        pub thread_handle: ::fidl_next::wire::fuchsia::Thread,
 
-        pub timer_handle: ::fidl_next::wire::fuchsia::WireTimer,
+        pub timer_handle: ::fidl_next::wire::fuchsia::Timer,
 
-        pub vcpu_handle: ::fidl_next::wire::fuchsia::WireVcpu,
+        pub vcpu_handle: ::fidl_next::wire::fuchsia::Vcpu,
 
-        pub vmar_handle: ::fidl_next::wire::fuchsia::WireVmar,
+        pub vmar_handle: ::fidl_next::wire::fuchsia::Vmar,
 
-        pub vmo_handle: ::fidl_next::wire::fuchsia::WireVmo,
+        pub vmo_handle: ::fidl_next::wire::fuchsia::Vmo,
 
-        pub rights_handle: ::fidl_next::wire::fuchsia::WireVmo,
+        pub rights_handle: ::fidl_next::wire::fuchsia::Vmo,
 
-        pub aliased_plain_handle_field: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub aliased_plain_handle_field: ::fidl_next::wire::fuchsia::NullableHandle,
 
-        pub aliased_subtype_handle_field: ::fidl_next::wire::fuchsia::WireVmo,
+        pub aliased_subtype_handle_field: ::fidl_next::wire::fuchsia::Vmo,
 
-        pub aliased_rights_handle_field: ::fidl_next::wire::fuchsia::WireVmo,
+        pub aliased_rights_handle_field: ::fidl_next::wire::fuchsia::Vmo,
 
         pub some_protocol:
-            ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
 
         pub request_some_protocol:
-            ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Handles>(), 140);
@@ -1544,13 +1542,13 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fdf_fidl::WireDriverChannel, ___E>,
+        T0: ::fidl_next::Encode<::fdf_fidl::wire::DriverChannel, ___E>,
         T1: ::fidl_next::Encode<
-                ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+                ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
                 ___E,
             >,
         T2: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+                ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::wire::DriverChannel>,
                 ___E,
             >,
     {
@@ -1767,51 +1765,45 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireBti, ___E>,
-        T2: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireChannel, ___E>,
-        T3: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireClock, ___E>,
-        T4: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireDebugLog, ___E>,
-        T5: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireEvent, ___E>,
-        T6: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireEventPair, ___E>,
-        T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireException, ___E>,
-        T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireFifo, ___E>,
-        T9: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireGuest, ___E>,
-        T10: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireInterrupt, ___E>,
-        T11: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireIob, ___E>,
-        T12: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireIommu, ___E>,
-        T13: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireJob, ___E>,
-        T14: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
-        T15: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WirePager, ___E>,
-        T16: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WirePmt, ___E>,
-        T17: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WirePort, ___E>,
-        T18: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireProcess, ___E>,
-        T19: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireProfile, ___E>,
-        T20: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireResource, ___E>,
-        T21: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
-        T22: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireStream, ___E>,
-        T23: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
-        T24: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireThread, ___E>,
-        T25: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireTimer, ___E>,
-        T26: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVcpu, ___E>,
-        T27: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmar, ___E>,
-        T28: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
-        T29: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
-        T30: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
-        T31: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
-        T32: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Bti, ___E>,
+        T2: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Channel, ___E>,
+        T3: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Clock, ___E>,
+        T4: ::fidl_next::Encode<::fidl_next::wire::fuchsia::DebugLog, ___E>,
+        T5: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Event, ___E>,
+        T6: ::fidl_next::Encode<::fidl_next::wire::fuchsia::EventPair, ___E>,
+        T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Exception, ___E>,
+        T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Fifo, ___E>,
+        T9: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Guest, ___E>,
+        T10: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Interrupt, ___E>,
+        T11: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Iob, ___E>,
+        T12: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Iommu, ___E>,
+        T13: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Job, ___E>,
+        T14: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        T15: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Pager, ___E>,
+        T16: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Pmt, ___E>,
+        T17: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Port, ___E>,
+        T18: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Process, ___E>,
+        T19: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Profile, ___E>,
+        T20: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Resource, ___E>,
+        T21: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
+        T22: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Stream, ___E>,
+        T23: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        T24: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Thread, ___E>,
+        T25: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Timer, ___E>,
+        T26: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vcpu, ___E>,
+        T27: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmar, ___E>,
+        T28: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        T29: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        T30: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        T31: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
+        T32: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
         T33: ::fidl_next::Encode<
-                ::fidl_next::ClientEnd<
-                    crate::SomeProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
-                >,
+                ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
         T34: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<
-                    crate::SomeProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
-                >,
+                ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
     {

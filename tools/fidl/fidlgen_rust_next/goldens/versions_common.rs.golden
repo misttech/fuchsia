@@ -41,7 +41,7 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Bits { value } = out);
 
-            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint32::from(self.bits()));
             Ok(())
         }
     }
@@ -109,7 +109,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Enum { value } = out);
-            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::Uint32::from(match *self {
                 Enum::A => 1,
 
                 Enum::UnknownOrdinal_(value) => value,
@@ -147,13 +147,13 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`Alias`](crate::natural::Alias).
-    pub type Alias<'de> = ::fidl_next::wire::WireString<'de>;
+    pub type Alias<'de> = ::fidl_next::wire::String<'de>;
 
     /// The wire type corresponding to [`Bits`](crate::natural::Bits).
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct Bits {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for Bits {
@@ -191,7 +191,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::Bits> for Bits {
         fn from(natural: crate::natural::Bits) -> Self {
-            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint32::from(natural.bits()) }
         }
     }
 
@@ -203,7 +203,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct Enum {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for Enum {
@@ -227,7 +227,7 @@ pub mod wire {
     }
 
     impl Enum {
-        pub const A: Enum = Enum { value: ::fidl_next::wire::WireU32(1) };
+        pub const A: Enum = Enum { value: ::fidl_next::wire::Uint32(1) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for Enum
@@ -249,7 +249,7 @@ pub mod wire {
                 crate::natural::Enum::A => Enum::A,
 
                 crate::natural::Enum::UnknownOrdinal_(value) => {
-                    Enum { value: ::fidl_next::wire::WireU32::from(value) }
+                    Enum { value: ::fidl_next::wire::Uint32::from(value) }
                 }
             }
         }

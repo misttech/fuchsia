@@ -19,7 +19,7 @@ use pin_project::pin_project;
 use crate::concurrency::sync::Arc;
 use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
-use crate::wire::WireMessageHeader;
+use crate::wire::MessageHeader;
 use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
 
 struct ServerInner<T: Transport> {
@@ -74,7 +74,7 @@ impl<T: Transport> Server<T> {
         W: Wire<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            buffer.encode_next(WireMessageHeader::new(0, ordinal, flexibility))?;
+            buffer.encode_next(MessageHeader::new(0, ordinal, flexibility))?;
             buffer.encode_next(event)
         })
     }
@@ -212,7 +212,7 @@ impl<T: Transport> ServerDispatcher<T> {
 
         let header = buffer
             .as_decoder()
-            .decode_prefix::<WireMessageHeader>()
+            .decode_prefix::<MessageHeader>()
             .map_err(ProtocolError::InvalidMessageHeader)?;
 
         if let Some(txid) = NonZeroU32::new(*header.txid) {
@@ -253,7 +253,7 @@ impl<T: Transport> Responder<T> {
         W: Wire<Constraint = ()>,
     {
         let state = self.server.inner.connection.send_message_raw(|buffer| {
-            buffer.encode_next(WireMessageHeader::new(self.txid.get(), ordinal, flexibility))?;
+            buffer.encode_next(MessageHeader::new(self.txid.get(), ordinal, flexibility))?;
             buffer.encode_next(response)
         })?;
 

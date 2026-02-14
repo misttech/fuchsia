@@ -437,7 +437,7 @@ macro_rules! impl_fidl_encode {
             }
         }
 
-        unsafe impl<E> $crate::EncodeOption<$crate::wire::WireBox<'static, $name>, E> for $prim
+        unsafe impl<E> $crate::EncodeOption<$crate::wire::Box<'static, $name>, E> for $prim
         where
             E: $crate::Encoder + ?Sized,
         {
@@ -445,21 +445,21 @@ macro_rules! impl_fidl_encode {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut ::core::mem::MaybeUninit<$crate::wire::WireBox<'static, $name>>,
+                out: &mut ::core::mem::MaybeUninit<$crate::wire::Box<'static, $name>>,
                 constraint: <$name as $crate::Constrained>::Constraint,
             ) -> Result<(), $crate::EncodeError> {
                 if let Some(value) = this {
                     $crate::EncoderExt::encode_next_with_constraint(encoder, value, constraint)?;
-                    $crate::wire::WireBox::encode_present(out);
+                    $crate::wire::Box::encode_present(out);
                 } else {
-                    $crate::wire::WireBox::encode_absent(out);
+                    $crate::wire::Box::encode_absent(out);
                 }
 
                 Ok(())
             }
         }
 
-        unsafe impl<E> $crate::EncodeOption<$crate::wire::WireBox<'static, $name>, E> for &$prim
+        unsafe impl<E> $crate::EncodeOption<$crate::wire::Box<'static, $name>, E> for &$prim
         where
             E: $crate::Encoder + ?Sized,
         {
@@ -467,7 +467,7 @@ macro_rules! impl_fidl_encode {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut ::core::mem::MaybeUninit<$crate::wire::WireBox<'static, $name>>,
+                out: &mut ::core::mem::MaybeUninit<$crate::wire::Box<'static, $name>>,
                 constraint: <$name as $crate::Constrained>::Constraint,
             ) -> Result<(), $crate::EncodeError> {
                 <$prim>::encode_option(this.cloned(), encoder, out, constraint)
@@ -692,9 +692,9 @@ macro_rules! define_signed_integer {
     }
 }
 
-define_signed_integer!(WireI16: i16, 2);
-define_signed_integer!(WireI32: i32, 4);
-define_signed_integer!(WireI64: i64, 8);
+define_signed_integer!(Int16: i16, 2);
+define_signed_integer!(Int32: i32, 4);
+define_signed_integer!(Int64: i64, 8);
 
 macro_rules! define_unsigned_integer {
     ($name:ident: $prim:ident, $align:expr) => {
@@ -703,9 +703,9 @@ macro_rules! define_unsigned_integer {
     }
 }
 
-define_unsigned_integer!(WireU16: u16, 2);
-define_unsigned_integer!(WireU32: u32, 4);
-define_unsigned_integer!(WireU64: u64, 8);
+define_unsigned_integer!(Uint16: u16, 2);
+define_unsigned_integer!(Uint32: u32, 4);
+define_unsigned_integer!(Uint64: u64, 8);
 
 macro_rules! define_float {
     ($name:ident: $prim:ident, $align:expr) => {
@@ -714,14 +714,12 @@ macro_rules! define_float {
     }
 }
 
-define_float!(WireF32: f32, 4);
-define_float!(WireF64: f64, 8);
+define_float!(Float32: f32, 4);
+define_float!(Float64: f64, 8);
 
 #[cfg(test)]
 mod tests {
-    use super::{WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64};
-
-    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+    use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
 
     #[test]
     fn decode_unit() {
@@ -785,14 +783,14 @@ mod tests {
         assert_eq!(
             chunks![0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireU16>()
+                .decode::<wire::Uint16>()
                 .unwrap(),
             0x1234u16,
         );
         assert_eq!(
             chunks![0xcc, 0xed, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireI16>()
+                .decode::<wire::Int16>()
                 .unwrap(),
             -0x1234i16,
         );
@@ -800,14 +798,14 @@ mod tests {
         assert_eq!(
             chunks![0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireU32>()
+                .decode::<wire::Uint32>()
                 .unwrap(),
             0x12345678u32,
         );
         assert_eq!(
             chunks![0x88, 0xa9, 0xcb, 0xed, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireI32>()
+                .decode::<wire::Int32>()
                 .unwrap(),
             -0x12345678i32,
         );
@@ -815,14 +813,14 @@ mod tests {
         assert_eq!(
             chunks![0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12]
                 .as_mut_slice()
-                .decode::<WireU64>()
+                .decode::<wire::Uint64>()
                 .unwrap(),
             0x123456789abcdef0u64,
         );
         assert_eq!(
             chunks![0x10, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed]
                 .as_mut_slice()
-                .decode::<WireI64>()
+                .decode::<wire::Int64>()
                 .unwrap(),
             -0x123456789abcdef0i64,
         );
@@ -872,14 +870,14 @@ mod tests {
         assert_eq!(
             chunks![0xdb, 0x0f, 0x49, 0x40, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireF32>()
+                .decode::<wire::Float32>()
                 .unwrap(),
             ::core::f32::consts::PI,
         );
         assert_eq!(
             chunks![0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40]
                 .as_mut_slice()
-                .decode::<WireF64>()
+                .decode::<wire::Float64>()
                 .unwrap(),
             ::core::f64::consts::PI,
         );

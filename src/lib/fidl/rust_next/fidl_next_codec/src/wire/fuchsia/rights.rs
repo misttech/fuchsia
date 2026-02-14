@@ -7,20 +7,19 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::wire::WireU32;
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
-    Slot, ValidationError, Wire,
+    Slot, ValidationError, Wire, wire,
 };
 
 /// The wire type for [`zx::Rights`].
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct WireRights {
-    inner: WireU32,
+pub struct Rights {
+    inner: wire::Uint32,
 }
 
-impl Constrained for WireRights {
+impl Constrained for Rights {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -28,75 +27,75 @@ impl Constrained for WireRights {
     }
 }
 
-unsafe impl Wire for WireRights {
+unsafe impl Wire for Rights {
     type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { inner } = out);
-        WireU32::zero_padding(inner);
+        wire::Uint32::zero_padding(inner);
     }
 }
 
-impl WireRights {
+impl Rights {
     /// Returns a `Rights` with the same value as this wire type.
     pub fn to_rights(self) -> zx::Rights {
         zx::Rights::from_bits_retain(*self.inner)
     }
 }
 
-impl fmt::Debug for WireRights {
+impl fmt::Debug for Rights {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_rights().fmt(f)
     }
 }
 
-unsafe impl<D: ?Sized> Decode<D> for WireRights {
+unsafe impl<D: ?Sized> Decode<D> for Rights {
     fn decode(
         slot: Slot<'_, Self>,
         decoder: &mut D,
         _: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { inner } = slot);
-        WireU32::decode(inner, decoder, ())
+        wire::Uint32::decode(inner, decoder, ())
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireRights, E> for zx::Rights {
+unsafe impl<E: ?Sized> Encode<Rights, E> for zx::Rights {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireRights>,
+        out: &mut MaybeUninit<Rights>,
         constraint: (),
     ) -> Result<(), EncodeError> {
-        munge!(let WireRights { inner } = out);
+        munge!(let Rights { inner } = out);
         self.bits().encode(encoder, inner, constraint)
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireRights, E> for &zx::Rights {
+unsafe impl<E: ?Sized> Encode<Rights, E> for &zx::Rights {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireRights>,
+        out: &mut MaybeUninit<Rights>,
         constraint: (),
     ) -> Result<(), EncodeError> {
         Encode::encode(*self, encoder, out, constraint)
     }
 }
 
-impl FromWire<WireRights> for zx::Rights {
-    fn from_wire(wire: WireRights) -> Self {
+impl FromWire<Rights> for zx::Rights {
+    fn from_wire(wire: Rights) -> Self {
         Self::from_wire_ref(&wire)
     }
 }
 
-impl FromWireRef<WireRights> for zx::Rights {
-    fn from_wire_ref(wire: &WireRights) -> Self {
+impl FromWireRef<Rights> for zx::Rights {
+    fn from_wire_ref(wire: &Rights) -> Self {
         Self::from_bits_retain(*wire.inner)
     }
 }
 
-impl IntoNatural for WireRights {
+impl IntoNatural for Rights {
     type Natural = zx::Rights;
 }

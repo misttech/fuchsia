@@ -9,34 +9,35 @@ use core::str::{from_utf8, from_utf8_unchecked};
 
 use munge::munge;
 
-use crate::wire::WireVector;
 use crate::{
     Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire, FromWireRef,
-    IntoNatural, Slot, ValidationError, Wire,
+    IntoNatural, Slot, ValidationError, Wire, wire,
 };
+
+use std::string::String as StdString;
 
 /// A FIDL string
 #[repr(transparent)]
-pub struct WireString<'de> {
-    vec: WireVector<'de, u8>,
+pub struct String<'de> {
+    vec: wire::Vector<'de, u8>,
 }
 
-unsafe impl Wire for WireString<'static> {
-    type Narrowed<'de> = WireString<'de>;
+unsafe impl Wire for String<'static> {
+    type Narrowed<'de> = String<'de>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { vec } = out);
-        WireVector::<u8>::zero_padding(vec);
+        wire::Vector::<u8>::zero_padding(vec);
     }
 }
 
-impl WireString<'_> {
+impl String<'_> {
     /// Encodes that a string is present in a slot.
     #[inline]
     pub fn encode_present(out: &mut MaybeUninit<Self>, len: u64) {
         munge!(let Self { vec } = out);
-        WireVector::encode_present(vec, len);
+        wire::Vector::encode_present(vec, len);
     }
 
     /// Returns the length of the string in bytes.
@@ -58,9 +59,9 @@ impl WireString<'_> {
     }
 
     /// Validate that this string's length falls within the limit.
-    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), crate::ValidationError> {
+    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), ValidationError> {
         munge!(let Self { vec } = slot);
-        match WireVector::validate_max_len(vec, limit) {
+        match wire::Vector::validate_max_len(vec, limit) {
             Ok(()) => Ok(()),
             Err(ValidationError::VectorTooLong { count, limit }) => {
                 Err(ValidationError::StringTooLong { count, limit })
@@ -70,7 +71,7 @@ impl WireString<'_> {
     }
 }
 
-impl Constrained for WireString<'_> {
+impl Constrained for String<'_> {
     type Constraint = u64;
 
     fn validate(slot: Slot<'_, Self>, constraint: u64) -> Result<(), ValidationError> {
@@ -78,7 +79,7 @@ impl Constrained for WireString<'_> {
     }
 }
 
-impl Deref for WireString<'_> {
+impl Deref for String<'_> {
     type Target = str;
 
     #[inline]
@@ -87,40 +88,40 @@ impl Deref for WireString<'_> {
     }
 }
 
-impl fmt::Debug for WireString<'_> {
+impl fmt::Debug for String<'_> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_str().fmt(f)
     }
 }
 
-impl<U: ?Sized> PartialEq<&U> for WireString<'_>
+impl<U: ?Sized> PartialEq<&U> for String<'_>
 where
-    for<'de> WireString<'de>: PartialEq<U>,
+    for<'de> String<'de>: PartialEq<U>,
 {
     fn eq(&self, other: &&U) -> bool {
         self == *other
     }
 }
 
-impl PartialEq for WireString<'_> {
+impl PartialEq for String<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.as_str() == other.as_str()
     }
 }
 
-impl PartialEq<str> for WireString<'_> {
+impl PartialEq<str> for String<'_> {
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
     }
 }
 
-unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireString<'de> {
+unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for String<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
-        match unsafe { WireVector::decode_raw(vec.as_mut(), decoder, constraint) } {
+        match unsafe { wire::Vector::decode_raw(vec.as_mut(), decoder, constraint) } {
             Ok(()) => (),
             Err(DecodeError::Validation(ValidationError::VectorTooLong { count, limit })) => {
                 return Err(DecodeError::Validation(ValidationError::StringTooLong {
@@ -145,67 +146,65 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireString<'de> {
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for String {
+unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for StdString {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireString<'static>>,
+        out: &mut MaybeUninit<String<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         self.as_str().encode(encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for &String {
+unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &StdString {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireString<'static>>,
+        out: &mut MaybeUninit<String<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         self.as_str().encode(encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for &str {
+unsafe impl<E: Encoder + ?Sized> Encode<String<'static>, E> for &str {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireString<'static>>,
+        out: &mut MaybeUninit<String<'static>>,
         _constraint: u64,
     ) -> Result<(), EncodeError> {
         encoder.write(self.as_bytes());
-        WireString::encode_present(out, self.len() as u64);
+        String::encode_present(out, self.len() as u64);
         Ok(())
     }
 }
 
-impl FromWire<WireString<'_>> for String {
+impl FromWire<String<'_>> for StdString {
     #[inline]
-    fn from_wire(wire: WireString<'_>) -> Self {
-        String::from_wire_ref(&wire)
+    fn from_wire(wire: String<'_>) -> Self {
+        StdString::from_wire_ref(&wire)
     }
 }
 
-impl IntoNatural for WireString<'_> {
-    type Natural = String;
+impl IntoNatural for String<'_> {
+    type Natural = StdString;
 }
 
-impl FromWireRef<WireString<'_>> for String {
+impl FromWireRef<String<'_>> for StdString {
     #[inline]
-    fn from_wire_ref(wire: &WireString<'_>) -> Self {
-        unsafe { String::from_utf8_unchecked(Vec::from_wire_ref(&wire.vec)) }
+    fn from_wire_ref(wire: &String<'_>) -> Self {
+        unsafe { StdString::from_utf8_unchecked(Vec::from_wire_ref(&wire.vec)) }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::WireString;
-
-    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+    use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
 
     #[test]
     fn decode_string() {
@@ -215,7 +214,7 @@ mod tests {
                 0xff, 0xff, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00,
             ]
             .as_mut_slice()
-            .decode_with_constraint::<WireString<'_>>(1000)
+            .decode_with_constraint::<wire::String<'_>>(1000)
             .unwrap(),
             "0123",
         );
@@ -225,7 +224,7 @@ mod tests {
                 0xff, 0xff,
             ]
             .as_mut_slice()
-            .decode_with_constraint::<WireString<'_>>(1000)
+            .decode_with_constraint::<wire::String<'_>>(1000)
             .unwrap(),
             "",
         );

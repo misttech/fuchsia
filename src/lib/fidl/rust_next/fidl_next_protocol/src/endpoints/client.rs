@@ -15,7 +15,7 @@ use pin_project::{pin_project, pinned_drop};
 use crate::concurrency::sync::{Arc, Mutex};
 use crate::endpoints::connection::Connection;
 use crate::endpoints::lockers::{LockerError, Lockers};
-use crate::wire::{WireEpitaph, WireMessageHeader};
+use crate::wire::{Epitaph, MessageHeader};
 use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
 
 struct ClientInner<T: Transport> {
@@ -98,7 +98,7 @@ impl<T: Transport> Client<T> {
         W: Wire<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            buffer.encode_next(WireMessageHeader::new(txid, ordinal, flexibility))?;
+            buffer.encode_next(MessageHeader::new(txid, ordinal, flexibility))?;
             buffer.encode_next(message)
         })
     }
@@ -321,7 +321,7 @@ impl<T: Transport> ClientDispatcher<T> {
             let mut decoder = buffer.as_decoder();
 
             let header = decoder
-                .decode_prefix::<WireMessageHeader>()
+                .decode_prefix::<MessageHeader>()
                 .map_err(ProtocolError::InvalidMessageHeader)?;
 
             // Check if the ordinal is the epitaph so we can immediately decode
@@ -329,7 +329,7 @@ impl<T: Transport> ClientDispatcher<T> {
             // don't have to re-acquire it and wrap it in `Body`.
             if header.ordinal == EPITAPH_ORDINAL {
                 let epitaph =
-                    decoder.decode::<WireEpitaph>().map_err(ProtocolError::InvalidEpitaphBody)?;
+                    decoder.decode::<Epitaph>().map_err(ProtocolError::InvalidEpitaphBody)?;
                 return Err(ProtocolError::PeerClosedWithEpitaph(*epitaph.error));
             }
 

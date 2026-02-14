@@ -2,35 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{HandleEncoder, WireHandle, WireOptionalHandle};
+use crate::fidl_next::{HandleEncoder, wire};
 use crate::{Channel, Event, EventPair, Handle, HandleBased, Socket};
 use fidl_next_codec::{Encode, EncodeError, EncodeOption, FromWire, FromWireOption};
 use std::mem::MaybeUninit;
 
 macro_rules! handle_type {
     ($name:ident) => {
-        unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for $name {
+        unsafe impl<E: HandleEncoder + ?Sized> Encode<wire::Handle, E> for $name {
             fn encode(
                 self,
                 encoder: &mut E,
-                out: &mut MaybeUninit<WireHandle>,
+                out: &mut MaybeUninit<wire::Handle>,
                 constraint: (),
             ) -> Result<(), EncodeError> {
                 Encode::encode(self.into_handle(), encoder, out, constraint)
             }
         }
 
-        impl FromWire<WireHandle> for $name {
-            fn from_wire(wire: WireHandle) -> Self {
+        impl FromWire<wire::Handle> for $name {
+            fn from_wire(wire: wire::Handle) -> Self {
                 $name::from_handle(Handle::from_wire(wire))
             }
         }
 
-        unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for $name {
+        unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<wire::OptionalHandle, E> for $name {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut MaybeUninit<WireOptionalHandle>,
+                out: &mut MaybeUninit<wire::OptionalHandle>,
                 constraint: (),
             ) -> Result<(), EncodeError> {
                 EncodeOption::encode_option(
@@ -42,8 +42,8 @@ macro_rules! handle_type {
             }
         }
 
-        impl FromWireOption<WireOptionalHandle> for $name {
-            fn from_wire_option(wire: WireOptionalHandle) -> Option<Self> {
+        impl FromWireOption<wire::OptionalHandle> for $name {
+            fn from_wire_option(wire: wire::OptionalHandle) -> Option<Self> {
                 Handle::from_wire_option(wire).map(Self::from_handle)
             }
         }

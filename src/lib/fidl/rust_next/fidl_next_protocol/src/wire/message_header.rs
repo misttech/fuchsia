@@ -5,9 +5,9 @@
 use core::mem::MaybeUninit;
 
 use fidl_constants::MAGIC_NUMBER_INITIAL;
-use fidl_next_codec::wire::{WireU32, WireU64};
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, Slot, ValidationError, Wire, bitflags,
+    wire,
 };
 use zerocopy::IntoBytes;
 
@@ -46,9 +46,9 @@ bitflags::bitflags! {
 /// A FIDL protocol message header
 #[derive(Clone, Copy, Debug, IntoBytes)]
 #[repr(C)]
-pub struct WireMessageHeader {
+pub struct MessageHeader {
     /// The transaction ID of the message header
-    pub txid: WireU32,
+    pub txid: wire::Uint32,
     /// Flags byte 0
     pub flags_0: MessageHeaderFlags0,
     /// Flags byte 1
@@ -58,15 +58,15 @@ pub struct WireMessageHeader {
     /// Magic number
     pub magic_number: u8,
     /// The ordinal of the message following this header
-    pub ordinal: WireU64,
+    pub ordinal: wire::Uint64,
 }
 
-impl WireMessageHeader {
+impl MessageHeader {
     /// Returns a new message header with the given transaction ID, ordinal, and
     /// flexibility.
     pub fn new(txid: u32, ordinal: u64, flexibility: Flexibility) -> Self {
         Self {
-            txid: WireU32(txid),
+            txid: wire::Uint32(txid),
             flags_0: MessageHeaderFlags0::WIRE_FORMAT_V2,
             flags_1: MessageHeaderFlags1::empty(),
             flags_2: match flexibility {
@@ -74,7 +74,7 @@ impl WireMessageHeader {
                 Flexibility::Flexible => MessageHeaderFlags2::FLEXIBLE_METHOD,
             },
             magic_number: MAGIC_NUMBER_INITIAL,
-            ordinal: WireU64(ordinal),
+            ordinal: wire::Uint64(ordinal),
         }
     }
 
@@ -88,7 +88,7 @@ impl WireMessageHeader {
     }
 }
 
-impl Constrained for WireMessageHeader {
+impl Constrained for MessageHeader {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -96,7 +96,7 @@ impl Constrained for WireMessageHeader {
     }
 }
 
-unsafe impl Wire for WireMessageHeader {
+unsafe impl Wire for MessageHeader {
     type Narrowed<'de> = Self;
 
     #[inline]
@@ -105,12 +105,12 @@ unsafe impl Wire for WireMessageHeader {
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for WireMessageHeader {
+unsafe impl<E: ?Sized> Encode<MessageHeader, E> for MessageHeader {
     #[inline]
     fn encode(
         self,
         _: &mut E,
-        out: &mut MaybeUninit<WireMessageHeader>,
+        out: &mut MaybeUninit<MessageHeader>,
         _: (),
     ) -> Result<(), EncodeError> {
         out.write(self);
@@ -118,19 +118,19 @@ unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for WireMessageHeader {
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for &WireMessageHeader {
+unsafe impl<E: ?Sized> Encode<MessageHeader, E> for &MessageHeader {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireMessageHeader>,
+        out: &mut MaybeUninit<MessageHeader>,
         constraint: (),
     ) -> Result<(), EncodeError> {
         Encode::encode(*self, encoder, out, constraint)
     }
 }
 
-unsafe impl<D: ?Sized> Decode<D> for WireMessageHeader {
+unsafe impl<D: ?Sized> Decode<D> for MessageHeader {
     #[inline]
     fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         Ok(())

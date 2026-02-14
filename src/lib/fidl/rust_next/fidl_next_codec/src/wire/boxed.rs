@@ -8,26 +8,25 @@ use core::ptr::NonNull;
 
 use munge::munge;
 
-use crate::wire::WirePointer;
 use crate::{
     Constrained, Decode, DecodeError, Decoder, DecoderExt as _, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
+    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// A boxed (optional) FIDL value.
 #[repr(C)]
-pub struct WireBox<'de, T> {
-    ptr: WirePointer<'de, T>,
+pub struct Box<'de, T> {
+    ptr: wire::Pointer<'de, T>,
 }
 
 // SAFETY: `WireBox` doesn't add any restrictions on sending across thread boundaries, and so is
 // `Send` if `T` is `Send`.
-unsafe impl<T: Send> Send for WireBox<'_, T> {}
+unsafe impl<T: Send> Send for Box<'_, T> {}
 
 // SAFETY: `WireBox` doesn't add any interior mutability, so it is `Sync` if `T` is `Sync`.
-unsafe impl<T: Sync> Sync for WireBox<'_, T> {}
+unsafe impl<T: Sync> Sync for Box<'_, T> {}
 
-impl<T> Drop for WireBox<'_, T> {
+impl<T> Drop for Box<'_, T> {
     fn drop(&mut self) {
         if self.is_some() {
             unsafe {
@@ -37,8 +36,8 @@ impl<T> Drop for WireBox<'_, T> {
     }
 }
 
-unsafe impl<T: Wire> Wire for WireBox<'static, T> {
-    type Narrowed<'de> = WireBox<'de, T::Narrowed<'de>>;
+unsafe impl<T: Wire> Wire for Box<'static, T> {
+    type Narrowed<'de> = Box<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -46,17 +45,17 @@ unsafe impl<T: Wire> Wire for WireBox<'static, T> {
     }
 }
 
-impl<T> WireBox<'_, T> {
+impl<T> Box<'_, T> {
     /// Encodes that a value is present in an output.
     pub fn encode_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { ptr } = out);
-        WirePointer::encode_present(ptr);
+        wire::Pointer::encode_present(ptr);
     }
 
     /// Encodes that a value is absent in a slot.
     pub fn encode_absent(out: &mut MaybeUninit<Self>) {
         munge!(let Self { ptr } = out);
-        WirePointer::encode_absent(ptr);
+        wire::Pointer::encode_absent(ptr);
     }
 
     /// Returns whether the value is present.
@@ -82,13 +81,13 @@ impl<T> WireBox<'_, T> {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for WireBox<'_, T> {
+impl<T: fmt::Debug> fmt::Debug for Box<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_ref().fmt(f)
     }
 }
 
-unsafe impl<'de, D: Decoder<'de> + ?Sized, T: Decode<D>> Decode<D> for WireBox<'de, T> {
+unsafe impl<'de, D: Decoder<'de> + ?Sized, T: Decode<D>> Decode<D> for Box<'de, T> {
     fn decode(
         slot: Slot<'_, Self>,
         decoder: &mut D,
@@ -96,33 +95,33 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized, T: Decode<D>> Decode<D> for WireBox<'
     ) -> Result<(), DecodeError> {
         munge!(let Self { mut ptr } = slot);
 
-        if WirePointer::is_encoded_present(ptr.as_mut())? {
+        if wire::Pointer::is_encoded_present(ptr.as_mut())? {
             let mut value = decoder.take_slot::<T>()?;
             T::decode(value.as_mut(), decoder, constraint)?;
-            WirePointer::set_decoded(ptr, value);
+            wire::Pointer::set_decoded(ptr, value);
         }
 
         Ok(())
     }
 }
 
-impl<T: FromWire<W>, W> FromWireOption<WireBox<'_, W>> for T {
-    fn from_wire_option(wire: WireBox<'_, W>) -> Option<Self> {
+impl<T: FromWire<W>, W> FromWireOption<Box<'_, W>> for T {
+    fn from_wire_option(wire: Box<'_, W>) -> Option<Self> {
         wire.into_option().map(T::from_wire)
     }
 }
 
-impl<T: IntoNatural> IntoNatural for WireBox<'_, T> {
+impl<T: IntoNatural> IntoNatural for Box<'_, T> {
     type Natural = Option<T::Natural>;
 }
 
-impl<T: FromWireRef<W>, W> FromWireOptionRef<WireBox<'_, W>> for T {
-    fn from_wire_option_ref(wire: &WireBox<'_, W>) -> Option<Self> {
+impl<T: FromWireRef<W>, W> FromWireOptionRef<Box<'_, W>> for T {
+    fn from_wire_option_ref(wire: &Box<'_, W>) -> Option<Self> {
         wire.as_ref().map(T::from_wire_ref)
     }
 }
 
-impl<T: Constrained> Constrained for WireBox<'_, T> {
+impl<T: Constrained> Constrained for Box<'_, T> {
     type Constraint = T::Constraint;
 
     fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
@@ -137,17 +136,14 @@ impl<T: Constrained> Constrained for WireBox<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::WireBox;
-
-    use crate::wire::WireU64;
-    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+    use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
 
     #[test]
     fn decode_box() {
         assert_eq!(
             chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                 .as_mut_slice()
-                .decode::<WireBox<'_, WireU64>>()
+                .decode::<wire::Box<'_, wire::Uint64>>()
                 .unwrap()
                 .as_ref(),
             None,
@@ -158,10 +154,10 @@ mod tests {
                 0x34, 0x12,
             ]
             .as_mut_slice()
-            .decode::<WireBox<'_, WireU64>>()
+            .decode::<wire::Box<'_, wire::Uint64>>()
             .unwrap()
             .as_ref(),
-            Some(&WireU64(0x123456789abcdef0u64)),
+            Some(&wire::Uint64(0x123456789abcdef0u64)),
         );
     }
 

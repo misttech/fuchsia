@@ -22,26 +22,26 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`AliasOfArray`](crate::natural::AliasOfArray).
-    pub type AliasOfArray = [::fidl_next::wire::WireU64; 1];
+    pub type AliasOfArray = [::fidl_next::wire::Uint64; 1];
 
     /// The wire type corresponding to [`U64`](crate::natural::U64).
-    pub type U64 = ::fidl_next::wire::WireU64;
+    pub type U64 = ::fidl_next::wire::Uint64;
 
     /// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`](crate::natural::AliasOfArrayContainingAliasOfArray).
-    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::wire::WireU64; 2];
+    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::wire::Uint64; 2];
 
     /// The wire type corresponding to [`AliasOfBytes`](crate::natural::AliasOfBytes).
-    pub type AliasOfBytes<'de> = ::fidl_next::wire::WireVector<'de, u8>;
+    pub type AliasOfBytes<'de> = ::fidl_next::wire::Vector<'de, u8>;
 
     /// The wire type corresponding to [`AliasOfString`](crate::natural::AliasOfString).
-    pub type AliasOfString<'de> = ::fidl_next::wire::WireString<'de>;
+    pub type AliasOfString<'de> = ::fidl_next::wire::String<'de>;
 
     /// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`](crate::natural::AliasOfVectorContainingAliasOfVector).
     pub type AliasOfVectorContainingAliasOfVector<'de> =
-        ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireU64>;
+        ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Uint64>;
 
     /// The wire type corresponding to [`Vector`](crate::natural::Vector).
-    pub type Vector<'de> = ::fidl_next::wire::WireOptionalVector<'de, ::fidl_next::wire::WireU64>;
+    pub type Vector<'de> = ::fidl_next::wire::OptionalVector<'de, ::fidl_next::wire::Uint64>;
 }
 
 pub mod wire_optional {}

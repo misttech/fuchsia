@@ -24,7 +24,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -55,7 +55,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ChannelProtocolTakeHandleRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolTakeHandleRequest>,
             ___E,
         > for ChannelProtocolTakeHandleRequest
     where
@@ -68,15 +68,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ChannelProtocolTakeHandleRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolTakeHandleRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -92,7 +92,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -122,7 +122,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -153,7 +153,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ChannelProtocolMutateSocketRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolMutateSocketRequest>,
             ___E,
         > for ChannelProtocolMutateSocketRequest
     where
@@ -166,18 +166,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::ChannelProtocolMutateSocketRequest,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolMutateSocketRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -193,7 +190,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -223,7 +220,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -254,7 +251,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ChannelProtocolMutateSocketResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolMutateSocketResponse>,
             ___E,
         > for ChannelProtocolMutateSocketResponse
     where
@@ -267,18 +264,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::ChannelProtocolMutateSocketResponse,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::ChannelProtocolMutateSocketResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -294,7 +288,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -325,7 +319,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -358,7 +352,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<
+            ::fidl_next::wire::Box<
                 'static,
                 crate::wire::HandleRightsProtocolNoResponseMethodRequest,
             >,
@@ -374,7 +368,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
+                ::fidl_next::wire::Box<
                     'static,
                     crate::wire::HandleRightsProtocolNoResponseMethodRequest,
                 >,
@@ -383,9 +377,9 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -401,7 +395,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -432,7 +426,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -465,10 +459,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<
-                'static,
-                crate::wire::HandleRightsProtocolResponseMethodRequest,
-            >,
+            ::fidl_next::wire::Box<'static, crate::wire::HandleRightsProtocolResponseMethodRequest>,
             ___E,
         > for HandleRightsProtocolResponseMethodRequest
     where
@@ -481,7 +472,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
+                ::fidl_next::wire::Box<
                     'static,
                     crate::wire::HandleRightsProtocolResponseMethodRequest,
                 >,
@@ -490,9 +481,9 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -508,7 +499,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -539,7 +530,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -572,7 +563,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<
+            ::fidl_next::wire::Box<
                 'static,
                 crate::wire::HandleRightsProtocolResponseMethodResponse,
             >,
@@ -588,7 +579,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
+                ::fidl_next::wire::Box<
                     'static,
                     crate::wire::HandleRightsProtocolResponseMethodResponse,
                 >,
@@ -597,9 +588,9 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -615,7 +606,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -645,7 +636,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -676,7 +667,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::HandleRightsProtocolAnEventRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::HandleRightsProtocolAnEventRequest>,
             ___E,
         > for HandleRightsProtocolAnEventRequest
     where
@@ -689,18 +680,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::HandleRightsProtocolAnEventRequest,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::HandleRightsProtocolAnEventRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -716,7 +704,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -759,7 +747,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -770,7 +758,7 @@ pub mod natural {
                     > as ::fidl_next::Encode<
                         ::fidl_next::ServerEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                         ___E,
                     >>::COPY_OPTIMIZATION
@@ -783,7 +771,7 @@ pub mod natural {
                     > as ::fidl_next::Encode<
                         ::fidl_next::ClientEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                            ::fidl_next::wire::fuchsia::OptionalChannel,
                         >,
                         ___E,
                     >>::COPY_OPTIMIZATION
@@ -796,7 +784,7 @@ pub mod natural {
                     > as ::fidl_next::Encode<
                         ::fidl_next::ServerEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                            ::fidl_next::wire::fuchsia::OptionalChannel,
                         >,
                         ___E,
                     >>::COPY_OPTIMIZATION
@@ -842,10 +830,8 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ProtocolEnds>,
-            ___E,
-        > for ProtocolEnds
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::ProtocolEnds>, ___E>
+        for ProtocolEnds
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         ProtocolEnds: ::fidl_next::Encode<crate::wire::ProtocolEnds, ___E>,
@@ -855,15 +841,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ProtocolEnds>,
+                ::fidl_next::wire::Box<'static, crate::wire::ProtocolEnds>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -879,7 +865,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled()
@@ -889,7 +875,7 @@ pub mod natural {
                     > as ::fidl_next::FromWire<
                         ::fidl_next::ServerEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
@@ -901,7 +887,7 @@ pub mod natural {
                     > as ::fidl_next::FromWire<
                         ::fidl_next::ClientEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                            ::fidl_next::wire::fuchsia::OptionalChannel,
                         >,
                     >>::COPY_OPTIMIZATION
                         .is_enabled()
@@ -913,7 +899,7 @@ pub mod natural {
                     > as ::fidl_next::FromWire<
                         ::fidl_next::ServerEnd<
                             crate::DiscoverableProtocol,
-                            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                            ::fidl_next::wire::fuchsia::OptionalChannel,
                         >,
                     >>::COPY_OPTIMIZATION
                         .is_enabled(),
@@ -952,7 +938,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -983,7 +969,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::WithErrorSyntaxHandleInResultResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxHandleInResultResponse>,
             ___E,
         > for WithErrorSyntaxHandleInResultResponse
     where
@@ -996,18 +982,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::WithErrorSyntaxHandleInResultResponse,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::WithErrorSyntaxHandleInResultResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1023,7 +1006,7 @@ pub mod natural {
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
                 true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -1059,7 +1042,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -1091,7 +1074,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsClientEndsRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsClientEndsRequest>,
             ___E,
         > for WithProtocolEndsClientEndsRequest
     where
@@ -1104,15 +1087,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsClientEndsRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsClientEndsRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1133,7 +1116,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -1173,7 +1156,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -1205,7 +1188,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsClientEndsResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsClientEndsResponse>,
             ___E,
         > for WithProtocolEndsClientEndsResponse
     where
@@ -1218,18 +1201,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::WithProtocolEndsClientEndsResponse,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsClientEndsResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1252,7 +1232,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -1292,7 +1272,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -1324,7 +1304,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsServerEndsRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsServerEndsRequest>,
             ___E,
         > for WithProtocolEndsServerEndsRequest
     where
@@ -1337,15 +1317,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsServerEndsRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsServerEndsRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1368,7 +1348,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ServerEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -1405,7 +1385,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -1437,7 +1417,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::WithProtocolEndsServerEndsResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsServerEndsResponse>,
             ___E,
         > for WithProtocolEndsServerEndsResponse
     where
@@ -1450,18 +1430,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
-                    'static,
-                    crate::wire::WithProtocolEndsServerEndsResponse,
-                >,
+                ::fidl_next::wire::Box<'static, crate::wire::WithProtocolEndsServerEndsResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1482,7 +1459,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ServerEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -1547,7 +1524,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<
+            ::fidl_next::wire::Box<
                 'static,
                 crate::wire::WithProtocolEndsStructContainingEndsRequest,
             >,
@@ -1563,7 +1540,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
+                ::fidl_next::wire::Box<
                     'static,
                     crate::wire::WithProtocolEndsStructContainingEndsRequest,
                 >,
@@ -1572,9 +1549,9 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1654,7 +1631,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<
+            ::fidl_next::wire::Box<
                 'static,
                 crate::wire::WithProtocolEndsStructContainingEndsResponse,
             >,
@@ -1670,7 +1647,7 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<
+                ::fidl_next::wire::Box<
                     'static,
                     crate::wire::WithProtocolEndsStructContainingEndsResponse,
                 >,
@@ -1679,9 +1656,9 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -1718,7 +1695,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ChannelProtocolTakeHandleRequest {
-        pub h: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub h: ::fidl_next::wire::fuchsia::NullableHandle,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ChannelProtocolTakeHandleRequest>(), 4);
@@ -1794,7 +1771,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ChannelProtocolMutateSocketRequest {
-        pub a: ::fidl_next::wire::fuchsia::WireSocket,
+        pub a: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -1873,7 +1850,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ChannelProtocolMutateSocketResponse {
-        pub b: ::fidl_next::wire::fuchsia::WireSocket,
+        pub b: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -1952,7 +1929,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct HandleRightsProtocolNoResponseMethodRequest {
-        pub h: ::fidl_next::wire::fuchsia::WireSocket,
+        pub h: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -2031,7 +2008,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct HandleRightsProtocolResponseMethodRequest {
-        pub h: ::fidl_next::wire::fuchsia::WireSocket,
+        pub h: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -2110,7 +2087,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct HandleRightsProtocolResponseMethodResponse {
-        pub h: ::fidl_next::wire::fuchsia::WireSocket,
+        pub h: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -2189,7 +2166,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct HandleRightsProtocolAnEventRequest {
-        pub h: ::fidl_next::wire::fuchsia::WireSocket,
+        pub h: ::fidl_next::wire::fuchsia::Socket,
     }
 
     static_assertions::const_assert_eq!(
@@ -2270,22 +2247,22 @@ pub mod wire {
     pub struct ProtocolEnds {
         pub client: ::fidl_next::ClientEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireChannel,
+            ::fidl_next::wire::fuchsia::Channel,
         >,
 
         pub server: ::fidl_next::ServerEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireChannel,
+            ::fidl_next::wire::fuchsia::Channel,
         >,
 
         pub client_opt: ::fidl_next::ClientEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
 
         pub server_opt: ::fidl_next::ServerEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
     }
 
@@ -2386,7 +2363,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct WithErrorSyntaxHandleInResultResponse {
-        pub h: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub h: ::fidl_next::wire::fuchsia::NullableHandle,
     }
 
     static_assertions::const_assert_eq!(
@@ -2467,7 +2444,7 @@ pub mod wire {
     pub struct WithProtocolEndsClientEndsRequest {
         pub in_: ::fidl_next::ClientEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireChannel,
+            ::fidl_next::wire::fuchsia::Channel,
         >,
     }
 
@@ -2549,7 +2526,7 @@ pub mod wire {
     pub struct WithProtocolEndsClientEndsResponse {
         pub out: ::fidl_next::ClientEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
     }
 
@@ -2631,7 +2608,7 @@ pub mod wire {
     pub struct WithProtocolEndsServerEndsRequest {
         pub in_: ::fidl_next::ServerEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
     }
 
@@ -2713,7 +2690,7 @@ pub mod wire {
     pub struct WithProtocolEndsServerEndsResponse {
         pub out: ::fidl_next::ServerEnd<
             crate::DiscoverableProtocol,
-            ::fidl_next::wire::fuchsia::WireChannel,
+            ::fidl_next::wire::fuchsia::Channel,
         >,
     }
 
@@ -2966,7 +2943,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
     {
         #[inline]
         fn encode(
@@ -2998,7 +2975,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3031,7 +3008,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3064,7 +3041,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3099,7 +3076,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3134,7 +3111,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3168,7 +3145,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireSocket, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Socket, ___E>,
     {
         #[inline]
         fn encode(
@@ -3209,28 +3186,28 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
+                    ::fidl_next::wire::fuchsia::Channel,
                 >,
                 ___E,
             >,
         T1: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
+                    ::fidl_next::wire::fuchsia::Channel,
                 >,
                 ___E,
             >,
         T2: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
         T3: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
@@ -3275,7 +3252,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
     {
         #[inline]
         fn encode(
@@ -3310,7 +3287,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
+                    ::fidl_next::wire::fuchsia::Channel,
                 >,
                 ___E,
             >,
@@ -3348,7 +3325,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
@@ -3386,7 +3363,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
@@ -3424,7 +3401,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::DiscoverableProtocol,
-                    ::fidl_next::wire::fuchsia::WireChannel,
+                    ::fidl_next::wire::fuchsia::Channel,
                 >,
                 ___E,
             >,
@@ -3674,12 +3651,12 @@ pub mod channel_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3708,12 +3685,12 @@ pub mod channel_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::MethodB, ___T>
@@ -3745,7 +3722,7 @@ pub mod channel_protocol {
                 &self,
 
                 h: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TakeHandle, ___T>
@@ -3778,7 +3755,7 @@ pub mod channel_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::MutateSocket, ___T>
@@ -3822,12 +3799,12 @@ pub mod channel_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4158,7 +4135,7 @@ pub mod handle_rights_protocol {
                 &self,
 
                 h: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4193,7 +4170,7 @@ pub mod handle_rights_protocol {
                 &self,
 
                 h: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ResponseMethod, ___T>
@@ -4239,7 +4216,7 @@ pub mod handle_rights_protocol {
                 &self,
 
                 h: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireSocket,
+                    ::fidl_next::wire::fuchsia::Socket,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4456,10 +4433,10 @@ pub mod with_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for ResponseAsStruct {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::WithErrorSyntaxResponseAsStructResponse,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -4492,10 +4469,10 @@ pub mod with_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorAsPrimitive {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -4528,7 +4505,7 @@ pub mod with_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorAsEnum {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::WithErrorSyntaxErrorAsEnumResponse,
             crate::wire::ErrorEnum,
@@ -4564,10 +4541,10 @@ pub mod with_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for HandleInResult {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::WithErrorSyntaxHandleInResultResponse,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -4916,7 +4893,7 @@ pub mod with_protocol_ends {
                 in_: impl ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
+                        ::fidl_next::wire::fuchsia::Channel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -4952,7 +4929,7 @@ pub mod with_protocol_ends {
                 in_: impl ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::DiscoverableProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,

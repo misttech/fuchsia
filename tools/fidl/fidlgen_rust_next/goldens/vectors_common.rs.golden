@@ -108,7 +108,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::ExampleUseOfVectors<'static>>,
             ___E,
         > for ExampleUseOfVectors
     where
@@ -120,15 +120,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+                ::fidl_next::wire::Box<'static, crate::wire::ExampleUseOfVectors<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -137,7 +137,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::ExampleUseOfVectors<'static>>,
             ___E,
         > for &'a ExampleUseOfVectors
     where
@@ -150,15 +150,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+                ::fidl_next::wire::Box<'static, crate::wire::ExampleUseOfVectors<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -198,10 +198,10 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ExampleUseOfVectors<'de> {
-        pub vector_of_uint8: ::fidl_next::wire::WireVector<'de, u8>,
+        pub vector_of_uint8: ::fidl_next::wire::Vector<'de, u8>,
 
         pub vector_of_vector_of_bool:
-            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireVector<'de, bool>>,
+            ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Vector<'de, bool>>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ExampleUseOfVectors<'_>>(), 32);
@@ -303,12 +303,9 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::WireVector<'static, u8>, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, u8>, ___E>,
         T1: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<
-                    'static,
-                    ::fidl_next::wire::WireVector<'static, bool>,
-                >,
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, bool>>,
                 ___E,
             >,
     {

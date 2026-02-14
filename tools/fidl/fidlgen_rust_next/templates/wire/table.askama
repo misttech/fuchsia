@@ -1,7 +1,7 @@
 /// The wire type corresponding to [`{{ name }}`].
 #[repr(C)]
 pub struct {{ name }}<'de> {
-    pub(crate) table: ::fidl_next::wire::WireTable<'de>,
+    pub(crate) table: ::fidl_next::wire::Table<'de>,
 }
 
 impl<'de> Drop for {{ name }}<'de> {
@@ -32,7 +32,7 @@ unsafe impl ::fidl_next::Wire for {{ name }}<'static> {
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge!(let Self { table } = out);
-        ::fidl_next::wire::WireTable::zero_padding(table);
+        ::fidl_next::wire::Table::zero_padding(table);
     }
 }
 
@@ -50,14 +50,14 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { table } = slot);
 
-        ::fidl_next::wire::WireTable::decode_with(
+        ::fidl_next::wire::Table::decode_with(
             table,
             decoder,
             |ordinal, mut slot, decoder| match ordinal {
                 0 => unsafe { ::core::hint::unreachable_unchecked() },
                 {% for member in table.members %}
                     {{ member.ordinal }} => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
                             {{ self.wire_type(member.ty) }},
                         >(slot.as_mut(), decoder, {{ self.constraint(member.ty) }})?;
@@ -114,7 +114,7 @@ where
                         Ok(())
                     }
                 {% endfor %}
-                _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
+                _ => ::fidl_next::wire::Envelope::decode_unknown(slot, decoder),
             }
         )
     }

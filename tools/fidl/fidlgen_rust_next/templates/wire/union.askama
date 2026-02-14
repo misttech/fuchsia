@@ -1,7 +1,7 @@
 /// The wire type corresponding to [`{{ name }}`].
 #[repr(transparent)]
 pub struct {{ name }}{{ de }} {
-    pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+    pub(crate) raw: ::fidl_next::wire::Union,
     pub(crate) _phantom: ::core::marker::PhantomData<{{ phantom }}>,
 }
 
@@ -41,7 +41,7 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-        ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+        ::fidl_next::wire::Union::zero_padding(raw);
     }
 }
 
@@ -117,14 +117,14 @@ where
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-        match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+        match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::wire::RawWireUnion::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
+                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             {% if union_.is_strict %}
                 ord => return Err(::fidl_next::DecodeError::InvalidUnionOrdinal(ord as usize)),
             {% else %}
-                _ => ::fidl_next::wire::RawWireUnion::{{ decode_unknown }}(raw, decoder)?,
+                _ => ::fidl_next::wire::Union::{{ decode_unknown }}(raw, decoder)?,
             {% endif %}
         }
 

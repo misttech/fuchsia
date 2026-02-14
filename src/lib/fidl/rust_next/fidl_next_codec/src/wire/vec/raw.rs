@@ -7,16 +7,15 @@ use core::ptr::slice_from_raw_parts_mut;
 
 use munge::munge;
 
-use crate::wire::{WirePointer, WireU64};
-use crate::{Constrained, Slot, ValidationError, Wire};
+use crate::{Constrained, Slot, ValidationError, Wire, wire};
 
 #[repr(C)]
-pub struct RawWireVector<'de, T> {
-    pub len: WireU64,
-    pub ptr: WirePointer<'de, T>,
+pub struct RawVector<'de, T> {
+    pub len: wire::Uint64,
+    pub ptr: wire::Pointer<'de, T>,
 }
 
-impl<T> Constrained for RawWireVector<'_, T> {
+impl<T> Constrained for RawVector<'_, T> {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -24,8 +23,8 @@ impl<T> Constrained for RawWireVector<'_, T> {
     }
 }
 
-unsafe impl<T: Wire> Wire for RawWireVector<'static, T> {
-    type Narrowed<'de> = RawWireVector<'de, T::Narrowed<'de>>;
+unsafe impl<T: Wire> Wire for RawVector<'static, T> {
+    type Narrowed<'de> = RawVector<'de, T::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -35,22 +34,22 @@ unsafe impl<T: Wire> Wire for RawWireVector<'static, T> {
 
 // SAFETY: `RawWireVector` doesn't add any restrictions on sending across thread boundaries, and so
 // is `Send` if `T` is `Send`.
-unsafe impl<T: Send> Send for RawWireVector<'_, T> {}
+unsafe impl<T: Send> Send for RawVector<'_, T> {}
 
 // SAFETY: `RawWireVector` doesn't add any interior mutability, so it is `Sync` if `T` is `Sync`.
-unsafe impl<T: Sync> Sync for RawWireVector<'_, T> {}
+unsafe impl<T: Sync> Sync for RawVector<'_, T> {}
 
-impl<T> RawWireVector<'_, T> {
+impl<T> RawVector<'_, T> {
     pub fn encode_present(out: &mut MaybeUninit<Self>, len: u64) {
         munge!(let Self { len: encoded_len, ptr } = out);
-        encoded_len.write(WireU64(len));
-        WirePointer::encode_present(ptr);
+        encoded_len.write(wire::Uint64(len));
+        wire::Pointer::encode_present(ptr);
     }
 
     pub fn encode_absent(out: &mut MaybeUninit<Self>) {
         munge!(let Self { len, ptr } = out);
-        len.write(WireU64(0));
-        WirePointer::encode_absent(ptr);
+        len.write(wire::Uint64(0));
+        wire::Pointer::encode_absent(ptr);
     }
 
     pub fn len(&self) -> u64 {

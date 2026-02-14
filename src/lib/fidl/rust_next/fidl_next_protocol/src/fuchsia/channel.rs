@@ -313,14 +313,7 @@ impl NonBlockingTransport for Channel {
 
 #[cfg(test)]
 mod tests {
-    use core::mem::MaybeUninit;
-
-    use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder};
-    use fidl_next_codec::wire::fuchsia::WireHandle;
-    use fidl_next_codec::{
-        AsDecoder as _, Constrained, Decode, DecodeError, DecoderExt as _, Encode, EncodeError,
-        EncoderExt as _, FromWire, Slot, ValidationError, Wire, munge,
-    };
+    use fidl_next_codec::{AsDecoder as _, DecoderExt as _, EncoderExt as _};
     use fuchsia_async as fasync;
     use zx::{Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult};
 
@@ -362,57 +355,67 @@ mod tests {
         boolean: bool,
     }
 
-    #[derive(Debug)]
-    #[repr(C)]
-    struct WireHandleAndBoolean {
-        handle: WireHandle,
-        boolean: bool,
-    }
+    mod wire {
+        use core::mem::MaybeUninit;
 
-    impl Constrained for WireHandleAndBoolean {
-        type Constraint = ();
+        use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder};
+        use fidl_next_codec::{
+            Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, Slot, ValidationError,
+            Wire, munge, wire,
+        };
 
-        fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
-            Ok(())
+        #[derive(Debug)]
+        #[repr(C)]
+        pub struct HandleAndBoolean {
+            handle: wire::fuchsia::Handle,
+            boolean: bool,
         }
-    }
 
-    unsafe impl Wire for WireHandleAndBoolean {
-        type Narrowed<'de> = Self;
+        impl Constrained for HandleAndBoolean {
+            type Constraint = ();
 
-        fn zero_padding(out: &mut MaybeUninit<Self>) {
-            unsafe {
-                out.as_mut_ptr().write_bytes(0, 1);
+            fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+                Ok(())
             }
         }
-    }
 
-    unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandleAndBoolean, E> for HandleAndBoolean {
-        fn encode(
-            self,
-            encoder: &mut E,
-            out: &mut MaybeUninit<WireHandleAndBoolean>,
-            _: (),
-        ) -> Result<(), EncodeError> {
-            munge!(let WireHandleAndBoolean { handle, boolean } = out);
-            self.handle.encode(encoder, handle, ())?;
-            self.boolean.encode(encoder, boolean, ())?;
-            Ok(())
+        unsafe impl Wire for HandleAndBoolean {
+            type Narrowed<'de> = Self;
+
+            fn zero_padding(out: &mut MaybeUninit<Self>) {
+                unsafe {
+                    out.as_mut_ptr().write_bytes(0, 1);
+                }
+            }
         }
-    }
 
-    unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandleAndBoolean {
-        fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
-            munge!(let Self { handle, boolean } = slot);
-            Decode::decode(handle, decoder, ())?;
-            Decode::decode(boolean, decoder, ())?;
-            Ok(())
+        unsafe impl<E: HandleEncoder + ?Sized> Encode<HandleAndBoolean, E> for super::HandleAndBoolean {
+            fn encode(
+                self,
+                encoder: &mut E,
+                out: &mut MaybeUninit<HandleAndBoolean>,
+                _: (),
+            ) -> Result<(), EncodeError> {
+                munge!(let HandleAndBoolean { handle, boolean } = out);
+                self.handle.encode(encoder, handle, ())?;
+                self.boolean.encode(encoder, boolean, ())?;
+                Ok(())
+            }
         }
-    }
 
-    impl FromWire<WireHandleAndBoolean> for HandleAndBoolean {
-        fn from_wire(wire: WireHandleAndBoolean) -> Self {
-            Self { handle: NullableHandle::from_wire(wire.handle), boolean: wire.boolean }
+        unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for HandleAndBoolean {
+            fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
+                munge!(let Self { handle, boolean } = slot);
+                Decode::decode(handle, decoder, ())?;
+                Decode::decode(boolean, decoder, ())?;
+                Ok(())
+            }
+        }
+
+        impl FromWire<HandleAndBoolean> for super::HandleAndBoolean {
+            fn from_wire(wire: HandleAndBoolean) -> Self {
+                Self { handle: zx::NullableHandle::from_wire(wire.handle), boolean: wire.boolean }
+            }
         }
     }
 
@@ -428,7 +431,7 @@ mod tests {
 
         let mut decoder = buffer.as_decoder();
         decoder
-            .decode::<WireHandleAndBoolean>()
+            .decode::<wire::HandleAndBoolean>()
             .expect_err("decoding an invalid boolean should fail");
 
         // Decoding failed, so the handle should still be in the buffer.
@@ -455,7 +458,7 @@ mod tests {
                 .expect("encoding should succeed");
 
         let mut decoder = buffer.as_decoder();
-        let decoded = decoder.decode::<WireHandleAndBoolean>().expect("decoding should succeed");
+        let decoded = decoder.decode::<wire::HandleAndBoolean>().expect("decoding should succeed");
 
         // The handle should remain un-signaled after successful decoding.
         assert_eq!(

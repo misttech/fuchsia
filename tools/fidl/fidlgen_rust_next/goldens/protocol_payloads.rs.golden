@@ -106,10 +106,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayComposedWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -197,10 +197,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayLocalWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::LocalStructPayload,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -282,10 +282,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayImportWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -373,10 +373,10 @@ pub mod main_protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for TwoWayAnonWithError {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::MainProtocolTwoWayAnonWithErrorResponse,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -432,7 +432,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -466,7 +466,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayComposed, ___T>
@@ -500,7 +500,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayComposedWithError, ___T>
@@ -534,12 +534,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -571,12 +571,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayLocal, ___T>
@@ -608,12 +608,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayLocalWithError, ___T>
@@ -645,7 +645,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -679,7 +679,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayImport, ___T>
@@ -713,7 +713,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayImportWithError, ___T>
@@ -747,12 +747,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -784,12 +784,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayAnon, ___T>
@@ -821,12 +821,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayAnonWithError, ___T>
@@ -871,7 +871,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -902,12 +902,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -936,7 +936,7 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -967,12 +967,12 @@ pub mod main_protocol {
                 &self,
 
                 a: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 b: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>

@@ -74,8 +74,7 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::Baz>, ___E>
-        for Baz
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Baz>, ___E> for Baz
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         Baz: ::fidl_next::Encode<crate::wire::Baz, ___E>,
@@ -84,16 +83,14 @@ pub mod natural {
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Baz>,
-            >,
+            out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::Box<'static, crate::wire::Baz>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -101,7 +98,7 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::Baz>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Baz>, ___E>
         for &'a Baz
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -111,16 +108,14 @@ pub mod natural {
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Baz>,
-            >,
+            out: &mut ::core::mem::MaybeUninit<::fidl_next::wire::Box<'static, crate::wire::Baz>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())

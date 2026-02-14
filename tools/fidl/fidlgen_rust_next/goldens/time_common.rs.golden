@@ -25,19 +25,19 @@ pub mod natural {
             true
 
                 && <
-                    i64 as ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>
+                    i64 as ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    i64 as ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>
+                    i64 as ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    i64 as ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>
+                    i64 as ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
                 && <
-                    i64 as ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>
+                    i64 as ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -125,10 +125,8 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::AllInstants>,
-            ___E,
-        > for AllInstants
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::AllInstants>, ___E>
+        for AllInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         AllInstants: ::fidl_next::Encode<crate::wire::AllInstants, ___E>,
@@ -138,15 +136,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::AllInstants>,
+                ::fidl_next::wire::Box<'static, crate::wire::AllInstants>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -154,10 +152,8 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::AllInstants>,
-            ___E,
-        > for &'a AllInstants
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::AllInstants>, ___E>
+        for &'a AllInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         &'a AllInstants: ::fidl_next::Encode<crate::wire::AllInstants, ___E>,
@@ -167,15 +163,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::AllInstants>,
+                ::fidl_next::wire::Box<'static, crate::wire::AllInstants>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -185,25 +181,15 @@ pub mod natural {
     impl ::fidl_next::FromWire<crate::wire::AllInstants> for AllInstants {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::AllInstants, Self> = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-            true
-
-                && <
-                    i64 as ::fidl_next::FromWire<::fidl_next::wire::WireI64>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    i64 as ::fidl_next::FromWire<::fidl_next::wire::WireI64>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    i64 as ::fidl_next::FromWire<::fidl_next::wire::WireI64>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    i64 as ::fidl_next::FromWire<::fidl_next::wire::WireI64>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-        )
+                true && <i64 as ::fidl_next::FromWire<::fidl_next::wire::Int64>>::COPY_OPTIMIZATION
+                    .is_enabled()
+                    && <i64 as ::fidl_next::FromWire<::fidl_next::wire::Int64>>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <i64 as ::fidl_next::FromWire<::fidl_next::wire::Int64>>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <i64 as ::fidl_next::FromWire<::fidl_next::wire::Int64>>::COPY_OPTIMIZATION
+                        .is_enabled(),
+            )
         };
 
         #[inline]
@@ -284,75 +270,75 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
             let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
-                ::fidl_next::wire::WireEnvelope,
+                ::fidl_next::wire::Envelope,
             >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     4 => {
                         if let Some(value) = self.boot_ticks.take() {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     3 => {
                         if let Some(value) = self.monotonic_ticks.take() {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     2 => {
                         if let Some(value) = self.boot.take() {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI64>,
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (4294967295, ())
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     1 => {
                         if let Some(value) = self.monotonic.take() {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::Table::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -374,75 +360,75 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
             let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
-                ::fidl_next::wire::WireEnvelope,
+                ::fidl_next::wire::Envelope,
             >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     4 => {
                         if let Some(value) = &self.boot_ticks {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     3 => {
                         if let Some(value) = &self.monotonic_ticks {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     2 => {
                         if let Some(value) = &self.boot {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI64>,
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (4294967295, ())
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
                     1 => {
                         if let Some(value) = &self.monotonic {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                [::fidl_next::wire::WireI64; 10],
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                [::fidl_next::wire::Int64; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::Table::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -465,22 +451,22 @@ pub mod natural {
 
 
                 monotonic: monotonic.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                 )),
 
 
                 boot: boot.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireI64>>() }
+                    unsafe { envelope.read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>() }
                 )),
 
 
                 monotonic_ticks: monotonic_ticks.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                 )),
 
 
                 boot_ticks: boot_ticks.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                 )),
 
         }
@@ -495,25 +481,25 @@ pub mod natural {
 
                 monotonic: wire.table.get(1)
                     .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 
 
                 boot: wire.table.get(2)
                     .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireI64>>() }
+                        unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>() }
                     )),
 
 
                 monotonic_ticks: wire.table.get(3)
                     .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 
 
                 boot_ticks: wire.table.get(4)
                     .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::WireI64; 10]>() }
+                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int64; 10]>() }
                     )),
 
         }
@@ -527,13 +513,13 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct AllInstants {
-        pub monotonic: ::fidl_next::wire::WireI64,
+        pub monotonic: ::fidl_next::wire::Int64,
 
-        pub boot: ::fidl_next::wire::WireI64,
+        pub boot: ::fidl_next::wire::Int64,
 
-        pub monotonic_ticks: ::fidl_next::wire::WireI64,
+        pub monotonic_ticks: ::fidl_next::wire::Int64,
 
-        pub boot_ticks: ::fidl_next::wire::WireI64,
+        pub boot_ticks: ::fidl_next::wire::Int64,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<AllInstants>(), 32);
@@ -631,26 +617,26 @@ pub mod wire {
     /// The wire type corresponding to [`ComplexInstants`].
     #[repr(C)]
     pub struct ComplexInstants<'de> {
-        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::Table<'de>,
     }
 
     impl<'de> Drop for ComplexInstants<'de> {
         fn drop(&mut self) {
             let _ = self.table.get(1).map(|envelope| unsafe {
-                envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>()
+                envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>()
             });
 
-            let _ = self.table.get(2)
-                .map(|envelope| unsafe {
-                    envelope.read_unchecked::<::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireI64>>()
-                });
+            let _ = self.table.get(2).map(|envelope| unsafe {
+                envelope
+                    .read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>()
+            });
 
             let _ = self.table.get(3).map(|envelope| unsafe {
-                envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>()
+                envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>()
             });
 
             let _ = self.table.get(4).map(|envelope| unsafe {
-                envelope.read_unchecked::<[::fidl_next::wire::WireI64; 10]>()
+                envelope.read_unchecked::<[::fidl_next::wire::Int64; 10]>()
             });
         }
     }
@@ -672,7 +658,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::wire::WireTable::zero_padding(table);
+            ::fidl_next::wire::Table::zero_padding(table);
         }
     }
 
@@ -687,71 +673,69 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::wire::WireTable::decode_with(
-                table,
-                decoder,
-                |ordinal, mut slot, decoder| match ordinal {
+            ::fidl_next::wire::Table::decode_with(table, decoder, |ordinal, mut slot, decoder| {
+                match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
                     1 => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            [::fidl_next::wire::WireI64; 10],
+                            [::fidl_next::wire::Int64; 10],
                         >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
                     }
 
                     2 => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireI64>,
+                            ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>,
                         >(slot.as_mut(), decoder, (4294967295, ()))?;
 
                         Ok(())
                     }
 
                     3 => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            [::fidl_next::wire::WireI64; 10],
+                            [::fidl_next::wire::Int64; 10],
                         >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
                     }
 
                     4 => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            [::fidl_next::wire::WireI64; 10],
+                            [::fidl_next::wire::Int64; 10],
                         >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
                     }
 
-                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
-                },
-            )
+                    _ => ::fidl_next::wire::Envelope::decode_unknown(slot, decoder),
+                }
+            })
         }
     }
 
     impl<'de> ComplexInstants<'de> {
-        pub fn monotonic(&self) -> ::core::option::Option<&[::fidl_next::wire::WireI64; 10]> {
+        pub fn monotonic(&self) -> ::core::option::Option<&[::fidl_next::wire::Int64; 10]> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
         pub fn boot(
             &self,
-        ) -> ::core::option::Option<&::fidl_next::wire::WireVector<'de, ::fidl_next::wire::WireI64>>
+        ) -> ::core::option::Option<&::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int64>>
         {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
         }
 
-        pub fn monotonic_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::WireI64; 10]> {
+        pub fn monotonic_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::Int64; 10]> {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
 
-        pub fn boot_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::WireI64; 10]> {
+        pub fn boot_ticks(&self) -> ::core::option::Option<&[::fidl_next::wire::Int64; 10]> {
             unsafe { Some(self.table.get(4)?.deref_unchecked()) }
         }
     }
@@ -793,10 +777,10 @@ pub mod generic {
         for AllInstants<T0, T1, T2, T3>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
-        T2: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
-        T3: ::fidl_next::Encode<::fidl_next::wire::WireI64, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        T2: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
+        T3: ::fidl_next::Encode<::fidl_next::wire::Int64, ___E>,
     {
         #[inline]
         fn encode(

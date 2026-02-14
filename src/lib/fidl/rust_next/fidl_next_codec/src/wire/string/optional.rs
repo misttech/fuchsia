@@ -8,41 +8,40 @@ use core::str::from_utf8;
 
 use munge::munge;
 
-use crate::wire::{WireOptionalVector, WireString, WireVector};
 use crate::{
     Constrained, Decode, DecodeError, Decoder, EncodeError, EncodeOption, Encoder, FromWireOption,
-    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire,
+    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire, wire,
 };
 
 /// An optional FIDL string
 #[repr(transparent)]
-pub struct WireOptionalString<'de> {
-    vec: WireOptionalVector<'de, u8>,
+pub struct OptionalString<'de> {
+    vec: wire::OptionalVector<'de, u8>,
 }
 
-unsafe impl Wire for WireOptionalString<'static> {
-    type Narrowed<'de> = WireOptionalString<'de>;
+unsafe impl Wire for OptionalString<'static> {
+    type Narrowed<'de> = OptionalString<'de>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { vec } = out);
-        WireOptionalVector::<u8>::zero_padding(vec);
+        wire::OptionalVector::<u8>::zero_padding(vec);
     }
 }
 
-impl WireOptionalString<'_> {
+impl OptionalString<'_> {
     /// Encodes that a string is present in a slot.
     #[inline]
     pub fn encode_present(out: &mut MaybeUninit<Self>, len: u64) {
         munge!(let Self { vec } = out);
-        WireOptionalVector::encode_present(vec, len);
+        wire::OptionalVector::encode_present(vec, len);
     }
 
     /// Encodes that a string is absent in a slot.
     #[inline]
     pub fn encode_absent(out: &mut MaybeUninit<Self>) {
         munge!(let Self { vec } = out);
-        WireOptionalVector::encode_absent(vec);
+        wire::OptionalVector::encode_absent(vec);
     }
 
     /// Returns whether the optional string is present.
@@ -59,14 +58,14 @@ impl WireOptionalString<'_> {
 
     /// Returns a reference to the underlying string, if any.
     #[inline]
-    pub fn as_ref(&self) -> Option<&WireString<'_>> {
-        self.vec.as_ref().map(|vec| unsafe { &*(vec as *const WireVector<'_, u8>).cast() })
+    pub fn as_ref(&self) -> Option<&wire::String<'_>> {
+        self.vec.as_ref().map(|vec| unsafe { &*(vec as *const wire::Vector<'_, u8>).cast() })
     }
 
     /// Validate that this string's length falls within the limit.
-    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), crate::ValidationError> {
+    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), ValidationError> {
         munge!(let Self { vec } = slot);
-        match WireOptionalVector::validate_max_len(vec, limit) {
+        match wire::OptionalVector::validate_max_len(vec, limit) {
             Ok(()) => Ok(()),
             Err(ValidationError::VectorTooLong { count, limit }) => {
                 Err(ValidationError::StringTooLong { count, limit })
@@ -76,7 +75,7 @@ impl WireOptionalString<'_> {
     }
 }
 
-impl Constrained for WireOptionalString<'_> {
+impl Constrained for OptionalString<'_> {
     type Constraint = u64;
 
     fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
@@ -84,16 +83,16 @@ impl Constrained for WireOptionalString<'_> {
     }
 }
 
-impl fmt::Debug for WireOptionalString<'_> {
+impl fmt::Debug for OptionalString<'_> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_ref().fmt(f)
     }
 }
 
-impl<T> PartialEq<Option<T>> for WireOptionalString<'_>
+impl<T> PartialEq<Option<T>> for OptionalString<'_>
 where
-    for<'de> WireString<'de>: PartialEq<T>,
+    for<'de> wire::String<'de>: PartialEq<T>,
 {
     fn eq(&self, other: &Option<T>) -> bool {
         match (self.as_ref(), other.as_ref()) {
@@ -104,12 +103,12 @@ where
     }
 }
 
-unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireOptionalString<'de> {
+unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for OptionalString<'de> {
     #[inline]
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
-        let result = unsafe { WireOptionalVector::decode_raw(vec.as_mut(), decoder, constraint) };
+        let result = unsafe { wire::OptionalVector::decode_raw(vec.as_mut(), decoder, constraint) };
         match result {
             Ok(()) => (),
             Err(DecodeError::Validation(ValidationError::VectorTooLong { count, limit })) => {
@@ -134,71 +133,69 @@ unsafe impl<'de, D: Decoder<'de> + ?Sized> Decode<D> for WireOptionalString<'de>
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for String {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for String {
     #[inline]
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireOptionalString<'static>>,
+        out: &mut MaybeUninit<OptionalString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         <&str>::encode_option(this.as_deref(), encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for &String {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &String {
     #[inline]
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireOptionalString<'static>>,
+        out: &mut MaybeUninit<OptionalString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         <&str>::encode_option(this.map(String::as_str), encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for &str {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<OptionalString<'static>, E> for &str {
     #[inline]
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireOptionalString<'static>>,
+        out: &mut MaybeUninit<OptionalString<'static>>,
         _constraint: u64,
     ) -> Result<(), EncodeError> {
         if let Some(string) = this {
             encoder.write(string.as_bytes());
-            WireOptionalString::encode_present(out, string.len() as u64);
+            OptionalString::encode_present(out, string.len() as u64);
         } else {
-            WireOptionalString::encode_absent(out);
+            OptionalString::encode_absent(out);
         }
         Ok(())
     }
 }
 
-impl FromWireOption<WireOptionalString<'_>> for String {
+impl FromWireOption<OptionalString<'_>> for String {
     #[inline]
-    fn from_wire_option(wire: WireOptionalString<'_>) -> Option<Self> {
+    fn from_wire_option(wire: OptionalString<'_>) -> Option<Self> {
         Vec::from_wire_option(wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
     }
 }
 
-impl IntoNatural for WireOptionalString<'_> {
+impl IntoNatural for OptionalString<'_> {
     type Natural = Option<String>;
 }
 
-impl FromWireOptionRef<WireOptionalString<'_>> for String {
+impl FromWireOptionRef<OptionalString<'_>> for String {
     #[inline]
-    fn from_wire_option_ref(wire: &WireOptionalString<'_>) -> Option<Self> {
+    fn from_wire_option_ref(wire: &OptionalString<'_>) -> Option<Self> {
         Vec::from_wire_option_ref(&wire.vec).map(|vec| unsafe { String::from_utf8_unchecked(vec) })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::WireOptionalString;
-
-    use crate::{DecoderExt as _, EncoderExt as _, chunks};
+    use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
 
     #[test]
     fn decode_optional_string() {
@@ -208,7 +205,7 @@ mod tests {
                 0x00, 0x00,
             ]
             .as_mut_slice()
-            .decode_with_constraint::<WireOptionalString<'_>>(1000)
+            .decode_with_constraint::<wire::OptionalString<'_>>(1000)
             .unwrap(),
             None::<&str>,
         );

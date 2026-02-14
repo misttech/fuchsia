@@ -16,7 +16,7 @@ use crate::concurrency::future::AtomicWaker;
 use crate::concurrency::hint::unreachable_unchecked;
 use crate::concurrency::sync::Mutex;
 use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
-use crate::wire::{WireEpitaph, WireMessageHeader};
+use crate::wire::{Epitaph, MessageHeader};
 use crate::{Flexibility, NonBlockingTransport, ProtocolError, Transport};
 
 // Indicates that the connection has been requested to stop. Connections are
@@ -265,10 +265,8 @@ impl<T: Transport> Connection<T> {
         let shared = unsafe { self.get_shared_unchecked() };
 
         let mut buffer = T::acquire(shared);
-        buffer
-            .encode_next(WireMessageHeader::new(0, EPITAPH_ORDINAL, Flexibility::Strict))
-            .unwrap();
-        buffer.encode_next(WireEpitaph::new(error)).unwrap();
+        buffer.encode_next(MessageHeader::new(0, EPITAPH_ORDINAL, Flexibility::Strict)).unwrap();
+        buffer.encode_next(Epitaph::new(error)).unwrap();
         let future_state = T::begin_send(shared, buffer);
 
         SendEpitaphFuture { shared, future_state }

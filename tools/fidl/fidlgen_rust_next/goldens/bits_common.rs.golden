@@ -38,7 +38,7 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyBits { value } = out);
 
-            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint32::from(self.bits()));
             Ok(())
         }
     }
@@ -99,7 +99,7 @@ pub mod natural {
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::FlexibleBits { value } = out);
 
-            let _ = value.write(::fidl_next::wire::WireU64::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint64::from(self.bits()));
             Ok(())
         }
     }
@@ -165,7 +165,7 @@ pub mod natural {
                 return Err(::fidl_next::EncodeError::InvalidStrictBits);
             }
 
-            let _ = value.write(::fidl_next::wire::WireU32::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint32::from(self.bits()));
             Ok(())
         }
     }
@@ -230,7 +230,7 @@ pub mod natural {
                 return Err(::fidl_next::EncodeError::InvalidStrictBits);
             }
 
-            let _ = value.write(::fidl_next::wire::WireU64::from(self.bits()));
+            let _ = value.write(::fidl_next::wire::Uint64::from(self.bits()));
             Ok(())
         }
     }
@@ -262,7 +262,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct EmptyBits {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for EmptyBits {
@@ -300,7 +300,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::EmptyBits> for EmptyBits {
         fn from(natural: crate::natural::EmptyBits) -> Self {
-            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint32::from(natural.bits()) }
         }
     }
 
@@ -312,7 +312,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct FlexibleBits {
-        pub(crate) value: ::fidl_next::wire::WireU64,
+        pub(crate) value: ::fidl_next::wire::Uint64,
     }
 
     impl ::fidl_next::Constrained for FlexibleBits {
@@ -350,7 +350,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::FlexibleBits> for FlexibleBits {
         fn from(natural: crate::natural::FlexibleBits) -> Self {
-            Self { value: ::fidl_next::wire::WireU64::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint64::from(natural.bits()) }
         }
     }
 
@@ -362,7 +362,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct MyBits {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for MyBits {
@@ -409,7 +409,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::MyBits> for MyBits {
         fn from(natural: crate::natural::MyBits) -> Self {
-            Self { value: ::fidl_next::wire::WireU32::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint32::from(natural.bits()) }
         }
     }
 
@@ -421,7 +421,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
     pub struct StrictBits {
-        pub(crate) value: ::fidl_next::wire::WireU64,
+        pub(crate) value: ::fidl_next::wire::Uint64,
     }
 
     impl ::fidl_next::Constrained for StrictBits {
@@ -468,7 +468,7 @@ pub mod wire {
 
     impl ::core::convert::From<crate::natural::StrictBits> for StrictBits {
         fn from(natural: crate::natural::StrictBits) -> Self {
-            Self { value: ::fidl_next::wire::WireU64::from(natural.bits()) }
+            Self { value: ::fidl_next::wire::Uint64::from(natural.bits()) }
         }
     }
 

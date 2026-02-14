@@ -9,35 +9,34 @@ use munge::munge;
 
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;
-use crate::wire::{WireU16, WireU32};
 use crate::{
     CHUNK_SIZE, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
-    Encoder, EncoderExt as _, Slot, ValidationError, Wire,
+    Encoder, EncoderExt as _, Slot, ValidationError, Wire, wire,
 };
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct Encoded {
-    maybe_num_bytes: WireU32,
-    num_handles: WireU16,
-    flags: WireU16,
+    maybe_num_bytes: wire::Uint32,
+    num_handles: wire::Uint16,
+    flags: wire::Uint16,
 }
 
 const INLINE_SIZE: usize = 4;
 
 /// A FIDL envelope
 #[repr(C, align(8))]
-pub union WireEnvelope {
+pub union Envelope {
     zero: [u8; 8],
     encoded: Encoded,
     decoded_inline: [MaybeUninit<u8>; INLINE_SIZE],
     decoded_out_of_line: *mut (),
 }
 
-unsafe impl Send for WireEnvelope {}
-unsafe impl Sync for WireEnvelope {}
+unsafe impl Send for Envelope {}
+unsafe impl Sync for Envelope {}
 
-impl Constrained for WireEnvelope {
+impl Constrained for Envelope {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -45,19 +44,19 @@ impl Constrained for WireEnvelope {
     }
 }
 
-unsafe impl Wire for WireEnvelope {
+unsafe impl Wire for Envelope {
     type Narrowed<'de> = Self;
 
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
 
-impl WireEnvelope {
+impl Envelope {
     const IS_INLINE_BIT: u16 = 1;
 
     /// Encodes a zero envelope into a slot.
     #[inline]
     pub fn encode_zero(out: &mut MaybeUninit<Self>) {
-        out.write(WireEnvelope { zero: [0; 8] });
+        out.write(Envelope { zero: [0; 8] });
     }
 
     /// Encodes a `'static` value into an envelope with an encoder.
@@ -103,10 +102,10 @@ impl WireEnvelope {
         W::zero_padding(value_out);
         value.encode(encoder, value_out, constraint)?;
 
-        flags.write(WireU16(Self::IS_INLINE_BIT));
+        flags.write(wire::Uint16(Self::IS_INLINE_BIT));
 
         let handle_count = (encoder.__internal_handle_count() - handles_before).try_into().unwrap();
-        num_handles.write(WireU16(handle_count));
+        num_handles.write(wire::Uint16(handle_count));
 
         Ok(())
     }
@@ -149,19 +148,19 @@ impl WireEnvelope {
             let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
             W::zero_padding(value_out);
             value.encode(encoder, value_out, constraint)?;
-            flags.write(WireU16(Self::IS_INLINE_BIT));
+            flags.write(wire::Uint16(Self::IS_INLINE_BIT));
         } else {
             let bytes_before = encoder.bytes_written();
 
             encoder.encode_next_with_constraint(value, constraint)?;
 
             let bytes_count = (encoder.bytes_written() - bytes_before).try_into().unwrap();
-            maybe_num_bytes.write(WireU32(bytes_count));
-            flags.write(WireU16(0));
+            maybe_num_bytes.write(wire::Uint32(bytes_count));
+            flags.write(wire::Uint16(0));
         }
 
         let handle_count = (encoder.__internal_handle_count() - handles_before).try_into().unwrap();
-        num_handles.write(WireU16(handle_count));
+        num_handles.write(wire::Uint16(handle_count));
 
         Ok(())
     }
@@ -192,8 +191,8 @@ impl WireEnvelope {
 
     #[inline]
     fn out_of_line_chunks(
-        maybe_num_bytes: Slot<'_, WireU32>,
-        flags: Slot<'_, WireU16>,
+        maybe_num_bytes: Slot<'_, wire::Uint32>,
+        flags: Slot<'_, wire::Uint16>,
     ) -> Result<Option<usize>, DecodeError> {
         match **flags {
             Self::IS_INLINE_BIT => Ok(None),

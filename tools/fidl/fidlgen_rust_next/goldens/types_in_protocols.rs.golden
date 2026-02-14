@@ -30,7 +30,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
+            ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
             ___E,
         > for ResourceStruct
     where
@@ -42,15 +42,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
+                ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -92,23 +92,23 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
             let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
-                ::fidl_next::wire::WireEnvelope,
+                ::fidl_next::wire::Envelope,
             >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
-                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::Table::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -156,13 +156,9 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::ResourceUnion { raw, _phantom: _ } = out);
 
             match self {
-                Self::B(value) => ::fidl_next::wire::RawWireUnion::encode_as::<___E, bool>(
-                    value,
-                    1,
-                    encoder,
-                    raw,
-                    (),
-                )?,
+                Self::B(value) => {
+                    ::fidl_next::wire::Union::encode_as::<___E, bool>(value, 1, encoder, raw, ())?
+                }
 
                 Self::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
@@ -192,7 +188,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::Union::encode_absent(raw);
             }
 
             Ok(())
@@ -512,7 +508,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::Resource<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::Resource<'static>>,
             ___E,
         > for Resource
     where
@@ -524,15 +520,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Resource<'static>>,
+                ::fidl_next::wire::Box<'static, crate::wire::Resource<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -609,7 +605,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ResourceStruct {
-        pub(crate) _empty: fidl_next::wire::WireEmptyStructPlaceholder,
+        pub(crate) _empty: fidl_next::wire::EmptyStruct,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ResourceStruct>(), 1);
@@ -676,7 +672,7 @@ pub mod wire {
     /// The wire type corresponding to [`ResourceTable`].
     #[repr(C)]
     pub struct ResourceTable<'de> {
-        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::Table<'de>,
     }
 
     impl<'de> Drop for ResourceTable<'de> {
@@ -700,7 +696,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::wire::WireTable::zero_padding(table);
+            ::fidl_next::wire::Table::zero_padding(table);
         }
     }
 
@@ -716,15 +712,13 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::wire::WireTable::decode_with(
-                table,
-                decoder,
-                |ordinal, mut slot, decoder| match ordinal {
+            ::fidl_next::wire::Table::decode_with(table, decoder, |ordinal, mut slot, decoder| {
+                match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
-                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
-                },
-            )
+                    _ => ::fidl_next::wire::Envelope::decode_unknown(slot, decoder),
+                }
+            })
         }
     }
 
@@ -746,7 +740,7 @@ pub mod wire {
     /// The wire type corresponding to [`ResourceUnion`].
     #[repr(transparent)]
     pub struct ResourceUnion<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -779,7 +773,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
@@ -815,10 +809,10 @@ pub mod wire {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                1 => ::fidl_next::wire::Union::decode_as::<___D, bool>(raw, decoder, ())?,
 
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -842,15 +836,15 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct Resource<'de> {
-        pub handle: ::fidl_next::wire::fuchsia::WireNullableHandle,
+        pub handle: ::fidl_next::wire::fuchsia::NullableHandle,
 
-        pub vmo: ::fidl_next::wire::fuchsia::WireVmo,
+        pub vmo: ::fidl_next::wire::fuchsia::Vmo,
 
         pub client_end:
-            ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
 
         pub server_end:
-            ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
 
         pub struct_: crate::wire::ResourceStruct,
 
@@ -858,33 +852,29 @@ pub mod wire {
 
         pub union: crate::wire::ResourceUnion<'de>,
 
-        pub opt_handle: ::fidl_next::wire::fuchsia::WireOptionalNullableHandle,
+        pub opt_handle: ::fidl_next::wire::fuchsia::OptionalNullableHandle,
 
-        pub opt_vmo: ::fidl_next::wire::fuchsia::WireOptionalVmo,
+        pub opt_vmo: ::fidl_next::wire::fuchsia::OptionalVmo,
 
-        pub opt_client_end: ::fidl_next::ClientEnd<
-            crate::Protocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
-        >,
+        pub opt_client_end:
+            ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::OptionalChannel>,
 
-        pub opt_server_end: ::fidl_next::ServerEnd<
-            crate::Protocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
-        >,
+        pub opt_server_end:
+            ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::OptionalChannel>,
 
-        pub opt_struct: ::fidl_next::wire::WireBox<'de, crate::wire::ResourceStruct>,
+        pub opt_struct: ::fidl_next::wire::Box<'de, crate::wire::ResourceStruct>,
 
         pub opt_union: crate::wire_optional::ResourceUnion<'de>,
 
-        pub array_handle: [::fidl_next::wire::fuchsia::WireNullableHandle; 5],
+        pub array_handle: [::fidl_next::wire::fuchsia::NullableHandle; 5],
 
-        pub array_vmo: [::fidl_next::wire::fuchsia::WireVmo; 5],
+        pub array_vmo: [::fidl_next::wire::fuchsia::Vmo; 5],
 
         pub array_client_end:
-            [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>; 5],
+            [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
 
         pub array_server_end:
-            [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>; 5],
+            [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
 
         pub array_struct: [crate::wire::ResourceStruct; 5],
 
@@ -893,25 +883,25 @@ pub mod wire {
         pub array_union: [crate::wire::ResourceUnion<'de>; 5],
 
         pub vector_handle:
-            ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::fuchsia::WireNullableHandle>,
+            ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::NullableHandle>,
 
-        pub vector_vmo: ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::fuchsia::WireVmo>,
+        pub vector_vmo: ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::Vmo>,
 
-        pub vector_client_end: ::fidl_next::wire::WireVector<
+        pub vector_client_end: ::fidl_next::wire::Vector<
             'de,
-            ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
         >,
 
-        pub vector_server_end: ::fidl_next::wire::WireVector<
+        pub vector_server_end: ::fidl_next::wire::Vector<
             'de,
-            ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+            ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
         >,
 
-        pub vector_struct: ::fidl_next::wire::WireVector<'de, crate::wire::ResourceStruct>,
+        pub vector_struct: ::fidl_next::wire::Vector<'de, crate::wire::ResourceStruct>,
 
-        pub vector_table: ::fidl_next::wire::WireVector<'de, crate::wire::ResourceTable<'de>>,
+        pub vector_table: ::fidl_next::wire::Vector<'de, crate::wire::ResourceTable<'de>>,
 
-        pub vector_union: ::fidl_next::wire::WireVector<'de, crate::wire::ResourceUnion<'de>>,
+        pub vector_union: ::fidl_next::wire::Vector<'de, crate::wire::ResourceUnion<'de>>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Resource<'_>>(), 456);
@@ -1261,7 +1251,7 @@ pub mod wire_optional {
 
     #[repr(transparent)]
     pub struct ResourceUnion<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -1282,7 +1272,7 @@ pub mod wire_optional {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
@@ -1323,11 +1313,11 @@ pub mod wire_optional {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                1 => ::fidl_next::wire::Union::decode_as::<___D, bool>(raw, decoder, ())?,
 
-                0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+                0 => ::fidl_next::wire::Union::decode_absent(raw)?,
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -1523,96 +1513,83 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireNullableHandle, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::NullableHandle, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
         T2: ::fidl_next::Encode<
-                ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
         T3: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
         T4: ::fidl_next::Encode<crate::wire::ResourceStruct, ___E>,
         T5: ::fidl_next::Encode<crate::wire::ResourceTable<'static>, ___E>,
         T6: ::fidl_next::Encode<crate::wire::ResourceUnion<'static>, ___E>,
-        T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireOptionalNullableHandle, ___E>,
-        T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireOptionalVmo, ___E>,
+        T7: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalNullableHandle, ___E>,
+        T8: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalVmo, ___E>,
         T9: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::Protocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
         T10: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::Protocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
-        T11: ::fidl_next::Encode<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
-                ___E,
-            >,
+        T11:
+            ::fidl_next::Encode<::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>, ___E>,
         T12: ::fidl_next::Encode<crate::wire_optional::ResourceUnion<'static>, ___E>,
-        T13: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::WireNullableHandle; 5], ___E>,
-        T14: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::WireVmo; 5], ___E>,
+        T13: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::NullableHandle; 5], ___E>,
+        T14: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::Vmo; 5], ___E>,
         T15: ::fidl_next::Encode<
-                [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>;
-                    5],
+                [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
                 ___E,
             >,
         T16: ::fidl_next::Encode<
-                [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::WireChannel>;
-                    5],
+                [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>; 5],
                 ___E,
             >,
         T17: ::fidl_next::Encode<[crate::wire::ResourceStruct; 5], ___E>,
         T18: ::fidl_next::Encode<[crate::wire::ResourceTable<'static>; 5], ___E>,
         T19: ::fidl_next::Encode<[crate::wire::ResourceUnion<'static>; 5], ___E>,
         T20: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<
-                    'static,
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
-                >,
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::NullableHandle>,
                 ___E,
             >,
         T21: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::fuchsia::WireVmo>,
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
                 ___E,
             >,
         T22: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<
+                ::fidl_next::wire::Vector<
                     'static,
-                    ::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                 >,
                 ___E,
             >,
         T23: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<
+                ::fidl_next::wire::Vector<
                     'static,
-                    ::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                 >,
                 ___E,
             >,
         T24: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, crate::wire::ResourceStruct>,
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceStruct>,
                 ___E,
             >,
         T25: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, crate::wire::ResourceTable<'static>>,
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceTable<'static>>,
                 ___E,
             >,
         T26: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, crate::wire::ResourceUnion<'static>>,
+                ::fidl_next::wire::Vector<'static, crate::wire::ResourceUnion<'static>>,
                 ___E,
             >,
     {
@@ -1829,10 +1806,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorBasic {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::Basic<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -1913,10 +1890,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorCompound {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::Compound<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -1997,10 +1974,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayBasic {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::ArrayBasic<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2081,10 +2058,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayCompound {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::ArrayCompound<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2165,10 +2142,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorBasic {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::VectorBasic<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2249,10 +2226,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorCompound {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::VectorCompound<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2333,10 +2310,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorVectorOptional {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::VectorOptional<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2417,10 +2394,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorArrayVectorNested {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::ArrayVectorNested<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2501,10 +2478,10 @@ pub mod protocol {
     }
 
     impl ::fidl_next::TwoWayMethod for ErrorResource {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::Resource<'static>,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -2562,54 +2539,54 @@ pub mod protocol {
                 uint8: impl ::fidl_next::Encode<u8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU16,
+                    ::fidl_next::wire::Uint16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU64,
+                    ::fidl_next::wire::Uint64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int8: impl ::fidl_next::Encode<i8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI16,
+                    ::fidl_next::wire::Int16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF32,
+                    ::fidl_next::wire::Float32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF64,
+                    ::fidl_next::wire::Float64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireString<'static>,
+                    ::fidl_next::wire::String<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalString<'static>,
+                    ::fidl_next::wire::OptionalString<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -2668,54 +2645,54 @@ pub mod protocol {
                 uint8: impl ::fidl_next::Encode<u8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU16,
+                    ::fidl_next::wire::Uint16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU64,
+                    ::fidl_next::wire::Uint64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int8: impl ::fidl_next::Encode<i8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI16,
+                    ::fidl_next::wire::Int16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF32,
+                    ::fidl_next::wire::Float32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF64,
+                    ::fidl_next::wire::Float64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireString<'static>,
+                    ::fidl_next::wire::String<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalString<'static>,
+                    ::fidl_next::wire::OptionalString<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayBasic, ___T>
@@ -2805,7 +2782,7 @@ pub mod protocol {
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -2882,7 +2859,7 @@ pub mod protocol {
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -2949,17 +2926,17 @@ pub mod protocol {
                 >,
 
                 array_uint16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU16; 5],
+                    [::fidl_next::wire::Uint16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU32; 5],
+                    [::fidl_next::wire::Uint32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU64; 5],
+                    [::fidl_next::wire::Uint64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -2969,37 +2946,37 @@ pub mod protocol {
                 >,
 
                 array_int16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI16; 5],
+                    [::fidl_next::wire::Int16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI32; 5],
+                    [::fidl_next::wire::Int32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI64; 5],
+                    [::fidl_next::wire::Int64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF32; 5],
+                    [::fidl_next::wire::Float32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF64; 5],
+                    [::fidl_next::wire::Float64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireString<'static>; 5],
+                    [::fidl_next::wire::String<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_opt_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireOptionalString<'static>; 5],
+                    [::fidl_next::wire::OptionalString<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3061,17 +3038,17 @@ pub mod protocol {
                 >,
 
                 array_uint16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU16; 5],
+                    [::fidl_next::wire::Uint16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU32; 5],
+                    [::fidl_next::wire::Uint32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU64; 5],
+                    [::fidl_next::wire::Uint64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -3081,37 +3058,37 @@ pub mod protocol {
                 >,
 
                 array_int16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI16; 5],
+                    [::fidl_next::wire::Int16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI32; 5],
+                    [::fidl_next::wire::Int32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI64; 5],
+                    [::fidl_next::wire::Int64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF32; 5],
+                    [::fidl_next::wire::Float32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF64; 5],
+                    [::fidl_next::wire::Float64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireString<'static>; 5],
+                    [::fidl_next::wire::String<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_opt_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireOptionalString<'static>; 5],
+                    [::fidl_next::wire::OptionalString<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayArrayBasic, ___T>
@@ -3203,7 +3180,7 @@ pub mod protocol {
                 >,
 
                 array_opt_struct: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireBox<'static, crate::wire::Struct>; 5],
+                    [::fidl_next::wire::Box<'static, crate::wire::Struct>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -3280,7 +3257,7 @@ pub mod protocol {
                 >,
 
                 array_opt_struct: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireBox<'static, crate::wire::Struct>; 5],
+                    [::fidl_next::wire::Box<'static, crate::wire::Struct>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -3342,65 +3319,62 @@ pub mod protocol {
                 &self,
 
                 vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, u8>,
+                    ::fidl_next::wire::Vector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, i8>,
+                    ::fidl_next::wire::Vector<'static, i8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireOptionalString<'static>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::OptionalString<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3457,65 +3431,62 @@ pub mod protocol {
                 &self,
 
                 vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, u8>,
+                    ::fidl_next::wire::Vector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, i8>,
+                    ::fidl_next::wire::Vector<'static, i8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireOptionalString<'static>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::OptionalString<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayVectorBasic, ___T>
@@ -3582,40 +3553,40 @@ pub mod protocol {
                 &self,
 
                 vector_bits: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Bits>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Bits>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_enum: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Enum>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Enum>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Table<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Table<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire_optional::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire_optional::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3662,40 +3633,40 @@ pub mod protocol {
                 &self,
 
                 vector_bits: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Bits>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Bits>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_enum: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Enum>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Enum>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Table<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Table<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire_optional::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire_optional::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayVectorCompound, ___T>
@@ -3752,27 +3723,24 @@ pub mod protocol {
                 &self,
 
                 opt_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, u8>,
+                    ::fidl_next::wire::OptionalVector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
-                        'static,
-                        ::fidl_next::wire::WireString<'static>,
-                    >,
+                    ::fidl_next::wire::OptionalVector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::OptionalVector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
+                    ::fidl_next::wire::OptionalVector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -3814,27 +3782,24 @@ pub mod protocol {
                 &self,
 
                 opt_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, u8>,
+                    ::fidl_next::wire::OptionalVector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
-                        'static,
-                        ::fidl_next::wire::WireString<'static>,
-                    >,
+                    ::fidl_next::wire::OptionalVector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::OptionalVector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
+                    ::fidl_next::wire::OptionalVector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -3891,20 +3856,17 @@ pub mod protocol {
                 >,
 
                 array_vector_uint8: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireVector<'static, u8>; 5],
+                    [::fidl_next::wire::Vector<'static, u8>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_array_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, [u8; 5]>,
+                    ::fidl_next::wire::Vector<'static, [u8; 5]>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireVector<'static, u8>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, u8>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3950,20 +3912,17 @@ pub mod protocol {
                 >,
 
                 array_vector_uint8: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireVector<'static, u8>; 5],
+                    [::fidl_next::wire::Vector<'static, u8>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_array_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, [u8; 5]>,
+                    ::fidl_next::wire::Vector<'static, [u8; 5]>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireVector<'static, u8>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, u8>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayArrayVectorNested, ___T>
@@ -4014,28 +3973,22 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireVmo,
+                    ::fidl_next::wire::fuchsia::Vmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4055,19 +4008,19 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalNullableHandle,
+                    ::fidl_next::wire::fuchsia::OptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalVmo,
+                    ::fidl_next::wire::fuchsia::OptionalVmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_client_end: impl ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -4075,13 +4028,13 @@ pub mod protocol {
                 opt_server_end: impl ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4091,28 +4044,24 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireNullableHandle; 5],
+                    [::fidl_next::wire::fuchsia::NullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_vmo: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireVmo; 5],
+                    [::fidl_next::wire::fuchsia::Vmo; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_client_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_server_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4132,52 +4081,49 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::NullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::fuchsia::WireVmo>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ClientEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ServerEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceTable<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceTable<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceUnion<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceUnion<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4265,28 +4211,22 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireVmo,
+                    ::fidl_next::wire::fuchsia::Vmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4306,19 +4246,19 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalNullableHandle,
+                    ::fidl_next::wire::fuchsia::OptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalVmo,
+                    ::fidl_next::wire::fuchsia::OptionalVmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_client_end: impl ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -4326,13 +4266,13 @@ pub mod protocol {
                 opt_server_end: impl ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4342,28 +4282,24 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireNullableHandle; 5],
+                    [::fidl_next::wire::fuchsia::NullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_vmo: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireVmo; 5],
+                    [::fidl_next::wire::fuchsia::Vmo; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_client_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_server_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4383,52 +4319,49 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::NullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::fuchsia::WireVmo>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ClientEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ServerEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceTable<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceTable<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceUnion<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceUnion<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TwoWayResource, ___T>
@@ -4539,54 +4472,54 @@ pub mod protocol {
                 uint8: impl ::fidl_next::Encode<u8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU16,
+                    ::fidl_next::wire::Uint16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU32,
+                    ::fidl_next::wire::Uint32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireU64,
+                    ::fidl_next::wire::Uint64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int8: impl ::fidl_next::Encode<i8, <___T as ::fidl_next::Transport>::SendBuffer>,
 
                 int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI16,
+                    ::fidl_next::wire::Int16,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI32,
+                    ::fidl_next::wire::Int32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireI64,
+                    ::fidl_next::wire::Int64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF32,
+                    ::fidl_next::wire::Float32,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireF64,
+                    ::fidl_next::wire::Float64,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireString<'static>,
+                    ::fidl_next::wire::String<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalString<'static>,
+                    ::fidl_next::wire::OptionalString<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4665,7 +4598,7 @@ pub mod protocol {
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4722,17 +4655,17 @@ pub mod protocol {
                 >,
 
                 array_uint16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU16; 5],
+                    [::fidl_next::wire::Uint16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU32; 5],
+                    [::fidl_next::wire::Uint32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_uint64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireU64; 5],
+                    [::fidl_next::wire::Uint64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4742,37 +4675,37 @@ pub mod protocol {
                 >,
 
                 array_int16: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI16; 5],
+                    [::fidl_next::wire::Int16; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI32; 5],
+                    [::fidl_next::wire::Int32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_int64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireI64; 5],
+                    [::fidl_next::wire::Int64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float32: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF32; 5],
+                    [::fidl_next::wire::Float32; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_float64: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireF64; 5],
+                    [::fidl_next::wire::Float64; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireString<'static>; 5],
+                    [::fidl_next::wire::String<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_opt_string: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireOptionalString<'static>; 5],
+                    [::fidl_next::wire::OptionalString<'static>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -4854,7 +4787,7 @@ pub mod protocol {
                 >,
 
                 array_opt_struct: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireBox<'static, crate::wire::Struct>; 5],
+                    [::fidl_next::wire::Box<'static, crate::wire::Struct>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4906,65 +4839,62 @@ pub mod protocol {
                 &self,
 
                 vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, u8>,
+                    ::fidl_next::wire::Vector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_uint64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireU64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Uint64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, i8>,
+                    ::fidl_next::wire::Vector<'static, i8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int16: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI16>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int16>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_int64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireI64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float32: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF32>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float32>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_float64: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireF64>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Float64>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::WireString<'static>>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireOptionalString<'static>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::OptionalString<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -5021,40 +4951,40 @@ pub mod protocol {
                 &self,
 
                 vector_bits: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Bits>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Bits>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_enum: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Enum>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Enum>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Table<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Table<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_opt_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire_optional::Union<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire_optional::Union<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -5101,27 +5031,24 @@ pub mod protocol {
                 &self,
 
                 opt_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, u8>,
+                    ::fidl_next::wire::OptionalVector<'static, u8>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_string: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
-                        'static,
-                        ::fidl_next::wire::WireString<'static>,
-                    >,
+                    ::fidl_next::wire::OptionalVector<'static, ::fidl_next::wire::String<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<'static, crate::wire::Struct>,
+                    ::fidl_next::wire::OptionalVector<'static, crate::wire::Struct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vector_opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireOptionalVector<
+                    ::fidl_next::wire::OptionalVector<
                         'static,
-                        ::fidl_next::wire::WireBox<'static, crate::wire::Struct>,
+                        ::fidl_next::wire::Box<'static, crate::wire::Struct>,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -5168,20 +5095,17 @@ pub mod protocol {
                 >,
 
                 array_vector_uint8: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::WireVector<'static, u8>; 5],
+                    [::fidl_next::wire::Vector<'static, u8>; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_array_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, [u8; 5]>,
+                    ::fidl_next::wire::Vector<'static, [u8; 5]>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vector_uint8: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::WireVector<'static, u8>,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Vector<'static, u8>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -5222,28 +5146,22 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireNullableHandle,
+                    ::fidl_next::wire::fuchsia::NullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireVmo,
+                    ::fidl_next::wire::fuchsia::Vmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >,
+                    ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5263,19 +5181,19 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalNullableHandle,
+                    ::fidl_next::wire::fuchsia::OptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::fuchsia::WireOptionalVmo,
+                    ::fidl_next::wire::fuchsia::OptionalVmo,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_client_end: impl ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
@@ -5283,13 +5201,13 @@ pub mod protocol {
                 opt_server_end: impl ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 opt_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireBox<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Box<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5299,28 +5217,24 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireNullableHandle; 5],
+                    [::fidl_next::wire::fuchsia::NullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_vmo: impl ::fidl_next::Encode<
-                    [::fidl_next::wire::fuchsia::WireVmo; 5],
+                    [::fidl_next::wire::fuchsia::Vmo; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_client_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ClientEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 array_server_end: impl ::fidl_next::Encode<
-                    [::fidl_next::ServerEnd<
-                        crate::Protocol,
-                        ::fidl_next::wire::fuchsia::WireChannel,
-                    >; 5],
+                    [::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::wire::fuchsia::Channel>;
+                        5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5340,52 +5254,49 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
-                        'static,
-                        ::fidl_next::wire::fuchsia::WireNullableHandle,
-                    >,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::NullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_vmo: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::fuchsia::WireVmo>,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_client_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ClientEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_server_end: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<
+                    ::fidl_next::wire::Vector<
                         'static,
                         ::fidl_next::ServerEnd<
                             crate::Protocol,
-                            ::fidl_next::wire::fuchsia::WireChannel,
+                            ::fidl_next::wire::fuchsia::Channel,
                         >,
                     >,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_struct: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceStruct>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceStruct>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_table: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceTable<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceTable<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
                 vector_union: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireVector<'static, crate::wire::ResourceUnion<'static>>,
+                    ::fidl_next::wire::Vector<'static, crate::wire::ResourceUnion<'static>>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>

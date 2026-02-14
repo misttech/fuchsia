@@ -4,8 +4,6 @@
 
 mod codec;
 mod has_executor;
-mod wire_handle;
-mod wire_types;
+pub mod wire;
 
 pub use codec::*;
-pub use wire_handle::*;

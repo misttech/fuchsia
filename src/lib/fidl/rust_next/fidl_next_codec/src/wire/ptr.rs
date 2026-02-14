@@ -7,22 +7,21 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::wire::WireU64;
-use crate::{Chunk, DecodeError, Slot};
+use crate::{Chunk, DecodeError, Slot, wire};
 use fidl_constants::{ALLOC_ABSENT_U64, ALLOC_PRESENT_U64};
 
 /// A raw FIDL pointer
 #[repr(C, align(8))]
-pub union WirePointer<'de, T> {
-    encoded: WireU64,
+pub union Pointer<'de, T> {
+    encoded: wire::Uint64,
     decoded: *mut T,
     _phantom: PhantomData<&'de mut [Chunk]>,
 }
 
-unsafe impl<T: Send> Send for WirePointer<'_, T> {}
-unsafe impl<T: Sync> Sync for WirePointer<'_, T> {}
+unsafe impl<T: Send> Send for Pointer<'_, T> {}
+unsafe impl<T: Sync> Sync for Pointer<'_, T> {}
 
-impl<'de, T> WirePointer<'de, T> {
+impl<'de, T> Pointer<'de, T> {
     /// Returns whether the wire pointer was encoded present.
     pub fn is_encoded_present(slot: Slot<'_, Self>) -> Result<bool, DecodeError> {
         // `unsafe` block required in the next version of munge
@@ -46,7 +45,7 @@ impl<'de, T> WirePointer<'de, T> {
             munge!(let Self { encoded } = out);
             encoded
         };
-        encoded.write(WireU64(ALLOC_PRESENT_U64));
+        encoded.write(wire::Uint64(ALLOC_PRESENT_U64));
     }
 
     /// Encodes that a pointer is absent in a slot.
@@ -57,7 +56,7 @@ impl<'de, T> WirePointer<'de, T> {
             munge!(let Self { encoded } = out);
             encoded
         };
-        encoded.write(WireU64(ALLOC_ABSENT_U64));
+        encoded.write(wire::Uint64(ALLOC_ABSENT_U64));
     }
 
     /// Sets the decoded value of the pointer.

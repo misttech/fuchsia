@@ -6,17 +6,18 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::wire::{WireEnvelope, WirePointer, WireU64};
-use crate::{Constrained, DecodeError, Decoder, DecoderExt as _, Slot, ValidationError, Wire};
+use crate::{
+    Constrained, DecodeError, Decoder, DecoderExt as _, Slot, ValidationError, Wire, wire,
+};
 
 /// A FIDL table
 #[repr(C)]
-pub struct WireTable<'de> {
-    len: WireU64,
-    ptr: WirePointer<'de, WireEnvelope>,
+pub struct Table<'de> {
+    len: wire::Uint64,
+    ptr: wire::Pointer<'de, wire::Envelope>,
 }
 
-impl Constrained for WireTable<'_> {
+impl Constrained for Table<'_> {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -24,8 +25,8 @@ impl Constrained for WireTable<'_> {
     }
 }
 
-unsafe impl Wire for WireTable<'static> {
-    type Narrowed<'de> = WireTable<'de>;
+unsafe impl Wire for Table<'static> {
+    type Narrowed<'de> = Table<'de>;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {
@@ -33,13 +34,13 @@ unsafe impl Wire for WireTable<'static> {
     }
 }
 
-impl<'de> WireTable<'de> {
+impl<'de> Table<'de> {
     /// Encodes that a table contains `len` values in a slot.
     #[inline]
     pub fn encode_len(out: &mut MaybeUninit<Self>, len: usize) {
         munge!(let Self { len: table_len, ptr } = out);
-        table_len.write(WireU64(len.try_into().unwrap()));
-        WirePointer::encode_present(ptr);
+        table_len.write(wire::Uint64(len.try_into().unwrap()));
+        wire::Pointer::encode_present(ptr);
     }
 
     /// Decodes the fields of the table with a decoding function.
@@ -49,21 +50,21 @@ impl<'de> WireTable<'de> {
     pub fn decode_with<D: Decoder<'de> + ?Sized>(
         slot: Slot<'_, Self>,
         decoder: &mut D,
-        f: impl Fn(i64, Slot<'_, WireEnvelope>, &mut D) -> Result<(), DecodeError>,
+        f: impl Fn(i64, Slot<'_, wire::Envelope>, &mut D) -> Result<(), DecodeError>,
     ) -> Result<(), DecodeError> {
         munge!(let Self { len, mut ptr } = slot);
 
-        if WirePointer::is_encoded_present(ptr.as_mut())? {
-            let mut envelopes = decoder.take_slice_slot::<WireEnvelope>(**len as usize)?;
+        if wire::Pointer::is_encoded_present(ptr.as_mut())? {
+            let mut envelopes = decoder.take_slice_slot::<wire::Envelope>(**len as usize)?;
 
             for i in 0..**len as usize {
                 let mut envelope = envelopes.index(i);
-                if !WireEnvelope::is_encoded_zero(envelope.as_mut()) {
+                if !wire::Envelope::is_encoded_zero(envelope.as_mut()) {
                     f((i + 1) as i64, envelope, decoder)?;
                 }
             }
 
-            WirePointer::set_decoded_slice(ptr, envelopes);
+            wire::Pointer::set_decoded_slice(ptr, envelopes);
         } else if **len != 0 {
             return Err(DecodeError::InvalidOptionalSize(**len));
         }
@@ -72,10 +73,10 @@ impl<'de> WireTable<'de> {
     }
 }
 
-impl WireTable<'_> {
+impl Table<'_> {
     /// Returns a reference to the envelope for the given ordinal, if any.
     #[inline]
-    pub fn get(&self, ordinal: usize) -> Option<&WireEnvelope> {
+    pub fn get(&self, ordinal: usize) -> Option<&wire::Envelope> {
         if ordinal == 0 || ordinal > *self.len as usize {
             return None;
         }

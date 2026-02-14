@@ -51,7 +51,7 @@ pub mod natural {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
-            let _ = value.write(::fidl_next::wire::WireU32::from(match *self {
+            let _ = value.write(::fidl_next::wire::Uint32::from(match *self {
                 ObjType::None => 0,
 
                 ObjType::Vmo => 3,
@@ -94,7 +94,7 @@ pub mod wire {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct ObjType {
-        pub(crate) value: ::fidl_next::wire::WireU32,
+        pub(crate) value: ::fidl_next::wire::Uint32,
     }
 
     impl ::fidl_next::Constrained for ObjType {
@@ -118,9 +118,9 @@ pub mod wire {
     }
 
     impl ObjType {
-        pub const NONE: ObjType = ObjType { value: ::fidl_next::wire::WireU32(0) };
+        pub const NONE: ObjType = ObjType { value: ::fidl_next::wire::Uint32(0) };
 
-        pub const VMO: ObjType = ObjType { value: ::fidl_next::wire::WireU32(3) };
+        pub const VMO: ObjType = ObjType { value: ::fidl_next::wire::Uint32(3) };
     }
 
     unsafe impl<___D> ::fidl_next::Decode<___D> for ObjType

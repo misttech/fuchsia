@@ -26,7 +26,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -56,7 +56,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ParentGetChildResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::ParentGetChildResponse>,
             ___E,
         > for ParentGetChildResponse
     where
@@ -68,15 +68,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ParentGetChildResponse>,
+                ::fidl_next::wire::Box<'static, crate::wire::ParentGetChildResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -92,7 +92,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>>
+                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -124,7 +124,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -154,7 +154,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ParentGetChildRequestResponse>,
+            ::fidl_next::wire::Box<'static, crate::wire::ParentGetChildRequestResponse>,
             ___E,
         > for ParentGetChildRequestResponse
     where
@@ -167,15 +167,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ParentGetChildRequestResponse>,
+                ::fidl_next::wire::Box<'static, crate::wire::ParentGetChildRequestResponse>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -193,7 +193,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>>
+                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -225,7 +225,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -255,7 +255,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ParentTakeChildRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::ParentTakeChildRequest>,
             ___E,
         > for ParentTakeChildRequest
     where
@@ -267,15 +267,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ParentTakeChildRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::ParentTakeChildRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -291,7 +291,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>>
+                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -323,7 +323,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>, ___E>
+                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -353,7 +353,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::ParentTakeChildRequestRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::ParentTakeChildRequestRequest>,
             ___E,
         > for ParentTakeChildRequestRequest
     where
@@ -366,15 +366,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::ParentTakeChildRequestRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::ParentTakeChildRequestRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -392,7 +392,7 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>>
+                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -413,7 +413,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ParentGetChildResponse {
-        pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+        pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ParentGetChildResponse>(), 4);
@@ -483,7 +483,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ParentGetChildRequestResponse {
-        pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+        pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ParentGetChildRequestResponse>(), 4);
@@ -553,7 +553,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ParentTakeChildRequest {
-        pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+        pub c: ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ParentTakeChildRequest>(), 4);
@@ -623,7 +623,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ParentTakeChildRequestRequest {
-        pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+        pub r: ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ParentTakeChildRequestRequest>(), 4);
@@ -709,7 +709,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
     {
@@ -744,7 +744,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
     {
@@ -779,7 +779,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
     {
@@ -814,7 +814,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
-                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                 ___E,
             >,
     {
@@ -978,7 +978,7 @@ pub mod parent {
                 &self,
 
                 c: impl ::fidl_next::Encode<
-                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                    ::fidl_next::ClientEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -1008,7 +1008,7 @@ pub mod parent {
                 &self,
 
                 r: impl ::fidl_next::Encode<
-                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::WireChannel>,
+                    ::fidl_next::ServerEnd<crate::Child, ::fidl_next::wire::fuchsia::Channel>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>

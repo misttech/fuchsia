@@ -10,7 +10,7 @@
 #[repr(C)]
 pub struct {{ name }}{{ de }} {
     {% if is_empty %}
-        pub(crate) _empty: fidl_next::wire::WireEmptyStructPlaceholder,
+        pub(crate) _empty: fidl_next::wire::EmptyStruct,
     {% endif %}
     {% for member in strct.members %}
         pub {{ member.name.snake() }}: {{ self.wire_type(member.ty) }},

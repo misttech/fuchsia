@@ -6,36 +6,34 @@ use core::fmt;
 use core::mem::{MaybeUninit, forget};
 
 use fidl_constants::{ALLOC_ABSENT_U32, ALLOC_PRESENT_U32};
-use zx::NullableHandle;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
-use crate::wire::WireU32;
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, ValidationError, Wire, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
 
 /// TODO(https://fxbug.dev/465766514): remove
-pub type WireNullableHandle = WireHandle;
+pub type NullableHandle = Handle;
 
 /// A Zircon handle.
 #[repr(C, align(4))]
-pub union WireHandle {
-    encoded: WireU32,
+pub union Handle {
+    encoded: wire::Uint32,
     decoded: zx_handle_t,
 }
 
-impl Drop for WireHandle {
+impl Drop for Handle {
     fn drop(&mut self) {
         // SAFETY: `WireHandle` is always a valid `Handle`.
-        let handle = unsafe { NullableHandle::from_raw(self.as_raw_handle()) };
+        let handle = unsafe { zx::NullableHandle::from_raw(self.as_raw_handle()) };
         drop(handle);
     }
 }
 
 // TODO: validate handle rights
-impl Constrained for WireHandle {
+impl Constrained for Handle {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -43,7 +41,7 @@ impl Constrained for WireHandle {
     }
 }
 
-unsafe impl Wire for WireHandle {
+unsafe impl Wire for Handle {
     type Narrowed<'de> = Self;
 
     #[inline]
@@ -52,11 +50,11 @@ unsafe impl Wire for WireHandle {
     }
 }
 
-impl WireHandle {
+impl Handle {
     /// Encodes a handle as present in an output.
     pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { encoded } = out);
-        encoded.write(WireU32(ALLOC_PRESENT_U32));
+        encoded.write(wire::Uint32(ALLOC_PRESENT_U32));
     }
 
     /// Returns whether the underlying `zx_handle_t` is invalid.
@@ -71,13 +69,13 @@ impl WireHandle {
     }
 }
 
-impl fmt::Debug for WireHandle {
+impl fmt::Debug for Handle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_raw_handle().fmt(f)
     }
 }
 
-unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
+unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for Handle {
     fn decode(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
@@ -99,17 +97,17 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
 }
 
 /// TODO(https://fxbug.dev/465766514): remove
-pub type WireOptionalNullableHandle = WireOptionalHandle;
+pub type OptionalNullableHandle = OptionalHandle;
 
 /// An optional Zircon handle.
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct WireOptionalHandle {
-    handle: WireHandle,
+pub struct OptionalHandle {
+    handle: Handle,
 }
 
 // TODO: validate handle rights
-impl Constrained for WireOptionalHandle {
+impl Constrained for OptionalHandle {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -117,27 +115,27 @@ impl Constrained for WireOptionalHandle {
     }
 }
 
-unsafe impl Wire for WireOptionalHandle {
+unsafe impl Wire for OptionalHandle {
     type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { handle } = out);
-        WireHandle::zero_padding(handle);
+        Handle::zero_padding(handle);
     }
 }
 
-impl WireOptionalHandle {
+impl OptionalHandle {
     /// Encodes a handle as present in a slot.
     pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { handle } = out);
-        WireHandle::set_encoded_present(handle);
+        Handle::set_encoded_present(handle);
     }
 
     /// Encodes a handle as absent in an output.
     pub fn set_encoded_absent(out: &mut MaybeUninit<Self>) {
-        munge!(let Self { handle: WireHandle { encoded } } = out);
-        encoded.write(WireU32(ZX_HANDLE_INVALID));
+        munge!(let Self { handle: Handle { encoded } } = out);
+        encoded.write(wire::Uint32(ZX_HANDLE_INVALID));
     }
 
     /// Returns whether a handle is present.
@@ -157,16 +155,16 @@ impl WireOptionalHandle {
     }
 }
 
-unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
+unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for OptionalHandle {
     fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { handle: mut wire_handle } = slot.as_mut());
-        munge!(let WireHandle { encoded } = wire_handle.as_mut());
+        munge!(let Handle { encoded } = wire_handle.as_mut());
 
         match **encoded {
             ALLOC_ABSENT_U32 => (),
             ALLOC_PRESENT_U32 => {
                 let handle = decoder.take_raw_handle()?;
-                munge!(let WireHandle { mut decoded } = wire_handle);
+                munge!(let Handle { mut decoded } = wire_handle);
                 decoded.write(handle);
             }
             e => return Err(DecodeError::InvalidHandlePresence(e)),
@@ -175,61 +173,61 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
     }
 }
 
-unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for NullableHandle {
+unsafe impl<E: HandleEncoder + ?Sized> Encode<Handle, E> for zx::NullableHandle {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireHandle>,
+        out: &mut MaybeUninit<Handle>,
         _constraint: (),
     ) -> Result<(), EncodeError> {
         if self.is_invalid() {
             Err(EncodeError::InvalidRequiredHandle)
         } else {
             encoder.push_handle(self)?;
-            WireHandle::set_encoded_present(out);
+            Handle::set_encoded_present(out);
             Ok(())
         }
     }
 }
 
-impl FromWire<WireHandle> for NullableHandle {
-    fn from_wire(wire: WireHandle) -> Self {
+impl FromWire<Handle> for zx::NullableHandle {
+    fn from_wire(wire: Handle) -> Self {
         // SAFETY: `WireHandle` is always a valid `NullableHandle`.
-        let handle = unsafe { NullableHandle::from_raw(wire.as_raw_handle()) };
+        let handle = unsafe { zx::NullableHandle::from_raw(wire.as_raw_handle()) };
         forget(wire);
         handle
     }
 }
 
-impl IntoNatural for WireHandle {
-    type Natural = NullableHandle;
+impl IntoNatural for Handle {
+    type Natural = zx::NullableHandle;
 }
 
-unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for NullableHandle {
+unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<OptionalHandle, E> for zx::NullableHandle {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireOptionalHandle>,
+        out: &mut MaybeUninit<OptionalHandle>,
         _constraint: (),
     ) -> Result<(), EncodeError> {
         if let Some(handle) = this {
             encoder.push_handle(handle)?;
-            WireOptionalHandle::set_encoded_present(out);
+            OptionalHandle::set_encoded_present(out);
         } else {
-            WireOptionalHandle::set_encoded_absent(out);
+            OptionalHandle::set_encoded_absent(out);
         }
         Ok(())
     }
 }
 
-impl FromWireOption<WireOptionalHandle> for NullableHandle {
-    fn from_wire_option(wire: WireOptionalHandle) -> Option<Self> {
+impl FromWireOption<OptionalHandle> for zx::NullableHandle {
+    fn from_wire_option(wire: OptionalHandle) -> Option<Self> {
         let raw_handle = wire.as_raw_handle();
         forget(wire);
-        raw_handle.map(|raw| unsafe { NullableHandle::from_raw(raw) })
+        raw_handle.map(|raw| unsafe { zx::NullableHandle::from_raw(raw) })
     }
 }
 
-impl IntoNatural for WireOptionalHandle {
-    type Natural = Option<NullableHandle>;
+impl IntoNatural for OptionalHandle {
+    type Natural = Option<zx::NullableHandle>;
 }

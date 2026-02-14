@@ -31,7 +31,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::EmptyResourceStruct>,
+            ::fidl_next::wire::Box<'static, crate::wire::EmptyResourceStruct>,
             ___E,
         > for EmptyResourceStruct
     where
@@ -43,15 +43,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::EmptyResourceStruct>,
+                ::fidl_next::wire::Box<'static, crate::wire::EmptyResourceStruct>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -96,23 +96,23 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
             let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
-                ::fidl_next::wire::WireEnvelope,
+                ::fidl_next::wire::Envelope,
             >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
-                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::Table::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -188,7 +188,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::Union::encode_absent(raw);
             }
 
             Ok(())
@@ -266,36 +266,36 @@ pub mod natural {
 
             let max_ord = self.__max_ordinal();
 
-            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+            let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
             ::fidl_next::Wire::zero_padding(&mut out);
 
             let mut preallocated = ::fidl_next::EncoderExt::preallocate::<
-                ::fidl_next::wire::WireEnvelope,
+                ::fidl_next::wire::Envelope,
             >(encoder, max_ord);
 
             for i in 1..=max_ord {
                 match i {
                     1 => {
                         if let Some(value) = self.h.take() {
-                            ::fidl_next::wire::WireEnvelope::encode_value::<
-                                ::fidl_next::wire::fuchsia::WireVmo,
+                            ::fidl_next::wire::Envelope::encode_value::<
+                                ::fidl_next::wire::fuchsia::Vmo,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
-                            ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                            ::fidl_next::wire::Envelope::encode_zero(&mut out)
                         }
                     }
 
-                    _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                    _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
                 }
                 unsafe {
                     preallocated.write_next(out.assume_init_ref());
                 }
             }
 
-            ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+            ::fidl_next::wire::Table::encode_len(table, max_ord);
 
             Ok(())
         }
@@ -311,7 +311,7 @@ pub mod natural {
             Self {
                 h: h.map(|envelope| {
                     ::fidl_next::FromWire::from_wire(unsafe {
-                        envelope.read_unchecked::<::fidl_next::wire::fuchsia::WireVmo>()
+                        envelope.read_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
                     })
                 }),
             }
@@ -352,9 +352,9 @@ pub mod natural {
             ::fidl_next::munge!(let crate::wire::UnionWithHandle { raw, _phantom: _ } = out);
 
             match self {
-                Self::H(value) => ::fidl_next::wire::RawWireUnion::encode_as::<
+                Self::H(value) => ::fidl_next::wire::Union::encode_as::<
                     ___E,
-                    ::fidl_next::wire::fuchsia::WireVmo,
+                    ::fidl_next::wire::fuchsia::Vmo,
                 >(value, 1, encoder, raw, ())?,
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -386,7 +386,7 @@ pub mod natural {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
                 ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
-                ::fidl_next::wire::RawWireUnion::encode_absent(raw);
+                ::fidl_next::wire::Union::encode_absent(raw);
             }
 
             Ok(())
@@ -399,7 +399,7 @@ pub mod natural {
             let wire = ::core::mem::ManuallyDrop::new(wire);
             match wire.raw.ordinal() {
                 1 => Self::H(::fidl_next::FromWire::from_wire(unsafe {
-                    wire.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::WireVmo>()
+                    wire.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
                 })),
 
                 ord => return Self::UnknownOrdinal_(ord as u64),
@@ -524,7 +524,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::HandlesInTypes<'static>>,
+            ::fidl_next::wire::Box<'static, crate::wire::HandlesInTypes<'static>>,
             ___E,
         > for HandlesInTypes
     where
@@ -536,15 +536,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::HandlesInTypes<'static>>,
+                ::fidl_next::wire::Box<'static, crate::wire::HandlesInTypes<'static>>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -581,7 +581,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct EmptyResourceStruct {
-        pub(crate) _empty: fidl_next::wire::WireEmptyStructPlaceholder,
+        pub(crate) _empty: fidl_next::wire::EmptyStruct,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<EmptyResourceStruct>(), 1);
@@ -648,7 +648,7 @@ pub mod wire {
     /// The wire type corresponding to [`EmptyResourceTable`].
     #[repr(C)]
     pub struct EmptyResourceTable<'de> {
-        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::Table<'de>,
     }
 
     impl<'de> Drop for EmptyResourceTable<'de> {
@@ -672,7 +672,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::wire::WireTable::zero_padding(table);
+            ::fidl_next::wire::Table::zero_padding(table);
         }
     }
 
@@ -688,15 +688,13 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::wire::WireTable::decode_with(
-                table,
-                decoder,
-                |ordinal, mut slot, decoder| match ordinal {
+            ::fidl_next::wire::Table::decode_with(table, decoder, |ordinal, mut slot, decoder| {
+                match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
-                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
-                },
-            )
+                    _ => ::fidl_next::wire::Envelope::decode_unknown(slot, decoder),
+                }
+            })
         }
     }
 
@@ -718,7 +716,7 @@ pub mod wire {
     /// The wire type corresponding to [`EmptyResourceUnion`].
     #[repr(transparent)]
     pub struct EmptyResourceUnion<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -747,7 +745,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
@@ -777,8 +775,8 @@ pub mod wire {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -800,13 +798,13 @@ pub mod wire {
     /// The wire type corresponding to [`TableWithHandle`].
     #[repr(C)]
     pub struct TableWithHandle<'de> {
-        pub(crate) table: ::fidl_next::wire::WireTable<'de>,
+        pub(crate) table: ::fidl_next::wire::Table<'de>,
     }
 
     impl<'de> Drop for TableWithHandle<'de> {
         fn drop(&mut self) {
             let _ = self.table.get(1).map(|envelope| unsafe {
-                envelope.read_unchecked::<::fidl_next::wire::fuchsia::WireVmo>()
+                envelope.read_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
             });
         }
     }
@@ -828,7 +826,7 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { table } = out);
-            ::fidl_next::wire::WireTable::zero_padding(table);
+            ::fidl_next::wire::Table::zero_padding(table);
         }
     }
 
@@ -844,29 +842,27 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
-            ::fidl_next::wire::WireTable::decode_with(
-                table,
-                decoder,
-                |ordinal, mut slot, decoder| match ordinal {
+            ::fidl_next::wire::Table::decode_with(table, decoder, |ordinal, mut slot, decoder| {
+                match ordinal {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
                     1 => {
-                        ::fidl_next::wire::WireEnvelope::decode_as::<
+                        ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            ::fidl_next::wire::fuchsia::WireVmo,
+                            ::fidl_next::wire::fuchsia::Vmo,
                         >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
                     }
 
-                    _ => ::fidl_next::wire::WireEnvelope::decode_unknown(slot, decoder),
-                },
-            )
+                    _ => ::fidl_next::wire::Envelope::decode_unknown(slot, decoder),
+                }
+            })
         }
     }
 
     impl<'de> TableWithHandle<'de> {
-        pub fn h(&self) -> ::core::option::Option<&::fidl_next::wire::fuchsia::WireVmo> {
+        pub fn h(&self) -> ::core::option::Option<&::fidl_next::wire::fuchsia::Vmo> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
     }
@@ -887,7 +883,7 @@ pub mod wire {
     /// The wire type corresponding to [`UnionWithHandle`].
     #[repr(transparent)]
     pub struct UnionWithHandle<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -896,7 +892,7 @@ pub mod wire {
             match self.raw.ordinal() {
                 1 => {
                     let _ = unsafe {
-                        self.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::WireVmo>()
+                        self.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
                     };
                 }
 
@@ -922,13 +918,13 @@ pub mod wire {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
     pub mod union_with_handle {
         pub enum Ref<'de> {
-            H(&'de ::fidl_next::wire::fuchsia::WireVmo),
+            H(&'de ::fidl_next::wire::fuchsia::Vmo),
 
             UnknownOrdinal_(u64),
         }
@@ -938,7 +934,7 @@ pub mod wire {
         pub fn as_ref(&self) -> crate::wire::union_with_handle::Ref<'_> {
             match self.raw.ordinal() {
                 1 => crate::wire::union_with_handle::Ref::H(unsafe {
-                    self.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::WireVmo>()
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::Vmo>()
                 }),
 
                 unknown => crate::wire::union_with_handle::Ref::UnknownOrdinal_(unknown),
@@ -958,13 +954,14 @@ pub mod wire {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::RawWireUnion::decode_as::<
-                    ___D,
-                    ::fidl_next::wire::fuchsia::WireVmo,
-                >(raw, decoder, ())?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                1 => ::fidl_next::wire::Union::decode_as::<___D, ::fidl_next::wire::fuchsia::Vmo>(
+                    raw,
+                    decoder,
+                    (),
+                )?,
 
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -975,7 +972,7 @@ pub mod wire {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self.raw.ordinal() {
                 1 => unsafe {
-                    self.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::WireVmo>().fmt(f)
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::Vmo>().fmt(f)
                 },
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             }
@@ -990,14 +987,14 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct HandlesInTypes<'de> {
-        pub normal_handle: ::fidl_next::wire::fuchsia::WireVmo,
+        pub normal_handle: ::fidl_next::wire::fuchsia::Vmo,
 
-        pub handle_in_vec: ::fidl_next::wire::WireVector<'de, ::fidl_next::wire::fuchsia::WireVmo>,
+        pub handle_in_vec: ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::Vmo>,
 
-        pub handle_in_array: [::fidl_next::wire::fuchsia::WireVmo; 5],
+        pub handle_in_array: [::fidl_next::wire::fuchsia::Vmo; 5],
 
         pub handle_in_mixed_vec_array:
-            ::fidl_next::wire::WireVector<'de, [::fidl_next::wire::fuchsia::WireVmo; 5]>,
+            ::fidl_next::wire::Vector<'de, [::fidl_next::wire::fuchsia::Vmo; 5]>,
 
         pub table_with_handle: crate::wire::TableWithHandle<'de>,
 
@@ -1157,7 +1154,7 @@ pub mod wire_optional {
 
     #[repr(transparent)]
     pub struct EmptyResourceUnion<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -1178,7 +1175,7 @@ pub mod wire_optional {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
@@ -1219,9 +1216,9 @@ pub mod wire_optional {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                0 => ::fidl_next::wire::Union::decode_absent(raw)?,
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -1240,7 +1237,7 @@ pub mod wire_optional {
 
     #[repr(transparent)]
     pub struct UnionWithHandle<'de> {
-        pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+        pub(crate) raw: ::fidl_next::wire::Union,
         pub(crate) _phantom: ::core::marker::PhantomData<&'de mut [::fidl_next::Chunk]>,
     }
 
@@ -1261,7 +1258,7 @@ pub mod wire_optional {
         #[inline]
         fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
             ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-            ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+            ::fidl_next::wire::Union::zero_padding(raw);
         }
     }
 
@@ -1302,14 +1299,15 @@ pub mod wire_optional {
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-            match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::RawWireUnion::decode_as::<
-                    ___D,
-                    ::fidl_next::wire::fuchsia::WireVmo,
-                >(raw, decoder, ())?,
+            match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
+                1 => ::fidl_next::wire::Union::decode_as::<___D, ::fidl_next::wire::fuchsia::Vmo>(
+                    raw,
+                    decoder,
+                    (),
+                )?,
 
-                0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
-                _ => ::fidl_next::wire::RawWireUnion::decode_unknown(raw, decoder)?,
+                0 => ::fidl_next::wire::Union::decode_absent(raw)?,
+                _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
             }
 
             Ok(())
@@ -1380,14 +1378,14 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireVmo, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::Vmo, ___E>,
         T1: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, ::fidl_next::wire::fuchsia::WireVmo>,
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::Vmo>,
                 ___E,
             >,
-        T2: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::WireVmo; 5], ___E>,
+        T2: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::Vmo; 5], ___E>,
         T3: ::fidl_next::Encode<
-                ::fidl_next::wire::WireVector<'static, [::fidl_next::wire::fuchsia::WireVmo; 5]>,
+                ::fidl_next::wire::Vector<'static, [::fidl_next::wire::fuchsia::Vmo; 5]>,
                 ___E,
             >,
         T4: ::fidl_next::Encode<crate::wire::TableWithHandle<'static>, ___E>,

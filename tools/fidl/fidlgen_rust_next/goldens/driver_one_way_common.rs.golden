@@ -19,7 +19,7 @@ pub mod natural {
             true
 
                 && <
-                    u32 as ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>
+                    u32 as ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -75,7 +75,7 @@ pub mod natural {
     }
 
     unsafe impl<___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::Payload>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Payload>, ___E>
         for Payload
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -86,15 +86,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Payload>,
+                ::fidl_next::wire::Box<'static, crate::wire::Payload>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -102,7 +102,7 @@ pub mod natural {
     }
 
     unsafe impl<'a, ___E>
-        ::fidl_next::EncodeOption<::fidl_next::wire::WireBox<'static, crate::wire::Payload>, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::wire::Box<'static, crate::wire::Payload>, ___E>
         for &'a Payload
     where
         ___E: ::fidl_next::Encoder + ?Sized,
@@ -113,15 +113,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::Payload>,
+                ::fidl_next::wire::Box<'static, crate::wire::Payload>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -131,13 +131,10 @@ pub mod natural {
     impl ::fidl_next::FromWire<crate::wire::Payload> for Payload {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Payload, Self> = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-            true
-
-                && <
-                    u32 as ::fidl_next::FromWire<::fidl_next::wire::WireU32>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-        )
+                true
+                    && <u32 as ::fidl_next::FromWire<::fidl_next::wire::Uint32>>::COPY_OPTIMIZATION
+                        .is_enabled(),
+            )
         };
 
         #[inline]
@@ -228,7 +225,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::OneWaySendRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::OneWaySendRequest>,
             ___E,
         > for OneWaySendRequest
     where
@@ -240,15 +237,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::OneWaySendRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::OneWaySendRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -257,7 +254,7 @@ pub mod natural {
 
     unsafe impl<'a, ___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::OneWaySendRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::OneWaySendRequest>,
             ___E,
         > for &'a OneWaySendRequest
     where
@@ -269,15 +266,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::OneWaySendRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::OneWaySendRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -318,7 +315,7 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct Payload {
-        pub value: ::fidl_next::wire::WireU32,
+        pub value: ::fidl_next::wire::Uint32,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<Payload>(), 4);
@@ -464,7 +461,7 @@ pub mod generic {
     unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::Payload, ___E> for Payload<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::wire::WireU32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::Uint32, ___E>,
     {
         #[inline]
         fn encode(

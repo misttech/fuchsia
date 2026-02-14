@@ -26,7 +26,7 @@ pub mod natural {
             true
 
                 && <
-                    ::core::option::Option<::fidl_next::fuchsia::zx::Vmo> as ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireOptionalVmo, ___E>
+                    ::core::option::Option<::fidl_next::fuchsia::zx::Vmo> as ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalVmo, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -56,7 +56,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableHandle>,
+            ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableHandle>,
             ___E,
         > for StructWithNullableHandle
     where
@@ -68,15 +68,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableHandle>,
+                ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableHandle>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -92,7 +92,7 @@ pub mod natural {
             true
 
                 && <
-                    ::core::option::Option<::fidl_next::fuchsia::zx::Vmo> as ::fidl_next::FromWire<::fidl_next::wire::fuchsia::WireOptionalVmo>
+                    ::core::option::Option<::fidl_next::fuchsia::zx::Vmo> as ::fidl_next::FromWire<::fidl_next::wire::fuchsia::OptionalVmo>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -131,7 +131,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ClientEnd<
                         crate::SimpleProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -163,7 +163,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableProtocol>,
+            ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableProtocol>,
             ___E,
         > for StructWithNullableProtocol
     where
@@ -176,15 +176,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableProtocol>,
+                ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableProtocol>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -205,7 +205,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ClientEnd<
                         crate::SimpleProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -245,7 +245,7 @@ pub mod natural {
                 > as ::fidl_next::Encode<
                     ::fidl_next::ServerEnd<
                         crate::SimpleProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                     ___E,
                 >>::COPY_OPTIMIZATION
@@ -277,7 +277,7 @@ pub mod natural {
 
     unsafe impl<___E>
         ::fidl_next::EncodeOption<
-            ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableRequest>,
+            ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableRequest>,
             ___E,
         > for StructWithNullableRequest
     where
@@ -290,15 +290,15 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<
-                ::fidl_next::wire::WireBox<'static, crate::wire::StructWithNullableRequest>,
+                ::fidl_next::wire::Box<'static, crate::wire::StructWithNullableRequest>,
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
                 ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-                ::fidl_next::wire::WireBox::encode_present(out);
+                ::fidl_next::wire::Box::encode_present(out);
             } else {
-                ::fidl_next::wire::WireBox::encode_absent(out);
+                ::fidl_next::wire::Box::encode_absent(out);
             }
 
             Ok(())
@@ -319,7 +319,7 @@ pub mod natural {
                 > as ::fidl_next::FromWire<
                     ::fidl_next::ServerEnd<
                         crate::SimpleProtocol,
-                        ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                        ::fidl_next::wire::fuchsia::OptionalChannel,
                     >,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -341,7 +341,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct StructWithNullableHandle {
-        pub val: ::fidl_next::wire::fuchsia::WireOptionalVmo,
+        pub val: ::fidl_next::wire::fuchsia::OptionalVmo,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<StructWithNullableHandle>(), 4);
@@ -413,7 +413,7 @@ pub mod wire {
     pub struct StructWithNullableProtocol {
         pub val: ::fidl_next::ClientEnd<
             crate::SimpleProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
     }
 
@@ -486,7 +486,7 @@ pub mod wire {
     pub struct StructWithNullableRequest {
         pub val: ::fidl_next::ServerEnd<
             crate::SimpleProtocol,
-            ::fidl_next::wire::fuchsia::WireOptionalChannel,
+            ::fidl_next::wire::fuchsia::OptionalChannel,
         >,
     }
 
@@ -572,7 +572,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::WireOptionalVmo, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::OptionalVmo, ___E>,
     {
         #[inline]
         fn encode(
@@ -607,7 +607,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<
                     crate::SimpleProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,
@@ -645,7 +645,7 @@ pub mod generic {
         T0: ::fidl_next::Encode<
                 ::fidl_next::ServerEnd<
                     crate::SimpleProtocol,
-                    ::fidl_next::wire::fuchsia::WireOptionalChannel,
+                    ::fidl_next::wire::fuchsia::OptionalChannel,
                 >,
                 ___E,
             >,

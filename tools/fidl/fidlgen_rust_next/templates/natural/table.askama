@@ -33,34 +33,34 @@ where
 
         let max_ord = self.__max_ordinal();
 
-        let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+        let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
         ::fidl_next::Wire::zero_padding(&mut out);
 
-        let mut preallocated = ::fidl_next::EncoderExt::preallocate::<::fidl_next::wire::WireEnvelope>(encoder, max_ord);
+        let mut preallocated = ::fidl_next::EncoderExt::preallocate::<::fidl_next::wire::Envelope>(encoder, max_ord);
 
         for i in 1..=max_ord {
             match i {
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = member.name.snake() %}
                     {{ member.ordinal }} => if let Some(value) = self.{{ member_name }}.take() {
-                        ::fidl_next::wire::WireEnvelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
+                        ::fidl_next::wire::Envelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
                             value,
                             preallocated.encoder,
                             &mut out,
                             {{ self.constraint(member.ty) }},
                         )?;
                     } else {
-                        ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                        ::fidl_next::wire::Envelope::encode_zero(&mut out)
                     }
                 {% endfor %}
-                _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
             }
             unsafe {
                 preallocated.write_next(out.assume_init_ref());
             }
         }
 
-        ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+        ::fidl_next::wire::Table::encode_len(table, max_ord);
 
         Ok(())
     }
@@ -82,34 +82,34 @@ where
 
         let max_ord = self.__max_ordinal();
 
-        let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::WireEnvelope>::uninit();
+        let mut out = ::core::mem::MaybeUninit::<::fidl_next::wire::Envelope>::uninit();
         ::fidl_next::Wire::zero_padding(&mut out);
 
-        let mut preallocated = ::fidl_next::EncoderExt::preallocate::<::fidl_next::wire::WireEnvelope>(encoder, max_ord);
+        let mut preallocated = ::fidl_next::EncoderExt::preallocate::<::fidl_next::wire::Envelope>(encoder, max_ord);
 
         for i in 1..=max_ord {
             match i {
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = member.name.snake() %}
                     {{ member.ordinal }} => if let Some(value) = &self.{{ member_name }} {
-                        ::fidl_next::wire::WireEnvelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
+                        ::fidl_next::wire::Envelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
                             value,
                             preallocated.encoder,
                             &mut out,
                             {{ self.constraint(member.ty) }},
                         )?;
                     } else {
-                        ::fidl_next::wire::WireEnvelope::encode_zero(&mut out)
+                        ::fidl_next::wire::Envelope::encode_zero(&mut out)
                     }
                 {% endfor %}
-                _ => ::fidl_next::wire::WireEnvelope::encode_zero(&mut out),
+                _ => ::fidl_next::wire::Envelope::encode_zero(&mut out),
             }
             unsafe {
                 preallocated.write_next(out.assume_init_ref());
             }
         }
 
-        ::fidl_next::wire::WireTable::encode_len(table, max_ord);
+        ::fidl_next::wire::Table::encode_len(table, max_ord);
 
         Ok(())
     }

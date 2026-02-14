@@ -5,7 +5,7 @@
 use fidl_next_codec::{AsDecoder, DecoderExt};
 
 use crate::Transport;
-use crate::wire::WireMessageHeader;
+use crate::wire::MessageHeader;
 
 /// The body of an encoded FIDL message.
 ///
@@ -27,7 +27,7 @@ unsafe impl<'de, T: Transport> AsDecoder<'de> for Body<T> {
 
     fn as_decoder(&'de mut self) -> Self::Decoder {
         let mut decoder = self.buffer.as_decoder();
-        let _ = decoder.take_slot::<WireMessageHeader>();
+        let _ = decoder.take_slot::<MessageHeader>();
         decoder
     }
 }

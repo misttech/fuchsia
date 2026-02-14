@@ -11,13 +11,10 @@ use core::num::NonZero;
 use fdf_channel::channel::Channel;
 use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
-use fidl_next::wire::WireU32;
 use fidl_next::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, ValidationError, Wire, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
-
-use crate::DriverChannel;
 
 /// The FIDL wire type for [`DriverChannel`].
 ///
@@ -25,12 +22,12 @@ use crate::DriverChannel;
 /// Zircon handle wire type. This ensures that we never confuse the two types
 /// when using FIDL.
 #[repr(C, align(4))]
-pub union WireDriverChannel {
-    encoded: WireU32,
+pub union DriverChannel {
+    encoded: wire::Uint32,
     decoded: fdf_handle_t,
 }
 
-impl Drop for WireDriverChannel {
+impl Drop for DriverChannel {
     fn drop(&mut self) {
         // SAFETY: `WireDriverHandle` is always non-zero.
         let raw_handle = unsafe { NonZero::new_unchecked(self.as_raw_handle()) };
@@ -40,7 +37,7 @@ impl Drop for WireDriverChannel {
     }
 }
 
-impl Constrained for WireDriverChannel {
+impl Constrained for DriverChannel {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -51,7 +48,7 @@ impl Constrained for WireDriverChannel {
 // SAFETY:
 // - `WireDriverHandle` doesn't reference any other decoded data.
 // - `WireDriverHandle` does not have any padding bytes.
-unsafe impl Wire for WireDriverChannel {
+unsafe impl Wire for DriverChannel {
     type Narrowed<'de> = Self;
 
     #[inline]
@@ -60,11 +57,11 @@ unsafe impl Wire for WireDriverChannel {
     }
 }
 
-impl WireDriverChannel {
+impl DriverChannel {
     /// Encodes a driver handle as present in an output.
     pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { encoded } = out);
-        encoded.write(WireU32(u32::MAX));
+        encoded.write(wire::Uint32(u32::MAX));
     }
 
     /// Returns the underlying [`fdf_handle_t`].
@@ -76,7 +73,7 @@ impl WireDriverChannel {
     }
 }
 
-impl fmt::Debug for WireDriverChannel {
+impl fmt::Debug for DriverChannel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.as_raw_handle().fmt(f)
     }
@@ -84,7 +81,7 @@ impl fmt::Debug for WireDriverChannel {
 
 // SAFETY: `decode` only returns `Ok` if it wrote to the `decoded` field of the
 // handle, initializing it.
-unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireDriverChannel {
+unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for DriverChannel {
     fn decode(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
@@ -110,12 +107,12 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireDriverChannel {
 /// Zircon handle optional wire type. This ensures that we never confuse the two
 /// types when using FIDL.
 #[repr(C, align(4))]
-pub union WireOptionalDriverChannel {
-    encoded: WireU32,
+pub union OptionalDriverChannel {
+    encoded: wire::Uint32,
     decoded: fdf_handle_t,
 }
 
-impl Drop for WireOptionalDriverChannel {
+impl Drop for OptionalDriverChannel {
     fn drop(&mut self) {
         if let Some(handle) = self.as_raw_handle() {
             // SAFETY: If the return value from `as_raw_handle` is `Some`, then
@@ -128,7 +125,7 @@ impl Drop for WireOptionalDriverChannel {
     }
 }
 
-impl Constrained for WireOptionalDriverChannel {
+impl Constrained for OptionalDriverChannel {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -139,7 +136,7 @@ impl Constrained for WireOptionalDriverChannel {
 // SAFETY:
 // - `WireOptionalDriverHandle` doesn't reference any other decoded data.
 // - `WireOptionalDriverHandle` does not have any padding bytes.
-unsafe impl Wire for WireOptionalDriverChannel {
+unsafe impl Wire for OptionalDriverChannel {
     type Narrowed<'de> = Self;
 
     #[inline]
@@ -148,17 +145,17 @@ unsafe impl Wire for WireOptionalDriverChannel {
     }
 }
 
-impl WireOptionalDriverChannel {
+impl OptionalDriverChannel {
     /// Encodes a driver handle as present in a slot.
     pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { encoded } = out);
-        encoded.write(WireU32(u32::MAX));
+        encoded.write(wire::Uint32(u32::MAX));
     }
 
     /// Encodes a driver handle as absent in an output.
     pub fn set_encoded_absent(out: &mut MaybeUninit<Self>) {
         munge!(let Self { encoded } = out);
-        encoded.write(WireU32(0));
+        encoded.write(wire::Uint32(0));
     }
 
     /// Returns whether a handle is present.
@@ -184,7 +181,7 @@ impl WireOptionalDriverChannel {
 // SAFETY: `decode` only returns `Ok` if either:
 // - It wrote to the `decoded` field of the handle, initializing it.
 // - The handle's encoded (and decoded) value was zero, indicating `None`.
-unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
+unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for OptionalDriverChannel {
     fn decode(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
@@ -207,11 +204,11 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
 
 // SAFETY: `encode` calls `set_encoded_present`, which initializes all of the
 // bytes of `out`.
-unsafe impl<E: HandleEncoder + ?Sized> Encode<WireDriverChannel, E> for DriverChannel {
+unsafe impl<E: HandleEncoder + ?Sized> Encode<DriverChannel, E> for crate::DriverChannel {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireDriverChannel>,
+        out: &mut MaybeUninit<DriverChannel>,
         _: (),
     ) -> Result<(), EncodeError> {
         let handle = self.channel.into_driver_handle();
@@ -219,13 +216,13 @@ unsafe impl<E: HandleEncoder + ?Sized> Encode<WireDriverChannel, E> for DriverCh
         unsafe {
             encoder.push_raw_driver_handle(handle.into_raw().get())?;
         }
-        WireDriverChannel::set_encoded_present(out);
+        DriverChannel::set_encoded_present(out);
         Ok(())
     }
 }
 
-impl FromWire<WireDriverChannel> for DriverChannel {
-    fn from_wire(wire: WireDriverChannel) -> Self {
+impl FromWire<DriverChannel> for crate::DriverChannel {
+    fn from_wire(wire: DriverChannel) -> Self {
         // SAFETY: `WireDriverHandle` is always non-zero.
         let raw_handle = unsafe { NonZero::new_unchecked(wire.as_raw_handle()) };
         // SAFETY: `WireDriverHandle` is always a valid `Handle`.
@@ -233,23 +230,23 @@ impl FromWire<WireDriverChannel> for DriverChannel {
         // SAFETY: `WireDriverHandle` is always a valid `Channel`.
         let channel = unsafe { Channel::from_driver_handle(handle) };
         forget(wire);
-        DriverChannel::new(channel)
+        crate::DriverChannel::new(channel)
     }
 }
 
-impl IntoNatural for WireDriverChannel {
-    type Natural = DriverChannel;
+impl IntoNatural for DriverChannel {
+    type Natural = crate::DriverChannel;
 }
 
 // SAFETY: `encode_option` calls either `set_encoded_present` or
 // `set_encoded_absent`, both of which initializes all of the bytes of `out`.
-unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalDriverChannel, E>
-    for DriverChannel
+unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<OptionalDriverChannel, E>
+    for crate::DriverChannel
 {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireOptionalDriverChannel>,
+        out: &mut MaybeUninit<OptionalDriverChannel>,
         _: (),
     ) -> Result<(), EncodeError> {
         if let Some(driver_channel) = this {
@@ -258,16 +255,16 @@ unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalDriverChannel, E
             unsafe {
                 encoder.push_raw_driver_handle(handle.into_raw().get())?;
             }
-            WireOptionalDriverChannel::set_encoded_present(out);
+            OptionalDriverChannel::set_encoded_present(out);
         } else {
-            WireOptionalDriverChannel::set_encoded_absent(out);
+            OptionalDriverChannel::set_encoded_absent(out);
         }
         Ok(())
     }
 }
 
-impl FromWireOption<WireOptionalDriverChannel> for DriverChannel {
-    fn from_wire_option(wire: WireOptionalDriverChannel) -> Option<Self> {
+impl FromWireOption<OptionalDriverChannel> for crate::DriverChannel {
+    fn from_wire_option(wire: OptionalDriverChannel) -> Option<Self> {
         let raw_handle = wire.as_raw_handle();
         forget(wire);
         raw_handle.map(|raw| {
@@ -279,13 +276,13 @@ impl FromWireOption<WireOptionalDriverChannel> for DriverChannel {
             let handle = unsafe { DriverHandle::new_unchecked(raw_handle) };
             // SAFETY: `WireOptionalDriverChannel` is always a valid `Channel`.
             let channel = unsafe { Channel::from_driver_handle(handle) };
-            DriverChannel::new(channel)
+            crate::DriverChannel::new(channel)
         })
     }
 }
 
-impl IntoNatural for WireOptionalDriverChannel {
-    type Natural = Option<DriverChannel>;
+impl IntoNatural for OptionalDriverChannel {
+    type Natural = Option<crate::DriverChannel>;
 }
 
 #[cfg(test)]
@@ -304,7 +301,7 @@ mod tests {
         let (channel, _) = Channel::<[Chunk]>::create();
         // SAFETY: this handle won't be used as a driver handle.
         let handle_raw = unsafe { channel.driver_handle().get_raw() };
-        let driver_channel = DriverChannel::new(channel);
+        let driver_channel = crate::DriverChannel::new(channel);
 
         let encoder = SendBuffer::encode(driver_channel).unwrap();
 
@@ -322,7 +319,7 @@ mod tests {
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.into_decoded::<WireDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<DriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), handle_raw.get());
 
         let handle = decoded.take();
@@ -335,7 +332,7 @@ mod tests {
         let (channel, _) = Channel::<[Chunk]>::create();
         // SAFETY: this handle won't be used as a driver handle.
         let handle_raw = unsafe { channel.driver_handle().get_raw() };
-        let driver_channel = DriverChannel::new(channel);
+        let driver_channel = crate::DriverChannel::new(channel);
 
         let encoder = SendBuffer::encode(Some(driver_channel)).unwrap();
 
@@ -353,7 +350,7 @@ mod tests {
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.into_decoded::<WireOptionalDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<OptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), Some(handle_raw.get()));
 
         let handle = decoded.take();
@@ -363,7 +360,7 @@ mod tests {
 
     #[test]
     fn roundtrip_none() {
-        let encoder = SendBuffer::encode(None::<DriverChannel>).unwrap();
+        let encoder = SendBuffer::encode(None::<crate::DriverChannel>).unwrap();
 
         assert_eq!(encoder.handles.len(), 0);
         assert_eq!(encoder.data, chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],);
@@ -374,7 +371,7 @@ mod tests {
         let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { message: buffer };
 
-        let decoded = decoder.into_decoded::<WireOptionalDriverChannel>().unwrap();
+        let decoded = decoder.into_decoded::<OptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), None);
 
         let handle = decoded.take();

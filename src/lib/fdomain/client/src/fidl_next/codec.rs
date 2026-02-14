@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::wire_handle::WireHandle;
+use super::wire;
 use crate::responder::Responder;
 use crate::{AsHandleRef, Channel, ChannelMessageStream, ChannelWriter, Error, Handle};
 use fidl_fuchsia_fdomain as proto;
@@ -99,7 +99,7 @@ impl HandleEncoder for SendBuffer {
 
 /// A receive buffer for an FDomain channel.
 pub struct RecvBuffer {
-    handles: Vec<WireHandle>,
+    handles: Vec<wire::Handle>,
     chunks: Vec<Chunk>,
 }
 

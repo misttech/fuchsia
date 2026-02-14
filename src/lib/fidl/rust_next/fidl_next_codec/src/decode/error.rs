@@ -4,6 +4,8 @@
 
 use thiserror::Error;
 
+use crate::ValidationError;
+
 /// Errors that can be produced when decoding FIDL messages.
 #[derive(Clone, Error, Debug)]
 pub enum DecodeError {
@@ -159,5 +161,5 @@ pub enum DecodeError {
 
     /// Validation Failed
     #[error("validation failed")]
-    Validation(#[from] crate::ValidationError),
+    Validation(#[from] ValidationError),
 }

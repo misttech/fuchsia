@@ -5,13 +5,11 @@
 use core::mem::MaybeUninit;
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
-use crate::wire::fuchsia::{WireHandle, WireOptionalHandle};
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
-    IntoNatural, Slot, ValidationError, Wire, munge,
+    IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
 
-use zx::NullableHandle;
 use zx::sys::zx_handle_t;
 
 macro_rules! define_wire_handle_types {
@@ -23,7 +21,7 @@ macro_rules! define_wire_handle_types {
         #[derive(Debug)]
         #[repr(transparent)]
         pub struct $wire {
-            handle: WireHandle,
+            handle: wire::fuchsia::Handle,
         }
 
         // TODO: validate handle rights.
@@ -41,7 +39,7 @@ macro_rules! define_wire_handle_types {
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
                 munge!(let Self { handle } = out);
-                WireHandle::zero_padding(handle);
+                wire::fuchsia::Handle::zero_padding(handle);
             }
         }
 
@@ -49,7 +47,7 @@ macro_rules! define_wire_handle_types {
             #[doc = concat!("Encodes a ", stringify!($natural), " as present in an output.")]
             pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
                 munge!(let Self { handle } = out);
-                WireHandle::set_encoded_present(handle);
+                wire::fuchsia::Handle::set_encoded_present(handle);
             }
 
             /// Returns whether the underlying `zx_handle_t` is invalid.
@@ -71,7 +69,7 @@ macro_rules! define_wire_handle_types {
                 constraint: Self::Constraint,
             ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
-                WireHandle::decode(handle, decoder, constraint)
+                wire::fuchsia::Handle::decode(handle, decoder, constraint)
             }
         }
 
@@ -79,7 +77,7 @@ macro_rules! define_wire_handle_types {
         #[derive(Debug)]
         #[repr(transparent)]
         pub struct $wire_optional {
-            handle: WireOptionalHandle,
+            handle: wire::fuchsia::OptionalHandle,
         }
 
         // TODO: validate handle rights.
@@ -97,7 +95,7 @@ macro_rules! define_wire_handle_types {
             #[inline]
             fn zero_padding(out: &mut MaybeUninit<Self>) {
                 munge!(let Self { handle } = out);
-                WireOptionalHandle::zero_padding(handle);
+                wire::fuchsia::OptionalHandle::zero_padding(handle);
             }
         }
 
@@ -105,13 +103,13 @@ macro_rules! define_wire_handle_types {
             #[doc = concat!("Encodes a ", stringify!($natural), " as present in an output.")]
             pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
                 munge!(let Self { handle } = out);
-                WireOptionalHandle::set_encoded_present(handle);
+                wire::fuchsia::OptionalHandle::set_encoded_present(handle);
             }
 
             #[doc = concat!("Encodes a ", stringify!($natural), " as absent in an output.")]
             pub fn set_encoded_absent(out: &mut MaybeUninit<Self>) {
                 munge!(let Self { handle } = out);
-                WireOptionalHandle::set_encoded_absent(handle);
+                wire::fuchsia::OptionalHandle::set_encoded_absent(handle);
             }
 
             #[doc = concat!("Returns whether a ", stringify!($natural), " is present.")]
@@ -137,7 +135,7 @@ macro_rules! define_wire_handle_types {
                 decoder: &mut D, constraint: Self::Constraint,
             ) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
-                WireOptionalHandle::decode(handle, decoder, constraint)
+                wire::fuchsia::OptionalHandle::decode(handle, decoder, constraint)
             }
         }
 
@@ -152,7 +150,7 @@ macro_rules! define_wire_handle_types {
                 constraint:  <$wire as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 munge!(let $wire { handle } = out);
-                NullableHandle::from(self).encode(encoder, handle, constraint)
+                zx::NullableHandle::from(self).encode(encoder, handle, constraint)
             }
         }
 
@@ -160,7 +158,7 @@ macro_rules! define_wire_handle_types {
             for zx::$natural $(<$($generics,)+>)?
         {
             fn from_wire(wire: $wire) -> Self {
-                NullableHandle::from_wire(wire.handle).into()
+                zx::NullableHandle::from_wire(wire.handle).into()
             }
         }
 
@@ -179,7 +177,7 @@ macro_rules! define_wire_handle_types {
                 constraint: (),
             ) -> Result<(), EncodeError> {
                 munge!(let $wire_optional { handle } = out);
-                Encode::encode(this.map(NullableHandle::from), encoder, handle, constraint)
+                Encode::encode(this.map(zx::NullableHandle::from), encoder, handle, constraint)
             }
         }
 
@@ -187,7 +185,7 @@ macro_rules! define_wire_handle_types {
             for zx::$natural $(<$($generics,)+>)?
         {
             fn from_wire_option(wire: $wire_optional) -> Option<Self> {
-                NullableHandle::from_wire_option(wire.handle).map(zx::$natural::from)
+                zx::NullableHandle::from_wire_option(wire.handle).map(zx::$natural::from)
             }
         }
 
@@ -198,34 +196,34 @@ macro_rules! define_wire_handle_types {
 }
 
 define_wire_handle_types! {
-    WireProcess(WireOptionalProcess): Process,
-    WireThread(WireOptionalThread): Thread,
-    WireVmo(WireOptionalVmo): Vmo,
-    WireChannel(WireOptionalChannel): Channel,
-    WireEvent(WireOptionalEvent): Event,
-    WirePort(WireOptionalPort): Port,
-    WireInterrupt(WireOptionalInterrupt): Interrupt<K: zx::InterruptKind, T: zx::Timeline>,
-    // WirePciDevice(WireOptionalPciDevice): PciDevice,
-    WireDebugLog(WireOptionalDebugLog): DebugLog,
-    WireSocket(WireOptionalSocket): Socket,
-    WireResource(WireOptionalResource): Resource,
-    WireEventPair(WireOptionalEventPair): EventPair,
-    WireJob(WireOptionalJob): Job,
-    WireVmar(WireOptionalVmar): Vmar,
-    WireFifo(WireOptionalFifo): Fifo<R, W>,
-    WireGuest(WireOptionalGuest): Guest,
-    WireVcpu(WireOptionalVcpu): Vcpu,
-    WireTimer(WireOptionalTimer): Timer<T: zx::Timeline>,
-    WireIommu(WireOptionalIommu): Iommu,
-    WireBti(WireOptionalBti): Bti,
-    WireProfile(WireOptionalProfile): Profile,
-    WirePmt(WireOptionalPmt): Pmt,
-    // WireSuspendToken(WireOptionalSuspendToken): SuspendToken,
-    WirePager(WireOptionalPager): Pager,
-    WireException(WireOptionalException): Exception,
-    WireClock(WireOptionalClock): Clock<Reference: zx::Timeline, Output: zx::Timeline>,
-    WireStream(WireOptionalStream): Stream,
-    // WireMsi(WireOptionalMsi): Msi,
-    WireIob(WireOptionalIob): Iob,
-    WireCounter(WireOptionalCounter): Counter,
+    Process(OptionalProcess): Process,
+    Thread(OptionalThread): Thread,
+    Vmo(OptionalVmo): Vmo,
+    Channel(OptionalChannel): Channel,
+    Event(OptionalEvent): Event,
+    Port(OptionalPort): Port,
+    Interrupt(OptionalInterrupt): Interrupt<K: zx::InterruptKind, T: zx::Timeline>,
+    // PciDevice(OptionalPciDevice): PciDevice,
+    DebugLog(OptionalDebugLog): DebugLog,
+    Socket(OptionalSocket): Socket,
+    Resource(OptionalResource): Resource,
+    EventPair(OptionalEventPair): EventPair,
+    Job(OptionalJob): Job,
+    Vmar(OptionalVmar): Vmar,
+    Fifo(OptionalFifo): Fifo<R, W>,
+    Guest(OptionalGuest): Guest,
+    Vcpu(OptionalVcpu): Vcpu,
+    Timer(OptionalTimer): Timer<T: zx::Timeline>,
+    Iommu(OptionalIommu): Iommu,
+    Bti(OptionalBti): Bti,
+    Profile(OptionalProfile): Profile,
+    Pmt(OptionalPmt): Pmt,
+    // SuspendToken(OptionalSuspendToken): SuspendToken,
+    Pager(OptionalPager): Pager,
+    Exception(OptionalException): Exception,
+    Clock(OptionalClock): Clock<Reference: zx::Timeline, Output: zx::Timeline>,
+    Stream(OptionalStream): Stream,
+    // Msi(OptionalMsi): Msi,
+    Iob(OptionalIob): Iob,
+    Counter(OptionalCounter): Counter,
 }

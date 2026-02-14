@@ -4,29 +4,29 @@
 
 use core::mem::MaybeUninit;
 
-use fidl_next_codec::wire::WireI32;
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, Slot, ValidationError, Wire,
 };
-
 use zerocopy::IntoBytes;
+
+use crate::wire;
 
 /// A FIDL protocol epitaph.
 #[derive(Clone, Copy, Debug, IntoBytes)]
 #[repr(C)]
-pub struct WireEpitaph {
+pub struct Epitaph {
     /// The error status.
-    pub error: WireI32,
+    pub error: wire::Int32,
 }
 
-impl WireEpitaph {
+impl Epitaph {
     /// Returns a new epitaph with the given error.
     pub fn new(error: i32) -> Self {
-        Self { error: WireI32(error) }
+        Self { error: wire::Int32(error) }
     }
 }
 
-impl Constrained for WireEpitaph {
+impl Constrained for Epitaph {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -34,7 +34,7 @@ impl Constrained for WireEpitaph {
     }
 }
 
-unsafe impl Wire for WireEpitaph {
+unsafe impl Wire for Epitaph {
     type Narrowed<'de> = Self;
 
     #[inline]
@@ -43,32 +43,27 @@ unsafe impl Wire for WireEpitaph {
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for WireEpitaph {
+unsafe impl<E: ?Sized> Encode<Epitaph, E> for Epitaph {
     #[inline]
-    fn encode(
-        self,
-        _: &mut E,
-        out: &mut MaybeUninit<WireEpitaph>,
-        _: (),
-    ) -> Result<(), EncodeError> {
+    fn encode(self, _: &mut E, out: &mut MaybeUninit<Epitaph>, _: ()) -> Result<(), EncodeError> {
         out.write(self);
         Ok(())
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for &WireEpitaph {
+unsafe impl<E: ?Sized> Encode<Epitaph, E> for &Epitaph {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireEpitaph>,
+        out: &mut MaybeUninit<Epitaph>,
         constraint: (),
     ) -> Result<(), EncodeError> {
         Encode::encode(*self, encoder, out, constraint)
     }
 }
 
-unsafe impl<D: ?Sized> Decode<D> for WireEpitaph {
+unsafe impl<D: ?Sized> Decode<D> for Epitaph {
     #[inline]
     fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         Ok(())

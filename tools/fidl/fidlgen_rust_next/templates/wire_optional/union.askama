@@ -1,6 +1,6 @@
 #[repr(transparent)]
 pub struct {{ name }}{{ de }} {
-    pub(crate) raw: ::fidl_next::wire::RawWireUnion,
+    pub(crate) raw: ::fidl_next::wire::Union,
     pub(crate) _phantom: ::core::marker::PhantomData<{{ phantom }}>,
 }
 
@@ -21,7 +21,7 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
     #[inline]
     fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
         ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
-        ::fidl_next::wire::RawWireUnion::zero_padding(raw);
+        ::fidl_next::wire::Union::zero_padding(raw);
     }
 }
 
@@ -59,7 +59,7 @@ impl{{ de }} {{ name }}{{ de }} {
         fn clone(&self) -> Self {
             if self.is_none() {
                 return {{ name }} {
-                    raw: ::fidl_next::wire::RawWireUnion::absent(),
+                    raw: ::fidl_next::wire::Union::absent(),
                     _phantom: ::core::marker::PhantomData,
                 };
             }
@@ -105,12 +105,12 @@ where
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
-        match ::fidl_next::wire::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+        match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::wire::RawWireUnion::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
+                {{ member.ordinal }} => ::fidl_next::wire::Union::{{ decode_as }}::<___D, {{ self.wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
-            0 => ::fidl_next::wire::RawWireUnion::decode_absent(raw)?,
-            _ => ::fidl_next::wire::RawWireUnion::{{ decode_unknown}}(
+            0 => ::fidl_next::wire::Union::decode_absent(raw)?,
+            _ => ::fidl_next::wire::Union::{{ decode_unknown}}(
                 raw,
                 decoder,
             )?,

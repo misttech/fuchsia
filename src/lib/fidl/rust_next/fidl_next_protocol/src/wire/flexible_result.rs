@@ -6,23 +6,21 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
-use fidl_next_codec::wire::{RawWireUnion, WireResult};
 use fidl_next_codec::{
     Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
     FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge,
 };
 
-use crate::wire::WireFrameworkError;
-use crate::{FlexibleResult, FrameworkError};
+use crate::wire;
 
 /// A flexible FIDL result.
 #[repr(transparent)]
-pub struct WireFlexibleResult<'de, T, E> {
-    raw: RawWireUnion,
+pub struct FlexibleResult<'de, T, E> {
+    raw: wire::Union,
     _phantom: PhantomData<(&'de mut [Chunk], T, E)>,
 }
 
-impl<T, E> Drop for WireFlexibleResult<'_, T, E> {
+impl<T, E> Drop for FlexibleResult<'_, T, E> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             ORD_OK => {
@@ -32,14 +30,14 @@ impl<T, E> Drop for WireFlexibleResult<'_, T, E> {
                 let _ = unsafe { self.raw.get().read_unchecked::<E>() };
             }
             ORD_FRAMEWORK_ERR => {
-                let _ = unsafe { self.raw.get().read_unchecked::<WireFrameworkError>() };
+                let _ = unsafe { self.raw.get().read_unchecked::<wire::FrameworkError>() };
             }
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
 }
 
-impl<T, E> Constrained for WireFlexibleResult<'_, T, E>
+impl<T, E> Constrained for FlexibleResult<'_, T, E>
 where
     T: Constrained<Constraint = ()>,
     E: Constrained<Constraint = ()>,
@@ -51,17 +49,17 @@ where
     }
 }
 
-unsafe impl<T, E> Wire for WireFlexibleResult<'static, T, E>
+unsafe impl<T, E> Wire for FlexibleResult<'static, T, E>
 where
     T: Wire<Constraint = ()>,
     E: Wire<Constraint = ()>,
 {
-    type Narrowed<'de> = WireFlexibleResult<'de, T::Narrowed<'de>, E::Narrowed<'de>>;
+    type Narrowed<'de> = FlexibleResult<'de, T::Narrowed<'de>, E::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { raw, _phantom: _ } = out);
-        RawWireUnion::zero_padding(raw);
+        wire::Union::zero_padding(raw);
     }
 }
 
@@ -69,7 +67,7 @@ const ORD_OK: u64 = 1;
 const ORD_ERR: u64 = 2;
 const ORD_FRAMEWORK_ERR: u64 = 3;
 
-impl<'de, T, E> WireFlexibleResult<'de, T, E> {
+impl<'de, T, E> FlexibleResult<'de, T, E> {
     /// Returns whether the flexible result is `Ok`.
     pub fn is_ok(&self) -> bool {
         self.raw.ordinal() == ORD_OK
@@ -96,9 +94,9 @@ impl<'de, T, E> WireFlexibleResult<'de, T, E> {
     }
 
     /// Returns the `FrameworkErr` value of the result, if any.
-    pub fn framework_err(&self) -> Option<FrameworkError> {
+    pub fn framework_err(&self) -> Option<crate::FrameworkError> {
         self.is_framework_err()
-            .then(|| unsafe { (*self.raw.get().deref_unchecked::<WireFrameworkError>()).into() })
+            .then(|| unsafe { (*self.raw.get().deref_unchecked::<wire::FrameworkError>()).into() })
     }
 
     /// Returns the contained `Ok` value.
@@ -118,18 +116,18 @@ impl<'de, T, E> WireFlexibleResult<'de, T, E> {
     /// Returns the contained `FrameworkErr` value.
     ///
     /// Panics if the result was not `FrameworkErr`.
-    pub fn unwrap_framework_err(&self) -> FrameworkError {
+    pub fn unwrap_framework_err(&self) -> crate::FrameworkError {
         self.framework_err().unwrap()
     }
 
     /// Returns a `FlexibleResult` of a reference to the value or framework error.
-    pub fn as_ref(&self) -> FlexibleResult<&T, &E> {
+    pub fn as_ref(&self) -> crate::FlexibleResult<&T, &E> {
         match self.raw.ordinal() {
-            ORD_OK => unsafe { FlexibleResult::Ok(self.raw.get().deref_unchecked()) },
-            ORD_ERR => unsafe { FlexibleResult::Err(self.raw.get().deref_unchecked()) },
+            ORD_OK => unsafe { crate::FlexibleResult::Ok(self.raw.get().deref_unchecked()) },
+            ORD_ERR => unsafe { crate::FlexibleResult::Err(self.raw.get().deref_unchecked()) },
             ORD_FRAMEWORK_ERR => unsafe {
-                FlexibleResult::FrameworkErr(
-                    (*self.raw.get().deref_unchecked::<WireFrameworkError>()).into(),
+                crate::FlexibleResult::FrameworkErr(
+                    (*self.raw.get().deref_unchecked::<wire::FrameworkError>()).into(),
                 )
             },
             _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -137,39 +135,39 @@ impl<'de, T, E> WireFlexibleResult<'de, T, E> {
     }
 
     /// Returns a `Result` of the `Ok` value and a potential `FrameworkError`.
-    pub fn as_response(&self) -> Result<&WireResult<'_, T, E>, FrameworkError> {
+    pub fn as_response(&self) -> Result<&wire::Result<'_, T, E>, crate::FrameworkError> {
         match self.raw.ordinal() {
             ORD_OK | ORD_ERR => unsafe {
-                Ok(&*(self as *const Self as *const WireResult<'_, T, E>))
+                Ok(&*(self as *const Self as *const wire::Result<'_, T, E>))
             },
             ORD_FRAMEWORK_ERR => unsafe {
-                Err((*self.raw.get().deref_unchecked::<WireFrameworkError>()).into())
+                Err((*self.raw.get().deref_unchecked::<wire::FrameworkError>()).into())
             },
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
 
     /// Returns a nested `Result` of the `Ok` and `Err` values, and a potential `FrameworkError`.
-    pub fn as_result(&self) -> Result<Result<&T, &E>, FrameworkError> {
+    pub fn as_result(&self) -> Result<Result<&T, &E>, crate::FrameworkError> {
         match self.raw.ordinal() {
             ORD_OK => unsafe { Ok(Ok(self.raw.get().deref_unchecked())) },
             ORD_ERR => unsafe { Ok(Err(self.raw.get().deref_unchecked())) },
             ORD_FRAMEWORK_ERR => unsafe {
-                Err((*self.raw.get().deref_unchecked::<WireFrameworkError>()).into())
+                Err((*self.raw.get().deref_unchecked::<wire::FrameworkError>()).into())
             },
             _ => unsafe { ::core::hint::unreachable_unchecked() },
         }
     }
 
     /// Returns a `FlexibleResult` of a value or framework error.
-    pub fn to_flexible_result(self) -> FlexibleResult<T, E> {
+    pub fn to_flexible_result(self) -> crate::FlexibleResult<T, E> {
         let this = ManuallyDrop::new(self);
         match this.raw.ordinal() {
-            ORD_OK => unsafe { FlexibleResult::Ok(this.raw.get().read_unchecked()) },
-            ORD_ERR => unsafe { FlexibleResult::Err(this.raw.get().read_unchecked()) },
+            ORD_OK => unsafe { crate::FlexibleResult::Ok(this.raw.get().read_unchecked()) },
+            ORD_ERR => unsafe { crate::FlexibleResult::Err(this.raw.get().read_unchecked()) },
             ORD_FRAMEWORK_ERR => unsafe {
-                FlexibleResult::FrameworkErr(
-                    this.raw.get().read_unchecked::<WireFrameworkError>().into(),
+                crate::FlexibleResult::FrameworkErr(
+                    this.raw.get().read_unchecked::<wire::FrameworkError>().into(),
                 )
             },
             _ => unsafe { ::core::hint::unreachable_unchecked() },
@@ -177,14 +175,14 @@ impl<'de, T, E> WireFlexibleResult<'de, T, E> {
     }
 }
 
-impl<T: Clone, E: Clone> Clone for WireFlexibleResult<'_, T, E> {
+impl<T: Clone, E: Clone> Clone for FlexibleResult<'_, T, E> {
     fn clone(&self) -> Self {
         Self {
             raw: match self.raw.ordinal() {
                 ORD_OK => unsafe { self.raw.clone_inline_unchecked::<T>() },
                 ORD_ERR => unsafe { self.raw.clone_inline_unchecked::<E>() },
                 ORD_FRAMEWORK_ERR => unsafe {
-                    self.raw.clone_inline_unchecked::<WireFrameworkError>()
+                    self.raw.clone_inline_unchecked::<wire::FrameworkError>()
                 },
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             },
@@ -193,7 +191,7 @@ impl<T: Clone, E: Clone> Clone for WireFlexibleResult<'_, T, E> {
     }
 }
 
-impl<T, E> fmt::Debug for WireFlexibleResult<'_, T, E>
+impl<T, E> fmt::Debug for FlexibleResult<'_, T, E>
 where
     T: fmt::Debug,
     E: fmt::Debug,
@@ -203,7 +201,7 @@ where
     }
 }
 
-unsafe impl<'de, D, T, E> Decode<D> for WireFlexibleResult<'de, T, E>
+unsafe impl<'de, D, T, E> Decode<D> for FlexibleResult<'de, T, E>
 where
     D: Decoder<'de> + ?Sized,
     T: Decode<D, Constraint = ()>,
@@ -212,11 +210,11 @@ where
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { mut raw, _phantom: _ } = slot);
 
-        match RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            ORD_OK => RawWireUnion::decode_as::<D, T>(raw, decoder, ())?,
-            ORD_ERR => RawWireUnion::decode_as::<D, E>(raw, decoder, ())?,
+        match wire::Union::encoded_ordinal(raw.as_mut()) {
+            ORD_OK => wire::Union::decode_as::<D, T>(raw, decoder, ())?,
+            ORD_ERR => wire::Union::decode_as::<D, E>(raw, decoder, ())?,
             ORD_FRAMEWORK_ERR => {
-                RawWireUnion::decode_as::<D, WireFrameworkError>(raw, decoder, ())?
+                wire::Union::decode_as::<D, wire::FrameworkError>(raw, decoder, ())?
             }
             ord => return Err(DecodeError::InvalidUnionOrdinal(ord as usize)),
         }
@@ -225,8 +223,8 @@ where
     }
 }
 
-unsafe impl<Enc, WT, T, WE, E> Encode<WireFlexibleResult<'static, WT, WE>, Enc>
-    for FlexibleResult<T, E>
+unsafe impl<Enc, WT, T, WE, E> Encode<FlexibleResult<'static, WT, WE>, Enc>
+    for crate::FlexibleResult<T, E>
 where
     Enc: Encoder + ?Sized,
     WT: Wire<Constraint = ()>,
@@ -237,17 +235,17 @@ where
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<WireFlexibleResult<'static, WT, WE>>,
+        out: &mut MaybeUninit<FlexibleResult<'static, WT, WE>>,
         _: (),
     ) -> Result<(), EncodeError> {
-        munge!(let WireFlexibleResult { raw, _phantom: _ } = out);
+        munge!(let FlexibleResult { raw, _phantom: _ } = out);
 
         match self {
-            Self::Ok(value) => RawWireUnion::encode_as::<Enc, WT>(value, ORD_OK, encoder, raw, ())?,
+            Self::Ok(value) => wire::Union::encode_as::<Enc, WT>(value, ORD_OK, encoder, raw, ())?,
             Self::Err(error) => {
-                RawWireUnion::encode_as::<Enc, WE>(error, ORD_ERR, encoder, raw, ())?
+                wire::Union::encode_as::<Enc, WE>(error, ORD_ERR, encoder, raw, ())?
             }
-            Self::FrameworkErr(error) => RawWireUnion::encode_as::<Enc, WireFrameworkError>(
+            Self::FrameworkErr(error) => wire::Union::encode_as::<Enc, wire::FrameworkError>(
                 error,
                 ORD_FRAMEWORK_ERR,
                 encoder,
@@ -260,8 +258,8 @@ where
     }
 }
 
-unsafe impl<'a, Enc, WT, T, WE, E> Encode<WireFlexibleResult<'static, WT, WE>, Enc>
-    for &'a FlexibleResult<T, E>
+unsafe impl<'a, Enc, WT, T, WE, E> Encode<FlexibleResult<'static, WT, WE>, Enc>
+    for &'a crate::FlexibleResult<T, E>
 where
     Enc: Encoder + ?Sized,
     WT: Wire<Constraint = ()>,
@@ -272,72 +270,76 @@ where
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<WireFlexibleResult<'static, WT, WE>>,
+        out: &mut MaybeUninit<FlexibleResult<'static, WT, WE>>,
         _: (),
     ) -> Result<(), EncodeError> {
         self.as_ref().encode(encoder, out, ())
     }
 }
 
-impl<T, WT, E, WE> FromWire<WireFlexibleResult<'_, WT, WE>> for FlexibleResult<T, E>
+impl<T, WT, E, WE> FromWire<FlexibleResult<'_, WT, WE>> for crate::FlexibleResult<T, E>
 where
     T: FromWire<WT>,
     E: FromWire<WE>,
 {
-    fn from_wire(wire: WireFlexibleResult<'_, WT, WE>) -> Self {
+    fn from_wire(wire: FlexibleResult<'_, WT, WE>) -> Self {
         match wire.to_flexible_result() {
-            FlexibleResult::Ok(value) => Self::Ok(T::from_wire(value)),
-            FlexibleResult::Err(error) => Self::Err(E::from_wire(error)),
-            FlexibleResult::FrameworkErr(framework_error) => Self::FrameworkErr(framework_error),
+            crate::FlexibleResult::Ok(value) => Self::Ok(T::from_wire(value)),
+            crate::FlexibleResult::Err(error) => Self::Err(E::from_wire(error)),
+            crate::FlexibleResult::FrameworkErr(framework_error) => {
+                Self::FrameworkErr(framework_error)
+            }
         }
     }
 }
 
-impl<T: IntoNatural, E: IntoNatural> IntoNatural for WireFlexibleResult<'_, T, E> {
-    type Natural = FlexibleResult<T::Natural, E::Natural>;
+impl<T: IntoNatural, E: IntoNatural> IntoNatural for FlexibleResult<'_, T, E> {
+    type Natural = crate::FlexibleResult<T::Natural, E::Natural>;
 }
 
-impl<T, WT, E, WE> FromWireRef<WireFlexibleResult<'_, WT, WE>> for FlexibleResult<T, E>
+impl<T, WT, E, WE> FromWireRef<FlexibleResult<'_, WT, WE>> for crate::FlexibleResult<T, E>
 where
     T: FromWireRef<WT>,
     E: FromWireRef<WE>,
 {
-    fn from_wire_ref(wire: &WireFlexibleResult<'_, WT, WE>) -> Self {
+    fn from_wire_ref(wire: &FlexibleResult<'_, WT, WE>) -> Self {
         match wire.as_ref() {
-            FlexibleResult::Ok(value) => Self::Ok(T::from_wire_ref(value)),
-            FlexibleResult::Err(error) => Self::Err(E::from_wire_ref(error)),
-            FlexibleResult::FrameworkErr(framework_error) => Self::FrameworkErr(framework_error),
+            crate::FlexibleResult::Ok(value) => Self::Ok(T::from_wire_ref(value)),
+            crate::FlexibleResult::Err(error) => Self::Err(E::from_wire_ref(error)),
+            crate::FlexibleResult::FrameworkErr(framework_error) => {
+                Self::FrameworkErr(framework_error)
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use fidl_next_codec::wire::WireI32;
     use fidl_next_codec::{DecoderExt as _, EncoderExt as _, chunks};
 
-    use super::{FlexibleResult, WireFlexibleResult};
-    use crate::FrameworkError;
+    use crate::wire;
 
     #[test]
     fn encode_flexible_result() {
         assert_eq!(
-            Vec::encode(FlexibleResult::<(), i32>::Ok(())).unwrap(),
+            Vec::encode(crate::FlexibleResult::<(), i32>::Ok(())).unwrap(),
             chunks![
                 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x01, 0x00,
             ],
         );
         assert_eq!(
-            Vec::encode(FlexibleResult::<(), i32>::Err(0x12345678)).unwrap(),
+            Vec::encode(crate::FlexibleResult::<(), i32>::Err(0x12345678)).unwrap(),
             chunks![
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ],
         );
         assert_eq!(
-            Vec::encode(FlexibleResult::<(), i32>::FrameworkErr(FrameworkError::UnknownMethod))
-                .unwrap(),
+            Vec::encode(crate::FlexibleResult::<(), i32>::FrameworkErr(
+                crate::FrameworkError::UnknownMethod
+            ))
+            .unwrap(),
             chunks![
                 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
                 0x01, 0x00,
@@ -353,10 +355,10 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<WireFlexibleResult<'_, (), WireI32>>()
+            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
             .unwrap()
             .as_ref(),
-            FlexibleResult::<_, &WireI32>::Ok(&()),
+            crate::FlexibleResult::<_, &wire::Int32>::Ok(&()),
         );
         assert_eq!(
             chunks![
@@ -364,10 +366,10 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<WireFlexibleResult<'_, (), WireI32>>()
+            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
             .unwrap()
             .as_ref(),
-            FlexibleResult::<&(), _>::Err(&WireI32(0x12345678)),
+            crate::FlexibleResult::<&(), _>::Err(&wire::Int32(0x12345678)),
         );
         assert_eq!(
             chunks![
@@ -375,10 +377,12 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<WireFlexibleResult<'_, (), WireI32>>()
+            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
             .unwrap()
             .as_ref(),
-            FlexibleResult::<&(), &WireI32>::FrameworkErr(FrameworkError::UnknownMethod),
+            crate::FlexibleResult::<&(), &wire::Int32>::FrameworkErr(
+                crate::FrameworkError::UnknownMethod
+            ),
         );
     }
 }

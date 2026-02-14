@@ -5,7 +5,7 @@
 //! Safe bindings for using FIDL with the fuchsia driver framework C API
 #![deny(unsafe_op_in_unsafe_fn, missing_docs)]
 
-mod wire;
+pub mod wire;
 
 use fuchsia_sync::{Mutex, MutexGuard};
 use std::marker::PhantomData;
@@ -24,8 +24,6 @@ use fdf_channel::futures::ReadMessageState;
 use fdf_channel::message::Message;
 use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
 use fdf_core::handle::{DriverHandle, MixedHandle, MixedHandleType};
-
-pub use self::wire::*;
 
 /// A wrapper around a dispatcher reference object that can be used with the [`fidl_next`] bindings
 /// to spawn client and server dispatchers on a driver runtime provided async dispatcher.

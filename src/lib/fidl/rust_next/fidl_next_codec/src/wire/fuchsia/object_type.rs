@@ -7,20 +7,19 @@ use core::mem::MaybeUninit;
 
 use munge::munge;
 
-use crate::wire::WireU32;
 use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
-    Slot, ValidationError, Wire,
+    Slot, ValidationError, Wire, wire,
 };
 
 /// The wire type for [`zx::ObjectType`].
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct WireObjectType {
-    inner: WireU32,
+pub struct ObjectType {
+    inner: wire::Uint32,
 }
 
-impl Constrained for WireObjectType {
+impl Constrained for ObjectType {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -28,75 +27,75 @@ impl Constrained for WireObjectType {
     }
 }
 
-unsafe impl Wire for WireObjectType {
+unsafe impl Wire for ObjectType {
     type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { inner } = out);
-        WireU32::zero_padding(inner);
+        wire::Uint32::zero_padding(inner);
     }
 }
 
-impl WireObjectType {
+impl ObjectType {
     /// Returns an `ObjectType` with the same value as this wire type.
     pub fn to_object_type(self) -> zx::ObjectType {
         zx::ObjectType::from_raw(*self.inner)
     }
 }
 
-impl fmt::Debug for WireObjectType {
+impl fmt::Debug for ObjectType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.to_object_type().fmt(f)
     }
 }
 
-unsafe impl<D: ?Sized> Decode<D> for WireObjectType {
+unsafe impl<D: ?Sized> Decode<D> for ObjectType {
     fn decode(
         slot: Slot<'_, Self>,
         decoder: &mut D,
         _: Self::Constraint,
     ) -> Result<(), DecodeError> {
         munge!(let Self { inner } = slot);
-        WireU32::decode(inner, decoder, ())
+        wire::Uint32::decode(inner, decoder, ())
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireObjectType, E> for zx::ObjectType {
+unsafe impl<E: ?Sized> Encode<ObjectType, E> for zx::ObjectType {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireObjectType>,
+        out: &mut MaybeUninit<ObjectType>,
         constraint: (),
     ) -> Result<(), EncodeError> {
-        munge!(let WireObjectType { inner } = out);
+        munge!(let ObjectType { inner } = out);
         self.into_raw().encode(encoder, inner, constraint)
     }
 }
 
-unsafe impl<E: ?Sized> Encode<WireObjectType, E> for &zx::ObjectType {
+unsafe impl<E: ?Sized> Encode<ObjectType, E> for &zx::ObjectType {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<WireObjectType>,
+        out: &mut MaybeUninit<ObjectType>,
         constraint: (),
     ) -> Result<(), EncodeError> {
         Encode::encode(*self, encoder, out, constraint)
     }
 }
 
-impl FromWire<WireObjectType> for zx::ObjectType {
-    fn from_wire(wire: WireObjectType) -> Self {
+impl FromWire<ObjectType> for zx::ObjectType {
+    fn from_wire(wire: ObjectType) -> Self {
         Self::from_wire_ref(&wire)
     }
 }
 
-impl FromWireRef<WireObjectType> for zx::ObjectType {
-    fn from_wire_ref(wire: &WireObjectType) -> Self {
+impl FromWireRef<ObjectType> for zx::ObjectType {
+    fn from_wire_ref(wire: &ObjectType) -> Self {
         Self::from_raw(*wire.inner)
     }
 }
 
-impl IntoNatural for WireObjectType {
+impl IntoNatural for ObjectType {
     type Natural = zx::ObjectType;
 }

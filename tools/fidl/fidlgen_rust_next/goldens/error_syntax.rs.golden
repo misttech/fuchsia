@@ -71,7 +71,7 @@ pub mod example_use_of_error_syntax {
         type Response =
 
 
-                            ::fidl_next::wire::WireResult
+                            ::fidl_next::wire::Result
 
                         <
                             'static,
@@ -79,7 +79,7 @@ pub mod example_use_of_error_syntax {
                             ::fidl_next_test_errorsyntax_parent::wire::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse,
 
 
-                            ::fidl_next::wire::WireU32,
+                            ::fidl_next::wire::Uint32,
 
                         >
 
@@ -126,10 +126,10 @@ pub mod example_use_of_error_syntax {
     }
 
     impl ::fidl_next::TwoWayMethod for CallWhichMayFail {
-        type Response = ::fidl_next::wire::WireResult<
+        type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::ExampleUseOfErrorSyntaxCallWhichMayFailResponse,
-            ::fidl_next::wire::WireU32,
+            ::fidl_next::wire::Uint32,
         >;
     }
 
@@ -178,7 +178,7 @@ pub mod example_use_of_error_syntax {
                 &self,
 
                 s: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireString<'static>,
+                    ::fidl_next::wire::String<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ComposedCallWhichMayFail, ___T>
@@ -217,7 +217,7 @@ pub mod example_use_of_error_syntax {
                 &self,
 
                 s: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::WireString<'static>,
+                    ::fidl_next::wire::String<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::CallWhichMayFail, ___T>

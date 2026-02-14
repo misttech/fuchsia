@@ -11,12 +11,12 @@ use crate::{Constrained, Slot, ValidationError, Wire};
 /// make a single, tiny type for empty structs.
 #[repr(u8)]
 #[derive(Clone, Copy)]
-pub enum WireEmptyStructPlaceholder {
+pub enum EmptyStruct {
     /// Empty structs are represented as a single 0u8.
     Zero = 0,
 }
 
-impl Constrained for WireEmptyStructPlaceholder {
+impl Constrained for EmptyStruct {
     type Constraint = ();
 
     fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
@@ -24,14 +24,14 @@ impl Constrained for WireEmptyStructPlaceholder {
     }
 }
 
-unsafe impl Wire for WireEmptyStructPlaceholder {
+unsafe impl Wire for EmptyStruct {
     type Narrowed<'de> = Self;
 
     #[inline]
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
 
-impl core::fmt::Debug for WireEmptyStructPlaceholder {
+impl core::fmt::Debug for EmptyStruct {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "(empty)")
     }

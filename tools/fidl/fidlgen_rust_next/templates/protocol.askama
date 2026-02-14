@@ -71,9 +71,9 @@ pub mod {{ module_name }} {
                 type Response =
                     {% if method.has_error %}
                         {% if !method.is_strict %}
-                            ::fidl_next::wire::WireFlexibleResult
+                            ::fidl_next::wire::FlexibleResult
                         {% else %}
-                            ::fidl_next::wire::WireResult
+                            ::fidl_next::wire::Result
                         {% endif %}
                         <
                             'static,
@@ -89,7 +89,7 @@ pub mod {{ module_name }} {
                         {% endif %}
                         >
                     {% else if !method.is_strict %}
-                        ::fidl_next::wire::WireFlexible<
+                        ::fidl_next::wire::Flexible<
                             'static,
                         {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
                             {{ self.static_wire_type(success) }}

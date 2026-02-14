@@ -6,20 +6,21 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
-use crate::wire::RawWireUnion;
 use crate::{
     Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
-    FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge,
+    FromWireRef, IntoNatural, Slot, ValidationError, Wire, munge, wire,
 };
+
+use core::result::Result as CoreResult;
 
 /// A FIDL result union.
 #[repr(transparent)]
-pub struct WireResult<'de, T, E> {
-    raw: RawWireUnion,
+pub struct Result<'de, T, E> {
+    raw: wire::Union,
     _phantom: PhantomData<(&'de mut [Chunk], T, E)>,
 }
 
-impl<T, E> Drop for WireResult<'_, T, E> {
+impl<T, E> Drop for Result<'_, T, E> {
     fn drop(&mut self) {
         match self.raw.ordinal() {
             ORD_OK => {
@@ -33,36 +34,36 @@ impl<T, E> Drop for WireResult<'_, T, E> {
     }
 }
 
-impl<T, E> Constrained for WireResult<'_, T, E>
+impl<T, E> Constrained for Result<'_, T, E>
 where
     T: Constrained<Constraint = ()>,
     E: Constrained<Constraint = ()>,
 {
     type Constraint = ();
 
-    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> Result<(), ValidationError> {
+    fn validate(_: Slot<'_, Self>, _: Self::Constraint) -> CoreResult<(), ValidationError> {
         Ok(())
     }
 }
 
-unsafe impl<T, E> Wire for WireResult<'static, T, E>
+unsafe impl<T, E> Wire for Result<'static, T, E>
 where
     T: Wire<Constraint = ()>,
     E: Wire<Constraint = ()>,
 {
-    type Narrowed<'de> = WireResult<'de, T::Narrowed<'de>, E::Narrowed<'de>>;
+    type Narrowed<'de> = Result<'de, T::Narrowed<'de>, E::Narrowed<'de>>;
 
     #[inline]
     fn zero_padding(out: &mut MaybeUninit<Self>) {
         munge!(let Self { raw, _phantom: _ } = out);
-        RawWireUnion::zero_padding(raw);
+        wire::Union::zero_padding(raw);
     }
 }
 
 const ORD_OK: u64 = 1;
 const ORD_ERR: u64 = 2;
 
-impl<T, E> WireResult<'_, T, E> {
+impl<T, E> Result<'_, T, E> {
     /// Returns whether the result is `Ok`.
     pub fn is_ok(&self) -> bool {
         self.raw.ordinal() == ORD_OK
@@ -98,7 +99,7 @@ impl<T, E> WireResult<'_, T, E> {
     }
 
     /// Returns a `Result` of a reference to the value or error.
-    pub fn as_ref(&self) -> Result<&T, &E> {
+    pub fn as_ref(&self) -> CoreResult<&T, &E> {
         match self.raw.ordinal() {
             ORD_OK => unsafe { Ok(self.raw.get().deref_unchecked()) },
             ORD_ERR => unsafe { Err(self.raw.get().deref_unchecked()) },
@@ -107,7 +108,7 @@ impl<T, E> WireResult<'_, T, E> {
     }
 
     /// Returns a `Result` of the owned value or error.
-    pub fn into_result(self) -> Result<T, E> {
+    pub fn into_result(self) -> CoreResult<T, E> {
         let this = ManuallyDrop::new(self);
         match this.raw.ordinal() {
             ORD_OK => unsafe { Ok(this.raw.get().read_unchecked()) },
@@ -117,7 +118,7 @@ impl<T, E> WireResult<'_, T, E> {
     }
 }
 
-impl<T: Clone, E: Clone> Clone for WireResult<'_, T, E> {
+impl<T: Clone, E: Clone> Clone for Result<'_, T, E> {
     fn clone(&self) -> Self {
         Self {
             raw: match self.raw.ordinal() {
@@ -130,7 +131,7 @@ impl<T: Clone, E: Clone> Clone for WireResult<'_, T, E> {
     }
 }
 
-impl<T, E> fmt::Debug for WireResult<'_, T, E>
+impl<T, E> fmt::Debug for Result<'_, T, E>
 where
     T: fmt::Debug,
     E: fmt::Debug,
@@ -140,18 +141,18 @@ where
     }
 }
 
-unsafe impl<'de, D, T, E> Decode<D> for WireResult<'de, T, E>
+unsafe impl<'de, D, T, E> Decode<D> for Result<'de, T, E>
 where
     D: Decoder<'de> + ?Sized,
     T: Decode<D, Constraint = ()>,
     E: Decode<D, Constraint = ()>,
 {
-    fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
+    fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> CoreResult<(), DecodeError> {
         munge!(let Self { mut raw, _phantom: _ } = slot);
 
-        match RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            ORD_OK => RawWireUnion::decode_as::<D, T>(raw, decoder, ())?,
-            ORD_ERR => RawWireUnion::decode_as::<D, E>(raw, decoder, ())?,
+        match wire::Union::encoded_ordinal(raw.as_mut()) {
+            ORD_OK => wire::Union::decode_as::<D, T>(raw, decoder, ())?,
+            ORD_ERR => wire::Union::decode_as::<D, E>(raw, decoder, ())?,
             ord => return Err(DecodeError::InvalidUnionOrdinal(ord as usize)),
         }
 
@@ -159,7 +160,7 @@ where
     }
 }
 
-unsafe impl<Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for Result<T, E>
+unsafe impl<Enc, WT, T, WE, E> Encode<Result<'static, WT, WE>, Enc> for CoreResult<T, E>
 where
     Enc: Encoder + ?Sized,
     WT: Wire<Constraint = ()>,
@@ -170,21 +171,21 @@ where
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<WireResult<'_, WT, WE>>,
+        out: &mut MaybeUninit<Result<'_, WT, WE>>,
         _: (),
-    ) -> Result<(), EncodeError> {
-        munge!(let WireResult { raw, _phantom: _ } = out);
+    ) -> CoreResult<(), EncodeError> {
+        munge!(let Result { raw, _phantom: _ } = out);
 
         match self {
-            Ok(value) => RawWireUnion::encode_as::<Enc, WT>(value, ORD_OK, encoder, raw, ())?,
-            Err(error) => RawWireUnion::encode_as::<Enc, WE>(error, ORD_ERR, encoder, raw, ())?,
+            Ok(value) => wire::Union::encode_as::<Enc, WT>(value, ORD_OK, encoder, raw, ())?,
+            Err(error) => wire::Union::encode_as::<Enc, WE>(error, ORD_ERR, encoder, raw, ())?,
         }
 
         Ok(())
     }
 }
 
-unsafe impl<'a, Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for &'a Result<T, E>
+unsafe impl<'a, Enc, WT, T, WE, E> Encode<Result<'static, WT, WE>, Enc> for &'a CoreResult<T, E>
 where
     Enc: Encoder + ?Sized,
     WT: Wire<Constraint = ()>,
@@ -195,20 +196,20 @@ where
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<WireResult<'static, WT, WE>>,
+        out: &mut MaybeUninit<Result<'static, WT, WE>>,
         _: (),
-    ) -> Result<(), EncodeError> {
+    ) -> CoreResult<(), EncodeError> {
         self.as_ref().encode(encoder, out, ())
     }
 }
 
-impl<T, E, WT, WE> FromWire<WireResult<'_, WT, WE>> for Result<T, E>
+impl<T, E, WT, WE> FromWire<Result<'_, WT, WE>> for CoreResult<T, E>
 where
     T: FromWire<WT>,
     E: FromWire<WE>,
 {
     #[inline]
-    fn from_wire(wire: WireResult<'_, WT, WE>) -> Self {
+    fn from_wire(wire: Result<'_, WT, WE>) -> Self {
         match wire.into_result() {
             Ok(value) => Ok(T::from_wire(value)),
             Err(error) => Err(E::from_wire(error)),
@@ -216,17 +217,17 @@ where
     }
 }
 
-impl<T: IntoNatural, E: IntoNatural> IntoNatural for WireResult<'_, T, E> {
-    type Natural = Result<T::Natural, E::Natural>;
+impl<T: IntoNatural, E: IntoNatural> IntoNatural for Result<'_, T, E> {
+    type Natural = CoreResult<T::Natural, E::Natural>;
 }
 
-impl<T, E, WT, WE> FromWireRef<WireResult<'_, WT, WE>> for Result<T, E>
+impl<T, E, WT, WE> FromWireRef<Result<'_, WT, WE>> for CoreResult<T, E>
 where
     T: FromWireRef<WT>,
     E: FromWireRef<WE>,
 {
     #[inline]
-    fn from_wire_ref(wire: &WireResult<'_, WT, WE>) -> Self {
+    fn from_wire_ref(wire: &Result<'_, WT, WE>) -> Self {
         match wire.as_ref() {
             Ok(value) => Ok(T::from_wire_ref(value)),
             Err(error) => Err(E::from_wire_ref(error)),
