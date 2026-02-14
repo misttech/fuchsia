@@ -1659,6 +1659,54 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+
+                        if let Some(x) = telemetry_data.multiradio_neighbor_info {
+                            inspector.root().record_child(
+                                "multiradio_neighbor_info",
+                                |multiradio_neighbor_info_child| {
+                                    for (nbr_index, neighbor_info) in x.iter().enumerate() {
+                                        multiradio_neighbor_info_child.record_child(
+                                            format!("neighbor_{}", nbr_index),
+                                            |neighbor_node| {
+                                                if let Some(y) = &neighbor_info.extended_address {
+                                                    neighbor_node.record_string(
+                                                        "extended_address",
+                                                        y.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                    );
+                                                }
+                                                if let Some(y) = neighbor_info.thread_rloc {
+                                                    neighbor_node.record_uint(
+                                                        "thread_rloc",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = &neighbor_info.radio_link_info {
+                                                    for (radio_index, radio_info) in y.iter().enumerate() {
+                                                        neighbor_node.record_child(
+                                                            format!("radio_{}", radio_index),
+                                                            |radio_link_node| {
+                                                                if let Some(z) = &radio_info.link_type {
+                                                                    radio_link_node.record_string(
+                                                                        "link_type",
+                                                                        z,
+                                                                    );
+                                                                }
+                                                                if let Some(z) = radio_info.preference {
+                                                                    radio_link_node.record_uint(
+                                                                        "preference",
+                                                                        z.into(),
+                                                                    );
+                                                                }
+                                                            }
+                                                        );
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    }
+                                },
+                            )
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

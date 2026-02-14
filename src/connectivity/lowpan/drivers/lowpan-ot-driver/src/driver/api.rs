@@ -957,7 +957,7 @@ where
                 ..Default::default()
             };
             // Ensure the number of registered host dump entries does not exceed the limit (64).
-            if srp_server_hosts.len() < 64 {
+            if srp_server_hosts.len() <= 64 {
                 srp_server_hosts.push(host.clone());
             }
 
@@ -1149,6 +1149,46 @@ where
                 })
                 .collect::<Vec<_>>();
 
+        // Gets the multi radio link information associated with a neighbor.
+        let multiradio_neighbor_info: Vec<
+            fidl_fuchsia_lowpan_experimental::MultiRadioNeighborInfo,
+        > = ot
+            .iter_neighbor_info()
+            .map(|x| {
+                let mut neighbor =
+                    fidl_fuchsia_lowpan_experimental::MultiRadioNeighborInfo::default();
+
+                neighbor.extended_address = Some(x.ext_address().into_array().to_vec());
+                neighbor.thread_rloc = Some(x.rloc16());
+
+                let mut radio_links: Vec<fidl_fuchsia_lowpan_experimental::RadioLinkInfo> =
+                    Vec::new();
+
+                // Limit the number of radio link entries to 5 per the FIDL definition,
+                // so far there are only two links: '15.4' and 'TREL'.
+                if let Ok(y) = ot.multi_radio_get_neighbor_info(&x.ext_address()) {
+                    if y.is_ieee_802_15_4_supported() && radio_links.len() <= 5 {
+                        radio_links.push(fidl_fuchsia_lowpan_experimental::RadioLinkInfo {
+                            link_type: Some("15.4".to_string()),
+                            preference: Some(y.ieee_802_15_4_preference()),
+                            ..Default::default()
+                        });
+                    }
+                    if y.is_trel_supported() && radio_links.len() <= 5 {
+                        radio_links.push(fidl_fuchsia_lowpan_experimental::RadioLinkInfo {
+                            link_type: Some("TREL".to_string()),
+                            preference: Some(y.trel_preference()),
+                            ..Default::default()
+                        });
+                    }
+                }
+
+                neighbor.radio_link_info = Some(radio_links);
+
+                neighbor
+            })
+            .collect::<Vec<_>>();
+
         // Get border agent counters.
         let border_agent_counters =
             driver_state.ot_instance.border_agent_get_counters().as_ref().map(|counters| {
@@ -1321,6 +1361,7 @@ where
             border_routing_peers: Some(border_routing_peers),
             border_routing_routers: Some(border_routing_routers),
             active_dataset: Some(active_dataset),
+            multiradio_neighbor_info: Some(multiradio_neighbor_info),
             ..Default::default()
         })
     }

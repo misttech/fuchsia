@@ -151,6 +151,9 @@ pub use nat64::*;
 mod dns_upstream;
 pub use dns_upstream::*;
 
+mod multi_radio_neighbor_info;
+pub use multi_radio_neighbor_info::*;
+
 /// Trait implemented by all OpenThread instances.
 pub trait InstanceInterface:
     Ip6
@@ -176,6 +179,7 @@ pub trait InstanceInterface:
     + Nat64
     + DnsUpstream
     + LinkMetrics
+    + MultiRadioLink
 {
 }
 

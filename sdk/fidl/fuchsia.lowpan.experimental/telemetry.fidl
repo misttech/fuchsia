@@ -818,6 +818,41 @@ type LinkMetricsEntry = table {
     2: rssi int8;
 };
 
+/// Represents information associated with a radio link.
+type RadioLinkInfo = table {
+    /// Radio Link Type, e.g., '15.4' or 'TREL'.
+    /// Considering a potential future expansion to other links, set
+    /// the MAX capability to 10.
+    ///
+    /// Required.
+    1: link_type string:10;
+
+    /// Preference level of radio link.
+    ///
+    /// Required.
+    2: preference uint8;
+};
+
+/// Multi radio link info associated with a neighbor.
+type MultiRadioNeighborInfo = table {
+    /// IEEE 802.15.4 Extended Address.
+    ///
+    /// Required.
+    1: extended_address vector<uint8>:8;
+
+    /// IEEE 802.15.4 short address of neighbor.
+    ///
+    /// Required.
+    2: thread_rloc uint16;
+
+    /// Multi radio link info. So far only '15.4' and 'TREL' links.
+    /// Considering a potential future expansion to other links, set
+    /// the MAX capability to 5.
+    ///
+    /// Required.
+    3: radio_link_info vector<RadioLinkInfo>:5;
+};
+
 /// The maximum number of entries allowed in the neighbor-related inspect
 /// dump. This prevents the inspect tree from becoming excessively large.
 const MAX_NEIGHBOR_INSPECT_ENTRIES uint32 = 64;
@@ -971,4 +1006,9 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     30: active_dataset OperationalDataset;
+
+    /// The multi radio link information associated with a neighbor with a given Extended Address.
+    ///
+    /// Only present on Thread networks.
+    31: multiradio_neighbor_info vector<MultiRadioNeighborInfo>:MAX_NEIGHBOR_INSPECT_ENTRIES;
 };
