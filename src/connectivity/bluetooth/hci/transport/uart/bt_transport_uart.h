@@ -207,7 +207,8 @@ class BtTransportUart : public fdf::DriverBase,
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
   size_t iso_buffer_offset_ = 0;
 
-  static constexpr size_t kUnackedReceivePacketLimit = 20;
+  static constexpr size_t kUnackedReceivePacketLimit = 30;
+  static constexpr size_t kUnackedReceivePacketRecover = 25;
   // Mark the read state of the driver, when the value is set to true, it means that the driver has
   // stopped reading data from the bus.
   bool read_stopped_ = false;

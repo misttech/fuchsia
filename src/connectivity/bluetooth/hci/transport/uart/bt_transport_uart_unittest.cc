@@ -685,8 +685,8 @@ TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveAclPacketsWithFlowControl
   std::vector<uint8_t> kAclBuffer(kSerialAclBuffer.begin() + 1, kSerialAclBuffer.end());
 
   // The packet number exceeds the limit of unacked packets in the driver. The limit is now 10.
-  const size_t kNumPackets = 30;
-  const size_t kUnackedLimit = 20;
+  const size_t kNumPackets = 35;
+  const size_t kUnackedLimit = 30;
   for (size_t i = 0; i < kNumPackets; i++) {
     driver_test().RunInEnvironmentTypeContext([&](FixtureBasedTestEnvironment& env) {
       // Store the sequence number in packet payload.

@@ -429,7 +429,8 @@ void BtTransportUart::OnAckReceive() {
     return;
   }
   unacked_receive_packet_number_--;
-  if (unacked_receive_packet_number_ == (kUnackedReceivePacketLimit / 2) && read_stopped_) {
+  if ((unacked_receive_packet_number_ < kUnackedReceivePacketRecover) && read_stopped_) {
+    fdf::info("Restarting read with {} unacked packets", unacked_receive_packet_number_);
     // Resume reading data from the uart data buffer if half of the unacked packets are acked.
     queue_read_task_.Post(dispatcher_);
     read_stopped_ = false;
@@ -585,7 +586,7 @@ void BtTransportUart::HciReadComplete(zx_status_t status, const uint8_t* buffer,
     HciHandleUartReadEvents(buffer, length);
     if (unacked_receive_packet_number_ >= kUnackedReceivePacketLimit) {
       fdf::warn(
-          "Too many unacked packets sent to the host, stop fetching data from the bus temporarily.");
+          "Too many unacked packets ({} > {}) sent to the host, stop fetching data from the bus temporarily", unacked_receive_packet_number_, kUnackedReceivePacketLimit);
       // Stop reading data from the uart buffer if there are too many unacked packets sent to the
       // host.
       read_stopped_ = true;
