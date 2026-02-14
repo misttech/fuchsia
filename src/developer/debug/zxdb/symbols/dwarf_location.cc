@@ -12,6 +12,7 @@
 #include "llvm/DebugInfo/DWARF/DWARFDebugLoc.h"
 #include "llvm/DebugInfo/DWARF/DWARFSection.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
+#include "src/developer/debug/zxdb/common/checked_math.h"
 #include "src/developer/debug/zxdb/common/data_extractor.h"
 
 namespace zxdb {
@@ -235,11 +236,13 @@ VariableLocation DecodeDwarf4LocationList(TargetPointer unit_base_addr,
     if (!ext.ReadBytes(*expression_len, expression.data()))
       return VariableLocation();
 
-    if (*begin >= *end)
-      continue;  // Invalid or empty range, don't add/
+    std::optional<uint64_t> abs_begin = CheckedAdd(base_address, *begin);
+    std::optional<uint64_t> abs_end = CheckedAdd(base_address, *end);
+    if (!abs_begin || !abs_end || *abs_begin >= *abs_end)
+      continue;  // Invalid, empty, or overflowed range.
 
     VariableLocation::Entry& dest = entries.emplace_back();
-    dest.range = AddressRange(base_address + *begin, base_address + *end);
+    dest.range = AddressRange(*abs_begin, *abs_end);
     dest.expression = DwarfExpr(std::move(expression), source);
   }
 
