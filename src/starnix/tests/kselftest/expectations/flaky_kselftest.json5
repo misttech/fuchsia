@@ -30,6 +30,9 @@
         {
             type: "skip",
             matchers: [
+                //TODO(https://fxbug.dev/484431306): test unable to find files
+                "cpu_hotplug_cpu_on_off_test",
+
                 // TODO(https://fxbug.dev/444478449): futex_wait_requeue_pi unimplemented function blocking kselftest test
                 "futex_functional_run.sh",
 
