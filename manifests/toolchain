@@ -41,7 +41,7 @@
          TODO(mcgrathr): repo/bot link about provenance
     -->
     <package name="fuchsia/third_party/gcc/${platform}"
-             version="git_revision:ababaaf45fa0dc369c07e19ca64862c4eefaadc1,9b4b5499b74bcf17f8f8194ebc2b1f5528e26f01"
+             version="git_revision:26e4f8ad7220f692cd8010f9cf7620d690f1b094,1daba1c5ceb27d25265ba2801f5be307d21a6abd"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/gcc/{{.OS}}-{{.Arch}}"/>
 
