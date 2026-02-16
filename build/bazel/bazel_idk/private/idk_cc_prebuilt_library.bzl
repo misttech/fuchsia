@@ -160,13 +160,19 @@ def _idk_cc_prebuilt_library_impl(
     if prebuilt_library_type == "shared":
         # In-tree code should depend on the imported `cc_shared_library` rather
         # than the `cc_library()`, which will not be a shared library.
-        # Give the `cc_library()` a different name to discourage use and make
-        # the base name available for the imported library.
+        # Give the `cc_library()` a different name to make the base name
+        # available for the imported library.
         cc_library_name = "%s_impl" % name
+
+        # The `cc_library()` is not a shared object. Prevent use.
+        cc_library_visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"]
     elif prebuilt_library_type == "static":
         # In-tree code should depend on the `cc_library` rather than importing
         # the `cc_static_library`, which is meant to be self-contained.
         cc_library_name = name
+
+        # In-tree code should depend on the `cc_library()`.
+        cc_library_visibility = visibility
     else:
         fail("Unrecognized `prebuilt_library_type` '%s'." % prebuilt_library_type)
 
@@ -190,7 +196,7 @@ def _idk_cc_prebuilt_library_impl(
         implementation_deps = implementation_deps,
         includes = [include_base],
         testonly = testonly,
-        visibility = visibility,
+        visibility = cc_library_visibility,
         **kwargs
     )
 
@@ -206,7 +212,8 @@ def _idk_cc_prebuilt_library_impl(
             shared_lib_name = "lib%s.so" % output_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
-            visibility = visibility,
+            # Only the IDK atom target should depend on this target.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         )
 
         # The target and `.so` file above cannot be referenced from targets that
@@ -227,6 +234,7 @@ def _idk_cc_prebuilt_library_impl(
             includes = [import_include_path],
             shared_library = ":%s" % underlying_library_for_idk_target_name,
             testonly = testonly,
+            # In-tree code should depend on the imported shared library.
             visibility = visibility,
         )
     elif prebuilt_library_type == "static":
@@ -237,7 +245,8 @@ def _idk_cc_prebuilt_library_impl(
             name = underlying_library_for_idk_target_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
-            visibility = visibility,
+            # Only the IDK atom target should depend on this target.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         )
     else:
         fail("Unrecognized `prebuilt_library_type` '%s'." % prebuilt_library_type)
