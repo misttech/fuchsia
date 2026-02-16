@@ -288,7 +288,7 @@ const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 13] = [
     ("ld\\.so\\.1-internal-heap|(^stack: msg of.*)", "[process-bootstrap]"),
     ("^blob-[0-9a-f]+$", "[blobs]"),
     ("^inactive-blob-[0-9a-f]+$", "[inactive blobs]"),
-    ("^thrd_t:0x.*|initial-thread|pthread_t:0x.*$", "[stacks]"),
+    ("^thrd_t:0x.*|initial-thread|pthread_(t|create):0x.*$", "[stacks]"),
     ("^data[0-9]*:.*$", "[data]"),
     ("^bss[0-9]*:.*$", "[bss]"),
     ("^relro:.*$", "[relro]"),
@@ -370,6 +370,10 @@ mod tests {
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("thrd_t:0x123"), "[stacks]");
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("initial-thread"), "[stacks]");
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("pthread_t:0x123"), "[stacks]");
+        pretty_assertions::assert_eq!(
+            vmo_name_to_digest_name("pthread_create:0xfa124714"),
+            "[stacks]"
+        );
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("data456:"), "[data]");
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("bss456:"), "[bss]");
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("relro:foobar"), "[relro]");

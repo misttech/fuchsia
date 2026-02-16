@@ -87,7 +87,7 @@ class Summary {
       {.regex = "ld\\.so\\.1-internal-heap|(^stack: msg of.*)", .name = "[process-bootstrap]"},
       {.regex = "blob-[0-9a-f]+", .name = "[blobs]"},
       {.regex = "inactive-blob-[0-9a-f]+", .name = "[inactive blobs]"},
-      {.regex = "thrd_t:0x.*|initial-thread|pthread_t:0x.*", .name = "[stacks]"},
+      {.regex = "thrd_t:0x.*|initial-thread|pthread_(t|create):0x.*", .name = "[stacks]"},
       {.regex = "data[0-9]*:.*", .name = "[data]"},
       {.regex = "bss[0-9]*:.*", .name = "[bss]"},
       {.regex = "relro:.*", .name = "[relro]"},
