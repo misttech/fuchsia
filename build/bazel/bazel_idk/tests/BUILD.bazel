@@ -41,7 +41,7 @@ create_idk_atom_for_test(
 # ":test_source_set_dependency2".
 # Non-Fuchsia builds also have a `non_fuchsia_deps` on ":test_source_set_dependency".
 idk_cc_source_library(
-    name = "test-source-set",
+    name = "test-source-library",
     testonly = True,
     srcs = [
         "internal/helper.cc",
@@ -372,7 +372,7 @@ idk_molecule(
     deps = [
         "platform_dependent_source_library_idk",
         ":test-shared-library_idk",
-        ":test-source-set_idk",
+        ":test-source-library_idk",
         ":test-static-library_idk",
         ":test_atom_idk",
         ":test_shared_library_zx_idk",
@@ -416,7 +416,7 @@ cc_binary(
     name = "test_executable_using_cc_source_library",
     testonly = True,
     srcs = ["test_executable.cc"],
-    deps = [":test-source-set"],
+    deps = [":test-source-library"],
 )
 
 cc_binary(
@@ -494,7 +494,7 @@ filegroup(
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
         ":platform_dependent_source_library",
-        ":test-source-set",
+        ":test-source-library",
         ":test_source_set_dependency",
         ":test_source_set_zx",
         ":tests",
@@ -543,7 +543,7 @@ genrule(
         # These libraries have Fuchsia-only dependencies and thus cannot be
         # linked into the executable on the host toolchain.
         ":test-shared-library",
-        ":test-source-set",
+        ":test-source-library",
         ":test-static-library",
         ":test_shared_library_zx",
         ":test_static_library_zx",
@@ -576,7 +576,7 @@ build_idk_combinations(
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
-        ":test-source-set",
+        ":test-source-library",
         ":test_source_set_dependency",
         "//sdk/lib/magma_common",
         # TODO(https://fxbug.dev/443766378): Fix the sysroot headers not found
