@@ -7,7 +7,7 @@ use crate::mm::{
     RemoteMemoryManager, TaskMemoryAccessor,
 };
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, KernelThreads, SimpleWaiter, WaitQueue};
+use crate::task::{CurrentTask, SimpleWaiter, WaitQueue};
 use crate::vfs::eventfd::EventFdFileObject;
 use crate::vfs::syscalls::IocbPtr;
 use crate::vfs::{
@@ -44,8 +44,8 @@ impl AioContext {
         max_operations: usize,
     ) -> Result<aio_context_t, Errno> {
         let context = Arc::new(AioContext { inner: AioContextInner::new(max_operations) });
-        context.inner.spawn_worker(&current_task.kernel().kthreads, WorkerType::Read);
-        context.inner.spawn_worker(&current_task.kernel().kthreads, WorkerType::Write);
+        context.inner.spawn_worker_for(current_task, WorkerType::Read);
+        context.inner.spawn_worker_for(current_task, WorkerType::Write);
         let context_addr = current_task.mm()?.map_anonymous(
             DesiredAddress::Any,
             AIO_RING_SIZE,
@@ -172,16 +172,19 @@ impl AioContextInner {
         self.operations.remove(op_type.worker_type(), iocb_addr)
     }
 
-    fn spawn_worker(self: &Arc<Self>, kthreads: &KernelThreads, worker_type: WorkerType) {
+    fn spawn_worker_for(self: &Arc<Self>, current_task: &CurrentTask, worker_type: WorkerType) {
+        let creds = current_task.full_current_creds();
         let inner = self.clone();
         let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
-            inner.perform_next_action(locked, current_task, worker_type)
+            current_task.override_creds(creds, || {
+                inner.perform_next_action(locked, current_task, worker_type)
+            })
         };
         let req = SpawnRequestBuilder::new()
             .with_debug_name("aio-worker")
             .with_sync_closure(closure)
             .build();
-        kthreads.spawner().spawn_from_request(req);
+        current_task.kernel().kthreads.spawner().spawn_from_request(req);
     }
 
     fn perform_next_action(
