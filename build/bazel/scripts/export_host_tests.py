@@ -6,6 +6,7 @@
 """Describe or export Bazel host test artifacts to the Ninja build directory."""
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -38,7 +39,7 @@ suffix. For example, the following command:
 
 ```bash
 python3 build/bazel/scripts/export_host_test.py \
-    list_tests \
+    list \
     //build/bazel/host_tests/cc_tests/...
 ```
 
@@ -56,12 +57,14 @@ Produces the following output:
       }
     ],
     "expects_ssh": false,
-    "label": "@@//build/bazel/host_tests/cc_tests:dynamic_test",
-    "name": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test",
-    "path": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test",
-    "runtime_deps": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test.runtime_deps.json",
-    "os": "linux",
-    "cpu": "x64"
+    "test": {
+      "label": "@@//build/bazel/host_tests/cc_tests:dynamic_test",
+      "name": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test",
+      "path": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test",
+      "runtime_deps": "bazel_host_tests/build/bazel/host_tests/cc_tests/dynamic_test.runtime_deps.json",
+      "os": "linux",
+      "cpu": "x64"
+    }
   },
   ...
 ]
@@ -188,7 +191,12 @@ def hardlink_or_copy_file(src_path: Path, dst_path: Path) -> None:
         try:
             dst_path.hardlink_to(src_path)
         except Exception:
-            shutil.copyfile(src_path, dst_path)
+            # When exporting twice to the same output directory,
+            # shutil.copyfile() can raise SameFileError because
+            # both the source and destination already point to
+            # the same i-node.
+            with contextlib.suppress(shutil.SameFileError):
+                shutil.copyfile(src_path, dst_path)
 
 
 def filter_bazel_bin_path(bazel_path: str) -> str:
@@ -269,12 +277,14 @@ class HostTestInfo(object):
         return {
             "environments": self._host_info.test_json_environments,
             "expects_ssh": False,
-            "label": self._label,
-            "name": name,
-            "path": self._entry_path,
-            "runtime_deps": self._runtime_deps_path,
-            "os": self._host_info.os,
-            "cpu": self._host_info.cpu,
+            "test": {
+                "label": self._label,
+                "name": name,
+                "path": self._entry_path,
+                "runtime_deps": self._runtime_deps_path,
+                "os": self._host_info.os,
+                "cpu": self._host_info.cpu,
+            },
         }
 
     def export_to(self, build_dir: Path, execroot: Path) -> None:
@@ -502,7 +512,7 @@ class ExportCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        execroot = args.bazel_cmd.get_execroot()
+        execroot = args.bazel_paths.execroot
 
         # Build the specific targets to ensure that the runfiles manifest files that
         # args.tests_map references do exist.
@@ -512,7 +522,7 @@ class ExportCommand(ScriptCommandBase):
         if ret.returncode != 0:
             return ret.returncode
 
-        build_dir = args.build_dir
+        build_dir = args.bazel_paths.ninja_build_dir
         if args.output_dir:
             build_dir = args.output_dir
 
@@ -559,15 +569,21 @@ def main() -> int:
         [
             "--output=starlark",
             "--config=host",
+            "--consistent_labels",
             f"--starlark:file={_CQUERY_STARLARK_FILE_PATH.resolve()}",
             f"tests(set({patterns}))",
         ],
         ignore_errors=False,
     )
     if ret.returncode != 0:
+        print(
+            f"ERROR: Bazel query failed!\n{ret.stdout}\n{ret.stderr}\n",
+            file=sys.stderr,
+        )
         return ret.returncode
 
     args.bazel_launcher = bazel_launcher
+    args.bazel_paths = bazel_paths
 
     host_info = HostInfo()
     tests_map = {}

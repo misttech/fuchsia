@@ -147,7 +147,7 @@ class FilterBazelBinPathTest(unittest.TestCase):
 
 class HostTestInfoTest(unittest.TestCase):
     TEST_INPUT = {
-        "label": "@//src/foo:test_program",
+        "label": "@@//src/foo:test_program",
         "executable": "bazel-out/k8-fastbuild/bin/src/foo/test_program",
         "runfiles_manifest": "bazel-out/k8-fastbuild/bin/src/foo/test_program.runfiles/MANIFEST",
     }
@@ -172,12 +172,14 @@ class HostTestInfoTest(unittest.TestCase):
             {
                 "environments": host_info.test_json_environments,
                 "expects_ssh": False,
-                "label": "@//src/foo:test_program",
-                "name": "src/foo/test_program",
-                "path": "src/foo/test_program",
-                "runtime_deps": "src/foo/test_program.runtime_deps.json",
-                "os": host_info.os,
-                "cpu": host_info.cpu,
+                "test": {
+                    "label": "@@//src/foo:test_program",
+                    "name": "src/foo/test_program",
+                    "path": "src/foo/test_program",
+                    "runtime_deps": "src/foo/test_program.runtime_deps.json",
+                    "os": host_info.os,
+                    "cpu": host_info.cpu,
+                },
             },
         )
 
@@ -191,58 +193,155 @@ class HostTestInfoTest(unittest.TestCase):
             {
                 "environments": host_info.test_json_environments,
                 "expects_ssh": False,
-                "label": "@//src/foo:test_program",
-                "name": "bazel_host_tests/src/foo/test_program",
-                "path": "bazel_host_tests/src/foo/test_program",
-                "runtime_deps": "bazel_host_tests/src/foo/test_program.runtime_deps.json",
-                "os": host_info.os,
-                "cpu": host_info.cpu,
+                "test": {
+                    "label": "@@//src/foo:test_program",
+                    "name": "bazel_host_tests/src/foo/test_program",
+                    "path": "bazel_host_tests/src/foo/test_program",
+                    "runtime_deps": "bazel_host_tests/src/foo/test_program.runtime_deps.json",
+                    "os": host_info.os,
+                    "cpu": host_info.cpu,
+                },
             },
         )
+
+    def _setup_export(
+        self, execroot: Path, build_dir: Path
+    ) -> tuple[Path, Path, Path, export_host_tests.HostTestInfo]:
+        """Setup export test files.
+
+        Args:
+            execroot: Path to test Bazel execroot.
+            build_dir: Path to test Ninja build directory.
+        Returns:
+            An (exec_path, repo_mapping_path, manifest_path, test_info) tuple.
+        """
+        # Generate a fake repo mapping file.
+        bazel_bin_shortpath = "bazel-out/k8-fastbuild/bin"
+        bazel_bin_path = execroot / bazel_bin_shortpath
+        repo_mapping_path = bazel_bin_path / "src/foo/test_program.repo_mapping"
+        repo_mapping_path.parent.mkdir(parents=True)
+        repo_mapping_path.write_text(",project,_main")
+
+        # Generate a fake manifest
+        manifest_path = execroot / self.TEST_INPUT["runfiles_manifest"]
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text(
+            "\n".join(
+                sorted(
+                    [
+                        "_main/data/file {bazel_bin_shortpath}/data/file",
+                        "_main/src/foo/test_program {bazel_bin_shortpath}/src/foo/test_program",
+                        f"_repo_mapping {os.path.relpath(repo_mapping_path, execroot)}",
+                    ]
+                )
+            )
+        )
+
+        # Generate a fake executable
+        exec_path = bazel_bin_path / "src/foo/test_program"
+        exec_path.write_text("#!/bin/sh\necho ok\n")
+
+        host_info = export_host_tests.HostInfo()
+        test_info = export_host_tests.HostTestInfo(
+            self.TEST_INPUT, host_info, "exported"
+        )
+        return exec_path, repo_mapping_path, manifest_path, test_info
 
     def test_export_to(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             execroot = Path(temp_dir) / "execroot"
             build_dir = Path(temp_dir) / "build_dir"
 
-            # Generate a fake repo mapping file.
-            bazel_bin_shortpath = "bazel-out/k8-fastbuild/bin"
-            bazel_bin_path = execroot / bazel_bin_shortpath
-            repo_mapping_path = (
-                bazel_bin_path / "src/foo/test_program.repo_mapping"
-            )
-            repo_mapping_path.parent.mkdir(parents=True)
-            repo_mapping_path.write_text(",project,_main")
-
-            # Generate a fake manifest
-            manifest_path = execroot / self.TEST_INPUT["runfiles_manifest"]
-            manifest_path.parent.mkdir(parents=True)
-            manifest_path.write_text(
-                "\n".join(
-                    sorted(
-                        [
-                            "_main/data/file {bazel_bin_shortpath}/data/file",
-                            "_main/src/foo/test_program {bazel_bin_shortpath}/src/foo/test_program",
-                            f"_repo_mapping {os.path.relpath(repo_mapping_path, execroot)}",
-                        ]
-                    )
-                )
-            )
-
-            # Generate a fake executable
-            exec_path = bazel_bin_path / "src/foo/test_program"
-            exec_path.write_text("#!/bin/sh\necho ok\n")
-
-            host_info = export_host_tests.HostInfo()
-            test_info = export_host_tests.HostTestInfo(
-                self.TEST_INPUT, host_info, "exported"
-            )
+            (
+                exec_path,
+                repo_mapping_path,
+                manifest_path,
+                test_info,
+            ) = self._setup_export(execroot, build_dir)
 
             # Do the export
             test_info.export_to(build_dir, execroot)
 
             # Now verify results.
 
+            export_root = build_dir / "exported" / "src" / "foo"
+
+            exported_exec = export_root / "test_program"
+            self.assertTrue(exported_exec.is_file())
+            self.assertEqual(
+                exported_exec.stat(),
+                exec_path.stat(),
+                f"Exported test should be a hard-link: {exported_exec}",
+            )
+
+            def resolve_one_symlink(path: Path) -> Path:
+                target = path.readlink()
+                if not target.is_absolute():
+                    target = (path.parent / target).resolve()
+                return target
+
+            def assertIsSymlinkTo(src_path: Path, dst_path: Path) -> None:
+                self.assertTrue(
+                    src_path.is_symlink(), f"Not a symlink: {src_path}"
+                )
+                src_target = resolve_one_symlink(src_path)
+                self.assertTrue(src_target, dst_path)
+
+            assertIsSymlinkTo(
+                export_root / "test_program.repo_mapping", repo_mapping_path
+            )
+
+            exported_manifest_path = (
+                export_root / "test_program.runfiles/MANIFEST"
+            )
+            self.assertTrue(exported_manifest_path.is_file())
+
+            assertIsSymlinkTo(
+                export_root / "test_program.runfiles_manifest",
+                exported_manifest_path,
+            )
+
+            self.assertEqual(
+                exported_manifest_path.read_text(),
+                "_main/data/file exported/src/foo/test_program.runfiles/_main/data/file\n"
+                + "_main/src/foo/test_program exported/src/foo/test_program.runfiles/_main/src/foo/test_program\n"
+                + "_repo_mapping exported/src/foo/test_program.runfiles/_repo_mapping\n",
+            )
+
+            runtime_deps_path = export_root / "test_program.runtime_deps.json"
+            self.assertTrue(runtime_deps_path.is_file())
+            self.assertListEqual(
+                json.loads(runtime_deps_path.read_text()),
+                [
+                    "exported/src/foo/test_program.runfiles/_main/data/file",
+                    "exported/src/foo/test_program.runfiles/_main/src/foo/test_program",
+                    "exported/src/foo/test_program.runfiles/_repo_mapping",
+                    "exported/src/foo/test_program.runfiles/MANIFEST",
+                    "exported/src/foo/test_program.runfiles_manifest",
+                    "exported/src/foo/test_program.repo_mapping",
+                ],
+            )
+
+    def test_double_export(self) -> None:
+        # Check that exporting host tests twice to the same build directory
+        # does not fail due to hard-linking the same file twice.
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            execroot = Path(temp_dir) / "execroot"
+            build_dir = Path(temp_dir) / "build_dir"
+
+            (
+                exec_path,
+                repo_mapping_path,
+                manifest_path,
+                test_info,
+            ) = self._setup_export(execroot, build_dir)
+
+            # Do the export
+            test_info.export_to(build_dir, execroot)
+            test_info.export_to(build_dir, execroot)
+
+            # Now verify results.
             export_root = build_dir / "exported" / "src" / "foo"
 
             exported_exec = export_root / "test_program"
