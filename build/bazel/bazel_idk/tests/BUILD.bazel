@@ -18,6 +18,7 @@ load(
     "idk_noop_atom",
 )
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
+load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
 
 create_idk_atom_for_test(
     name = "test_atom",
@@ -102,6 +103,23 @@ idk_cc_shared_library(
     ],
 )
 
+verify_file_path(
+    name = "verify_test_shared_library_file_path",
+    testonly = True,
+    # The actual `cc_library` target is not a shared object.
+    expected_file_path = "build/bazel/bazel_idk/tests/libtest-shared-library_impl.a",
+    # ":test-shared-library" is the `cc_import()`, which exposes `CcInfo` but
+    # not `files` in `DefaultInfo`, so we must use the "..._impl" target instead.
+    target = ":test-shared-library_impl",
+)
+
+verify_file_path(
+    name = "verify_exported_test_shared_library_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/libmy_test_shared_library.so",
+    target = ":test-shared-library_export",
+)
+
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
 # * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
 #   * This file includes another_header.h, which is available via
@@ -132,6 +150,21 @@ idk_cc_static_library(
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
+)
+
+verify_file_path(
+    name = "verify_test_static_library_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/libtest-static-library.a",
+    target = ":test-static-library",
+)
+
+verify_file_path(
+    name = "verify_exported_test_static_library_file_path",
+    testonly = True,
+    # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
+    expected_file_path = "build/bazel/bazel_idk/tests/libtest-static-library_export.a",
+    target = ":test-static-library_export",
 )
 
 # Tests `fuchsia_*` and `non_fuchsia_*` attributes for header and source files.
@@ -476,9 +509,10 @@ filegroup(
     name = "build_only_tests",
     testonly = True,
     srcs = [
+        # Depends on the IDK atom targets.
         ":test_molecule",
 
-        # Test linking.
+        # Linking executables verifies that all deps are properly specified.
         ":test_executable_using_cc_shared_library",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
@@ -487,6 +521,12 @@ filegroup(
         ":test_executable_using_cc_source_library_zx",
         ":test_executable_using_cc_static_library_zx",
         ":test_executable_using_imported_cc_static_library",
+
+        # Verify that the file paths of prebuilt libraries are correct.
+        ":verify_test_shared_library_file_path",
+        ":verify_exported_test_shared_library_file_path",
+        ":verify_test_static_library_file_path",
+        ":verify_exported_test_static_library_file_path",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
