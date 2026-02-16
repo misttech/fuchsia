@@ -245,7 +245,7 @@ impl ConnectionInfo {
     }
 }
 
-pub type DeviceMap = HashMap<magma_device_t, MagmaDevice>;
+pub type DeviceMap = HashMap<magma_device_t, Arc<MagmaDevice>>;
 
 pub struct MagmaFile {
     supported_vendors: Vec<u16>,
@@ -370,6 +370,10 @@ impl MagmaFile {
         self.buffers.lock().insert(buffer, arc_buffer);
     }
 
+    fn get_device(&self, device: magma_device_t) -> Result<Arc<MagmaDevice>, Errno> {
+        Ok(self.devices.lock().get(&device).ok_or_else(|| errno!(EINVAL))?.clone())
+    }
+
     fn get_connection(
         &self,
         connection: magma_connection_t,
@@ -480,7 +484,7 @@ impl FileOps for MagmaFile {
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_IMPORT => {
                 let (control, mut response) = read_control_and_response(current_task, &command)?;
                 let device = device_import(&self.supported_vendors, control, &mut response)?;
-                (*self.devices.lock()).insert(device.handle, device);
+                (*self.devices.lock()).insert(device.handle, Arc::new(device));
 
                 current_task.write_object(UserRef::new(response_address), &response)
             }
@@ -490,7 +494,9 @@ impl FileOps for MagmaFile {
                     virtio_magma_device_create_connection_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
 
-                create_connection(control, &mut response, &mut self.connections.lock());
+                let device = self.get_device(control.device)?;
+
+                create_connection(device.handle, &mut response, &mut self.connections.lock());
                 current_task.write_object(UserRef::new(response_address), &response)
             }
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE => {
@@ -1128,7 +1134,9 @@ impl FileOps for MagmaFile {
                     virtio_magma_device_query_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
 
-                query(locked, current_task, control, &mut response)?;
+                let device = self.get_device(control.device)?;
+
+                query(locked, current_task, device.handle, control.id, &mut response)?;
 
                 response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_QUERY as u32;
                 current_task.write_object(UserRef::new(response_address), &response)

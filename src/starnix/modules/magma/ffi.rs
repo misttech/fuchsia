@@ -15,8 +15,8 @@ use magma::{
     magma_connection_flush, magma_connection_import_semaphore2,
     magma_connection_read_notification_channel, magma_connection_t, magma_device_create_connection,
     magma_device_import, magma_device_query, magma_device_t, magma_exec_command_buffer,
-    magma_exec_resource, magma_handle_t, magma_inline_command_buffer, magma_status_t,
-    virtio_magma_buffer_export_ctrl_t, virtio_magma_buffer_export_resp_t,
+    magma_exec_resource, magma_handle_t, magma_inline_command_buffer, magma_query_t,
+    magma_status_t, virtio_magma_buffer_export_ctrl_t, virtio_magma_buffer_export_resp_t,
     virtio_magma_buffer_get_handle_ctrl_t, virtio_magma_buffer_get_handle_resp_t,
     virtio_magma_connection_execute_command_ctrl_t,
     virtio_magma_connection_execute_inline_commands_ctrl_t, virtio_magma_connection_flush_ctrl_t,
@@ -31,9 +31,8 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE,
-    virtio_magma_device_create_connection_ctrl, virtio_magma_device_create_connection_resp_t,
-    virtio_magma_device_import_ctrl_t, virtio_magma_device_import_resp_t,
-    virtio_magma_device_query_ctrl_t, virtio_magma_device_query_resp_t,
+    virtio_magma_device_create_connection_resp_t, virtio_magma_device_import_ctrl_t,
+    virtio_magma_device_import_resp_t, virtio_magma_device_query_resp_t,
     virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
     virtmagma_command_descriptor,
 };
@@ -86,7 +85,7 @@ where
 ///
 /// SAFETY: Makes an FFI call to populate the fields of `response`.
 pub fn create_connection(
-    control: virtio_magma_device_create_connection_ctrl,
+    device: magma_device_t,
     response: &mut virtio_magma_device_create_connection_resp_t,
     connections: &mut ConnectionMap,
 ) {
@@ -97,7 +96,7 @@ pub fn create_connection(
             reason = "Force documented unsafe blocks in Starnix"
         )]
         unsafe {
-            magma_device_create_connection(control.device, &mut connection_out) as u64
+            magma_device_create_connection(device, &mut connection_out) as u64
         }
     };
 
@@ -648,7 +647,8 @@ pub fn get_buffer_handle(
 pub fn query(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
-    control: virtio_magma_device_query_ctrl_t,
+    device: magma_device_t,
+    id: magma_query_t,
     response: &mut virtio_magma_device_query_resp_t,
 ) -> Result<(), Errno> {
     let mut result_buffer_out = 0;
@@ -659,8 +659,7 @@ pub fn query(
             reason = "Force documented unsafe blocks in Starnix"
         )]
         unsafe {
-            magma_device_query(control.device, control.id, &mut result_buffer_out, &mut result_out)
-                as u64
+            magma_device_query(device, id, &mut result_buffer_out, &mut result_out) as u64
         }
     };
 
