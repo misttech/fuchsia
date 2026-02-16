@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+test_suite(
+    name = "cc_tests",
+    visibility = ["//visibility:public"],
+)
+
 # A simple statically linked test executable that does not use a runfiles library.
 cc_test(
     name = "static_test",
