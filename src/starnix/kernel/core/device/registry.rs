@@ -13,7 +13,7 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::log_error;
-use starnix_sync::{InterruptibleEvent, LockEqualOrBefore, OrderedMutex};
+use starnix_sync::{InterruptibleEvent, LockBefore, LockEqualOrBefore, OrderedMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_type::{
@@ -382,6 +382,7 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
+        let locked = locked.cast_locked::<FileOpsCore>();
         let entry = DeviceEntry::new(name.into(), dev_ops);
         self.devices(locked, metadata.mode).register_minor(metadata.device_type, entry);
         self.add_device(locked, kernel_or_task, name, metadata, class, build_directory)
@@ -525,7 +526,8 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let device_type = self.state.lock(locked.cast_locked()).dyn_chardev_allocator.allocate()?;
+        let locked = locked.cast_locked::<FileOpsCore>();
+        let device_type = self.state.lock(locked).dyn_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(name.into(), device_type, DeviceMode::Char);
         let entry = DeviceEntry::new(name.into(), dev_ops);
         self.devices(locked, metadata.mode).register_minor(metadata.device_type, entry);
@@ -551,7 +553,7 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.devices(locked, metadata.mode)
+        self.devices(locked.cast_locked(), metadata.mode)
             .get(metadata.device_type)
             .expect("device is registered");
         let device = self.objects.create_device(name, Some(metadata), class, build_directory);
@@ -636,7 +638,7 @@ impl DeviceRegistry {
         mode: DeviceMode,
     ) -> Vec<(u32, FsString)>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
+        L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
         self.devices(locked, mode).list_major_devices()
     }
@@ -649,7 +651,7 @@ impl DeviceRegistry {
         range: Range<DeviceType>,
     ) -> Vec<(DeviceType, FsString)>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
+        L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
         self.devices(locked, mode).list_minor_devices(range)
     }
@@ -661,9 +663,9 @@ impl DeviceRegistry {
         mode: DeviceMode,
     ) -> MappedMutexGuard<'a, RegisteredDevices>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
+        L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
-        MutexGuard::map(self.state.lock(locked.cast_locked()), |state| match mode {
+        MutexGuard::map(self.state.lock(locked), |state| match mode {
             DeviceMode::Char => &mut state.char_devices,
             DeviceMode::Block => &mut state.block_devices,
         })
@@ -685,6 +687,7 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
+        let locked = locked.cast_locked::<FileOpsCore>();
         let entry = DeviceEntry::new(name, dev_ops);
         self.devices(locked, mode).register_major(major, entry)
     }
@@ -694,7 +697,8 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let mut state = self.state.lock(locked.cast_locked());
+        let locked = locked.cast_locked::<FileOpsCore>();
+        let mut state = self.state.lock(locked);
         let id = DeviceType::new(0, state.next_anon_minor);
         state.next_anon_minor += 1;
         id
@@ -771,7 +775,7 @@ impl DeviceRegistry {
         mode: DeviceMode,
     ) -> Result<DeviceHandle, Errno>
     where
-        L: LockEqualOrBefore<FileOpsCore>,
+        L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
         self.devices(locked, mode).get(device_type)
     }
