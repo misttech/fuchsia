@@ -2053,6 +2053,18 @@ alias(
 )
 
 alias(
+    name = "roaring-0.11.3",
+    actual = "//third_party/rust_crates/vendor/roaring-0.11.3:roaring",
+    tags = ["manual"],
+)
+
+alias(
+    name = "roaring",
+    actual = "//third_party/rust_crates/vendor/roaring-0.11.3:roaring",
+    tags = ["manual"],
+)
+
+alias(
     name = "rsa-0.9.8",
     actual = "//third_party/rust_crates/vendor/rsa-0.9.8:rsa",
     tags = ["manual"],

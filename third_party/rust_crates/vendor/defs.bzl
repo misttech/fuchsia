@@ -447,6 +447,7 @@ _NORMAL_DEPENDENCIES = {
             "regex": Label("//third_party/rust_crates/vendor/regex-1.7.3:regex"),
             "regex-syntax": Label("//third_party/rust_crates/vendor/regex-syntax-0.8.9:regex_syntax"),
             "ring": Label("//third_party/rust_crates/vendor/ring-0.17.8:ring"),
+            "roaring": Label("//third_party/rust_crates/vendor/roaring-0.11.3:roaring"),
             "rsa": Label("//third_party/rust_crates/vendor/rsa-0.9.8:rsa"),
             "rustc-hash": Label("//third_party/rust_crates/vendor/rustc-hash-1.0.1:rustc_hash"),
             "rustls": Label("//third_party/rust_crates/vendor/rustls-0.21.12:rustls"),

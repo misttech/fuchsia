@@ -838,6 +838,10 @@ group("ring") {
   public_deps = [ ":ring-v0_17_8" ]
 }
 
+group("roaring") {
+  public_deps = [ ":roaring-v0_11_3" ]
+}
+
 group("rsa") {
   public_deps = [ ":rsa-v0_9_8" ]
 }
@@ -3479,6 +3483,39 @@ rustc_library("bytecount-v0_6_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bytecount-v0_6_9.license" ]
+}
+
+license("bytemuck-v1_25_0.license") {
+  public_package_name = "bytemuck"
+  license_files = [
+    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bytemuck-1.25.0/LICENSE-ZLIB",
+  ]
+}
+
+rustc_library("bytemuck-v1_25_0") {
+  crate_name = "bytemuck"
+  source_root = "//third_party/rust_crates/vendor/bytemuck-1.25.0/src/lib.rs"
+  output_name = "bytemuck-b66ad3f792ebed41"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=b66ad3f792ebed41",
+    "-Cextra-filename=-b66ad3f792ebed41",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bytemuck-v1_25_0.license" ]
 }
 
 license("byteorder-v1_5_0.license") {
@@ -15225,6 +15262,42 @@ rustc_library("ringbuf-v0_4_8") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ringbuf-v0_4_8.license" ]
+}
+
+license("roaring-v0_11_3.license") {
+  public_package_name = "roaring"
+  license_files = [
+    "//third_party/rust_crates/vendor/roaring-0.11.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/roaring-0.11.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("roaring-v0_11_3") {
+  crate_name = "roaring"
+  source_root = "//third_party/rust_crates/vendor/roaring-0.11.3/src/lib.rs"
+  output_name = "roaring-d13d660550f7f7df"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":byteorder-v1_5_0" ]
+  deps += [ ":bytemuck-v1_25_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d13d660550f7f7df",
+    "-Cextra-filename=-d13d660550f7f7df",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":roaring-v0_11_3.license" ]
 }
 
 license("rsa-v0_9_8.license") {
