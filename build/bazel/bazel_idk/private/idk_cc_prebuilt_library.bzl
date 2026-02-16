@@ -287,6 +287,8 @@ def _idk_cc_prebuilt_library_impl(
             hdrs_for_internal_use = hdrs_for_internal_use,
             srcs = srcs,
             testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         ),
 
         # For simplicity, check all source files, including non-header files in
@@ -295,6 +297,8 @@ def _idk_cc_prebuilt_library_impl(
             name = name,
             files = all_source_files,
             testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         ),
     ]
 

@@ -182,6 +182,8 @@ def _idk_cc_source_library_impl(
             hdrs_for_internal_use = hdrs_for_internal_use + fuchsia_hdrs_for_internal_use,
             srcs = srcs + fuchsia_srcs,
             testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         ),
 
         # For simplicity, check all source files, including non-header files in
@@ -191,6 +193,8 @@ def _idk_cc_source_library_impl(
             name = name,
             files = all_idk_source_files,
             testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         ),
     ]
 

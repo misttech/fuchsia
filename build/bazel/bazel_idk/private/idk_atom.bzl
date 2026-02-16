@@ -221,6 +221,7 @@ def _create_idk_atom_impl(ctx):
 
     return [
         DefaultInfo(files = all_deps_depset),
+        # LINT.IfChange(idk_atom_info)
         FuchsiaIdkAtomInfo(
             label = ctx.label,
             idk_name = ctx.attr.idk_name,
@@ -241,6 +242,7 @@ def _create_idk_atom_impl(ctx):
             atom_build_deps = ctx.attr.atom_build_deps,
             additional_prebuild_info = additional_prebuild_info,
         ),
+        # LINT.ThenChange(//build/bazel/bazel_idk/providers.bzl:idk_atom_info)
     ]
 
 _create_idk_atom = rule(
@@ -420,7 +422,8 @@ def _idk_atom_impl(
             golden_files = [api_file_path],
             only_warn_on_changes = warn_on_sdk_changes,
             testonly = testonly,
-            visibility = ["//visibility:private"],
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         )
 
         atom_build_deps.append(":%s" % verify_api_target_name)

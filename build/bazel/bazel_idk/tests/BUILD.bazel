@@ -17,8 +17,10 @@ load(
     "idk_molecule",
     "idk_noop_atom",
 )
+load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
+load(":rules.bzl", "create_test_atom_info", "verify_atom_info")
 
 create_idk_atom_for_test(
     name = "test_atom",
@@ -31,6 +33,33 @@ create_idk_atom_for_test(
     meta_dest = "/pkg/test",
     stable = True,
     type = "data",
+)
+
+create_test_atom_info(
+    name = "test_atom_golden_info",
+    testonly = True,
+    additional_prebuild_info = {},
+    api_area = "Developer",
+    api_contents_map = {},
+    api_file_path = None,
+    atom_build_deps = ["//build/bazel/bazel_idk:partner_idk_data_allowlist"],
+    atom_files_map_generated_files = {},
+    atom_files_map_source_files = {},
+    category = "partner",
+    id = "sdk://pkg/test",
+    idk_deps = [],
+    idk_name = "test_atom",
+    is_stable = True,
+    label = ":test_atom_idk",
+    meta_dest = "/pkg/test",
+    type = "data",
+)
+
+verify_atom_info(
+    name = "verify_test_atom_info",
+    testonly = True,
+    atom = ":test_atom_idk",
+    expected_atom_info = ":test_atom_golden_info",
 )
 
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
@@ -70,6 +99,61 @@ idk_cc_source_library(
     ],
 )
 
+create_test_atom_info(
+    name = "test_source_library_golden_info",
+    testonly = True,
+    additional_prebuild_info = {
+        "include_dir": '"pkg/test_source_set/include"',
+        "sources": '["pkg/test_source_set/internal/helper.cc","pkg/test_source_set/some_library.cc"]',
+        "headers": '["pkg/test_source_set/include/lib/test_lib/test_header.h"]',
+        "file_base": '"pkg/test_source_set"',
+    },
+    api_area = "Developer",
+    api_contents_map = {
+        "pkg/test_source_set/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+    },
+    api_file_path = "//build/bazel/bazel_idk/tests:different_file_name.api",
+    atom_build_deps = [
+        "//build/bazel/bazel_idk/tests:test-source-library_verify_no_duplicate_files",
+        "//build/bazel/bazel_idk/tests:test-source-library_verify_pragma_once",
+        "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist",
+        "//build/bazel/bazel_idk/tests:test-source-library_idk_verify_api",
+    ],
+    atom_files_map_generated_files = {},
+    atom_files_map_source_files = {
+        "pkg/test_source_set/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+        "pkg/test_source_set/internal/helper.cc": "//build/bazel/bazel_idk/tests:internal/helper.cc",
+        "pkg/test_source_set/some_library.cc": "//build/bazel/bazel_idk/tests:some_library.cc",
+    },
+    atoms_depset = depset([
+        "//build/bazel/bazel_idk/tests:test_source_set_subdependency_idk",
+        "//build/bazel/bazel_idk/tests:test_noop_atom_idk",
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ]),
+    category = "partner",
+    id = "sdk://pkg/test_source_set",
+    idk_deps = [
+        "//build/bazel/bazel_idk/tests:test_noop_atom_idk",
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
+    idk_name = "test_source_set",
+    is_stable = True,
+    label = "//build/bazel/bazel_idk/tests:test-source-library_idk",
+    meta_dest = "pkg/test_source_set/meta.json",
+    type = "cc_source_library",
+)
+
+verify_atom_info(
+    name = "verify_test_source_library_atom_info",
+    testonly = True,
+    atom = ":test-source-library_idk",
+    expected_atom_info = ":test_source_library_golden_info",
+)
+
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
 # * dependency.h: via `hdrs` in the `fuchsia_deps` ":test_source_set_dependency"
 #   * This file includes another_header.h, which is available via
@@ -101,6 +185,72 @@ idk_cc_shared_library(
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
+)
+
+create_test_atom_info(
+    name = "test_shared_library_golden_info",
+    testonly = True,
+    additional_prebuild_info = {
+        "format": '"shared"',
+        "include_dir": '"pkg/test_shared_library/include"',
+        "headers": '["pkg/test_shared_library/include/lib/test_lib/test_header.h"]',
+        "file_base": '"pkg/test_shared_library"',
+        "binaries": (
+            '{"api_level":"PLATFORM",' +
+            '"arch":"x64",' +
+            '"debug_lib":"arch/x64/debug/libmy_test_shared_library.so",' +
+            '"dist_lib":"arch/x64/dist/libmy_test_shared_library.so",' +
+            '"dist_path":"lib/libmy_test_shared_library.so",' +
+            '"ifs":"arch/x64/lib/libmy_test_shared_library.ifs",' +
+            '"link_lib":"arch/x64/lib/libmy_test_shared_library.so"}'
+        ),
+    },
+    api_area = "Developer",
+    api_contents_map = {
+        "pkg/test_shared_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+    },
+    api_file_path = "//build/bazel/bazel_idk/tests:different_file_name_shared_library.api",
+    atom_build_deps = [
+        "//build/bazel/bazel_idk/tests:test-shared-library_verify_no_duplicate_files",
+        "//build/bazel/bazel_idk/tests:test-shared-library_verify_pragma_once",
+        "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_shared_library_allowlist",
+        "//build/bazel/bazel_idk/tests:test-shared-library_idk_verify_api",
+    ],
+    atom_files_map_generated_files = {
+        "arch/x64/debug/libmy_test_shared_library.so": ":test-shared-library_export",
+        # TODO(https://fxbug.dev/443982549): Update to stripped binary once exposed.
+        "arch/x64/dist/libmy_test_shared_library.so": ":test-shared-library_export",
+        # TODO(https://fxbug.dev/449812165): Update these to link stubs once exposed.
+        "arch/x64/lib/libmy_test_shared_library.so": ":test-shared-library_export",
+        "arch/x64/lib/libmy_test_shared_library.ifs": ":test-shared-library_export",
+    },
+    atom_files_map_source_files = {
+        "pkg/test_shared_library/include/lib/test_lib/test_header.h": "include/lib/test_lib/test_header.h",
+    },
+    atoms_depset = depset([
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ]),
+    category = "partner",
+    id = "sdk://pkg/test_shared_library",
+    idk_deps = [
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
+    idk_name = "test_shared_library",
+    is_stable = True,
+    label = "//build/bazel/bazel_idk/tests:test-shared-library_idk",
+    meta_dest = "pkg/test_shared_library/meta.json",
+    type = "cc_prebuilt_library",
+)
+
+verify_atom_info(
+    name = "verify_test_shared_library_atom_info",
+    testonly = True,
+    atom = ":test-shared-library_idk",
+    expected_atom_info = ":test_shared_library_golden_info",
 )
 
 verify_file_path(
@@ -150,6 +300,65 @@ idk_cc_static_library(
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
+)
+
+create_test_atom_info(
+    name = "test_static_library_golden_info",
+    testonly = True,
+    additional_prebuild_info = {
+        "format": '"static"',
+        "include_dir": '"pkg/test_static_library/include"',
+        "headers": '["pkg/test_static_library/include/lib/test_lib/test_header.h"]',
+        "file_base": '"pkg/test_static_library"',
+        "binaries": (
+            '{"api_level":"PLATFORM",' +
+            '"arch":"x64",' +
+            # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
+            '"link_lib":"arch/x64/lib/libtest-static-library_export.a"}'
+        ),
+    },
+    api_area = "Developer",
+    api_contents_map = {
+        "pkg/test_static_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+    },
+    api_file_path = "//build/bazel/bazel_idk/tests:different_file_name_static_library.api",
+    atom_build_deps = [
+        "//build/bazel/bazel_idk/tests:test-static-library_verify_no_duplicate_files",
+        "//build/bazel/bazel_idk/tests:test-static-library_verify_pragma_once",
+        "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_static_library_allowlist",
+        "//build/bazel/bazel_idk/tests:test-static-library_idk_verify_api",
+    ],
+    atom_files_map_generated_files = {
+        # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
+        "arch/x64/lib/libtest-static-library_export.a": ":test-static-library_export",
+    },
+    atom_files_map_source_files = {
+        "pkg/test_static_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+    },
+    atoms_depset = depset([
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ]),
+    category = "partner",
+    id = "sdk://pkg/test_static_library",
+    idk_deps = [
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
+    idk_name = "test_static_library",
+    is_stable = True,
+    label = "//build/bazel/bazel_idk/tests:test-static-library_idk",
+    meta_dest = "pkg/test_static_library/meta.json",
+    type = "cc_prebuilt_library",
+)
+
+verify_atom_info(
+    name = "verify_test_static_library_atom_info",
+    testonly = True,
+    atom = ":test-static-library_idk",
+    expected_atom_info = ":test_static_library_golden_info",
 )
 
 verify_file_path(
@@ -527,6 +736,12 @@ filegroup(
         ":verify_exported_test_shared_library_file_path",
         ":verify_test_static_library_file_path",
         ":verify_exported_test_static_library_file_path",
+
+        # Verify that the info about atoms that goes into the IDK is correct.
+        ":verify_test_atom_info",
+        ":verify_test_shared_library_atom_info",
+        ":verify_test_source_library_atom_info",
+        ":verify_test_static_library_atom_info",
 
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",

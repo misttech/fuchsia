@@ -39,7 +39,11 @@ verify_no_pragma_once = rule(
     },
 )
 
-def create_verify_pragma_once_target(name, files, testonly):
+def create_verify_pragma_once_target(
+        name,
+        files,
+        testonly,
+        visibility):
     """Creates a target that ensures there are no #pragma once directives in `files`.
 
     Args:
@@ -54,7 +58,7 @@ def create_verify_pragma_once_target(name, files, testonly):
         name = target_name,
         files = files,
         testonly = testonly,
-        visibility = ["//visibility:private"],
+        visibility = visibility,
     )
     return ":%s" % target_name
 
@@ -63,7 +67,8 @@ def create_verify_no_duplicate_files_target(
         hdrs,
         hdrs_for_internal_use,
         srcs,
-        testonly):
+        testonly,
+        visibility):
     """Creates a target that ensures there are no duplicate files specified.
 
     It works by providing all source files as a single list of labels. Bazel
@@ -83,6 +88,6 @@ def create_verify_no_duplicate_files_target(
         name = target_name,
         data = hdrs + hdrs_for_internal_use + srcs,
         testonly = testonly,
-        visibility = ["//visibility:private"],
+        visibility = visibility,
     )
     return ":%s" % target_name
