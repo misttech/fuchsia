@@ -4,8 +4,8 @@ This guide assumes you have already [created](write-a-fuzzer.md) a fuzzer that y
 build. It uses the same [sample code](write-a-fuzzer.md#samples) as in that guide.
 
 Fuchsia uses [GN][fuchsia-gn], a meta-build system, to generate `.ninja` files that explicitly
-describe how to build the system. [_GN targets_][gn-targets]{: .external} are nodes in the build graph
-that represent a specific output such as a library or executable.
+describe how to build the system. [_GN targets_][gn-targets]{: .external} are nodes in the build
+graph that represent a specific output such as a library or executable.
 [_GN templates_][gn-templates]{: .external} are rules that generate additional targets.
 
 In order to make adding new fuzzers as easy as possible, Fuchsia provides fuzzing-related GN
@@ -27,6 +27,7 @@ Once you have defined your build rules, you can [build fuzzers with fx](#fx-set)
 Each language has a specific fuzzer GN template:
 
 * {C/C++}
+
   The [`fuchsia_library_fuzzer`][fuchsia_library_fuzzer.gni] GN template generates an `executable`
   target that compiles and links the fuzz target function with the code under test and the fuzzing
   engine.
@@ -105,13 +106,12 @@ Each language has a specific fuzzer GN template:
       ```
 
 When a [fuzzing variant][variants] is [selected](#fx-set), these templates will build a fuzzer
-binary by linking the \[libFuzzer\] compiler runtime with the provided `sources`, `deps` or both. This
-code must provide a [fuzz target][fuzz-target]{:.external} function.
+binary by linking the \[libFuzzer\] compiler runtime with the provided `sources`, `deps` or both.
+This code must provide a [fuzz target][fuzz-target]{:.external} function.
 
 Otherwise, a fuzzer unit test is built by linking a [test harness][test-harness] with the provided
-code. This test harness calls the fuzz target function with fixed inputs, such
-as a zero length input. This test ensures the fuzzer can compile and link, even when not building
-for fuzzing.
+code. This test harness calls the fuzz target function with fixed inputs, such as a zero length
+input. This test ensures the fuzzer can compile and link, even when not building for fuzzing.
 
 Note: Since the generated unit test uses a zero-length input, your fuzzer _must not_ crash when
 provided with a zero-length input. If a fuzzer input is shorter than your fuzzer's minimum input
@@ -149,11 +149,10 @@ fuchsia_fuzzer_component("my-fuzzer-component") {
 }
 ```
 
-The [component manifest source][glossary.manifest] for library fuzzers must include
-the default shard for libfuzzer. The output name of the fuzzer must be
-provided as the first program argument as a package-relative path. Additional arguments may include
-libFuzzer [options][options]{:.external}, or package-relative paths to directories of seed inputs
-known as [seed corpora][corpus]{:.external}.
+The [component manifest source][glossary.manifest] for library fuzzers must include the default
+shard for libfuzzer. The output name of the fuzzer must be provided as the first program argument
+as a package-relative path. Additional arguments may include libFuzzer [options][options]{:.external},
+or package-relative paths to directories of seed inputs known as [seed corpora][corpus]{:.external}.
 
 For example:
 
@@ -176,8 +175,7 @@ For example:
 }
 ```
 
-A seed corpus should match a `resource` target that is included in the component's
-`deps`.
+A seed corpus should match a `resource` target that is included in the component's `deps`.
 
 For example:
 
@@ -200,19 +198,19 @@ resource("my-corpus") {
 
 The `fuchsia_fuzzer_package` [template][fuzzer_package.gni] bundles fuzzer components into a
 Fuchsia [package][glossary.package], similar to how `fuchsia_test_package` bundles test components.
-The `fuchsia_fuzzer_package` template is distinguished by adding a specific build rule
-to annotate fuzzers when built by a fuzzing toolchain [variant][variants].
+The `fuchsia_fuzzer_package` template is distinguished by adding a specific build rule to annotate
+fuzzers when built by a fuzzing toolchain [variant][variants].
 
-Note: Executables built by these templates are only be capable of fuzzing if they are selected by a
+Note: Executables built by these templates are only capable of fuzzing if they are selected by a
 fuzzing toolchain variant. If they are built by another toolchain, they only test a fixed set of
 inputs. See [Build fuzzers with fx](#fx-set) for more details.
 
 The template includes parameters that are lists of fuzzer components, organized by language. Each
-language has a set of supported sanitizers provided by their toolchain as compiler runtimes.
-When the selected toolchain variant includes a sanitizer that is supported for a given language, the
+language has a set of supported sanitizers provided by their toolchain as compiler runtimes. When
+the selected toolchain variant includes a sanitizer that is supported for a given language, the
 corresponding list of fuzzer components are capable of fuzzing.
 
-For example, if the C++ toolchain has support for a hypotheical _examplesan_, the Rust toolchain
+For example, if the C++ toolchain has support for a hypothetical _examplesan_, the Rust toolchain
 does not, and the _examplesan-fuzzer_ variant is selected, then the package definition below builds
 `my-cpp-fuzzer` for fuzzing and `my-rust-fuzzer` for testing only.
 
@@ -259,11 +257,11 @@ instrument them for fuzzing with an appropriate fuzzing variant. These are the
 [sanitizer][sanitizers]{:.external} variant, including:
 
 * _asan_: Use [AddressSanitizer][asan]{:.external} to detect memory errors such as using memory
-   after [freeing][asan-uaf]{:.external} or [returning][asan-uar]{:.external} it, overflowing
-   [heap][asan-hbo]{:.external} and [stack][asan-sbo]{:.external} buffer overflows, and more.
+  after [freeing][asan-uaf]{:.external} or [returning][asan-uar]{:.external} it, overflowing
+  [heap][asan-hbo]{:.external} and [stack][asan-sbo]{:.external} buffer overflows, and more.
 * _ubsan_: Use [UndefinedBehaviorSanitizer][ubsan]{:.external} to detect behavior that violates the
-   language specification such as [signed integer overflow][ubsan-sio]{:.external}, misaligned
-   pointers, and [more][ubsan-all]{:.external}.
+  language specification such as [signed integer overflow][ubsan-sio]{:.external}, misaligned
+  pointers, and [more][ubsan-all]{:.external}.
 
 The easiest way to build a `fuzzer_package` with a fuzzing variant is to use the
 `--fuzz-with <sanitizer>` flag with [`fx set`][fx-set].
@@ -271,7 +269,7 @@ The easiest way to build a `fuzzer_package` with a fuzzing variant is to use the
 For example:
 
 <pre>
-<code class="devsite-terminal">fx set core.x64 --fuzz-with asan --with //bundles/tests</code>
+<code class="devsite-terminal">fx set core.x64 --fuzz-with asan --with //bundles/tests --include-clippy=false</code>
 <code class="devsite-terminal">fx build</code>
 </pre>
 
