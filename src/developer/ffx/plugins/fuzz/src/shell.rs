@@ -774,7 +774,7 @@ mod test_fixtures {
             // workflow that runs to completion.
             if !self.runs_indefinitely && self.state == FuzzerState::Running {
                 let mut reader = self.shell.reader.borrow_mut();
-                reader.interrupt(MonotonicDuration::from_millis(10)).await;
+                reader.interrupt(MonotonicDuration::from_millis(100)).await;
                 test.output_matches("Workflow complete. Press any key to continue...");
                 self.state = FuzzerState::Idle;
             }
