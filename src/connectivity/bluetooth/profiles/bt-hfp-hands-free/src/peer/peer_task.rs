@@ -136,7 +136,7 @@ impl PeerTask {
                         }
                     };
 
-                    self.handle_at_response(at_response);
+                    self.handle_at_response(at_response)?;
                 }
                 procedure_outputs_result_option = self.procedure_manager.next() => {
                     debug!("Received procedure outputs {:?} for peer {:?}",
@@ -251,13 +251,13 @@ impl PeerTask {
         self.procedure_manager.enqueue(ProcedureInput::CommandFromHf(command_from_hf));
     }
 
-    fn handle_at_response(&mut self, at_response: AtResponse) {
+    fn handle_at_response(&mut self, at_response: AtResponse) -> Result<()> {
         if Self::at_response_is_indicator(&at_response) {
             self.handle_indicator_response(at_response)
         } else {
             let procedure_input = ProcedureInput::AtResponseFromAg(at_response);
-
             self.procedure_manager.enqueue(procedure_input);
+            Ok(())
         }
     }
 
@@ -272,14 +272,16 @@ impl PeerTask {
     // Must take an unolicited AT Response indicator--a +CIEV or a +CLIP.  These
     // don't start a procedure but instead have data that is immediately usable.
     // This is in contrast to +BCS which is unsolicited but starts a procedure.
-    fn handle_indicator_response(&mut self, at_response: AtResponse) {
+    fn handle_indicator_response(&mut self, at_response: AtResponse) -> Result<()> {
         match at_response {
             AtResponse::Recognized(at::Response::Success(at::Success::Ciev { ind, value })) => {
                 let indicator = self.ag_indicator_translator.translate_indicator(ind, value);
                 match indicator {
-                    Ok(ind) => self.handle_ag_indicator(ind),
+                    Ok(ind) => self.handle_ag_indicator(ind)?,
                     // HFP v1.8 sec. 4.10: Unknown indicators are not an error.
-                    Err(err) => info!("Got unknown indicator: {:?}", err),
+                    Err(err) => {
+                        info!("Got unknown indicator: {:?}", err);
+                    }
                 }
             }
             // TODO(htps://fxbug.dec/135158) Handle setting phone numbers.
@@ -288,11 +290,20 @@ impl PeerTask {
             }
             _ => warn!("Received unexpected unsolicited AT response: {:?}", at_response),
         }
+        Ok(())
     }
 
-    fn handle_ag_indicator(&mut self, indicator: AgIndicator) -> () {
+    fn handle_ag_indicator(&mut self, indicator: AgIndicator) -> Result<()> {
         match indicator {
             AgIndicator::Call(call_indicator) => {
+                // This is a new call
+                if let CallIndicator::CallSetup(call_indicators::CallSetup::Incoming)
+                | CallIndicator::CallSetup(call_indicators::CallSetup::OutgoingDialing) =
+                    call_indicator
+                {
+                    let _index = self.calls.insert_new_call()?;
+                }
+
                 self.calls.set_call_state_by_indicator(call_indicator)
             }
             AgIndicator::NetworkInformation(network_indicator) => {
@@ -302,6 +313,8 @@ impl PeerTask {
                 self.indicated_state.set_ag_battery_level(percent)
             }
         }
+
+        Ok(())
     }
 
     fn handle_network_information_indicator(&mut self, indicator: NetworkInformationIndicator) {
@@ -354,36 +367,28 @@ impl PeerTask {
         for (index, value) in indices_and_values {
             let index: i64 = index.try_into().expect("Failed to fit AG indicator index into i64?");
             let ag_indicator = self.ag_indicator_translator.translate_indicator(index, value)?;
+            // TODO(https://fxbug.dev/135119) Handle multiple calls.
+            // I don't think there's anything to do here in the case of multiple calls, but consider it.
             match ag_indicator {
                 AgIndicator::Call(CallIndicator::Call(call))
                     if call != call_indicators::Call::None =>
                 {
-                    Err(format_err!(
-                        "Got unexpected initial call indicator value {:?} for peer {:}",
-                        call,
-                        self.peer_id
-                    ))?;
+                    let _index = self.calls.insert_new_call()?;
+                    self.calls.set_call_state_by_indicator(CallIndicator::Call(call));
                 }
                 AgIndicator::Call(CallIndicator::CallSetup(call_setup))
                     if call_setup != call_indicators::CallSetup::None =>
                 {
-                    Err(format_err!(
-                        "Got unexpected initial callsetup indicator value {:?} for peer {:}",
-                        call_setup,
-                        self.peer_id
-                    ))?;
+                    let _index = self.calls.insert_new_call()?;
+                    self.calls.set_call_state_by_indicator(CallIndicator::CallSetup(call_setup));
                 }
                 AgIndicator::Call(CallIndicator::CallHeld(call_held))
                     if call_held != call_indicators::CallHeld::None =>
                 {
-                    Err(format_err!(
-                        "Got unexpected initial callheld indicator value {:?} for peer {:}",
-                        call_held,
-                        self.peer_id
-                    ))?;
+                    let _index = self.calls.insert_new_call()?;
+                    self.calls.set_call_state_by_indicator(CallIndicator::CallHeld(call_held));
                 }
-                AgIndicator::Call(_) => { // Nothing to do
-                }
+                AgIndicator::Call(_) => {} // Nothing to do
                 AgIndicator::NetworkInformation(network_indicator) => {
                     self.handle_network_information_indicator(network_indicator);
                 }
@@ -491,5 +496,95 @@ impl PeerTask {
         let codecs = vec![self.get_selected_codec()];
         let fut = self.sco_connector.accept(self.peer_id.clone(), codecs);
         self.sco_state.iset(sco::State::AwaitingRemote(Box::pin(fut)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::peer::ag_indicators::AgIndicatorIndex;
+    use fidl_fuchsia_bluetooth_bredr as bredr;
+
+    async fn create_test_peer_task() -> PeerTask {
+        let hf_features = HandsFreeFeatureSupport::default();
+        let (rfcomm_local, _rfcomm_remote) = Channel::create();
+
+        let (profile_proxy, _profile_stream) =
+            fidl::endpoints::create_proxy_and_stream::<bredr::ProfileMarker>();
+
+        let peer_id = PeerId(1);
+        let procedure_manager = ProcedureManager::new(peer_id, hf_features);
+
+        let (_peer_handler_proxy, peer_handler_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_hfp::PeerHandlerMarker>();
+
+        let at_connection = at_connection::Connection::new(peer_id, rfcomm_local);
+        let ag_indicator_translator = AgIndicatorTranslator::new();
+        let indicated_state = IndicatedState::default();
+        let calls = Calls::new(peer_id);
+        let sco_connector = sco::Connector::build(profile_proxy, std::collections::HashSet::new());
+        let sco_state = sco::InspectableState::default();
+        let a2dp_control = a2dp::Control::connect();
+        let audio_control: Arc<Mutex<Box<dyn audio::Control + 'static>>> =
+            Arc::new(Mutex::new(Box::new(audio::TestControl::default())));
+
+        let mut peer_task = PeerTask {
+            peer_id,
+            procedure_manager,
+            peer_handler_request_stream,
+            at_connection,
+            ag_indicator_translator,
+            indicated_state,
+            calls,
+            sco_connector,
+            sco_state,
+            a2dp_control,
+            audio_control,
+        };
+
+        // Set indicator indices
+        let indicators = vec![
+            (AgIndicatorIndex::Call, 1),
+            (AgIndicatorIndex::CallSetup, 2),
+            (AgIndicatorIndex::CallHeld, 3),
+            (AgIndicatorIndex::ServiceAvailable, 4),
+            (AgIndicatorIndex::SignalStrength, 5),
+            (AgIndicatorIndex::Roaming, 6),
+            (AgIndicatorIndex::BatteryCharge, 7),
+        ];
+
+        for (indicator, index) in indicators {
+            peer_task
+                .handle_procedure_output(ProcedureOutput::CommandToHf(
+                    CommandToHf::SetAgIndicatorIndex { indicator, index },
+                ))
+                .await
+                .expect("Failed to set AG indicator index");
+        }
+
+        peer_task
+    }
+
+    #[fuchsia::test]
+    // Test that the peer task does not err when starting with a call in progress.
+    async fn initial_indicator_with_in_progress_call() {
+        let mut peer_task = create_test_peer_task().await;
+
+        // Set initial indicator values
+        let values = vec![
+            1, // call
+            0, // call setup
+            0, // call held
+            1, // service available
+            5, // signal strength
+            0, // roaming
+            2, // battery charge
+        ];
+        peer_task
+            .handle_procedure_output(ProcedureOutput::CommandToHf(
+                CommandToHf::SetInitialAgIndicatorValues { ordered_values: values },
+            ))
+            .await
+            .expect("Failed to handle call in progress");
     }
 }

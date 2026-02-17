@@ -635,13 +635,6 @@ impl Calls {
         // Calls are 1-indexed
         let call_index = 1;
 
-        // This is a new call
-        if let CallIndicator::CallSetup(call_indicators::CallSetup::Incoming)
-        | CallIndicator::CallSetup(call_indicators::CallSetup::OutgoingDialing) = indicator
-        {
-            let _index = self.insert_new_call();
-        }
-
         debug!(
             "Setting call state for peer {:} for call {:?} with indicator {:?}",
             self.peer_id,
