@@ -1190,7 +1190,7 @@ group("tuf") {
 }
 
 group("typed-builder") {
-  public_deps = [ ":typed-builder-v0_21_2" ]
+  public_deps = [ ":typed-builder-v0_23_2" ]
 }
 
 group("unic-char-range") {
@@ -19917,6 +19917,40 @@ rustc_library("typed-builder-v0_21_2") {
   applicable_licenses = [ ":typed-builder-v0_21_2.license" ]
 }
 
+license("typed-builder-v0_23_2.license") {
+  public_package_name = "typed_builder"
+  license_files = [
+    "//third_party/rust_crates/vendor/typed-builder-0.23.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/typed-builder-0.23.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("typed-builder-v0_23_2") {
+  crate_name = "typed_builder"
+  source_root =
+      "//third_party/rust_crates/vendor/typed-builder-0.23.2/src/lib.rs"
+  output_name = "typed_builder-b5ec9349e70a78b2"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":typed-builder-macro-v0_23_2($host_toolchain)" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=b5ec9349e70a78b2",
+    "-Cextra-filename=-b5ec9349e70a78b2",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":typed-builder-v0_23_2.license" ]
+}
+
 license("typed-builder-macro-v0_21_2.license") {
   public_package_name = "typed_builder_macro"
   license_files = [
@@ -19951,6 +19985,42 @@ rustc_macro("typed-builder-macro-v0_21_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":typed-builder-macro-v0_21_2.license" ]
+}
+
+license("typed-builder-macro-v0_23_2.license") {
+  public_package_name = "typed_builder_macro"
+  license_files = [
+    "//third_party/rust_crates/vendor/typed-builder-macro-0.23.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/typed-builder-macro-0.23.2/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("typed-builder-macro-v0_23_2") {
+  crate_name = "typed_builder_macro"
+  source_root =
+      "//third_party/rust_crates/vendor/typed-builder-macro-0.23.2/src/lib.rs"
+  output_name = "typed_builder_macro-1b415063cafa5380"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_97" ]
+  deps += [ ":quote-v1_0_42" ]
+  deps += [ ":syn-v2_0_114" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=1b415063cafa5380",
+    "-Cextra-filename=-1b415063cafa5380",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":typed-builder-macro-v0_23_2.license" ]
 }
 
 license("typenum-v1_18_0.license") {

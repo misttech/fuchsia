@@ -483,7 +483,7 @@ _NORMAL_DEPENDENCIES = {
             "tracing": Label("//third_party/rust_crates/vendor/tracing-0.1.41:tracing"),
             "tracing-mutex": Label("//third_party/rust_crates/vendor/tracing-mutex-0.3.2:tracing_mutex"),
             "tuf": Label("//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf"),
-            "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.21.2:typed_builder"),
+            "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.23.2:typed_builder"),
             "unic-char-range": Label("//third_party/rust_crates/vendor/unic-char-range-0.9.0:unic_char_range"),
             "unic-ucd-block": Label("//third_party/rust_crates/vendor/unic-ucd-block-0.9.0:unic_ucd_block"),
             "unicase": Label("//third_party/rust_crates/vendor/unicase-2.9.0:unicase"),

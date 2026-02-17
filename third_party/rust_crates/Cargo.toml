@@ -247,7 +247,7 @@ toml_edit = "0.24.0"
 tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes", "log"] }
 tracing-mutex = { version = "0.3.2", features = ["experimental", "lockapi", "parkinglot"] }
 tuf = { version = "=0.3.0-beta14", default-features = false, features = ["hyper"] }
-typed-builder = "0.21.2"
+typed-builder = "0.23.2"
 unic-char-range = "0.9"
 unic-ucd-block = "0.9"
 unicase = "2.9.0"
