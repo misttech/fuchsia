@@ -381,10 +381,6 @@ impl Credentials {
         }
     }
 
-    pub fn is_superuser(&self) -> bool {
-        self.euid == 0
-    }
-
     pub fn is_in_group(&self, gid: gid_t) -> bool {
         self.egid == gid || self.groups.contains(&gid)
     }

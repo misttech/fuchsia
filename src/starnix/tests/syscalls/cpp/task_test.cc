@@ -5,6 +5,7 @@
 #include "src/starnix/tests/syscalls/cpp/task_test.h"
 
 #include <fcntl.h>
+#include <grp.h>
 #include <limits.h>
 #include <sched.h>
 #include <strings.h>
@@ -25,6 +26,7 @@
 
 #include <fbl/algorithm.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/sched.h>
 
 #include "src/lib/files/directory.h"
@@ -32,6 +34,7 @@
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -1365,4 +1368,40 @@ TEST_F(DumpableTest, DumpableDropsOnUserChange) {
 
     EXPECT_TRUE(helper.WaitForChildren());
   }
+}
+
+TEST(Task, SetgroupsWithoutCapSetgidFails) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "test requires root privileges";
+  }
+
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([]() {
+    // Dropping CAP_SETGID should be sufficient to cause setgroups() to fail.
+    test_helper::UnsetCapability(CAP_SETGID);
+
+    gid_t groups[] = {kUser1Gid};
+    EXPECT_THAT(setgroups(1, groups), SyscallFailsWithErrno(EPERM));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, SetgroupsWithCapSetgidSucceeds) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "test requires root privileges";
+  }
+
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([]() {
+    // Change to non-root user while preserving capabilities, and re-enable CAP_SETGID.
+    SAFE_SYSCALL(prctl(PR_SET_KEEPCAPS, 1));
+    SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, kUser1Uid));
+    test_helper::SetCapabilityEffective(CAP_SETGID);
+
+    gid_t groups[] = {kUser1Gid};
+    EXPECT_THAT(setgroups(1, groups), SyscallSucceeds());
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }

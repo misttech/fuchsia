@@ -1646,10 +1646,8 @@ pub fn sys_setgroups(
         return error!(EINVAL);
     }
     let groups = current_task.read_objects_to_vec::<gid_t>(groups_addr.into(), size)?;
+    security::check_task_capable(current_task, CAP_SETGID)?;
     let mut creds = Credentials::clone(&current_task.current_creds());
-    if !creds.is_superuser() {
-        return error!(EPERM);
-    }
     creds.groups = groups;
     current_task.set_creds(creds);
     Ok(())
