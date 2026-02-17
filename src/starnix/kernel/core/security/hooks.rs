@@ -898,16 +898,22 @@ pub fn check_file_ioctl_access(
 /// Updates the supplied `new_creds` with the necessary FS and LSM credentials to correctly label
 /// a new `FsNode` on copy-up, to match the existing `fs_node`.
 ///
+/// - fs_node: The "lower" filesystem node that is to be copied-up.
+/// - fs: The OverlayFS instance performing the copy-up operation.
+// TODO: https://fxbug.dev/398696739 - Revise this API to accept the overlay FsNode for which
+// copy-up is being performed, rather than separate "lower" `fs_node` and overlay `fs`.
+///
 /// Corresponds to the `security_inode_copy_up()` LSM hook.
 pub fn fs_node_copy_up(
     current_task: &CurrentTask,
     fs_node: &FsNode,
+    fs: &FileSystem,
     new_creds: &mut FullCredentials,
 ) {
     if_selinux_else(
         current_task,
         |_security_server| {
-            selinux_hooks::fs_node::fs_node_copy_up(current_task, fs_node, new_creds)
+            selinux_hooks::fs_node::fs_node_copy_up(current_task, fs_node, fs, new_creds)
         },
         || {},
     )
@@ -3098,7 +3104,7 @@ mod tests {
                 .expect("set_xattr(security.selinux) failed");
 
                 let mut creds = current_task.full_current_creds();
-                security::fs_node_copy_up(current_task, source_node, &mut creds);
+                security::fs_node_copy_up(current_task, source_node, &source_node.fs(), &mut creds);
                 let dir_entry = current_task
                     .override_creds(creds, || {
                         current_task

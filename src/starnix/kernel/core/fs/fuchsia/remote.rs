@@ -1066,6 +1066,7 @@ impl FsNodeOps for RemoteNode {
     fn update_attributes(
         &self,
         _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
         _current_task: &CurrentTask,
         info: &FsNodeInfo,
         has: zxio_node_attr_has_t,
