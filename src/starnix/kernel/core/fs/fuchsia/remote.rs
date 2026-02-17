@@ -26,6 +26,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
+use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
 use starnix_sync::{
@@ -44,6 +45,7 @@ use starnix_uapi::{
 };
 use std::ops::ControlFlow;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use sync_io_client::{RemoteIo, create_with_on_representation};
 use syncio::zxio::{
     ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, ZXIO_NODE_PROTOCOL_SYMLINK,
@@ -231,23 +233,32 @@ impl FileSystemOps for RemoteFs {
         old_name: &FsStr,
         new_parent: &FsNodeHandle,
         new_name: &FsStr,
-        _renamed: &FsNodeHandle,
-        _replaced: Option<&FsNodeHandle>,
+        renamed: &FsNodeHandle,
+        replaced: Option<&FsNodeHandle>,
     ) -> Result<(), Errno> {
         // Renames should fail if the src or target directory is encrypted and locked.
         old_parent.fail_if_locked(current_task)?;
         new_parent.fail_if_locked(current_task)?;
 
-        let Some(old_parent) = old_parent.downcast_ops::<RemoteNode>() else {
+        let Some((old_parent_ops, new_parent_ops)) =
+            old_parent.downcast_ops::<RemoteNode>().zip(new_parent.downcast_ops::<RemoteNode>())
+        else {
             return error!(EXDEV);
         };
-        let Some(new_parent) = new_parent.downcast_ops::<RemoteNode>() else {
-            return error!(EXDEV);
-        };
-        old_parent
-            .io
-            .rename(get_name_str(old_name)?, &new_parent.io, get_name_str(new_name)?)
-            .map_err(map_sync_io_client_error)
+
+        let mut nodes: SmallVec<[&FsNode; 4]> =
+            smallvec![&***old_parent, &***new_parent, &***renamed];
+        if let Some(r) = replaced {
+            nodes.push(r);
+        }
+
+        will_dirty(&nodes, || {
+            old_parent_ops
+                .node
+                .io
+                .rename(get_name_str(old_name)?, &new_parent_ops.node.io, get_name_str(new_name)?)
+                .map_err(map_sync_io_client_error)
+        })
     }
 
     fn sync(
@@ -269,29 +280,30 @@ impl FileSystemOps for RemoteFs {
 
 struct Factory {
     assume_special: bool,
+    start_dirty: bool,
 }
 
 impl sync_io_client::Factory for Factory {
     type Result = Box<dyn FsNodeOps>;
 
     fn create_node(self, io: RemoteIo) -> Self::Result {
-        Box::new(RemoteNode::new(io))
+        Box::new(RemoteNode::new(io, self.start_dirty))
     }
 
     fn create_directory(self, io: RemoteIo) -> Self::Result {
-        Box::new(RemoteNode::new(io))
+        Box::new(RemoteNode::new(io, self.start_dirty))
     }
 
     fn create_file(self, io: RemoteIo, info: &fio::FileInfo) -> Self::Result {
         if self.assume_special || is_special(info) {
-            Box::new(RemoteSpecialNode { io })
+            Box::new(RemoteSpecialNode { node: BaseNode::new(io, self.start_dirty) })
         } else {
-            Box::new(RemoteNode::new(io))
+            Box::new(RemoteNode::new(io, self.start_dirty))
         }
     }
 
     fn create_symlink(self, io: RemoteIo, target: Vec<u8>) -> Self::Result {
-        Box::new(RemoteSymlink::new(io, target))
+        Box::new(RemoteSymlink::new(BaseNode::new(io, self.start_dirty), target))
     }
 }
 
@@ -333,9 +345,11 @@ impl RemoteFs {
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
 
-        let (remote_node, attrs, _) =
-            create_with_on_representation(client_end.into(), Factory { assume_special: false })
-                .map_err(map_sync_io_client_error)?;
+        let (remote_node, attrs, _) = create_with_on_representation(
+            client_end.into(),
+            Factory { assume_special: false, start_dirty: true },
+        )
+        .map_err(map_sync_io_client_error)?;
         Ok((
             RemoteFs { use_remote_ids, root_proxy, root_rights },
             remote_node,
@@ -386,14 +400,66 @@ impl RemoteFs {
     }
 }
 
-struct RemoteNode {
+/// All nodes compose `BaseNode`.
+///
+/// NOTE: If new node types are created, the `TryFrom` implementation needs updating below.
+struct BaseNode {
     /// The underlying I/O object for this remote node.
     io: RemoteIo,
+
+    /// The number of active dirty operations on this node and whether the node info is in sync (the
+    /// top bit is used for this).  See the `will_dirty` function for semantics.
+    info_state: InfoState,
+}
+
+impl BaseNode {
+    fn new(io: RemoteIo, dirty: bool) -> Self {
+        Self { io, info_state: InfoState::new(dirty) }
+    }
+
+    fn fetch_and_refresh_info<'a>(
+        &self,
+        info: &'a RwLock<FsNodeInfo>,
+    ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
+        self.info_state.maybe_refresh(
+            info,
+            |info| {
+                let mut query = NODE_INFO_ATTRIBUTES;
+                if info.read().pending_time_access_update {
+                    query |= fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE;
+                }
+                let attrs = self.io.attr_get_zxio(query).map_err(map_sync_io_client_error)?;
+                let mut info = info.write();
+                update_info_from_attrs(&mut info, &attrs);
+                info.pending_time_access_update = false;
+                Ok(RwLockWriteGuard::downgrade(info))
+            },
+            |info| Ok(info.read()),
+        )
+    }
+}
+
+impl<'a> TryFrom<&'a FsNode> for &'a BaseNode {
+    type Error = ();
+    fn try_from(value: &FsNode) -> Result<&BaseNode, ()> {
+        value
+            .downcast_ops::<RemoteNode>()
+            .map(|n| &n.node)
+            .or_else(|| value.downcast_ops::<RemoteSpecialNode>().map(|n| &n.node))
+            .or_else(|| value.downcast_ops::<RemoteSymlink>().map(|n| &n.node))
+            .ok_or(())
+    }
+}
+
+/// This is the most common type of node.  It is used for files and directories.  Symlinks and
+/// special nodes use RemoteSymlink and RemoteSpecialNode respectively.
+struct RemoteNode {
+    node: BaseNode,
 }
 
 impl RemoteNode {
-    fn new(io: RemoteIo) -> Self {
-        Self { io }
+    fn new(io: RemoteIo, dirty: bool) -> Self {
+        Self { node: BaseNode::new(io, dirty) }
     }
 }
 
@@ -555,21 +621,6 @@ where
     new_remote_file(locked, current_task, socket.into(), flags)
 }
 
-fn fetch_and_refresh_info_impl<'a>(
-    io: &RemoteIo,
-    info: &'a RwLock<FsNodeInfo>,
-) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-    let mut query = NODE_INFO_ATTRIBUTES;
-    if info.read().pending_time_access_update {
-        query |= fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE;
-    }
-    let attrs = io.attr_get_zxio(query).map_err(map_sync_io_client_error)?;
-    let mut info = info.write();
-    update_info_from_attrs(&mut info, &attrs);
-    info.pending_time_access_update = false;
-    Ok(RwLockWriteGuard::downgrade(info))
-}
-
 // This only needs to include attributes that can be out of date.  There are other attributes that
 // we read when we first look up the node (see `lookup`).
 const NODE_INFO_ATTRIBUTES: fio::NodeAttributesQuery = fio::NodeAttributesQuery::CONTENT_SIZE
@@ -649,13 +700,14 @@ fn get_name_str<'a>(name_bytes: &'a FsStr) -> Result<&'a str, Errno> {
     })
 }
 
-impl XattrStorage for RemoteIo {
+impl XattrStorage for BaseNode {
     fn get_xattr(
         &self,
         _locked: &mut Locked<FileOpsCore>,
         name: &FsStr,
     ) -> Result<FsString, Errno> {
         Ok(self
+            .io
             .xattr_get(name)
             .map_err(|status| match status {
                 zx::Status::NOT_FOUND => errno!(ENODATA),
@@ -677,28 +729,33 @@ impl XattrStorage for RemoteIo {
             XattrOp::Replace => XattrSetMode::Replace,
         };
 
-        self.xattr_set(name, value, mode).map_err(|status| match status {
-            zx::Status::NOT_FOUND => errno!(ENODATA),
-            status => from_status_like_fdio!(status),
+        will_dirty(&[self], || {
+            self.io.xattr_set(name, value, mode).map_err(|status| match status {
+                zx::Status::NOT_FOUND => errno!(ENODATA),
+                status => from_status_like_fdio!(status),
+            })
         })
     }
 
     fn remove_xattr(&self, _locked: &mut Locked<FileOpsCore>, name: &FsStr) -> Result<(), Errno> {
-        self.xattr_remove(name).map_err(|status| match status {
-            zx::Status::NOT_FOUND => errno!(ENODATA),
-            _ => from_status_like_fdio!(status),
+        will_dirty(&[self], || {
+            self.io.xattr_remove(name).map_err(|status| match status {
+                zx::Status::NOT_FOUND => errno!(ENODATA),
+                _ => from_status_like_fdio!(status),
+            })
         })
     }
 
     fn list_xattrs(&self, _locked: &mut Locked<FileOpsCore>) -> Result<Vec<FsString>, Errno> {
-        self.xattr_list()
+        self.io
+            .xattr_list()
             .map(|attrs| attrs.into_iter().map(FsString::new).collect::<Vec<_>>())
             .map_err(map_sync_io_client_error)
     }
 }
 
 impl FsNodeOps for RemoteNode {
-    fs_node_impl_xattr_delegate!(self, self.io);
+    fs_node_impl_xattr_delegate!(self, self.node);
 
     fn create_file_ops(
         &self,
@@ -726,7 +783,8 @@ impl FsNodeOps for RemoteNode {
                 // For directories we need to clone the connection because we rely on the seek
                 // offset.
                 return Ok(Box::new(RemoteDirectoryObject::new(
-                    self.io
+                    self.node
+                        .io
                         .clone_proxy()
                         .map(|p| p.into_channel().into())
                         .map_err(map_sync_io_client_error)?,
@@ -764,25 +822,28 @@ impl FsNodeOps for RemoteNode {
         if !(mode.is_reg() || mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()) {
             return error!(EINVAL, name);
         }
-        let (ops, attrs, _) = self
-            .io
-            .open(
-                name,
-                fio::Flags::FLAG_MUST_CREATE
-                    | fio::Flags::PROTOCOL_FILE
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE,
-                Some(fio::MutableNodeAttributes {
-                    mode: Some(mode.bits()),
-                    uid: Some(owner.uid),
-                    gid: Some(owner.gid),
-                    rdev: Some(dev.bits()),
-                    ..Default::default()
-                }),
-                fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                Factory { assume_special: !mode.is_reg() },
-            )
-            .map_err(|status| from_status_like_fdio!(status, name))?;
+
+        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .open(
+                    name,
+                    fio::Flags::FLAG_MUST_CREATE
+                        | fio::Flags::PROTOCOL_FILE
+                        | fio::PERM_READABLE
+                        | fio::PERM_WRITABLE,
+                    Some(fio::MutableNodeAttributes {
+                        mode: Some(mode.bits()),
+                        uid: Some(owner.uid),
+                        gid: Some(owner.gid),
+                        rdev: Some(dev.bits()),
+                        ..Default::default()
+                    }),
+                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    Factory { assume_special: !mode.is_reg(), start_dirty: true },
+                )
+                .map_err(|status| from_status_like_fdio!(status, name))
+        })?;
 
         let node_id = if fs_ops.use_remote_ids { attrs.id } else { fs.allocate_ino() };
 
@@ -811,24 +872,26 @@ impl FsNodeOps for RemoteNode {
         let fs_ops = RemoteFs::from_fs(&fs);
 
         let mut node_id;
-        let (ops, attrs, _) = self
-            .io
-            .open(
-                name,
-                fio::Flags::FLAG_MUST_CREATE
-                    | fio::Flags::PROTOCOL_DIRECTORY
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE,
-                Some(fio::MutableNodeAttributes {
-                    mode: Some(mode.bits()),
-                    uid: Some(owner.uid),
-                    gid: Some(owner.gid),
-                    ..Default::default()
-                }),
-                fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                Factory { assume_special: false },
-            )
-            .map_err(|status| from_status_like_fdio!(status, name))?;
+        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .open(
+                    name,
+                    fio::Flags::FLAG_MUST_CREATE
+                        | fio::Flags::PROTOCOL_DIRECTORY
+                        | fio::PERM_READABLE
+                        | fio::PERM_WRITABLE,
+                    Some(fio::MutableNodeAttributes {
+                        mode: Some(mode.bits()),
+                        uid: Some(owner.uid),
+                        gid: Some(owner.gid),
+                        ..Default::default()
+                    }),
+                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    Factory { assume_special: false, start_dirty: true },
+                )
+                .map_err(|status| from_status_like_fdio!(status, name))
+        })?;
         node_id = attrs.id;
 
         if !fs_ops.use_remote_ids {
@@ -870,8 +933,19 @@ impl FsNodeOps for RemoteNode {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
         let (ops, attrs, context) = self
+            .node
             .io
-            .open(name, fs_ops.root_rights, None, query, Factory { assume_special: false })
+            .open(
+                name,
+                fs_ops.root_rights,
+                None,
+                query,
+                Factory {
+                    assume_special: false,
+                    // We can start not dirty because we call `update_info_from_attrs` below.
+                    start_dirty: false,
+                },
+            )
             .map_err(|status| from_status_like_fdio!(status, name))?;
         let node_id = if fs_ops.use_remote_ids {
             if attrs.id == fio::INO_UNKNOWN {
@@ -889,11 +963,6 @@ impl FsNodeOps for RemoteNode {
             return error!(EINVAL);
         }
         let casefold = attrs.casefold;
-        let time_modify =
-            UtcInstant::from_nanos(attrs.modification_time.try_into().unwrap_or(i64::MAX));
-        let time_status_change =
-            UtcInstant::from_nanos(attrs.change_time.try_into().unwrap_or(i64::MAX));
-        let time_access = UtcInstant::from_nanos(attrs.access_time.try_into().unwrap_or(i64::MAX));
 
         let mut ops = Some(ops);
         let node = fs.get_or_create_node(node_id, || {
@@ -904,9 +973,6 @@ impl FsNodeOps for RemoteNode {
                 FsNodeInfo {
                     rdev,
                     casefold,
-                    time_status_change,
-                    time_modify,
-                    time_access,
                     wrapping_key_id: attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
                     ..FsNodeInfo::new(get_mode(&attrs, fs_ops.root_rights), owner)
                 },
@@ -925,6 +991,8 @@ impl FsNodeOps for RemoteNode {
             }
             Ok(child)
         })?;
+
+        node.update_info(|info| update_info_from_attrs(info, &attrs));
 
         // Encrypted symlinks that use fscrypt can be read as encrypted links when no key is
         // available.  When no key is available, directories will not cache their entries.  When,
@@ -953,7 +1021,10 @@ impl FsNodeOps for RemoteNode {
         length: u64,
     ) -> Result<(), Errno> {
         node.fail_if_locked(current_task)?;
-        self.io.truncate(length).map_err(|status| from_status_like_fdio!(status))
+
+        will_dirty(&[&self.node], || {
+            self.node.io.truncate(length).map_err(|status| from_status_like_fdio!(status))
+        })
     }
 
     fn allocate(
@@ -969,9 +1040,13 @@ impl FsNodeOps for RemoteNode {
         match mode {
             FallocMode::Allocate { keep_size: false } => {
                 node.fail_if_locked(current_task)?;
-                self.io
-                    .allocate(offset, length, AllocateMode::empty())
-                    .map_err(|status| from_status_like_fdio!(status))?;
+
+                will_dirty(&[&self.node], || {
+                    self.node
+                        .io
+                        .allocate(offset, length, AllocateMode::empty())
+                        .map_err(|status| from_status_like_fdio!(status))
+                })?;
                 Ok(())
             }
             _ => error!(EINVAL),
@@ -985,7 +1060,7 @@ impl FsNodeOps for RemoteNode {
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-        fetch_and_refresh_info_impl(&self.io, info)
+        self.node.fetch_and_refresh_info(info)
     }
 
     fn update_attributes(
@@ -996,38 +1071,44 @@ impl FsNodeOps for RemoteNode {
         has: zxio_node_attr_has_t,
     ) -> Result<(), Errno> {
         // Omit updating creation_time. By definition, there shouldn't be a change in creation_time.
-        self.io
-            .attr_set(fio::MutableNodeAttributes {
-                modification_time: has
-                    .modification_time
-                    .then_some(info.time_modify.into_nanos() as u64),
-                access_time: has.access_time.then_some(info.time_access.into_nanos() as u64),
-                mode: has.mode.then_some(info.mode.bits()),
-                uid: has.uid.then_some(info.uid),
-                gid: has.gid.then_some(info.gid),
-                rdev: has.rdev.then_some(info.rdev.bits()),
-                casefold: has.casefold.then_some(info.casefold),
-                wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
-                ..Default::default()
-            })
-            .map_err(|status| from_status_like_fdio!(status))
+        will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .attr_set(fio::MutableNodeAttributes {
+                    modification_time: has
+                        .modification_time
+                        .then_some(info.time_modify.into_nanos() as u64),
+                    access_time: has.access_time.then_some(info.time_access.into_nanos() as u64),
+                    mode: has.mode.then_some(info.mode.bits()),
+                    uid: has.uid.then_some(info.uid),
+                    gid: has.gid.then_some(info.gid),
+                    rdev: has.rdev.then_some(info.rdev.bits()),
+                    casefold: has.casefold.then_some(info.casefold),
+                    wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
+                    ..Default::default()
+                })
+                .map_err(|status| from_status_like_fdio!(status))
+        })
     }
 
     fn unlink(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
+        node: &FsNode,
         _current_task: &CurrentTask,
         name: &FsStr,
-        _child: &FsNodeHandle,
+        child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        // We don't care about the _child argument because 1. unlinking already takes the parent's
+        // We don't care about the child argument because 1. unlinking already takes the parent's
         // children lock, so we don't have to worry about conflicts on this path, and 2. the remote
         // filesystem tracks the link counts so we don't need to update them here.
         let name = get_name_str(name)?;
-        self.io
-            .unlink(name, fio::UnlinkFlags::empty())
-            .map_err(|status| from_status_like_fdio!(status))
+        will_dirty(&[node, child], || {
+            self.node
+                .io
+                .unlink(name, fio::UnlinkFlags::empty())
+                .map_err(|status| from_status_like_fdio!(status))
+        })
     }
 
     fn create_symlink(
@@ -1042,10 +1123,12 @@ impl FsNodeOps for RemoteNode {
         node.fail_if_locked(current_task)?;
 
         let name = get_name_str(name)?;
-        let io = self
-            .io
-            .create_symlink(name, target)
-            .map_err(|status| from_status_like_fdio!(status))?;
+        let io = will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .create_symlink(name, target)
+                .map_err(|status| from_status_like_fdio!(status))
+        })?;
 
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
@@ -1061,7 +1144,7 @@ impl FsNodeOps for RemoteNode {
         };
         Ok(fs.create_node(
             node_id,
-            RemoteSymlink::new(io, target.as_bytes()),
+            RemoteSymlink::new(BaseNode::new(io, true), target.as_bytes()),
             FsNodeInfo {
                 size: target.len(),
                 ..FsNodeInfo::new(FileMode::IFLNK | FileMode::ALLOW_ALL, owner)
@@ -1083,30 +1166,33 @@ impl FsNodeOps for RemoteNode {
         if !mode.is_reg() {
             return error!(EINVAL);
         }
+
         // `create_tmpfile` is used by O_TMPFILE. Note that
         // <https://man7.org/linux/man-pages/man2/open.2.html> states that if O_EXCL is specified
         // with O_TMPFILE, the temporary file created cannot be linked into the filesystem. Although
         // there exist fuchsia flags `fio::FLAG_TEMPORARY_AS_NOT_LINKABLE`, the starnix vfs already
         // handles this case and makes sure that the created file is not linkable. There is also no
         // current way of passing the open flags to this function.
-        let (ops, attrs, _) = self
-            .io
-            .open(
-                ".",
-                fio::Flags::PROTOCOL_FILE
-                    | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
-                    | fio::PERM_READABLE
-                    | fio::PERM_WRITABLE,
-                Some(fio::MutableNodeAttributes {
-                    mode: Some(mode.bits()),
-                    uid: Some(owner.uid),
-                    gid: Some(owner.gid),
-                    ..Default::default()
-                }),
-                fio::NodeAttributesQuery::ID,
-                Factory { assume_special: false },
-            )
-            .map_err(|status| from_status_like_fdio!(status))?;
+        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .open(
+                    ".",
+                    fio::Flags::PROTOCOL_FILE
+                        | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
+                        | fio::PERM_READABLE
+                        | fio::PERM_WRITABLE,
+                    Some(fio::MutableNodeAttributes {
+                        mode: Some(mode.bits()),
+                        uid: Some(owner.uid),
+                        gid: Some(owner.gid),
+                        ..Default::default()
+                    }),
+                    fio::NodeAttributesQuery::ID,
+                    Factory { assume_special: false, start_dirty: true },
+                )
+                .map_err(|status| from_status_like_fdio!(status))
+        })?;
         node_id = attrs.id;
 
         if !fs_ops.use_remote_ids {
@@ -1127,21 +1213,24 @@ impl FsNodeOps for RemoteNode {
             return error!(EPERM);
         }
         let name = get_name_str(name)?;
-        if let Some(child) = child.downcast_ops::<RemoteNode>() {
-            child.io.link_into(&self.io, name).map_err(|status| match status {
-                zx::Status::BAD_STATE => errno!(EXDEV),
-                zx::Status::ACCESS_DENIED => errno!(ENOKEY),
-                s => from_status_like_fdio!(s),
-            })
-        } else if let Some(child) = child.downcast_ops::<RemoteSymlink>() {
-            child.io.link_into(&self.io, name).map_err(|status| match status {
-                zx::Status::BAD_STATE => errno!(EXDEV),
-                zx::Status::ACCESS_DENIED => errno!(ENOKEY),
-                s => from_status_like_fdio!(s),
-            })
-        } else {
-            error!(EXDEV)
-        }
+
+        will_dirty(&[node, child], || {
+            if let Some(child) = child.downcast_ops::<RemoteNode>() {
+                child.node.io.link_into(&self.node.io, name).map_err(|status| match status {
+                    zx::Status::BAD_STATE => errno!(EXDEV),
+                    zx::Status::ACCESS_DENIED => errno!(ENOKEY),
+                    s => from_status_like_fdio!(s),
+                })
+            } else if let Some(child) = child.downcast_ops::<RemoteSymlink>() {
+                child.node.io.link_into(&self.node.io, name).map_err(|status| match status {
+                    zx::Status::BAD_STATE => errno!(EXDEV),
+                    zx::Status::ACCESS_DENIED => errno!(ENOKEY),
+                    s => from_status_like_fdio!(s),
+                })
+            } else {
+                error!(EXDEV)
+            }
+        })
     }
 
     fn forget(
@@ -1152,24 +1241,31 @@ impl FsNodeOps for RemoteNode {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.io
-                .close_and_update_access_time()
-                .map_err(|status| from_status_like_fdio!(status))?;
+            self.node.io.close_and_update_access_time();
         }
         Ok(())
     }
 
-    fn enable_fsverity(&self, descriptor: &fsverity_descriptor) -> Result<(), Errno> {
+    fn enable_fsverity(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        descriptor: &fsverity_descriptor,
+    ) -> Result<(), Errno> {
         let descr = zxio_fsverity_descriptor_t {
             hash_algorithm: descriptor.hash_algorithm,
             salt_size: descriptor.salt_size,
             salt: descriptor.salt,
         };
-        self.io.enable_verity(&descr).map_err(|status| from_status_like_fdio!(status))
+        will_dirty(&[&self.node], || {
+            self.node.io.enable_verity(&descr).map_err(|status| from_status_like_fdio!(status))
+        })
     }
 
     fn get_fsverity_descriptor(&self, log_blocksize: u8) -> Result<fsverity_descriptor, Errno> {
         let (_, attrs) = self
+            .node
             .io
             .attr_get(
                 fio::NodeAttributesQuery::CONTENT_SIZE
@@ -1212,12 +1308,12 @@ impl FsNodeOps for RemoteNode {
 }
 
 struct RemoteSpecialNode {
-    io: RemoteIo,
+    node: BaseNode,
 }
 
 impl FsNodeOps for RemoteSpecialNode {
     fs_node_impl_not_dir!();
-    fs_node_impl_xattr_delegate!(self, self.io);
+    fs_node_impl_xattr_delegate!(self, self.node);
 
     fn create_file_ops(
         &self,
@@ -1324,7 +1420,7 @@ impl RemoteFileObject {
     /// This will panic if the node's ops are not `RemoteNode`; `AnonymousRemoteFileObject` should
     /// be used if this won't be the case.
     fn io(file: &FileObject) -> &RemoteIo {
-        &file.node().downcast_ops::<RemoteNode>().unwrap().io
+        &file.node().downcast_ops::<RemoteNode>().unwrap().node.io
     }
 }
 
@@ -1422,7 +1518,9 @@ impl FileOps for RemoteFileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        Self::io(file).write_from_input_buffer(offset as u64, data)
+        will_dirty(&[&***file.node()], || {
+            Self::io(file).write_from_input_buffer(offset as u64, data)
+        })
     }
 
     fn get_memory(
@@ -1515,6 +1613,8 @@ impl FileOps for AnonymousRemoteFileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
+        // As this is an anonymous file, there's no point marking the node info dirty because this
+        // isn't backed by `RemoteNode` or `RemoteSymlink`.
         self.io.write_from_input_buffer(offset as u64, data)
     }
 
@@ -1722,19 +1822,19 @@ impl FileOps for RemoteZxioFileObject {
 }
 
 struct RemoteSymlink {
-    io: RemoteIo,
+    node: BaseNode,
     target: RwLock<Box<[u8]>>,
 }
 
 impl RemoteSymlink {
-    fn new(io: RemoteIo, target: impl Into<Box<[u8]>>) -> Self {
-        Self { io, target: RwLock::new(target.into()) }
+    fn new(node: BaseNode, target: impl Into<Box<[u8]>>) -> Self {
+        Self { node, target: RwLock::new(target.into()) }
     }
 }
 
 impl FsNodeOps for RemoteSymlink {
     fs_node_impl_symlink!();
-    fs_node_impl_xattr_delegate!(self, self.io);
+    fs_node_impl_xattr_delegate!(self, self.node);
 
     fn readlink(
         &self,
@@ -1752,7 +1852,7 @@ impl FsNodeOps for RemoteSymlink {
         _current_task: &CurrentTask,
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
-        fetch_and_refresh_info_impl(&self.io, info)
+        self.node.fetch_and_refresh_info(info)
     }
 
     fn forget(
@@ -1763,9 +1863,7 @@ impl FsNodeOps for RemoteSymlink {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.io
-                .close_and_update_access_time()
-                .map_err(|status| from_status_like_fdio!(status))?;
+            self.node.io.close_and_update_access_time();
         }
         Ok(())
     }
@@ -1865,6 +1963,133 @@ fn map_sync_io_client_error(status: zx::Status) -> Errno {
     from_status_like_fdio!(status)
 }
 
+/// Used to keep track of whether node info is in sync or dirty so that we can avoid communicating
+/// exernally if we think the node information is in sync.
+// The two top bits are special (see below).  The remaining bits are a count of the number of
+// in-flight dirty operations.
+struct InfoState(AtomicU32);
+
+impl InfoState {
+    /// When this bit is set and the PENDING_REFRESH bit is *not* set, the node information is in
+    /// sync with the external node.
+    const IN_SYNC: u32 = 0x8000_0000;
+
+    /// When this bit is set in `info_state`, it means the node information is currently being
+    /// refreshed.
+    const PENDING_REFRESH: u32 = 0x4000_0000;
+
+    fn new(dirty: bool) -> Self {
+        Self(AtomicU32::new(if dirty { 0 } else { Self::IN_SYNC }))
+    }
+
+    /// This guard should be taken whilst an operation that might result in dirty node information
+    /// is in flight.
+    fn dirty_op_guard(&self) -> DirtyOpGuard<'_> {
+        // Increment the count indicating a dirty operation is in flight and also clear the
+        // `IN_SYNC` bit to indicate the node information will need refreshing from its external
+        // source.
+        let mut current = self.0.load(Ordering::Relaxed);
+        loop {
+            assert!(current | Self::IN_SYNC | Self::PENDING_REFRESH != u32::MAX); // Check overflow
+            match self.0.compare_exchange_weak(
+                current,
+                (current & !Self::IN_SYNC) + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(old) => current = old,
+            }
+        }
+        DirtyOpGuard(self)
+    }
+
+    /// Calls `refresh` if node information needs to be refreshed, or `not_needed` if node
+    /// information does not need refreshing.
+    fn maybe_refresh<'a, T: 'a>(
+        &self,
+        info: &'a RwLock<FsNodeInfo>,
+        refresh: impl FnOnce(&'a RwLock<FsNodeInfo>) -> Result<T, Errno>,
+        not_needed: impl FnOnce(&'a RwLock<FsNodeInfo>) -> Result<T, Errno>,
+    ) -> Result<T, Errno> {
+        let mut current = self.0.load(Ordering::Relaxed);
+
+        // If node information is dirty, and there are no pending dirty operations, and there is no
+        // other thread currently refreshing node information, we can set the bits indicating that a
+        // refresh is pending.  We want to set the `IN_SYNC` bit here in case `will_dirty` runs
+        // before we're done.
+        //
+        // NOTE: Multiple threads can be refreshing at the same time, but only one of them will
+        // succeed in setting the `PENDING_REFRESH` bit.
+        while current == 0 {
+            match self.0.compare_exchange_weak(
+                0,
+                Self::IN_SYNC | Self::PENDING_REFRESH,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(old) => current = old,
+            }
+        }
+
+        // Skip the update if the cached information is in sync and there are no pending dirty
+        // operations.  If there's a pending atime update, we'll skip updating that now; it
+        // shouldn't be necessary and we can do it later.
+        if current == Self::IN_SYNC {
+            return not_needed(info);
+        }
+
+        let result = refresh(info);
+
+        // If we set the PENDING_REFRESH bit above, we must clear it now.
+        if current == 0 {
+            if result.is_ok() {
+                self.0.fetch_and(!Self::PENDING_REFRESH, Ordering::Relaxed);
+            } else {
+                // If there was an error, we should also clear the IN_SYNC bit to indicate the node
+                // information is still dirty.
+                self.0.fetch_and(!(Self::IN_SYNC | Self::PENDING_REFRESH), Ordering::Relaxed);
+            }
+        }
+
+        result
+    }
+}
+
+struct DirtyOpGuard<'a>(&'a InfoState);
+
+impl Drop for DirtyOpGuard<'_> {
+    fn drop(&mut self) {
+        // Decrement the count we took when we created the guard.
+        self.0.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// A wrapper to be used around calls that will end up making node info dirty.
+fn will_dirty<'a, N: TryInto<&'a BaseNode> + Copy, T>(nodes: &[N], f: impl FnOnce() -> T) -> T {
+    // We are about to execute an operation that will make the cached information for one or more
+    // nodes out of date, and we must deal with races.  If we mark the node as dirty first, another
+    // thread could sneak in and refresh the node information before this operation has finished,
+    // and then the information would be out of date.  If we only mark the node as dirty afterwards,
+    // there is a window between when the operation completes and when we mark the node as dirty
+    // where another thread could observe the changes caused by this operation, but still see old
+    // node information.  So, the approach we take is to mark the node as dirty before the operation
+    // starts, but indicate that this operation is ongoing.  Any threads that try and retrieve node
+    // information will fetch fresh information, but, importantly, they'll leave the node marked as
+    // dirty.  Once this operation has finished, we'll indicate this operation is no longer
+    // in-flight, and then the next time information is refreshed, we'll mark the node information
+    // as being in sync.
+
+    let _guards: SmallVec<[_; 4]> = nodes
+        .iter()
+        .filter_map(|n| N::try_into(*n).ok())
+        .map(|n| n.info_state.dirty_op_guard())
+        .collect();
+
+    f()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1884,6 +2109,7 @@ mod test {
     use starnix_uapi::ino_t;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
+    use std::sync::atomic::AtomicU32;
     use zx::HandleBased;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -2509,7 +2735,10 @@ mod test {
                 log_blocksize: 12,
                 ..Default::default()
             };
-            file.entry.node.ops().enable_fsverity(&desc).expect("enable fsverity failed");
+            file.entry
+                .node
+                .enable_fsverity(locked, current_task, &desc)
+                .expect("enable fsverity failed");
         })
         .await;
 
@@ -3051,121 +3280,81 @@ mod test {
     }
 
     #[::fuchsia::test]
-    async fn test_update_time_access_persists() {
+    async fn test_pending_access_time() {
         const TEST_FILE: &str = "test_file";
 
         let fixture = TestFixture::new().await;
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
-        // Set up file.
-        let info_after_read = spawn_kernel_and_run(async move |locked, current_task| {
-            let kernel = current_task.kernel();
-            let fs = RemoteFs::new_fs(
-                locked,
-                &kernel,
-                client,
-                FileSystemOptions {
-                    source: FlyByteStr::new(b"/"),
-                    flags: MountFlags::RELATIME,
-                    ..Default::default()
-                },
-                fio::PERM_READABLE | fio::PERM_WRITABLE,
-            )
-            .expect("new_fs failed");
-            let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
-            let child = ns
-                .root()
-                .open_create_node(
-                    locked,
-                    &current_task,
-                    TEST_FILE.into(),
-                    FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
-                    DeviceType::NONE,
-                    OpenFlags::empty(),
-                )
-                .expect("create_node failed");
-
-            let file_handle = child
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
-
-            // Expect atime to be updated as this is the first file access since the
-            // last file modification or status change.
-            file_handle
-                .read(locked, &current_task, &mut VecOutputBuffer::new(10))
-                .expect("read failed");
-
-            // Call `fetch_and_refresh_info` to persist atime update.
-            let info_after_read = child
-                .entry
-                .node
-                .fetch_and_refresh_info(locked, &current_task)
-                .expect("fetch_and_refresh_info failed")
-                .clone();
-
-            info_after_read
-        })
-        .await;
-
-        // Tear down the kernel and open the file again. The file should no longer be cached.
-        let fixture = TestFixture::open(
-            fixture.close().await,
-            TestFixtureOptions { format: false, ..Default::default() },
-        )
-        .await;
-
-        let (server, client) = zx::Channel::create();
-        fixture.root().clone(server.into()).expect("clone failed");
-
-        spawn_kernel_and_run(async move |locked, current_task| {
-            let kernel = current_task.kernel();
-            let fs = RemoteFs::new_fs(
-                locked,
-                &kernel,
-                client,
-                FileSystemOptions {
-                    source: FlyByteStr::new(b"/"),
-                    flags: MountFlags::RELATIME,
-                    ..Default::default()
-                },
-                fio::PERM_READABLE | fio::PERM_WRITABLE,
-            )
-            .expect("new_fs failed");
-            let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
-            let mut context = LookupContext::new(SymlinkMode::NoFollow);
-            let child = ns
-                .root()
-                .lookup_child(locked, &current_task, &mut context, TEST_FILE.into())
-                .expect("lookup_child failed");
-
-            // Get info - this should be refreshed with info that was persisted before
-            // we tore down the kernel.
-            let persisted_info = child
-                .entry
-                .node
-                .fetch_and_refresh_info(locked, &current_task)
-                .expect("fetch_and_refresh_info failed")
-                .clone();
-            assert_eq!(info_after_read.time_access, persisted_info.time_access);
-        })
-        .await;
-        fixture.close().await;
-    }
-
-    #[::fuchsia::test]
-    async fn test_pending_access_time_updates() {
-        const TEST_FILE: &str = "test_file";
-
-        let fixture = TestFixture::new().await;
-        let (server, client) = zx::Channel::create();
+        let (server, client2) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
 
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel.clone();
+
+            let atime3 = {
+                let fs = RemoteFs::new_fs(
+                    locked,
+                    &kernel,
+                    client,
+                    FileSystemOptions {
+                        source: FlyByteStr::new(b"/"),
+                        flags: MountFlags::RELATIME,
+                        ..Default::default()
+                    },
+                    fio::PERM_READABLE | fio::PERM_WRITABLE,
+                )
+                .expect("new_fs failed");
+
+                let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
+                let child = ns
+                    .root()
+                    .open_create_node(
+                        locked,
+                        &current_task,
+                        TEST_FILE.into(),
+                        FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
+                        DeviceType::NONE,
+                        OpenFlags::empty(),
+                    )
+                    .expect("create_node failed");
+
+                let atime1 = child.entry.node.info().time_access;
+
+                std::thread::sleep(std::time::Duration::from_micros(1));
+
+                let file_handle = child
+                    .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                    .expect("open failed");
+
+                file_handle
+                    .read(locked, &current_task, &mut VecOutputBuffer::new(10))
+                    .expect("read failed");
+
+                // Expect atime to have changed.
+                let atime2 = child.entry.node.info().time_access;
+                assert!(atime2 > atime1);
+
+                std::thread::sleep(std::time::Duration::from_micros(1));
+
+                file_handle
+                    .read(locked, &current_task, &mut VecOutputBuffer::new(10))
+                    .expect("read failed");
+
+                // And again.
+                let atime3 = child.entry.node.info().time_access;
+                assert!(atime3 > atime2);
+
+                atime3
+            };
+
+            kernel.delayed_releaser.apply(locked.cast_locked(), current_task);
+
+            // After dropping the filesystem, the atime should have been persistently updated.
             let fs = RemoteFs::new_fs(
                 locked,
                 &kernel,
-                client,
+                client2,
                 FileSystemOptions {
                     source: FlyByteStr::new(b"/"),
                     flags: MountFlags::RELATIME,
@@ -3178,69 +3367,20 @@ mod test {
             let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
             let child = ns
                 .root()
-                .open_create_node(
+                .lookup_child(
                     locked,
                     &current_task,
+                    &mut LookupContext::new(Default::default()),
                     TEST_FILE.into(),
-                    FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
-                    DeviceType::NONE,
-                    OpenFlags::empty(),
                 )
-                .expect("create_node failed");
+                .expect("lookup_child failed");
 
-            let file_handle = child
-                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
+            let atime4 = child.entry.node.info().time_access;
 
-            // Expect atime to be updated as this is the first file access since the last
-            // file modification or status change.
-            file_handle
-                .read(locked, &current_task, &mut VecOutputBuffer::new(10))
-                .expect("read failed");
-
-            let atime_after_first_read = child
-                .entry
-                .node
-                .fetch_and_refresh_info(locked, &current_task)
-                .expect("fetch_and_refresh_info failed")
-                .time_access;
-
-            // Read again (this read will not trigger a persistent atime update if
-            // filesystem was mounted with atime)
-            file_handle
-                .read(locked, &current_task, &mut VecOutputBuffer::new(10))
-                .expect("read failed");
-
-            let atime_after_second_read = child
-                .entry
-                .node
-                .fetch_and_refresh_info(locked, &current_task)
-                .expect("fetch_and_refresh_info failed")
-                .time_access;
-            assert_eq!(atime_after_first_read, atime_after_second_read);
-
-            // Do another operation that will update ctime and/or mtime but not atime.
-            let write_bytes: [u8; 5] = [1, 2, 3, 4, 5];
-            let _written = file_handle
-                .write(locked, &current_task, &mut VecInputBuffer::new(&write_bytes))
-                .expect("write failed");
-
-            // Read again (atime should be updated).
-            file_handle
-                .read(locked, &current_task, &mut VecOutputBuffer::new(10))
-                .expect("read failed");
-
-            assert!(
-                atime_after_second_read
-                    < child
-                        .entry
-                        .node
-                        .fetch_and_refresh_info(locked, &current_task)
-                        .expect("fetch_and_refresh_info failed")
-                        .time_access
-            );
+            assert!(atime4 >= atime3);
         })
         .await;
+
         fixture.close().await;
     }
 
@@ -3313,5 +3453,352 @@ mod test {
         .await;
 
         server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_cached_attribute_refresh_behavior() {
+        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let barrier_clone = barrier.clone();
+        let get_attrs_count = Arc::new(AtomicU32::new(0));
+        let get_attrs_count_clone = get_attrs_count.clone();
+
+        let server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::GetAttributes { query: _, responder } => {
+                        get_attrs_count_clone.fetch_add(1, Ordering::SeqCst);
+                        let mutable_attrs = fio::MutableNodeAttributes { ..Default::default() };
+                        let immutable_attrs = fio::ImmutableNodeAttributes {
+                            id: Some(1),
+                            link_count: Some(1),
+                            ..Default::default()
+                        };
+                        responder.send(Ok((&mutable_attrs, &immutable_attrs))).unwrap();
+                    }
+                    fio::FileRequest::Resize { length: _, responder } => {
+                        let barrier_clone = barrier_clone.clone();
+                        fasync::Task::spawn(async move {
+                            fasync::unblock(move || {
+                                barrier_clone.wait();
+                                barrier_clone.wait();
+                            })
+                            .await;
+                            responder.send(Ok(())).unwrap();
+                        })
+                        .detach();
+                    }
+                    fio::FileRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+        });
+
+        fasync::unblock(move || {
+            let io = RemoteIo::new(client.into_channel().into());
+            let node = BaseNode::new(io, false);
+            let info = RwLock::new(FsNodeInfo::default());
+
+            // 1. Initial fetch. Should return cached info immediately.
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
+            {
+                let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
+
+            // 2. Spawn a thread to perform a dirty operation.
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    will_dirty(&[&node], || {
+                        node.io.truncate(0).expect("truncate failed");
+                    });
+                });
+
+                // Wait for the operation to start.
+                barrier.wait();
+
+                // Now the node is dirty. Fetching attributes should trigger a request.
+                {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                }
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
+
+                // A second fetch should trigger another request.
+                {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                }
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 2);
+
+                // Let the operation finish.
+                barrier.wait();
+            });
+
+            // 3. Operation finished. The next fetch should trigger a request.
+            {
+                let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 3);
+
+            // 4. Subsequent fetch should return cached info.
+            {
+                let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 3);
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_attribute_refresh_during_concurrent_dirty_operation() {
+        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let get_attrs_started = Arc::new(std::sync::Barrier::new(2));
+        let get_attrs_started_clone = get_attrs_started.clone();
+        let finish_get_attrs = Arc::new(std::sync::Barrier::new(2));
+        let finish_get_attrs_clone = finish_get_attrs.clone();
+
+        let resize_started = Arc::new(std::sync::Barrier::new(2));
+        let resize_started_clone = resize_started.clone();
+        let finish_resize = Arc::new(std::sync::Barrier::new(2));
+        let finish_resize_clone = finish_resize.clone();
+
+        let get_attrs_count = Arc::new(AtomicU32::new(0));
+        let get_attrs_count_clone = get_attrs_count.clone();
+
+        let server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::GetAttributes { query: _, responder } => {
+                        let count = get_attrs_count_clone.fetch_add(1, Ordering::SeqCst);
+                        let finish_get_attrs_clone = finish_get_attrs_clone.clone();
+                        let get_attrs_started_clone = get_attrs_started_clone.clone();
+
+                        fasync::Task::spawn(async move {
+                            if count == 0 {
+                                fasync::unblock(move || {
+                                    get_attrs_started_clone.wait();
+                                    finish_get_attrs_clone.wait();
+                                })
+                                .await;
+                            }
+                            let mutable_attrs = fio::MutableNodeAttributes { ..Default::default() };
+                            let immutable_attrs = fio::ImmutableNodeAttributes {
+                                id: Some(1),
+                                link_count: Some(1),
+                                ..Default::default()
+                            };
+                            responder.send(Ok((&mutable_attrs, &immutable_attrs))).unwrap();
+                        })
+                        .detach();
+                    }
+                    fio::FileRequest::Resize { length: _, responder } => {
+                        let resize_started_clone = resize_started_clone.clone();
+                        let finish_resize_clone = finish_resize_clone.clone();
+                        fasync::Task::spawn(async move {
+                            fasync::unblock(move || {
+                                resize_started_clone.wait();
+                                finish_resize_clone.wait();
+                            })
+                            .await;
+                            responder.send(Ok(())).unwrap();
+                        })
+                        .detach();
+                    }
+                    fio::FileRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+        });
+
+        fasync::unblock(move || {
+            let io = RemoteIo::new(client.into_channel().into());
+            let node = BaseNode::new(io, true);
+            let info = RwLock::new(FsNodeInfo::default());
+
+            std::thread::scope(|s| {
+                // 1. Start Refresh Thread
+                let refresh_thread = s.spawn(|| {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                });
+
+                get_attrs_started.wait();
+
+                // 2. Start Dirty Thread
+                let dirty_thread = s.spawn(|| {
+                    will_dirty(&[&node], || {
+                        node.io.truncate(0).expect("truncate failed");
+                    });
+                });
+
+                resize_started.wait();
+
+                // 3. Allow GetAttributes to finish
+                finish_get_attrs.wait();
+                refresh_thread.join().unwrap();
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
+
+                // 4. Refresh #2 (Should fetch because dirty op is in flight)
+                {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                }
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 2);
+
+                // 5. Allow Dirty Op to finish
+                finish_resize.wait();
+                dirty_thread.join().unwrap();
+
+                // 6. Refresh #3 (Should fetch because dirty op finished, but state was 0)
+                {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                }
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 3);
+
+                // 7. Refresh #4 (Should be cached)
+                {
+                    let _info = node.fetch_and_refresh_info(&info).expect("fetch failed");
+                }
+                assert_eq!(get_attrs_count.load(Ordering::SeqCst), 3);
+            });
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_update_attributes_invalidates_cache() {
+        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let get_attrs_count = Arc::new(AtomicU32::new(0));
+        let get_attrs_count_clone = get_attrs_count.clone();
+
+        let server_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fio::FileRequest::GetAttributes { query: _, responder } => {
+                        get_attrs_count_clone.fetch_add(1, Ordering::SeqCst);
+                        let mutable_attrs = fio::MutableNodeAttributes { ..Default::default() };
+                        let immutable_attrs = fio::ImmutableNodeAttributes {
+                            id: Some(1),
+                            link_count: Some(1),
+                            ..Default::default()
+                        };
+                        responder.send(Ok((&mutable_attrs, &immutable_attrs))).unwrap();
+                    }
+                    fio::FileRequest::UpdateAttributes { payload: _, responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    fio::FileRequest::Close { responder } => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => panic!("Unexpected request: {:?}", request),
+                }
+            }
+        });
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let io = RemoteIo::new(client.into_channel().into());
+            let node = RemoteNode::new(io, false); // Start clean
+            let info = RwLock::new(FsNodeInfo::default());
+
+            // 1. Initial fetch. Should use cached info (start_dirty=false).
+            {
+                let _info = node.node.fetch_and_refresh_info(&info).expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
+
+            let mut locked = locked.cast_locked::<FileOpsCore>();
+
+            // 2. Update attributes. This should dirty the node.
+            node.update_attributes(
+                &mut locked,
+                current_task,
+                &info.read(),
+                zxio_node_attr_has_t { modification_time: true, ..Default::default() },
+            )
+            .expect("update_attributes failed");
+
+            // 3. Fetch again. Should trigger a request.
+            {
+                let _info = node.node.fetch_and_refresh_info(&info).expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+
+        server_task.await;
+    }
+
+    #[test]
+    fn test_info_state_initial_state() {
+        let state = InfoState::new(true); // dirty
+        assert_eq!(state.0.load(Ordering::Relaxed), 0);
+
+        let state = InfoState::new(false); // in sync
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::IN_SYNC);
+    }
+
+    #[test]
+    fn test_info_state_dirty_op_guard() {
+        let state = InfoState::new(false);
+        {
+            let _guard = state.dirty_op_guard();
+            assert_eq!(state.0.load(Ordering::Relaxed), 1); // IN_SYNC bit cleared, count 1
+        }
+        assert_eq!(state.0.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_info_state_maybe_refresh_success() {
+        let state = InfoState::new(true);
+        let info = RwLock::new(FsNodeInfo::default());
+
+        let res = state.maybe_refresh(&info, |_| Ok(42), |_| unreachable!());
+        assert_eq!(res.unwrap(), 42);
+        assert_eq!(state.0.load(Ordering::Relaxed), InfoState::IN_SYNC);
+    }
+
+    #[test]
+    fn test_info_state_maybe_refresh_error() {
+        let state = InfoState::new(true);
+        let info = RwLock::new(FsNodeInfo::default());
+
+        let res: Result<u32, Errno> =
+            state.maybe_refresh(&info, |_| error!(EIO), |_| unreachable!());
+        assert!(res.is_err());
+        assert_eq!(state.0.load(Ordering::Relaxed), 0); // Still dirty
+    }
+
+    #[test]
+    fn test_info_state_maybe_refresh_not_needed() {
+        let state = InfoState::new(false); // in sync
+        let info = RwLock::new(FsNodeInfo::default());
+        let res = state.maybe_refresh(&info, |_| unreachable!(), |_| Ok(123));
+        assert_eq!(res.unwrap(), 123);
+    }
+
+    #[test]
+    fn test_info_state_concurrent_dirty_op_during_refresh() {
+        let state = InfoState::new(true);
+        let info = RwLock::new(FsNodeInfo::default());
+
+        state
+            .maybe_refresh(
+                &info,
+                |_| {
+                    // Simulate a dirty op starting while refresh is in progress
+                    let _guard = state.dirty_op_guard();
+                    assert_eq!(state.0.load(Ordering::Relaxed), InfoState::PENDING_REFRESH | 1);
+                    Ok(())
+                },
+                |_| unreachable!(),
+            )
+            .unwrap();
+
+        assert_eq!(state.0.load(Ordering::Relaxed), 0);
     }
 }

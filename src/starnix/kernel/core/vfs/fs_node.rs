@@ -223,8 +223,10 @@ pub struct FsNodeInfo {
     pub time_access: UtcInstant,
     pub time_modify: UtcInstant,
     pub casefold: bool,
+
     // If this node is fscrypt encrypted, stores the id of the user wrapping key used to encrypt it.
     pub wrapping_key_id: Option<[u8; 16]>,
+
     // Used to indicate to filesystems that manage timestamps that an access has occurred and to
     // update the node's atime.
     // This only impacts accesses within Starnix. Most Fuchsia programs are not expected to maintain
@@ -873,7 +875,13 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     /// computed by the filesystem.
     /// This should ensure there are no writable file handles. Returns EEXIST if the file was
     /// already fsverity-enabled. Returns EBUSY if this ioctl was already running on this file.
-    fn enable_fsverity(&self, _descriptor: &fsverity_descriptor) -> Result<(), Errno> {
+    fn enable_fsverity(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _descriptor: &fsverity_descriptor,
+    ) -> Result<(), Errno> {
         error!(ENOTSUP)
     }
 
@@ -2738,6 +2746,20 @@ impl FsNode {
         if let Some(rare_data) = self.rare_data.get() {
             rare_data.watchers.notify(event_mask, cookie, name, mode, is_dead);
         }
+    }
+
+    /// Calls through to the filesystem to enable fs-verity on this file.
+    pub fn enable_fsverity<L>(
+        &self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        descriptor: &fsverity_descriptor,
+    ) -> Result<(), Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let locked = locked.cast_locked::<FileOpsCore>();
+        self.ops().enable_fsverity(locked, self, current_task, descriptor)
     }
 }
 

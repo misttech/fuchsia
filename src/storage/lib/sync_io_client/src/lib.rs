@@ -401,12 +401,11 @@ impl RemoteIo {
     }
 
     /// Closes and updates access time asynchronously.
-    pub fn close_and_update_access_time(self) -> Result<(), zx::Status> {
+    pub fn close_and_update_access_time(self) {
         let _ = self.proxy.get_attributes(
             fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
             zx::MonotonicInstant::INFINITE_PAST,
         );
-        Ok(())
     }
 
     /// Clones (in the fuchsia.unknown.Clonable sense) the underlying proxy.

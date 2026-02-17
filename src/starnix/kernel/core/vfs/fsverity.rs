@@ -164,17 +164,18 @@ pub mod ioctl {
         descriptor.data_size = file.node().fetch_and_refresh_info(locked, task)?.size as u64;
         // The "Exec" writeguard mode means 'no writers'.
         let _mapping = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
-        let mut fsverity = file.node().fsverity.lock();
-        match *fsverity {
-            FsVerityState::Building => error!(EBUSY),
-            FsVerityState::FsVerity => error!(EEXIST),
-            FsVerityState::None => {
-                *fsverity = FsVerityState::Building;
-                file.node().ops().enable_fsverity(&descriptor)?;
-                *fsverity = FsVerityState::FsVerity;
-                Ok(SUCCESS)
+        {
+            let mut fsverity = file.node().fsverity.lock();
+            match *fsverity {
+                FsVerityState::Building => return error!(EBUSY),
+                FsVerityState::FsVerity => return error!(EEXIST),
+                FsVerityState::None => *fsverity = FsVerityState::Building,
             }
         }
+        let result = file.node().enable_fsverity(locked, task, &descriptor);
+        *file.node().fsverity.lock() =
+            if result.is_ok() { FsVerityState::FsVerity } else { FsVerityState::None };
+        result.map(|()| SUCCESS)
     }
 
     /// ioctl handler for FS_IOC_MEASURE_VERITY.
