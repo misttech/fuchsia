@@ -308,6 +308,16 @@ are defined in [`//bundles/assembly/BUILD.gn`][assembly-build]. For example:
 ```gn {:.devsite-disable-click-to-copy}
 # Declares a new AIB with the name "tandem_core".
 assembly_input_bundle("tandem_core") {
+  # Controls which build types and feature set levels this AIB is allowed to be
+  # included in. This prevents non-production code from ending up in production
+  # user builds.
+  # Options include:
+  #   "everything" (equivalent to empty list)
+  #   <build-type> (e.g. "user", "userdebug", "eng")
+  #   <feature-set-level> (e.g. "standard", "utility", "bootstrap", "embeddable")
+  #   <feature-set-level>::<build-type> (e.g. "standard::eng" or "utility::user")
+  allowed_in = [ "standard", "utility::eng" ]
+
   # Include this package into the "base package set".
   # See RFC-0212 for an explanation on package sets.
   # The provided targets must be fuchsia_package().
@@ -319,7 +329,24 @@ assembly_input_bundle("tandem_core") {
 }
 ```
 
-To include the AIB, use the following method in your subsystem:
+**Access Control Fields:**
+
+*   **`allowed_in`**: (Recommended) Lists the feature sets (e.g. `standard`,
+    `bootstrap`) and build types (e.g. `user`, `eng`) that are allowed to
+    include this AIB. If a user attempts to include an AIB in an improper
+    product, then assembly will throw an error.
+*   **`scrutiny_required`**: Lists the feature sets and build types where
+    the contents of this AIB are expected in the scrutiny goldens. This is
+    used only for scrutiny golden generation and does not affect what AIBs
+    go into which products.
+*   **`auto_include_in`**: Lists the feature sets and build types where this
+    AIB is automatically included without needing an explicit
+    `builder.platform_bundle()` call in the subsystem.
+
+To include an AIB, you can either use `auto_include_in` in the AIB definition
+to tell Assembly to automatically include the AIB in the listed build types
+and feature set levels, or if you need to enable the AIB based on a board or
+product-level flag, you can use the following method in your subsystem:
 
 ```rust {:.devsite-disable-click-to-copy}
 builder.platform_bundle("tandem_core");
