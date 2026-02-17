@@ -502,9 +502,10 @@ impl PackageManifest {
         Ok(())
     }
 
-    /// Returns a tuple of BlobInfo corresponding to the top level meta.far blob
-    /// and a HashMap containing all of the blobs from all of the subpackages.
-    fn package_and_subpackage_blobs(
+    /// Returns a tuple of a BlobInfo corresponding to the top level meta.far blob and a HashMap
+    /// containing all of the blobs (both content blobs and meta.fars) from the transitive closure
+    /// of the subpackages. The HashMap will not contain the BlobInfo of the top level meta.far.
+    pub fn package_and_subpackage_blobs(
         self,
     ) -> Result<(BlobInfo, HashMap<Hash, BlobInfo>), PackageManifestError> {
         let mut contents = HashMap::new();
