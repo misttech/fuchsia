@@ -97,9 +97,15 @@ pub struct PlatformUiConfig {
 
     // TODO(b/443729860): Remove these temporary feature flags once enabled.
     /// Enables baton passing in different input drivers.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_button_baton_passing: bool,
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_mouse_baton_passing: bool,
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_touch_baton_passing: bool,
+
+    /// Enables merging move only touch events in the input pipeline.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_merge_touch_events: bool,
 }
 
