@@ -16,23 +16,10 @@ mod sync;
 
 use policy::arrays::FsUseType;
 
-use std::num::NonZeroU32;
-
 /// Numeric class Ids are provided to the userspace AVC surfaces (e.g. "create", "access", etc).
 pub use policy::ClassId;
 
-/// The Security ID (SID) used internally to refer to a security context.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SecurityId(NonZeroU32);
-
-impl From<InitialSid> for SecurityId {
-    fn from(initial_sid: InitialSid) -> Self {
-        // Initial SIDs are used by the kernel as placeholder `SecurityId` values for objects
-        // created prior to the SELinux policy being loaded, and are resolved to the policy-defined
-        // Security Context when referenced after policy load.
-        Self(NonZeroU32::new(initial_sid as u32).unwrap())
-    }
-}
+pub use starnix_uapi::selinux::{InitialSid, ReferenceInitialSid, SecurityId, TaskAttrs};
 
 /// Identifies a specific class by its policy-defined Id, or as a kernel object class enum Id.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -1587,68 +1574,6 @@ class_permission_enum! {
      }
 }
 
-/// Initial Security Identifier (SID) values defined by the SELinux Reference Policy.
-/// Where the SELinux Reference Policy retains definitions for some deprecated initial SIDs, this
-/// enum omits deprecated entries for clarity.
-#[repr(u64)]
-enum ReferenceInitialSid {
-    Kernel = 1,
-    Security = 2,
-    Unlabeled = 3,
-    _Fs = 4,
-    File = 5,
-    _Port = 9,
-    _Netif = 10,
-    _Netmsg = 11,
-    _Node = 12,
-    _Sysctl = 17,
-    Devnull = 27,
-
-    /// Lowest Security Identifier value guaranteed not to be used by this
-    /// implementation to refer to an initial Security Context.
-    FirstUnused,
-}
-
-macro_rules! initial_sid_enum {
-    ($(#[$meta:meta])* $name:ident {
-        $($(#[$variant_meta:meta])* $variant:ident ($variant_name: literal)),*,
-    }) => {
-        $(#[$meta])*
-        pub enum $name {
-            $($(#[$variant_meta])* $variant = ReferenceInitialSid::$variant as isize),*
-        }
-
-        impl $name {
-            pub fn all_variants() -> &'static [Self] {
-                &[
-                    $($name::$variant),*
-                ]
-            }
-
-            pub fn name(&self) -> &'static str {
-                match self {
-                    $($name::$variant => $variant_name),*
-                }
-            }
-        }
-    }
-}
-
-initial_sid_enum! {
-/// Initial Security Identifier (SID) values actually used by this implementation.
-/// These must be present in the policy, for it to be valid.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-    InitialSid {
-        // keep-sorted start
-        Devnull("devnull"),
-        File("file"),
-        Kernel("kernel"),
-        Security("security"),
-        Unlabeled("unlabeled"),
-        // keep-sorted end
-    }
-}
-
 /// A borrowed byte slice that contains no `NUL` characters by truncating the input slice at the
 /// first `NUL` (if any) upon construction.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1802,9 +1727,12 @@ impl PolicyCap {
     }
 }
 
+/// The SELinux security structure for `ThreadGroup`.
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroU32;
 
     #[test]
     fn object_class_permissions() {

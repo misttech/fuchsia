@@ -21,6 +21,7 @@ pub mod range_ext;
 pub mod resource_limits;
 pub mod restricted_aspace;
 pub mod seal_flags;
+pub mod selinux;
 pub mod signals;
 pub mod syslog;
 pub mod uapi;

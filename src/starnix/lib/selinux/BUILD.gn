@@ -74,6 +74,7 @@ rustc_library("selinux") {
   deps = [
     "//sdk/rust/zx",
     "//src/starnix/lib/starnix_rcu",
+    "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:crossbeam-utils",

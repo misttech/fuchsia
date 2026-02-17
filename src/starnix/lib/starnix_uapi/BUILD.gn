@@ -34,6 +34,7 @@ rustc_library("starnix_uapi") {
     "src/resource_limits.rs",
     "src/restricted_aspace.rs",
     "src/seal_flags.rs",
+    "src/selinux.rs",
     "src/signals.rs",
     "src/syslog.rs",
     "src/uapi.rs",
