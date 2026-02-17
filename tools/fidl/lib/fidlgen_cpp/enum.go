@@ -32,7 +32,7 @@ func (*Enum) IsResourceType() bool {
 	return false
 }
 
-func (e Enum) UnknownValueForTmpl() interface{} {
+func (e Enum) UnknownValueForTmpl() any {
 	return e.Enum.UnknownValueForTmpl()
 }
 
@@ -100,7 +100,7 @@ func readEnumValue(m fidlgen.EnumMember, typ fidlgen.PrimitiveSubtype) integer {
 // value. Note that by definition there cannot be unknown values in fully
 // populated enums, so it's fine if the user ends up writing a switch without a
 // `default:` case in that case.
-func (e Enum) UnusedEnumValueForTmpl() interface{} {
+func (e Enum) UnusedEnumValueForTmpl() any {
 	nb := e.Enum.Type.NumberOfBits()
 	if math.Log2(float64(len(e.Members))) >= float64(nb) {
 		return e.UnknownValueForTmpl()

@@ -175,7 +175,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 		d.spdxName = fmt.Sprintf("%s", d.libraryName)
 
 		h := fnv.New128a()
-		h.Write([]byte(fmt.Sprintf("%s %s %s", d.libraryName, d.file.relPath, string(d.data))))
+		h.Write(fmt.Appendf(nil, "%s %s %s", d.libraryName, d.file.relPath, string(d.data)))
 		d.spdxID = fmt.Sprintf("LicenseRef-filedata-%x", h.Sum([]byte{}))
 	}
 	return data, nil

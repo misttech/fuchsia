@@ -275,10 +275,7 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 
 	// Boot Fuchsia.
 	if t.config.FastbootSernum != "" || t.config.TCPFastboot {
-		maxAllowedAttempts := 1
-		if t.config.MaxFlashAttempts > maxAllowedAttempts {
-			maxAllowedAttempts = t.config.MaxFlashAttempts
-		}
+		maxAllowedAttempts := max(t.config.MaxFlashAttempts, 1)
 		var err error
 		tcpFlash := false
 		target := t.config.FastbootSernum

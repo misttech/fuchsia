@@ -38,7 +38,7 @@ type builder struct {
 	handleRepr handleRepr
 }
 
-func (b *builder) write(format string, vals ...interface{}) {
+func (b *builder) write(format string, vals ...any) {
 	b.WriteString(fmt.Sprintf(format, vals...))
 }
 
@@ -47,14 +47,14 @@ func (b *builder) newVar() string {
 	return fmt.Sprintf("var%d", b.varidx)
 }
 
-func (b *builder) assignNew(typename string, isPointer bool, fmtStr string, vals ...interface{}) string {
+func (b *builder) assignNew(typename string, isPointer bool, fmtStr string, vals ...any) string {
 	rhs := b.construct(typename, isPointer, fmtStr, vals...)
 	newVar := b.newVar()
 	b.write("auto %s = %s;\n", newVar, rhs)
 	return newVar
 }
 
-func (b *builder) construct(typename string, isPointer bool, fmtStr string, args ...interface{}) string {
+func (b *builder) construct(typename string, isPointer bool, fmtStr string, args ...any) string {
 	val := fmt.Sprintf(fmtStr, args...)
 	if !isPointer {
 		return fmt.Sprintf("%s(%s)", typename, val)

@@ -335,12 +335,11 @@ func (r *Readme) ProcessReadmeLicense(rl *ReadmeLicense) {
 // Parse a single line in a README.fuchsia file.
 // Find the colon ':', directives are before that, values are after that.
 func parseReadmeLine(line string) (string, string, error) {
-	colon := strings.Index(line, ":")
-	if colon < 0 {
+	directive, value, ok := strings.Cut(line, ":")
+	if !ok {
 		return "", line, fmt.Errorf("Failed to find ':' in line '%s'", line)
 	}
-	directive := line[:colon]
-	value := strings.TrimSpace(line[colon+1:])
+	value = strings.TrimSpace(value)
 
 	if _, ok := knownDirectives[directive]; !ok {
 		return "", line, fmt.Errorf("Unknown directive '%s'", directive)

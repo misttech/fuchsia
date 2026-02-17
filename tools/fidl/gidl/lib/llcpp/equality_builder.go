@@ -55,12 +55,12 @@ type boolExpr string
 type fidlExpr string
 
 // Create a fidl expression from a formatted string.
-func fidlSprintf(format string, vals ...interface{}) fidlExpr {
+func fidlSprintf(format string, vals ...any) fidlExpr {
 	return fidlExpr(fmt.Sprintf(format, vals...))
 }
 
 // Create a boolean expression from a formatted string.
-func boolSprintf(format string, vals ...interface{}) boolExpr {
+func boolSprintf(format string, vals ...any) boolExpr {
 	return boolExpr(fmt.Sprintf(format, vals...))
 }
 
@@ -100,7 +100,7 @@ type equalityCheckBuilder struct {
 	handleKoidVectorName string
 }
 
-func (b *equalityCheckBuilder) write(format string, vals ...interface{}) {
+func (b *equalityCheckBuilder) write(format string, vals ...any) {
 	b.WriteString(fmt.Sprintf(format, vals...))
 }
 
@@ -110,7 +110,7 @@ func (b *equalityCheckBuilder) createAndAssignVar(val fidlExpr) fidlExpr {
 	return varName
 }
 
-func (b *equalityCheckBuilder) construct(typename string, fmtStr string, args ...interface{}) fidlExpr {
+func (b *equalityCheckBuilder) construct(typename string, fmtStr string, args ...any) fidlExpr {
 	val := fmt.Sprintf(fmtStr, args...)
 	return fidlSprintf("%s(%s)", typename, val)
 }

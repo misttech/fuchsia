@@ -8,6 +8,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"slices"
 	"strconv"
 	"text/template"
 
@@ -204,12 +205,7 @@ var supportedWireFormats = []ir.WireFormat{
 }
 
 func wireFormatSupported(wireFormat ir.WireFormat) bool {
-	for _, wf := range supportedWireFormats {
-		if wireFormat == wf {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(supportedWireFormats, wireFormat)
 }
 
 func testCaseName(baseName string, wireFormat ir.WireFormat) string {

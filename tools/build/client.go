@@ -48,7 +48,7 @@ func (c BuildAPIClient) GetRaw(name string) ([]byte, error) {
 }
 
 // GetJson reads build API module file as JSON.
-func (c BuildAPIClient) GetJSON(name string, v interface{}) error {
+func (c BuildAPIClient) GetJSON(name string, v any) error {
 	content, err := c.GetRaw(name)
 	if err != nil {
 		return err

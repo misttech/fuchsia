@@ -24,7 +24,7 @@ func HTTPGet(url string) ([]byte, error) {
 
 // HTTPGetJSON gets a response from the given URL and stores it in jsonData.
 // It is the caller's responsibility to make sure the response is in JSON format.
-func HTTPGetJSON(url string, jsonData interface{}) error {
+func HTTPGetJSON(url string, jsonData any) error {
 	b, err := HTTPGet(url)
 	if err != nil {
 		return err

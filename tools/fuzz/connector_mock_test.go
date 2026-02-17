@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -76,10 +77,8 @@ func (c *mockConnector) IsDir(path string) (bool, error) {
 		return false, os.ErrNotExist
 	}
 
-	for _, dir := range c.Dirs {
-		if path == dir {
-			return true, nil
-		}
+	if slices.Contains(c.Dirs, path) {
+		return true, nil
 	}
 	return false, nil
 }

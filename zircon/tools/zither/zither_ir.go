@@ -152,7 +152,7 @@ func newMember(m fidlgen.Member) member {
 // deriving concrete types. In normal go code, we would do the type assertions
 // directly, but no can do in templates.
 type DeclWrapper struct {
-	value interface{}
+	value any
 }
 
 func (decl DeclWrapper) Name() fidlgen.Name {

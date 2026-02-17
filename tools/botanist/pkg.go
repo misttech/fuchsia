@@ -48,7 +48,7 @@ func newCachedPkgRepo(ctx context.Context, repoPath string) (*cachedPkgRepo, err
 	}, nil
 }
 
-func (c *cachedPkgRepo) logf(msg string, args ...interface{}) {
+func (c *cachedPkgRepo) logf(msg string, args ...any) {
 	logger.Debugf(c.loggerCtx, fmt.Sprintf("[package server] %s", msg), args...)
 }
 

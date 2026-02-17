@@ -1586,7 +1586,7 @@ func parse(gidlInput string) (ir.All, error) {
 	return all, err
 }
 
-func checkMatch(t *testing.T, actual, expected interface{}, err error) {
+func checkMatch(t *testing.T, actual, expected any, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -544,10 +544,7 @@ func WithTargetDuration(
 				// within the max shards per env.
 				avgTestsPerShard := divRoundUp(totalTestsPerEnv, subShardCount)
 				if maxShardSize > 0 && avgTestsPerShard > maxShardSize {
-					subShardCount = divRoundUp(totalTestsPerEnv, maxShardSize)
-					if subShardCount > maxShardsPerEnvironment {
-						subShardCount = maxShardsPerEnvironment
-					}
+					subShardCount = min(divRoundUp(totalTestsPerEnv, maxShardSize), maxShardsPerEnvironment)
 				}
 			}
 			if subShardCount > 0 {
@@ -641,11 +638,11 @@ func (h subshardHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
 
-func (h *subshardHeap) Push(s interface{}) {
+func (h *subshardHeap) Push(s any) {
 	*h = append(*h, s.(subshard))
 }
 
-func (h *subshardHeap) Pop() interface{} {
+func (h *subshardHeap) Pop() any {
 	old := *h
 	n := len(old)
 	s := old[n-1]

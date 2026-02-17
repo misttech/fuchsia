@@ -48,7 +48,7 @@ const gchart = `
 </html>`
 
 type htmlData struct {
-	Data  *[][]interface{}
+	Data  *[][]any
 	Title string
 }
 
@@ -65,17 +65,17 @@ type htmlData struct {
 //     This value determines the size of the node, computed relative to all other
 //     nodes currently shown. For non-leaf nodes, this value is ignored and
 //     calculated from the size of all its children.
-func toTable(bloatyData map[string]*Segment) *[][]interface{} {
-	var data [][]interface{}
-	data = append(data, []interface{}{"ID", "Parent", "File Size", "Color"})
-	data = append(data, []interface{}{"Build", nil, uint64(0), 0})
+func toTable(bloatyData map[string]*Segment) *[][]any {
+	var data [][]any
+	data = append(data, []any{"ID", "Parent", "File Size", "Color"})
+	data = append(data, []any{"Build", nil, uint64(0), 0})
 
 	for seg, segData := range bloatyData {
-		data = append(data, []interface{}{seg, "Build", uint64(0), 0})
+		data = append(data, []any{seg, "Build", uint64(0), 0})
 		for file, fileData := range segData.Files {
-			data = append(data, []interface{}{fmt.Sprintf("%s (%s)", file, seg), seg, fileData.TotalFilesz, 0})
+			data = append(data, []any{fmt.Sprintf("%s (%s)", file, seg), seg, fileData.TotalFilesz, 0})
 			for sym, symData := range fileData.Symbols {
-				data = append(data, []interface{}{
+				data = append(data, []any{
 					fmt.Sprintf("%s:%s (%s)", file, sym, seg),
 					fmt.Sprintf("%s (%s)", file, seg),
 					symData.Filesz,

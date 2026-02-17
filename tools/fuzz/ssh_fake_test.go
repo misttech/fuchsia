@@ -259,7 +259,7 @@ func (f *fakeFile) Mode() os.FileMode {
 }
 func (f *fakeFile) ModTime() time.Time { return time.Now() }
 func (f *fakeFile) IsDir() bool        { return f.isDir }
-func (f *fakeFile) Sys() interface{}   { return nil }
+func (f *fakeFile) Sys() any           { return nil }
 
 func (f *fakeFile) WriteAt(p []byte, off int64) (n int, err error) {
 	// Note: this ignores offset, assuming sequential writes

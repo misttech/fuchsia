@@ -57,7 +57,7 @@ func NewModules(buildDir string) (*Modules, error) {
 		return nil, err
 	}
 
-	manifests := map[string]interface{}{
+	manifests := map[string]any{
 		// keep-sorted start ignore_prefixes="
 		"api":                         &m.apis,
 		"args":                        &m.args,

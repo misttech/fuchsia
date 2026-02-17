@@ -22,7 +22,7 @@ import (
 // - `[]Value` for slices of values
 // - `nil` for null values (only allowed for nullable types)
 // - `UnknownData` for unknown variants of unions
-type Value interface{}
+type Value any
 
 // A RawFloat is an integer whose bytes specify an IEEE 754 single or double
 // precision floating point number (sign bit = most significant bit). In the

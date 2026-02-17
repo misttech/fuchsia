@@ -52,7 +52,7 @@ type Segment struct {
 }
 
 func (s *Segment) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&s.LineNumber, &s.ColumnNumber, &s.Count, &s.HasCount, &s.IsRegionEntry, &s.IsGapRegion}
+	tmp := []any{&s.LineNumber, &s.ColumnNumber, &s.Count, &s.HasCount, &s.IsRegionEntry, &s.IsGapRegion}
 	wantLen := len(tmp)
 	if err := json.Unmarshal(buf, &tmp); err != nil {
 		return err
@@ -82,7 +82,7 @@ type Region struct {
 }
 
 func (r *Region) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&r.LineStart, &r.ColumnStart, &r.LineEnd, &r.ColumnEnd, &r.ExecutionCount, &r.FileID, &r.ExpandedFileID, &r.Kind}
+	tmp := []any{&r.LineStart, &r.ColumnStart, &r.LineEnd, &r.ColumnEnd, &r.ExecutionCount, &r.FileID, &r.ExpandedFileID, &r.Kind}
 	wantLen := len(tmp)
 	if err := json.Unmarshal(buf, &tmp); err != nil {
 		return err

@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 
 	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
@@ -101,13 +100,7 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 			}
 		}
 	}
-	matchedState := false
-	for _, state := range c.OnlyOnStates {
-		if c.swarmingResult.State == state {
-			matchedState = true
-			break
-		}
-	}
+	matchedState := slices.Contains(c.OnlyOnStates, c.swarmingResult.State)
 	if len(c.OnlyOnStates) != 0 && !matchedState {
 		return false
 	}
@@ -287,20 +280,21 @@ func (c *stringInLogCheck) Name() string {
 }
 
 func (c *stringInLogCheck) DebugText() string {
-	debugStr := fmt.Sprintf("Found the string \"%s\" in ", c.String)
+	var debugStr strings.Builder
+	debugStr.WriteString(fmt.Sprintf("Found the string \"%s\" in ", c.String))
 	if c.outputFile != "" && c.testName != "" {
-		debugStr += fmt.Sprintf("%s of test %s.", filepath.Base(c.outputFile), c.testName)
+		debugStr.WriteString(fmt.Sprintf("%s of test %s.", filepath.Base(c.outputFile), c.testName))
 	} else {
-		debugStr += fmt.Sprintf("%s for task %s.", c.Type, c.swarmingResult.TaskId)
+		debugStr.WriteString(fmt.Sprintf("%s for task %s.", c.Type, c.swarmingResult.TaskId))
 	}
-	debugStr += "\nThat file should be accessible from the build result page or Sponge.\n"
+	debugStr.WriteString("\nThat file should be accessible from the build result page or Sponge.\n")
 	for _, s := range c.ExceptStrings {
-		debugStr += fmt.Sprintf("\nDid not find the exception string \"%s\"", s)
+		debugStr.WriteString(fmt.Sprintf("\nDid not find the exception string \"%s\"", s))
 	}
 	for _, block := range c.ExceptBlocks {
-		debugStr += fmt.Sprintf("\nDid not occur inside a block delimited by:\nSTART: %s\nEND: %s", block.startString, block.endString)
+		debugStr.WriteString(fmt.Sprintf("\nDid not occur inside a block delimited by:\nSTART: %s\nEND: %s", block.startString, block.endString))
 	}
-	return debugStr
+	return debugStr.String()
 }
 
 func (c *stringInLogCheck) OutputFiles() []string {

@@ -736,7 +736,7 @@ func setEnviron(environ []string) {
 	}
 }
 
-func (r *RunCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (r *RunCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	args := f.Args()
 	if len(args) == 0 {
 		return subcommands.ExitUsageError

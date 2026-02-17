@@ -6,6 +6,7 @@ package project
 
 import (
 	"path/filepath"
+	"slices"
 )
 
 var Config *ProjectConfig
@@ -60,17 +61,11 @@ func IsBarrier(path string) bool {
 	base := filepath.Base(path)
 	isBarrier := false
 	for _, barrier := range Config.Barriers {
-		for _, bPath := range barrier.Paths {
-			if base == bPath {
-				isBarrier = true
-				break
-			}
+		if slices.Contains(barrier.Paths, base) {
+			isBarrier = true
 		}
-		for _, ePath := range barrier.Exceptions {
-			if ePath == path {
-				isBarrier = false
-				break
-			}
+		if slices.Contains(barrier.Exceptions, path) {
+			isBarrier = false
 		}
 	}
 	return isBarrier

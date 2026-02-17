@@ -67,7 +67,7 @@ func (cmd *listCmd) execute(ctx context.Context) error {
 	return cmd.outputNormal(devices, cmd.fullInfo)
 }
 
-func (cmd *listCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (cmd *listCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if err := cmd.execute(ctx); err != nil {
 		log.Print(err)
 		return subcommands.ExitFailure

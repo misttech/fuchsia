@@ -46,7 +46,7 @@ type equalityCheckBuilder struct {
 	strings.Builder
 }
 
-func (b *equalityCheckBuilder) write(format string, args ...interface{}) {
+func (b *equalityCheckBuilder) write(format string, args ...any) {
 	// Eight spaces to fit with the Python formatting for each line.
 	b.WriteString("        ")
 	fmt.Fprintf(b, format, args...)

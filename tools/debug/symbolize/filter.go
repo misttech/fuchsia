@@ -15,7 +15,7 @@ import (
 // allow for the proper construction of triggers since triggers need to know
 // where a triggering element came from. Right now this is just an empty
 // interface. It would be nice if the user could do soemthing other than cast this.
-type LineSource interface{}
+type LineSource any
 
 type Process uint64
 

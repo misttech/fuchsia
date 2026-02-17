@@ -270,7 +270,7 @@ func readSDKVersion(manifestFilePath string) (string, error) {
 		return "", err
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(data), &result); err != nil {
 		return "", err
 	}
@@ -998,7 +998,7 @@ func (sdk SDKProperties) getConfiguredDevices(isMigration bool) ([]DeviceConfig,
 	// If the default device name is "", we don't need to check if we visited it.
 	visitedDefaultDevice := defaultDeviceName == ""
 
-	if deviceConfigMap, ok := configData[deviceConfigurationKey].(map[string]interface{}); ok {
+	if deviceConfigMap, ok := configData[deviceConfigurationKey].(map[string]any); ok {
 		for k, v := range deviceConfigMap {
 			if !isReservedProperty(k) {
 				if device, ok := sdk.mapToDeviceConfig(k, v); ok {
@@ -1263,7 +1263,7 @@ func (sdk SDKProperties) MigrateGlobalData() error {
 		return err
 	}
 
-	if deviceConfigMap, ok := configData[globalDeviceConfigurationKey].(map[string]interface{}); ok {
+	if deviceConfigMap, ok := configData[globalDeviceConfigurationKey].(map[string]any); ok {
 		for k, v := range deviceConfigMap {
 			if !isReservedProperty(k) {
 				if device, ok := sdk.mapToDeviceConfig(k, v); ok {
@@ -1284,9 +1284,9 @@ func (sdk SDKProperties) MigrateGlobalData() error {
 }
 
 // getDeviceConfigurationData calls `ffx` to read the data at the specified key.
-func getDeviceConfigurationData(sdk SDKProperties, key string) (map[string]interface{}, error) {
+func getDeviceConfigurationData(sdk SDKProperties, key string) (map[string]any, error) {
 	var (
-		data   map[string]interface{}
+		data   map[string]any
 		err    error
 		output string
 	)
@@ -1359,17 +1359,17 @@ func isReservedProperty(property string) bool {
 }
 
 // mapToDeviceConfig converts the map returned by json into a DeviceConfig struct.
-func (sdk SDKProperties) mapToDeviceConfig(deviceName string, data interface{}) (DeviceConfig, bool) {
+func (sdk SDKProperties) mapToDeviceConfig(deviceName string, data any) (DeviceConfig, bool) {
 	var (
 		device     DeviceConfig
-		deviceData map[string]interface{}
+		deviceData map[string]any
 		ok         bool
 		value      string
 	)
 
 	device.DeviceName = deviceName
 
-	if deviceData, ok = data.(map[string]interface{}); ok {
+	if deviceData, ok = data.(map[string]any); ok {
 		for _, key := range validPropertyNames {
 			// The Default flag, IP address, and SSH port are stored else where, so don't
 			// try to key it from the map.

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 )
 
 type OrchestrateConfig struct {
@@ -123,12 +124,7 @@ func (ri *RunInput) Cipd() map[string]string {
 }
 
 func (ri *RunInput) HasExperiment(experiment string) bool {
-	for _, given_experiment := range ri.ExperimentSlice {
-		if given_experiment == experiment {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ri.ExperimentSlice, experiment)
 }
 
 // ReadRunInput reads RunInput from a given path.

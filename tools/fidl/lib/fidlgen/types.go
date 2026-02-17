@@ -90,12 +90,7 @@ type Experiments []Experiment
 
 // Contains checks if a given experiment string is included in the list.
 func (exs Experiments) Contains(needle Experiment) bool {
-	for _, ex := range exs {
-		if needle == ex {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(exs, needle)
 }
 
 // An EncodedLibraryIdentifier is a LibraryIdentifier encoded as a string,
@@ -719,7 +714,7 @@ func (t *Type) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON customizes the JSON marshalling for Type.
 func (t *Type) MarshalJSON() ([]byte, error) {
-	obj := map[string]interface{}{
+	obj := map[string]any{
 		"kind_v2":       t.Kind,
 		"type_shape_v2": t.TypeShapeV2,
 	}
@@ -1150,12 +1145,7 @@ func (s scopedNamingContext) nestedIn(other scopedNamingContext) bool {
 
 // nestedInAny returns true if s is nested in (or is the same as) any of others.
 func (s scopedNamingContext) nestedInAny(others []scopedNamingContext) bool {
-	for _, other := range others {
-		if s.nestedIn(other) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(others, s.nestedIn)
 }
 
 // LayoutDecl represents data specific to bits/enums/structs/tables/unions. All
@@ -1561,7 +1551,7 @@ func (enum *Enum) UnknownValueAsUint64() (uint64, error) {
 
 // UnknownValueForTmpl retrieves the signed or unsigned unknown value. Panics
 // if called on a strict enum.
-func (enum *Enum) UnknownValueForTmpl() interface{} {
+func (enum *Enum) UnknownValueForTmpl() any {
 	if enum.Type.IsSigned() {
 		unknownValue, err := enum.UnknownValueAsInt64()
 		if err != nil {

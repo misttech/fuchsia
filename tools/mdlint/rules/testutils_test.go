@@ -33,7 +33,7 @@ type warningRecorder struct {
 
 var _ core.Reporter = (*warningRecorder)(nil)
 
-func (r *warningRecorder) Warnf(tok core.Token, format string, a ...interface{}) {
+func (r *warningRecorder) Warnf(tok core.Token, format string, a ...any) {
 	r.actual = append(r.actual, warning{
 		Ln:         tok.Ln,
 		Col:        tok.Col,

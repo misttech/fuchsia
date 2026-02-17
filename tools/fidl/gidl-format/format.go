@@ -58,7 +58,7 @@ func format(dst io.StringWriter, src io.Reader, filename string) error {
 	return f.err
 }
 
-func (f *formatter) fail(format string, args ...interface{}) {
+func (f *formatter) fail(format string, args ...any) {
 	f.err = fmt.Errorf("%s: %s", f.Position, fmt.Sprintf(format, args...))
 }
 

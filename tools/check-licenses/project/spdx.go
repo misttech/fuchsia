@@ -16,7 +16,7 @@ import (
 // Create an spdx.Package struct that matches the given project struct.
 func (p *Project) GenerateSPDXPackage() (*spdx.Package, error) {
 	h := fnv.New128a()
-	h.Write([]byte(fmt.Sprintf("%s %s", p.Root, p.Name)))
+	h.Write(fmt.Appendf(nil, "%s %s", p.Root, p.Name))
 	p.SPDXID = fmt.Sprintf("Package-%x", h.Sum([]byte{}))
 
 	pkg := &spdx.Package{

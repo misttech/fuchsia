@@ -80,7 +80,7 @@ If neither --device-name nor --device-ip are specified, the device-name configur
 	f.BoolVar(&c.verbose, verboseFlag, false, "Runs ssh in verbose mode.")
 }
 
-func (c *Cmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *Cmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	// Write all logs to stderr. Other tools parse the output of fssh which will break if logs
 	// are written to stdout.
 	log := logger.NewLogger(c.logLevel, color.NewColor(color.ColorAuto), os.Stderr, os.Stderr, "fssh ")

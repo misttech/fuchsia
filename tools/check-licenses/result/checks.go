@@ -7,6 +7,7 @@ package result
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -224,10 +225,8 @@ func isProjectAllowlisted(relpath string, m *classifierLib.Match) bool {
 			continue
 		}
 		for _, e := range al.Entries {
-			for _, p := range e.Projects {
-				if p == relpath {
-					return true
-				}
+			if slices.Contains(e.Projects, relpath) {
+				return true
 			}
 		}
 	}

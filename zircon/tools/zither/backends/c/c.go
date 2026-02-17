@@ -205,11 +205,11 @@ type TypeInfo struct {
 // nesting encoded within the type. If the type is not an array, this returns an
 // empty string.
 func (info TypeInfo) ArraySuffix() string {
-	suffix := ""
+	var suffix strings.Builder
 	for _, count := range info.ArrayCounts {
-		suffix += fmt.Sprintf("[%d]", count)
+		suffix.WriteString(fmt.Sprintf("[%d]", count))
 	}
-	return suffix
+	return suffix.String()
 }
 
 func (info TypeInfo) String() string {

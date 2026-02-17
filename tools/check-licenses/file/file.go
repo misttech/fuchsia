@@ -98,7 +98,7 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 	}
 
 	h := fnv.New128a()
-	h.Write([]byte(fmt.Sprintf("%s %s", f.projectName, f.RelPath())))
+	h.Write(fmt.Appendf(nil, "%s %s", f.projectName, f.RelPath()))
 	f.spdxID = fmt.Sprintf("LicenseRef-file-%x", h.Sum([]byte{}))
 
 	AllFiles[path] = f

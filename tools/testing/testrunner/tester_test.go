@@ -658,7 +658,7 @@ func (ctx *fakeContext) SetErr(err error) {
 	ctx.Unlock()
 }
 
-func (ctx *fakeContext) Value(key interface{}) interface{} {
+func (ctx *fakeContext) Value(key any) any {
 	return nil
 }
 
@@ -874,19 +874,21 @@ func TestSerialTester(t *testing.T) {
 }
 
 func longKernelLog(numChars int) string {
-	kernelLog := "[123.456]"
+	var kernelLog strings.Builder
+	kernelLog.WriteString("[123.456]")
 	for i := 0; i < numChars; i++ {
-		kernelLog += "a"
+		kernelLog.WriteString("a")
 	}
-	return kernelLog + "\n"
+	return kernelLog.String() + "\n"
 }
 
 func longPotentialKernelLog(numChars int) string {
-	log := "["
+	var log strings.Builder
+	log.WriteString("[")
 	for i := 0; i < numChars; i++ {
-		log += "1"
+		log.WriteString("1")
 	}
-	return log
+	return log.String()
 }
 
 type hangForeverReader struct {

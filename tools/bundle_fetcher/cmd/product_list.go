@@ -102,7 +102,7 @@ func (cmd *productListCmd) parseFlags() error {
 	return nil
 }
 
-func (cmd *productListCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (cmd *productListCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if err := cmd.execute(ctx); err != nil {
 		logger.Errorf(ctx, "%s", err)
 		return subcommands.ExitFailure

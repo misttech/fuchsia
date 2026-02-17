@@ -38,7 +38,7 @@ func (ctx mockContext) Err() error {
 	return ctx.err
 }
 
-func (ctx mockContext) Value(key interface{}) interface{} {
+func (ctx mockContext) Value(key any) any {
 	return ""
 }
 

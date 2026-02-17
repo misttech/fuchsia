@@ -29,7 +29,7 @@ const (
 )
 
 // SaveResults saves the results to the output files defined in the config file.
-func SaveResults(cmdConfig interface{}, cmdMetrics MetricsInterface) (string, error) {
+func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	var b strings.Builder
 
 	s, err := savePackageInfo("cmd", cmdConfig, cmdMetrics)
@@ -131,7 +131,7 @@ func SaveResults(cmdConfig interface{}, cmdMetrics MetricsInterface) (string, er
 
 // This retrieves all the relevant metrics information for a given package.
 // e.g. the //tools/check-licenses/directory package.
-func savePackageInfo(pkgName string, c interface{}, m MetricsInterface) (string, error) {
+func savePackageInfo(pkgName string, c any, m MetricsInterface) (string, error) {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "\n%s Metrics:\n", strings.Title(pkgName))

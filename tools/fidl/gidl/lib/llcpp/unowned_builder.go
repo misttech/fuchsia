@@ -28,7 +28,7 @@ type unownedBuilder struct {
 	handleRepr HandleRepr
 }
 
-func (b *unownedBuilder) write(format string, vals ...interface{}) {
+func (b *unownedBuilder) write(format string, vals ...any) {
 	b.WriteString(fmt.Sprintf(format, vals...))
 }
 

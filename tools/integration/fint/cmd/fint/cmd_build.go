@@ -40,7 +40,7 @@ flags:
 `
 }
 
-func (c *BuildCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *BuildCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	return c.execute(ctx, func(ctx context.Context) error {
 		staticSpec, contextSpec, err := c.loadSpecs()
 		if err != nil {

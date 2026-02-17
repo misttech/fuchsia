@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func checkRow(t *testing.T, row []interface{}, expected []interface{}) {
+func checkRow(t *testing.T, row []any, expected []any) {
 	if len(expected) != 4 {
 		t.Fatalf("In TestToChart, len is wrong. expected: \n%+v\n but got: \n%+v", expected, row)
 	}
@@ -82,7 +82,7 @@ func TestToChart(t *testing.T) {
 
 	actual := *toTable(input)
 
-	ids_to_expected_rows := map[string][]interface{}{
+	ids_to_expected_rows := map[string][]any{
 		"ID":                           {"ID", "Parent", "File Size", "Color"},
 		"Build":                        {"Build", nil, uint64(0), 0},
 		"LOAD [R]":                     {"LOAD [R]", "Build", uint64(0), 0},

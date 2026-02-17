@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -355,13 +356,7 @@ func TestBeaconForDevice(t *testing.T) {
 				t.Errorf("expected advertisement: %v, got advertisement: %v", !tc.wantErr, msg != nil)
 			}
 			if msg != nil {
-				foundExpectedNodename := false
-				for _, n := range tc.expectedNodenames {
-					if msg.Nodename == n {
-						foundExpectedNodename = true
-						break
-					}
-				}
+				foundExpectedNodename := slices.Contains(tc.expectedNodenames, msg.Nodename)
 				if !foundExpectedNodename {
 					t.Errorf("expected nodename from: %v, got: %s", tc.expectedNodenames, msg.Nodename)
 				}

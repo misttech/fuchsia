@@ -79,7 +79,7 @@ If using the default SSH config, the following ports which are already in use wi
 	f.BoolVar(&c.verbose, verboseFlag, false, "Add debugging to the SSH config.")
 }
 
-func (c *TunnelCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *TunnelCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if c.verbose {
 		c.logLevel = logger.DebugLevel
 	}

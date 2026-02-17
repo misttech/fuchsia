@@ -54,7 +54,7 @@ type MeasuringTape struct {
 
 	// name stores the name of the declaration if relevant, i.e. Union, Struct, Table
 	name fidlgen.Name
-	decl interface{}
+	decl any
 
 	inlineNumBytes int
 
@@ -272,7 +272,7 @@ func (m *Measurer) createUnionMeasuringTape(decl fidlgen.Union) (*MeasuringTape,
 type keyedDecl struct {
 	key      string
 	nullable bool
-	decl     interface{}
+	decl     any
 }
 
 type primitiveDecl struct {

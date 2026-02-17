@@ -4,7 +4,10 @@
 
 package tokenizer
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Iterator iterates over a stream of tokens. This provides the core functionality for a
 // TokenStream.
@@ -63,7 +66,7 @@ func (s *TokenStream) Eat(typ TokenType) error {
 // types are not anyOf. TypeEOF is implied and need not be specified. Returns the
 // concatenated output with outer spaces trimmed.
 func (s *TokenStream) ConcatUntil(anyOf ...TokenType) string {
-	var values string
+	var values strings.Builder
 	stopAtType := map[TokenType]struct{}{TypeEOF: {}}
 	for i := range anyOf {
 		stopAtType[anyOf[i]] = struct{}{}
@@ -72,7 +75,7 @@ func (s *TokenStream) ConcatUntil(anyOf ...TokenType) string {
 		if _, ok := stopAtType[s.iter.Peek().Type]; ok {
 			break
 		}
-		values += s.iter.Next().Value
+		values.WriteString(s.iter.Next().Value)
 	}
-	return values
+	return values.String()
 }

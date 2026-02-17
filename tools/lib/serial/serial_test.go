@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,11 +122,12 @@ func TestRunCommands(t *testing.T) {
 	}
 	// Verify that each command was seen in the received data, and in the
 	// proper order. The first command run was an empty command in NewSocket().
-	expectedCommands := asSerialCmd([]string{})
+	var expectedCommands strings.Builder
+	expectedCommands.WriteString(asSerialCmd([]string{}))
 	for _, cmd := range diagnosticCmds {
-		expectedCommands += asSerialCmd(cmd.Cmd)
+		expectedCommands.WriteString(asSerialCmd(cmd.Cmd))
 	}
-	if diff := cmp.Diff(expectedCommands, string(server.received)); diff != "" {
+	if diff := cmp.Diff(expectedCommands.String(), string(server.received)); diff != "" {
 		t.Errorf("Unexpected server.received (-want +got):\n%s", diff)
 	}
 }

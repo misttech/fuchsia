@@ -234,7 +234,7 @@ func parseYAMLBlock(tokens *tokenizer.TokenStream, doc *Document) (state, error)
 		return discardLine, unexpectedTokenError("a newline", rtokens.Peek())
 	}
 
-	var body string
+	var body strings.Builder
 	for {
 		line := rtokens.ConcatUntil(tokenizer.TypeNewline)
 		// Expect the footer to match /\s+.../
@@ -242,14 +242,14 @@ func parseYAMLBlock(tokens *tokenizer.TokenStream, doc *Document) (state, error)
 			break
 		}
 
-		body += strings.TrimSpace(line) + "\n"
+		body.WriteString(strings.TrimSpace(line) + "\n")
 		if rtokens.Peek().Type == tokenizer.TypeEOF {
 			break
 		}
 		rtokens.Eat(tokenizer.TypeNewline)
 	}
 
-	testLine.YAML = body
+	testLine.YAML = body.String()
 	return parseNextLine, nil
 }
 
@@ -257,6 +257,6 @@ func unexpectedTokenError(wanted string, token tokenizer.Token) error {
 	return parserError("got %q but wanted %s", token, wanted)
 }
 
-func parserError(format string, args ...interface{}) error {
+func parserError(format string, args ...any) error {
 	return fmt.Errorf("parse error: "+format, args...)
 }

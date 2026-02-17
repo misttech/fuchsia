@@ -116,7 +116,7 @@ type buildStats struct {
 func traceToOutputs(t *chrometrace.Trace) []string {
 	var outputs []string
 	if outputs_value, ok := t.Args["outputs"]; ok {
-		for _, outputValue := range outputs_value.([]interface{}) {
+		for _, outputValue := range outputs_value.([]any) {
 			outputs = append(outputs, outputValue.(string))
 		}
 	}

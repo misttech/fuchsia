@@ -84,7 +84,7 @@ func (p *Producer) Skip() *Producer {
 	return p
 }
 
-func (p *Producer) writeln(format string, args ...interface{}) {
+func (p *Producer) writeln(format string, args ...any) {
 	fmt.Fprintln(p.writer(), fmt.Sprintf(format, args...))
 }
 

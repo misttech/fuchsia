@@ -10,7 +10,7 @@ import (
 )
 
 // WriteToFile writes data as JSON into a file.
-func WriteToFile(path string, v interface{}) error {
+func WriteToFile(path string, v any) error {
 	raw, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
@@ -19,7 +19,7 @@ func WriteToFile(path string, v interface{}) error {
 }
 
 // ReadFromFile reads data as JSON from a file.
-func ReadFromFile(path string, v interface{}) error {
+func ReadFromFile(path string, v any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err

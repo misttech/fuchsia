@@ -217,7 +217,7 @@ type codeBuffer struct {
 	buf   *bytes.Buffer
 }
 
-func (buf *codeBuffer) writef(format string, a ...interface{}) {
+func (buf *codeBuffer) writef(format string, a ...any) {
 	for i := 0; i < buf.level; i++ {
 		buf.buf.WriteString(indent)
 	}

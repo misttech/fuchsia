@@ -18,7 +18,7 @@ import (
 // specific tokens, and to pretty print these aggregates messages.
 type Reporter interface {
 	// Warnf formats and adds warning message using the format specifier.
-	Warnf(tok Token, format string, a ...interface{})
+	Warnf(tok Token, format string, a ...any)
 }
 
 // RootReporter is the linter wide reporter, and may be used to report general
@@ -93,15 +93,15 @@ func (s sortableMessages) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (r *RootReporter) Warnf(tok Token, format string, a ...interface{}) {
+func (r *RootReporter) Warnf(tok Token, format string, a ...any) {
 	r.warnf(generalName, tok, format, a...)
 }
 
-func (r *ruleReporter) Warnf(tok Token, format string, a ...interface{}) {
+func (r *ruleReporter) Warnf(tok Token, format string, a ...any) {
 	r.parent.warnf(r.rule, tok, format, a...)
 }
 
-func (r *RootReporter) warnf(category string, tok Token, format string, a ...interface{}) {
+func (r *RootReporter) warnf(category string, tok Token, format string, a ...any) {
 	r.messages = append(r.messages, message{
 		category: category,
 		tok:      tok,

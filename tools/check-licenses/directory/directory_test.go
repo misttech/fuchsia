@@ -78,7 +78,7 @@ func cleanConfig(c *DirectoryConfig, root string) {
 	}
 }
 
-func decodeJSON(path string, obj interface{}, t *testing.T) {
+func decodeJSON(path string, obj any, t *testing.T) {
 	t.Helper()
 
 	contents, err := os.ReadFile(path)

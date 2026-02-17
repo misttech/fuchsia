@@ -662,7 +662,7 @@ func (c *updateCmd) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.depends, "depends", false, "Transitively include dependencies")
 }
 
-func (c *updateCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *updateCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	d, err := os.ReadFile(c.config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to read config: %v\n", err)
@@ -727,7 +727,7 @@ func (c *installCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.debsCache, "cache", "debs", "Cache for .deb files")
 }
 
-func (c *installCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *installCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if len(f.Args()) != 1 {
 		fmt.Fprintln(os.Stderr, "missing lockfile argument")
 		return subcommands.ExitUsageError

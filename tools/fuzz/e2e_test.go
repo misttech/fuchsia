@@ -467,7 +467,7 @@ func testBulkPut(t *testing.T, handle string) {
 	}
 	for j := 0; j < 2000; j++ {
 		corpusPath := path.Join(corpusDir, fmt.Sprintf("corpus-%d", j))
-		if err := os.WriteFile(corpusPath, []byte(fmt.Sprintf("%d", j)), 0o600); err != nil {
+		if err := os.WriteFile(corpusPath, fmt.Appendf(nil, "%d", j), 0o600); err != nil {
 			t.Fatalf("error creating local corpus file: %s", err)
 		}
 	}

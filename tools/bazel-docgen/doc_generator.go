@@ -142,7 +142,7 @@ func RenderModuleInfo(roots []pb.ModuleInfo, renderer Renderer, fileProvider Fil
 	}
 
 	// Make our table of contents
-	if yamlData, err := yaml.Marshal(&map[string]interface{}{"toc": toc}); err == nil {
+	if yamlData, err := yaml.Marshal(&map[string]any{"toc": toc}); err == nil {
 		tocWriter := fileProvider.NewFile("_toc.yaml")
 		tocWriter.Write(yamlData)
 	}

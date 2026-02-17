@@ -216,7 +216,7 @@ func NewRoot(ir fidlgen.Root, outputBase string, templates *template.Template, o
 
 // Applies the specified template to the specified data and writes the output
 // to outputPath.
-func (root Root) Generate(outputPath string, template string, data interface{}) (string, error) {
+func (root Root) Generate(outputPath string, template string, data any) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(outputPath), os.ModePerm); err != nil {
 		return "", err
 	}
@@ -336,7 +336,7 @@ func GenerateFidl(templatePath string, ir fidlgen.Root, outputBase *string, opti
 			return fidlgen.EncodedCompoundIdentifier(root.options[name])
 		},
 		// Returns the template executed
-		"execTmpl": func(template string, data interface{}) (string, error) {
+		"execTmpl": func(template string, data any) (string, error) {
 			buffer := &bytes.Buffer{}
 			err = root.templates.ExecuteTemplate(buffer, template, data)
 			return buffer.String(), err

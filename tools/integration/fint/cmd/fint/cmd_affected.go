@@ -32,7 +32,7 @@ flags:
 `
 }
 
-func (a *AffectedCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (a *AffectedCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	return a.execute(ctx, func(ctx context.Context) error {
 		staticSpec, contextSpec, err := a.loadSpecs()
 		if err != nil {

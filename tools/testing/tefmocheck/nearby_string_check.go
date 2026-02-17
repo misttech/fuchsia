@@ -6,6 +6,7 @@ package tefmocheck
 
 import (
 	"path"
+	"slices"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
@@ -158,13 +159,11 @@ func (c *NearbyStringCheck) Check(outputs *TestingOutputs) bool {
 		return false
 	}
 
-	for _, log := range logs {
-		if c.findNearbyStrings(log) {
-			if c.AlwaysFlake {
-				c.isFlake = true
-			}
-			return true
+	if slices.ContainsFunc(logs, c.findNearbyStrings) {
+		if c.AlwaysFlake {
+			c.isFlake = true
 		}
+		return true
 	}
 	return false
 }

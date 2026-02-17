@@ -62,14 +62,14 @@ func TestCheck(t *testing.T) {
 		{
 			name: "should match simple",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("PREFIX %s SUFFIX", killerString)),
+				SwarmingOutput: fmt.Appendf(nil, "PREFIX %s SUFFIX", killerString),
 			},
 			shouldMatch: true,
 		},
 		{
 			name: "should match with failure reason",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("1\n2\n%s\n4\n5\n", line)),
+				SwarmingOutput: fmt.Appendf(nil, "1\n2\n%s\n4\n5\n", line),
 			},
 			shouldMatch: true,
 			wantLine:    line,
@@ -77,7 +77,7 @@ func TestCheck(t *testing.T) {
 		{
 			name: "should match if string before except_block and return failure reason",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("%s\n%s\n%s", exceptBlock.startString, exceptBlock.endString, line)),
+				SwarmingOutput: fmt.Appendf(nil, "%s\n%s\n%s", exceptBlock.startString, exceptBlock.endString, line),
 			},
 			shouldMatch: true,
 			wantLine:    line,
@@ -85,7 +85,7 @@ func TestCheck(t *testing.T) {
 		{
 			name: "exceptSuccessfulSwarmingResult",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("PREFIX %s SUFFIX", killerString)),
+				SwarmingOutput: fmt.Appendf(nil, "PREFIX %s SUFFIX", killerString),
 			},
 			skipPassedTask:      true,
 			swarmingResultState: "COMPLETED",
@@ -106,46 +106,45 @@ func TestCheck(t *testing.T) {
 		{
 			name: "should match if string before except_block",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("PREFIX %s ... %s output %s SUFFIX", killerString, exceptBlock.startString, exceptBlock.endString)),
+				SwarmingOutput: fmt.Appendf(nil, "PREFIX %s ... %s output %s SUFFIX", killerString, exceptBlock.startString, exceptBlock.endString),
 			},
 			shouldMatch: true,
 		},
 		{
 			name: "should match if string after except_block",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("PREFIX %s output %s ... %s SUFFIX", exceptBlock.startString, exceptBlock.endString, killerString)),
+				SwarmingOutput: fmt.Appendf(nil, "PREFIX %s output %s ... %s SUFFIX", exceptBlock.startString, exceptBlock.endString, killerString),
 			},
 			shouldMatch: true,
 		},
 		{
 			name: "should not match if string in except_block",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(
-					fmt.Sprintf(
-						"PREFIX %s %s output %s SUFFIX %s %s %s",
-						exceptBlock.startString, killerString, exceptBlock.endString,
-						exceptBlock2.startString, killerString, exceptBlock2.endString)),
+				SwarmingOutput: fmt.Appendf(nil,
+					"PREFIX %s %s output %s SUFFIX %s %s %s",
+					exceptBlock.startString, killerString, exceptBlock.endString,
+					exceptBlock2.startString, killerString, exceptBlock2.endString),
 			},
 		},
 		{
 			name: "should match if string in both except_block and outside except_block",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf(
+				SwarmingOutput: fmt.Appendf(nil,
 					"PREFIX %s ... %s %s %s %s %s %s SUFFIX",
 					killerString, exceptBlock.startString, killerString, exceptBlock.endString,
 					exceptBlock2.startString, killerString, exceptBlock2.endString,
-				)),
+				),
 			},
 			shouldMatch: true,
 		},
 		{
 			name: "should not match if string in except_block with missing end string",
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf(
+				SwarmingOutput: fmt.Appendf(nil,
 					"PREFIX ... %s %s %s %s %s",
 					exceptBlock.startString, killerString, exceptBlock.endString,
 					exceptBlock2.startString, killerString,
-				)),
+				),
 			},
 		},
 		{
@@ -205,17 +204,17 @@ func TestCheck(t *testing.T) {
 			name:            "should respect except block even if split across tests",
 			attributeToTest: true,
 			testingOutputs: TestingOutputs{
-				SwarmingOutput: []byte(fmt.Sprintf("%s %s %s %s", exceptBlock.startString, killerString, exceptBlock.endString, killerString)),
+				SwarmingOutput: fmt.Appendf(nil, "%s %s %s %s", exceptBlock.startString, killerString, exceptBlock.endString, killerString),
 				SwarmingOutputPerTest: []TestLog{
 					{
 						TestName: "foo-test",
-						Bytes:    []byte(fmt.Sprintf("%s %s", exceptBlock.startString, killerString)),
+						Bytes:    fmt.Appendf(nil, "%s %s", exceptBlock.startString, killerString),
 						FilePath: "foo/log.txt",
 						Index:    0,
 					},
 					{
 						TestName: "bar-test",
-						Bytes:    []byte(fmt.Sprintf("%s %s", exceptBlock.endString, killerString)),
+						Bytes:    fmt.Appendf(nil, "%s %s", exceptBlock.endString, killerString),
 						FilePath: "bar/log.txt",
 						Index:    len(exceptBlock.startString) + len(killerString) + 2,
 					},

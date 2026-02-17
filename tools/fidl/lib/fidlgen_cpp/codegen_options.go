@@ -8,6 +8,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen"
@@ -87,13 +88,7 @@ func (c *CmdlineFlags) ParseAndLoadIR() fidlgen.Root {
 	// Check that all Experiments are in validExperiments.
 	// These are always going to be small lists so linear searches are fine.
 	for _, e := range c.experiments {
-		valid := false
-		for _, v := range c.validExperiments {
-			if e == v {
-				valid = true
-				break
-			}
-		}
+		valid := slices.Contains(c.validExperiments, e)
 		if !valid {
 			log.Fatalf("Invalid experiment %s. Must be one of %s", e,
 				strings.Join(c.validExperiments, ", "))
@@ -109,10 +104,5 @@ func (c *CmdlineFlags) ParseAndLoadIR() fidlgen.Root {
 }
 
 func (c *CmdlineFlags) ExperimentEnabled(experiment string) bool {
-	for _, e := range c.experiments {
-		if e == experiment {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.experiments, experiment)
 }

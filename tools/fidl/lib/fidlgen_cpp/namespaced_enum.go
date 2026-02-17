@@ -46,7 +46,7 @@ var enumMemberBaseType = reflect.TypeOf(namespacedEnumMember(0))
 //
 //	// Authoring the template
 //	{{ if eq .Color Colors.Red }} ... {{ end }}
-func namespacedEnum(namespace interface{}) interface{} {
+func namespacedEnum(namespace any) any {
 	ns := reflect.New(reflect.TypeOf(namespace)).Elem()
 	if ns.Kind() != reflect.Struct {
 		panic(fmt.Sprintf("Must use a struct as namespace. Got %v", ns.Kind()))

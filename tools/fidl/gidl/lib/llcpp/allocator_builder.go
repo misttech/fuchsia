@@ -31,7 +31,7 @@ type allocatorBuilder struct {
 	handleRepr HandleRepr
 }
 
-func (a *allocatorBuilder) write(format string, vals ...interface{}) {
+func (a *allocatorBuilder) write(format string, vals ...any) {
 	a.WriteString(fmt.Sprintf(format, vals...))
 }
 
@@ -40,14 +40,14 @@ func (a *allocatorBuilder) newVar() string {
 	return fmt.Sprintf("var%d", a.varidx)
 }
 
-func (a *allocatorBuilder) assignNew(typename string, isPointer bool, fmtStr string, vals ...interface{}) string {
+func (a *allocatorBuilder) assignNew(typename string, isPointer bool, fmtStr string, vals ...any) string {
 	rhs := a.construct(typename, isPointer, fmtStr, vals...)
 	newVar := a.newVar()
 	a.write("auto %s = %s;\n", newVar, rhs)
 	return newVar
 }
 
-func (a *allocatorBuilder) construct(typename string, isPointer bool, fmtStr string, args ...interface{}) string {
+func (a *allocatorBuilder) construct(typename string, isPointer bool, fmtStr string, args ...any) string {
 	val := fmt.Sprintf(fmtStr, args...)
 	if !isPointer {
 		return fmt.Sprintf("%s(%s)", typename, val)

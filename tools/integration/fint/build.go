@@ -921,12 +921,12 @@ func toolAbsPath(modules buildModules, platform, tool string) (string, error) {
 // toStructPB converts a Go struct to a Struct protobuf. Unfortunately, short of
 // using some complicated `reflect` logic, the only way to do this conversion is
 // by using JSON as an intermediate format.
-func toStructPB(s interface{}) (*structpb.Struct, error) {
+func toStructPB(s any) (*structpb.Struct, error) {
 	j, err := json.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(j, &m); err != nil {
 		return nil, err
 	}

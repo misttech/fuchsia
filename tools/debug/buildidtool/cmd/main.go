@@ -89,7 +89,7 @@ func atomicLink(from, to string) error {
 	return nil
 }
 
-func atomicWrite(file, fmtStr string, args ...interface{}) error {
+func atomicWrite(file, fmtStr string, args ...any) error {
 	dir, base := filepath.Split(file)
 	tmpFile, err := getTmpFile(dir, base)
 	if err != nil {

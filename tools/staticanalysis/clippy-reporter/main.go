@@ -26,6 +26,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -161,11 +162,8 @@ func (c *clippyReporter) clippyTargetForFile(buildRelPath string) (target build.
 		if target.DisableClippy {
 			continue
 		}
-		for _, source := range target.Sources {
-			// Assumes each file only feeds into a single clippy target.
-			if source == buildRelPath {
-				return target, true
-			}
+		if slices.Contains(target.Sources, buildRelPath) {
+			return target, true
 		}
 	}
 	return build.ClippyTarget{}, false

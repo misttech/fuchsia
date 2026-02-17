@@ -1248,7 +1248,7 @@ func TestMapToDeviceConfig(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		var data map[string]interface{}
+		var data map[string]any
 		err := json.Unmarshal([]byte(test.jsonString), &data)
 		if err != nil {
 			t.Errorf("Error parsing json for %v: %v", i, err)
@@ -1570,7 +1570,7 @@ func TestFakeFfx(*testing.T) {
 func handleGetFake(args []string) bool {
 	var (
 		dataName   string
-		deviceData map[string]interface{}
+		deviceData map[string]any
 	)
 
 	currentDeviceData := os.Getenv("TEST_CURRENT_DEVICE_DATA")
@@ -1581,7 +1581,7 @@ func handleGetFake(args []string) bool {
 			os.Exit(1)
 		}
 	} else {
-		deviceData = make(map[string]interface{})
+		deviceData = make(map[string]any)
 	}
 	if value, ok := deviceData["device-name"].(string); ok {
 		dataName = value
@@ -1653,7 +1653,7 @@ func handleGetFake(args []string) bool {
 func handleSetFake(args []string) {
 	sdk := SDKProperties{}
 	expectedData := os.Getenv("TEST_EXPECTED_SET_DATA")
-	var data map[string]interface{}
+	var data map[string]any
 	if len(expectedData) > 0 {
 		err := json.Unmarshal([]byte(expectedData), &data)
 		if err != nil {
@@ -1661,7 +1661,7 @@ func handleSetFake(args []string) {
 			os.Exit(1)
 		}
 	} else {
-		data = make(map[string]interface{})
+		data = make(map[string]any)
 	}
 
 	if len(args) > 2 {

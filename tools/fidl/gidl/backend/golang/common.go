@@ -25,7 +25,7 @@ type withGoFmt struct {
 	template *template.Template
 }
 
-func (w withGoFmt) Execute(wr io.Writer, data interface{}) error {
+func (w withGoFmt) Execute(wr io.Writer, data any) error {
 	var b bytes.Buffer
 	if err := w.template.Execute(&b, data); err != nil {
 		return err

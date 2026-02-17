@@ -432,10 +432,7 @@ func SaveReport(files []*codecoverage.File, shardSize int, dir string) (*codecov
 		// TODO(phosek): Use goroutines to process slices in parallel.
 		for i := 0; i < numShards; i++ {
 			from := i * shardSize
-			to := (i + 1) * shardSize
-			if to > numFiles {
-				to = numFiles
-			}
+			to := min((i+1)*shardSize, numFiles)
 			report := codecoverage.CoverageReport{Files: files[from:to]}
 			filename := fmt.Sprintf(filename, width, i+1)
 			if err := saveReport(&report, filepath.Join(dir, filename)); err != nil {

@@ -18,7 +18,7 @@ import (
 
 // ensureNamespace changes the current namespace to the one supplied and
 // returns the C++ code required to switch to that namespace.
-func ensureNamespace(arg interface{}) string {
+func ensureNamespace(arg any) string {
 	lines := []string{}
 
 	newNamespace := []string{}
@@ -169,7 +169,7 @@ type formatParam func(string, Type) string
 
 // visitSliceMembers visits each member of nested slices passed in and calls
 // |fn| on each of them in depth first order.
-func visitSliceMembers(val reflect.Value, fn func(interface{})) {
+func visitSliceMembers(val reflect.Value, fn func(any)) {
 	switch val.Type().Kind() {
 	case reflect.Slice:
 		for j := 0; j < val.Len(); j++ {
@@ -262,12 +262,12 @@ func forwardStructParam(n string, _ Type) string {
 // The parameter definitions are either strings or Members.
 // Parameter structs are rendered with the supplied format func.
 // The strings and formatted Parameters are joined with commas and returned.
-func renderParams(format formatParam, list interface{}) string {
+func renderParams(format formatParam, list any) string {
 	var (
 		buf   bytes.Buffer
 		first = true
 	)
-	visitSliceMembers(reflect.ValueOf(list), func(val interface{}) {
+	visitSliceMembers(reflect.ValueOf(list), func(val any) {
 		if val == nil {
 			panic(fmt.Sprintf("Unexpected nil in %#v", list))
 		}
@@ -292,15 +292,15 @@ func renderParams(format formatParam, list interface{}) string {
 
 // CommonTemplateFuncs holds a template.FuncMap containing common funcs.
 var commonTemplateFuncs = template.FuncMap{
-	"Eq":  func(a interface{}, b interface{}) bool { return a == b },
-	"NEq": func(a interface{}, b interface{}) bool { return a != b },
+	"Eq":  func(a any, b any) bool { return a == b },
+	"NEq": func(a any, b any) bool { return a != b },
 	"Add": func(a int, b int) int { return a + b },
 	"Sub": func(a int, b int) int { return a - b },
 	"Mul": func(a int, b int) int { return a * b },
 
-	"Kinds":       func() interface{} { return Kinds },
-	"FamilyKinds": func() interface{} { return FamilyKinds },
-	"TypeKinds":   func() interface{} { return TypeKinds },
+	"Kinds":       func() any { return Kinds },
+	"FamilyKinds": func() any { return FamilyKinds },
+	"TypeKinds":   func() any { return TypeKinds },
 
 	"IfdefFuchsia":          ifdefFuchsia,
 	"EndifFuchsia":          endifFuchsia,
@@ -350,7 +350,7 @@ var commonTemplateFuncs = template.FuncMap{
 	// Output:
 	//   Arg1 arg1, Foo local_var
 	//
-	"RenderParams": func(params ...interface{}) string {
+	"RenderParams": func(params ...any) string {
 		return renderParams(param, params)
 	},
 
@@ -363,7 +363,7 @@ var commonTemplateFuncs = template.FuncMap{
 	// Output:
 	//   std::move(arg1), std::move(foo)
 	//
-	"RenderForwardParams": func(params ...interface{}) string {
+	"RenderForwardParams": func(params ...any) string {
 		return renderParams(forwardParam, params)
 	},
 
@@ -376,12 +376,12 @@ var commonTemplateFuncs = template.FuncMap{
 	// Output:
 	//   .arg1 = std::move(arg1), .foo = std::move(foo)
 	//
-	"RenderForwardStructParams": func(params ...interface{}) string {
+	"RenderForwardStructParams": func(params ...any) string {
 		return renderParams(forwardStructParam, params)
 	},
 
 	// List is a helper to return a list of its arguments.
-	"List": func(items ...interface{}) []interface{} {
+	"List": func(items ...any) []any {
 		return items
 	},
 }

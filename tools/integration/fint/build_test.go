@@ -858,7 +858,7 @@ func createEmptyFile(t *testing.T, path string) {
 
 // mustStructPB converts a Go struct to a protobuf Struct, failing the test in
 // case of failure.
-func mustStructPB(t *testing.T, s interface{}) *structpb.Struct {
+func mustStructPB(t *testing.T, s any) *structpb.Struct {
 	ret, err := toStructPB(s)
 	if err != nil {
 		t.Fatal(err)

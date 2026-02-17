@@ -50,7 +50,7 @@ func (c *SetCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.skipLocalArgs, "skip-local-args", true, "skip inclusion of $CHECKOUT_DIR/local/args.gn")
 }
 
-func (c *SetCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *SetCommand) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	return c.execute(ctx, func(ctx context.Context) error {
 		staticSpec, contextSpec, err := c.loadSpecs()
 		if err != nil {

@@ -36,7 +36,7 @@ func (r MarkdownRenderer) RenderReadme(toc *[]TOCEntry, out io.Writer) error {
 	return render(toc, out, NewREADMETemplate)
 }
 
-func render(v interface{}, out io.Writer, templateFunc func() (*template.Template, error)) error {
+func render(v any, out io.Writer, templateFunc func() (*template.Template, error)) error {
 	t, err := templateFunc()
 	if err == nil {
 		err = t.Execute(out, v)

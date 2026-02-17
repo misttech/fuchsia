@@ -35,7 +35,7 @@ type equalityCheckBuilder struct {
 	koidArrayVar string
 }
 
-func (b *equalityCheckBuilder) write(format string, vals ...interface{}) {
+func (b *equalityCheckBuilder) write(format string, vals ...any) {
 	b.WriteString(fmt.Sprintf(format, vals...))
 }
 

@@ -9,16 +9,16 @@ package chrometrace
 //
 // https://code.google.com/p/trace-viewer/
 type Trace struct {
-	Name            string                 `json:"name"`
-	Category        string                 `json:"cat"`
-	EventType       string                 `json:"ph"`
-	TimestampMicros int                    `json:"ts"`
-	DurationMicros  int                    `json:"dur"`
-	ProcessID       int                    `json:"pid"`
-	ThreadID        int                    `json:"tid"`
-	Args            map[string]interface{} `json:"args,omitempty"`
-	ID              int                    `json:"id,omitempty"`
-	BindingPoint    string                 `json:"bp,omitempty"`
+	Name            string         `json:"name"`
+	Category        string         `json:"cat"`
+	EventType       string         `json:"ph"`
+	TimestampMicros int            `json:"ts"`
+	DurationMicros  int            `json:"dur"`
+	ProcessID       int            `json:"pid"`
+	ThreadID        int            `json:"tid"`
+	Args            map[string]any `json:"args,omitempty"`
+	ID              int            `json:"id,omitempty"`
+	BindingPoint    string         `json:"bp,omitempty"`
 }
 
 // Event types used in conversions.

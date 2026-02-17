@@ -119,7 +119,7 @@ func TestMalformed(t *testing.T) {
 }
 
 func EqualJson(a, b []byte) bool {
-	var j1, j2 interface{}
+	var j1, j2 any
 	err := json.Unmarshal(a, &j1)
 	if err != nil {
 		panic(err.Error())

@@ -70,7 +70,7 @@ func (cmd *resolveCmd) execute(ctx context.Context, domains ...string) error {
 	return cmd.outputNormal(outDevices, false /* includeDomain */)
 }
 
-func (cmd *resolveCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (cmd *resolveCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if err := cmd.execute(ctx, f.Args()...); err != nil {
 		log.Print(err)
 		return subcommands.ExitFailure

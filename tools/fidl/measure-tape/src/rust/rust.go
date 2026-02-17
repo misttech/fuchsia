@@ -157,7 +157,7 @@ func (cb *codeBuffer) CaseSetMaxOrdinal(local, ordinal measurer.Expression) {
 	cb.writef("%s = %s;\n", formatExpr{local}, formatExpr{ordinal})
 }
 
-func (cb *codeBuffer) writef(format string, a ...interface{}) {
+func (cb *codeBuffer) writef(format string, a ...any) {
 	for i := 0; i < cb.level; i++ {
 		cb.buf.WriteString(indent)
 	}

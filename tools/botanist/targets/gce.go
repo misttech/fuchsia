@@ -109,10 +109,7 @@ func (s *gceSerial) Write(b []byte) (int, error) {
 	bytesWritten := 0
 	for i := 0; i < numChunks; i++ {
 		start := i * maxChunkSize
-		end := start + maxChunkSize
-		if end > len(b) {
-			end = len(b)
-		}
+		end := min(start+maxChunkSize, len(b))
 		n, err := s.in.Write(b[start:end])
 		bytesWritten += n
 		if err != nil {

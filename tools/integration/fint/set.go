@@ -231,7 +231,7 @@ func genArgs(
 	assemblyOverridesStrings []string,
 ) ([]string, error) {
 	// GN variables to set via args (mapping from variable name to value).
-	vars := make(map[string]interface{})
+	vars := make(map[string]any)
 	// GN list variables that could historically be set by products, and should go
 	// in their own block in args.gn.  Append or assign is controlled when these
 	// are formatted as lines.
@@ -239,7 +239,7 @@ func genArgs(
 	// GN targets to import.
 	var imports []string
 	// GN vars for managing tests.
-	testVars := make(map[string]interface{})
+	testVars := make(map[string]any)
 
 	if staticSpec.TargetArch == fintpb.Static_ARCH_UNSPECIFIED {
 		// Board files declare `target_cpu` so it's not necessary to set
@@ -543,7 +543,7 @@ func gnFormat(ctx context.Context, gn string, runner subprocessRunner, args []st
 // - toGNValue(true) => `true`
 // - toGNValue("foo") => `"foo"` (a string containing literal double-quotes)
 // - toGNValue([]string{"foo", "bar"}) => `["foo","bar"]`
-func toGNValue(x interface{}) string {
+func toGNValue(x any) string {
 	switch val := x.(type) {
 	case bool:
 		return fmt.Sprintf("%v", val)
@@ -568,6 +568,6 @@ func toGNValue(x interface{}) string {
 // appendGNArg appends an argument to a list of GN arguments, which is one per
 // line.  The value is converted from a Go value to a string representation
 // using toGNValue.
-func appendGNArg(varlist []string, name string, value interface{}) []string {
+func appendGNArg(varlist []string, name string, value any) []string {
 	return append(varlist, fmt.Sprintf("%s=%s", name, toGNValue(value)))
 }

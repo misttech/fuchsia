@@ -226,7 +226,7 @@ func (t Tag) String() string {
 }
 
 // Tags is a collection containing the tag definitions.
-type Tags map[Tag]interface{}
+type Tags map[Tag]any
 
 func (t Tags) String() string {
 	var tagPairs []string

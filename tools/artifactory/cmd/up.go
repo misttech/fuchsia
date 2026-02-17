@@ -153,7 +153,7 @@ func (cmd *upCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&cmd.uploadManifestJSONOutput, "upload-manifest-json-output", "", "Whether to emit upload manifest to this path instead of executing uploads.")
 }
 
-func (cmd upCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (cmd upCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	args := f.Args()
 	if len(args) != 1 {
 		logger.Errorf(ctx, "exactly one positional argument expected: the build directory root")

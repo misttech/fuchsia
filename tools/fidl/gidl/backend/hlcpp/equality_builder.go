@@ -38,7 +38,7 @@ type equalityCheckBuilder struct {
 	handleKoidVectorName string
 }
 
-func (b *equalityCheckBuilder) write(format string, vals ...interface{}) {
+func (b *equalityCheckBuilder) write(format string, vals ...any) {
 	b.WriteString(fmt.Sprintf(format, vals...))
 }
 
@@ -48,7 +48,7 @@ func (b *equalityCheckBuilder) createAndAssignVar(val string) string {
 	return varName
 }
 
-func (b *equalityCheckBuilder) construct(typename string, fmtStr string, args ...interface{}) string {
+func (b *equalityCheckBuilder) construct(typename string, fmtStr string, args ...any) string {
 	return fmt.Sprintf("%s(%s)", typename, fmt.Sprintf(fmtStr, args...))
 }
 

@@ -48,7 +48,7 @@ type equalityCheckBuilder struct {
 	strings.Builder
 }
 
-func (b *equalityCheckBuilder) write(format string, args ...interface{}) {
+func (b *equalityCheckBuilder) write(format string, args ...any) {
 	fmt.Fprintf(b, format, args...)
 	b.WriteRune('\n')
 }

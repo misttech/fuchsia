@@ -8,6 +8,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"slices"
 	"text/template"
 
 	"go.fuchsia.dev/fuchsia/tools/fidl/gidl/lib/config"
@@ -216,12 +217,7 @@ var supportedWireFormats = []ir.WireFormat{
 }
 
 func wireFormatSupported(wireFormat ir.WireFormat) bool {
-	for _, wf := range supportedWireFormats {
-		if wireFormat == wf {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(supportedWireFormats, wireFormat)
 }
 
 func encodingContext(wireFormat ir.WireFormat) string {

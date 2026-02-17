@@ -43,7 +43,7 @@ func (c *SyncKeysCmd) SetFlags(f *flag.FlagSet) {
 	f.Var(&c.logLevel, logLevelFlag, "Output verbosity, can be fatal, error, warning, info, debug or trace.")
 }
 
-func (c *SyncKeysCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *SyncKeysCmd) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	log := logger.NewLogger(c.logLevel, color.NewColor(color.ColorAuto), os.Stdout, os.Stderr, "synckeys ")
 	log.SetFlags(logFlags)
 

@@ -1642,7 +1642,7 @@ func (err *parseError) Error() string {
 	return fmt.Sprintf("%s:%d:%d: %s", err.input, err.line, err.column, err.message)
 }
 
-func (p *Parser) newParseError(tok token, format string, a ...interface{}) error {
+func (p *Parser) newParseError(tok token, format string, a ...any) error {
 	return &parseError{
 		input:   p.scanner.Position.Filename,
 		line:    tok.line,

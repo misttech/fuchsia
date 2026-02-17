@@ -58,7 +58,7 @@ func listTemplateFiles(tmplFS fs.FS) ([]string, error) {
 	return tmpls, nil
 }
 
-func (gen *Generator) ExecuteTemplate(tmpl string, data interface{}) ([]byte, error) {
+func (gen *Generator) ExecuteTemplate(tmpl string, data any) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := gen.tmpls.ExecuteTemplate(buf, tmpl, data)
 	if err == nil {
@@ -67,7 +67,7 @@ func (gen *Generator) ExecuteTemplate(tmpl string, data interface{}) ([]byte, er
 	return nil, err
 }
 
-func (gen *Generator) GenerateFile(filename string, tmpl string, data interface{}) error {
+func (gen *Generator) GenerateFile(filename string, tmpl string, data any) error {
 	err := os.MkdirAll(filepath.Dir(filename), os.ModePerm)
 	if err != nil {
 		return err

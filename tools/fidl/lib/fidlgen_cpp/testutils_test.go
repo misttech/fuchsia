@@ -11,7 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func performEqualCheck(left interface{}, right interface{}, opts ...cmp.Option) (bool, string) {
+func performEqualCheck(left any, right any, opts ...cmp.Option) (bool, string) {
 	var failed bool
 	var log string
 	if !cmp.Equal(left, right, opts...) {
@@ -33,21 +33,21 @@ diff:
 	return failed, log
 }
 
-func assertEqual(t *testing.T, left interface{}, right interface{}, opts ...cmp.Option) {
+func assertEqual(t *testing.T, left any, right any, opts ...cmp.Option) {
 	t.Helper()
 	if failed, log := performEqualCheck(left, right, opts...); failed {
 		t.Fatal(log)
 	}
 }
 
-func expectEqual(t *testing.T, left interface{}, right interface{}, opts ...cmp.Option) {
+func expectEqual(t *testing.T, left any, right any, opts ...cmp.Option) {
 	t.Helper()
 	if failed, log := performEqualCheck(left, right, opts...); failed {
 		t.Error(log)
 	}
 }
 
-func performNotEqualCheck(left interface{}, right interface{}, opts ...cmp.Option) (failed bool, log string) {
+func performNotEqualCheck(left any, right any, opts ...cmp.Option) (failed bool, log string) {
 	if cmp.Equal(left, right, opts...) {
 		failed = true
 		log = fmt.Sprintf(`
@@ -60,14 +60,14 @@ left=
 	return
 }
 
-func assertNotEqual(t *testing.T, left interface{}, right interface{}, opts ...cmp.Option) {
+func assertNotEqual(t *testing.T, left any, right any, opts ...cmp.Option) {
 	t.Helper()
 	if failed, log := performNotEqualCheck(left, right, opts...); failed {
 		t.Fatal(log)
 	}
 }
 
-func expectNotEqual(t *testing.T, left interface{}, right interface{}, opts ...cmp.Option) {
+func expectNotEqual(t *testing.T, left any, right any, opts ...cmp.Option) {
 	t.Helper()
 	if failed, log := performNotEqualCheck(left, right, opts...); failed {
 		t.Error(log)

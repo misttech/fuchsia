@@ -620,8 +620,8 @@ func expectLiveCorpusContents(t *testing.T, conn *mockConnector, targetPaths []s
 	var added []string
 	prefix := "fuzz add fuchsia-pkg://fuchsia.com/cff#meta/fuzzer.cm "
 	for _, cmd := range conn.FfxHistory {
-		if strings.HasPrefix(cmd, prefix) {
-			added = append(added, strings.TrimPrefix(cmd, prefix))
+		if after, ok := strings.CutPrefix(cmd, prefix); ok {
+			added = append(added, after)
 		}
 	}
 	if diff := cmp.Diff(targetPaths, added, sortSlicesOpt); diff != "" {

@@ -856,14 +856,14 @@ type Schema struct {
 	// Maps fully qualified type names to fidl data structures:
 	// *fidl.Struct, *fidl.Table, or *fidl.Union.
 	// TODO(https://fxbug.dev/42115264): Use common.DeclName.
-	types map[string]interface{}
+	types map[string]any
 }
 
 // BuildSchema builds a Schema from a FIDL library and handle definitions.
 // Note: The returned schema contains pointers into fidl.
 func BuildSchema(fidl fidlgen.Root) Schema {
 	total := len(fidl.Bits) + len(fidl.Enums) + len(fidl.Structs) + len(fidl.Tables) + len(fidl.Unions)
-	types := make(map[string]interface{}, total)
+	types := make(map[string]any, total)
 	// These loops must use fidl.Structs[i], fidl.Tables[i], etc. rather than
 	// iterating `for i, decl := ...` and using &decl, because that would store
 	// the same local variable address in every entry.

@@ -93,7 +93,7 @@ func (b *BacktracePresenter) Process(line OutputLine, out chan<- OutputLine) {
 	b.next.Process(line, out)
 }
 
-func printLine(line LogLine, fmtStr string, args ...interface{}) OutputLine {
+func printLine(line LogLine, fmtStr string, args ...any) OutputLine {
 	node := Text{text: fmt.Sprintf(fmtStr, args...)}
 	return OutputLine{LogLine: line, line: []Node{&node}}
 }

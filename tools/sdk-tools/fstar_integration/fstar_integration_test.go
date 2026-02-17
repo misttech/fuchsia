@@ -31,7 +31,7 @@ type deviceInfoChild struct {
 	Label string `json:"label"`
 	// Use a interface because the value can be either bool, int, or string but will always be
 	// a string when the label is set to "target", the only label we care about.
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }
 
 const (

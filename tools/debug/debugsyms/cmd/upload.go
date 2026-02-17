@@ -48,7 +48,7 @@ func (cmd *uploadCommand) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&cmd.j, "j", 500, "number of concurrent uploading routines")
 }
 
-func (cmd uploadCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (cmd uploadCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	args := f.Args()
 	if len(args) == 0 {
 		logger.Errorf(ctx, "one or more positional args expected: paths to .build-id dirs")

@@ -914,7 +914,7 @@ func readShards(t *testing.T, path string) []testsharder.Shard {
 	return shards
 }
 
-func writeTempJSONFile(t *testing.T, obj interface{}) string {
+func writeTempJSONFile(t *testing.T, obj any) string {
 	path := filepath.Join(t.TempDir(), "temp.json")
 	if err := jsonutil.WriteToFile(path, obj); err != nil {
 		t.Fatal(err)

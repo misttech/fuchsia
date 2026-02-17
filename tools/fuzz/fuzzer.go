@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -94,8 +95,8 @@ func (f *Fuzzer) translatePath(relpath string) string {
 	// places like artifact_prefix.
 
 	// Rewrite all references to data/ to tmp/ for better performance
-	if strings.HasPrefix(relpath, "data/") {
-		relpath = "tmp/" + strings.TrimPrefix(relpath, "data/")
+	if after, ok := strings.CutPrefix(relpath, "data/"); ok {
+		relpath = "tmp/" + after
 	}
 
 	return relpath
@@ -724,13 +725,7 @@ func (f *Fuzzer) Run(conn Connector, out io.Writer, hostArtifactDir string) ([]s
 
 		// For v1 libFuzzer: check the returncode (though this might be
 		// modified by libfuzzer args and thus be unreliable)
-		found := false
-		for _, code := range expectedFuzzerReturnCodes {
-			if cmderr.ReturnCode == code {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(expectedFuzzerReturnCodes, cmderr.ReturnCode)
 		if !found {
 			return nil, fmt.Errorf("unexpected return code: %s", err)
 		}

@@ -8,21 +8,21 @@ package cache
 import "container/list"
 
 // A Key may be any value that is comparable.
-type Key interface{}
+type Key any
 
 // Cache is the interface for cache.
 type Cache interface {
 	// Adds a value to the cache.
-	Add(key Key, value interface{}) interface{}
+	Add(key Key, value any) any
 
 	// Returns key's value from the cache.
-	Get(key Key) (interface{}, bool)
+	Get(key Key) (any, bool)
 
 	// Checks if a key exists in cache.
 	Contains(key Key) bool
 
 	// Removes a key from the cache.
-	Remove(key Key) interface{}
+	Remove(key Key) any
 
 	// Returns the number of items in the cache.
 	Len() int
@@ -38,18 +38,18 @@ type LRUCache struct {
 	Size uint
 
 	ll    *list.List
-	cache map[interface{}]*list.Element
+	cache map[any]*list.Element
 }
 
 type entry struct {
 	key   Key
-	value interface{}
+	value any
 }
 
 // Add adds a value to the cache and updates the "recently used"-ness of the key.
-func (c *LRUCache) Add(key Key, value interface{}) interface{} {
+func (c *LRUCache) Add(key Key, value any) any {
 	if c.cache == nil {
-		c.cache = make(map[interface{}]*list.Element)
+		c.cache = make(map[any]*list.Element)
 		c.ll = list.New()
 	}
 	if e, ok := c.cache[key]; ok {
@@ -67,7 +67,7 @@ func (c *LRUCache) Add(key Key, value interface{}) interface{} {
 }
 
 // Get returns key's value from the cache and updates the "recently used"-ness.
-func (c *LRUCache) Get(key Key) (interface{}, bool) {
+func (c *LRUCache) Get(key Key) (any, bool) {
 	if c.cache == nil {
 		return nil, false
 	}
@@ -88,7 +88,7 @@ func (c *LRUCache) Contains(key Key) bool {
 }
 
 // Remove removes a key from the cache.
-func (c *LRUCache) Remove(key Key) interface{} {
+func (c *LRUCache) Remove(key Key) any {
 	if c.cache == nil {
 		return nil
 	}

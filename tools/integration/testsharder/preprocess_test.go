@@ -11,7 +11,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/build"
 )
 
-func deepCopy(x, y interface{}) error {
+func deepCopy(x, y any) error {
 	b, err := json.Marshal(x)
 	if err != nil {
 		return err
