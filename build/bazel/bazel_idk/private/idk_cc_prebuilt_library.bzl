@@ -202,11 +202,11 @@ def _idk_cc_prebuilt_library_impl(
 
     # The library included in the IDK is defined by a different rule that allows
     # it to be exported.
-    underlying_library_for_idk_target_name = name + "_export"
-
     if prebuilt_library_type == "shared":
         # Create the exportable shared library. This generates the `.so` file
         # that will be included in the IDK.
+        underlying_library_for_idk_target_name = name + "_export"
+
         cc_shared_library(
             name = underlying_library_for_idk_target_name,
             shared_lib_name = "lib%s.so" % output_name,
@@ -240,6 +240,8 @@ def _idk_cc_prebuilt_library_impl(
     elif prebuilt_library_type == "static":
         # Create the exportable static library. This generates the `.a` file
         # that will be included in the IDK.
+        underlying_library_for_idk_target_name = name + ".export/" + name
+
         # TODO(https://fxbug.dev/450004374): Remove `native.` once rules_cc supports it.
         native.cc_static_library(
             name = underlying_library_for_idk_target_name,

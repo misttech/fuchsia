@@ -313,8 +313,7 @@ create_test_atom_info(
         "binaries": (
             '{"api_level":"PLATFORM",' +
             '"arch":"x64",' +
-            # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
-            '"link_lib":"arch/x64/lib/libtest-static-library_export.a"}'
+            '"link_lib":"arch/x64/lib/libtest-static-library.a"}'
         ),
     },
     api_area = "Developer",
@@ -329,8 +328,7 @@ create_test_atom_info(
         "//build/bazel/bazel_idk/tests:test-static-library_idk_verify_api",
     ],
     atom_files_map_generated_files = {
-        # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
-        "arch/x64/lib/libtest-static-library_export.a": ":test-static-library_export",
+        "arch/x64/lib/libtest-static-library.a": ":test-static-library.export/test-static-library",
     },
     atom_files_map_source_files = {
         "pkg/test_static_library/include/lib/test_lib/test_header.h": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
@@ -371,9 +369,8 @@ verify_file_path(
 verify_file_path(
     name = "verify_exported_test_static_library_file_path",
     testonly = True,
-    # TODO(https://fxbug.dev/417307356): Make the file name "libtest-static-library.a".
-    expected_file_path = "build/bazel/bazel_idk/tests/libtest-static-library_export.a",
-    target = ":test-static-library_export",
+    expected_file_path = "build/bazel/bazel_idk/tests/test-static-library.export/libtest-static-library.a",
+    target = ":test-static-library.export/test-static-library",
 )
 
 # Tests `fuchsia_*` and `non_fuchsia_*` attributes for header and source files.
@@ -704,7 +701,7 @@ cc_import(
     # source root - see https://fxbug.dev/478970857 so we must do so manually.
     # TODO(https://fxbug.dev/478896548): Make this `"include"` when updating to Bazel 9.
     includes = ["build/bazel/bazel_idk/tests/include"],
-    static_library = ":test-static-library_export",
+    static_library = ":test-static-library.export/test-static-library",
 )
 
 cc_binary(
