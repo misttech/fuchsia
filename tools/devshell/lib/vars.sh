@@ -1228,6 +1228,12 @@ EOF
     ${CLICOLOR_FORCE+"CLICOLOR_FORCE=$CLICOLOR_FORCE"}
     ${FX_BUILD_RBE_STATS+"FX_BUILD_RBE_STATS=$FX_BUILD_RBE_STATS"}
     ${FX_BUILD_QUIET+"FX_BUILD_QUIET=$FX_BUILD_QUIET"}
+
+    # Recommend pointing Python's cache dir outside of the source tree,
+    # so that it is possible to mount the source tree read-only.
+    # $FUCHSIA_OUT_DIR would also be a good choice that shares the cache
+    # among all build output dirs.
+    "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX:-"${FUCHSIA_BUILD_DIR}/__pycache__"}"
   )
 
   if [[ "$BUILD_PROFILE_ENABLED" == 1 ]]
