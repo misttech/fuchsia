@@ -37,6 +37,10 @@ guest_package("android_guest") {
 
   cmdline = "root=/dev/vda rw systemd.log_target=kmsg init=/lib/systemd/systemd"
 
+  # We have no need for the bounce buffer, and trying to initialize it on boot causes a ~30s delay
+  # while the Linux kernel tries to initialize all that memory.
+  cmdline += " swiotlb=noforce"
+
   # Since redirect_guest_serial_logs is a debug arg for peeking at kernel logs, we'll use that as a
   # signal to flip a few kernel flags, including redirecting console and increasing verbosity.
   if (redirect_guest_serial_logs) {
