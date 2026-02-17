@@ -151,6 +151,19 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
   std::shared_ptr<VsyncTiming> vsync_timing_;
 };
 
+namespace {
+class StaticFramePredictor : public FramePredictor {
+ public:
+  explicit StaticFramePredictor(PredictedTimes times) : times_(times) {}
+  PredictedTimes GetPrediction(PredictionRequest request) const override { return times_; }
+  void ReportRenderDuration(zx::duration time_to_render) override {}
+  void ReportUpdateDuration(zx::duration time_to_update) override {}
+
+ private:
+  PredictedTimes times_;
+};
+}  // namespace
+
 TEST_F(FrameSchedulerTest, PresentTimeZero_ShouldBeScheduledBeforeNextVsync) {
   SingleRenderTest(zx::time(0), zx::time(0), zx::time(0) + vsync_timing_->vsync_interval());
 }
@@ -913,6 +926,53 @@ TEST_F(FrameSchedulerTest, UnsquashableAsapUpdate_ShouldNotBeSquashedWithNextAsa
   EXPECT_TRUE(frame_presented_callback_.has_value());
   FireFramePresentedCallback();
   EXPECT_EQ(last_latched_times_.at(kSessionId).size(), 1u);
+}
+
+TEST_F(FrameSchedulerTest, ScheduleAsap_WhenNowExceedsPredictedTarget_ShouldClampWakeupTime) {
+  // Use a predictor that returns a target time in the "past" (relative to our future clock).
+  zx::time target_time = zx::time(10);
+  auto predictor = std::make_unique<StaticFramePredictor>(
+      PredictedTimes{.latch_point_time = zx::time(5), .presentation_time = target_time});
+
+  // Create a local scheduler for this test.
+  DefaultFrameScheduler local_scheduler(std::move(predictor));
+
+  zx::time captured_presentation_time = zx::time(0);
+  zx::time captured_latched_time = zx::time(0);
+  FramePresentedCallback presented_callback;
+
+  local_scheduler.Initialize(
+      vsync_timing_, /*update_sessions*/ [](auto&, auto, auto) {}, /*on_cpu_work_done*/ []() {},
+      /*on_frame_presented*/
+      [&](auto latched_times, auto) {
+        if (latched_times.contains(1) && latched_times.at(1).contains(1)) {
+          captured_latched_time = latched_times.at(1).at(1);
+        }
+      },
+      /*render_scheduled_frame*/
+      [&](auto, auto presentation_time, auto callback) {
+        captured_presentation_time = presentation_time;
+        presented_callback = std::move(callback);
+      });
+
+  // Advance clock to a time past the predicted target.
+  RunLoopUntil(zx::time(20));
+
+  // Register a present and schedule it ASAP.
+  local_scheduler.RegisterPresent(1, {});
+  local_scheduler.ScheduleUpdateForSession(zx::time(0), {1, 1}, true, true);
+
+  // Trigger MaybeRenderFrame.
+  RunLoopUntilIdle();
+
+  // Verify target_presentation_time was correctly picked (should be 10, not 20).
+  EXPECT_EQ(captured_presentation_time, target_time);
+
+  // Verify wakeup_time was clamped to target_time (since now=20 > target=10).
+  // We can see this indirectly because ApplyUpdates uses latched_time (which is wakeup_time).
+  ASSERT_TRUE(presented_callback);
+  presented_callback(CreateTimestamps());
+  EXPECT_EQ(captured_latched_time, target_time);
 }
 
 }  // namespace scheduling::test

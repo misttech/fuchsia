@@ -107,7 +107,10 @@ void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time, b
   auto [new_target_presentation_time, new_wakeup_time] =
       ComputePresentationAndWakeupTimesForTargetTime(requested_presentation_time);
   if (schedule_asap) {
-    new_wakeup_time = zx::time(async_now(dispatcher_));
+    // We target scheduling the frame as soon as possible. However, there may be scheduling delays
+    // such that the earlier calculated `new_target_presentation_time` is now in the past. In that
+    // case, we should use whichever is earlier.
+    new_wakeup_time = std::min(new_target_presentation_time, zx::time(async_now(dispatcher_)));
   }
 
   TRACE_DURATION(
