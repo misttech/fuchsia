@@ -29,6 +29,7 @@ idk_cc_static_library_zx(
     implementation_deps = [
         "//src/zircon/lib/zircon:zircon.as-needed",
     ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//visibility:public"],
 )
 
@@ -42,6 +43,7 @@ idk_cc_source_library(
     category = "partner",
     idk_name = "sync_cpp",
     stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//visibility:public"],
     deps = [
         ":sync",
