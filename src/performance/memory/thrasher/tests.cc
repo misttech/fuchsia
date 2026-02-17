@@ -423,6 +423,7 @@ void RunThrashTestWithConfig(
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = loop.dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> result) {
@@ -483,6 +484,7 @@ TEST_F(ThrasherTest, AnonThrasherInvalidSizeTest) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   ThrashConfig config = {
       .dispatcher = loop.dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
   auto thrasher = CreateAnonThrasher(std::move(config), 0);
   ASSERT_NE(thrasher, nullptr);
@@ -507,6 +509,7 @@ TEST_F(ThrasherTest, MmapThrasherNonExistentFileTest) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   ThrashConfig config = {
       .dispatcher = loop.dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
   auto thrasher = CreateMmapThrasher(std::move(config), "/pkg/data/non_existent_file");
   ASSERT_NE(thrasher, nullptr);
@@ -546,6 +549,7 @@ TEST_F(ThrasherTest, DirThrasherNonExistentDirTest) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   ThrashConfig config = {
       .dispatcher = loop.dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
   auto thrasher = CreateDirThrasher(std::move(config), "/pkg/data/non_existent_dir");
   ASSERT_NE(thrasher, nullptr);
@@ -576,6 +580,7 @@ TEST_F(ThrasherTest, DirThrasherEmptyDirTest) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   ThrashConfig config = {
       .dispatcher = loop.dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
   auto thrasher = CreateDirThrasher(std::move(config), "/pkg/data/empty_dir");
   ASSERT_NE(thrasher, nullptr);
@@ -632,6 +637,7 @@ TEST_F(ThrasherTest, ThrashBlobsErrorTest) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -683,6 +689,7 @@ TEST_F(ThrasherTest, ThrashBlobsSuccessTest) {
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -763,6 +770,7 @@ TEST_F(ThrasherTest, ThrashBlobsInvalidMerkleTest) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -785,8 +793,6 @@ TEST_F(ThrasherTest, ThrashBlobsInvalidMerkleTest) {
 
   thrasher->Start(thrash_callback, nullptr);
   RunLoopUntil([&]() { return callback_called; });
-  std::cerr << "[" << zx_clock_get_monotonic()
-            << "] ThrashBlobsInvalidMerkleTest: RunLoopUntil returned" << std::endl;
   EXPECT_TRUE(callback_called);
 }
 
@@ -805,6 +811,7 @@ TEST_F(ThrasherTest, ThrashBlobsVmoGetSizeErrorTest) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -848,6 +855,7 @@ TEST_F(ThrasherTest, ThrashBlobsInvalidConfigBursts) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   std::vector<std::string> merkle_roots = {
@@ -878,6 +886,7 @@ TEST_F(ThrasherTest, ThrashBlobsInvalidConfigThreads) {
       .run_for_seconds = 1,
       .num_threads = 0,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   std::vector<std::string> merkle_roots = {
@@ -912,6 +921,7 @@ TEST_F(ThrasherTest, ThrashBlobsShortMerkleTest) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -950,6 +960,7 @@ TEST_F(ThrasherTest, ThrashBlobsInvalidClientHandle) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -993,6 +1004,7 @@ TEST_F(ThrasherTest, ThrashBlobsNoMerkleRoots) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1035,6 +1047,7 @@ TEST_F(ThrasherTest, ThrashBlobsGetVmoFidlErrorTest) {
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1124,6 +1137,7 @@ TEST_F(ThrasherTest, ThrashBlobsUnroutedTest) {
       .run_for_seconds = 1,
       .num_threads = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1178,6 +1192,7 @@ TEST_F(ThrasherTest, ConnectionErrorStopsSubsequentCalls) {
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1231,9 +1246,11 @@ TEST_F(ThrasherTest, ThrashBlobsSequentialTest) {
 
   ThrashConfig config = {
       .bursts_per_second = 1,
+      .run_for_seconds = 1,
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},  // Return instantly
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1295,9 +1312,11 @@ TEST_F(ThrasherTest, ThrashBlobsMemoryLimitTest) {
 
   ThrashConfig config = {
       .bursts_per_second = 1,
+      .run_for_seconds = 1,
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},  // Return instantly
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1435,14 +1454,23 @@ TEST(Thrasher, StatusReportingTest) {
   bool init_called = false;
   zx_status_t init_status = ZX_ERR_INTERNAL;
 
+  std::mutex cv_m;
+  std::condition_variable cv;
+  bool should_teardown = false;
+
   ThrashConfig config = {
       .bursts_per_second = 1000,
-      // Run for at least 2 seconds to get at least one status update (assuming 1s interval)
       .run_for_seconds = 2,
       .num_threads = 4,
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = loop.dispatcher(),
+      .status_interval_ms = 10,  // speed up status
+      .teardown_sleep_fn =
+          [&](zx::duration) {
+            std::unique_lock<std::mutex> lock(cv_m);
+            cv.wait(lock, [&] { return should_teardown; });
+          },
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo>) {
@@ -1458,6 +1486,13 @@ TEST(Thrasher, StatusReportingTest) {
     EXPECT_GE(status.total_touches, status.touches_delta);
     EXPECT_GE(status.distinct_pages_delta, 0u);
     EXPECT_GT(status.total_time.to_msecs(), 0);
+
+    // Unblock the teardown thread immediately.
+    {
+      std::lock_guard<std::mutex> lock(cv_m);
+      should_teardown = true;
+    }
+    cv.notify_all();
   });
 
   auto thrasher = CreateAnonThrasher(std::move(config), 1024 * 1024);
@@ -1551,13 +1586,24 @@ TEST_F(ThrasherTest, AnonAndBlobConcurrent) {
   std::vector<zx::vmo> collected_vmos;
   std::mutex vmo_mutex;
 
-  ThrashConfig config = {
+  ThrashConfig config_anon = {
       .bursts_per_second = 100,
       .run_for_seconds = 5,  // Short run time for testing
       .num_threads = 1,
       .pages_per_read = 1,
       .consecutive_pages_per_read = 1,
       .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
+  };
+
+  ThrashConfig config_blob = {
+      .bursts_per_second = 100,
+      .run_for_seconds = 5,  // Short run time for testing
+      .num_threads = 1,
+      .pages_per_read = 1,
+      .consecutive_pages_per_read = 1,
+      .dispatcher = dispatcher(),
+      .teardown_sleep_fn = [](zx::duration) {},
   };
 
   auto thrash_callback = std::make_shared<ThrashCallback>([&](std::vector<zx::vmo> vmos) {
@@ -1570,9 +1616,9 @@ TEST_F(ThrasherTest, AnonAndBlobConcurrent) {
     }
   });
 
-  auto anon_thrasher = CreateAnonThrasher(config, 1024 * 1024);
-  auto blob_thrasher =
-      CreateBlobThrasherWithClient(config, std::move(client_end), merkle_roots, 10 * 1024 * 1024);
+  auto anon_thrasher = CreateAnonThrasher(std::move(config_anon), 1024 * 1024);
+  auto blob_thrasher = CreateBlobThrasherWithClient(std::move(config_blob), std::move(client_end),
+                                                    merkle_roots, 10 * 1024 * 1024);
 
   ASSERT_NE(anon_thrasher, nullptr);
   ASSERT_NE(blob_thrasher, nullptr);

@@ -39,6 +39,7 @@ struct ThrashConfig {
   async_dispatcher_t* dispatcher;
   bool verbose = false;
   int status_interval_ms = 1000;
+  fit::function<void(zx::duration)> teardown_sleep_fn;
 };
 
 // Abstract base class for all thrashers.

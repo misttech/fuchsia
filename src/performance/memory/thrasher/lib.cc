@@ -397,7 +397,7 @@ std::optional<MappedBuffer> allocate_and_touch_buffer(size_t buffer_size_bytes) 
   return MappedBuffer{buffer, buffer_size_bytes, std::move(vmo)};
 }
 
-void thrash_memory_worker(uint8_t* buffer, size_t size, int bursts_per_second, int run_for_seconds,
+void thrash_memory_worker(uint8_t* buffer, size_t size, int bursts_per_second,
                           std::atomic<uint64_t>& pages_touched_counter,
                           std::atomic<bool>& keep_running, int pages_per_read,
                           int consecutive_pages_per_read, bool write, PageTracker* page_tracker) {
@@ -509,15 +509,19 @@ class AnonThrasher : public Thrasher, public std::enable_shared_from_this<AnonTh
     }
 
     for (int i = 0; i < config_.num_threads; ++i) {
-      worker_threads_.emplace_back(
-          thrash_memory_worker, static_cast<uint8_t*>(buffer_->mapped), buffer_size_bytes_,
-          config_.bursts_per_second, config_.run_for_seconds, std::ref(pages_touched_counter_),
-          std::ref(keep_running_), config_.pages_per_read, config_.consecutive_pages_per_read,
-          /*write=*/true, page_tracker_.get());
+      worker_threads_.emplace_back(thrash_memory_worker, static_cast<uint8_t*>(buffer_->mapped),
+                                   buffer_size_bytes_, config_.bursts_per_second,
+                                   std::ref(pages_touched_counter_), std::ref(keep_running_),
+                                   config_.pages_per_read, config_.consecutive_pages_per_read,
+                                   /*write=*/true, page_tracker_.get());
     }
 
     std::thread([self = shared_from_this()]() {
-      std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      if (self->config_.teardown_sleep_fn) {
+        self->config_.teardown_sleep_fn(zx::sec(self->config_.run_for_seconds));
+      } else {
+        std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      }
       self->keep_running_.store(false, std::memory_order_relaxed);
 
       for (auto& t : self->worker_threads_) {
@@ -620,13 +624,17 @@ class MmapThrasher : public Thrasher, public std::enable_shared_from_this<MmapTh
     for (int i = 0; i < config_.num_threads; ++i) {
       worker_threads_.emplace_back(
           thrash_memory_worker, static_cast<uint8_t*>(mapped_file_->ptr), mapped_file_->size,
-          config_.bursts_per_second, config_.run_for_seconds, std::ref(pages_touched_counter_),
-          std::ref(keep_running_), config_.pages_per_read, config_.consecutive_pages_per_read,
+          config_.bursts_per_second, std::ref(pages_touched_counter_), std::ref(keep_running_),
+          config_.pages_per_read, config_.consecutive_pages_per_read,
           /*write=*/false, page_tracker_.get());  // MmapThrasher only reads
     }
 
     std::thread([self = shared_from_this()]() {
-      std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      if (self->config_.teardown_sleep_fn) {
+        self->config_.teardown_sleep_fn(zx::sec(self->config_.run_for_seconds));
+      } else {
+        std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      }
       self->keep_running_.store(false, std::memory_order_relaxed);
 
       for (auto& thread : self->worker_threads_) {
@@ -770,12 +778,9 @@ class DirThrasher : public Thrasher, public std::enable_shared_from_this<DirThra
 
       const auto delay_between_bursts = std::chrono::microseconds(
           static_cast<long long>(1'000'000.0 / self->config_.bursts_per_second));
-      const auto end_time =
-          std::chrono::steady_clock::now() + std::chrono::seconds(self->config_.run_for_seconds);
 
       volatile uint8_t value;
-      while (std::chrono::steady_clock::now() < end_time &&
-             self->keep_running_.load(std::memory_order_relaxed)) {
+      while (self->keep_running_.load(std::memory_order_relaxed)) {
         size_t pages_to_read = pages_to_read_distrib(gen);
         for (size_t i = 0; i < pages_to_read; ++i) {
           size_t start_page_index = distrib(gen);
@@ -800,7 +805,11 @@ class DirThrasher : public Thrasher, public std::enable_shared_from_this<DirThra
     }
 
     std::thread([self = shared_from_this()]() {
-      std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      if (self->config_.teardown_sleep_fn) {
+        self->config_.teardown_sleep_fn(zx::sec(self->config_.run_for_seconds));
+      } else {
+        std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      }
       self->keep_running_.store(false, std::memory_order_relaxed);
 
       for (auto& thread : self->worker_threads_) {
@@ -965,22 +974,19 @@ class BlobThrasher : public Thrasher, public std::enable_shared_from_this<BlobTh
       });
     }
 
-    auto thrash_fn = [all_pages, config = config_, self = shared_from_this()](int thread_id) {
+    auto thrash_fn = [all_pages, self = shared_from_this()](int thread_id) {
       std::random_device rd;
       std::mt19937 gen(rd());
       std::uniform_int_distribution<size_t> distrib(0, all_pages.size() - 1);
-      std::uniform_int_distribution<size_t> pages_to_read_distrib(1, config.pages_per_read);
+      std::uniform_int_distribution<size_t> pages_to_read_distrib(1, self->config_.pages_per_read);
       std::uniform_int_distribution<size_t> consecutive_pages_to_read_distrib(
-          1, config.consecutive_pages_per_read);
+          1, self->config_.consecutive_pages_per_read);
 
-      const auto delay_between_bursts =
-          std::chrono::microseconds(static_cast<long long>(1'000'000.0 / config.bursts_per_second));
-      const auto end_time =
-          std::chrono::steady_clock::now() + std::chrono::seconds(config.run_for_seconds);
+      const auto delay_between_bursts = std::chrono::microseconds(
+          static_cast<long long>(1'000'000.0 / self->config_.bursts_per_second));
 
       volatile uint8_t value;
-      while (std::chrono::steady_clock::now() < end_time &&
-             self->keep_running_status_thread_.load(std::memory_order_relaxed)) {
+      while (self->keep_running_status_thread_.load(std::memory_order_relaxed)) {
         size_t pages_to_read = pages_to_read_distrib(gen);
         for (size_t i = 0; i < pages_to_read; ++i) {
           size_t start_page_index = distrib(gen);
@@ -1005,13 +1011,19 @@ class BlobThrasher : public Thrasher, public std::enable_shared_from_this<BlobTh
     }
 
     waiter_thread_ = std::thread([self = shared_from_this()]() mutable {
+      if (self->config_.teardown_sleep_fn) {
+        self->config_.teardown_sleep_fn(zx::sec(self->config_.run_for_seconds));
+      } else {
+        std::this_thread::sleep_for(std::chrono::seconds(self->config_.run_for_seconds));
+      }
+      self->keep_running_status_thread_.store(false, std::memory_order_relaxed);
+
       for (auto& thread : self->worker_threads_) {
         if (thread.joinable()) {
           thread.join();
         }
       }
       if (self->status_thread_.joinable()) {
-        self->keep_running_status_thread_.store(false);
         self->status_thread_.join();
       }
       async::PostTask(self->config_.dispatcher, [self] { self->FinishThrashing(); });
