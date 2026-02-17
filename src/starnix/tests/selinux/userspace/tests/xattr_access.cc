@@ -326,6 +326,19 @@ TEST(XattrTest, SetSelinuxWithRelabelFromAndTo) {
   }));
 }
 
+TEST(XattrTest, CannotSetSelinuxToSameWithoutRelabelFrom) {
+  auto scoped_fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", kTestFileLabel);
+  test_helper::ScopedTempFD file;
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_xattr_relabel_t:s0", [&]() {
+    EXPECT_THAT(SetXattr(file.name(), kSelinuxAttrName, kTestFileNewLabel), SyscallSucceeds());
+    EXPECT_THAT(SetXattr(file.name(), kSelinuxAttrName, kTestFileNewLabel),
+                SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 TEST(XattrTest, SetSelinuxNonOwnerFailsWithoutCapFOwner) {
   auto scoped_fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", kTestFileLabel);
   test_helper::ScopedTempFD file;

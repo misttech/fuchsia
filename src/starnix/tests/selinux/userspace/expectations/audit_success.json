@@ -875,6 +875,50 @@
             ]
         },
         {
+            "name": "PerfEventTest.PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
+            "audit_expectations": [
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.PerfEventOpenCpuEventsOnCurrentTask",
+            "audit_expectations": [
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.PerfEventOpenKernelEventsOnCurrentTask",
+            "audit_expectations": [
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.ReadEventsFromSameProcessNoRead",
+            "audit_expectations": [
+                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.ReadEventsNoReadPermission",
+            "audit_expectations": [
+                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.WriteEventsNoWritePermission",
+            "audit_expectations": [
+                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
             "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint.OpenEventsNoCpu/0",
             "audit_expectations": [
                 "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
@@ -1392,50 +1436,6 @@
             ]
         },
         {
-            "name": "PerfEventTest.PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
-            "audit_expectations": [
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_not_admin_t:s0 tcontext=test_u:test_r:test_perf_not_admin_t:s0 tclass=capability permissive=0"
-            ]
-        },
-        {
-            "name": "PerfEventTest.PerfEventOpenCpuEventsOnCurrentTask",
-            "audit_expectations": [
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
-            ]
-        },
-        {
-            "name": "PerfEventTest.PerfEventOpenKernelEventsOnCurrentTask",
-            "audit_expectations": [
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0",
-                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_all_permissions_t:s0 tclass=capability2 permissive=0"
-            ]
-        },
-        {
-            "name": "PerfEventTest.ReadEventsFromSameProcessNoRead",
-            "audit_expectations": [
-                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
-            ]
-        },
-        {
-            "name": "PerfEventTest.ReadEventsNoReadPermission",
-            "audit_expectations": [
-                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0",
-                "avc:  denied  { read } for scontext=test_u:test_r:test_perf_event_no_read_t:s0 tcontext=test_u:test_r:test_perf_event_no_read_t:s0 tclass=perf_event permissive=0"
-            ]
-        },
-        {
-            "name": "PerfEventTest.WriteEventsNoWritePermission",
-            "audit_expectations": [
-                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
-                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0",
-                "avc:  denied  { write } for scontext=test_u:test_r:test_perf_event_no_write_t:s0 tcontext=test_u:test_r:test_perf_event_no_write_t:s0 tclass=perf_event permissive=0"
-            ]
-        },
-        {
             "name": "PipeTest.LabeledFromTask",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"\" dev=\"pipefs\" ino=276 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=fifo_file permissive=1"
@@ -1896,41 +1896,47 @@
             ]
         },
         {
+            "name": "XattrTest.CannotSetSelinuxToSameWithoutRelabelFrom",
+            "audit_expectations": [
+                "avc:  denied  { relabelfrom } for name=\"proc_test_file_kXzxx5\" dev=\"tmpfs\" ino=10 scontext=test_u:test_r:test_xattr_relabel_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "XattrTest.GetSecurityXattrRequiresOnlyGetAttr",
             "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"proc_test_file_cy74oZ\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { getattr } for name=\"proc_test_file_Snceh6\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "XattrTest.GetTrustedXattrRequiresCapSysAdminAndGetAttr",
             "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"proc_test_file_TYWoDW\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { getattr } for name=\"proc_test_file_xB73D8\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
             ]
         },
         {
             "name": "XattrTest.GetUserRequiresFileReadAndGetAttr",
             "audit_expectations": [
-                "avc:  denied  { read } for name=\"proc_test_file_vFTw6W\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_noread_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
-                "avc:  denied  { getattr } for name=\"proc_test_file_vFTw6W\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { read } for name=\"proc_test_file_Yjt1t5\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_noread_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { getattr } for name=\"proc_test_file_Yjt1t5\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "XattrTest.ListOmitsInaccessiblePrefixes",
             "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"proc_test_file_86p5jW\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { getattr } for name=\"proc_test_file_DIslu6\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_xattr_user_nogetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "XattrTest.RemoveRequiresSameChecksAsSet",
             "audit_expectations": [
-                "avc:  denied  { write } for name=\"proc_test_file_nDSJ7V\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_capsysadmin_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { write } for name=\"proc_test_file_PWRyn8\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_capsysadmin_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_t:s0 tcontext=test_u:test_r:test_xattr_user_t:s0 tclass=capability permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_t:s0 tcontext=test_u:test_r:test_xattr_user_t:s0 tclass=capability permissive=0",
-                "avc:  denied  { write } for name=\"proc_test_file_nDSJ7V\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { write } for name=\"proc_test_file_PWRyn8\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tclass=capability permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tclass=capability permissive=0",
-                "avc:  denied  { setattr } for name=\"proc_test_file_nDSJ7V\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_PWRyn8\" dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tclass=capability permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tclass=capability permissive=0"
             ]
@@ -1938,16 +1944,16 @@
         {
             "name": "XattrTest.SetSelinuxMissingPermissions",
             "audit_expectations": [
-                "avc:  denied  { relabelto } for name=\"proc_test_file_Ybf2vW\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelto_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0",
-                "avc:  denied  { relabelfrom } for name=\"proc_test_file_Ybf2vW\" dev=\"tmpfs\" ino=12 scontext=test_u:test_r:test_xattr_relabel_norelabelfrom_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
-                "avc:  denied  { associate } for name=\"proc_test_file_Ybf2vW\" dev=\"tmpfs\" ino=12 scontext=test_u:object_r:test_xattr_access_noassociate_file_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=0"
+                "avc:  denied  { relabelto } for name=\"proc_test_file_4NJ8z6\" dev=\"tmpfs\" ino=13 scontext=test_u:test_r:test_xattr_relabel_norelabelto_t:s0 tcontext=test_u:object_r:test_xattr_access_relabeled_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { relabelfrom } for name=\"proc_test_file_4NJ8z6\" dev=\"tmpfs\" ino=13 scontext=test_u:test_r:test_xattr_relabel_norelabelfrom_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { associate } for name=\"proc_test_file_4NJ8z6\" dev=\"tmpfs\" ino=13 scontext=test_u:object_r:test_xattr_access_noassociate_file_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=0"
             ]
         },
         {
             "name": "XattrTest.SetTrustedAndSecurityXattrRequiresCapSysAdminAndSetAttr",
             "audit_expectations": [
-                "avc:  denied  { setattr } for name=\"proc_test_file_9g2gYZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
-                "avc:  denied  { setattr } for name=\"proc_test_file_9g2gYZ\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_Bghwb9\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_Bghwb9\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_xattr_capsysadmin_nosetgetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0",
                 "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tcontext=test_u:test_r:test_xattr_nocapsysadmin_setgetattr_t:s0 tclass=capability permissive=0"
             ]
@@ -1964,8 +1970,8 @@
         {
             "name": "XattrTest.SetUserRequiresFileWriteAndSetAttr",
             "audit_expectations": [
-                "avc:  denied  { write } for name=\"proc_test_file_5gECHX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
-                "avc:  denied  { setattr } for name=\"proc_test_file_5gECHX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { write } for name=\"proc_test_file_3PgX77\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nowrite_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { setattr } for name=\"proc_test_file_3PgX77\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_xattr_user_nosetattr_t:s0 tcontext=test_u:object_r:test_xattr_access_file_t:s0 tclass=file permissive=0"
             ]
         }
     ]
