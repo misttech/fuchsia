@@ -46,7 +46,7 @@
       "optionality": "optional",
       "long": "--dev-config",
       "short": null,
-      "description": "specify developer config file to append onto the configuration. This is a JSON file with the object structure: {{   \"args\": [],   \"kernel_args\": [],   \"env\" : {{\"key\": \"value\"}}  }}",
+      "description": "specify developer config file to append onto the configuration. This is a JSON file with the object structure: {{{{   \"args\": [],   \"kernel_args\": [],   \"env\" : {{{{\"key\": \"value\"}}}}  }}}}",
       "hidden": false
     },
     {

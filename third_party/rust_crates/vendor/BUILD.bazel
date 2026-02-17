@@ -127,14 +127,14 @@ alias(
 )
 
 alias(
-    name = "argh-0.1.12",
-    actual = "//third_party/rust_crates/vendor/argh-0.1.12:argh",
+    name = "argh-0.1.14",
+    actual = "//third_party/rust_crates/vendor/argh-0.1.14:argh",
     tags = ["manual"],
 )
 
 alias(
     name = "argh",
-    actual = "//third_party/rust_crates/vendor/argh-0.1.12:argh",
+    actual = "//third_party/rust_crates/vendor/argh-0.1.14:argh",
     tags = ["manual"],
 )
 

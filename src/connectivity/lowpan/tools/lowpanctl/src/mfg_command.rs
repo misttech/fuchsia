@@ -16,8 +16,11 @@ impl FromArgs for MfgCommand {
 }
 
 impl SubCommand for MfgCommand {
-    const COMMAND: &'static CommandInfo =
-        &CommandInfo { name: "mfg", description: "Send a manufacturing command to the NCP/RCP" };
+    const COMMAND: &'static CommandInfo = &CommandInfo {
+        name: "mfg",
+        description: "Send a manufacturing command to the NCP/RCP",
+        short: &'\0',
+    };
 }
 
 impl MfgCommand {

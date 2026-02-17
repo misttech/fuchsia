@@ -257,6 +257,7 @@ mod tests {
         let orig = argh::CommandInfoWithArgs {
             name: TEST_NAME,
             description: "",
+            short: &'\0',
             examples: &[],
             flags: &[],
             notes: &[],
@@ -286,6 +287,7 @@ mod tests {
             argh::ErrorCodeInfo { code: 123, description: "Some error code" };
         let orig = argh::CommandInfoWithArgs {
             name: TEST_NAME,
+            short: &'\0',
             description: TEST_DESCRIPTION,
             examples: &TEST_EXAMPLES,
             flags: &[],
@@ -336,6 +338,7 @@ mod tests {
         const SUB1: argh::CommandInfoWithArgs = argh::CommandInfoWithArgs {
             name: TEST_NAME,
             description: TEST_DESCRIPTION,
+            short: &'\0',
             examples: &TEST_EXAMPLES,
             flags: &[],
             notes: &TEST_NOTES,

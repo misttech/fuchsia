@@ -20,23 +20,19 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "mock-omaha-server",
-    package_url = "https://github.com/google/omaha-client",
-    package_version = "0.3.7",
+    package_name = "argh_shared",
+    package_url = "https://github.com/google/argh",
+    package_version = "0.1.14",
 )
 
 license(
     name = "license",
-    license_kinds = [
-        "@rules_license//licenses/spdx:Apache-2.0",
-        "@rules_license//licenses/spdx:BSD-2-Clause",
-        "@rules_license//licenses/spdx:MIT",
-    ],
-    license_text = "LICENSE-APACHE",
+    license_kinds = ["@rules_license//licenses/spdx:BSD-3-Clause"],
+    license_text = "LICENSE",
 )
 
 rust_library(
-    name = "mock_omaha_server",
+    name = "argh_shared",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,14 +49,17 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "serde",
+    ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2018",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=mock-omaha-server",
+        "crate-name=argh_shared",
         "manual",
         "noclippy",
         "norustfmt",
@@ -73,30 +72,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.7",
+    version = "0.1.14",
     deps = [
-        "//src/lib/fuchsia-async",
-        "//src/lib/fuchsia-hyper",
-        "//src/lib/fuchsia-sync",
-        "//third_party/rust_crates/vendor:argh",
-        "//third_party/rust_crates/vendor/anyhow-1.0.100:anyhow",
-        "//third_party/rust_crates/vendor/argh-0.1.14:argh",
-        "//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder",
-        "//third_party/rust_crates/vendor/futures-0.3.31:futures",
-        "//third_party/rust_crates/vendor/hex-0.4.3:hex",
-        "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
-        "//third_party/rust_crates/vendor/log-0.4.27:log",
-        "//third_party/rust_crates/vendor/omaha_client-0.3.7:omaha_client",
-        "//third_party/rust_crates/vendor/p256-0.11.1:p256",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
-        "//third_party/rust_crates/vendor/serde_json-1.0.145:serde_json",
-        "//third_party/rust_crates/vendor/sha2-0.10.8:sha2",
-        "//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror",
-        "//third_party/rust_crates/vendor/url-2.3.1:url",
-    ] + select({
-        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor:tokio",  # x86_64-unknown-linux-gnu
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
