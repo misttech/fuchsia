@@ -87,7 +87,7 @@ fn fidl_table_strict(attrs: &[Attribute]) -> Result<Option<Vec<Ident>>> {
                     "fidl_table_strict expects either no arguments or a list of \
                     fields from the FIDL table that are omitted from the validated type"
                 ),
-            ))
+            ));
         }
         Meta::List(list) => list,
     };
@@ -292,14 +292,16 @@ impl FidlField {
                 quote!(
                     #ident: <#path as ::fidl_table_validation::Converter>::try_from_fidl(
                         #src_ident.ok_or(#missing_field_error_type::#camel_case)?
-                    )?,
+                    )
+                    .map_err(::fidl_table_validation::anyhow::Error::from)?,
                 )
             }
             FidlFieldKind::OptionalConverter(path) => {
                 quote!(
                     #ident: <#path as ::fidl_table_validation::Converter>::try_from_fidl(
                         #src_ident
-                    )?,
+                    )
+                    .map_err(::fidl_table_validation::anyhow::Error::from)?,
                 )
             }
         }
@@ -385,7 +387,7 @@ fn impl_valid_fidl_table(
                     "The #[fidl_table_src(FidlTableType)] attribute ",
                     "takes only one argument, a type name."
                 ),
-            ))
+            ));
         }
     };
 

@@ -11,6 +11,7 @@ use assert_matches::assert_matches;
 use fidl_table_validation::*;
 use fidl_test_tablevalidation::{Example, VecOfExample, WrapExample};
 use test_case::test_case;
+use thiserror::Error;
 
 #[test]
 fn rejects_missing_fields() {
@@ -377,16 +378,22 @@ fn strict_validation_ignore() {
 
 #[test]
 fn required_converter() {
+    #[derive(Debug, Error)]
+    enum ValidationError {
+        #[error("cannot be zero")]
+        CannotBeZero,
+    }
+
     struct CustomConverter;
 
     impl Converter for CustomConverter {
         type Fidl = u32;
         type Validated = NonZeroU32;
 
-        type Error = anyhow::Error;
+        type Error = ValidationError;
 
         fn try_from_fidl(value: Self::Fidl) -> std::result::Result<Self::Validated, Self::Error> {
-            NonZeroU32::new(value).ok_or_else(|| anyhow::anyhow!("invalid zero"))
+            NonZeroU32::new(value).ok_or(ValidationError::CannotBeZero)
         }
 
         fn from_validated(validated: Self::Validated) -> Self::Fidl {
@@ -426,6 +433,12 @@ fn required_converter() {
 
 #[test]
 fn optional_converter() {
+    #[derive(Debug, Error)]
+    enum ValidationError {
+        #[error("cannot be zero")]
+        CannotBeZero,
+    }
+
     // NB: Adding a type parameter to custom converter to prove the macro can
     // take full paths and not only identifiers.
     struct CustomConverter<T>(PhantomData<T>);
@@ -440,13 +453,13 @@ fn optional_converter() {
         type Fidl = Option<u32>;
         type Validated = MaybeMissing;
 
-        type Error = anyhow::Error;
+        type Error = ValidationError;
 
         fn try_from_fidl(value: Self::Fidl) -> std::result::Result<Self::Validated, Self::Error> {
             Ok(match value {
-                Some(v) => MaybeMissing::Present(
-                    NonZeroU32::new(v).ok_or_else(|| anyhow::anyhow!("invalid zero"))?,
-                ),
+                Some(v) => {
+                    MaybeMissing::Present(NonZeroU32::new(v).ok_or(ValidationError::CannotBeZero)?)
+                }
                 None => MaybeMissing::Missing,
             })
         }
