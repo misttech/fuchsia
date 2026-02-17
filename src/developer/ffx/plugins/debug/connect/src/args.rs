@@ -8,7 +8,12 @@ use ffx_core::ffx_command;
 /// Options for "ffx debug connect".
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "connect", description = "start the debugger and connect to the target")]
+#[argh(
+    subcommand,
+    name = "connect",
+    description = "start the debugger and connect to the target",
+    short = 'c'
+)]
 pub struct ConnectCommand {
     /// start zxdb in another debugger. Currently, the only valid option is "lldb".
     #[argh(option)]

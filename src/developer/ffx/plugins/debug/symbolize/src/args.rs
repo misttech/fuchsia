@@ -8,7 +8,12 @@ use ffx_core::ffx_command;
 /// Options for "ffx debug symbolize".
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "symbolize", description = "symbolize backtraces in markup format")]
+#[argh(
+    subcommand,
+    name = "symbolize",
+    description = "symbolize backtraces in markup format",
+    short = 's'
+)]
 pub struct SymbolizeCommand {
     /// start the authentication process.
     #[argh(switch)]

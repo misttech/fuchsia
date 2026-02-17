@@ -12,6 +12,7 @@ use ffx_core::ffx_command;
 #[argh(
     subcommand,
     name = "list",
+    short = 'l',
     example = "To list targets in short form:
 
     $ ffx target list --format s

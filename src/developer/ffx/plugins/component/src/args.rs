@@ -8,7 +8,7 @@ use ffx_core::ffx_command;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
-#[argh(subcommand, name = "component", description = "Discover and manage components")]
+#[argh(subcommand, name = "component", description = "Discover and manage components", short = 'c')]
 pub struct ComponentCommand {
     #[argh(subcommand)]
     pub subcommand: SubCommand,

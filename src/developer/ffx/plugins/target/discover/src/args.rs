@@ -27,6 +27,7 @@ fn loop_mode(lm: &str) -> Result<LoopMode, String> {
     subcommand,
     name = "discover",
     description = "Discovers targets",
+    short = 'd',
     note = "Discovers targets, storing them in the discovery cache. By default, runs as a background process."
 )]
 pub struct DiscoverCommand {

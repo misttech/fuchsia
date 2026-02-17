@@ -12,6 +12,7 @@ use ffx_core::ffx_command;
     subcommand,
     name = "list",
     description = "Lists components in the component topology. Children of unresolved components are not included in this list.",
+    short = 'l',
     example = "To list components in the topology:
 
     $ ffx component list

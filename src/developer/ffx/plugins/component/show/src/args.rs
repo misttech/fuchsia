@@ -11,6 +11,7 @@ use ffx_core::ffx_command;
     subcommand,
     name = "show",
     description = "Shows detailed information about a component instance",
+    short = 's',
     example = "To show information about the `brightness_manager` component instance, all of the
 following commands are valid:
 

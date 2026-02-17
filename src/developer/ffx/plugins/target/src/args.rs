@@ -12,6 +12,7 @@ use ffx_target_sub_command::SubCommand;
     subcommand,
     name = "target",
     description = "Interact with a target device or emulator",
+    short = 't',
     note = "The `target` subcommand contains various commands for target management
 and interaction.
 
