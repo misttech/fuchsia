@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "src/lib/fxl/strings/join_strings.h"
-#include "src/lib/fxl/strings/string_printf.h"
 #include "src/media/audio/audio_core/device_id.h"
 #include "src/media/audio/audio_core/testing/integration/capturer_shim.h"
 #include "src/media/audio/audio_core/testing/integration/inspect.h"
@@ -147,7 +146,7 @@ void HermeticAudioTest::SetUp() {
     // shortly after the Connect call. To ensure the server is ready, we simply call a read-only
     // method and wait for a response.
     bool connected = false;
-    audio_dev_enum_->GetDevices([&connected](auto devices) mutable { connected = true; });
+    audio_dev_enum_->GetDevices([&connected](const auto& devices) mutable { connected = true; });
     RunLoopUntil([&connected]() { return connected; });
   }
   WatchForDeviceArrivals();
@@ -160,7 +159,7 @@ void HermeticAudioTest::SetUp() {
   // the most recent pending_default_device_token_ once initial_devices_received_.
   audio_dev_enum_->GetDevices([this](const std::vector<fuchsia::media::AudioDeviceInfo>& devices) {
     for (const auto& info : devices) {
-      if (token_to_unique_id_.count(info.token_id) == 0) {
+      if (!token_to_unique_id_.contains(info.token_id)) {
         OnDeviceAdded(info);
       }
     }
@@ -344,14 +343,14 @@ void HermeticAudioTest::Unbind(RendererShimImpl* renderer) {
 
 void HermeticAudioTest::WatchForDeviceArrivals() {
   audio_dev_enum_.events().OnDeviceAdded = [this](const fuchsia::media::AudioDeviceInfo& info) {
-    if (token_to_unique_id_.count(info.token_id) > 0) {
+    if (token_to_unique_id_.contains(info.token_id)) {
       FAIL() << "Device with token " << info.token_id << " already exists";
     }
     OnDeviceAdded(info);
   };
 
   audio_dev_enum_.events().OnDeviceRemoved = [this](uint64_t token) {
-    if (token_to_unique_id_.count(token) == 0) {
+    if (!token_to_unique_id_.contains(token)) {
       FAIL() << "Unknown device with token " << token;
     }
     auto id = token_to_unique_id_[token];
@@ -360,7 +359,7 @@ void HermeticAudioTest::WatchForDeviceArrivals() {
 
   audio_dev_enum_.events().OnDeviceGainChanged = [this](uint64_t token,
                                                         fuchsia::media::AudioGainInfo gain_info) {
-    if (token_to_unique_id_.count(token) == 0) {
+    if (!token_to_unique_id_.contains(token)) {
       FAIL() << "Unknown device with token " << token;
     }
     auto id = token_to_unique_id_[token];
@@ -390,7 +389,7 @@ void HermeticAudioTest::WaitForDeviceDepartures() {
   };
 
   audio_dev_enum_.events().OnDeviceRemoved = [this](uint64_t token) {
-    if (token_to_unique_id_.count(token) == 0) {
+    if (!token_to_unique_id_.contains(token)) {
       FAIL() << "Unknown device with token " << token;
     }
     auto id = token_to_unique_id_[token];
@@ -421,7 +420,7 @@ void HermeticAudioTest::WaitForDeviceDepartures() {
   audio_dev_enum_.events().OnDefaultDeviceChanged = nullptr;
 }
 
-void HermeticAudioTest::OnDeviceAdded(fuchsia::media::AudioDeviceInfo info) {
+void HermeticAudioTest::OnDeviceAdded(const fuchsia::media::AudioDeviceInfo& info) {
   auto id = info.unique_id;
   token_to_unique_id_[info.token_id] = id;
   if (!devices_[id].virtual_device) {
@@ -445,11 +444,11 @@ void HermeticAudioTest::OnDefaultDeviceChanged(uint64_t old_default_token,
     pending_default_device_tokens_.push(new_default_token);
     return;
   }
-  EXPECT_TRUE(old_default_token == 0 || token_to_unique_id_.count(old_default_token) > 0)
+  EXPECT_TRUE(old_default_token == 0 || token_to_unique_id_.contains(old_default_token))
       << "Default device changed from unknown device " << old_default_token << " to "
       << new_default_token;
 
-  EXPECT_TRUE(new_default_token == 0 || token_to_unique_id_.count(new_default_token) > 0)
+  EXPECT_TRUE(new_default_token == 0 || token_to_unique_id_.contains(new_default_token))
       << "Default device changed from " << old_default_token << " to unknown device "
       << new_default_token;
 
@@ -630,7 +629,8 @@ void HermeticAudioTest::ExpectInspectMetrics(const std::vector<std::string>& pat
 bool HermeticAudioTest::DeviceHasUnderflows(const std::string& unique_id) {
   auto root = GetInspectHierarchy();
 
-  for (const std::string& kind : {kDeviceUnderflows, kPipelineUnderflows}) {
+  const std::vector<std::string>& kinds{kDeviceUnderflows, kPipelineUnderflows};
+  return std::ranges::any_of(kinds, [&root, unique_id](const std::string& kind) {
     std::vector<std::string> path = {
         kOutputDevices,
         unique_id,
@@ -640,18 +640,15 @@ bool HermeticAudioTest::DeviceHasUnderflows(const std::string& unique_id) {
     auto h = root.GetByPath(path);
     if (!h) {
       ADD_FAILURE() << "Missing inspect hierarchy for " << path_string;
-      continue;
+      return false;
     }
     auto p = h->node().template get_property<inspect::UintPropertyValue>(kCount);
     if (!p) {
       ADD_FAILURE() << "Missing property: " << path_string << "[count]";
-      continue;
+      return false;
     }
-    if (p->value() > 0) {
-      return true;
-    }
-  }
-  return false;
+    return (p->value() > 0);
+  });
 }
 
 // Explicitly instantiate all possible implementations.

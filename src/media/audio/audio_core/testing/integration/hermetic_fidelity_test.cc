@@ -10,6 +10,7 @@
 #include <lib/zx/time.h>
 #include <zircon/types.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iomanip>
@@ -22,7 +23,6 @@
 #include <test/thermal/cpp/fidl.h>
 
 #include "src/lib/fxl/strings/concatenate.h"
-#include "src/lib/fxl/strings/string_printf.h"
 #include "src/media/audio/audio_core/device_id.h"
 #include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
 #include "src/media/audio/lib/analysis/analysis.h"
@@ -97,6 +97,7 @@ constexpr double kFidelityDbTolerance = 1.0;
 // If kDisplayAnalysisDataOnFailureDbTolerance, display freq bins with magnitude >= this val.
 constexpr double kMinAnalysisMagnitudeToDisplay = 1e-4;
 
+namespace {
 // For each test_name|channel, we maintain two results arrays: Frequency Response and
 // Signal-to-Noise-and-Distortion (SiNAD). A map of array results is saved as a function-local
 // static variable. If kRetainWorstCaseResults is set, we persist results across repeated test runs.
@@ -111,6 +112,7 @@ struct ResultsIndex {
     return std::tie(test_name, channel) < std::tie(rhs.test_name, rhs.channel);
   }
 };
+}  // namespace
 
 // When displaying in-progress results, storing worst-case results and comparing results to required
 // minimum thresholds, we use the actual level_db and sinad_db values as calculated.
@@ -145,9 +147,9 @@ std::array<double, HermeticFidelityTest::kNumReferenceFreqs>& HermeticFidelityTe
       .test_name = std::move(test_name),
       .channel = channel,
   };
-  if (results_level_db->find(index) == results_level_db->end()) {
+  if (!results_level_db->contains(index)) {
     auto& results = (*results_level_db)[index];
-    std::fill(results.begin(), results.end(), std::numeric_limits<double>::infinity());
+    std::ranges::fill(results, std::numeric_limits<double>::infinity());
   }
 
   return results_level_db->find(index)->second;
@@ -166,9 +168,9 @@ std::array<double, HermeticFidelityTest::kNumReferenceFreqs>& HermeticFidelityTe
       .test_name = std::move(test_name),
       .channel = channel,
   };
-  if (results_sinad_db->find(index) == results_sinad_db->end()) {
+  if (!results_sinad_db->contains(index)) {
     auto& results = (*results_sinad_db)[index];
-    std::fill(results.begin(), results.end(), std::numeric_limits<double>::infinity());
+    std::ranges::fill(results, std::numeric_limits<double>::infinity());
   }
 
   return results_sinad_db->find(index)->second;
@@ -791,12 +793,12 @@ void HermeticFidelityTest::Run(
                         << std::setw(8) << sinad_db << " db";
         }
       } else {
-        freq_result = MeasureAudioFreqs(output, {static_cast<int32_t>(freq.periods)});
+        freq_result = MeasureAudioFreqs(output, {freq.periods});
         level_db = DoubleToDb(freq_result.magnitudes[freq.periods]);
         if (isinf(level_db) && level_db < 0) {
           // If an expected signal was truly absent (silence), we probably underflowed. This
           // [level_db, sinad_db] pair is meaningless, so set sinad_db to -INFINITY as well.
-          sinad_db = -INFINITY;
+          sinad_db = -std::numeric_limits<double>::infinity();
         } else {
           sinad_db =
               DoubleToDb(freq_result.magnitudes[freq.periods] / freq_result.total_magn_other);
@@ -831,7 +833,7 @@ void HermeticFidelityTest::Run(
         // 2) frequency is not out-of-band, 3) buffer is NOT entirely silent (SiNAD > -infinity),
         // and 4) failure (Frequency Response or SiNAD) exceeds tolerance.
         bool display_output_buffer_for_failure =
-            kDisplayOutputBufferOnFailure && !out_of_band && !(isinf(sinad_db) && sinad_db < 0) &&
+            kDisplayOutputBufferOnFailure && !out_of_band && (!isinf(sinad_db) || sinad_db >= 0) &&
             (level_db + kDisplayOutputBufferOnFailureFreqRespDbTolerance < required_level_db ||
              sinad_db + kDisplayOutputBufferOnFailureSinadDbTolerance < required_sinad_db);
 

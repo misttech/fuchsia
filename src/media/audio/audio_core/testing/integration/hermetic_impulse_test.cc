@@ -7,16 +7,11 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/lib/files/file.h"
-#include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/media/audio/audio_core/device_id.h"
 #include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
 #include "src/media/audio/lib/analysis/analysis.h"
-#include "src/media/audio/lib/analysis/generators.h"
 #include "src/media/audio/lib/format/audio_buffer.h"
-#include "src/media/audio/lib/test/comparators.h"
-#include "src/media/audio/lib/wav/wav_writer.h"
 
 using ASF = fuchsia::media::AudioSampleFormat;
 
@@ -102,7 +97,7 @@ void HermeticImpulseTest::Run(const HermeticImpulseTest::TestCase<InputFormat, O
     if (k + 1 < static_cast<int64_t>(tc.impulse_locations_in_frames.size())) {
       auto curr = input_impulse_pre_pad + tc.impulse_locations_in_frames[k];
       auto next = input_impulse_pre_pad + tc.impulse_locations_in_frames[k + 1];
-      input_next_midpoint_frame = curr + (next - curr) / 2;
+      input_next_midpoint_frame = curr + ((next - curr) / 2);
     } else {
       input_next_midpoint_frame = num_input_frames;
     }

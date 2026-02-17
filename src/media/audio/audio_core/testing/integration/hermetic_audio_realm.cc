@@ -205,15 +205,15 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   builder.AddRoute({
       .capabilities =
           {
-              Protocol{"fuchsia.media.ActivityReporter"},
-              Protocol{"fuchsia.media.Audio"},
-              Protocol{"fuchsia.media.AudioCore"},
-              Protocol{"fuchsia.media.AudioDeviceEnumerator"},
-              Protocol{"fuchsia.media.audio.EffectsController"},
-              Protocol{"fuchsia.media.tuning.AudioTuner"},
-              Protocol{"fuchsia.media.UsageGainReporter"},
-              Protocol{"fuchsia.media.UsageReporter"},
-              Protocol{"fuchsia.ultrasound.Factory"},
+              Protocol{.name = "fuchsia.media.ActivityReporter"},
+              Protocol{.name = "fuchsia.media.Audio"},
+              Protocol{.name = "fuchsia.media.AudioCore"},
+              Protocol{.name = "fuchsia.media.AudioDeviceEnumerator"},
+              Protocol{.name = "fuchsia.media.audio.EffectsController"},
+              Protocol{.name = "fuchsia.media.tuning.AudioTuner"},
+              Protocol{.name = "fuchsia.media.UsageGainReporter"},
+              Protocol{.name = "fuchsia.media.UsageReporter"},
+              Protocol{.name = "fuchsia.ultrasound.Factory"},
           },
       .source = ChildRef{kAudioCore},
       .targets = {ParentRef()},
@@ -235,9 +235,9 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   builder.AddRoute({
       .capabilities =
           {
-              Protocol{"fuchsia.scheduler.RoleManager"},
+              Protocol{.name = "fuchsia.scheduler.RoleManager"},
               // Not necessary for tests but can be useful when debugging tests.
-              Protocol{"fuchsia.tracing.provider.Registry"},
+              Protocol{.name = "fuchsia.tracing.provider.Registry"},
           },
       .source = ParentRef(),
       .targets = {ChildRef{kAudioCore}},
@@ -246,7 +246,7 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   builder.AddRoute({
       .capabilities =
           {
-              Protocol{"fuchsia.inspect.InspectSink"},
+              Protocol{.name = "fuchsia.inspect.InspectSink"},
           },
       .source = ChildRef{InspectSinkMock::kName},
       .targets = {DictionaryRef{.base_ref = SelfRef(), .path = "test-diagnostics"}},
@@ -299,7 +299,7 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
       return std::make_unique<LocalProcessorCreator>(test_effects);
     });
     builder.AddRoute({
-        .capabilities = {Protocol{"fuchsia.audio.effects.ProcessorCreator"}},
+        .capabilities = {Protocol{.name = "fuchsia.audio.effects.ProcessorCreator"}},
         .source = ChildRef{"local_processor_creator"},
         .targets = {ChildRef{kAudioCore}},
     });
@@ -340,12 +340,12 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   // For simplicity, always add this test thermal control server.
   builder.AddChild(kThermalTestControl, "#meta/thermal_test_control.cm");
   builder.AddRoute({
-      .capabilities = {Protocol{"fuchsia.thermal.ClientStateConnector"}},
+      .capabilities = {Protocol{.name = "fuchsia.thermal.ClientStateConnector"}},
       .source = ChildRef{kThermalTestControl},
       .targets = {ChildRef{kAudioCore}},
   });
   builder.AddRoute({
-      .capabilities = {Protocol{"test.thermal.ClientStateControl"}},
+      .capabilities = {Protocol{.name = "test.thermal.ClientStateControl"}},
       .source = ChildRef{kThermalTestControl},
       .targets = {ParentRef()},
   });
@@ -361,7 +361,7 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   // Include a fake cobalt to silence warnings that we can't connect to cobalt.
   builder.AddChild(kFakeCobalt, "#meta/fake_cobalt.cm");
   builder.AddRoute({
-      .capabilities = {Protocol{"fuchsia.metrics.MetricEventLoggerFactory"}},
+      .capabilities = {Protocol{.name = "fuchsia.metrics.MetricEventLoggerFactory"}},
       .source = ChildRef{kFakeCobalt},
       .targets = {ChildRef{kAudioCore}},
   });

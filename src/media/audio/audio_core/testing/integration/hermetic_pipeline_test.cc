@@ -7,14 +7,7 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/lib/files/file.h"
-#include "src/lib/files/path.h"
-#include "src/lib/fxl/strings/string_printf.h"
-#include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
-#include "src/media/audio/lib/analysis/analysis.h"
-#include "src/media/audio/lib/analysis/generators.h"
 #include "src/media/audio/lib/format/audio_buffer.h"
-#include "src/media/audio/lib/test/comparators.h"
 #include "src/media/audio/lib/wav/wav_writer.h"
 
 using ASF = fuchsia::media::AudioSampleFormat;

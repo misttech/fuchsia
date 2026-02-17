@@ -28,7 +28,7 @@ class HermeticFidelityTest : public HermeticPipelineTest {
   static const std::array<int32_t, kNumReferenceFreqs> kReferenceFrequencies;
 
   // Test renderers that use various reference clocks.  These options include:
-  enum class ClockMode {
+  enum class ClockMode : uint8_t {
     // Client wants to use the reference clock we provide to clients that do not specify one. This
     // is not strongly specified, so clients using timestamps must call GetReferenceClock.
     Default,
@@ -101,7 +101,7 @@ class HermeticFidelityTest : public HermeticPipelineTest {
   void Run(const TestCase<InputFormat, OutputFormat>& tc);
 
  protected:
-  static inline double DoubleToDb(double val) { return std::log10(val) * 20.0; }
+  static double DoubleToDb(double val) { return std::log10(val) * 20.0; }
 
   static std::array<double, HermeticFidelityTest::kNumReferenceFreqs>& level_results(
       std::string test_name, int32_t channel);

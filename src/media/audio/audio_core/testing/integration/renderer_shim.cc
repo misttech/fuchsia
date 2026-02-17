@@ -167,7 +167,7 @@ RendererShimImpl::PacketVector RendererShimImpl::AppendSlice(AudioBufferSlice<Sa
                                                              int64_t initial_pts) {
   // Split into packets.
   std::vector<AudioBufferSlice<SampleFormat>> packets;
-  for (auto f = 0; f < slice.NumFrames(); f += frames_per_packet) {
+  for (int64_t f = 0; f < slice.NumFrames(); f += frames_per_packet) {
     auto start = slice.start_frame() + f;
     packets.push_back({slice.buf(), start, start + frames_per_packet});
   }
@@ -225,7 +225,7 @@ std::optional<RendererShimImpl::PayloadSlot> RendererShimImpl::AllocSlotFor(
         .end_offset = new_end,
     };
     if (new_end == payload_slots_[k].end_offset) {
-      payload_slots_.erase(payload_slots_.begin() + k);
+      payload_slots_.erase(payload_slots_.begin() + static_cast<int64_t>(k));
     } else {
       payload_slots_[k].start_offset = new_end;
     }

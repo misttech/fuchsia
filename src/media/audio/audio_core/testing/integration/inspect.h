@@ -36,7 +36,7 @@ struct ExpectedInspectProperties {
         ADD_FAILURE() << "missing node: " << path << "/" << name;
         continue;
       }
-      Check(expected_child, path + "/" + name, *child);
+      Check(expected_child, (path + "/").append(name), *child);
     }
     CheckValue<inspect::DoublePropertyValue>(path, h.node(), props.doubles);
     CheckValue<inspect::UintPropertyValue>(path, h.node(), props.uints);

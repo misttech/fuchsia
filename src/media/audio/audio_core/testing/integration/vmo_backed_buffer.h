@@ -9,7 +9,7 @@
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/zx/vmo.h>
 
-#include <memory>
+#include <gtest/gtest.h>
 
 #include "src/media/audio/lib/format/audio_buffer.h"
 #include "src/media/audio/lib/format/format.h"
@@ -118,7 +118,7 @@ class VmoBackedBuffer {
   void WriteRawBytesAt(int64_t offset, const std::vector<uint8_t>& bytes) {
     FX_CHECK(offset + static_cast<int64_t>(bytes.size()) <= SizeBytes());
 
-    memmove(BufferStart() + offset, &bytes[0], bytes.size());
+    memmove(BufferStart() + offset, bytes.data(), bytes.size());
   }
 
   // Set every sample to the given value.
@@ -126,7 +126,7 @@ class VmoBackedBuffer {
   void Memset(typename SampleFormatTraits<SampleFormat>::SampleT value) {
     for (int64_t k = 0; k < frame_count_ * format_.channels(); k++) {
       auto dst = reinterpret_cast<typename SampleFormatTraits<SampleFormat>::SampleT*>(
-          BufferStart() + k * format_.bytes_per_sample());
+          BufferStart() + (k * format_.bytes_per_sample()));
       *dst = value;
     }
   }
@@ -139,7 +139,7 @@ class VmoBackedBuffer {
     FX_CHECK(dst_frame_index < frame_count_);
     FX_CHECK(dst_frame_index + slice.NumFrames() <= frame_count_);
 
-    auto dst = BufferStart() + dst_frame_index * format_.bytes_per_frame();
+    auto dst = BufferStart() + (dst_frame_index * format_.bytes_per_frame());
     auto src = &slice.buf()->samples()[slice.SampleIndex(0, 0)];
     memmove(dst, src, slice.NumBytes());
   }

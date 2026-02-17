@@ -192,7 +192,8 @@ void VirtualDevice::WatchEvents() {
 zx::time VirtualDevice::NextSynchronizedTimestamp(zx::time min_time) const {
   // Compute the next synchronized position, then iterate until we find a synchronized
   // position at min_time or later.
-  int64_t running_pos_sync = ((running_ring_pos_ / rb_.SizeBytes()) + 1) * rb_.SizeBytes();
+  int64_t running_pos_sync =
+      (static_cast<int64_t>(running_ring_pos_ / rb_.SizeBytes()) + 1) * rb_.SizeBytes();
   while (true) {
     zx::time sync_time = zx::time(running_pos_to_ref_time_.Apply(running_pos_sync));
     if (sync_time >= min_time) {

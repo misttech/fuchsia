@@ -8,9 +8,6 @@
 #include <fuchsia/media/cpp/fidl.h>
 #include <fuchsia/ultrasound/cpp/fidl.h>
 
-#include <memory>
-
-#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/media/audio/audio_core/testing/integration/vmo_backed_buffer.h"
 #include "src/media/audio/lib/format/audio_buffer.h"
 #include "src/media/audio/lib/format/format.h"

@@ -14,11 +14,7 @@
 #include <memory>
 #include <vector>
 
-#include "src/lib/fxl/strings/string_printf.h"
-#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
-#include "src/media/audio/audio_core/stream_usage.h"
 #include "src/media/audio/audio_core/testing/integration/vmo_backed_buffer.h"
-#include "src/media/audio/lib/clock/utils.h"
 #include "src/media/audio/lib/format/audio_buffer.h"
 #include "src/media/audio/lib/format/format.h"
 #include "src/media/audio/lib/test/test_fixture.h"

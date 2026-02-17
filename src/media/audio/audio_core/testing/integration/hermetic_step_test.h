@@ -7,7 +7,6 @@
 
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "src/media/audio/audio_core/testing/integration/hermetic_pipeline_test.h"
 #include "src/media/audio/lib/format/format.h"

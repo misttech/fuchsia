@@ -14,11 +14,11 @@
 namespace {
 
 // If a binary name was specified, set it as the syslog tag (after stripping any prepended dirs).
-void SetSyslogTag(fxl::CommandLine cmdline) {
+void SetSyslogTag(const fxl::CommandLine& cmdline) {
   if (cmdline.has_argv0()) {
     auto tag = cmdline.argv0();
     auto last_separator_index = tag.rfind('/');
-    if (last_separator_index < tag.npos) {
+    if (last_separator_index < std::string::npos) {
       tag = tag.substr(last_separator_index + 1);
     }
     fuchsia_logging::LogSettingsBuilder builder;

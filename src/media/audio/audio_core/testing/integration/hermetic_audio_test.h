@@ -12,7 +12,6 @@
 
 #include <queue>
 #include <unordered_map>
-#include <unordered_set>
 
 #include <test/thermal/cpp/fidl.h>
 
@@ -22,8 +21,6 @@
 #include "src/media/audio/audio_core/testing/integration/inspect.h"
 #include "src/media/audio/audio_core/testing/integration/renderer_shim.h"
 #include "src/media/audio/audio_core/testing/integration/virtual_device.h"
-#include "src/media/audio/lib/format/audio_buffer.h"
-#include "src/media/audio/lib/test/constants.h"
 #include "src/media/audio/lib/test/test_fixture.h"
 
 namespace media::audio::test {
@@ -188,7 +185,7 @@ class HermeticAudioTest : public TestFixture {
 
   void WatchForDeviceArrivals();
   void WaitForDeviceDepartures();
-  void OnDeviceAdded(fuchsia::media::AudioDeviceInfo info);
+  void OnDeviceAdded(const fuchsia::media::AudioDeviceInfo& info);
   void OnDefaultDeviceChanged(uint64_t old_default_token, uint64_t new_default_token);
   void ExpectInspectMetrics(const std::vector<std::string>& path,
                             const ExpectedInspectProperties& props);

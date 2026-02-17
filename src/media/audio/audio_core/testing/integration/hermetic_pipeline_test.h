@@ -6,7 +6,6 @@
 #define SRC_MEDIA_AUDIO_AUDIO_CORE_TESTING_INTEGRATION_HERMETIC_PIPELINE_TEST_H_
 
 #include <string>
-#include <vector>
 
 #include "src/media/audio/audio_core/testing/integration/hermetic_audio_test.h"
 
@@ -26,7 +25,7 @@ class HermeticPipelineTest : public HermeticAudioTest {
   }
 
   // The three render paths present in common effects configurations.
-  enum class RenderPath {
+  enum class RenderPath : uint8_t {
     Communication = 0,
     Media = 1,
     Ultrasound = 2,
@@ -74,7 +73,7 @@ class HermeticPipelineTest : public HermeticAudioTest {
   // input frames. Our device ring buffer includes more frames than necessary so that, in
   // case we write too many output frames due to a bug, we'll have plenty of space without
   // wrapping around. This helps more easily detect such bugs.
-  static inline size_t AddSlackToOutputFrames(size_t expected_output_frames) {
+  static size_t AddSlackToOutputFrames(size_t expected_output_frames) {
     return static_cast<size_t>(static_cast<double>(expected_output_frames) * 1.5);
   }
 
