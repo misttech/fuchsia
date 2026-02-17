@@ -15,6 +15,7 @@
 #include <zircon/types.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -23,19 +24,24 @@
 #include <src/lib/unwinder/fuchsia.h>
 #include <src/lib/unwinder/unwind.h>
 
+#include "memory.h"
 #include "symbolization_context.h"
 
 namespace profiler {
 struct ThreadTarget {
   zx::thread handle;
   zx_koid_t tid;
+  mutable std::optional<uint64_t> restricted_state_addr;
 };
 
 // The unwinding library receives pointers and references. We place the relevant structs together to
 // ensure they don't get copied/moved and invalidate the references.
 struct UnwinderData {
   explicit UnwinderData(const zx::unowned_process& process)
-      : memory(process->get()), cfi_unwinder(this->modules), fp_unwinder(&this->cfi_unwinder) {}
+      : memory(process->get()),
+        cached_memory(&memory),
+        cfi_unwinder(this->modules),
+        fp_unwinder(&this->cfi_unwinder) {}
 
   UnwinderData(const UnwinderData&) = delete;
   UnwinderData(UnwinderData&&) = delete;
@@ -43,6 +49,7 @@ struct UnwinderData {
   UnwinderData& operator=(UnwinderData&&) = delete;
 
   unwinder::FuchsiaMemory memory;
+  profiler::CachedModuleMemory cached_memory;
   std::vector<unwinder::Module> modules;
 
   // As each process has its own memory, we have an unwinder per process
@@ -63,6 +70,7 @@ struct ProcessTarget {
   zx_koid_t pid;
   std::unordered_map<zx_koid_t, ThreadTarget> threads;
   std::unique_ptr<UnwinderData> unwinder_data;
+  mutable std::vector<zx_info_maps_t> cached_mappings;
 };
 
 zx::result<std::map<std::vector<std::byte>, profiler::Module>> GetProcessModules(

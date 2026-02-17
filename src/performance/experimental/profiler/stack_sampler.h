@@ -5,6 +5,8 @@
 #ifndef SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_STACK_SAMPLER_H_
 #define SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_STACK_SAMPLER_H_
 
+#include <zircon/syscalls-next.h>
+
 #include "sampler.h"
 
 namespace profiler {
@@ -22,6 +24,9 @@ class StackSampler : public Sampler {
   void AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
                  zx::thread t) override;
   void CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status);
+  static void PopulateRestrictedStateAddrs(const ProcessTarget& target);
+  static zx::result<> RefreshMappings(const ProcessTarget& target);
+  static void GetRestrictedSP(const zx_restricted_state_t& restricted_state, uint64_t& sp);
   async::TaskMethod<profiler::StackSampler, &profiler::StackSampler::CollectSamples> sample_task_{
       this};
 };

@@ -6,17 +6,27 @@
 
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
+#include <lib/zx/clock.h>
+#include <lib/zx/result.h>
 #include <lib/zx/suspend_token.h>
+#include <zircon/errors.h>
+#include <zircon/syscalls-next.h>
+#include <zircon/syscalls.h>
 #include <zircon/syscalls/debug.h>
+#include <zircon/syscalls/object.h>
 
-#include <algorithm>
+#include <charconv>
+#include <cstdint>
+#include <cstring>
+#include <vector>
 
 #include <src/lib/unwinder/fuchsia.h>
 #include <src/lib/unwinder/registers.h>
-
-#include "lib/zx/result.h"
+#include <src/lib/unwinder/unwind.h>
 
 namespace profiler {
+constexpr size_t kMaxUnwindDepth = 50;
+constexpr size_t kStackCaptureSize = 4096ul * 4;  // 16 kib
 
 zx::result<> StackSampler::Start(size_t buffer_size_mb) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
@@ -76,6 +86,65 @@ void StackSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_
   }
 }
 
+void StackSampler::PopulateRestrictedStateAddrs(const ProcessTarget& target) {
+  constexpr char kRestrictedStateVmoPrefix[] = "restricted_state_vmo:";
+  constexpr size_t kPrefixLen = sizeof(kRestrictedStateVmoPrefix) - 1;
+
+  for (const zx_info_maps& map : target.cached_mappings) {
+    if (strncmp(map.name, kRestrictedStateVmoPrefix, kPrefixLen) == 0) {
+      const char* tid_str = map.name + kPrefixLen;
+      zx_koid_t tid;
+      auto result = std::from_chars(tid_str, map.name + sizeof(map.name), tid);
+      if (result.ec != std::errc()) {
+        continue;
+      }
+      auto it = target.threads.find(tid);
+      if (it != target.threads.end()) {
+        it->second.restricted_state_addr = map.base;
+      }
+    }
+  }
+}
+
+zx::result<> StackSampler::RefreshMappings(const ProcessTarget& target) {
+  size_t actual = 0;
+  size_t avail = 0;
+  zx_status_t status = target.handle.get_info(ZX_INFO_PROCESS_MAPS, nullptr, 0, &actual, &avail);
+  if (status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Process has exited. Failed to get mappings for process: "
+                            << target.pid;
+    target.cached_mappings.clear();
+    return zx::error(status);
+  }
+  target.cached_mappings.resize(avail);
+  status = target.handle.get_info(ZX_INFO_PROCESS_MAPS, target.cached_mappings.data(),
+                                  target.cached_mappings.size() * sizeof(zx_info_maps_t), &actual,
+                                  &avail);
+  if (status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Process has exited. Failed to get mappings for process: "
+                            << target.pid;
+    target.cached_mappings.clear();
+    return zx::error(status);
+  }
+  if (actual < avail) {
+    target.cached_mappings.resize(actual);
+  }
+  PopulateRestrictedStateAddrs(target);
+  return zx::ok();
+}
+
+void StackSampler::GetRestrictedSP(const zx_restricted_state_t& restricted_state, uint64_t& sp) {
+#if defined(__aarch64__)
+  sp = restricted_state.sp;
+#elif defined(__x86_64__)
+  sp = restricted_state.rsp;
+#elif defined(__riscv)
+  sp = restricted_state.sp;
+#else
+#error "unsupported architecture"
+#endif
+}
+
 void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task,
                                   zx_status_t status) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
@@ -84,14 +153,29 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
   }
 
   zx::result res = targets_.ForEachProcess([this](std::span<const zx_koid_t>,
-                                                  const ProcessTarget& target) {
+                                                  const ProcessTarget& target) -> zx::result<> {
+    TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/ForEachProcess");
+    // Get mappings once per process
+    if (zx::result<> res = RefreshMappings(target); res.is_error()) {
+      FX_PLOGS(WARNING, res.status_value()) << "Failed to get mappings for process: " << target.pid;
+      return zx::ok();
+    }
+
+    unwinder::Unwinder unwinder(target.unwinder_data->modules);
+    std::vector<Sample>& process_samples = samples_[target.pid];
     for (const auto& [tid, thread] : target.threads) {
-      TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/ForEachThread");
+      if (!thread.restricted_state_addr.has_value()) {
+        if (zx::result<> res = RefreshMappings(target); res.is_error()) {
+          FX_PLOGS(WARNING, res.status_value()) << "Failed to refresh mappings for thread: " << tid;
+          return zx::ok();
+        }
+      }
 
       // Suspend thread
       zx::suspend_token suspend_token;
       zx_status_t status = thread.handle.suspend(&suspend_token);
       if (status != ZX_OK) {
+        FX_PLOGS(ERROR, status) << "Failed to suspend thread: " << tid;
         continue;
       }
 
@@ -101,6 +185,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
       if (status != ZX_OK || (observed & ZX_THREAD_TERMINATED)) {
         continue;
       }
+      zx::ticks tick_suspended = zx::ticks::now();
 
       // Get registers
       zx_thread_state_general_regs_t regs;
@@ -108,66 +193,60 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
         continue;
       }
 
-      auto registers = unwinder::FromFuchsiaRegisters(regs);
+      unwinder::Registers registers = unwinder::FromFuchsiaRegisters(regs);
+
       uint64_t sp = 0;
       if (registers.GetSP(sp).has_err()) {
         continue;
       }
 
-      // Get mappings
-      size_t actual = 0;
-      size_t avail = 0;
+      BufferedStackMemory stack_memory(target.handle.borrow(), {}, target.cached_mappings);
+      stack_memory.CaptureStack(sp, kStackCaptureSize);
 
-      // Check mappings size
-      status = target.handle.get_info(ZX_INFO_PROCESS_MAPS, nullptr, 0, &actual, &avail);
-      if (status != ZX_OK) {
-        continue;
+      if (thread.restricted_state_addr.has_value()) {
+        uint64_t restricted_base = thread.restricted_state_addr.value();
+
+        // Capture the memory containing the restricted state struct
+        if (stack_memory.CaptureStack(restricted_base, sizeof(zx_restricted_state_t)) == ZX_OK) {
+          zx_restricted_state_t restricted_state;
+          // Read from local buffer
+          if (!stack_memory.ReadBytes(restricted_base, sizeof(restricted_state), &restricted_state)
+                   .has_err()) {
+            GetRestrictedSP(restricted_state, sp);
+            stack_memory.CaptureStack(sp, kStackCaptureSize);
+          } else {
+            thread.restricted_state_addr.reset();
+          }
+        } else {
+          thread.restricted_state_addr.reset();
+        }
       }
+      suspend_token.reset();
+      zx::ticks tick_resume = zx::ticks::now();
+      std::vector<uint64_t> stack;
 
-      // NOTE/RISK: Even though the target thread is suspended, other threads in the process
-      // might still be running. They can add/remove mappings (e.g., mmap, dlopen)
-      // between the size check above and the data fetch below.
-      //
-      // If the map list grows during this window, 'actual' will be less than the new 'avail',
-      // and the kernel will truncate the list. If our stack mapping happens to be at the
-      // end of that list, we might miss it.
-      // TODO(https://fxbug.dev/467127240): Fix TOCTOU race condition in process mapping retrieval
+      {
+        TRACE_DURATION("cpu_profiler", "StackSampler::CollectSamples/Unwind");
 
-      // Fetch mappings data
-      std::vector<zx_info_maps_t> maps(avail);
-      status = target.handle.get_info(ZX_INFO_PROCESS_MAPS, maps.data(),
-                                      maps.size() * sizeof(zx_info_maps_t), &actual, &avail);
-      if (status != ZX_OK) {
-        continue;
-      }
-
-      zx_info_maps_t* stack_map = nullptr;
-      // TODO(https://fxbug.dev/467162834): Apply Cache for stack mappings
-      for (auto& map : maps) {
-        if (map.type == ZX_INFO_MAPS_TYPE_MAPPING && sp >= map.base && sp < map.base + map.size) {
-          stack_map = &map;
-          break;
+        std::vector<unwinder::Frame> frames =
+            unwinder.Unwind(&stack_memory, registers, kMaxUnwindDepth);
+        for (const unwinder::Frame& frame : frames) {
+          uint64_t pc;
+          if (!frame.regs.GetPC(pc).has_err() && pc != 0) {
+            stack.push_back(pc);
+          }
         }
       }
 
-      if (stack_map) {
-        // TODO(https://fxbug.dev/466469604): Update size to a real value.
-        size_t wanted_size = 4096;
-        // Stack pointer go decrementing/grow down.
-        size_t used_stack_size = (stack_map->base + stack_map->size) - sp;
-        size_t copy_len = std::min(wanted_size, used_stack_size);
-        std::vector<uint8_t> stack_copy(copy_len);
-        size_t actual_read = 0;
-        status = target.handle.read_memory(sp, stack_copy.data(), copy_len, &actual_read);
-        if (status == ZX_OK) {
-          stack_copy.resize(actual_read);
-          samples_[target.pid].push_back({.pid = target.pid,
-                                          .tid = tid,
-                                          .stack = {},
-                                          .timestamp = zx::ticks::now(),
-                                          .stack_memory = std::move(stack_copy)});
-        }
+      if (!stack.empty()) {
+        process_samples.push_back({.pid = target.pid,
+                                   .tid = tid,
+                                   .stack = std::move(stack),
+                                   .timestamp = zx::ticks::now(),
+                                   .stack_memory = {}});
       }
+
+      inspecting_durations_.push_back(tick_resume - tick_suspended);
     }
     return zx::ok();
   });
@@ -183,5 +262,4 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
   }
   sample_task_.PostDelayed(dispatcher_, period);
 }
-
 }  // namespace profiler

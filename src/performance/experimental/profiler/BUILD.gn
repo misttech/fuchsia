@@ -12,6 +12,7 @@ source_set("lib") {
     "fxt_writer.cc",
     "job_watcher.cc",
     "kernel_sampler.cc",
+    "memory.h",
     "process_watcher.cc",
     "sampler.cc",
     "stack_sampler.cc",

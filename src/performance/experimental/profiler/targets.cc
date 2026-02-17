@@ -18,10 +18,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <span>
 
 #include <src/lib/unwinder/module.h>
 
@@ -217,7 +217,7 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process proc
   }
   for (const auto& [build_id, module] : *modules) {
     process_target.unwinder_data->modules.emplace_back(module.vaddr,
-                                                       &process_target.unwinder_data->memory,
+                                                       &process_target.unwinder_data->cached_memory,
                                                        unwinder::Module::AddressMode::kProcess);
   }
   return zx::ok(std::move(process_target));
@@ -415,8 +415,8 @@ zx::result<> profiler::TargetTree::AddThread(std::span<const zx_koid_t> job_path
                            : it->second.AddThread(job_path.subspan(1), pid, std::move(thread));
 }
 
-zx::result<> profiler::TargetTree::RemoveThread(std::span<const zx_koid_t> job_path,
-                                                zx_koid_t pid, zx_koid_t tid) {
+zx::result<> profiler::TargetTree::RemoveThread(std::span<const zx_koid_t> job_path, zx_koid_t pid,
+                                                zx_koid_t tid) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   if (job_path.empty()) {
     auto it = processes_.find(pid);

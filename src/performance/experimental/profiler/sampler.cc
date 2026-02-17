@@ -282,7 +282,11 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
     return;
   }
 
-  sample_task_.PostDelayed(dispatcher_, zx::msec(10));
+  zx::duration period = zx::msec(10);
+  if (!sample_specs_.empty() && sample_specs_[0].period().has_value()) {
+    period = zx::nsec(sample_specs_[0].period().value());
+  }
+  sample_task_.PostDelayed(dispatcher_, period);
 }
 
 zx::result<profiler::SymbolizationContext> profiler::Sampler::GetContexts() {
