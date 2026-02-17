@@ -74,7 +74,7 @@ rust_library(
     }),
     version = "0.5.0",
     deps = [
-        "//third_party/rust_crates/vendor/opaque-debug-0.3.0:opaque_debug",
+        "//third_party/rust_crates/vendor/opaque-debug-0.3.1:opaque_debug",
         "//third_party/rust_crates/vendor/polyval-0.6.2:polyval",
     ],
 )

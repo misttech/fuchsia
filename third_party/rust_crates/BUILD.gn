@@ -7948,7 +7948,7 @@ rustc_library("ghash-v0_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":opaque-debug-v0_3_0" ]
+  deps += [ ":opaque-debug-v0_3_1" ]
   deps += [ ":polyval-v0_6_2" ]
 
   rustenv = []
@@ -11594,18 +11594,18 @@ rustc_library("once_cell-v1_21_3") {
   applicable_licenses = [ ":once_cell-v1_21_3.license" ]
 }
 
-license("opaque-debug-v0_3_0.license") {
+license("opaque-debug-v0_3_1.license") {
   public_package_name = "opaque_debug"
   license_files = [
-    "//third_party/rust_crates/vendor/opaque-debug-0.3.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/opaque-debug-0.3.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/opaque-debug-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/opaque-debug-0.3.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("opaque-debug-v0_3_0") {
+rustc_library("opaque-debug-v0_3_1") {
   crate_name = "opaque_debug"
-  source_root = "//third_party/rust_crates/vendor/opaque-debug-0.3.0/src/lib.rs"
-  output_name = "opaque_debug-56835c6b9238e559"
+  source_root = "//third_party/rust_crates/vendor/opaque-debug-0.3.1/src/lib.rs"
+  output_name = "opaque_debug-aa5e729d76a45ae3"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -11617,13 +11617,13 @@ rustc_library("opaque-debug-v0_3_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=56835c6b9238e559",
-    "-Cextra-filename=-56835c6b9238e559",
+    "-Cmetadata=aa5e729d76a45ae3",
+    "-Cextra-filename=-aa5e729d76a45ae3",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":opaque-debug-v0_3_0.license" ]
+  applicable_licenses = [ ":opaque-debug-v0_3_1.license" ]
 }
 
 license("openat-v0_1_21.license") {
@@ -13087,7 +13087,7 @@ rustc_library("polyval-v0_6_2") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  deps += [ ":opaque-debug-v0_3_0" ]
+  deps += [ ":opaque-debug-v0_3_1" ]
   deps += [ ":universal-hash-v0_5_1" ]
   if (current_cpu == "arm64" || current_cpu == "x64" || false) {
     deps += [ ":cpufeatures-v0_2_1" ]
