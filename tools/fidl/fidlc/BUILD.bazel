@@ -110,7 +110,7 @@ cc_library(
     ],
     implementation_deps = [
         ":json_schema",
-        "@boringssl//src:crypto",
+        "@boringssl//:crypto",
     ],
     includes = ["../.."],
     visibility = [

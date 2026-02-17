@@ -106,6 +106,7 @@ _BAZEL_NO_CONTENT_HASH_REPOSITORIES = (
 # This dictionary is created for determining the paths for external
 # repositories, which use canonical repo names as directory names.
 _APPARENT_REPO_NAME_TO_CANONICAL = {
+    "boringssl": "boringssl+",
     "fuchsia_prebuilt_rust": "+_repo_rules+fuchsia_prebuilt_rust",
 }
 

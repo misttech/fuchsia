@@ -54,6 +54,7 @@ fx-update-bazel-workspace
     --bazel-vendor-dir="${FUCHSIA_DIR}/third_party/bazel_vendor" \
     --repo='@@bazel_features+' \
     --repo='@@bazel_skylib+' \
+    --repo='@@boringssl+' \
     --repo='@@platforms' \
     --repo='@@re2+' \
     --repo='@@rules_cc+' \

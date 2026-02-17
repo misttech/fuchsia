@@ -252,16 +252,10 @@ assembly_developer_overrides_repository(
     overrides_map_from_gn = "fuchsia_build_generated/assembly_developer_overrides.json",
 )
 
-boringssl_repository = use_repo_rule(
-    "//build/bazel/repository_rules:boringssl_repository.bzl",
-    "boringssl_repository",
-)
-
-boringssl_repository(
-    name = "boringssl",
-    # LINT.IfChange
-    content_hash_file = "fuchsia_build_generated/content_hashes/boringssl.hash",
-    # LINT.ThenChange(scripts/workspace_utils.py)
+bazel_dep(name = "boringssl", version = "")
+local_path_override(
+    module_name = "boringssl",
+    path = "third_party/boringssl/src",
 )
 
 generate_prebuilt_clang_toolchain_repository = use_repo_rule(

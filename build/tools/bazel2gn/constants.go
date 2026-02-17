@@ -323,8 +323,8 @@ var thirdPartyRustCrateRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/
 // dependency paths. The key is the Bazel repository name, and the value is the GN dependency
 // path.
 var thirdPartyBazelRepos = map[string]string{
-	"@re2":                   "//third_party/re2",
-	"@boringssl//src:crypto": "//third_party/boringssl:crypto",
+	"@re2":                "//third_party/re2",
+	"@boringssl//:crypto": "//third_party/boringssl:crypto",
 }
 
 // coptToConfig maps from Bazel copt values to configs to use in GN.

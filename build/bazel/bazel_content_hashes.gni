@@ -13,15 +13,6 @@ import("//build/icu/build_config.gni")
 #
 bazel_content_hash_definitions = [
   {
-    repo_name = "boringssl"
-    source_paths = [
-      "//third_party/boringssl/src",
-      "//third_party/boringssl/BUILD.generated.bzl",
-      "//third_party/boringssl/BUILD.generated_tests.bzl",
-      "//build/bazel/repository_rules/boringssl_BUILD.bazel",
-    ]
-  },
-  {
     repo_name = "fuchsia_clang"
     source_paths = [
       # clang_prefix points to bin under clang root.
