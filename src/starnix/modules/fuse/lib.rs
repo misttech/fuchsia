@@ -1561,7 +1561,6 @@ impl FsNodeOps for FuseNode {
     fn update_attributes(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
         current_task: &CurrentTask,
         info: &FsNodeInfo,
         has: zxio_node_attr_has_t,

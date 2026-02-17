@@ -799,7 +799,6 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     fn update_attributes(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
         _current_task: &CurrentTask,
         _info: &FsNodeInfo,
         _has: zxio_node_attr_has_t,
@@ -2129,7 +2128,7 @@ impl FsNode {
             || has.wrapping_key_id
         {
             let locked = locked.cast_locked::<FileOpsCore>();
-            self.ops().update_attributes(locked, self, current_task, &new_info, has)?;
+            self.ops().update_attributes(locked, current_task, &new_info, has)?;
         }
 
         *info = new_info;

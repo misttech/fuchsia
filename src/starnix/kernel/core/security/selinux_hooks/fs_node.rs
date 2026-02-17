@@ -7,8 +7,8 @@
 
 use super::super::{FsNodeSecurityXattr, check_task_capable};
 use super::{
-    Auditable, FileSystem, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs,
-    check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
+    Auditable, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs, check_permission,
+    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, has_fs_node_permissions_dontaudit,
     permissions_from_flags, set_cached_sid,
 };
@@ -1348,18 +1348,9 @@ where
 pub(in crate::security) fn fs_node_copy_up(
     _current_task: &CurrentTask,
     fs_node: &FsNode,
-    fs: &FileSystem,
     new_creds: &mut FullCredentials,
 ) {
-    // TODO: https://fxbug.dev/398696739 - Once this API is updated to accept the `OverlayFsNode`
-    // instead of the lower filesystem node, the `Mountpoint` special-case can be removed.
-    let new_sid = if let Some(label) = fs.security_state.state.label()
-        && let FileSystemLabelingScheme::Mountpoint { sid } = label.scheme
-    {
-        sid
-    } else {
-        fs_node_effective_sid_and_class(fs_node).sid
-    };
+    let new_sid = fs_node_effective_sid_and_class(fs_node).sid;
     new_creds.security_state.lock().fscreate_sid = Some(new_sid);
 }
 
