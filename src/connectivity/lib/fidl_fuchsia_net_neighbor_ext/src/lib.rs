@@ -12,11 +12,32 @@ pub mod testutil;
 use async_utils::{fold, stream};
 use fidl_table_validation::*;
 use futures::{Stream, TryStreamExt as _};
+use std::num::NonZeroU64;
 use thiserror::Error;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_neighbor as fnet_neighbor, zx_types as zx,
 };
+
+#[derive(Debug, Error)]
+enum ConversionError {
+    #[error("interface ID must be non-zero")]
+    ZeroInterface,
+}
+
+struct NonZeroU64Converter;
+
+impl Converter for NonZeroU64Converter {
+    type Fidl = u64;
+    type Validated = NonZeroU64;
+    type Error = ConversionError;
+    fn try_from_fidl(value: Self::Fidl) -> std::result::Result<Self::Validated, Self::Error> {
+        NonZeroU64::new(value).ok_or(ConversionError::ZeroInterface)
+    }
+    fn from_validated(validated: Self::Validated) -> Self::Fidl {
+        validated.get()
+    }
+}
 
 /// Information on a neighboring device in the local network.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, ValidFidlTable)]
@@ -24,7 +45,8 @@ use {
 #[fidl_table_strict]
 pub struct Entry {
     /// Identifier for the interface used for communicating with the neighbor.
-    pub interface: u64,
+    #[fidl_field_type(converter = NonZeroU64Converter)]
+    pub interface: NonZeroU64,
     /// IP address of the neighbor.
     pub neighbor: fnet::IpAddress,
     /// State of the entry within the Neighbor Unreachability Detection (NUD)
@@ -251,9 +273,9 @@ mod tests {
     use futures::{FutureExt, StreamExt as _};
     use test_case::test_case;
 
-    fn valid_fidl_entry(interface: u64) -> fnet_neighbor::Entry {
+    fn valid_fidl_entry(interface: NonZeroU64) -> fnet_neighbor::Entry {
         fnet_neighbor::Entry {
-            interface: Some(interface),
+            interface: Some(interface.get()),
             neighbor: Some(fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, 0, 1] })),
             state: Some(fnet_neighbor::EntryState::Reachable),
             mac: Some(fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] }),
@@ -264,7 +286,7 @@ mod tests {
 
     #[test]
     fn event_try_from_success() {
-        let fidl_entry = valid_fidl_entry(1);
+        let fidl_entry = valid_fidl_entry(NonZeroU64::new(1).unwrap());
         let local_entry: Entry = fidl_entry.clone().try_into().unwrap();
         assert_matches!(
             fnet_neighbor::EntryIteratorItem::Existing(fidl_entry.clone()).try_into(),
@@ -292,11 +314,7 @@ mod tests {
     fn event_try_from_missing_field() {
         let fidl_entry = fnet_neighbor::Entry {
             interface: None, // Required field omitted.
-            neighbor: Some(fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, 0, 1] })),
-            state: Some(fnet_neighbor::EntryState::Reachable),
-            mac: Some(fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] }),
-            updated_at: Some(123456),
-            ..Default::default()
+            ..valid_fidl_entry(NonZeroU64::new(1).unwrap())
         };
         assert_matches!(
             Event::try_from(fnet_neighbor::EntryIteratorItem::Existing(fidl_entry.clone())),
@@ -314,6 +332,15 @@ mod tests {
             Event::try_from(fnet_neighbor::EntryIteratorItem::Removed(fidl_entry.clone())),
             Err(EntryValidationError::MissingField(_))
         );
+    }
+
+    #[test]
+    fn entry_try_from_zero_interface() {
+        let fidl_entry = fnet_neighbor::Entry {
+            interface: Some(0),
+            ..valid_fidl_entry(NonZeroU64::new(1).unwrap())
+        };
+        assert_matches!(Entry::try_from(fidl_entry), Err(EntryValidationError::InvalidField(_)));
     }
 
     // Tests `event_stream_from_view` with various "shapes". The test
@@ -502,7 +529,8 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn collect_neighbors_until_idle_error_unexpected_event() {
-        let event = Ok(Event::Added(valid_fidl_entry(1).try_into().unwrap()));
+        let event =
+            Ok(Event::Added(valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap()));
         let event_stream = futures::stream::once(futures::future::ready(event));
         assert_matches!(
             collect_neighbors_until_idle::<Vec<_>>(event_stream).await,
@@ -512,7 +540,8 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn collect_neighbors_until_idle_error_stream_ended() {
-        let event = Ok(Event::Existing(valid_fidl_entry(1).try_into().unwrap()));
+        let event =
+            Ok(Event::Existing(valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap()));
         let event_stream = futures::stream::once(futures::future::ready(event));
         assert_matches!(
             collect_neighbors_until_idle::<Vec<_>>(event_stream).await,
@@ -522,7 +551,7 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn collect_neighbors_until_idle_success() {
-        let entry: Entry = valid_fidl_entry(1).try_into().unwrap();
+        let entry: Entry = valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap();
         let mut event_stream = futures::stream::iter([
             Ok(Event::Existing(entry.clone())),
             Ok(Event::Idle),

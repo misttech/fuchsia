@@ -183,7 +183,7 @@ fn new_fidl_entry(
         neighbor::EventState::Static(mac) => (fnet_neighbor::EntryState::Static, Some(mac)),
     };
     fnet_neighbor_ext::Entry {
-        interface: binding_id.into(),
+        interface: binding_id,
         neighbor: addr.get().into_ext(),
         state,
         mac: mac.map(IntoExt::into_ext),

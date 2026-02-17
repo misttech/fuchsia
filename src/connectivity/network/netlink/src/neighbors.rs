@@ -90,8 +90,8 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
             IpAddr::V4(_) => AddressFamily::Inet,
             IpAddr::V6(_) => AddressFamily::Inet6,
         };
-        header.ifindex = neighbor.interface.try_into().map_err(|_| {
-            NetlinkNeighborMessageConversionError::InvalidInterfaceId(neighbor.interface)
+        header.ifindex = neighbor.interface.get().try_into().map_err(|_| {
+            NetlinkNeighborMessageConversionError::InvalidInterfaceId(neighbor.interface.get())
         })?;
         header.state = match neighbor.state {
             fnet_neighbor::EntryState::Delay => NeighbourState::Delay,
@@ -378,7 +378,7 @@ pub(crate) enum HandleWatchEventError {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 struct NeighborKey {
-    interface: u64,
+    interface: NonZeroU64,
     neighbor: fnet::IpAddress,
 }
 
@@ -480,7 +480,7 @@ impl NeighborsWorker {
                                 fnet::IpAddress::Ipv6(_) => ip_version == IpVersion::V6,
                             })
                         })
-                        .filter(|n| interface.map_or(true, |i| n.interface == i.get()))
+                        .filter(|n| interface.map_or(true, |i| n.interface == i))
                         .filter_map(|e| NetlinkNeighborMessage::optionally_from(e.clone()))
                         .for_each(|m| {
                             client.send_unicast(m.into_rtnl_new_neighbor(sequence_number, true));
@@ -490,7 +490,7 @@ impl NeighborsWorker {
                 GetNeighborArgs::Get { ip, interface } => {
                     let neighbor = self
                         .neighbor_table
-                        .get(&NeighborKey { interface: interface.get(), neighbor: ip })
+                        .get(&NeighborKey { interface, neighbor: ip })
                         .map(|e| NetlinkNeighborMessage::optionally_from(e.clone()))
                         .flatten();
                     match neighbor {
@@ -547,7 +547,7 @@ mod tests {
 
     fn valid_neighbor_entry() -> fnet_neighbor_ext::Entry {
         fnet_neighbor_ext::Entry {
-            interface: 1,
+            interface: NonZeroU64::new(1).unwrap(),
             neighbor: fidl_ip!("192.168.0.1"),
             state: fnet_neighbor::EntryState::Reachable,
             mac: Some(fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] }),
@@ -557,7 +557,10 @@ mod tests {
 
     #[test]
     fn netlink_neighbor_message_from_entry_invalid_iface_id() {
-        let entry = fnet_neighbor_ext::Entry { interface: u64::MAX, ..valid_neighbor_entry() };
+        let entry = fnet_neighbor_ext::Entry {
+            interface: NonZeroU64::new(u64::MAX).unwrap(),
+            ..valid_neighbor_entry()
+        };
 
         assert_eq!(
             NetlinkNeighborMessage::try_from(entry),
@@ -569,7 +572,7 @@ mod tests {
     fn netlink_neighbor_message_from_entry_valid_iface_id() {
         assert_matches!(
             NetlinkNeighborMessage::try_from(fnet_neighbor_ext::Entry {
-                interface: 1,
+                interface: NonZeroU64::new(1).unwrap(),
                 ..valid_neighbor_entry()
             }),
             Ok(NetlinkNeighborMessage(NeighbourMessage {
@@ -671,7 +674,7 @@ mod tests {
     fn netlink_neighbor_message_optionally_from_failure() {
         assert_eq!(
             NetlinkNeighborMessage::optionally_from(fnet_neighbor_ext::Entry {
-                interface: u64::MAX,
+                interface: NonZeroU64::new(u64::MAX).unwrap(),
                 ..valid_neighbor_entry()
             }),
             None
@@ -681,7 +684,7 @@ mod tests {
     #[test]
     fn netlink_neighbor_message_optionally_from_success() {
         let fidl_entry = fnet_neighbor_ext::Entry {
-            interface: 1,
+            interface: NonZeroU64::new(1).unwrap(),
             neighbor: fidl_ip!("192.168.0.1"),
             state: fnet_neighbor::EntryState::Reachable,
             mac: None,
@@ -728,7 +731,7 @@ mod tests {
     #[test]
     fn neighbor_keyed_by_interface_and_ip() {
         let entry = fnet_neighbor_ext::Entry {
-            interface: 1,
+            interface: NonZeroU64::new(1).unwrap(),
             neighbor: fidl_ip!("192.168.0.1"),
             mac: None,
             state: fnet_neighbor::EntryState::Reachable,
@@ -743,14 +746,18 @@ mod tests {
         };
         assert_eq!(NeighborKey::from(&entry), NeighborKey::from(&same_iface_and_ip));
 
-        let different_iface = fnet_neighbor_ext::Entry { interface: 2, ..entry };
+        let different_iface =
+            fnet_neighbor_ext::Entry { interface: NonZeroU64::new(2).unwrap(), ..entry };
         assert_ne!(NeighborKey::from(&entry), NeighborKey::from(&different_iface));
 
         let different_ip = fnet_neighbor_ext::Entry { neighbor: fidl_ip!("192.168.0.2"), ..entry };
         assert_ne!(NeighborKey::from(&entry), NeighborKey::from(&different_ip));
 
-        let different_iface_and_ip =
-            fnet_neighbor_ext::Entry { interface: 2, neighbor: fidl_ip!("192.168.0.2"), ..entry };
+        let different_iface_and_ip = fnet_neighbor_ext::Entry {
+            interface: NonZeroU64::new(2).unwrap(),
+            neighbor: fidl_ip!("192.168.0.2"),
+            ..entry
+        };
         assert_ne!(NeighborKey::from(&entry), NeighborKey::from(&different_iface_and_ip));
     }
 
@@ -1091,12 +1098,12 @@ mod tests {
 
         let events: Vec<_> = [
             fnet_neighbor_ext::Entry {
-                interface: 2,
+                interface: NonZeroU64::new(2).unwrap(),
                 neighbor: fidl_ip!("192.168.0.1"),
                 ..valid_neighbor_entry()
             },
             fnet_neighbor_ext::Entry {
-                interface: 1,
+                interface: NonZeroU64::new(1).unwrap(),
                 neighbor: fidl_ip!("fe80::2"),
                 ..valid_neighbor_entry()
             },
@@ -1179,22 +1186,22 @@ mod tests {
 
         let events: Vec<_> = [
             fnet_neighbor_ext::Entry {
-                interface: 1,
+                interface: NonZeroU64::new(1).unwrap(),
                 neighbor: fidl_ip!("192.168.0.1"),
                 ..valid_neighbor_entry()
             },
             fnet_neighbor_ext::Entry {
-                interface: 2,
+                interface: NonZeroU64::new(2).unwrap(),
                 neighbor: fidl_ip!("fe80::2"),
                 ..valid_neighbor_entry()
             },
             fnet_neighbor_ext::Entry {
-                interface: 3,
+                interface: NonZeroU64::new(3).unwrap(),
                 neighbor: fidl_ip!("192.168.0.3"),
                 ..valid_neighbor_entry()
             },
             fnet_neighbor_ext::Entry {
-                interface: 4,
+                interface: NonZeroU64::new(4).unwrap(),
                 neighbor: fidl_ip!("fe80::4"),
                 ..valid_neighbor_entry()
             },

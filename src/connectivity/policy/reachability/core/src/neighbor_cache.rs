@@ -133,7 +133,7 @@ impl NeighborCache {
         let updated_at = zx::MonotonicInstant::from_nanos(updated_at);
 
         let InterfaceNeighborCache { neighbors } =
-            interfaces.entry(interface).or_insert_with(Default::default);
+            interfaces.entry(interface.get()).or_insert_with(Default::default);
 
         match event {
             Event::Added => match neighbors.entry(neighbor) {
@@ -163,7 +163,8 @@ impl NeighborCache {
                         // Clean up interface state when we see all neighbors
                         // removed. Unwrap is valid because `neighbors` is
                         // itself a borrow into the map's entry.
-                        InterfaceNeighborCache { .. } = interfaces.remove(&interface).unwrap();
+                        InterfaceNeighborCache { .. } =
+                            interfaces.remove(&interface.get()).unwrap();
                     }
                 }
                 None => {

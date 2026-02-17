@@ -330,7 +330,7 @@ impl From<fidl_fuchsia_net_neighbor_ext::Entry> for NeighborTableEntry {
     ) -> NeighborTableEntry {
         let fidl_fuchsia_net_ext::IpAddress(neighbor) = neighbor.into();
         NeighborTableEntry {
-            interface,
+            interface: interface.into(),
             neighbor,
             state: fidl_fuchsia_net_neighbor_ext::display_entry_state(&state),
             mac: mac.map(|mac| mac.into()),
