@@ -9,9 +9,9 @@
 
 __EXPORT size_t __sanitizer_fast_backtrace(uintptr_t buffer[], size_t buffer_size) {
   std::span<uintptr_t> pcs{buffer, buffer_size};
-  size_t count = __libc_sanitizer::BacktraceByShadowCallStack(pcs);
+  size_t count = LIBC_NAMESPACE::BacktraceByShadowCallStack(pcs);
   if (count == 0) {
-    count = __libc_sanitizer::BacktraceByFramePointer(pcs);
+    count = LIBC_NAMESPACE::BacktraceByFramePointer(pcs);
   }
   return count;
 }

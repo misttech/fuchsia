@@ -113,13 +113,13 @@ struct BacktraceMethod {
 };
 
 constexpr BacktraceMethod kByFramePointer = {
-    .getter = __libc_sanitizer::BacktraceByFramePointer,
+    .getter = LIBC_NAMESPACE::BacktraceByFramePointer,
     .name = "frame pointers",
     .enabled = true,
 };
 
 constexpr BacktraceMethod kByShadowCallStack = {
-    .getter = __libc_sanitizer::BacktraceByShadowCallStack,
+    .getter = LIBC_NAMESPACE::BacktraceByShadowCallStack,
     .name = "shadow call stack",
     .enabled = __has_feature(shadow_call_stack),
 };

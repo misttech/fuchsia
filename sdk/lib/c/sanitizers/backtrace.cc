@@ -8,7 +8,7 @@
 
 #include "threads_impl.h"
 
-namespace __libc_sanitizer {
+namespace LIBC_NAMESPACE_DECL {
 
 size_t BacktraceByFramePointer(std::span<uintptr_t> pcs) {
   struct IsOnStack {
@@ -43,4 +43,4 @@ size_t BacktraceByShadowCallStack(std::span<uintptr_t> pcs) {
 
 #endif  // __has_feature(shadow_call_stack)
 
-}  // namespace __libc_sanitizer
+}  // namespace LIBC_NAMESPACE_DECL

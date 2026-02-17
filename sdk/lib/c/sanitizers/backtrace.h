@@ -6,14 +6,16 @@
 #include <cstdint>
 #include <span>
 
-namespace __libc_sanitizer {
+#include "src/__support/macros/config.h"
+
+namespace LIBC_NAMESPACE_DECL {
 
 size_t BacktraceByFramePointer(std::span<uintptr_t> pcs);
 
-#if __has_feature(shadow_call_stack)
 size_t BacktraceByShadowCallStack(std::span<uintptr_t> pcs);
-#else
+
+#if !__has_feature(shadow_call_stack)
 inline size_t BacktraceByShadowCallStack(std::span<uintptr_t> pcs) { return 0; }
 #endif
 
-}  // namespace __libc_sanitizer
+}  // namespace LIBC_NAMESPACE_DECL

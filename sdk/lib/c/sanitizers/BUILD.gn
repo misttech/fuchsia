@@ -6,15 +6,7 @@ import("//build/config/zircon/levels.gni")
 import("../libc.gni")
 
 if (zircon_toolchain != false) {
-  source_set("sanitizers") {
-    deps = [
-      ":backtrace",
-      ":debugdata",
-      ":memory-snapshot",
-      "//zircon/system/ulib/zircon-internal",
-      "//zircon/system/ulib/zx",
-      "//zircon/third_party/ulib/musl:musl_internal",
-    ]
+  libc_source_set("sanitizers") {
     sources = [
       "__asan_early_init.c",
       "__sanitizer_change_code_protection.cc",
@@ -24,6 +16,19 @@ if (zircon_toolchain != false) {
       "hwasan-stubs.cc",
       "safestack.cc",
       "ubsan-stubs.cc",
+    ]
+
+    configs = [ "//build/config:Wno-missing-declarations" ]
+
+    libc_deps = [
+      ":backtrace",
+      ":debugdata",
+      ":memory-snapshot",
+    ]
+    deps = [
+      "//zircon/system/ulib/zircon-internal",
+      "//zircon/system/ulib/zx",
+      "//zircon/third_party/ulib/musl:musl_internal",
     ]
 
     # There is no '#if __has_feature(coverage)', so this has to be excluded
@@ -36,7 +41,8 @@ if (zircon_toolchain != false) {
     }
   }
 
-  source_set("debugdata") {
+  libc_source_set("debugdata") {
+    visibility = [ ":*" ]
     sources = [ "debugdata.cc" ]
     deps = [
       "//sdk/lib/ld:fuchsia-debugdata",
@@ -47,10 +53,10 @@ if (zircon_toolchain != false) {
 
   # This code is only needed when compiling for sancov, but the file itself
   # must be compiled without instrumentation of any kind.
-  source_set("sancov-stubs") {
+  libc_source_set("sancov-stubs") {
     visibility = [ ":*" ]
     sources = [ "sancov-stubs.cc" ]
-    configs += [ "//build/config/sanitizers:no_sanitizers" ]
+    configs = [ "//build/config/sanitizers:no_sanitizers" ]
   }
 }
 
@@ -77,13 +83,8 @@ libc_source_set("backtrace") {
 
   # Always compile with frame pointers so that BacktraceByFramePointer reliably
   # has one for its own caller's frame to show up in the backtrace.
-  if (defined(configs)) {
-    configs -= [ "//build/config:default_frame_pointers" ]
-  } else {
-    configs = []
-  }
   remove_configs = [ "//build/config:default_frame_pointers" ]
-  configs += [ "//build/config:frame_pointers" ]
+  configs = [ "//build/config:frame_pointers" ]
 }
 
 libc_test("unittests") {
