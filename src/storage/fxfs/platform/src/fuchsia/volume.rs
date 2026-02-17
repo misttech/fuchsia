@@ -996,7 +996,6 @@ mod tests {
     use crate::fuchsia::volumes_directory::VolumesDirectory;
     use crate::volume::MAX_READ_AHEAD_SIZE;
     use delivery_blob::CompressionMode;
-    use fidl_fuchsia_fs_startup::VolumeMarker;
     use fidl_fuchsia_fxfs::{BytesAndNodes, ProjectIdMarker};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
@@ -1015,9 +1014,6 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use vfs::directory::entry_container::Directory;
-    use vfs::execution_scope::ExecutionScope;
-    use vfs::path::Path;
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -1750,13 +1746,10 @@ mod tests {
                 .mount_volume(VOLUME_NAME, None, false)
                 .await
                 .expect("mount unencrypted volume failed");
-            // TODO(https://fxbug.dev/378924259): Migrate to open3.
-            let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
-            volumes_directory.directory_node().clone().deprecated_open(
-                ExecutionScope::new(),
-                fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE,
-                Path::validate_and_split(VOLUME_NAME).unwrap(),
-                volume_server_end.into_channel().into(),
+
+            let (volume_proxy, _scope) = crate::volumes_directory::serve_startup_volume_proxy(
+                &volumes_directory,
+                VOLUME_NAME,
             );
 
             let project_proxy = {

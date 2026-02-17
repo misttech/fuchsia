@@ -951,8 +951,29 @@ impl StoreOwner for VolumesDirectory {
 }
 
 #[cfg(test)]
+pub(crate) fn serve_startup_volume_proxy(
+    volumes_directory: &Arc<VolumesDirectory>,
+    volume_name: &str,
+) -> (fidl_fuchsia_fs_startup::VolumeProxy, vfs::ExecutionScope) {
+    use vfs::ToObjectRequest;
+    use vfs::service::ServiceLike;
+    let scope = vfs::ExecutionScope::new();
+    let entry = volumes_directory.directory_node().get_entry(volume_name).unwrap();
+    let service = entry.into_any().downcast::<vfs::service::Service>().unwrap();
+    let (proxy, server) = fidl::endpoints::create_proxy::<fidl_fuchsia_fs_startup::VolumeMarker>();
+    service
+        .connect(
+            scope.clone(),
+            Default::default(),
+            &mut fio::Flags::PROTOCOL_SERVICE.to_object_request(server),
+        )
+        .unwrap();
+    (proxy, scope)
+}
+
+#[cfg(test)]
 mod tests {
-    use super::Mode;
+    use super::{Mode, serve_startup_volume_proxy};
     use crate::fuchsia::RemoteCrypt;
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
@@ -961,7 +982,7 @@ mod tests {
     use crate::testing::TestFixtureOptions;
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
-    use fidl_fuchsia_fs_startup::{MountOptions, VolumeMarker, VolumeProxy};
+    use fidl_fuchsia_fs_startup::{MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
@@ -982,9 +1003,6 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use vfs::directory::entry_container::Directory;
-    use vfs::execution_scope::ExecutionScope;
-    use vfs::path::Path;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -1388,18 +1406,9 @@ mod tests {
             .create_and_mount_volume("vol", None, false, None)
             .await
             .expect("create_and_mount_volume failed");
-        let store_id = vol.volume().store().store_object_id();
         let guid = vol.volume().store().guid();
 
-        let (volume_proxy, volume_server_end): (VolumeProxy, _) = create_proxy::<VolumeMarker>();
-        let volumes_directory_clone = volumes_directory.clone();
-        fasync::Task::spawn(async move {
-            volumes_directory_clone
-                .handle_volume_requests("vol", volume_server_end.into_stream(), store_id)
-                .await
-                .unwrap();
-        })
-        .detach();
+        let (volume_proxy, _scope) = serve_startup_volume_proxy(&volumes_directory, "vol");
 
         let info: fidl_fuchsia_fs_startup::VolumeInfo = volume_proxy
             .get_info()
@@ -1474,15 +1483,7 @@ mod tests {
         };
         volumes_directory.lock().await.unmount(store_id).await.expect("unmount failed");
 
-        let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
-        let scope = ExecutionScope::new();
-        // TODO(https://fxbug.dev/378924259): Migrate this to open3.
-        volumes_directory.directory_node().clone().deprecated_open(
-            scope.clone(),
-            fio::OpenFlags::empty(),
-            Path::validate_and_split("encrypted").unwrap(),
-            volume_server_end.into_channel().into(),
-        );
+        let (volume_proxy, _scope) = serve_startup_volume_proxy(&volumes_directory, "encrypted");
 
         let (dir_proxy, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
 
@@ -1595,15 +1596,7 @@ mod tests {
         };
         volumes_directory.lock().await.unmount(store_id).await.expect("unmount failed");
 
-        let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
-        let scope = ExecutionScope::new();
-        // TODO(https://fxbug.dev/378924259): Migrate this to open3.
-        volumes_directory.directory_node().clone().deprecated_open(
-            scope.clone(),
-            fio::OpenFlags::empty(),
-            Path::validate_and_split("encrypted").unwrap(),
-            volume_server_end.into_channel().into(),
-        );
+        let (volume_proxy, _scope) = serve_startup_volume_proxy(&volumes_directory, "encrypted");
 
         let crypt_service = Arc::new(fxfs_crypt::CryptService::new());
         crypt_service
@@ -1791,15 +1784,8 @@ mod tests {
                 .await
                 .expect("create unencrypted volume failed");
 
-            let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
-            let scope = ExecutionScope::new();
-            // TODO(https://fxbug.dev/378924259): Migrate this to open3.
-            volumes_directory.directory_node().clone().deprecated_open(
-                scope.clone(),
-                fio::OpenFlags::empty(),
-                Path::validate_and_split(VOLUME_NAME).unwrap(),
-                volume_server_end.into_channel().into(),
-            );
+            let (volume_proxy, _scope) =
+                serve_startup_volume_proxy(&volumes_directory, VOLUME_NAME);
 
             volume_proxy.set_limit(BYTES_LIMIT_1).await.unwrap().expect("To set limits");
             {
@@ -1860,7 +1846,7 @@ mod tests {
     }
 
     struct VolumeInfo {
-        _scope: ExecutionScope,
+        _scope: vfs::ExecutionScope,
         volume_proxy: VolumeProxy,
         file_proxy: fio::FileProxy,
     }
@@ -1878,15 +1864,7 @@ mod tests {
                 .serve_volume(&volume, dir_server_end, false)
                 .expect("serve_volume failed");
 
-            let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
-            let scope = ExecutionScope::new();
-            // TODO(https://fxbug.dev/378924259): Migrate this to Open3.
-            volumes_directory.directory_node().clone().deprecated_open(
-                scope.clone(),
-                fio::OpenFlags::empty(),
-                Path::validate_and_split(name).unwrap(),
-                volume_server_end.into_channel().into(),
-            );
+            let (volume_proxy, _scope) = serve_startup_volume_proxy(&volumes_directory, name);
 
             let (root_proxy, root_server_end) =
                 fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
@@ -1909,7 +1887,7 @@ mod tests {
                 &Default::default(),
             )
             .await;
-            VolumeInfo { _scope: scope, volume_proxy, file_proxy }
+            VolumeInfo { _scope, volume_proxy, file_proxy }
         }
     }
 

@@ -30,6 +30,7 @@ pub trait ServiceLike: Node {
     ) -> Result<(), Status>;
 }
 
+#[derive(Default)]
 pub struct ServiceOptions;
 
 /// Constructs a node in your file system that will host a service that implements a statically
