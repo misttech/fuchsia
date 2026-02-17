@@ -8,6 +8,10 @@
 # features for the test to pass, or a temporary exclusion because a
 # bug is causing the test to fail too often.
 
+wlancfg_tests_for_general_cq = [
+  "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
+]
+
 wlancfg_tests_for_general_cq_shielded_dut_only = [
   "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
   "//src/connectivity/wlan/tests/wlancfg:suggest_ap_mac_address_test",

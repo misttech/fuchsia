@@ -45,13 +45,19 @@ group("tests_host") {
   testonly = true
   public_deps = [
     ":tests_for_fyi",
+    ":tests_for_general_cq",
     ":tests_for_general_cq_shielded_dut_only",
   ]
 }
 
 group("tests_for_fyi") {
   testonly = true
-  public_deps = [ ":start_stop_client_connections_test" ]
+  public_deps = []
+}
+
+group("tests_for_general_cq") {
+  testonly = true
+  public_deps = wlancfg_tests_for_general_cq
 }
 
 group("tests_for_general_cq_shielded_dut_only") {
