@@ -110,6 +110,11 @@
         "instance_id": "fegvv0zc8CatnDMSQVfpr9APqmg5qpviHM94ggST4zoC"
     },
     {
+        "package": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
+        "version": "version:arm-trusted-firmware=c17351450c8a513ca3f30f936e26a71db693a145;u-boot=127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3,1",
+        "instance_id": "2LlbOxGJ05FfVtA3ZemoXT-NRu1E81d3QiAECYS8hxIC"
+    },
+    {
         "package": "fuchsia/firmware/wlan/intel/iwlwifi",
         "version": "version:10",
         "instance_id": "9Ciaz9lEUJelUYsIxZLYMscPuEvCHEqJUTyZzzxMudoC"
