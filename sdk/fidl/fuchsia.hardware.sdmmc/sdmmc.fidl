@@ -78,6 +78,16 @@ type SdmmcReq = resource struct {
     /// The client ID for this request. Only VMOs registered with this client may be present in
     /// buffers below.
     client_id uint8;
+
+    /// If true, the `slot` and `dun` will be used to encrypt/decrypt this request.
+    use_inline_crypto bool;
+
+    /// The key slot used to encrypt/decrypt the bytes in this request.
+    slot uint8;
+
+    /// The data unit number used as an initialization vector for this encrypted IO request.
+    dun uint32;
+
     buffers vector<SdmmcBufferRegion>:MAX;
 };
 

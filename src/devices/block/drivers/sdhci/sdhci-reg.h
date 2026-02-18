@@ -340,6 +340,50 @@ class HostControllerVersion : public hwreg::RegisterBase<HostControllerVersion, 
   DEF_FIELD(7, 0, specification_version);
 };
 
+class CommandQueuingCapabilities
+    : public hwreg::RegisterBase<CommandQueuingCapabilities, uint32_t> {
+ public:
+  static auto Get() { return hwreg::RegisterAddr<CommandQueuingCapabilities>(0x04); }
+
+  DEF_FIELD(31, 29, reserved0);
+  DEF_BIT(28, crypto_support);
+  DEF_FIELD(27, 16, reserved1);
+  DEF_FIELD(15, 12, internal_clock_frequency_multiplier);
+  DEF_FIELD(11, 10, reserved2);
+  DEF_FIELD(9, 0, internal_clock_frequency_value);
+};
+
+class CommandQueuingConfiguration
+    : public hwreg::RegisterBase<CommandQueuingConfiguration, uint32_t> {
+ public:
+  static auto Get() { return hwreg::RegisterAddr<CommandQueuingConfiguration>(0x08); }
+
+  DEF_FIELD(31, 13, reserved0);
+  DEF_BIT(12, direct_command_enable);
+  DEF_BIT(11, reserved1);
+  DEF_FIELD(10, 9, transaction_type);
+  DEF_BIT(8, task_descriptor_size);
+  DEF_FIELD(7, 2, reserved2);
+  DEF_BIT(1, crypto_enable);
+  DEF_BIT(0, cq_enable);
+};
+
+class CryptoNonQueueParameters : public hwreg::RegisterBase<CryptoNonQueueParameters, uint32_t> {
+ public:
+  static auto Get() { return hwreg::RegisterAddr<CryptoNonQueueParameters>(0x70); }
+
+  DEF_FIELD(31, 9, reserved);
+  DEF_BIT(8, crypto_enable);
+  DEF_FIELD(7, 0, crypto_config_idx);
+};
+
+class CryptoNonQueueDun : public hwreg::RegisterBase<CryptoNonQueueDun, uint32_t> {
+ public:
+  static auto Get() { return hwreg::RegisterAddr<CryptoNonQueueDun>(0x74); }
+
+  DEF_FIELD(31, 0, dun);
+};
+
 }  // namespace sdhci
 
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_SDHCI_SDHCI_REG_H_

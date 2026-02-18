@@ -81,6 +81,7 @@ Request SplitRequest(Request& request, uint32_t block_offset, uint32_t block_siz
     case Operation::Tag::Read:
     case Operation::Tag::Write:
       request.operation.read.vmo_offset += static_cast<uint64_t>(block_offset) * block_size;
+      request.operation.read.options.inline_crypto.dun += block_offset;
       break;
     case Operation::Tag::Trim:
       break;

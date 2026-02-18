@@ -274,6 +274,9 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
   fdf::WireSharedClient<fuchsia_hardware_sdmmc::InBandInterrupt> interrupt_cb_;
   bool card_interrupt_masked_ TA_GUARDED(mtx_) = false;
 
+  // Set to true if the device has inline crypto support.
+  bool supports_inline_crypto_ = false;
+
   // Keep one SdmmcVmoStore for each possible client ID (IDs are in [0,
   // fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId]).
   std::array<SdmmcVmoStore, fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId + 1>

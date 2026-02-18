@@ -529,6 +529,11 @@ struct RequestAccessor<BlockOperation> {
   uint64_t device_block_offset() const { return rw.offset_dev; }
   uint32_t block_count() const { return rw.length; }
   zx_handle_t vmo() const { return rw.vmo; }
+  bool use_inline_crypto() const {
+    return rw.command.flags & BLOCK_IO_FLAG_INLINE_ENCRYPTION_ENABLED;
+  }
+  uint8_t slot() const { return rw.slot; }
+  uint32_t dun() const { return rw.dun; }
 
   const block_read_write_t& rw;
 };
@@ -544,6 +549,9 @@ struct RequestAccessor<block_server::Request> {
   uint64_t vmo_offset(uint32_t block_size) const { return request.operation.read.vmo_offset; }
   uint64_t device_block_offset() const { return request.operation.read.device_block_offset; }
   uint32_t block_count() const { return request.operation.read.block_count; }
+  bool use_inline_crypto() const { return request.operation.read.options.inline_crypto.is_enabled; }
+  uint8_t slot() const { return request.operation.read.options.inline_crypto.slot; }
+  uint32_t dun() const { return request.operation.read.options.inline_crypto.dun; }
 
   zx_handle_t vmo() const { return request.vmo->get(); }
 
@@ -593,6 +601,10 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     rw_multiple_block.cmd_flags = cmd_flags;
     rw_multiple_block.arg = static_cast<uint32_t>(first_request.device_block_offset());
     rw_multiple_block.blocksize = block_info_.block_size;
+    rw_multiple_block.use_inline_crypto = first_request.use_inline_crypto();
+    rw_multiple_block.slot = first_request.slot();
+    rw_multiple_block.dun = first_request.dun();
+
     rw_multiple_block.buffers.Allocate(arena, 1);
     auto buffer_region =
         GetBufferRegion(first_request.vmo(), first_request.vmo_offset(block_info_.block_size),
@@ -674,6 +686,8 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     // The following buffer regions point to the data.
     for (size_t i = 0; i < requests.size(); i++) {
       const RequestAccessor<Request> request(&requests[i]);
+      // TODO(https://fxbug.dev/436663316): Support multiple packed commands with inline crypto.
+      ZX_ASSERT(!request.use_inline_crypto());
       readwrite_metadata_.packed_command_header_data->arg[i].cmd23_arg = request.block_count();
       readwrite_metadata_.packed_command_header_data->arg[i].cmdXX_arg =
           static_cast<uint32_t>(request.device_block_offset());
@@ -1385,6 +1399,16 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
       if (bytes == 0)
         return;
 
+      size_t max_requests = max_requests_;
+
+      // If inline encryption is enabled, we don't pack requests since we need a way to adjust the
+      // DUN for a non-contiguous set of reads/writes.
+      // TODO(https://fxbug.dev/436663316): Support packed commands with inline crypto.
+      if (request.operation.read.options.inline_crypto.is_enabled) {
+        [[maybe_unused]] auto result = Flush();
+        max_requests = 1;
+      }
+
       if (max_bytes_ > 0) {
         for (;;) {
           const uint64_t space = max_bytes_ - total_bytes_;
@@ -1414,7 +1438,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
       }
       requests_.push_back(request);
       total_bytes_ += bytes;
-      if (requests_.size() >= max_requests_ || (max_bytes_ > 0 && total_bytes_ >= max_bytes_)) {
+      if (requests_.size() >= max_requests || (max_bytes_ > 0 && total_bytes_ >= max_bytes_)) {
         [[maybe_unused]] auto result = Flush();
       }
     }
@@ -1451,7 +1475,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     PartitionDevice& partition_;
     const size_t max_requests_;
     const uint64_t max_bytes_;
-    uint32_t block_size_;
+    const uint32_t block_size_;
     std::vector<block_server::Request> requests_;
     uint64_t total_bytes_ = 0;
   };

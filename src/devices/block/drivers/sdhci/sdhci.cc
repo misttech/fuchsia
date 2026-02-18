@@ -47,6 +47,9 @@ constexpr uint32_t Lo32(zx_paddr_t val) { return val & 0xffffffff; }
 // also see SDMMC_PAGES_COUNT in fuchsia.hardware.sdmmc
 constexpr int kDmaDescCount = 512;
 
+// We should be able to query at least the crypto capabilities from 0x7C + 4.
+constexpr size_t kMinimumCqhciMmioSize = (0x7C + 4);
+
 uint16_t GetClockDividerValue(const uint32_t base_clock, const uint32_t target_rate) {
   if (target_rate >= base_clock) {
     // A clock divider of 0 means "don't divide the clock"
@@ -489,6 +492,23 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::Request(
     // one command at a time
     if (pending_request_) {
       return zx::error(ZX_ERR_SHOULD_WAIT);
+    }
+
+    if (request.use_inline_crypto) {
+      if (!supports_inline_crypto_) {
+        return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      CryptoNonQueueParameters::Get()
+          .FromValue(0)
+          .set_crypto_config_idx(request.slot)
+          .set_crypto_enable(true)
+          .WriteTo(&*regs_cqhci_mmio_buffer_);
+      CryptoNonQueueDun::Get().FromValue(0).set_dun(request.dun).WriteTo(&*regs_cqhci_mmio_buffer_);
+    } else if (supports_inline_crypto_) {
+      // The controller supports inline crypto but this request doesn't use it. Make sure we disable
+      // the crypto configuration for this request.
+      CryptoNonQueueParameters::Get().FromValue(0).set_crypto_enable(false).WriteTo(
+          &*regs_cqhci_mmio_buffer_);
     }
 
     if (zx::result pending_request = StartRequest(request, builder); pending_request.is_ok()) {
@@ -1410,6 +1430,14 @@ zx_status_t Sdhci::Init() {
     metadata.max_command_packing() = 0;
   }
 
+  if (supports_inline_crypto_) {
+    FDF_LOG(INFO, "enabling cryptographic operation support");
+    CommandQueuingConfiguration::Get()
+        .ReadFrom(&*regs_cqhci_mmio_buffer_)
+        .set_crypto_enable(true)
+        .WriteTo(&*regs_cqhci_mmio_buffer_);
+  }
+
   if (zx::result result = metadata_server_.SetMetadata(metadata); result.is_error()) {
     FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
     return result.status_value();
@@ -1475,13 +1503,32 @@ zx_status_t Sdhci::InitCqhciMmio() {
     vmo_offset = mmio.value()->offset;
   }
 
+  size_t vmo_size;
+  if (zx_status_t status = vmo.get_size(&vmo_size); status != ZX_OK) {
+    FDF_LOG(ERROR, "error querying mmio vmo size: %s", zx_status_get_string(status));
+    return status;
+  }
+  if (vmo_size < vmo_offset) {
+    FDF_LOG(ERROR, "cqhci mmio size (%zu) is smaller than offset (%" PRIu64 ")!", vmo_size,
+            vmo_offset);
+    return ZX_ERR_IO_INVALID;
+  }
+  const size_t cqhci_mmio_size = vmo_size - vmo_offset;
+  if (cqhci_mmio_size < kMinimumCqhciMmioSize) {
+    FDF_LOG(ERROR, "cqhci mmio size (%zu) is smaller than expected minimum (%zu)!", cqhci_mmio_size,
+            kMinimumCqhciMmioSize);
+    return ZX_ERR_IO_INVALID;
+  }
+
   zx::result<fdf::MmioBuffer> regs_mmio_buffer = fdf::MmioBuffer::Create(
-      vmo_offset, kRegisterSetSize, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+      vmo_offset, cqhci_mmio_size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (regs_mmio_buffer.is_error()) {
-    FDF_LOG(ERROR, "sdhci: error %s in mmio_buffer_init", regs_mmio_buffer.status_string());
+    FDF_LOG(ERROR, "error %s in mmio_buffer_init", regs_mmio_buffer.status_string());
     return regs_mmio_buffer.status_value();
   }
   regs_cqhci_mmio_buffer_ = *std::move(regs_mmio_buffer);
+  supports_inline_crypto_ =
+      CommandQueuingCapabilities::Get().ReadFrom(&*regs_cqhci_mmio_buffer_).crypto_support();
 
   return ZX_OK;
 }

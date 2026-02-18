@@ -66,7 +66,7 @@ closed protocol Device {
         offset zx.Off;
     }) error zx.Status;
 
-    /// Mmio size minus offset must be at least 260 bytes as per the CQHCI specification.
+    /// Mmio size minus offset must be at least 128 bytes (0x7C + 4) as per the CQHCI specification.
     /// Returns
     /// - ZX_ERR_NOT_SUPPORTED if the device does not support CQHCI
     strict GetCqhciMmio() -> (resource struct {
