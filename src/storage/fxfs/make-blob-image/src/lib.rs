@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, anyhow};
+use delivery_blob::Type1Blob;
 use delivery_blob::compression::ChunkedArchive;
 use fuchsia_async as fasync;
 use fuchsia_merkle::{Hash, MerkleRootBuilder};
@@ -19,7 +20,6 @@ use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
     DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions, ObjectStore, StoreOptions,
 };
-use fxfs::round::round_up;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -273,30 +273,14 @@ enum BlobData {
     Compressed(ChunkedArchive),
 }
 
-impl BlobData {
-    fn compressed_offsets(&self) -> Option<Vec<u64>> {
-        if let BlobData::Compressed(archive) = self {
-            let mut offsets = vec![0 as u64];
-            let chunks = archive.chunks();
-            if chunks.len() > 1 {
-                offsets.reserve(chunks.len() - 1);
-                for chunk in &chunks[..chunks.len() - 1] {
-                    offsets.push(*offsets.last().unwrap() + chunk.compressed_data.len() as u64);
-                }
-            }
-            Some(offsets)
-        } else {
-            None
-        }
+fn compressed_offsets(chunked_archive: &ChunkedArchive) -> Vec<u64> {
+    let mut offsets = Vec::with_capacity(chunked_archive.chunks().len());
+    let mut offset: u64 = 0;
+    for chunk in chunked_archive.chunks() {
+        offsets.push(offset);
+        offset += chunk.compressed_data.len() as u64;
     }
-
-    fn chunk_size(&self) -> Option<u64> {
-        if let BlobData::Compressed(archive) = self {
-            Some(archive.chunk_size() as u64)
-        } else {
-            None
-        }
-    }
+    offsets
 }
 
 /// Represents a blob ready to be installed into an FxBlob instance.
@@ -326,7 +310,7 @@ impl BlobToInstall {
 
         let uncompressed_size = data.len();
         let data = if compression_enabled {
-            maybe_compress(data, fuchsia_merkle::BLOCK_SIZE, fs_block_size)
+            maybe_compress(data, fs_block_size)
         } else {
             BlobData::Uncompressed(data)
         };
@@ -334,12 +318,12 @@ impl BlobToInstall {
             BlobData::Uncompressed(_) => {
                 BlobMetadata { merkle_leaves: hashes, format: BlobFormat::Uncompressed }
             }
-            BlobData::Compressed(_) => BlobMetadata {
+            BlobData::Compressed(chunked_archive) => BlobMetadata {
                 merkle_leaves: hashes,
                 format: BlobFormat::ChunkedZstd {
                     uncompressed_size: uncompressed_size as u64,
-                    chunk_size: data.chunk_size().unwrap(),
-                    compressed_offsets: data.compressed_offsets().unwrap(),
+                    chunk_size: chunked_archive.chunk_size() as u64,
+                    compressed_offsets: compressed_offsets(&chunked_archive),
                 },
             },
         };
@@ -432,13 +416,15 @@ async fn install_blob_with_json_output(
     })
 }
 
-fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize) -> BlobData {
+fn maybe_compress(buf: Vec<u8>, filesystem_block_size: usize) -> BlobData {
     if buf.len() <= filesystem_block_size {
         return BlobData::Uncompressed(buf); // No savings, return original data.
     }
-    let archive: ChunkedArchive =
-        ChunkedArchive::new(&buf, block_size).expect("failed to compress data");
-    if round_up(archive.compressed_data_size(), filesystem_block_size).unwrap() >= buf.len() {
+    let archive: ChunkedArchive = ChunkedArchive::new(&buf, Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
+        .expect("failed to compress data");
+    if archive.compressed_data_size().checked_next_multiple_of(filesystem_block_size).unwrap()
+        >= buf.len()
+    {
         BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
         BlobData::Compressed(archive)

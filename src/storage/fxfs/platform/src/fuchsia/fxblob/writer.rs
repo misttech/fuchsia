@@ -86,7 +86,7 @@ impl Stage {
 }
 
 /// Represents an RFC-0207 compliant delivery blob that is being written. Used to implement the
-/// fuchisa.fxfs/BlobWriter protocol (see [`Self::handle_requests`]).
+/// fuchsia.fxfs/BlobWriter protocol (see [`Self::handle_requests`]).
 ///
 /// Once all data for the delivery blob has been written, the calculated Merkle root is verified
 /// against [`Self::hash`]. On success, the blob is added under the [`Self::parent`] directory.
@@ -461,7 +461,7 @@ impl DeliveryBlobWriter {
         if self.header().is_compressed && self.decompressor.is_none() {
             let prev_buff_len = self.buffer.len();
             let archive_length = self.header().payload_length;
-            let Some((seek_table, chunk_data)) = decode_archive(&self.buffer, archive_length)
+            let Some((decoded_archive, chunk_data)) = decode_archive(&self.buffer, archive_length)
                 .context("Failed to decode archive header")?
             else {
                 return Ok(()); // Not enough data to decode archive header/seek table.
@@ -474,7 +474,7 @@ impl DeliveryBlobWriter {
             let hash = self.hash.clone();
             self.decompressor = Some(
                 ChunkedDecompressor::new_with_error_handler(
-                    seek_table,
+                    decoded_archive,
                     Box::new(move |chunk_index, chunk_info, chunk_data| {
                         on_decompression_error(hash, chunk_index, chunk_info, chunk_data);
                     }),

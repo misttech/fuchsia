@@ -21,7 +21,7 @@
 //! file.set_len(payload.len() as u64).unwrap();
 //! file.write_all(&payload).unwrap();
 
-use crate::compression::{ChunkedArchive, ChunkedDecompressor};
+use crate::compression::{ChunkedArchive, ChunkedArchiveOptions, ChunkedDecompressor};
 use crate::format::SerializedType1Blob;
 use serde::{Deserialize, Serialize};
 use static_assertions::assert_eq_size;
@@ -257,7 +257,11 @@ impl Type1Blob {
         header_length: std::mem::size_of::<SerializedType1Blob>() as u32,
     };
 
-    const CHUNK_ALIGNMENT: usize = fuchsia_merkle::BLOCK_SIZE;
+    pub const CHUNKED_ARCHIVE_OPTIONS: ChunkedArchiveOptions = ChunkedArchiveOptions::V2 {
+        chunk_alignment: fuchsia_merkle::BLOCK_SIZE,
+        minimum_chunk_size: 32 * 1024,
+        compression_level: 14,
+    };
 
     /// Generate a Type 1 delivery blob for `data` using the specified `mode`.
     ///
@@ -282,7 +286,7 @@ impl Type1Blob {
         // Compress `data` depending on `compression_mode` and if we save any space.
         let compressed = match mode {
             CompressionMode::Attempt | CompressionMode::Always => {
-                let compressed = ChunkedArchive::new(data, Self::CHUNK_ALIGNMENT)
+                let compressed = ChunkedArchive::new(data, Self::CHUNKED_ARCHIVE_OPTIONS)
                     .expect("failed to compress data");
                 if mode == CompressionMode::Always || compressed.serialized_size() <= data.len() {
                     Some(compressed)
@@ -329,10 +333,10 @@ impl Type1Blob {
             return Ok(header.payload_length as u64);
         }
 
-        let (seek_table, _chunk_data) =
+        let (decoded_archive, _chunk_data) =
             compression::decode_archive(payload, header.payload_length)?
                 .ok_or(DecompressError::NeedMoreData)?;
-        Ok(seek_table.into_iter().map(|chunk| chunk.decompressed_range.len() as u64).sum())
+        Ok(decoded_archive.decompressed_size() as u64)
     }
 
     /// Decompress a Type 1 delivery blob in `delivery_blob`.
@@ -353,9 +357,10 @@ impl Type1Blob {
             return Ok(writer.write_all(payload)?);
         }
 
-        let (seek_table, chunk_data) = compression::decode_archive(payload, header.payload_length)?
-            .ok_or(DecompressError::NeedMoreData)?;
-        let mut decompressor = ChunkedDecompressor::new(seek_table)?;
+        let (decoded_archive, chunk_data) =
+            compression::decode_archive(payload, header.payload_length)?
+                .ok_or(DecompressError::NeedMoreData)?;
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive)?;
         let mut result = Ok(());
         let mut chunk_callback = |chunk: &[u8]| {
             if let Err(e) = writer.write_all(chunk) {

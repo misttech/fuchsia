@@ -14,6 +14,11 @@ use thiserror::Error;
 use zerocopy::byteorder::{LE, U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned};
 
+mod compression_algorithm;
+pub use compression_algorithm::{
+    CompressionAlgorithm, Compressor, Decompressor, ThreadLocalCompressor, ThreadLocalDecompressor,
+};
+
 /// Validated chunk information from an archive. Compressed ranges are relative to the start of
 /// compressed data (i.e. they start after the header and seek table).
 // *NOTE*: Use caution when using the `#[source]` attribute or naming fields `source`. Some callers
@@ -33,14 +38,144 @@ pub enum ChunkedArchiveError {
     #[error("Value is out of range or cannot be represented in specified type.")]
     OutOfRange,
 
-    #[error("Error invoking Zstd function: `{0:?}`.")]
-    ZstdError(std::io::Error),
-
     #[error("Error decompressing chunk {index}: `{error}`.")]
     DecompressionError { index: usize, error: std::io::Error },
 
     #[error("Error compressing chunk {index}: `{error}`.")]
     CompressionError { index: usize, error: std::io::Error },
+}
+
+/// Options for constructing a chunked archive.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ChunkedArchiveOptions {
+    /// A chunked-compression V2 archive will be created.
+    V2 {
+        /// Chunked-compression V2 has a limit of 1023 chunks. If splitting the data up into
+        /// `minimum_chunk_size`d chunks would exceed this limit then the chunk size increased by
+        /// `chunk_alignment` until fewer than 1024 are required. `minimum_chunk_size` must be a
+        /// multiple of `chunk_alignment`.
+        minimum_chunk_size: usize,
+        /// The chosen uncompressed chunk size must always be a multiple of this value.
+        chunk_alignment: usize,
+        /// The Zstd compression level to use when compressing chunks.
+        compression_level: i32,
+    },
+    /// A chunked-compression V3 archive will be created.
+    V3 {
+        /// The compression algorithm to use to compress the chunks.
+        compression_algorithm: CompressionAlgorithm,
+    },
+}
+
+impl ChunkedArchiveOptions {
+    const V2_VERSION: u16 = 2;
+    const V2_MAX_CHUNKS: usize = 1023;
+
+    const V3_VERSION: u16 = 3;
+    const V3_MAX_CHUNKS: usize = u32::MAX as usize;
+    const V3_CHUNK_SIZE: usize = 32 * 1024;
+    const V3_ZSTD_COMPRESSION_LEVEL: i32 = 22;
+
+    /// Which version of chunked-compression archive should be constructed.
+    fn version(&self) -> u16 {
+        match self {
+            Self::V2 { .. } => Self::V2_VERSION,
+            Self::V3 { .. } => Self::V3_VERSION,
+        }
+    }
+
+    /// The compression algorithm to use to compress the chunks.
+    fn compression_algorithm(&self) -> CompressionAlgorithm {
+        match self {
+            Self::V2 { .. } => CompressionAlgorithm::Zstd,
+            Self::V3 { compression_algorithm } => *compression_algorithm,
+        }
+    }
+
+    /// Calculate how large chunks must be for a given amount of data.
+    fn chunk_size_for(&self, data_size: usize) -> usize {
+        match self {
+            Self::V2 { chunk_alignment, minimum_chunk_size: target_chunk_size, .. } => {
+                if data_size <= (Self::V2_MAX_CHUNKS * target_chunk_size) {
+                    *target_chunk_size
+                } else {
+                    let chunk_size = data_size.div_ceil(Self::V2_MAX_CHUNKS);
+                    chunk_size.checked_next_multiple_of(*chunk_alignment).unwrap()
+                }
+            }
+            Self::V3 { .. } => {
+                assert!(
+                    data_size.div_ceil(Self::V3_CHUNK_SIZE) <= Self::V3_MAX_CHUNKS,
+                    "Chunked-compression V3 only supports data up to ~140TB"
+                );
+                Self::V3_CHUNK_SIZE
+            }
+        }
+    }
+
+    /// Constructs a compressor to compress chunks based on the specified options.
+    pub fn compressor(&self) -> Compressor {
+        match self {
+            Self::V2 { compression_level, .. } => {
+                let mut compressor = zstd::bulk::Compressor::default();
+                compressor
+                    .set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
+                        *compression_level,
+                    ))
+                    .expect("setting the compression level should never fail");
+                Compressor::Zstd(compressor)
+            }
+            Self::V3 { compression_algorithm: CompressionAlgorithm::Zstd } => {
+                let mut compressor = zstd::bulk::Compressor::default();
+                compressor
+                    .set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
+                        Self::V3_ZSTD_COMPRESSION_LEVEL,
+                    ))
+                    .expect("setting the compression level should never fail");
+                Compressor::Zstd(compressor)
+            }
+            Self::V3 { compression_algorithm: CompressionAlgorithm::Lz4 } => {
+                Compressor::Lz4 { compression_level: lz4::HcCompressionLevel::custom(12) }
+            }
+        }
+    }
+
+    /// Constructs a compressor object that uses a thread local compressor to compress chunks based
+    /// on the specified options.
+    pub fn thread_local_compressor(&self) -> ThreadLocalCompressor {
+        match self {
+            Self::V2 { compression_level, .. } => {
+                ThreadLocalCompressor::Zstd { compression_level: *compression_level }
+            }
+            Self::V3 { compression_algorithm: CompressionAlgorithm::Zstd } => {
+                ThreadLocalCompressor::Zstd { compression_level: Self::V3_ZSTD_COMPRESSION_LEVEL }
+            }
+            Self::V3 { compression_algorithm: CompressionAlgorithm::Lz4 } => {
+                ThreadLocalCompressor::Lz4 {
+                    compression_level: lz4::HcCompressionLevel::custom(12),
+                }
+            }
+        }
+    }
+
+    /// Returns true if `version` is a valid chunked-compression version.
+    fn is_valid_version(version: u16) -> bool {
+        match version {
+            Self::V2_VERSION => true,
+            Self::V3_VERSION => true,
+            _ => false,
+        }
+    }
+
+    /// Returns the maximum number of chunks supported by the chunked-compression format at the
+    /// specified version.
+    fn max_chunks_for_version(version: u16) -> Result<usize, ChunkedArchiveError> {
+        match version {
+            Self::V2_VERSION => Ok(Self::V2_MAX_CHUNKS),
+            Self::V3_VERSION => Ok(Self::V3_MAX_CHUNKS),
+            _ => Err(ChunkedArchiveError::InvalidVersion),
+        }
+    }
 }
 
 /// Validated chunk information from an archive. Compressed ranges are relative to the start of
@@ -49,19 +184,6 @@ pub enum ChunkedArchiveError {
 pub struct ChunkInfo {
     pub decompressed_range: Range<usize>,
     pub compressed_range: Range<usize>,
-}
-
-/// Decode a chunked archive header. Returns validated seek table and start of chunk data. Ranges
-/// in resulting chunks are relative to start of returned slice. Returns `Ok(None)` if `data` is not
-/// large enough to decode the archive header & seek table.
-pub fn decode_archive(
-    data: &[u8],
-    archive_length: usize,
-) -> Result<Option<(Vec<ChunkInfo>, /*archive_data*/ &[u8])>, ChunkedArchiveError> {
-    match Ref::<_, ChunkedArchiveHeader>::from_prefix(data).map_err(Into::into) {
-        Ok((header, data)) => header.decode_seek_table(data, archive_length as u64),
-        Err(zerocopy::SizeError { .. }) => Ok(None), // Not enough data.
-    }
 }
 
 impl ChunkInfo {
@@ -90,13 +212,44 @@ impl ChunkInfo {
     }
 }
 
+/// Validated information from decoding an archive.
+#[derive(Debug)]
+pub struct DecodedArchive {
+    compression_algorithm: CompressionAlgorithm,
+    seek_table: Vec<ChunkInfo>,
+}
+
+impl DecodedArchive {
+    /// The total size of decompressing all of the chunks in the archive.
+    pub fn decompressed_size(&self) -> usize {
+        self.seek_table.last().map_or(0, |entry| entry.decompressed_range.end)
+    }
+}
+
+/// Decodes a chunked archive header. Returns a `DecodedArchive` and any remaining bytes that are
+/// part of the chunk data. Returns `Ok(None)` if `data` is not large enough to decode the archive
+/// header & seek table.
+pub fn decode_archive(
+    data: &[u8],
+    archive_length: usize,
+) -> Result<Option<(DecodedArchive, /*archive_data*/ &[u8])>, ChunkedArchiveError> {
+    match Ref::<_, ChunkedArchiveHeader>::from_prefix(data).map_err(Into::into) {
+        Ok((header, data)) => header.decode_archive(data, archive_length as u64),
+        Err(zerocopy::SizeError { .. }) => Ok(None), // Not enough data.
+    }
+}
+
 /// Chunked archive header.
 #[derive(IntoBytes, KnownLayout, FromBytes, Immutable, Unaligned, Clone, Copy, Debug)]
 #[repr(C)]
 struct ChunkedArchiveHeader {
     magic: [u8; 8],
     version: U16<LE>,
-    reserved_0: U16<LE>,
+    // This field was added in V3 and should not be used if `version` is 2. Technically, this field
+    // should be 0 in V2, Zstd has the value 0, and V2 always uses Zstd so accessing this field in
+    // V2 should give the correct result.
+    compression_algorithm: u8,
+    reserved_0: u8,
     num_entries: U32<LE>,
     checksum: U32<LE>,
     reserved_1: U32<LE>,
@@ -115,14 +268,16 @@ struct SeekTableEntry {
 
 impl ChunkedArchiveHeader {
     const CHUNKED_ARCHIVE_MAGIC: [u8; 8] = [0x46, 0x9b, 0x78, 0xef, 0x0f, 0xd0, 0xb2, 0x03];
-    const CHUNKED_ARCHIVE_VERSION: u16 = 2;
-    const CHUNKED_ARCHIVE_MAX_FRAMES: usize = 1023;
     const CHUNKED_ARCHIVE_CHECKSUM_OFFSET: usize = 16;
 
-    fn new(seek_table: &[SeekTableEntry]) -> Result<Self, ChunkedArchiveError> {
+    fn new(
+        seek_table: &[SeekTableEntry],
+        options: ChunkedArchiveOptions,
+    ) -> Result<Self, ChunkedArchiveError> {
         let header: ChunkedArchiveHeader = Self {
             magic: Self::CHUNKED_ARCHIVE_MAGIC,
-            version: Self::CHUNKED_ARCHIVE_VERSION.into(),
+            version: options.version().into(),
+            compression_algorithm: options.compression_algorithm().into(),
             reserved_0: 0.into(),
             num_entries: TryInto::<u32>::try_into(seek_table.len())
                 .or(Err(ChunkedArchiveError::OutOfRange))?
@@ -153,14 +308,12 @@ impl ChunkedArchiveHeader {
             + (std::mem::size_of::<SeekTableEntry>() * num_entries)
     }
 
-    /// Decode seek table for this archive. Returns validated seek table and start of chunk data.
-    /// `data` must point to the start of the seek table. Returns `Ok(None)` if `data` is not large
-    /// enough to decode all seek table entries.
-    fn decode_seek_table(
+    /// Validates the archive header and decodes the seek table.
+    fn decode_archive(
         self,
         data: &[u8],
         archive_length: u64,
-    ) -> Result<Option<(Vec<ChunkInfo>, /*chunk_data*/ &[u8])>, ChunkedArchiveError> {
+    ) -> Result<Option<(DecodedArchive, /*chunk_data*/ &[u8])>, ChunkedArchiveError> {
         // Deserialize seek table.
         let num_entries = self.num_entries.get() as usize;
         let Ok((entries, chunk_data)) =
@@ -174,15 +327,17 @@ impl ChunkedArchiveHeader {
         if self.magic != Self::CHUNKED_ARCHIVE_MAGIC {
             return Err(ChunkedArchiveError::BadMagic);
         }
-        if self.version.get() != Self::CHUNKED_ARCHIVE_VERSION {
+        let version = self.version.get();
+        if !ChunkedArchiveOptions::is_valid_version(version) {
             return Err(ChunkedArchiveError::InvalidVersion);
         }
         if self.checksum.get() != self.checksum(entries) {
             return Err(ChunkedArchiveError::IntegrityError);
         }
-        if entries.len() > Self::CHUNKED_ARCHIVE_MAX_FRAMES {
+        if entries.len() > ChunkedArchiveOptions::max_chunks_for_version(version)? {
             return Err(ChunkedArchiveError::IntegrityError);
         }
+        let compression_algorithm = CompressionAlgorithm::try_from(self.compression_algorithm)?;
 
         // Validate seek table using invariants I0 through I5.
 
@@ -236,7 +391,7 @@ impl ChunkedArchiveHeader {
             .into_iter()
             .map(|entry| ChunkInfo::from_entry(entry, header_length))
             .try_collect()?;
-        Ok(Some((seek_table, chunk_data)))
+        Ok(Some((DecodedArchive { seek_table, compression_algorithm }, chunk_data)))
     }
 }
 
@@ -253,49 +408,30 @@ pub struct ChunkedArchive {
     /// Chunks this archive contains, in order. Right now we only allow creating archives with
     /// contiguous compressed and decompressed space.
     chunks: Vec<CompressedChunk>,
-    /// Size used to chunk input when creating this archive. Last chunk may be smaller than this amount.
+    /// Size used to chunk input when creating this archive. Last chunk may be smaller than this
+    /// amount.
     chunk_size: usize,
+    /// The options used to construct this archive.
+    options: ChunkedArchiveOptions,
 }
 
 impl ChunkedArchive {
-    const MAX_CHUNKS: usize = ChunkedArchiveHeader::CHUNKED_ARCHIVE_MAX_FRAMES;
-    const TARGET_CHUNK_SIZE: usize = 32 * 1024;
-    const COMPRESSION_LEVEL: i32 = 14;
-
     /// Create a ChunkedArchive for `data` compressing each chunk in parallel. This function uses
     /// the `rayon` crate for parallelism. By default compression happens in the global thread pool,
     /// but this function can also be executed within a locally scoped pool.
-    pub fn new(data: &[u8], chunk_alignment: usize) -> Result<Self, ChunkedArchiveError> {
-        let chunk_size = ChunkedArchive::chunk_size_for(data.len(), chunk_alignment);
+    pub fn new(data: &[u8], options: ChunkedArchiveOptions) -> Result<Self, ChunkedArchiveError> {
+        let chunk_size = options.chunk_size_for(data.len());
         let mut chunks: Vec<Result<CompressedChunk, ChunkedArchiveError>> = vec![];
+        let compressor = options.thread_local_compressor();
         data.par_chunks(chunk_size)
             .enumerate()
             .map(|(index, chunk)| {
-                // Creating and destroying zstd::bulk::Compressor objects is expensive. A single
-                // `Compressor` is created for each `rayon` thread and is reused across chunks.
-                thread_local! {
-                    static COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> =
-                        std::cell::RefCell::new({
-                            let mut compressor =
-                                zstd::bulk::Compressor::new(ChunkedArchive::COMPRESSION_LEVEL)
-                                    .unwrap();
-                            compressor
-                                .set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true))
-                                .unwrap();
-                            compressor
-                        });
-                }
-                let compressed_data = COMPRESSOR.with(|compressor| {
-                    let mut compressor = compressor.borrow_mut();
-                    compressor
-                        .compress(chunk)
-                        .map_err(|error| ChunkedArchiveError::CompressionError { index, error })
-                })?;
+                let compressed_data = compressor.compress(chunk, index)?;
                 Ok(CompressedChunk { compressed_data, decompressed_size: chunk.len() })
             })
             .collect_into_vec(&mut chunks);
         let chunks: Vec<_> = chunks.into_iter().try_collect()?;
-        Ok(ChunkedArchive { chunks, chunk_size })
+        Ok(ChunkedArchive { chunks, chunk_size, options })
     }
 
     /// Accessor for compressed chunk data.
@@ -323,25 +459,13 @@ impl ChunkedArchive {
     /// Write the archive to `writer`.
     pub fn write(self, mut writer: impl std::io::Write) -> Result<(), std::io::Error> {
         let seek_table = self.make_seek_table();
-        let header = ChunkedArchiveHeader::new(&seek_table).unwrap();
+        let header = ChunkedArchiveHeader::new(&seek_table, self.options).unwrap();
         writer.write_all(header.as_bytes())?;
         writer.write_all(seek_table.as_slice().as_bytes())?;
         for chunk in self.chunks {
             writer.write_all(&chunk.compressed_data)?;
         }
         Ok(())
-    }
-
-    /// Calculate how large chunks must be for a given uncompressed buffer.
-    fn chunk_size_for(uncompressed_length: usize, chunk_alignment: usize) -> usize {
-        if uncompressed_length <= (Self::MAX_CHUNKS * Self::TARGET_CHUNK_SIZE) {
-            return Self::TARGET_CHUNK_SIZE;
-        }
-        // TODO(https://github.com/rust-lang/rust/issues/88581): Replace with
-        // `{integer}::div_ceil()` when `int_roundings` is available.
-        let chunk_size =
-            round_up(uncompressed_length, ChunkedArchive::MAX_CHUNKS) / ChunkedArchive::MAX_CHUNKS;
-        return round_up(chunk_size, chunk_alignment);
     }
 
     /// Create the seek table for this archive.
@@ -385,7 +509,7 @@ pub struct ChunkedDecompressor {
     data_written: usize,
     curr_chunk: usize,
     total_compressed_size: usize,
-    decompressor: zstd::bulk::Decompressor<'static>,
+    decompressor: Decompressor,
     decompressed_buffer: Vec<u8>,
     error_handler: Option<ErrorHandler>,
 }
@@ -394,20 +518,19 @@ type ErrorHandler = Box<dyn Fn(usize, ChunkInfo, &[u8]) -> () + Send + 'static>;
 
 impl ChunkedDecompressor {
     /// Create a new decompressor to decode an archive from a validated seek table.
-    pub fn new(seek_table: Vec<ChunkInfo>) -> Result<Self, ChunkedArchiveError> {
+    pub fn new(decoded_archive: DecodedArchive) -> Result<Self, ChunkedArchiveError> {
+        let DecodedArchive { compression_algorithm, seek_table } = decoded_archive;
         let total_compressed_size =
-            seek_table.last().map(|last_chunk| last_chunk.compressed_range.end).unwrap_or(0);
+            seek_table.last().map_or(0, |last_chunk| last_chunk.compressed_range.end);
         let decompressed_buffer =
-            vec![0u8; seek_table.first().map(|c| c.decompressed_range.len()).unwrap_or(0)];
-        let decompressor =
-            zstd::bulk::Decompressor::new().map_err(ChunkedArchiveError::ZstdError)?;
+            vec![0u8; seek_table.first().map_or(0, |c| c.decompressed_range.len())];
         Ok(Self {
             seek_table,
             buffer: vec![],
             data_written: 0,
             curr_chunk: 0,
             total_compressed_size,
-            decompressor,
+            decompressor: compression_algorithm.decompressor(),
             decompressed_buffer,
             error_handler: None,
         })
@@ -416,10 +539,10 @@ impl ChunkedDecompressor {
     /// Creates a new decompressor with an additional error handler invoked when a chunk fails to be
     /// decompressed.
     pub fn new_with_error_handler(
-        seek_table: Vec<ChunkInfo>,
+        decoded_archive: DecodedArchive,
         error_handler: ErrorHandler,
     ) -> Result<Self, ChunkedArchiveError> {
-        Ok(Self { error_handler: Some(error_handler), ..Self::new(seek_table)? })
+        Ok(Self { error_handler: Some(error_handler), ..Self::new(decoded_archive)? })
     }
 
     pub fn seek_table(&self) -> &Vec<ChunkInfo> {
@@ -435,12 +558,11 @@ impl ChunkedDecompressor {
         let chunk = &self.seek_table[self.curr_chunk];
         let decompressed_size = self
             .decompressor
-            .decompress_to_buffer(data, self.decompressed_buffer.as_mut_slice())
-            .map_err(|error| {
-                if let Some(ref error_handler) = self.error_handler {
+            .decompress_into(data, self.decompressed_buffer.as_mut_slice(), self.curr_chunk)
+            .inspect_err(|_| {
+                if let Some(error_handler) = &self.error_handler {
                     error_handler(self.curr_chunk, chunk.clone(), data.as_bytes());
                 }
-                ChunkedArchiveError::DecompressionError { index: self.curr_chunk, error }
             })?;
         if decompressed_size != chunk.decompressed_range.len() {
             return Err(ChunkedArchiveError::IntegrityError);
@@ -512,28 +634,20 @@ impl ChunkedDecompressor {
     }
 }
 
-/// TODO(https://github.com/rust-lang/rust/issues/88581): Replace with
-/// `{integer}::checked_next_multiple_of()` when `int_roundings` is available.
-fn round_up(value: usize, multiple: usize) -> usize {
-    let remainder = value % multiple;
-    if remainder > 0 { value.checked_add(multiple - remainder).unwrap() } else { value }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::Type1Blob;
 
     use super::*;
     use rand::Rng;
     use std::matches;
-
-    const BLOCK_SIZE: usize = 8192;
 
     /// Create a compressed archive and ensure we can decode it as a valid archive that passes all
     /// required integrity checks.
     #[test]
     fn compress_simple() {
         let data: Vec<u8> = vec![0; 32 * 1024 * 16];
-        let archive = ChunkedArchive::new(&data, BLOCK_SIZE).unwrap();
+        let archive = ChunkedArchive::new(&data, Type1Blob::CHUNKED_ARCHIVE_OPTIONS).unwrap();
         // This data is highly compressible, so the result should be smaller than the original.
         let mut compressed: Vec<u8> = vec![];
         archive.write(&mut compressed).unwrap();
@@ -545,9 +659,9 @@ mod tests {
     /// Generate a header + seek table for verifying invariants/integrity checks.
     fn generate_archive(
         num_entries: usize,
+        options: ChunkedArchiveOptions,
     ) -> (ChunkedArchiveHeader, Vec<SeekTableEntry>, /*archive_length*/ u64) {
-        let mut seek_table = vec![];
-        seek_table.reserve(num_entries);
+        let mut seek_table = Vec::with_capacity(num_entries);
         let header_length = ChunkedArchiveHeader::header_length(num_entries) as u64;
         const COMPRESSED_CHUNK_SIZE: u64 = 1024;
         const DECOMPRESSED_CHUNK_SIZE: u64 = 2048;
@@ -559,103 +673,109 @@ mod tests {
                 decompressed_size: DECOMPRESSED_CHUNK_SIZE.into(),
             });
         }
-        let header = ChunkedArchiveHeader::new(&seek_table).unwrap();
+        let header = ChunkedArchiveHeader::new(&seek_table, options).unwrap();
         let archive_length: u64 = header_length + (num_entries as u64 * COMPRESSED_CHUNK_SIZE);
         (header, seek_table, archive_length)
     }
 
     #[test]
     fn should_validate_self() {
-        let (header, seek_table, archive_length) = generate_archive(4);
+        let (header, seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         let serialized_table = seek_table.as_slice().as_bytes();
-        assert!(header.decode_seek_table(serialized_table, archive_length).unwrap().is_some());
+        assert!(header.decode_archive(serialized_table, archive_length).unwrap().is_some());
     }
 
     #[test]
     fn should_validate_empty() {
-        let (header, _, archive_length) = generate_archive(0);
-        assert!(header.decode_seek_table(&[], archive_length).unwrap().is_some());
+        let (header, _, archive_length) = generate_archive(0, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
+        assert!(header.decode_archive(&[], archive_length).unwrap().is_some());
     }
 
     #[test]
     fn should_detect_bad_magic() {
-        let (header, seek_table, archive_length) = generate_archive(4);
+        let (header, seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         let mut corrupt_magic = ChunkedArchiveHeader::CHUNKED_ARCHIVE_MAGIC;
         corrupt_magic[0] = !corrupt_magic[0];
         let bad_magic = ChunkedArchiveHeader { magic: corrupt_magic, ..header };
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            bad_magic.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            bad_magic.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::BadMagic
         ));
     }
     #[test]
     fn should_detect_wrong_version() {
-        let (header, seek_table, archive_length) = generate_archive(4);
-        let wrong_version = ChunkedArchiveHeader {
-            version: (ChunkedArchiveHeader::CHUNKED_ARCHIVE_VERSION + 1).into(),
-            ..header
-        };
+        let (header, seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
+        let invalid_version = ChunkedArchiveHeader { version: u16::MAX.into(), ..header };
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            wrong_version.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            invalid_version.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::InvalidVersion
         ));
     }
 
     #[test]
     fn should_detect_corrupt_checksum() {
-        let (header, seek_table, archive_length) = generate_archive(4);
+        let (header, seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         let corrupt_checksum =
             ChunkedArchiveHeader { checksum: (!header.checksum.get()).into(), ..header };
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            corrupt_checksum.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            corrupt_checksum.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
-    fn should_reject_too_many_entries() {
-        let (too_many_entries, seek_table, archive_length) =
-            generate_archive(ChunkedArchiveHeader::CHUNKED_ARCHIVE_MAX_FRAMES + 1);
+    fn should_reject_too_many_entries_v2() {
+        let (too_many_entries, seek_table, archive_length) = generate_archive(
+            ChunkedArchiveOptions::V2_MAX_CHUNKS + 1,
+            Type1Blob::CHUNKED_ARCHIVE_OPTIONS,
+        );
 
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            too_many_entries.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            too_many_entries.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i0_first_entry_zero() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         assert_eq!(seek_table[0].decompressed_offset.get(), 0);
         seek_table[0].decompressed_offset = 1.into();
 
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i1_no_header_overlap() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         let header_end = ChunkedArchiveHeader::header_length(seek_table.len()) as u64;
         assert!(seek_table[0].compressed_offset.get() >= header_end);
         seek_table[0].compressed_offset = (header_end - 1).into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i2_decompressed_monotonic() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         assert_eq!(
             seek_table[0].decompressed_offset.get() + seek_table[0].decompressed_size.get(),
             seek_table[1].decompressed_offset.get()
@@ -663,14 +783,15 @@ mod tests {
         seek_table[1].decompressed_offset = (seek_table[1].decompressed_offset.get() - 1).into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i3_compressed_monotonic() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         assert!(
             (seek_table[0].compressed_offset.get() + seek_table[0].compressed_size.get())
                 <= seek_table[1].compressed_offset.get()
@@ -678,38 +799,41 @@ mod tests {
         seek_table[1].compressed_offset = (seek_table[1].compressed_offset.get() - 1).into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i4_nonzero_compressed_size() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         assert!(seek_table[0].compressed_size.get() > 0);
         seek_table[0].compressed_size = 0.into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i4_nonzero_decompressed_size() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         assert!(seek_table[0].decompressed_size.get() > 0);
         seek_table[0].decompressed_size = 0.into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn invariant_i5_within_archive() {
-        let (header, mut seek_table, archive_length) = generate_archive(4);
+        let (header, mut seek_table, archive_length) =
+            generate_archive(4, Type1Blob::CHUNKED_ARCHIVE_OPTIONS);
         let last_entry = seek_table.last_mut().unwrap();
         assert!(
             (last_entry.compressed_offset.get() + last_entry.compressed_size.get())
@@ -718,40 +842,41 @@ mod tests {
         last_entry.compressed_offset = (archive_length + 1).into();
         let serialized_table = seek_table.as_slice().as_bytes();
         assert!(matches!(
-            header.decode_seek_table(serialized_table, archive_length).unwrap_err(),
+            header.decode_archive(serialized_table, archive_length).unwrap_err(),
             ChunkedArchiveError::IntegrityError
         ));
     }
 
     #[test]
     fn max_chunks() {
+        let ChunkedArchiveOptions::V2 { minimum_chunk_size, chunk_alignment, .. } =
+            Type1Blob::CHUNKED_ARCHIVE_OPTIONS
+        else {
+            panic!()
+        };
         assert_eq!(
-            ChunkedArchive::chunk_size_for(
-                ChunkedArchive::MAX_CHUNKS * ChunkedArchive::TARGET_CHUNK_SIZE,
-                BLOCK_SIZE,
-            ),
-            ChunkedArchive::TARGET_CHUNK_SIZE
+            Type1Blob::CHUNKED_ARCHIVE_OPTIONS
+                .chunk_size_for(minimum_chunk_size * ChunkedArchiveOptions::V2_MAX_CHUNKS),
+            minimum_chunk_size
         );
         assert_eq!(
-            ChunkedArchive::chunk_size_for(
-                ChunkedArchive::MAX_CHUNKS * ChunkedArchive::TARGET_CHUNK_SIZE + 1,
-                BLOCK_SIZE,
-            ),
-            ChunkedArchive::TARGET_CHUNK_SIZE + BLOCK_SIZE
+            Type1Blob::CHUNKED_ARCHIVE_OPTIONS
+                .chunk_size_for(minimum_chunk_size * ChunkedArchiveOptions::V2_MAX_CHUNKS + 1),
+            minimum_chunk_size + chunk_alignment
         );
     }
 
     #[test]
     fn test_decompressor_empty_archive() {
         let mut compressed: Vec<u8> = vec![];
-        ChunkedArchive::new(&[], BLOCK_SIZE)
+        ChunkedArchive::new(&[], Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
             .expect("compress")
             .write(&mut compressed)
             .expect("write archive");
-        let (seek_table, chunk_data) =
+        let (decoded_archive, chunk_data) =
             decode_archive(&compressed, compressed.len()).unwrap().unwrap();
-        assert!(seek_table.is_empty());
-        let mut decompressor = ChunkedDecompressor::new(seek_table).unwrap();
+        assert!(decoded_archive.seek_table.is_empty());
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
         let mut chunk_callback = |_chunk: &[u8]| panic!("Archive doesn't have any chunks.");
         // Stream data into the decompressor in small chunks to exhaust more edge cases.
         chunk_data
@@ -767,18 +892,18 @@ mod tests {
             rand::rng().sample_iter(&range).take(UNCOMPRESSED_LENGTH).collect()
         };
         let mut compressed: Vec<u8> = vec![];
-        ChunkedArchive::new(&data, BLOCK_SIZE)
+        ChunkedArchive::new(&data, Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
             .expect("compress")
             .write(&mut compressed)
             .expect("write archive");
-        let (seek_table, chunk_data) =
+        let (decoded_archive, chunk_data) =
             decode_archive(&compressed, compressed.len()).unwrap().unwrap();
 
         // Make sure we have multiple chunks for this test.
-        let num_chunks = seek_table.len();
+        let num_chunks = decoded_archive.seek_table.len();
         assert!(num_chunks > 1);
 
-        let mut decompressor = ChunkedDecompressor::new(seek_table).unwrap();
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
 
         let mut decoded_chunks: usize = 0;
         let mut decompressed_offset: usize = 0;
@@ -802,18 +927,19 @@ mod tests {
     fn test_decompressor_corrupt_decompressed_size() {
         let data = vec![0; 3_000_000];
         let mut compressed: Vec<u8> = vec![];
-        ChunkedArchive::new(&data, BLOCK_SIZE)
+        ChunkedArchive::new(&data, Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
             .expect("compress")
             .write(&mut compressed)
             .expect("write archive");
-        let (mut seek_table, chunk_data) =
+        let (mut decoded_archive, chunk_data) =
             decode_archive(&compressed, compressed.len()).unwrap().unwrap();
 
         // Corrupt the decompressed size of the chunk.
-        seek_table[0].decompressed_range =
-            seek_table[0].decompressed_range.start..seek_table[0].decompressed_range.end + 1;
+        decoded_archive.seek_table[0].decompressed_range =
+            decoded_archive.seek_table[0].decompressed_range.start
+                ..decoded_archive.seek_table[0].decompressed_range.end + 1;
 
-        let mut decompressor = ChunkedDecompressor::new(seek_table).unwrap();
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
         assert!(matches!(
             decompressor.update(&chunk_data, &mut |_chunk| {}),
             Err(ChunkedArchiveError::IntegrityError)
@@ -824,17 +950,18 @@ mod tests {
     fn test_decompressor_corrupt_compressed_size() {
         let data = vec![0; 3_000_000];
         let mut compressed: Vec<u8> = vec![];
-        ChunkedArchive::new(&data, BLOCK_SIZE)
+        ChunkedArchive::new(&data, Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
             .expect("compress")
             .write(&mut compressed)
             .expect("write archive");
-        let (mut seek_table, chunk_data) =
+        let (mut decoded_archive, chunk_data) =
             decode_archive(&compressed, compressed.len()).unwrap().unwrap();
 
         // Corrupt the compressed size of the chunk.
-        seek_table[0].compressed_range =
-            seek_table[0].compressed_range.start..seek_table[0].compressed_range.end - 1;
-        let first_chunk_info = seek_table[0].clone();
+        decoded_archive.seek_table[0].compressed_range =
+            decoded_archive.seek_table[0].compressed_range.start
+                ..decoded_archive.seek_table[0].compressed_range.end - 1;
+        let first_chunk_info = decoded_archive.seek_table[0].clone();
         let error_handler = move |chunk_index: usize, chunk_info: ChunkInfo, chunk_data: &[u8]| {
             assert_eq!(chunk_index, 0);
             assert_eq!(chunk_info, first_chunk_info);
@@ -842,11 +969,69 @@ mod tests {
         };
 
         let mut decompressor =
-            ChunkedDecompressor::new_with_error_handler(seek_table, Box::new(error_handler))
+            ChunkedDecompressor::new_with_error_handler(decoded_archive, Box::new(error_handler))
                 .unwrap();
         assert!(matches!(
             decompressor.update(&chunk_data, &mut |_chunk| {}),
             Err(ChunkedArchiveError::DecompressionError { index: 0, .. })
         ));
+    }
+
+    #[test]
+    fn test_v3_zstd_roundtrip() {
+        let data = vec![0; 3_000_000];
+        let options =
+            ChunkedArchiveOptions::V3 { compression_algorithm: CompressionAlgorithm::Zstd };
+        let mut compressed = vec![];
+        ChunkedArchive::new(&data, options)
+            .expect("compress")
+            .write(&mut compressed)
+            .expect("write");
+
+        // Verify header.
+        let (header, _) =
+            Ref::<_, ChunkedArchiveHeader>::from_prefix(compressed.as_slice()).unwrap();
+        assert_eq!(header.version.get(), 3);
+        assert_eq!(header.compression_algorithm, CompressionAlgorithm::Zstd as u8);
+
+        let (decoded_archive, chunk_data) =
+            decode_archive(&compressed, compressed.len()).unwrap().unwrap();
+
+        // Decompress.
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
+        let mut decompressed: Vec<u8> = vec![];
+        let mut chunk_callback = |chunk: &[u8]| decompressed.extend_from_slice(chunk);
+        decompressor.update(chunk_data, &mut chunk_callback).unwrap();
+
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn test_v3_lz4_roundtrip() {
+        let data = vec![0; 3_000_000];
+        let options =
+            ChunkedArchiveOptions::V3 { compression_algorithm: CompressionAlgorithm::Lz4 };
+        let mut compressed = vec![];
+        ChunkedArchive::new(&data, options)
+            .expect("compress")
+            .write(&mut compressed)
+            .expect("write");
+
+        // Verify header.
+        let (header, _) =
+            Ref::<_, ChunkedArchiveHeader>::from_prefix(compressed.as_slice()).unwrap();
+        assert_eq!(header.version.get(), 3);
+        assert_eq!(header.compression_algorithm, CompressionAlgorithm::Lz4 as u8);
+
+        let (decoded_archive, chunk_data) =
+            decode_archive(&compressed, compressed.len()).unwrap().unwrap();
+
+        // Decompress.
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
+        let mut decompressed: Vec<u8> = vec![];
+        let mut chunk_callback = |chunk: &[u8]| decompressed.extend_from_slice(chunk);
+        decompressor.update(chunk_data, &mut chunk_callback).unwrap();
+
+        assert_eq!(decompressed, data);
     }
 }

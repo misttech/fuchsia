@@ -21,6 +21,7 @@ rustc_library("delivery_blob") {
   ]
   sources = [
     "src/compression.rs",
+    "src/compression/compression_algorithm.rs",
     "src/format.rs",
     "src/lib.rs",
   ]
@@ -36,6 +37,7 @@ rustc_library("delivery_blob") {
     "//third_party/rust_crates:zerocopy",
     "//third_party/rust_crates:zstd",
     "//third_party/zstd",
+    "//zircon/third_party/ulib/lz4/rust:lz4",
   ]
   if (is_fuchsia) {
     deps += [ "//sdk/rust/zx" ]
