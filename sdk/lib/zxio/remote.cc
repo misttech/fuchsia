@@ -675,52 +675,26 @@ zx_status_t Remote<Protocol>::FlagsSetDeprecated(uint32_t flags) {
 template <typename Protocol>
 zx_status_t Remote<Protocol>::FlagsGet(uint64_t* out_flags) {
   const fidl::WireResult result = client()->GetFlags();
-  if (result.ok()) {
-    if (result->is_error()) {
-      return result->error_value();
-    }
-    *out_flags = uint64_t{(*result)->flags};
-    return ZX_OK;
-  }
-  if (result.status() != ZX_ERR_NOT_SUPPORTED) {
+  if (!result.ok()) {
     return result.status();
   }
-  // Fallback to fuchsia.io/Node.DeprecatedGetFlags if the server doesn't support GetFlags.
-  // TODO(https://fxbug.dev/376509077): Remove fallback when GetFlags is supported by all
-  // out-of-tree servers at all API levels.
-  // fuchsia.io servers only support setting the APPEND flag so we can ignore other flags here.
-  uint32_t deprecated_flags = {};
-  const zx_status_t status = FlagsGetDeprecated(&deprecated_flags);
-  if (status == ZX_OK) {
-    *out_flags = {};
-    if (fio::wire::OpenFlags{deprecated_flags} & fio::wire::OpenFlags::kAppend) {
-      *out_flags |= uint64_t{fio::wire::Flags::kFileAppend};
-    }
+  if (result->is_error()) {
+    return result->error_value();
   }
-  return status;
+  *out_flags = uint64_t{(*result)->flags};
+  return ZX_OK;
 }
 
 template <typename Protocol>
 zx_status_t Remote<Protocol>::FlagsSet(uint64_t flags) {
   const fidl::WireResult result = client()->SetFlags(fio::wire::Flags{flags});
-  if (result.ok()) {
-    if (result->is_error()) {
-      return result->error_value();
-    }
-    return ZX_OK;
-  }
-  if (result.status() != ZX_ERR_NOT_SUPPORTED) {
+  if (!result.ok()) {
     return result.status();
   }
-  // Fallback to fuchsia.io/Node.DeprecatedSetFlags if the server doesn't support SetFlags.
-  // TODO(https://fxbug.dev/376509077): Remove fallback when SetFlags is supported by all
-  // out-of-tree servers at all API levels.
-  // fuchsia.io servers only support setting the APPEND flag so we can ignore other flags here.
-  fio::wire::OpenFlags deprecated_flags = {};
-  if (fio::wire::Flags{flags} & fio::wire::Flags::kFileAppend) {
-    deprecated_flags |= fio::wire::OpenFlags::kAppend;
+  if (result->is_error()) {
+    return result->error_value();
   }
-  return FlagsSetDeprecated(uint32_t{deprecated_flags});
+  return ZX_OK;
 }
 
 template <typename Protocol>
