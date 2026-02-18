@@ -240,7 +240,7 @@ mod tests {
                 utilization_per_ten_k: 10000u64,
                 total_dynamic_children: 2u64,
                 allocated_blocks: 664u64,
-                deallocated_blocks: 4u64,
+                deallocated_blocks: 6u64,
                 failed_allocations: 2u64,
             }
         });

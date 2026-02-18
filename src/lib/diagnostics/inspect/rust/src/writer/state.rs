@@ -92,11 +92,15 @@ macro_rules! metric_fns {
                 value: $type,
                 parent_index: BlockIndex,
             ) -> Result<BlockIndex, Error> {
-                let (block_index, name_block_index) = self.allocate_reserved_value(
+                let pending = self.allocate_reserved_value(
                     name, parent_index, constants::MIN_ORDER_SIZE)?;
-                self.heap.container.block_at_unchecked_mut::<Reserved>(block_index)
-                    .[<become_ $name _value>](value, name_block_index, parent_index);
-                Ok(block_index)
+                pending
+                    .state
+                    .heap
+                    .container
+                    .block_at_unchecked_mut::<Reserved>(pending.block_index)
+                    .[<become_ $name _value>](value, pending.name_block_index, parent_index);
+                Ok(pending.commit())
             }
 
             fn [<set_ $name _metric>](&mut self, block_index: BlockIndex, value: $type) {
@@ -171,14 +175,17 @@ macro_rules! arithmetic_array_fns {
                 if block_size > constants::MAX_ORDER_SIZE {
                     return Err(Error::BlockSizeTooBig(block_size))
                 }
-                let (block_index, name_block_index) = self.allocate_reserved_value(
+                let pending = self.allocate_reserved_value(
                     name, parent_index, block_size)?;
-                self.heap.container
-                    .block_at_unchecked_mut::<Reserved>(block_index)
+                pending
+                    .state
+                    .heap
+                    .container
+                    .block_at_unchecked_mut::<Reserved>(pending.block_index)
                     .become_array_value::<$marker>(
-                        slots, array_format, name_block_index, parent_index
+                        slots, array_format, pending.name_block_index, parent_index
                     )?;
-                Ok(block_index)
+                Ok(pending.commit())
             }
 
             pub fn [<set_array_ $name _slot>](
@@ -606,6 +613,39 @@ impl InnerState {
     }
 }
 
+struct PendingValueBlock<'a> {
+    state: &'a mut InnerState,
+    block_index: BlockIndex,
+    name_block_index: BlockIndex,
+    parent_index: BlockIndex,
+}
+
+impl Drop for PendingValueBlock<'_> {
+    fn drop(&mut self) {
+        if self.state.heap.container.block_at(self.block_index).block_type()
+            == Some(BlockType::Reserved)
+        {
+            self.state
+                .heap
+                .container
+                .block_at_unchecked_mut::<Reserved>(self.block_index)
+                .become_node(self.name_block_index, self.parent_index);
+        }
+
+        if let Err(e) = self.state.delete_value(self.block_index) {
+            panic!("failed to free pending block: {:?}", e);
+        }
+    }
+}
+
+impl PendingValueBlock<'_> {
+    fn commit(self) -> BlockIndex {
+        let index = self.block_index;
+        std::mem::forget(self);
+        index
+    }
+}
+
 impl InnerState {
     /// Creates a new inner state that performs all operations on the heap.
     pub fn new(
@@ -648,13 +688,15 @@ impl InnerState {
         name: impl Into<Cow<'a, str>>,
         parent_index: BlockIndex,
     ) -> Result<BlockIndex, Error> {
-        let (block_index, name_block_index) =
+        let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        self.heap
+        pending
+            .state
+            .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(block_index)
-            .become_node(name_block_index, parent_index);
-        Ok(block_index)
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .become_node(pending.name_block_index, parent_index);
+        Ok(pending.commit())
     }
 
     /// Allocate a LINK block with the given |name| and |parent_index| and keep track
@@ -709,27 +751,22 @@ impl InnerState {
         disposition: LinkNodeDisposition,
         parent_index: BlockIndex,
     ) -> Result<BlockIndex, Error> {
-        let (value_block_index, name_block_index) =
+        let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        let result =
-            self.get_or_create_string_reference(content).and_then(|content_block_index| {
-                self.heap
-                    .container
-                    .block_at_unchecked_mut::<StringRef>(content_block_index)
-                    .increment_ref_count()?;
-                self.heap
-                    .container
-                    .block_at_unchecked_mut::<Reserved>(value_block_index)
-                    .become_link(name_block_index, parent_index, content_block_index, disposition);
-                Ok(())
-            });
-        match result {
-            Ok(()) => Ok(value_block_index),
-            Err(err) => {
-                self.delete_value(value_block_index)?;
-                Err(err)
-            }
-        }
+        let content_block_index = pending.state.get_or_create_string_reference(content)?;
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<StringRef>(content_block_index)
+            .increment_ref_count()?;
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .become_link(pending.name_block_index, parent_index, content_block_index, disposition);
+        Ok(pending.commit())
     }
 
     /// Free a *_VALUE block at the given |index|.
@@ -745,19 +782,16 @@ impl InnerState {
         value: &[u8],
         parent_index: BlockIndex,
     ) -> Result<BlockIndex, Error> {
-        let (block_index, name_block_index) =
+        let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        self.heap.container.block_at_unchecked_mut::<Reserved>(block_index).become_property(
-            name_block_index,
-            parent_index,
-            PropertyFormat::Bytes,
-        );
-        if let Err(err) = self.inner_set_buffer_property_value(block_index, value) {
-            self.heap.free_block(block_index)?;
-            self.release_string_reference(name_block_index)?;
-            return Err(err);
-        }
-        Ok(block_index)
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .become_property(pending.name_block_index, parent_index, PropertyFormat::Bytes);
+        pending.state.inner_set_buffer_property_value(pending.block_index, value)?;
+        Ok(pending.commit())
     }
 
     /// Allocate a BUFFER_VALUE block with the given |name|, |value| and |parent_index|, where
@@ -768,33 +802,33 @@ impl InnerState {
         value: impl Into<Cow<'b, str>>,
         parent_index: BlockIndex,
     ) -> Result<BlockIndex, Error> {
-        let (block_index, name_block_index) =
+        let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        self.heap.container.block_at_unchecked_mut::<Reserved>(block_index).become_property(
-            name_block_index,
-            parent_index,
-            PropertyFormat::StringReference,
-        );
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .become_property(
+                pending.name_block_index,
+                parent_index,
+                PropertyFormat::StringReference,
+            );
 
-        let value_block_index = match self.get_or_create_string_reference(value) {
-            Ok(b_index) => {
-                self.heap
-                    .container
-                    .block_at_unchecked_mut::<StringRef>(b_index)
-                    .increment_ref_count()?;
-                b_index
-            }
-            Err(err) => {
-                self.heap.free_block(block_index)?;
-                return Err(err);
-            }
-        };
+        let value_block_index = pending.state.get_or_create_string_reference(value)?;
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<StringRef>(value_block_index)
+            .increment_ref_count()?;
 
-        let mut block = self.heap.container.block_at_unchecked_mut::<Buffer>(block_index);
+        let mut block =
+            pending.state.heap.container.block_at_unchecked_mut::<Buffer>(pending.block_index);
         block.set_extent_index(value_block_index);
         block.set_total_length(0);
 
-        Ok(block_index)
+        Ok(pending.commit())
     }
 
     /// Get or allocate a STRING_REFERENCE block with the given |value|.
@@ -1006,14 +1040,15 @@ impl InnerState {
         value: bool,
         parent_index: BlockIndex,
     ) -> Result<BlockIndex, Error> {
-        let (block_index, name_block_index) =
+        let pending =
             self.allocate_reserved_value(name, parent_index, constants::MIN_ORDER_SIZE)?;
-        self.heap.container.block_at_unchecked_mut::<Reserved>(block_index).become_bool_value(
-            value,
-            name_block_index,
-            parent_index,
-        );
-        Ok(block_index)
+        pending
+            .state
+            .heap
+            .container
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
+            .become_bool_value(value, pending.name_block_index, parent_index);
+        Ok(pending.commit())
     }
 
     fn set_bool(&mut self, block_index: BlockIndex, value: bool) {
@@ -1039,18 +1074,19 @@ impl InnerState {
         if block_size > constants::MAX_ORDER_SIZE {
             return Err(Error::BlockSizeTooBig(block_size));
         }
-        let (block_index, name_block_index) =
-            self.allocate_reserved_value(name, parent_index, block_size)?;
-        self.heap
+        let pending = self.allocate_reserved_value(name, parent_index, block_size)?;
+        pending
+            .state
+            .heap
             .container
-            .block_at_unchecked_mut::<Reserved>(block_index)
+            .block_at_unchecked_mut::<Reserved>(pending.block_index)
             .become_array_value::<StringRef>(
-                slots,
-                ArrayFormat::Default,
-                name_block_index,
-                parent_index,
-            )?;
-        Ok(block_index)
+            slots,
+            ArrayFormat::Default,
+            pending.name_block_index,
+            parent_index,
+        )?;
+        Ok(pending.commit())
     }
 
     fn get_array_size(&self, block_index: BlockIndex) -> usize {
@@ -1142,12 +1178,12 @@ impl InnerState {
         Ok(())
     }
 
-    fn allocate_reserved_value<'a>(
-        &mut self,
+    fn allocate_reserved_value<'a, 'b>(
+        &'b mut self,
         name: impl Into<Cow<'a, str>>,
         parent_index: BlockIndex,
         block_size: usize,
-    ) -> Result<(BlockIndex, BlockIndex), Error> {
+    ) -> Result<PendingValueBlock<'b>, Error> {
         let block_index = self.heap.allocate_block(block_size)?;
         let name_block_index = match self.get_or_create_string_reference(name) {
             Ok(b_index) => {
@@ -1177,7 +1213,9 @@ impl InnerState {
             }
         };
         match result {
-            Ok(()) => Ok((block_index, name_block_index)),
+            Ok(()) => {
+                Ok(PendingValueBlock { state: self, block_index, name_block_index, parent_index })
+            }
             Err(err) => {
                 self.release_string_reference(name_block_index)?;
                 self.heap.free_block(block_index)?;
@@ -2784,5 +2822,48 @@ mod tests {
         assert_eq!(blocks[252].block_type(), Some(BlockType::IntValue));
         assert_eq!(blocks[253].block_type(), Some(BlockType::StringReference));
         assert_all_free_or_reserved(blocks.into_iter().skip(4).rev().skip(4));
+    }
+
+    #[fuchsia::test]
+    fn test_allocate_link_cleanup_failure() {
+        let core_state = get_state(4096);
+        {
+            let mut state = core_state.try_lock().expect("lock state");
+
+            // Fill the heap until almost full with nodes sharing the same name.
+            // This ensures we have many node blocks but only one name block.
+            let mut nodes = vec![];
+            while let Ok(idx) = state.create_node("n", 0.into()) {
+                // "n" will be interned and shared.
+                nodes.push(idx);
+            }
+
+            // Free one node to make space for exactly one block (the reserved block for the link).
+            // The name "n" is still held by other nodes, so the name block is not freed.
+            state.free_value(nodes.pop().unwrap()).unwrap();
+
+            // Now call `create_lazy_node`.
+            // 1. `allocate_reserved_value("n", ...)`:
+            //    - `allocate_block` succeeds (takes the freed slot).
+            //    - `get_or_create_string_reference("n")` succeeds (reused).
+            //    - Returns PendingBlock.
+            // 2. `get_or_create_string_reference("new_content")`:
+            //    - Tries to allocate new string ref block.
+            //    - Fails (no space).
+            // 3. PendingBlock drops.
+            //    - Should cleanly free the reserved block and release "n" ref.
+
+            let result = state.create_lazy_node("n", 0.into(), LinkNodeDisposition::Inline, || {
+                async move { Ok(Inspector::default()) }.boxed()
+            });
+
+            assert!(result.is_err());
+        }
+
+        // Verify header is intact.
+        core_state.with_current_header(|header| {
+            assert_eq!(header.magic_number(), constants::HEADER_MAGIC_NUMBER);
+            assert_eq!(header.version(), constants::HEADER_VERSION_NUMBER);
+        });
     }
 }
