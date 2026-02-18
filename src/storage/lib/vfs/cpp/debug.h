@@ -24,14 +24,34 @@
 
 std::ostream& operator<<(std::ostream& os, const fs::DeprecatedOptions& options);
 std::ostream& operator<<(std::ostream& os, fs::CreationType type);
+
 namespace fs::debug_internal {
 
 inline void PrintEach(std::ostream& stream) {}
 
 template <typename T, typename... Args>
+void PrintEach(std::ostream& stream, T val, Args... args);
+
+template <typename... Args>
+void PrintEach(std::ostream& stream, const char* val, Args... args) {
+  stream << (val ? val : "nullptr");
+  PrintEach(stream, args...);
+}
+
+template <typename T, typename... Args>
+void PrintEach(std::ostream& stream, T* val, Args... args) {
+  if (val) {
+    PrintEach(stream, *val);
+  } else {
+    stream << "nullptr";
+  }
+  PrintEach(stream, args...);
+}
+
+template <typename T, typename... Args>
 void PrintEach(std::ostream& stream, T val, Args... args) {
-  if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, std::string_view> ||
-                std::is_same_v<T, fs::DeprecatedOptions>) {
+  static_assert(!std::is_pointer_v<T>, "pointers should be handled by a specialization above");
+  if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, fs::DeprecatedOptions>) {
     stream << val;
   } else if constexpr (std::is_same_v<T, fidl::StringView>) {
     stream << val.get();
@@ -41,7 +61,6 @@ void PrintEach(std::ostream& stream, T val, Args... args) {
     stream << fidl::ostream::Formatted(val);
   }
   PrintEach(stream, args...);
-  stream << "\n";
 }
 
 }  // namespace fs::debug_internal
@@ -49,11 +68,12 @@ void PrintEach(std::ostream& stream, T val, Args... args) {
 #define FS_PRETTY_TRACE_DEBUG(args...)              \
   do {                                              \
     fs::debug_internal::PrintEach(std::cerr, args); \
+    std::cerr << "\n";                              \
   } while (0)
 #else
 #define FS_PRETTY_TRACE_DEBUG(args...) \
   do {                                 \
   } while (0)
-
 #endif
+
 #endif  // SRC_STORAGE_LIB_VFS_CPP_DEBUG_H_
