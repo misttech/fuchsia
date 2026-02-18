@@ -17,7 +17,8 @@ pub enum EventFilter {
     EVFILT_LIO = -10,
     EVFILT_USER = -11,
     EVFILT_SENDFILE = -12,
-    EVFILT_SYSCOUNT = 12,
+    EVFILT_EMPTY = -13,
+    EVFILT_SYSCOUNT = 13,
 }
 
 bitflags! {
@@ -79,5 +80,6 @@ bitflags! {
         const NOTE_MSECONDS                     = 0x00000002;
         const NOTE_USECONDS                     = 0x00000004;
         const NOTE_NSECONDS                     = 0x00000008;
+        const NOTE_ABSTIME                      = 0x00000010;
     }
 }

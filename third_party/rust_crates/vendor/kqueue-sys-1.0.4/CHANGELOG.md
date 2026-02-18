@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+* #4: Adds support for iOS
+
 ## 1.0.3
 
 * #1: fixes compiler error on NetBSD

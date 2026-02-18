@@ -9629,7 +9629,7 @@ rustc_library("kqueue-v1_0_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":kqueue-sys-v1_0_3" ]
+  deps += [ ":kqueue-sys-v1_0_4" ]
   deps += [ ":libc-v0_2_180" ]
 
   rustenv = []
@@ -9645,16 +9645,16 @@ rustc_library("kqueue-v1_0_7") {
   applicable_licenses = [ ":kqueue-v1_0_7.license" ]
 }
 
-license("kqueue-sys-v1_0_3.license") {
+license("kqueue-sys-v1_0_4.license") {
   public_package_name = "kqueue_sys"
   license_files =
-      [ "//third_party/rust_crates/vendor/kqueue-sys-1.0.3/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/kqueue-sys-1.0.4/LICENSE" ]
 }
 
-rustc_library("kqueue-sys-v1_0_3") {
+rustc_library("kqueue-sys-v1_0_4") {
   crate_name = "kqueue_sys"
-  source_root = "//third_party/rust_crates/vendor/kqueue-sys-1.0.3/src/lib.rs"
-  output_name = "kqueue_sys-369df57c1b7accc0"
+  source_root = "//third_party/rust_crates/vendor/kqueue-sys-1.0.4/src/lib.rs"
+  output_name = "kqueue_sys-68e4d7bf95b344b7"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -9668,13 +9668,13 @@ rustc_library("kqueue-sys-v1_0_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=369df57c1b7accc0",
-    "-Cextra-filename=-369df57c1b7accc0",
+    "-Cmetadata=68e4d7bf95b344b7",
+    "-Cextra-filename=-68e4d7bf95b344b7",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":kqueue-sys-v1_0_3.license" ]
+  applicable_licenses = [ ":kqueue-sys-v1_0_4.license" ]
 }
 
 license("lazy_static-v1_5_0.license") {
