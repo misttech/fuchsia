@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use crate::errors::{Errno, error};
+use crate::selinux::TaskAttrs;
 use crate::{gid_t, uapi, uid_t};
 use bitflags::bitflags;
 use std::ops;
@@ -333,6 +334,9 @@ pub struct Credentials {
     /// > PR_SET_SECUREBITS and PR_GET_SECUREBITS operations.  The CAP_SETPCAP capability is
     /// > required to modify the flags.
     pub securebits: SecureBits,
+
+    /// The SELinux security state of the task.
+    pub security_state: TaskAttrs,
 }
 
 bitflags! {
@@ -378,6 +382,7 @@ impl Credentials {
             cap_bounding: Capabilities::all(),
             cap_ambient: Capabilities::empty(),
             securebits: SecureBits::empty(),
+            security_state: TaskAttrs::for_kernel(),
         }
     }
 

@@ -12,7 +12,6 @@ use crate::vfs::socket::{
     SocketShutdownFlags, SocketType, socket_fs,
 };
 use crate::vfs::{Anon, DowncastedFile, FsNode};
-
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
@@ -164,7 +163,7 @@ where
     // Ensure sockfs gets labeled, in case it was mounted after the SELinux policy has been loaded.
     superblock::file_system_resolve_security(locked, security_server, &current_task, &sockfs)
         .expect("resolve fs security");
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     let new_socket_class =
         compute_socket_security_class(security_server, domain, socket_type, protocol);
     let new_socket_sid = if let Some(fs_label) = sockfs.security_state.state.label() {
@@ -228,7 +227,7 @@ pub(in crate::security) fn check_socket_bind_access(
         return Ok(());
     };
 
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
 
     // TODO: https://fxbug.dev/364569010 - Add checks for `name_bind` between the socket and the SID
     // of the port number, and for `node_bind` between the socket and the SID of the IP address.
@@ -250,7 +249,7 @@ pub(in crate::security) fn check_socket_connect_access(
     socket: DowncastedFile<'_, SocketFile>,
     _socket_peer: &SocketPeer,
 ) -> Result<(), Errno> {
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
 
     // TODO: https://fxbug.dev/364568577 - Add checks for `name_connect` between the socket and the
     // SID of the port number for TCP sockets.
@@ -279,7 +278,7 @@ pub(in crate::security) fn check_socket_listen_access(
         return Ok(());
     };
 
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -298,7 +297,7 @@ pub(in crate::security) fn socket_accept(
     listening_socket: DowncastedFile<'_, SocketFile>,
     accepted_socket: DowncastedFile<'_, SocketFile>,
 ) -> Result<(), Errno> {
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     let listening_security_state = listening_socket.file().node().security_state.lock().clone();
     has_socket_permission(
         &security_server.as_permission_check(),
@@ -329,7 +328,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
     };
 
     let audit_context = &[current_task.into(), Auditable::SockOptArguments(level, optname)];
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -355,7 +354,7 @@ pub(in crate::security) fn check_socket_setsockopt_access(
         );
         return Ok(());
     };
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -379,7 +378,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
         );
         return Ok(());
     };
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -403,7 +402,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
         );
         return Ok(());
     };
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -428,7 +427,7 @@ pub(in crate::security) fn check_socket_getname_access(
         return Ok(());
     };
 
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -454,7 +453,7 @@ pub(in crate::security) fn check_socket_shutdown_access(
         return Ok(());
     };
 
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -561,7 +560,7 @@ pub(in crate::security) fn check_tun_dev_create_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
 ) -> Result<(), Errno> {
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     check_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -576,7 +575,9 @@ pub(in crate::security) fn check_tun_dev_create_access(
 mod tests {
     use super::super::get_cached_sid;
     use super::*;
-    use crate::security::selinux_hooks::testing::spawn_kernel_with_selinux_hooks_test_policy_and_run;
+    use crate::security::selinux_hooks::testing::{
+        mutate_attrs_for_test, spawn_kernel_with_selinux_hooks_test_policy_and_run,
+    };
     use crate::vfs::socket::SocketFile;
     use assert_matches::assert_matches;
     use starnix_uapi::errors::EACCES;
@@ -589,7 +590,7 @@ mod tests {
                 let task_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
                     .expect("invalid security context");
-                current_task_state(current_task).lock().current_sid = task_sid;
+                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
 
                 let socket_node = SocketFile::new_socket(
                     locked,
@@ -618,7 +619,7 @@ mod tests {
                 let task_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_socket_create_yes_t:s0".into())
                     .expect("invalid security context");
-                current_task_state(current_task).lock().current_sid = task_sid;
+                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
 
                 assert_matches!(
                     SocketFile::new_socket(
@@ -644,7 +645,7 @@ mod tests {
                 let task_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_socket_create_no_t:s0".into())
                     .expect("invalid security context");
-                current_task_state(current_task).lock().current_sid = task_sid;
+                mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
 
                 assert_matches!(SocketFile::new_socket(
                     locked,

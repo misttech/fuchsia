@@ -1097,6 +1097,7 @@ mod tests {
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
     use starnix_task_command::TaskCommand;
     use starnix_types::PAGE_SIZE;
+    use starnix_uapi::auth::Credentials;
     use starnix_uapi::file_mode::mode;
     use starnix_uapi::mount_flags::MountFlags;
     use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_RANGE;
@@ -1122,7 +1123,6 @@ mod tests {
         }
     }
     use starnix_core::execution::{TaskInfo, create_task};
-    use starnix_core::security;
     use starnix_core::signals::SignalActions;
 
     /// Setup and run a test against the remote binder. The closure that is passed to this function
@@ -1171,7 +1171,7 @@ mod tests {
                             );
                             Ok(TaskInfo { thread: None, thread_group, memory_manager }.into())
                         },
-                        security::task_alloc_for_kernel(),
+                        Credentials::root(),
                     )
                     .expect("failed");
                     let current_task: CurrentTask = builder.into();

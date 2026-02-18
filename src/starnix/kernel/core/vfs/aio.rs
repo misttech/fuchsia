@@ -173,7 +173,7 @@ impl AioContextInner {
     }
 
     fn spawn_worker_for(self: &Arc<Self>, current_task: &CurrentTask, worker_type: WorkerType) {
-        let creds = current_task.full_current_creds();
+        let creds = current_task.current_creds().clone();
         let inner = self.clone();
         let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             current_task.override_creds(creds, || {

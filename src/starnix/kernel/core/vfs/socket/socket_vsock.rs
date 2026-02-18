@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTask, EventHandler, FullCredentials, WaitCanceler, WaitQueue, Waiter};
+use crate::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::FileHandle;
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::socket::{
@@ -10,6 +10,7 @@ use crate::vfs::socket::{
     SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
@@ -163,9 +164,8 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        let bytes_read = current_task.override_creds(FullCredentials::for_kernel(), || {
-            file.read(locked, current_task, data)
-        })?;
+        let bytes_read = current_task
+            .override_creds(Credentials::root(), || file.read(locked, current_task, data))?;
         Ok(MessageReadInfo {
             bytes_read,
             message_length: bytes_read,
@@ -190,9 +190,7 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        current_task.override_creds(FullCredentials::for_kernel(), || {
-            file.write(locked, current_task, data)
-        })
+        current_task.override_creds(Credentials::root(), || file.write(locked, current_task, data))
     }
 
     fn wait_async(
@@ -335,9 +333,7 @@ impl VsockSocketInner {
         Ok(match &self.state {
             VsockSocketState::Disconnected => FdEvents::empty(),
             VsockSocketState::Connected { file, .. } => current_task
-                .override_creds(FullCredentials::for_kernel(), || {
-                    file.query_events(locked, current_task)
-                })?,
+                .override_creds(Credentials::root(), || file.query_events(locked, current_task))?,
             VsockSocketState::Listening(queue) => {
                 if !queue.sockets.is_empty() {
                     FdEvents::POLLIN

@@ -102,7 +102,7 @@ pub(in crate::security) fn selinuxfs_check_access(
     current_task: &CurrentTask,
     permission: SecurityPermission,
 ) -> Result<(), Errno> {
-    let source_sid = current_task_state(current_task).lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
     let target_sid = InitialSid::Security.into();
     let permission_check = security_server.as_permission_check();
     check_permission(

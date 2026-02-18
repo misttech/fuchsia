@@ -121,20 +121,6 @@ impl std::ops::Deref for TaskBuilder {
     }
 }
 
-/// Task permission are determined from their credentials, and if enabled, from their SEStarnix
-///  security state.
-#[derive(Debug, Clone)]
-pub struct FullCredentials {
-    pub creds: Arc<Credentials>,
-    pub security_state: security::TaskState,
-}
-
-impl FullCredentials {
-    pub fn for_kernel() -> Self {
-        Self { creds: Credentials::root(), security_state: security::task_alloc_for_kernel() }
-    }
-}
-
 /// The task object associated with the currently executing thread.
 ///
 /// We often pass the `CurrentTask` as the first argument to functions if those functions need to
@@ -165,20 +151,19 @@ pub struct CurrentTask {
 /// Represents the current state of the task's subjective credentials.
 pub enum CurrentCreds {
     /// The task does not have overridden credentials, the subjective creds are identical to the
-    /// objective creds. Since credentials are often accessed from the current task, we hold a
-    /// reference here that does not necessitate going through the Rcu machinery to read.
-    /// The subjective security state is stored on the Task.
+    /// objective creds stored in the Task. Since credentials are often accessed from the current
+    /// task, we hold a reference here that does not necessitate going through the RCU machinery to
+    /// read.
     Cached(Arc<Credentials>),
-    /// The task has overridden credentials, with the given credentials and security state.
-    // TODO(https://fxbug.dev/433463756): TaskState will soon move into Credentials.
-    Overridden(Arc<Credentials>, security::TaskState),
+    /// The task has overridden subjective credentials.
+    Overridden(Arc<Credentials>),
 }
 
 impl CurrentCreds {
     fn creds(&self) -> &Arc<Credentials> {
         match self {
             CurrentCreds::Cached(creds) => creds,
-            CurrentCreds::Overridden(creds, _) => creds,
+            CurrentCreds::Overridden(creds) => creds,
         }
     }
 }
@@ -324,19 +309,6 @@ impl CurrentTask {
         Ref::map(self.current_creds.borrow(), CurrentCreds::creds)
     }
 
-    /// Returns the current subjective credentials of the task, including the security state.
-    pub fn full_current_creds(&self) -> FullCredentials {
-        match *self.current_creds.borrow() {
-            CurrentCreds::Cached(ref creds) => FullCredentials {
-                creds: creds.clone(),
-                security_state: self.security_state.clone(),
-            },
-            CurrentCreds::Overridden(ref creds, ref security_state) => {
-                FullCredentials { creds: creds.clone(), security_state: security_state.clone() }
-            }
-        }
-    }
-
     pub fn current_fscred(&self) -> FsCred {
         self.current_creds().as_fscred()
     }
@@ -356,12 +328,10 @@ impl CurrentTask {
     /// externally visible.
     pub async fn override_creds_async<R>(
         &self,
-        new_creds: FullCredentials,
+        new_creds: Arc<Credentials>,
         callback: impl AsyncFnOnce() -> R,
     ) -> R {
-        let saved = self
-            .current_creds
-            .replace(CurrentCreds::Overridden(new_creds.creds, new_creds.security_state));
+        let saved = self.current_creds.replace(CurrentCreds::Overridden(new_creds));
         let result = callback().await;
         self.current_creds.replace(saved);
         result
@@ -375,14 +345,18 @@ impl CurrentTask {
     ///  state, accessed through `Task::real_creds()` by other tasks and used to check permissions
     /// for actions performed on the task, is not altered, and changes to the credentials are not
     /// externally visible.
-    pub fn override_creds<R>(&self, new_creds: FullCredentials, callback: impl FnOnce() -> R) -> R {
+    pub fn override_creds<R>(
+        &self,
+        new_creds: Arc<Credentials>,
+        callback: impl FnOnce() -> R,
+    ) -> R {
         self.override_creds_async(new_creds, async move || callback())
             .now_or_never()
             .expect("Future should be ready")
     }
 
     pub fn has_overridden_creds(&self) -> bool {
-        matches!(*self.current_creds.borrow(), CurrentCreds::Overridden(_, _))
+        matches!(*self.current_creds.borrow(), CurrentCreds::Overridden(_))
     }
 
     pub fn trigger_delayed_releaser<L>(&self, locked: &mut Locked<L>)
@@ -1258,7 +1232,7 @@ impl CurrentTask {
         // signal state inheritance.
         //
         // This needs to be called after closing any files marked "close-on-exec".
-        security::exec_binprm(locked, self, &security_state);
+        security::exec_binprm(locked, self, &security_state)?;
 
         self.thread_group().write().did_exec = true;
 
@@ -1662,7 +1636,6 @@ impl CurrentTask {
         let child_signal_mask;
         let timerslack_ns;
         let uts_ns;
-        let security_state = security::task_alloc(&self, flags);
 
         let TaskInfo { thread, thread_group, memory_manager } = {
             // These variables hold the original parent in case we need to switch the parent of the
@@ -1770,7 +1743,6 @@ impl CurrentTask {
             seccomp_filters,
             robust_list_head,
             timerslack_ns,
-            security_state,
         ));
 
         release_on_error!(child, locked, {
@@ -2240,15 +2212,15 @@ pub enum ExceptionResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::task::FullCredentials;
     use crate::testing::spawn_kernel_and_run;
+    use starnix_uapi::auth::Credentials;
 
     // This test will run `override_creds` and check it doesn't crash. This ensures that the
     // delegation to `override_creds_async` is correct.
     #[::fuchsia::test]
     async fn test_override_creds_can_delegate_to_async_version() {
         spawn_kernel_and_run(async move |_, current_task| {
-            assert_eq!(current_task.override_creds(FullCredentials::for_kernel(), || 0), 0);
+            assert_eq!(current_task.override_creds(Credentials::root(), || 0), 0);
         })
         .await;
     }

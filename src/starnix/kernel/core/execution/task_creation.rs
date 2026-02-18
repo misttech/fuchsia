@@ -147,6 +147,7 @@ pub fn create_init_child_process<L>(
     locked: &mut Locked<L>,
     kernel: &Arc<Kernel>,
     initial_name: TaskCommand,
+    mut creds: Credentials,
     seclabel: Option<&CString>,
 ) -> Result<TaskBuilder, Errno>
 where
@@ -155,7 +156,7 @@ where
     let weak_init = kernel.pids.read().get_task(1);
     let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
 
-    let security_context = if let Some(seclabel) = seclabel {
+    let security_state = if let Some(seclabel) = seclabel {
         security::task_for_context(&init_task, seclabel.as_bytes().into())?
     } else if let Some(default_seclabel) = kernel.features.default_seclabel.as_ref() {
         security::task_for_context(&init_task, default_seclabel.as_bytes().into())?
@@ -165,6 +166,7 @@ where
             errno!(EINVAL, "Container has SELinux enabled but no Security Context specified")
         })?
     };
+    creds.security_state = security_state;
 
     let task = create_task(
         locked,
@@ -183,7 +185,7 @@ where
                 initial_name.clone(),
             )
         },
-        security_context,
+        creds.into(),
     )?;
     {
         let mut init_writer = init_task.thread_group().write();
@@ -247,9 +249,6 @@ pub fn create_init_process(
         },
         Credentials::root(),
         rlimits,
-        // If SELinux is enabled then `exec()` of the "init" executable will normally be
-        // configured by policy to transition to the desired init task Security Context.
-        security::task_alloc_for_kernel(),
     )
 }
 
@@ -291,7 +290,7 @@ where
             );
             Ok(TaskInfo { thread: None, thread_group, memory_manager: None }.into())
         },
-        security::task_alloc_for_kernel(),
+        Credentials::root(),
     )?;
     Ok(builder.into())
 }
@@ -302,7 +301,7 @@ pub fn create_task<F, L>(
     initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
     task_info_factory: F,
-    security_state: security::TaskState,
+    creds: Arc<Credentials>,
 ) -> Result<TaskBuilder, Errno>
 where
     F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
@@ -318,9 +317,8 @@ where
         initial_name,
         root_fs,
         task_info_factory,
-        Credentials::root(),
+        creds,
         &[],
-        security_state,
     )
 }
 
@@ -334,7 +332,6 @@ fn create_task_with_pid<F, L>(
     task_info_factory: F,
     creds: Arc<Credentials>,
     rlimits: &[(Resource, u64)],
-    security_state: security::TaskState,
 ) -> Result<TaskBuilder, Errno>
 where
     F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
@@ -377,7 +374,6 @@ where
             SeccompFilterContainer::default(),
             RobustListHeadPtr::null(&ArchWidth::Arch64),
             default_timerslack,
-            security_state,
         ),
         thread_state: Default::default(),
     };
@@ -415,13 +411,11 @@ where
     let scheduler_state;
     let uts_ns;
     let default_timerslack_ns;
-    let security_state;
     {
         let state = system_task.read();
         scheduler_state = state.scheduler_state;
         uts_ns = state.uts_ns.clone();
         default_timerslack_ns = state.default_timerslack_ns;
-        security_state = security::task_alloc_for_kernel();
     }
 
     let current_task: CurrentTask = TaskBuilder::new(Task::new(
@@ -445,7 +439,6 @@ where
         SeccompFilterContainer::default(),
         RobustListHeadPtr::null(&ArchWidth::Arch64),
         default_timerslack_ns,
-        security_state,
     ))
     .into();
     release_on_error!(current_task, locked, {

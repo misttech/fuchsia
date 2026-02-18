@@ -8,7 +8,7 @@ use crate::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
-use crate::task::{CurrentTask, FullCredentials, Kernel};
+use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fsverity::FsVerityState;
@@ -34,7 +34,7 @@ use starnix_sync::{
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
-use starnix_uapi::auth::FsCred;
+use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
@@ -482,7 +482,7 @@ pub fn new_remote_file<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let remote_creds = current_task.full_current_creds();
+    let remote_creds = current_task.current_creds().clone();
     let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle.into(), remote_creds)?;
     let mut rights = fio::Flags::empty();
     if flags.can_read() {
@@ -504,7 +504,7 @@ where
 pub fn new_remote_file_ops(
     current_task: &CurrentTask,
     handle: zx::NullableHandle,
-    creds: FullCredentials,
+    creds: Arc<Credentials>,
 ) -> Result<Box<dyn FileOps>, Errno> {
     let (_, ops) = remote_file_attrs_and_ops(current_task, handle, creds)?;
     Ok(ops)
@@ -513,7 +513,7 @@ pub fn new_remote_file_ops(
 fn remote_file_attrs_and_ops(
     current_task: &CurrentTask,
     mut handle: zx::NullableHandle,
-    remote_creds: FullCredentials,
+    remote_creds: Arc<Credentials>,
 ) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
     let handle_type =
         handle.basic_info().map_err(|status| from_status_like_fdio!(status))?.object_type;
@@ -1554,7 +1554,7 @@ impl FileOps for RemoteFileObject {
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         // To avoid cache coherency and security issues, we proxy remote files via the Starnix file
         // server.  This will incur a performance penalty which we can optimize later if we need to.
-        serve_file_tagged(current_task, file, current_task.full_current_creds(), "remote_files")
+        serve_file_tagged(current_task, file, current_task.current_creds().clone(), "remote_files")
             .map(|c| Some(c.0.into_handle().into()))
     }
 

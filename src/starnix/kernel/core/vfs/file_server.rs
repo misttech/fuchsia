@@ -4,7 +4,7 @@
 
 use crate::mm::ProtectionFlags;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, FullCredentials, Kernel, LockedAndTask};
+use crate::task::{CurrentTask, Kernel, LockedAndTask};
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::{
     DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, FsString, LookupContext,
@@ -19,6 +19,7 @@ use itertools::Either;
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_types::convert::IntoFidl as _;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
@@ -94,7 +95,7 @@ impl FileServerRegistry {
 pub fn serve_file_tagged(
     current_task: &CurrentTask,
     file: &FileObject,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
     tag: &'static str,
 ) -> Result<(ClientEnd<fio::NodeMarker>, execution_scope::ExecutionScope), Errno> {
     let (client_end, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
@@ -106,7 +107,7 @@ pub fn serve_file_tagged(
 pub fn serve_file(
     current_task: &CurrentTask,
     file: &FileObject,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
 ) -> Result<(ClientEnd<fio::NodeMarker>, execution_scope::ExecutionScope), Errno> {
     serve_file_tagged(current_task, file, credentials, "default")
 }
@@ -115,7 +116,7 @@ pub fn serve_file_at_tagged(
     server_end: ServerEnd<fio::NodeMarker>,
     current_task: &CurrentTask,
     file: &FileObject,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
     tag: &'static str,
 ) -> Result<execution_scope::ExecutionScope, Errno> {
     let kernel = current_task.kernel();
@@ -168,7 +169,7 @@ pub fn serve_file_at(
     server_end: ServerEnd<fio::NodeMarker>,
     current_task: &CurrentTask,
     file: &FileObject,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
 ) -> Result<execution_scope::ExecutionScope, Errno> {
     serve_file_at_tagged(server_end, current_task, file, credentials, "default")
 }
@@ -239,7 +240,7 @@ where
 
 async fn handle_file(
     locked_and_task: LockedAndTask<'_>,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
     file: FileHandle,
     receiver: std::sync::mpsc::Receiver<Box<dyn Work>>,
 ) {
@@ -319,7 +320,7 @@ fn to_open_flags(flags: &impl ProtocolsExt) -> OpenFlags {
 #[derive(Clone)]
 struct StarnixNodeConnection {
     is_dir: bool,
-    credentials: FullCredentials,
+    credentials: Arc<Credentials>,
     work_sender: std::sync::mpsc::Sender<Box<dyn Work>>,
     stats: Arc<FileServerStats>,
 }
@@ -343,7 +344,7 @@ impl StarnixNodeConnection {
     fn new(
         kernel: &Kernel,
         file: FileHandle,
-        credentials: FullCredentials,
+        credentials: Arc<Credentials>,
         stats: Arc<FileServerStats>,
     ) -> Arc<Self> {
         let (work_sender, receiver) = std::sync::mpsc::channel();
@@ -962,7 +963,7 @@ mod tests {
             let file =
                 &fs.root().open_anonymous(locked, current_task, OpenFlags::RDWR).expect("open");
             let (root_handle, scope) =
-                serve_file(current_task, file, FullCredentials::for_kernel()).expect("serve");
+                serve_file(current_task, file, Credentials::root()).expect("serve");
 
             // Capture information from the filesystem in the main thread. The filesystem must not be
             // transferred to the other thread.
@@ -1106,8 +1107,7 @@ mod tests {
                 .open_anonymous(locked, current_task, OpenFlags::RDWR)
                 .expect("open_anonymous failed");
             let (root_handle, scope) =
-                serve_file(current_task, file, FullCredentials::for_kernel())
-                    .expect("serve_file failed");
+                serve_file(current_task, file, Credentials::root()).expect("serve_file failed");
 
             std::thread::spawn(move || {
                 let root_zxio =
@@ -1206,14 +1206,12 @@ mod tests {
                 )
                 .expect("open_create_node failed");
 
-            let mut user_credentials = FullCredentials::for_kernel();
             let mut creds = Credentials::with_ids(0, 0);
             creds.fsuid = 1;
             creds.cap_effective = Capabilities::empty();
-            user_credentials.creds = creds.into();
 
             let (root_handle, scope) =
-                serve_file(current_task, file, user_credentials).expect("serve_file failed");
+                serve_file(current_task, file, creds.into()).expect("serve_file failed");
 
             std::thread::spawn(move || {
                 let root_zxio =

@@ -234,6 +234,7 @@ pub async fn start_component(
                 system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
                 system_task.kernel(),
                 TaskCommand::new(program.binary.as_bytes()),
+                credentials,
                 program.seclabel.as_ref(),
             )?;
 
@@ -251,8 +252,6 @@ pub async fn start_component(
                             cwd_path.as_ref(),
                         )?;
                         current_task.fs().chdir(locked, current_task, cwd)?;
-
-                        current_task.set_creds(credentials);
 
                         for mount in &program.component_mounts {
                             let action = MountAction::from_spec(locked, current_task, &pkg, mount)

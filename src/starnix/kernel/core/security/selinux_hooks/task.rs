@@ -4,9 +4,9 @@
 
 use crate::security::selinux_hooks::{
     CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, ProcessPermission,
-    TaskAttrs, check_permission, check_self_permission, current_task_state,
-    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
-    has_file_permissions, is_internal_operation, permissions_from_flags, task_consistent_attrs,
+    check_permission, check_self_permission, current_task_state, fs_node_effective_sid_and_class,
+    fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
+    permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, Auditable, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
@@ -15,11 +15,12 @@ use crate::vfs::{FsNode, FsStr, NamespaceNode};
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
     InitialSid, KernelClass, NullessByteStr, PolicyCap, Process2Permission, SystemPermission,
+    TaskAttrs,
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::auth::{
-    PTRACE_MODE_ATTACH, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ, PtraceAccessMode,
+    Credentials, PTRACE_MODE_ATTACH, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ, PtraceAccessMode,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
@@ -41,9 +42,9 @@ pub(in crate::security) fn exec_binprm(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     elf_security_state: &ResolvedElfState,
-) {
+) -> Result<(), Errno> {
     let new_sid = elf_security_state.sid.expect("SELinux enabled but missing resolved elf state");
-    let previous_sid = task_consistent_attrs(current_task).current_sid;
+    let previous_sid = current_task_state(current_task).current_sid;
 
     bprm_committing_creds(locked, security_server, current_task, previous_sid, new_sid);
 
@@ -55,9 +56,11 @@ pub(in crate::security) fn exec_binprm(
     let mut task_mutable_state = current_task.write();
     let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
     {
-        // Commit the new SID to the current task's metadata.
-        let mut task_attrs = task_consistent_attrs(current_task);
-        *task_attrs = TaskAttrs {
+        if current_task.has_overridden_creds() {
+            return error!(EACCES);
+        }
+        let mut creds = Credentials::clone(&current_task.current_creds());
+        creds.security_state = TaskAttrs {
             current_sid: new_sid,
             previous_sid,
             exec_sid: None,
@@ -66,6 +69,7 @@ pub(in crate::security) fn exec_binprm(
             sockcreate_sid: None,
             internal_operation: false,
         };
+        current_task.set_creds(creds);
     }
     bprm_committed_creds(
         security_server,
@@ -75,6 +79,8 @@ pub(in crate::security) fn exec_binprm(
         previous_sid,
         new_sid,
     );
+
+    Ok(())
 }
 
 /// If the task SID is changing during `exec`, enforces permissions that relate to inheritance of
@@ -260,12 +266,6 @@ fn maybe_reset_signal_state(
     current_task.thread_group().signal_actions.reset_to_default();
 }
 
-/// Returns `TaskAttrs` for a new `Task`, based on the `current_task` state, and the specified clone
-/// flags.
-pub(in crate::security) fn task_alloc(current_task: &CurrentTask, _clone_flags: u64) -> TaskAttrs {
-    task_consistent_attrs(current_task).clone()
-}
-
 /// Returns `TaskAttrs` for a new `Task` that will run in the specified `context`.
 pub(in crate::security) fn task_alloc_from_context(
     security_server: &SecurityServer,
@@ -274,7 +274,7 @@ pub(in crate::security) fn task_alloc_from_context(
     const INITIAL_PREFIX: &[u8] = b"#";
     let sid = if context.starts_with(INITIAL_PREFIX) {
         let name = &*context[INITIAL_PREFIX.len()..];
-        let initial_sid = InitialSid::all_variants().iter().find(|x| x.name().as_bytes() == name);
+        let initial_sid = InitialSid::all_variants().iter().find(|&x| x.name().as_bytes() == name);
         (*initial_sid.ok_or_else(|| errno!(EINVAL))?).into()
     } else {
         security_server
@@ -422,7 +422,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
 
         // Check that ptrace permission is allowed if the process is traced.
         if let Some(ptracer) = current_task.ptracer_task().upgrade() {
-            let tracer_sid = ptracer.security_state.lock().current_sid;
+            let tracer_sid = ptracer.real_creds().security_state.current_sid;
             // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
             check_permission(
                 &permission_check,
@@ -471,8 +471,8 @@ pub(in crate::security) fn check_getsched_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -491,8 +491,8 @@ pub(in crate::security) fn check_setsched_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -511,8 +511,8 @@ pub(in crate::security) fn check_getpgid_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -531,8 +531,8 @@ pub(in crate::security) fn check_setpgid_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -551,8 +551,8 @@ pub(in crate::security) fn check_task_getsid(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -571,8 +571,8 @@ pub(in crate::security) fn check_signal_access(
     signal: Signal,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     match signal {
         // The `sigkill` permission is required for sending SIGKILL.
         SIGKILL => check_permission(
@@ -619,7 +619,7 @@ pub(in crate::security) fn check_syslog_access(
     current_task: &CurrentTask,
     action: SyslogAction,
 ) -> Result<(), Errno> {
-    let sid = current_task_state(current_task).lock().current_sid;
+    let sid = current_task_state(current_task).current_sid;
     let required_permission = match action {
         SyslogAction::ReadAll | SyslogAction::SizeBuffer => SystemPermission::SyslogRead,
         SyslogAction::ConsoleOff | SyslogAction::ConsoleOn | SyslogAction::ConsoleLevel => {
@@ -649,8 +649,8 @@ pub(in crate::security) fn check_getcap_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -668,8 +668,8 @@ pub(in crate::security) fn check_setcap_access(
     target: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -806,7 +806,7 @@ pub(in crate::security) fn is_task_capable_noaudit(
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
 ) -> bool {
-    let sid = current_task_state(current_task).lock().current_sid;
+    let sid = current_task_state(current_task).current_sid;
     let permission = permission_from_capability(capability);
     is_internal_operation(current_task)
         || permission_check.has_permission(sid, sid, permission).permit
@@ -817,7 +817,7 @@ pub(in crate::security) fn check_task_capable(
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
-    let sid = current_task_state(current_task).lock().current_sid;
+    let sid = current_task_state(current_task).current_sid;
     let permission = permission_from_capability(capability);
     check_self_permission(&permission_check, current_task, sid, permission, current_task.into())
         .map_err(|_| errno!(EPERM))
@@ -832,8 +832,8 @@ pub(in crate::security) fn task_prlimit(
     check_set_rlimit: bool,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     if check_get_rlimit {
         check_permission(
             permission_check,
@@ -866,8 +866,8 @@ pub(in crate::security) fn task_setrlimit(
     new_limit: rlimit,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target.real_creds().security_state.current_sid;
     if new_limit.rlim_max != old_limit.rlim_max {
         check_permission(
             permission_check,
@@ -888,8 +888,8 @@ pub(in crate::security) fn ptrace_traceme(
     tracer: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let tracer_sid = tracer.security_state.lock().current_sid;
-    let tracee_sid = current_task_state(current_task).lock().current_sid;
+    let tracer_sid = tracer.real_creds().security_state.current_sid;
+    let tracee_sid = current_task_state(current_task).current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -908,8 +908,8 @@ pub(in crate::security) fn ptrace_access_check(
     mode: PtraceAccessMode,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let tracer_sid = current_task_state(current_task).lock().current_sid;
-    let tracee_sid = target.security_state.lock().current_sid;
+    let tracer_sid = current_task_state(current_task).current_sid;
+    let tracee_sid = target.real_creds().security_state.current_sid;
     let permission: KernelPermission =
         if mode.contains(PTRACE_MODE_READ) && !mode.contains(PTRACE_MODE_ATTACH) {
             CommonFsNodePermission::Read.for_class(FileClass::File).into()
@@ -938,7 +938,7 @@ pub(in crate::security) fn get_procattr(
     task: &Task,
     attr: ProcAttr,
 ) -> Result<Vec<u8>, Errno> {
-    let task_attrs = &task.security_state.lock();
+    let task_attrs = &task.real_creds().security_state;
 
     let sid = match attr {
         ProcAttr::Current => Some(task_attrs.current_sid),
@@ -972,6 +972,8 @@ pub(in crate::security) fn set_procattr(
     let audit_context = current_task.into();
     let permission_check = security_server.as_permission_check();
     let current_sid = task_consistent_attrs(current_task).current_sid;
+    let mut creds = Credentials::clone(&current_task.current_creds());
+
     match attr {
         ProcAttr::Current => {
             check_self_permission(
@@ -1006,7 +1008,7 @@ pub(in crate::security) fn set_procattr(
 
             // Check that ptrace permission is allowed if the process is traced.
             if let Some(ptracer) = current_task.ptracer_task().upgrade() {
-                let tracer_sid = ptracer.security_state.lock().current_sid;
+                let tracer_sid = ptracer.real_creds().security_state.current_sid;
                 // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
                 check_permission(
                     &permission_check,
@@ -1018,7 +1020,7 @@ pub(in crate::security) fn set_procattr(
                 )?;
             }
 
-            current_task_state(current_task).lock().current_sid = new_sid;
+            creds.security_state.current_sid = new_sid;
         }
         ProcAttr::Previous => {
             return error!(EINVAL);
@@ -1031,7 +1033,7 @@ pub(in crate::security) fn set_procattr(
                 ProcessPermission::SetExec,
                 audit_context,
             )?;
-            current_task_state(current_task).lock().exec_sid = sid;
+            creds.security_state.exec_sid = sid;
         }
         ProcAttr::FsCreate => {
             check_self_permission(
@@ -1041,7 +1043,7 @@ pub(in crate::security) fn set_procattr(
                 ProcessPermission::SetFsCreate,
                 audit_context,
             )?;
-            current_task_state(current_task).lock().fscreate_sid = sid;
+            creds.security_state.fscreate_sid = sid;
         }
         ProcAttr::KeyCreate => {
             check_self_permission(
@@ -1051,7 +1053,7 @@ pub(in crate::security) fn set_procattr(
                 ProcessPermission::SetKeyCreate,
                 audit_context,
             )?;
-            current_task_state(current_task).lock().keycreate_sid = sid;
+            creds.security_state.keycreate_sid = sid;
         }
         ProcAttr::SockCreate => {
             check_self_permission(
@@ -1061,17 +1063,18 @@ pub(in crate::security) fn set_procattr(
                 ProcessPermission::SetSockCreate,
                 audit_context,
             )?;
-            current_task_state(current_task).lock().sockcreate_sid = sid;
+            creds.security_state.sockcreate_sid = sid;
         }
     };
 
+    current_task.set_creds(creds);
     Ok(())
 }
 
 /// Sets the sid of `fs_node` to be that of `task`.
 pub(in crate::security) fn fs_node_init_with_task(task: &TempRef<'_, Task>, fs_node: &FsNode) {
     fs_node_ensure_class(fs_node).unwrap();
-    fs_node_set_label_with_task(fs_node, Arc::clone(&task.security_state.0));
+    fs_node_set_label_with_task(fs_node, &task.persistent_info);
 }
 
 #[cfg(test)]
@@ -1079,57 +1082,25 @@ mod tests {
 
     use super::*;
     use crate::security::exec_binprm;
-    use crate::security::selinux_hooks::testing::create_test_executable;
+    use crate::security::selinux_hooks::testing::{create_test_executable, mutate_attrs_for_test};
     use crate::security::selinux_hooks::{InitialSid, TaskAttrs, testing};
     use crate::signals::SignalInfo;
-    use crate::testing::create_task;
+    use crate::testing::create_task_with_security_context;
     use starnix_uapi::auth::PTRACE_MODE_ATTACH;
     use starnix_uapi::signals::{SIGTERM, SigSet};
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, error};
+    use std::ffi::CString;
     use testing::spawn_kernel_with_selinux_hooks_test_policy_and_run;
-
-    #[fuchsia::test]
-    async fn task_alloc_from_parent() {
-        spawn_kernel_with_selinux_hooks_test_policy_and_run(
-            |_locked, current_task, _security_server| {
-                // Create a fake parent state, with values for some fields, to check for.
-                let parent_security_state = TaskAttrs {
-                    current_sid: InitialSid::Unlabeled.into(),
-                    previous_sid: InitialSid::Kernel.into(),
-                    exec_sid: Some(InitialSid::Unlabeled.into()),
-                    fscreate_sid: Some(InitialSid::Unlabeled.into()),
-                    keycreate_sid: Some(InitialSid::Unlabeled.into()),
-                    sockcreate_sid: Some(InitialSid::Unlabeled.into()),
-                    internal_operation: false,
-                };
-
-                *current_task_state(current_task).lock() = parent_security_state.clone();
-
-                let security_state = task_alloc(&current_task, 0);
-                assert_eq!(security_state, parent_security_state);
-            },
-        )
-        .await;
-    }
-
-    #[fuchsia::test]
-    fn task_alloc_for() {
-        let for_kernel = TaskAttrs::for_kernel();
-        assert_eq!(for_kernel.current_sid, InitialSid::Kernel.into());
-        assert_eq!(for_kernel.previous_sid, for_kernel.current_sid);
-        assert_eq!(for_kernel.exec_sid, None);
-        assert_eq!(for_kernel.fscreate_sid, None);
-        assert_eq!(for_kernel.keycreate_sid, None);
-        assert_eq!(for_kernel.sockcreate_sid, None);
-    }
 
     #[fuchsia::test]
     async fn task_create_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |_locked, current_task, security_server| {
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:fork_yes_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:fork_yes_t:s0".into())
+                        .expect("invalid security context");
+                });
 
                 assert_eq!(
                     check_task_create_access(&security_server.as_permission_check(), &current_task),
@@ -1144,9 +1115,11 @@ mod tests {
     async fn task_create_denied_for_denied_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |_locked, current_task, security_server| {
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:fork_no_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:fork_no_t:s0".into())
+                        .expect("invalid security context");
+                });
 
                 assert_eq!(
                     check_task_create_access(&security_server.as_permission_check(), &current_task),
@@ -1177,8 +1150,10 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() =
-                    TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs =
+                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                });
 
                 assert_eq!(
                     bprm_creds_for_exec(&security_server, &current_task, &executable),
@@ -1211,8 +1186,10 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() =
-                    TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs =
+                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                });
 
                 assert_eq!(
                     bprm_creds_for_exec(&security_server, &current_task, &executable),
@@ -1245,8 +1222,10 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() =
-                    TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs =
+                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                });
 
                 assert_eq!(
                     bprm_creds_for_exec(&security_server, &current_task, &executable),
@@ -1280,8 +1259,10 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() =
-                    TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs =
+                        TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
+                });
 
                 assert_eq!(
                     bprm_creds_for_exec(&security_server, &current_task, &executable),
@@ -1309,7 +1290,9 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() = TaskAttrs::for_sid(current_sid);
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs = TaskAttrs::for_sid(current_sid);
+                });
 
                 // Since the security domain is not changing, the `noatsecure` permission is not
                 // checked and secure-mode exec is not required.
@@ -1341,7 +1324,9 @@ mod tests {
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
 
-                *current_task_state(current_task).lock() = TaskAttrs::for_sid(current_sid);
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs = TaskAttrs::for_sid(current_sid);
+                });
 
                 // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
                 // expect access denied.
@@ -1359,9 +1344,7 @@ mod tests {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
                 let initial_state = {
-                    let state = current_task_state(current_task);
-                    let mut attrs = state.lock();
-
+                    let mut attrs = current_task_state(current_task).clone();
                     // Set previous SID to a different value from current, to allow verification
                     // of the pre-exec "current" being moved into "previous".
                     attrs.previous_sid = InitialSid::Unlabeled.into();
@@ -1370,9 +1353,11 @@ mod tests {
                     attrs.sockcreate_sid = Some(InitialSid::Unlabeled.into());
                     attrs.fscreate_sid = Some(InitialSid::Unlabeled.into());
                     attrs.keycreate_sid = Some(InitialSid::Unlabeled.into());
-
-                    attrs.clone()
+                    attrs
                 };
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    *attrs = initial_state.clone();
+                });
 
                 // Ensure that the ELF binary SID differs from the task's current SID before exec.
                 let elf_sid = security_server
@@ -1384,10 +1369,11 @@ mod tests {
                     locked,
                     &current_task,
                     &ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false },
-                );
+                )
+                .unwrap();
 
                 assert_eq!(
-                    *current_task_state(current_task).lock(),
+                    *current_task_state(current_task),
                     TaskAttrs {
                         current_sid: elf_sid,
                         exec_sid: None,
@@ -1443,7 +1429,7 @@ mod tests {
                 }
 
                 // Simulate exec of the grandchild task into a new domain.
-                let previous_sid = { child_task.security_state.lock().current_sid };
+                let previous_sid = { child_task.real_creds().security_state.current_sid };
                 let new_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_valid_t:s0".into())
                     .expect("invalid security context");
@@ -1454,7 +1440,8 @@ mod tests {
                     locked,
                     &grandchild_task,
                     &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                );
+                )
+                .unwrap();
 
                 let post_exec_limits =
                     { grandchild_task.thread_group().limits.lock(locked).clone() };
@@ -1477,7 +1464,8 @@ mod tests {
                     locked,
                     &same_domain_task,
                     &ResolvedElfState { sid: Some(previous_sid), require_secure_exec: false },
-                );
+                )
+                .unwrap();
 
                 let same_domain_limits =
                     { same_domain_task.thread_group().limits.lock(locked).clone() };
@@ -1517,7 +1505,7 @@ mod tests {
                 assert_ne!(pre_exec_itimer_val.it_value.tv_sec, 0);
 
                 // Simulate exec of the child task into a context with type `test_siginh_no_t`.
-                let old_sid = { current_task.security_state.lock().current_sid };
+                let old_sid = { current_task.real_creds().security_state.current_sid };
                 let new_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
@@ -1526,7 +1514,8 @@ mod tests {
                     locked,
                     &child_task,
                     &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                );
+                )
+                .unwrap();
 
                 // Check that the child task's ITIMER_REAL is now unset.
                 let post_exec_itimer_val =
@@ -1554,7 +1543,7 @@ mod tests {
                 assert_eq!(child_task.read().pending_signal_count(), 1);
 
                 // Simulate exec of the child task into a context with type `test_siginh_no_t`.
-                let old_sid = { current_task.security_state.lock().current_sid };
+                let old_sid = { current_task.real_creds().security_state.current_sid };
                 let new_sid = security_server
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
@@ -1563,7 +1552,8 @@ mod tests {
                     locked,
                     &child_task,
                     &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                );
+                )
+                .unwrap();
 
                 // Check that the previously pending signal has been cleared.
                 assert_eq!(child_task.read().pending_signal_count(), 0);
@@ -1578,15 +1568,18 @@ mod tests {
     async fn setsched_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new("u:object_r:test_setsched_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_setsched_yes_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_setsched_target_t:s0".into())
-                    .expect("invalid security context");
-
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_setsched_yes_t:s0".into())
+                        .unwrap();
+                });
                 assert_eq!(
                     check_setsched_access(
                         &security_server.as_permission_check(),
@@ -1604,14 +1597,18 @@ mod tests {
     async fn setsched_access_denied_for_denied_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new("u:object_r:test_setsched_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_setsched_no_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_setsched_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_setsched_no_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_setsched_access(
@@ -1630,14 +1627,18 @@ mod tests {
     async fn getsched_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_getsched_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getsched_yes_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getsched_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_getsched_yes_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_getsched_access(
@@ -1656,14 +1657,18 @@ mod tests {
     async fn getsched_access_denied_for_denied_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_getsched_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getsched_no_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getsched_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_getsched_no_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_getsched_access(
@@ -1682,14 +1687,18 @@ mod tests {
     async fn getpgid_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_getpgid_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getpgid_yes_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getpgid_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_getpgid_yes_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_getpgid_access(
@@ -1708,14 +1717,18 @@ mod tests {
     async fn getpgid_access_denied_for_denied_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_getpgid_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getpgid_no_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_getpgid_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_getpgid_no_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_getpgid_access(
@@ -1734,14 +1747,18 @@ mod tests {
     async fn sigkill_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_kill_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_sigkill_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_kill_sigkill_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_signal_access(
@@ -1761,14 +1778,18 @@ mod tests {
     async fn sigchld_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_kill_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_sigchld_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_kill_sigchld_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_signal_access(
@@ -1788,14 +1809,18 @@ mod tests {
     async fn sigstop_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_kill_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_sigstop_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_kill_sigstop_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     check_signal_access(
@@ -1815,14 +1840,18 @@ mod tests {
     async fn signal_access_allowed_for_allowed_type() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_kill_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_signal_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_kill_signal_t:s0".into())
+                        .unwrap();
+                });
 
                 // The `signal` permission allows signals other than SIGKILL, SIGCHLD, SIGSTOP.
                 assert_eq!(
@@ -1843,14 +1872,18 @@ mod tests {
     async fn signal_access_denied_for_denied_signals() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let target_task = create_task(locked, &current_task.kernel(), "target_task");
+                let target_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_kill_target_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_signal_t:s0".into())
-                    .expect("invalid security context");
-                target_task.security_state.lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_kill_target_t:s0".into())
-                    .expect("invalid security context");
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid = security_server
+                        .security_context_to_sid(b"u:object_r:test_kill_signal_t:s0".into())
+                        .unwrap();
+                });
 
                 // The `signal` permission does not allow SIGKILL, SIGCHLD or SIGSTOP.
                 for signal in [SIGCHLD, SIGKILL, SIGSTOP] {
@@ -1873,18 +1906,18 @@ mod tests {
     async fn ptrace_access_allowed_for_allowed_type_and_state_is_updated() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let tracee_task = create_task(locked, &current_task.kernel(), "target_task");
+                let tracee_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_ptrace_traced_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_ptrace_tracer_yes_t:s0".into())
-                    .expect("invalid security context");
-                {
-                    let attrs = &mut tracee_task.security_state.lock();
+                mutate_attrs_for_test(&current_task, |attrs| {
                     attrs.current_sid = security_server
-                        .security_context_to_sid(b"u:object_r:test_ptrace_traced_t:s0".into())
-                        .expect("invalid security context");
-                    attrs.previous_sid = attrs.current_sid;
-                }
+                        .security_context_to_sid(b"u:object_r:test_ptrace_tracer_yes_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     ptrace_access_check(
@@ -1904,18 +1937,18 @@ mod tests {
     async fn ptrace_access_denied_for_denied_type_and_state_is_not_updated() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
-                let tracee_task = create_task(locked, &current_task.kernel(), "target_task");
+                let tracee_task = create_task_with_security_context(
+                    locked,
+                    &current_task.kernel(),
+                    "target_task",
+                    &CString::new(b"u:object_r:test_ptrace_traced_t:s0").unwrap(),
+                );
 
-                current_task_state(current_task).lock().current_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_ptrace_tracer_no_t:s0".into())
-                    .expect("invalid security context");
-                {
-                    let attrs = &mut tracee_task.security_state.lock();
+                mutate_attrs_for_test(&current_task, |attrs| {
                     attrs.current_sid = security_server
-                        .security_context_to_sid(b"u:object_r:test_ptrace_traced_t:s0".into())
-                        .expect("invalid security context");
-                    attrs.previous_sid = attrs.current_sid;
-                }
+                        .security_context_to_sid(b"u:object_r:test_ptrace_tracer_no_t:s0".into())
+                        .unwrap();
+                });
 
                 assert_eq!(
                     ptrace_access_check(
@@ -1944,10 +1977,10 @@ mod tests {
             |locked, current_task, security_server| {
                 security_server.load_policy(BINARY_POLICY.to_vec()).expect("policy load failed");
 
-                let unbounded_sid = security_server
-                    .security_context_to_sid(UNBOUNDED_CONTEXT.into())
-                    .expect("Make unbounded SID");
-                current_task_state(current_task).lock().current_sid = unbounded_sid;
+                mutate_attrs_for_test(&current_task, |attrs| {
+                    attrs.current_sid =
+                        security_server.security_context_to_sid(UNBOUNDED_CONTEXT.into()).unwrap();
+                });
 
                 // Thread-group has a single task, so dynamic transitions are permitted, with "setcurrent"
                 // and "dyntransition".

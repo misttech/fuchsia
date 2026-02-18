@@ -33,9 +33,7 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use crate::device::kobject::{Device, UEventAction, UEventContext};
 use crate::device::{DeviceListener, DeviceListenerKey};
-use crate::task::{
-    CurrentTask, EventHandler, FullCredentials, Kernel, WaitCanceler, WaitQueue, Waiter,
-};
+use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{
     AncillaryData, InputBuffer, Message, MessageQueue, MessageReadInfo, OutputBuffer,
     UnixControlData, VecInputBuffer,
@@ -45,7 +43,7 @@ use crate::vfs::socket::{
     SocketMessageFlags, SocketOps, SocketPeer, SocketShutdownFlags, SocketType,
 };
 use starnix_logging::{log_debug, log_error, log_warn, track_stub};
-use starnix_uapi::auth::{CAP_AUDIT_CONTROL, CAP_AUDIT_WRITE, CAP_NET_ADMIN};
+use starnix_uapi::auth::{CAP_AUDIT_CONTROL, CAP_AUDIT_WRITE, CAP_NET_ADMIN, Credentials};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -936,10 +934,10 @@ impl<'a> NetlinkAccessControl<'a> {
     }
 }
 
-impl<'a> AccessControl<FullCredentials> for NetlinkAccessControl<'a> {
+impl<'a> AccessControl<Arc<Credentials>> for NetlinkAccessControl<'a> {
     fn grant_assess(
         &self,
-        creds: &FullCredentials,
+        creds: &Arc<Credentials>,
         permission: Permission,
     ) -> Result<(), netlink::Errno> {
         let need_cap_net_admin = match permission {
@@ -963,7 +961,7 @@ impl<'a> AccessControl<FullCredentials> for NetlinkAccessControl<'a> {
 pub struct NetlinkContextImpl;
 
 impl NetlinkContext for NetlinkContextImpl {
-    type Creds = FullCredentials;
+    type Creds = Arc<Credentials>;
     type Sender<M: Clone + NetlinkSerializable + Send> = NetlinkToClientSender<M>;
     type Receiver<
         M: Send + MessageWithPermission + NetlinkDeserializable<Error: Into<DecodeError>>,
@@ -1021,7 +1019,7 @@ struct NetlinkSocket<C: NetlinkClient> {
     // TODO(https://issuetracker.google.com/285880057): Bound the capacity of
     // the "send buffer".
     message_sender: UnboundedSender<
-        NetlinkMessageWithCreds<UnparsedNetlinkMessage<Vec<u8>, C::Request>, FullCredentials>,
+        NetlinkMessageWithCreds<UnparsedNetlinkMessage<Vec<u8>, C::Request>, Arc<Credentials>>,
     >,
 }
 
@@ -1138,7 +1136,7 @@ impl<C: NetlinkClient + 'static> SocketOps for NetlinkSocket<C> {
 
         let msg = NetlinkMessageWithCreds::new(
             UnparsedNetlinkMessage::new(bytes),
-            current_task.full_current_creds(),
+            current_task.current_creds().clone(),
         );
         message_sender.unbounded_send(msg).map_err(|e| {
             log_warn!(

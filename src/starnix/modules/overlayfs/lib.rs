@@ -10,7 +10,7 @@ use rand::Rng;
 use starnix_core::fs::tmpfs::{TmpFs, TmpFsDirectory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::security;
-use starnix_core::task::{CurrentTask, FullCredentials, Kernel};
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::rw_queue::RwQueueReadGuard;
 use starnix_core::vfs::{
@@ -26,7 +26,7 @@ use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, FsNodeAppend, LockEqualOrBefore, Locked, RwLock,
     RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
-use starnix_uapi::auth::FsCred;
+use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{EEXIST, ENOENT, Errno};
 use starnix_uapi::file_mode::{FileMode, mode};
@@ -339,11 +339,11 @@ impl OverlayNode {
             };
             let cred = info.cred();
 
-            let mut copy_up_creds = self.stack.mounter.clone();
+            let mut copy_up_creds = Credentials::clone(&self.stack.mounter);
             // TODO: `fs_node_copy_up()` should receive the "union" node, rather than the lower, so
             // that the created upper node will reflect the overlay mount's "context=..." if any.
             security::fs_node_copy_up(current_task, &lower.entry.node, &mut copy_up_creds);
-            let res = current_task.override_creds(copy_up_creds, || {
+            let res = current_task.override_creds(Arc::new(copy_up_creds), || {
                 if info.mode.is_lnk() {
                     let link_target = lower.entry.node.readlink(locked, current_task)?;
                     let link_path = match &link_target {
@@ -670,9 +670,9 @@ impl FsNodeOps for OverlayNodeOps {
         dev: DeviceType,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let mut creds = self.node.stack.mounter.clone();
+        let mut creds = Credentials::clone(&self.node.stack.mounter);
         security::dentry_create_files_as(current_task, node, mode, name, &mut creds)?;
-        current_task.override_creds(creds, || {
+        current_task.override_creds(Arc::new(creds), || {
             let new_upper_node = self.node.create_entry(
                 locked,
                 node,
@@ -710,9 +710,9 @@ impl FsNodeOps for OverlayNodeOps {
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let mut creds = self.node.stack.mounter.clone();
+        let mut creds = Credentials::clone(&self.node.stack.mounter);
         security::dentry_create_files_as(current_task, node, mode, name, &mut creds)?;
-        current_task.override_creds(creds, || {
+        current_task.override_creds(Arc::new(creds), || {
             let new_upper_node = self.node.create_entry(
                 locked,
                 node,
@@ -756,9 +756,9 @@ impl FsNodeOps for OverlayNodeOps {
         target: &FsStr,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let mut creds = self.node.stack.mounter.clone();
+        let mut creds = Credentials::clone(&self.node.stack.mounter);
         security::dentry_create_files_as(current_task, node, FileMode::IFLNK, name, &mut creds)?;
-        current_task.override_creds(creds, || {
+        current_task.override_creds(Arc::new(creds), || {
             let new_upper_node = self.node.create_entry(
                 locked,
                 node,
@@ -1255,7 +1255,7 @@ pub struct OverlayStack {
     work: ActiveEntry,
 
     // Used when interacting with the `upper_fs`, `lower_fs` or `work` directories.
-    mounter: FullCredentials,
+    mounter: Arc<Credentials>,
 }
 
 impl OverlayStack {
@@ -1286,7 +1286,7 @@ impl OverlayStack {
         }
 
         let kernel = current_task.kernel();
-        let mounter = current_task.full_current_creds();
+        let mounter = current_task.current_creds().clone();
         let stack = Arc::new(OverlayStack { lower_fs, upper_fs, work, mounter });
         let root_node = OverlayNode::new(stack.clone(), Some(lower), Some(upper), None);
         let fs =
@@ -1331,7 +1331,7 @@ impl OverlayStack {
         let lower_fs = rootfs;
         let upper_fs = invisible_tmp;
 
-        let mounter = FullCredentials::for_kernel();
+        let mounter = Credentials::root();
         let stack = Arc::new(OverlayStack { lower_fs, upper_fs, work, mounter });
         let root_node = OverlayNode::new(stack.clone(), Some(lower), Some(upper), None);
         let fs = FileSystem::new(

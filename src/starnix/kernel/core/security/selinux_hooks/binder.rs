@@ -14,7 +14,7 @@ use starnix_uapi::errors::Errno;
 pub(in crate::security) fn binder_connection_alloc(
     current_task: &CurrentTask,
 ) -> BinderConnectionState {
-    BinderConnectionState { sid: current_task_state(current_task).lock().current_sid }
+    BinderConnectionState { sid: current_task_state(current_task).current_sid }
 }
 
 /// Returns the serialized Security Context associated with the given state.
@@ -31,7 +31,7 @@ pub(in crate::security) fn binder_set_context_mgr(
     current_task: &CurrentTask,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let sid = current_task_state(current_task).lock().current_sid;
+    let sid = current_task_state(current_task).current_sid;
     check_self_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -50,8 +50,8 @@ pub(in crate::security) fn binder_transaction(
     target_task: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target_task.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target_task.real_creds().security_state.current_sid;
     if source_sid != connection_security_state.sid {
         check_permission(
             &security_server.as_permission_check(),
@@ -81,8 +81,8 @@ pub(in crate::security) fn binder_transfer_binder(
     target_task: &Task,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
-    let source_sid = current_task_state(current_task).lock().current_sid;
-    let target_sid = target_task.security_state.lock().current_sid;
+    let source_sid = current_task_state(current_task).current_sid;
+    let target_sid = target_task.real_creds().security_state.current_sid;
     check_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -100,6 +100,6 @@ pub(in crate::security) fn binder_transfer_file(
     subject_task: &Task,
     file: &FileObject,
 ) -> Result<(), Errno> {
-    let receiving_sid = subject_task.security_state.lock().current_sid;
+    let receiving_sid = subject_task.real_creds().security_state.current_sid;
     file_receive(security_server, current_task, receiving_sid, file)
 }

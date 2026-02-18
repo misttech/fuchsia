@@ -7,12 +7,12 @@ use {fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, zx};
 use starnix_core::device::mem::new_null_file;
 use starnix_core::fs::fuchsia::new_remote_file;
 use starnix_core::mm::MemoryAccessor;
-
-use starnix_core::task::{CurrentTask, FullCredentials, Task};
+use starnix_core::task::{CurrentTask, Task};
 use starnix_core::vfs::{FdFlags, FdNumber, FileHandle};
 use starnix_logging::{log_trace, log_warn, with_zx_name};
 use starnix_sync::{Locked, ResourceAccessorLevel};
 use starnix_types::convert::IntoFidl;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::{Errno, errno, errno_from_code, error};
 
 use starnix_uapi::user_address::UserAddress;
@@ -64,7 +64,7 @@ pub fn get_resource_accessor<'a>(
 pub struct RemoteResourceAccessor {
     pub process: zx::Process,
     pub process_accessor: fbinder::ProcessAccessorSynchronousProxy,
-    pub remote_creds: FullCredentials,
+    pub remote_creds: Arc<Credentials>,
 }
 
 impl RemoteResourceAccessor {

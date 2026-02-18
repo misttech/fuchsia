@@ -8,7 +8,9 @@ use crate::security::SecurityServer;
 use crate::task::CurrentTask;
 use crate::testing::spawn_kernel_with_selinux_and_run;
 use crate::vfs::{FsStr, NamespaceNode};
+use selinux::TaskAttrs;
 use starnix_sync::{Locked, Unlocked};
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::file_mode::FileMode;
 use std::future::Future;
@@ -89,9 +91,9 @@ pub(in crate::security) fn create_test_executable(
     let security_server = &current_task.kernel().security_state.state.as_ref().unwrap().server;
     let fscreate_sid = security_server.security_context_to_sid(security_context.into()).unwrap();
 
-    let creds = current_task.full_current_creds();
-    creds.security_state.lock().fscreate_sid = Some(fscreate_sid);
-    current_task.override_creds(creds, || {
+    let mut creds = Credentials::clone(&current_task.current_creds());
+    creds.security_state.fscreate_sid = Some(fscreate_sid);
+    current_task.override_creds(creds.into(), || {
         current_task
             .fs()
             .root()
@@ -104,6 +106,15 @@ pub(in crate::security) fn create_test_executable(
             )
             .expect("create_node(file)")
     })
+}
+
+pub(in crate::security) fn mutate_attrs_for_test(
+    current_task: &CurrentTask,
+    f: impl FnOnce(&mut TaskAttrs),
+) {
+    let mut creds = Credentials::clone(&current_task.current_creds());
+    f(&mut creds.security_state);
+    current_task.set_creds(creds)
 }
 
 #[cfg(test)]

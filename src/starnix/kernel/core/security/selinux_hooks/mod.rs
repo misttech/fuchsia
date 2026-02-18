@@ -18,8 +18,8 @@ pub(super) mod superblock;
 pub(super) mod task;
 pub(super) mod testing;
 
-use super::{PermissionFlags, TaskState};
-use crate::task::{CurrentCreds, CurrentTask};
+use super::PermissionFlags;
+use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{
     Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
 };
@@ -31,17 +31,16 @@ use selinux::{
     ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FdPermission,
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
     FsNodeClass, InitialSid, KernelPermission, PolicyCap, ProcessPermission, SecurityId,
-    SecurityServer,
+    SecurityServer, TaskAttrs,
 };
 use smallvec;
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, bug_ref, trace_duration, track_stub};
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::Mutex;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::{errno, error};
 use std::cell::Ref;
-use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -82,7 +81,7 @@ fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> Permiss
 }
 
 fn is_internal_operation(current_task: &CurrentTask) -> bool {
-    current_task_state(current_task).lock().internal_operation
+    current_task_state(current_task).internal_operation
 }
 
 /// Checks that `current_task` has permission to "use" the specified `file`, and the specified
@@ -350,7 +349,7 @@ fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
     let state = fs_node.security_state.lock().clone();
     let sid = match state.label {
         FsNodeLabel::SecurityId { sid } => sid,
-        FsNodeLabel::FromTask { task_state } => task_state.lock().current_sid,
+        FsNodeLabel::FromTask { task_state } => task_state.real_creds().security_state.current_sid,
         FsNodeLabel::Uninitialized => {
             // We should never reach here, but for now enforce it in debug builds.
             if cfg!(any(test, debug_assertions)) {
@@ -559,96 +558,14 @@ pub(super) struct PerfEventState {
     sid: SecurityId,
 }
 
-/// The SELinux security structure for `ThreadGroup`.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct TaskAttrs {
-    /// Current SID for the task.
-    pub current_sid: SecurityId,
-
-    /// SID for the task upon the next execve call.
-    pub exec_sid: Option<SecurityId>,
-
-    /// SID for files created by the task.
-    pub fscreate_sid: Option<SecurityId>,
-
-    /// SID for kernel-managed keys created by the task.
-    pub keycreate_sid: Option<SecurityId>,
-
-    /// SID prior to the last execve.
-    pub previous_sid: SecurityId,
-
-    /// SID for sockets created by the task.
-    pub sockcreate_sid: Option<SecurityId>,
-
-    /// Indicates that the task with these credentials is performing an internal operation where
-    /// access checks must be skipped.
-    pub internal_operation: bool,
-}
-
-impl TaskAttrs {
-    /// Returns initial state for kernel tasks.
-    pub(super) fn for_kernel() -> Self {
-        Self::for_sid(InitialSid::Kernel.into())
-    }
-
-    /// Returns placeholder state for use when SELinux is not enabled.
-    pub(super) fn for_selinux_disabled() -> Self {
-        Self::for_sid(InitialSid::Unlabeled.into())
-    }
-
-    /// Used to create initial state for tasks with a specified SID.
-    pub(super) fn for_sid(sid: SecurityId) -> Self {
-        Self {
-            current_sid: sid,
-            previous_sid: sid,
-            exec_sid: None,
-            fscreate_sid: None,
-            keycreate_sid: None,
-            sockcreate_sid: None,
-            internal_operation: false,
-        }
-    }
-}
-
-pub(super) enum CurrentTaskStateHolder<'a> {
-    TaskState(&'a TaskState),
-    OverriddenTaskState(Ref<'a, TaskState>),
-}
-
-impl Deref for CurrentTaskStateHolder<'_> {
-    type Target = TaskState;
-    fn deref(&self) -> &Self::Target {
-        match self {
-            CurrentTaskStateHolder::TaskState(task_attrs) => &task_attrs,
-            CurrentTaskStateHolder::OverriddenTaskState(overridden_creds) => {
-                overridden_creds.deref()
-            }
-        }
-    }
-}
-
-pub(in crate::security) fn current_task_state(
-    current_task: &CurrentTask,
-) -> CurrentTaskStateHolder<'_> {
-    if current_task.has_overridden_creds() {
-        CurrentTaskStateHolder::OverriddenTaskState(Ref::map(
-            current_task.current_creds.borrow(),
-            |creds| match creds {
-                CurrentCreds::Overridden(_, security_state) => security_state,
-                CurrentCreds::Cached(_) => unreachable!("Inconsistent state"),
-            },
-        ))
-    } else {
-        CurrentTaskStateHolder::TaskState(&current_task.security_state)
-    }
+pub(in crate::security) fn current_task_state(current_task: &CurrentTask) -> Ref<'_, TaskAttrs> {
+    Ref::map(current_task.current_creds(), |creds| &creds.security_state)
 }
 
 /// Returns the SID of a task. Panics if the task is using overridden credentials.
-pub(in crate::security) fn task_consistent_attrs(
-    current_task: &CurrentTask,
-) -> MutexGuard<'_, TaskAttrs> {
+pub(in crate::security) fn task_consistent_attrs(current_task: &CurrentTask) -> Ref<'_, TaskAttrs> {
     assert!(!current_task.has_overridden_creds());
-    current_task.security_state.lock()
+    current_task_state(current_task)
 }
 
 /// Security state for a [`crate::vfs::FileObject`] instance. This currently just holds the SID
@@ -778,7 +695,7 @@ pub(super) enum FsNodeLabel {
     Uninitialized,
     SecurityId { sid: SecurityId },
     // TODO(https://fxbug.dev/451613626): Consider replacing by a reference to a task-or-zombie.
-    FromTask { task_state: Arc<Mutex<TaskAttrs>> },
+    FromTask { task_state: TaskPersistentInfo },
 }
 
 impl FsNodeLabel {
@@ -795,13 +712,13 @@ struct FsNodeSidAndClass {
 }
 
 /// Security state for a [`crate::binderfs::BinderConnection`] instance. This holds the
-/// [`selinux::SecurityId`] of the task as it was when it created the connection.
+/// [`selinux_types::SecurityId`] of the task as it was when it created the connection.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct BinderConnectionState {
     sid: SecurityId,
 }
 
-/// Security state for a [`crate::vfs::Socket`] instance. This holds the [`selinux::SecurityId`] of
+/// Security state for a [`crate::vfs::Socket`] instance. This holds the [`selinux_types::SecurityId`] of
 /// the peer socket.
 #[derive(Debug, Default)]
 pub(super) struct SocketState {
@@ -832,8 +749,9 @@ pub(super) fn set_cached_sid(fs_node: &FsNode, sid: SecurityId) {
 /// Sets the Task associated with `fs_node` to `task`.
 /// The effective security id of the [`FsNode`] will be that of the task, even if the security id
 /// of the task changes.
-fn fs_node_set_label_with_task(fs_node: &FsNode, task_state: Arc<Mutex<TaskAttrs>>) {
-    fs_node.security_state.lock().label = FsNodeLabel::FromTask { task_state };
+fn fs_node_set_label_with_task(fs_node: &FsNode, task_persistent_info: &TaskPersistentInfo) {
+    fs_node.security_state.lock().label =
+        FsNodeLabel::FromTask { task_state: task_persistent_info.clone() };
 }
 
 /// Ensures that the `fs_node`'s security state has an appropriate security class set.

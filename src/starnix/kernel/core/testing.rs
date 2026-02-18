@@ -31,7 +31,7 @@ use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::vfs::default_statfs;
-use starnix_uapi::auth::FsCred;
+use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -289,11 +289,24 @@ pub fn create_task(
     kernel: &Kernel,
     task_name: &str,
 ) -> AutoReleasableTask {
+    create_task_with_security_context(locked, kernel, task_name, &CString::new("#kernel").unwrap())
+}
+
+/// An old way of creating a task for testing, with a given security context.
+///
+/// See caveats on `create_task`.
+pub fn create_task_with_security_context(
+    locked: &mut Locked<Unlocked>,
+    kernel: &Kernel,
+    task_name: &str,
+    security_context: &CString,
+) -> AutoReleasableTask {
     let task = create_init_child_process(
         locked,
         &kernel.weak_self.upgrade().unwrap(),
         TaskCommand::new(task_name.as_bytes()),
-        Some(&CString::new("#kernel").unwrap()),
+        Credentials::with_ids(0, 0),
+        Some(security_context),
     )
     .expect("failed to create second task");
     task.mm().unwrap().initialize_mmap_layout_for_test(ArchWidth::Arch64);

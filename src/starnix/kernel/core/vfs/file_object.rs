@@ -390,7 +390,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        serve_file(current_task, file, current_task.full_current_creds())
+        serve_file(current_task, file, current_task.current_creds().clone())
             .map(|c| Some(c.0.into_handle().into()))
     }
 

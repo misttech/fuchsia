@@ -521,7 +521,7 @@ impl BinderDriver {
             RemoteResourceAccessor {
                 process_accessor,
                 process,
-                remote_creds: current_task.full_current_creds(),
+                remote_creds: current_task.current_creds().clone(),
             },
         );
         Arc::new(RemoteBinderConnection {

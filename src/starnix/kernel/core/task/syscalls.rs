@@ -2283,6 +2283,7 @@ mod tests {
                 locked,
                 &kernel.weak_self.upgrade().unwrap(),
                 TaskCommand::new(b"second task"),
+                Credentials::with_ids(0, 0),
                 Some(&CString::new("#kernel").unwrap()),
             )
             .expect("failed to create second task");
@@ -2460,7 +2461,7 @@ mod tests {
     async fn test_setuid() {
         spawn_kernel_and_run(async |locked, current_task| {
             // Test for root.
-            current_task.set_creds(Credentials::clone(&Credentials::root()));
+            current_task.set_creds(Credentials::with_ids(0, 0));
             sys_setuid(locked, &current_task, 42).expect("setuid");
             let mut creds = Credentials::clone(&current_task.current_creds());
             assert_eq!(creds.euid, 42);
@@ -2476,10 +2477,9 @@ mod tests {
             assert_eq!(sys_setuid(locked, &current_task, 43), error!(EPERM));
 
             sys_setuid(locked, &current_task, 42).expect("setuid");
-            let creds = current_task.clone_creds();
-            assert_eq!(creds.euid, 42);
-            assert_eq!(creds.uid, 42);
-            assert_eq!(creds.saved_uid, 42);
+            assert_eq!(current_task.current_creds().euid, 42);
+            assert_eq!(current_task.current_creds().uid, 42);
+            assert_eq!(current_task.current_creds().saved_uid, 42);
 
             // Change uid and saved_uid, and check that one can set the euid to these.
             let mut creds = Credentials::clone(&current_task.current_creds());
@@ -2489,10 +2489,9 @@ mod tests {
             current_task.set_creds(creds);
 
             sys_setuid(locked, &current_task, 41).expect("setuid");
-            let creds = current_task.clone_creds();
-            assert_eq!(creds.euid, 41);
-            assert_eq!(creds.uid, 41);
-            assert_eq!(creds.saved_uid, 43);
+            assert_eq!(current_task.current_creds().euid, 41);
+            assert_eq!(current_task.current_creds().uid, 41);
+            assert_eq!(current_task.current_creds().saved_uid, 43);
 
             let mut creds = Credentials::clone(&current_task.current_creds());
             creds.uid = 41;
@@ -2501,10 +2500,9 @@ mod tests {
             current_task.set_creds(creds);
 
             sys_setuid(locked, &current_task, 43).expect("setuid");
-            let creds = current_task.clone_creds();
-            assert_eq!(creds.euid, 43);
-            assert_eq!(creds.uid, 41);
-            assert_eq!(creds.saved_uid, 43);
+            assert_eq!(current_task.current_creds().euid, 43);
+            assert_eq!(current_task.current_creds().uid, 41);
+            assert_eq!(current_task.current_creds().saved_uid, 43);
         })
         .await;
     }

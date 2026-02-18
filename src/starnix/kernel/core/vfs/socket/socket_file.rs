@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::security;
-use crate::task::{CurrentTask, EventHandler, FullCredentials, WaitCanceler, Waiter};
+use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::file_server::serve_file;
 use crate::vfs::socket::{
@@ -16,6 +16,7 @@ use crate::vfs::{
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::error;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
@@ -181,8 +182,7 @@ impl FileOps for SocketFile {
         if let Some(handle) = self.socket.to_handle(file, current_task)? {
             Ok(Some(handle))
         } else {
-            serve_file(current_task, file, FullCredentials::for_kernel())
-                .map(|c| Some(c.0.into_handle()))
+            serve_file(current_task, file, Credentials::root()).map(|c| Some(c.0.into_handle()))
         }
     }
 }

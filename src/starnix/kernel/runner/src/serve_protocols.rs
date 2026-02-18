@@ -17,9 +17,7 @@ use starnix_core::execution::{create_init_child_process, execute_task_with_preru
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{
-    CurrentTask, ExitStatus, FullCredentials, Kernel, LockedAndTask, ProcessEntryRef,
-};
+use starnix_core::task::{CurrentTask, ExitStatus, Kernel, LockedAndTask, ProcessEntryRef};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
@@ -28,6 +26,7 @@ use starnix_logging::{log_error, log_warn};
 use starnix_modules_framebuffer::Framebuffer;
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::UncheckedSignal;
@@ -49,12 +48,7 @@ pub fn expose_root(
     server_end: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), Error> {
     let root_file = system_task.open_file(locked, "/".into(), OpenFlags::RDONLY)?;
-    serve_file_at(
-        server_end.into_channel().into(),
-        system_task,
-        &root_file,
-        FullCredentials::for_kernel(),
-    )?;
+    serve_file_at(server_end.into_channel().into(), system_task, &root_file, Credentials::root())?;
     Ok(())
 }
 
@@ -116,6 +110,7 @@ async fn spawn_console(
             kernel.kthreads.unlocked_for_async().deref_mut(),
             &kernel.weak_self.upgrade().expect("Kernel must still be alive"),
             TaskCommand::new(binary_path.as_bytes()),
+            Credentials::with_ids(0, 0),
             None,
         )?;
         let (sender, receiver) = oneshot::channel();

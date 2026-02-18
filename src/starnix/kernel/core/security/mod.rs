@@ -44,24 +44,6 @@ impl KernelState {
     }
 }
 
-/// Opaque structure encapsulating active security state for a `Task`.
-#[derive(Debug)]
-pub struct TaskState(Arc<Mutex<selinux_hooks::TaskAttrs>>);
-
-impl TaskState {
-    pub(in crate::security) fn lock(
-        &self,
-    ) -> starnix_sync::MutexGuard<'_, selinux_hooks::TaskAttrs> {
-        self.0.lock()
-    }
-}
-
-impl Clone for TaskState {
-    fn clone(&self) -> Self {
-        TaskState(Arc::new(self.0.lock().clone().into()))
-    }
-}
-
 /// Structure holding security state associated with a `ResolvedElf` instance.
 /// TODO(https://fxbug.dev/378835222): Consider restructuring hook calls so that
 /// the kernel does not need to depend on the contents of this struct.

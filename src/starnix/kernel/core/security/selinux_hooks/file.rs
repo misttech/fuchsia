@@ -30,7 +30,7 @@ use std::ops::Range;
 
 /// Returns the security state for a new file object created by `current_task`.
 pub(in crate::security) fn file_alloc_security(current_task: &CurrentTask) -> FileObjectState {
-    FileObjectState { sid: current_task_state(current_task).lock().current_sid }
+    FileObjectState { sid: current_task_state(current_task).current_sid }
 }
 
 /// Checks whether the `current_task` has the specified `permission_flags` to the `file`.
@@ -40,7 +40,7 @@ pub(in crate::security) fn file_permission(
     file: &FileObject,
     mut permission_flags: PermissionFlags,
 ) -> Result<(), Errno> {
-    let current_sid = current_task_state(current_task).lock().current_sid;
+    let current_sid = current_task_state(current_task).current_sid;
     let FsNodeSidAndClass { class: file_class, .. } =
         fs_node_effective_sid_and_class(&file.name.entry.node);
 
@@ -117,7 +117,7 @@ pub(in crate::security) fn check_file_ioctl_access(
     request: u32,
 ) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
-    let subject_sid = current_task_state(current_task).lock().current_sid;
+    let subject_sid = current_task_state(current_task).current_sid;
     match canonicalize_ioctl_request(current_task, request) {
         FIBMAP | FIONREAD | FIGETBSZ | FS_IOC_GETFLAGS | FS_IOC_GETVERSION => has_file_permissions(
             &permission_check,
@@ -168,7 +168,7 @@ pub(in crate::security) fn check_file_lock_access(
     file: &FileObject,
 ) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
-    let subject_sid = current_task_state(current_task).lock().current_sid;
+    let subject_sid = current_task_state(current_task).current_sid;
     has_file_permissions(
         &permission_check,
         current_task,
@@ -189,7 +189,7 @@ pub(in crate::security) fn check_file_fcntl_access(
     fcntl_arg: u64,
 ) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
-    let subject_sid = current_task_state(current_task).lock().current_sid;
+    let subject_sid = current_task_state(current_task).current_sid;
 
     match fcntl_cmd {
         F_GETLK | F_SETLK | F_SETLKW => {
@@ -274,7 +274,7 @@ pub(in crate::security) fn file_mprotect(
             }
         };
         if let Some(permission) = permission {
-            let subject_sid = current_task_state(current_task).lock().current_sid;
+            let subject_sid = current_task_state(current_task).current_sid;
             check_self_permission(
                 &security_server.as_permission_check(),
                 current_task,
@@ -304,7 +304,7 @@ pub(in crate::security) fn mmap_file(
     mapping_options: MappingOptions,
 ) -> Result<(), Errno> {
     if let Some(file) = file {
-        let current_sid = current_task_state(current_task).lock().current_sid;
+        let current_sid = current_task_state(current_task).current_sid;
         // The `map` permission shouldn't be checked for BPF handles.
         if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
             match *bpf_handle {
@@ -352,7 +352,7 @@ fn file_map_prot_check(
         let private_writable_mapping = !mapping_options.contains(MappingOptions::SHARED)
             && prot.contains(ProtectionFlags::WRITE);
         if anonymous_mapping || private_writable_mapping {
-            let current_sid = current_task_state(current_task).lock().current_sid;
+            let current_sid = current_task_state(current_task).current_sid;
             check_permission(
                 &security_server.as_permission_check(),
                 current_task,
@@ -380,7 +380,7 @@ fn file_map_prot_check(
             flags
         };
         let permissions = permissions_from_flags(flags, node_class);
-        let current_sid = current_task_state(current_task).lock().current_sid;
+        let current_sid = current_task_state(current_task).current_sid;
         has_fs_node_permissions(
             &security_server.as_permission_check(),
             current_task,

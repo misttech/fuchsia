@@ -7,7 +7,6 @@ use crate::mutable_state::{state_accessor, state_implementation};
 use crate::ptrace::{
     AtomicStopState, PtraceEvent, PtraceEventData, PtraceState, PtraceStatus, StopState,
 };
-use crate::security;
 use crate::signals::{KernelSignal, RunState, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::tracing::KoidPair;
@@ -954,10 +953,6 @@ pub struct Task {
     // The pid directory, so it doesn't have to be generated and thrown away on every access.
     // See https://fxbug.dev/291962828 for details.
     pub proc_pid_directory_cache: Mutex<Option<FsNodeHandle>>,
-
-    /// The Linux Security Modules state for this thread group. This should be the last member of
-    /// this struct.
-    pub security_state: security::TaskState,
 }
 
 /// The decoded cross-platform parts we care about for page fault exception reports.
@@ -1088,7 +1083,6 @@ impl Task {
         seccomp_filters: SeccompFilterContainer,
         robust_list_head: RobustListHeadPtr,
         timerslack_ns: u64,
-        security_state: security::TaskState,
     ) -> OwnedRef<Self> {
         let thread_group_key = ThreadGroupKey::from(&thread_group);
         OwnedRef::new_cyclic(|weak_self| {
@@ -1133,7 +1127,6 @@ impl Task {
                 seccomp_filter_state,
                 trace_syscalls: AtomicBool::new(false),
                 proc_pid_directory_cache: Mutex::new(None),
-                security_state,
             };
 
             #[cfg(any(test, debug_assertions))]
@@ -1628,6 +1621,7 @@ impl cmp::Eq for Task {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::security;
     use crate::testing::*;
     use starnix_uapi::auth::{CAP_SYS_ADMIN, Capabilities};
     use starnix_uapi::resource_limits::Resource;

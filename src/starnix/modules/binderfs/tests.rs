@@ -33,7 +33,7 @@ pub mod tests {
         ProtectionFlags,
     };
     use starnix_core::security;
-    use starnix_core::task::{CurrentTask, ExitStatus, FullCredentials, Kernel, Waiter};
+    use starnix_core::task::{CurrentTask, ExitStatus, Kernel, Waiter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{
         Anon, FdFlags, FdNumber, FileHandle, FileObject, NamespaceNode, anon_fs,
@@ -43,6 +43,7 @@ pub mod tests {
     use starnix_types::convert::IntoFidl;
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
+    use starnix_uapi::auth::Credentials;
     use starnix_uapi::device_type::DeviceType;
     use starnix_uapi::errors::{EBADF, EINVAL, Errno};
     use starnix_uapi::open_flags::OpenFlags;
@@ -4021,7 +4022,7 @@ pub mod tests {
             let process = fuchsia_runtime::process_self()
                 .duplicate(zx::Rights::SAME_RIGHTS)
                 .expect("process");
-            let remote_creds = FullCredentials::for_kernel();
+            let remote_creds = Credentials::root();
             let remote_binder_task =
                 Arc::new(RemoteResourceAccessor { process_accessor, process, remote_creds });
             let mut vector = Vec::with_capacity(VECTOR_SIZE);
@@ -4132,7 +4133,7 @@ pub mod tests {
             let process = fuchsia_runtime::process_self()
                 .duplicate(zx::Rights::SAME_RIGHTS)
                 .expect("process");
-            let remote_creds = FullCredentials::for_kernel();
+            let remote_creds = Credentials::root();
             let remote_binder_task =
                 Arc::new(RemoteResourceAccessor { process_accessor, process, remote_creds });
 

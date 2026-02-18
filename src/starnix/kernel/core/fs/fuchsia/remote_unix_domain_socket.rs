@@ -4,8 +4,7 @@
 
 use crate::fs::fuchsia::{OpenFlags, new_remote_file};
 use crate::task::{
-    CurrentTask, EventHandler, FullCredentials, SignalHandler, SignalHandlerInner, WaitCanceler,
-    Waiter,
+    CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::socket::{
@@ -16,9 +15,11 @@ use crate::vfs::{AncillaryData, FileHandle, MessageReadInfo, UnixControlData};
 use fidl::endpoints::SynchronousProxy;
 use linux_uapi::{SO_LINGER, SOL_SOCKET};
 use starnix_sync::{FileOpsCore, Locked};
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, uapi, ucred};
+use std::sync::Arc;
 use zerocopy::IntoBytes;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
 static READABLE_SIGNAL: zx::Signals =
@@ -29,11 +30,11 @@ static WRITABLE_SIGNAL: zx::Signals =
 pub struct RemoteUnixDomainSocket {
     client: fbinder::UnixDomainSocketSynchronousProxy,
     event: zx::EventPair,
-    remote_creds: FullCredentials,
+    remote_creds: Arc<Credentials>,
 }
 
 impl RemoteUnixDomainSocket {
-    pub fn new(channel: zx::Channel, remote_creds: FullCredentials) -> Result<Self, Errno> {
+    pub fn new(channel: zx::Channel, remote_creds: Arc<Credentials>) -> Result<Self, Errno> {
         let client = fbinder::UnixDomainSocketSynchronousProxy::from_channel(channel);
         let response = client
             .get_event(
