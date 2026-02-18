@@ -32,9 +32,9 @@ void MoonflowerRcgClock::Enable(hwreg::RegisterMmio& io, uint64_t freq) {
 }
 
 void MoonflowerRcgClock::Disable(hwreg::RegisterMmio& io) {
-  ForceEnable(io, false);
-  Configure(io, CXO_F);
   ForceEnable(io, true);
+  Configure(io, CXO_F);
+  ForceEnable(io, false);
 }
 
 void MoonflowerRcgClock::Configure(hwreg::RegisterMmio& io, const FreqConfig& config) const {
