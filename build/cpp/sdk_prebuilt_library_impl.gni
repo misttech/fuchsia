@@ -515,6 +515,16 @@ template("sdk_prebuilt_library_impl") {
   #
   link_lib_dir = "${sdk_prebuilt_base_for_target_api_level}/lib"
 
+  # Determine the API file path we will use if needed as it may be used to
+  # determine another path below.
+  tentative_api_file = "${sdk_name}.api"
+  if (defined(invoker.api)) {
+    assert(
+        rebase_path(invoker.api, "//") != rebase_path(tentative_api_file, "//"),
+        "The specified `api` file (`${invoker.api}`) matches the default. `api` only needs to be specified when overriding the default.")
+    tentative_api_file = invoker.api
+  }
+
   if (prebuilt_library_type == "static") {
     # Use the binary from the shared library toolchain to allow the static
     # libraries shipped in the IDK to be linked into shared libraries See
@@ -552,15 +562,10 @@ template("sdk_prebuilt_library_impl") {
       # For legacy reasons, the file name in the IDK is different.
       ifs_file_name = "${output_name}.ifs"
 
-      # Unlike other target API levels, the golden file is not in `_goldens_dir`.
-      # It is in the same directory as the BUILD.gn file except when the `api`
-      # parameter is specified, in which case it is next to that file.
-      if (defined(invoker.api)) {
-        ifs_golden_file =
-            get_path_info(invoker.api, "dir") + "/${ifs_file_name}"
-      } else {
-        ifs_golden_file = get_path_info(ifs_file_name, "abspath")
-      }
+      # Unlike other target API levels, the golden file is always in the same
+      # directory as the `.api` file is or would be.
+      ifs_golden_file =
+          get_path_info(tentative_api_file, "dir") + "/${ifs_file_name}"
 
       packaged_ifs_file = "${sdk_root_path}/${ifs_file_name}"
     }
@@ -710,19 +715,14 @@ template("sdk_prebuilt_library_impl") {
           !defined(invoker.api) && sdk_header_files == [],
           "`no_headers` targets do not require/support modification acknowledgement.")
       assert(!is_internal)  # Would not enter else if.
+      not_needed([ "tentative_api_file" ])
     } else if (is_internal) {
       assert(
           !defined(invoker.api),
           "\"internal\" targets do not require/support modification acknowledgement.")
+      not_needed([ "tentative_api_file" ])
     } else {
-      api = "${sdk_name}.api"
-      if (defined(invoker.api)) {
-        assert(
-            rebase_path(invoker.api, "//") != rebase_path(api, "//"),
-            "The specified `api` file (`${invoker.api}`) matches the default. `api` only needs to be specified when overriding the default.")
-        api = invoker.api
-      }
-
+      api = tentative_api_file
       api_contents = sdk_header_files
     }
 
