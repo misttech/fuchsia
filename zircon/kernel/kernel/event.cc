@@ -36,7 +36,6 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <kernel/auto_preempt_disabler.h>
 #include <kernel/scheduler.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
@@ -124,8 +123,9 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
 
   // In order to transition from not-signaled to signaled, we must be
   // holding our wait queue's lock.
-  const auto do_transaction =
-      [&]() TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
+  const auto do_transaction = [&]()
+                                  TA_REQ(chainlock_transaction_token,
+                                         preempt_disabled_token) -> ChainLockTransaction::Result<> {
     ChainLockGuard guard{wait_.get_lock()};
 
     // If we are already signaled, we are finished.  We should be able to assert
@@ -184,19 +184,11 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
       // To reach the target state, BlockAndAssignOwnerLocked must perform the "P_c -> Q_o -> P_w"
       // join. This occurs when in ChannelDispatcher::MessageWaiter::Wait.
       if (queue_to_own != nullptr) {
-        // There's a few things occurring here, all are required to perform an
-        // ownership assignment:
-        // 1. We grab the first thread from maybe_unblock_list, and assert that
-        //    its lock is held, to convince static analysis.
-        // 2. We disable preemption, so that we can perform the ownership
-        //    assignment.
+        // We grab the first thread from maybe_unblock_list, and assert that its lock is held, to
+        // convince static analysis.
         Thread* thread = &maybe_unblock_list->front();
         thread->get_lock().AssertHeld();
-        // TODO(https://fxbug.dev/473600952): Once spinlocks imply disabling of preemption,
-        // modify the transaction to use EagerReschedDisableAndIrqSaveOption and remove
-        // AnnotatedAutoPreemptDisabler.
-        if (AnnotatedAutoPreemptDisabler preempt_disabler;
-            queue_to_own->AssignOwnerLocked(thread) != ZX_OK) {
+        if (queue_to_own->AssignOwnerLocked(thread) != ZX_OK) {
           while ((thread = maybe_unblock_list->pop_front()) != nullptr) {
             thread->get_lock().Release();
           }
@@ -226,7 +218,8 @@ void Event::Signal(zx_status_t wait_result, OwnedWaitQueue* queue_to_own) {
     }
     return ChainLockTransaction::Done;
   };
-  ChainLockTransaction::UntilDone(IrqSaveOption, CLT_TAG("Event::Signal"), do_transaction);
+  ChainLockTransaction::UntilDone(EagerReschedDisableAndIrqSaveOption, CLT_TAG("Event::Signal"),
+                                  do_transaction);
 }
 
 /**
