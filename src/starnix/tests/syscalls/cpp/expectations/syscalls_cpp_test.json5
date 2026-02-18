@@ -51,6 +51,11 @@
 
                 // TODO(https://fxbug.dev/483116800): Deflake and re-enable
                 "LoopTest.RemoveLoopDeviceFromKernelDeviceRegistry",
+
+                // TODO(https://fxbug.dev/297440106)
+                // TODO(https://fxbug.dev/365540067)
+                "ZombieProcTest.ZombieStatus",
+                "ZombieProcTest.ZombieMapsEmpty",
             ],
         },
         {
@@ -132,11 +137,6 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
-
-                // TODO(https://fxbug.dev/297440106)
-                // TODO(https://fxbug.dev/365540067)
-                "ZombieProcTest.ZombieStatus",
-                "ZombieProcTest.ZombieMapsEmpty",
             ],
         },
     ],
