@@ -25,7 +25,7 @@ from assembly.assembly_input_bundle import (
     AssemblyInputBundleCreationException,
     CompiledComponentDefinition,
     CompiledPackageDefinition,
-    DriverDetails,
+    PackagedDriverDetails,
     PackageDetails,
 )
 from fast_copy_mock import mock_fast_copy_in
@@ -221,9 +221,10 @@ raw_assembly_input_bundle_json = """{
     ]
   },
   "blobs": [],
-  "base_drivers": [
+  "drivers": [
     {
       "package": "driver_package1",
+      "set": "base",
       "components": [
         "meta/driver_component1.cm",
         "meta/driver_component2.cm"
@@ -231,13 +232,13 @@ raw_assembly_input_bundle_json = """{
     },
     {
       "package": "driver_package2",
+      "set": "base",
       "components": [
         "meta/driver2_component1.cm",
         "meta/driver2_component2.cm"
       ]
     }
   ],
-  "boot_drivers": [],
   "bootfs_shell_commands": {},
   "shell_commands": {
     "package1": [
@@ -304,13 +305,15 @@ class AssemblyInputBundleTest(unittest.TestCase):
         aib.config_data["package1"] = set(
             [FileEntry("path/to/source.json", "config.json")]
         )
-        aib.base_drivers = [
-            DriverDetails(
+        aib.drivers = [
+            PackagedDriverDetails(
                 "driver_package1",
+                "base",
                 set(["meta/driver_component1.cm", "meta/driver_component2.cm"]),
             ),
-            DriverDetails(
+            PackagedDriverDetails(
                 "driver_package2",
+                "base",
                 set(
                     ["meta/driver2_component1.cm", "meta/driver2_component2.cm"]
                 ),
@@ -360,13 +363,15 @@ class AssemblyInputBundleTest(unittest.TestCase):
         aib.config_data["package1"] = set(
             [FileEntry("path/to/source.json", "config.json")]
         )
-        aib.base_drivers = [
-            DriverDetails(
+        aib.drivers = [
+            PackagedDriverDetails(
                 "driver_package1",
+                "base",
                 set(["meta/driver_component1.cm", "meta/driver_component2.cm"]),
             ),
-            DriverDetails(
+            PackagedDriverDetails(
                 "driver_package2",
+                "base",
                 set(
                     ["meta/driver2_component1.cm", "meta/driver2_component2.cm"]
                 ),
@@ -408,7 +413,7 @@ class AssemblyInputBundleTest(unittest.TestCase):
         assert_field_equal(parsed_aib, aib, "boot_args")
         assert_field_equal(parsed_aib, aib, "bootfs_files")
         assert_field_equal(parsed_aib, aib, "config_data")
-        assert_field_equal(parsed_aib, aib, "base_drivers")
+        assert_field_equal(parsed_aib, aib, "drivers")
         assert_field_equal(parsed_aib, aib, "shell_commands")
         # TODO(https://fxbug.dev/42068124): support deserializing union data types
         # assert_field_equal(parsed_aib, aib, "packages_to_compile")

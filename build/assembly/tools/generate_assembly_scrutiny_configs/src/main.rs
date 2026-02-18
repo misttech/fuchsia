@@ -212,8 +212,9 @@ fn main() -> Result<()> {
             && aib.required_to_be_in(&FeatureSetLevel::Utility, &args.build_type);
 
         let bootfs_package_manifests: Vec<&Utf8PathBuf> = aib
-            .boot_drivers
+            .drivers
             .iter()
+            .filter(|d| d.set == PackageSet::Bootfs)
             .map(|d| d.package.as_utf8_pathbuf())
             .chain(aib.packages.iter().filter_map(|p| {
                 if p.set == PackageSet::Bootfs { Some(p.package.as_utf8_pathbuf()) } else { None }
@@ -229,7 +230,12 @@ fn main() -> Result<()> {
                     None
                 }
             })
-            .chain(aib.base_drivers.iter().map(|d| d.package.as_utf8_pathbuf()))
+            .chain(
+                aib.drivers
+                    .iter()
+                    .filter(|d| d.set == PackageSet::Base)
+                    .map(|d| d.package.as_utf8_pathbuf()),
+            )
             .collect();
 
         let bootfs_package_names = bootfs_package_manifests

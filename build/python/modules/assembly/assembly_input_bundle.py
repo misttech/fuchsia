@@ -8,6 +8,7 @@ of-tree (OOT) assembly as a unit, but whose contents should be opaque to the
 delivery system itself.
 
 """
+import builtins
 import functools
 import os
 import pathlib
@@ -30,7 +31,7 @@ __all__ = [
     "AssemblyInputBundle",
     "AssemblyInputBundleCreationException",
     "ConfigDataEntries",
-    "DriverDetails",
+    "PackagedDriverDetails",
     "PackageDetails",
 ]
 
@@ -64,14 +65,6 @@ class PackageManifestParsingException(Exception):
     """To be raised when an attempt to parse a json file into a PackageManifest object fails"""
 
     ...
-
-
-@dataclass(order=True)
-class DriverDetails:
-    """Details for constructing a driver manifest fragment from a driver package"""
-
-    package: FilePath = field()  # Path to the package manifest
-    components: set[FilePath] = field(default_factory=set)
 
 
 @dataclass
@@ -146,6 +139,15 @@ class CompiledPackageDefinitionFromGN:
     component_includes: set[FileEntry] = field(default_factory=set)
     # Whether to extract the contents of this package into bootfs
     bootfs_package: bool = field(default=False)
+
+
+@dataclass(order=True)
+class PackagedDriverDetails:
+    """Details for constructing a driver manifest fragment from a driver package"""
+
+    package: FilePath = field()  # Path to the package manifest
+    set: str = field()  # Package set that includes the driver
+    components: builtins.set[FilePath] = field(default_factory=builtins.set)
 
 
 @dataclass
@@ -235,8 +237,14 @@ class AssemblyInputBundle:
                     "set": "bootfs",
                 },
             ],
-            "base_drivers": [ "packageD1", ... ],
-            "boot_drivers": [ "packageD1", ... ],
+            "drivers": [
+                {
+                    "package": "packageD1",
+                    "set": "base",
+                    "components": [ "meta/driver.cm" ]
+                },
+                ...
+            ],
             "bootfs_files_package": "packages/packageB2",
             "bootfs_files": [
                 { "destination": "path/in/bootfs", source: "path/in/layout" },
@@ -316,8 +324,7 @@ class AssemblyInputBundle:
     packages: set[PackageDetails] = field(default_factory=set)
     config_data: ConfigDataEntries = field(default_factory=dict)
     blobs: set[FilePath] = field(default_factory=set)
-    base_drivers: list[DriverDetails] = field(default_factory=list)
-    boot_drivers: list[DriverDetails] = field(default_factory=list)
+    drivers: list[PackagedDriverDetails] = field(default_factory=list)
     bootfs_shell_commands: dict[str, list[str]] = field(
         default_factory=functools.partial(defaultdict, list)
     )
@@ -482,13 +489,9 @@ class AIBCreator:
         # The config_data entries
         self.config_data: FileEntryList = []
 
-        # Additional base drivers directly specified without requiring
+        # Additional drivers directly specified without requiring
         # us to parse GN generated files
-        self.provided_base_driver_details: list[DriverDetails] = list()
-
-        # Additional boot drivers directly specified without requiring
-        # us to parse GN generated files
-        self.provided_boot_driver_details: list[DriverDetails] = list()
+        self.provided_driver_details: list[PackagedDriverDetails] = list()
 
         # A set containing all the unique packageUrls seen by the AIBCreator instance
         self.package_urls: set[str] = set()
@@ -668,21 +671,10 @@ class AIBCreator:
             self._prepare_packages_for_copying(sorted(self.packages))
         )
 
-        # Copy the base drivers' packages.
-        result.base_drivers.extend(
+        # Copy the drivers' packages.
+        result.drivers.extend(
             sorted(
-                self._prepare_drivers_for_copying(
-                    self.provided_base_driver_details, "base"
-                )
-            )
-        )
-
-        # Copy bootfs drivers' packages.
-        result.boot_drivers.extend(
-            sorted(
-                self._prepare_drivers_for_copying(
-                    self.provided_boot_driver_details, "bootfs"
-                )
+                self._prepare_drivers_for_copying(self.provided_driver_details)
             )
         )
 
@@ -902,11 +894,11 @@ class AIBCreator:
         return package_details
 
     def _prepare_drivers_for_copying(
-        self, driver_details_list: list[DriverDetails], pkg_set: str
-    ) -> list[DriverDetails]:
-        """Queue up the package copying for each driver, returning a DriverDetails with the new destination path"""
+        self, driver_details_list: list[PackagedDriverDetails]
+    ) -> list[PackagedDriverDetails]:
+        """Queue up the package copying for each driver, returning a PackagedDriverDetails with the new destination path"""
 
-        driver_details: list[DriverDetails] = []
+        driver_details: list[PackagedDriverDetails] = []
 
         for driver_detail in driver_details_list:
             try:
@@ -916,11 +908,12 @@ class AIBCreator:
             except package_copier.DuplicatePackageException as e:
                 raise DuplicatePackageException(e)
 
-            self._validate_package_url(manifest, pkg_set)
+            self._validate_package_url(manifest, driver_detail.set)
 
             driver_details.append(
-                DriverDetails(
+                PackagedDriverDetails(
                     destination_path,
+                    driver_detail.set,
                     driver_detail.components,
                 )
             )

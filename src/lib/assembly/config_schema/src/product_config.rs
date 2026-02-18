@@ -56,7 +56,7 @@ impl ProductConfig {
 mod tests {
     use super::*;
     use crate::assembly_input_bundle::{AssemblyInputBundle, PartialKernelConfig};
-    use crate::common::{DriverDetails, PackageDetails, PackageSet};
+    use crate::common::{DriverDetails, PackageDetails, PackageSet, PackagedDriverDetails};
     use crate::platform_settings::media_config::{
         AudioConfig, AudioDeviceRegistryConfig, PlatformMediaConfig,
     };
@@ -331,9 +331,10 @@ mod tests {
                   }
                 ]
               },
-              base_drivers: [
+              drivers: [
                 {
                   package: "path/to/driver",
+                  set: "base",
                   components: ["path/to/1234", "path/to/5678"]
                 }
               ],
@@ -405,9 +406,10 @@ mod tests {
             })
         );
         assert_eq!(
-            bundle.base_drivers[0],
-            DriverDetails {
+            bundle.drivers[0],
+            PackagedDriverDetails {
                 package: FileRelativePathBuf::FileRelative(Utf8PathBuf::from("path/to/driver")),
+                set: PackageSet::Base,
                 components: vec!(
                     Utf8PathBuf::from("path/to/1234"),
                     Utf8PathBuf::from("path/to/5678")

@@ -144,8 +144,9 @@ assembly_input_bundle("embeddable") {
     "//src/sys/bootstrap/meta/bootstrap.cml",
   ]
 
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/bus/drivers/platform:package"
       driver_components = [ "meta/platform-bus.cm" ]
     },
@@ -212,36 +213,44 @@ assembly_input_bundle("bootstrap") {
     bootstrap_shards += [ "//src/sys/instrumentation_data_processor/meta/instrumentation_data_processor.bootstrap_shard.cml" ]
   }
 
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/adc/drivers/adc:package"
       driver_components = [ "meta/adc.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/core:package"
       driver_components = [ "meta/block.core.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/sdmmc:package"
       driver_components = [ "meta/sdmmc.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/clock/drivers/clock:package"
       driver_components = [ "meta/clock.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/gpio/drivers/gpio:package"
       driver_components = [ "meta/gpio.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/i2c/drivers/i2c:package"
       driver_components = [ "meta/i2c.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/spi/drivers/spi:package"
       driver_components = [ "meta/spi.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/usb/drivers/usb-bus:package"
       driver_components = [ "meta/usb-bus.cm" ]
     },
@@ -256,16 +265,33 @@ _DISPLAY_DRIVER_PACKAGES = [
 ]
 
 assembly_input_bundle("display_drivers_boot") {
-  boot_driver_packages = _DISPLAY_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _DISPLAY_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "bootfs"
+      },
+    ]
+  }
 }
 
 assembly_input_bundle("display_drivers_base") {
-  base_driver_packages = _DISPLAY_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _DISPLAY_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "base"
+      },
+    ]
+  }
 }
 
 assembly_input_bundle("pwm_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/pwm/drivers/pwm:package"
       driver_components = [ "meta/pwm.cm" ]
     },
@@ -273,8 +299,9 @@ assembly_input_bundle("pwm_driver") {
 }
 
 assembly_input_bundle("power_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/power/drivers/power:package"
       driver_components = [ "meta/power.cm" ]
     },
@@ -282,8 +309,9 @@ assembly_input_bundle("power_driver") {
 }
 
 assembly_input_bundle("registers_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/registers/drivers/registers:package"
       driver_components = [ "meta/registers.cm" ]
     },
@@ -306,8 +334,9 @@ assembly_input_bundle("usb_cdc_function_boot") {
     "userdebug",
     "eng",
   ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target =
           "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
       driver_components = [ "meta/usb-cdc-function.cm" ]
@@ -316,8 +345,9 @@ assembly_input_bundle("usb_cdc_function_boot") {
 }
 
 assembly_input_bundle("usb_cdc_function_base") {
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target =
           "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
       driver_components = [ "meta/usb-cdc-function.cm" ]
@@ -330,11 +360,27 @@ assembly_input_bundle("network_drivers_boot") {
     "userdebug",
     "eng",
   ]
-  boot_driver_packages = _NETWORK_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _NETWORK_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "bootfs"
+      },
+    ]
+  }
 }
 
 assembly_input_bundle("network_drivers_base") {
-  base_driver_packages = _NETWORK_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _NETWORK_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "base"
+      },
+    ]
+  }
 }
 
 _USB_PERIPHERAL_DRIVER_PACKAGES = [
@@ -345,24 +391,43 @@ _USB_PERIPHERAL_DRIVER_PACKAGES = [
 ]
 
 assembly_input_bundle("usb_peripheral_drivers_boot") {
-  boot_driver_packages = _USB_PERIPHERAL_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _USB_PERIPHERAL_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "bootfs"
+      },
+    ]
+  }
 }
 
 assembly_input_bundle("usb_peripheral_drivers_base") {
-  base_driver_packages = _USB_PERIPHERAL_DRIVER_PACKAGES
+  drivers = []
+  foreach(pkg, _USB_PERIPHERAL_DRIVER_PACKAGES) {
+    drivers += [
+      {
+        forward_variables_from(pkg, "*")
+        set = "base"
+      },
+    ]
+  }
 }
 
 assembly_input_bundle("input_drivers") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/ui/input/drivers/buttons:package"
       driver_components = [ "meta/buttons.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/ui/input/drivers/hid:package"
       driver_components = [ "meta/hid.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/ui/input/drivers/hid-input-report:package"
       driver_components = [ "meta/hid-input-report.cm" ]
     },
@@ -370,52 +435,64 @@ assembly_input_bundle("input_drivers") {
 }
 
 assembly_input_bundle("usb_host_drivers") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/connectivity/bluetooth/hci/transport/usb:package"
       driver_components = [ "meta/bt-transport-usb.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/usb-mass-storage:package"
       driver_components = [ "meta/usb-mass-storage.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/connectivity/ethernet/drivers/usb-cdc-ecm:package"
       driver_components = [ "meta/usb-cdc-ecm.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/ml/drivers/usb-harriet:package"
       driver_components = [ "meta/usb-harriet.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/serial/drivers/usb-cdc-acm:package"
       driver_components = [ "meta/usb-cdc-acm.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/usb/drivers/usb-composite:package"
       driver_components = [ "meta/usb-composite.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/usb/drivers/usb-hub:package"
       driver_components = [ "meta/usb-hub.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/media/audio/drivers/usb-audio:package"
       driver_components = [ "meta/usb-audio.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/ui/input/drivers/usb-hid:package"
       driver_components = [ "meta/usb-hid.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/serial/drivers/ftdi:package"
       driver_components = [ "meta/ftdi.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/connectivity/ethernet/drivers/asix-88179:package"
       driver_components = [ "meta/asix-88179.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/connectivity/ethernet/drivers/asix-88772b:package"
       driver_components = [ "meta/asix-88772b.cm" ]
     },
@@ -423,8 +500,9 @@ assembly_input_bundle("usb_host_drivers") {
 }
 
 assembly_input_bundle("usb_rndis_function") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target =
           "//src/connectivity/ethernet/drivers/rndis-function:package"
       driver_components = [ "meta/rndis-function.cm" ]
@@ -433,8 +511,9 @@ assembly_input_bundle("usb_rndis_function") {
 }
 
 assembly_input_bundle("usb_ums_function") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/ums-function:package"
       driver_components = [ "meta/ums-function.cm" ]
     },
@@ -560,8 +639,9 @@ assembly_input_bundle("embeddable_eng") {
 # This is a temporary AIB hold wlanphy driver. This driver will eventually
 # be moved to bootstrap AIB and this AIB will be removed.
 assembly_input_bundle("wlanphy_driver") {
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/connectivity/wlan/drivers/wlanphy:wlanphy"
       driver_components = [ "meta/wlanphy.cm" ]
     },
@@ -570,8 +650,9 @@ assembly_input_bundle("wlanphy_driver") {
 
 # AIB for the bt-transport-uart driver.
 assembly_input_bundle("bt_transport_uart_driver") {
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/connectivity/bluetooth/hci/transport/uart:uart"
       driver_components = [ "meta/bt-transport-uart.cm" ]
     },
@@ -580,8 +661,9 @@ assembly_input_bundle("bt_transport_uart_driver") {
 
 # AIB for the bus-pci driver
 assembly_input_bundle("bus_pci_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/bus/drivers/pci:bus-pci-package"
       driver_components = [ "meta/bus-pci.cm" ]
     },
@@ -590,8 +672,9 @@ assembly_input_bundle("bus_pci_driver") {
 
 # AIB for the bus-kpci driver
 assembly_input_bundle("bus_kpci_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/bus/drivers/pci:bus-kpci-package"
       driver_components = [ "meta/bus-kpci.cm" ]
     },
@@ -600,8 +683,9 @@ assembly_input_bundle("bus_kpci_driver") {
 
 # AIB for the realtek-8211f driver
 assembly_input_bundle("realtek_8211f_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target =
           "//src/connectivity/ethernet/drivers/realtek-8211f:package"
       driver_components = [ "meta/realtek-8211f.cm" ]
@@ -611,8 +695,9 @@ assembly_input_bundle("realtek_8211f_driver") {
 
 # AIB for the xHCI driver
 assembly_input_bundle("xhci_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/usb/drivers/xhci:package"
       driver_components = [ "meta/xhci.cm" ]
     },
@@ -625,8 +710,9 @@ assembly_input_bundle("fake_battery_driver") {
     "userdebug",
     "eng",
   ]
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/power/testing/fake-battery:fake_battery"
       driver_components = [ "meta/fake_battery.cm" ]
     },
@@ -643,8 +729,9 @@ assembly_input_bundle("fake_power_sensor") {
 
 # AIB for the sdhci driver
 assembly_input_bundle("sdhci_driver") {
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/sdhci:package"
       driver_components = [ "meta/sdhci.cm" ]
     },
@@ -654,8 +741,9 @@ assembly_input_bundle("sdhci_driver") {
 # AIB for the ufs driver
 assembly_input_bundle("ufs_driver") {
   allowed_in = [ "eng" ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/ufs:package"
       driver_components = [ "meta/ufs.cm" ]
     },
@@ -669,8 +757,9 @@ assembly_input_bundle("interconnect_driver") {
     "userdebug",
     "eng",
   ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/interconnect/drivers/interconnect:package"
       driver_components = [ "meta/interconnect.cm" ]
     },
@@ -1002,9 +1091,10 @@ assembly_input_bundle("core_realm") {
     "//src/developer/forensics:pkg",
   ]
 
-  base_driver_packages = [
+  drivers = [
     {
       # Fallback driver for uart nodes.
+      set = "base"
       package_target = "//src/devices/serial/drivers/serial:package"
       driver_components = [ "meta/serial.cm" ]
     },
@@ -1736,8 +1826,9 @@ assembly_input_bundle("core_realm_development_access_rcs_usb") {
     "userdebug",
     "eng",
   ]
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/developer/remote-control/usb:usb-vsock-package"
       driver_components = [
         "meta/usb-vsock-service.cm",
@@ -2304,8 +2395,9 @@ assembly_input_bundle("usb_adb_function") {
     "userdebug",
     "eng",
   ]
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/developer/adb/drivers/usb-adb-function:package"
       driver_components = [ "meta/usb-adb-function.cm" ]
     },
@@ -2322,8 +2414,9 @@ assembly_input_bundle("fastbootd_usb_support") {
   base_packages = [ "//src/firmware/fastboot-usb:package" ]
   core_shards =
       [ "//src/firmware/fastboot-usb/meta/fastboot_usb.core_shard.cml" ]
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/firmware/drivers/usb-fastboot-function:pkg"
       driver_components = [ "meta/usb-fastboot-function.cm" ]
     },
@@ -2828,20 +2921,24 @@ assembly_input_bundle("fshost_non_storage_host") {
       ]
     },
   ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/ramdisk:package"
       driver_components = [ "meta/ramdisk.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/gpt:package"
       driver_components = [ "meta/gpt.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/storage/fvm/driver:package"
       driver_components = [ "meta/fvm.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/devices/block/drivers/zxcrypt:package"
       driver_components = [ "meta/zxcrypt.cm" ]
     },
@@ -3389,8 +3486,9 @@ assembly_input_bundle("wlan_contemporary_privacy_only_support") {
 
 # WLAN support for drivers that provide their own MAC
 assembly_input_bundle("wlan_fullmac_support") {
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/connectivity/wlan/drivers/wlanif"
       driver_components = [ "meta/wlanif.cm" ]
     },
@@ -3399,8 +3497,9 @@ assembly_input_bundle("wlan_fullmac_support") {
 
 # WLAN support for drivers that utilize a software MAC
 assembly_input_bundle("wlan_softmac_support") {
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/connectivity/wlan/drivers/wlansoftmac"
       driver_components = [ "meta/wlansoftmac.cm" ]
     },
@@ -3423,24 +3522,28 @@ assembly_input_bundle("location_emergency") {
 # Intel High-Definition Audio class driver
 assembly_input_bundle("intel_hda") {
   allowed_in = [ "eng" ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/media/audio/drivers/intel-hda/codecs/hdmi:package"
       package_set = "bootfs"
       driver_components = [ "meta/hdmi-audio-codec.cm" ]
     },
     {
+      set = "bootfs"
       package_target =
           "//src/media/audio/drivers/intel-hda/codecs/realtek:package"
       package_set = "bootfs"
       driver_components = [ "meta/realtek-audio-codec.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/media/audio/drivers/intel-hda/controller:package"
       package_set = "bootfs"
       driver_components = [ "meta/intel-hda.cm" ]
     },
     {
+      set = "bootfs"
       package_target = "//src/media/audio/drivers/intel-hda/codecs/qemu:package"
       package_set = "bootfs"
       driver_components = [ "meta/qemu-audio-codec.cm" ]
@@ -3452,12 +3555,14 @@ assembly_input_bundle("intel_hda") {
 # Support for interactive debugging/development of platform audio
 assembly_input_bundle("audio_development_support") {
   allowed_in = [ "eng" ]
-  base_driver_packages = [
+  drivers = [
     {
+      set = "base"
       package_target = "//src/media/audio/drivers/virtual-audio"
       driver_components = [ "meta/virtual-audio-driver.cm" ]
     },
     {
+      set = "base"
       package_target = "//src/media/audio/drivers/virtual-audio-legacy"
       driver_components = [ "meta/virtual-audio-legacy-driver.cm" ]
     },
@@ -3792,8 +3897,9 @@ assembly_input_bundle("power_framework_testing_sag") {
 # An AIB for our power test related platform drivers.
 assembly_input_bundle("power_test_platform_drivers") {
   allowed_in = [ "eng" ]
-  boot_driver_packages = [
+  drivers = [
     {
+      set = "bootfs"
       package_target = "//src/power/testing/system-integration/example/test-driver:power-system-integration-example-test-driver"
       driver_components =
           [ "meta/power-system-integration-example-test-driver.cm" ]

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::{DriverDetails, PackageDetails, PackageName};
+use crate::common::{PackageDetails, PackageName, PackagedDriverDetails};
 use crate::{BuildType, FeatureSetLevel};
 use assembly_constants::{CompiledPackageDestination, FileEntry};
 use assembly_container::WalkPaths;
@@ -59,13 +59,9 @@ pub struct AssemblyInputBundle {
     /// assembly, as the package manifests contain the same information.
     pub blobs: Vec<Utf8PathBuf>,
 
-    /// Configuration of base driver packages. Driver packages should not be
-    /// listed in the base package list and will be included automatically.
-    pub base_drivers: Vec<DriverDetails>,
-
-    /// Configuration of boot driver packages. Driver packages should not be
-    /// listed in the bootfs package list and will be included automatically.
-    pub boot_drivers: Vec<DriverDetails>,
+    /// Configuration of driver packages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drivers: Vec<PackagedDriverDetails>,
 
     /// Map of the names of packages that contain shell commands to the list of
     /// commands within each.

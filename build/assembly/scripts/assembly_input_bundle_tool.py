@@ -13,9 +13,9 @@ from typing import Any, TextIO
 
 from assembly import (
     AIBCreator,
-    DriverDetails,
     FileEntry,
     FilePath,
+    PackagedDriverDetails,
     PackageDetails,
     PackageManifest,
 )
@@ -108,18 +108,11 @@ def create_bundle(args: argparse.Namespace) -> None:
     if args.compiled_packages:
         add_compiled_packages_from_file(aib_creator, args.compiled_packages)
 
-    if args.base_drivers_pkg_list:
+    if args.drivers_list:
         add_driver_list_from_file(
             aib_creator,
-            args.base_drivers_pkg_list,
-            aib_creator.provided_base_driver_details,
-        )
-
-    if args.boot_drivers_pkg_list:
-        add_driver_list_from_file(
-            aib_creator,
-            args.boot_drivers_pkg_list,
-            aib_creator.provided_boot_driver_details,
+            args.drivers_list,
+            aib_creator.provided_driver_details,
         )
 
     if args.config_data_list:
@@ -196,7 +189,7 @@ def add_memory_buckets(
 def add_driver_list_from_file(
     aib_creator: AIBCreator,
     driver_list_file: TextIO,
-    driver_list: list[DriverDetails],
+    driver_list: list[PackagedDriverDetails],
 ) -> None:
     # cross-check the base and bootfs_package sets for the driver before adding
     # it to the target driver_list.
@@ -206,9 +199,11 @@ def add_driver_list_from_file(
             raise ValueError(
                 f"duplicate pkg manifest found: {driver_details['package_target']}"
             )
+
         driver_list.append(
-            DriverDetails(
+            PackagedDriverDetails(
                 driver_details["package_target"],
+                driver_details["set"],
                 driver_details["driver_components"],
             )
         )
@@ -510,15 +505,11 @@ def main() -> int:
         help="Path to a json list of package manifests for the 'on-demand' package set",
     )
     bundle_creation_parser.add_argument(
-        "--boot-drivers-pkg-list",
+        "--drivers-list",
         type=argparse.FileType("r"),
-        help="Path to a json list of driver details for the 'bootfs' package set",
+        help="Path to a json list of driver details",
     )
-    bundle_creation_parser.add_argument(
-        "--base-drivers-pkg-list",
-        type=argparse.FileType("r"),
-        help="Path to a json list of driver details for the 'base' package set",
-    )
+
     bundle_creation_parser.add_argument(
         "--shell-cmds-list",
         type=argparse.FileType("r"),

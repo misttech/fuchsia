@@ -289,8 +289,7 @@ impl ImageAssemblyConfigBuilder {
             packages,
             config_data,
             blobs: _,
-            base_drivers,
-            boot_drivers,
+            drivers,
             bootfs_shell_commands,
             shell_commands,
             packages_to_compile,
@@ -305,32 +304,36 @@ impl ImageAssemblyConfigBuilder {
             self.add_bootfs_files_package(path, false).context("Adding bootfs files package")?;
         }
 
-        // Base drivers are added to the base packages
-        for driver_details in base_drivers {
-            let driver_package_path = &bundle_path.join(&driver_details.package);
-            self.add_package_from_path(driver_package_path, PackageOrigin::AIB, &PackageSet::Base)?;
-
-            let package_url = DriverManifestBuilder::get_package_url(
-                DriverPackageType::Base,
-                driver_package_path,
-            )?;
-            self.base_drivers.try_insert_unique(package_url, driver_details)?;
-        }
-
-        // Boot drivers are added to the bootfs package set
-        for driver_details in boot_drivers {
+        // Drivers are added to the correct driver map based on their set
+        for driver_details in drivers {
             let driver_package_path = &bundle_path.join(&driver_details.package);
             self.add_package_from_path(
                 driver_package_path,
                 PackageOrigin::AIB,
-                &PackageSet::Bootfs,
+                &driver_details.set,
             )?;
 
-            let package_url = DriverManifestBuilder::get_package_url(
-                DriverPackageType::Boot,
-                driver_package_path,
+            let driver_package_type = match driver_details.set {
+                PackageSet::Base => DriverPackageType::Base,
+                PackageSet::Bootfs => DriverPackageType::Boot,
+                _ => bail!("Unsupported driver package set type {:?}", &driver_details.set),
+            };
+
+            let package_url =
+                DriverManifestBuilder::get_package_url(driver_package_type, driver_package_path)?;
+
+            let driver_set = match driver_package_type {
+                DriverPackageType::Base => &mut self.base_drivers,
+                DriverPackageType::Boot => &mut self.boot_drivers,
+            };
+
+            driver_set.try_insert_unique(
+                package_url,
+                DriverDetails {
+                    package: driver_details.package,
+                    components: driver_details.components,
+                },
             )?;
-            self.boot_drivers.try_insert_unique(package_url, driver_details)?;
         }
 
         self.boot_args
@@ -1667,8 +1670,7 @@ mod tests {
                     set: PackageSet::System,
                 },
             ],
-            base_drivers: Vec::default(),
-            boot_drivers: Vec::default(),
+            drivers: Vec::default(),
             config_data: BTreeMap::default(),
             blobs: Vec::default(),
             bootfs_shell_commands: ShellCommands::default(),
@@ -1718,8 +1720,7 @@ mod tests {
                     set: PackageSet::Base,
                 })
                 .collect(),
-            base_drivers: Vec::default(),
-            boot_drivers: Vec::default(),
+            drivers: Vec::default(),
             config_data: BTreeMap::default(),
             blobs: Vec::default(),
             bootfs_shell_commands: ShellCommands::default(),
