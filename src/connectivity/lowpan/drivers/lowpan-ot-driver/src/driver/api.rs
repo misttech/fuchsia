@@ -1303,6 +1303,35 @@ where
             }
         }
 
+        // Get the information regarding all active routers within the Thread network.
+        let max_router_id = ot.get_max_router_id();
+        let mut router_info: Vec<fidl_fuchsia_lowpan_experimental::RouterInfo> = Vec::new();
+        for i in 0..max_router_id {
+            if let Ok(x) = ot.get_router_info(i.into()) {
+                // Limit the number of routers to 64 per the FIDL definition.
+                if router_info.len() > 64 {
+                    break;
+                }
+                router_info.push(fidl_fuchsia_lowpan_experimental::RouterInfo {
+                    extended_address: Some(x.get_ext_address().into_array().to_vec()),
+                    thread_rloc: Some(x.get_rloc16()),
+                    router_id: Some(x.get_router_id()),
+                    next_hop: Some(x.get_next_hop()),
+                    path_cost: Some(x.get_path_cost()),
+                    link_quality_in: Some(x.get_link_quality_in()),
+                    link_quality_out: Some(x.get_link_quality_out()),
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_seconds(x.get_age().into())
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    link_established: Some(x.get_link_established()),
+                    ..Default::default()
+                });
+            }
+        }
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1362,6 +1391,7 @@ where
             border_routing_routers: Some(border_routing_routers),
             active_dataset: Some(active_dataset),
             multiradio_neighbor_info: Some(multiradio_neighbor_info),
+            router_info: Some(router_info),
             ..Default::default()
         })
     }

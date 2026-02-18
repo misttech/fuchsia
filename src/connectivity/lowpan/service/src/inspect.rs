@@ -1707,6 +1707,74 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.router_info {
+                            inspector.root().record_child(
+                                "router_info",
+                                |router_info_child| {
+                                    for (index, router) in x.iter().enumerate() {
+                                        router_info_child.record_child(
+                                            format!("{}", index),
+                                            |router_node| {
+                                                if let Some(y) = &router.extended_address {
+                                                    router_node.record_string(
+                                                        "extended_address",
+                                                        y.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.thread_rloc {
+                                                    router_node.record_uint(
+                                                        "thread_rloc",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.router_id {
+                                                    router_node.record_uint(
+                                                        "router_id",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.next_hop {
+                                                    router_node.record_uint(
+                                                        "next_hop",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.path_cost {
+                                                    router_node.record_uint(
+                                                        "path_cost",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.link_quality_in {
+                                                    router_node.record_uint(
+                                                        "link_quality_in",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.link_quality_out {
+                                                    router_node.record_uint(
+                                                        "link_quality_out",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = router.age {
+                                                    router_node.record_uint(
+                                                        "age",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                                if let Some(y) = router.link_established {
+                                                    router_node.record_bool(
+                                                        "link_established",
+                                                        y.into(),
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
+                                },
+                            );
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

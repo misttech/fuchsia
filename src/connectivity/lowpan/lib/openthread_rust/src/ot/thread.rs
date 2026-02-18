@@ -121,9 +121,13 @@ pub trait Thread {
     /// [`otsys::otThreadGetMeshLocalPrefix`](crate::otsys::otThreadGetMeshLocalPrefix).
     fn get_mesh_local_prefix(&self) -> &MeshLocalPrefix;
 
-    /// Fucntional equivalent of
+    /// Functional equivalent of
     /// [`otsys::otThreadGetRouterInfo`](crate::otsys::otThreadGetRouterInfo).
     fn get_router_info(&self, router_id: u16) -> Result<RouterInfo>;
+
+    /// Functional equivalent of
+    /// [`otsys::otThreadGetMaxRouterId`](crate::otsys::otThreadGetMaxRouterId).
+    fn get_max_router_id(&self) -> u8;
 
     /// Functional equivalent of
     /// [`otsys::otThreadGetIp6Counters`](crate::otsys::otThreadGetIp6Counters).
@@ -137,7 +141,7 @@ pub trait Thread {
     //       we may need to make it unsafe and provide a safe method
     //       that collects the results.
     fn iter_next_neighbor_info(&self, ot_iter: &mut otNeighborInfoIterator)
-        -> Option<NeighborInfo>;
+    -> Option<NeighborInfo>;
 
     /// Returns an iterator for iterating over external routes.
     fn iter_neighbor_info(&self) -> NeighborInfoIterator<'_, Self> {
@@ -239,6 +243,10 @@ impl<T: Thread + Boxable> Thread for ot::Box<T> {
 
     fn get_router_info(&self, router_id: u16) -> Result<RouterInfo> {
         self.as_ref().get_router_info(router_id)
+    }
+
+    fn get_max_router_id(&self) -> u8 {
+        self.as_ref().get_max_router_id()
     }
 
     fn get_ip6_counters(&self) -> &IpCounters {
@@ -381,6 +389,10 @@ impl Thread for Instance {
         })
         .into_result()?;
         Ok(ret)
+    }
+
+    fn get_max_router_id(&self) -> u8 {
+        unsafe { otThreadGetMaxRouterId(self.as_ot_ptr()) }
     }
 
     fn get_ip6_counters(&self) -> &IpCounters {

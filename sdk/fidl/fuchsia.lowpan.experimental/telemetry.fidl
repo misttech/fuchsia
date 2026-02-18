@@ -853,6 +853,54 @@ type MultiRadioNeighborInfo = table {
     3: radio_link_info vector<RadioLinkInfo>:5;
 };
 
+/// Represents the diagnostic information for a Thread Router.
+type RouterInfo = table {
+    /// IEEE 802.15.4 Extended Address
+    ///
+    /// Required.
+    1: extended_address vector<uint8>:8;
+
+    /// IEEE 802.15.4 short address of neighbor.
+    ///
+    /// Required.
+    2: thread_rloc uint16;
+
+    /// Router ID.
+    ///
+    /// Required.
+    3: router_id uint8;
+
+    /// Next hop to router.
+    ///
+    /// Required.
+    4: next_hop uint8;
+
+    /// Path cost to router.
+    ///
+    /// Required.
+    5: path_cost uint8;
+
+    /// Link Quality In.
+    ///
+    /// Required.
+    6: link_quality_in uint8;
+
+    /// Link Quality Out.
+    ///
+    /// Required.
+    7: link_quality_out uint8;
+
+    /// The router's age (duration since last heard).
+    ///
+    /// Required.
+    8: age zx.Duration;
+
+    /// Whether link established with Router ID or not.
+    ///
+    /// Required.
+    9: link_established bool;
+};
+
 /// The maximum number of entries allowed in the neighbor-related inspect
 /// dump. This prevents the inspect tree from becoming excessively large.
 const MAX_NEIGHBOR_INSPECT_ENTRIES uint32 = 64;
@@ -1011,4 +1059,9 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     31: multiradio_neighbor_info vector<MultiRadioNeighborInfo>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// Information regarding all active routers within the Thread network.
+    ///
+    /// Only present on Thread networks.
+    32: router_info vector<RouterInfo>:MAX_NEIGHBOR_INSPECT_ENTRIES;
 };
