@@ -14,7 +14,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/directory"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/project/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/result"
 )
 

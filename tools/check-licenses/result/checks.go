@@ -15,7 +15,7 @@ import (
 	classifierLib "github.com/google/licenseclassifier/v2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/directory"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/project/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
 type Check struct {

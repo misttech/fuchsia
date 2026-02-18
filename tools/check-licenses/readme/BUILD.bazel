@@ -15,7 +15,7 @@ go_library(
         "readme.go",
         "rust_crate.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/project/readme",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/readme",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [

@@ -91,7 +91,7 @@ if (is_host) {
       "//tools/check-licenses/file:verify_bazel2gn",
       "//tools/check-licenses/file/notice:verify_bazel2gn",
       "//tools/check-licenses/project:verify_bazel2gn",
-      "//tools/check-licenses/project/readme:verify_bazel2gn",
+      "//tools/check-licenses/readme:verify_bazel2gn",
       "//tools/check-licenses/result:verify_bazel2gn",
       "//tools/check-licenses/testutil:verify_bazel2gn",
       "//tools/check-licenses/util:verify_bazel2gn",

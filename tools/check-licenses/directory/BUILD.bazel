@@ -20,7 +20,7 @@ go_library(
     deps = [
         "//tools/check-licenses/file",
         "//tools/check-licenses/project",
-        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/readme",
         "//tools/lib/logger",
     ],
 )
@@ -50,7 +50,7 @@ go_test(
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//tools/check-licenses/file",
         "//tools/check-licenses/project",
-        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/readme",
         "//tools/check-licenses/testutil",
     ],
 )

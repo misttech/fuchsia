@@ -24,7 +24,7 @@ go_library(
         "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
         "//third_party/golibs:golang.org/x/sync/errgroup",
         "//tools/check-licenses/file",
-        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/readme",
         "//tools/check-licenses/util",
         "//tools/lib/logger",
     ],
@@ -41,7 +41,7 @@ go_test(
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         "//tools/check-licenses/file",
-        "//tools/check-licenses/project/readme",
+        "//tools/check-licenses/readme",
         "//tools/check-licenses/testutil",
     ],
 )

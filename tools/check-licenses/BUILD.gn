@@ -51,7 +51,7 @@ group("tests") {
     "//tools/check-licenses/file:file_test",
     "//tools/check-licenses/file/notice:notice_test",
     "//tools/check-licenses/project:project_test",
-    "//tools/check-licenses/project/readme:readme_test",
+    "//tools/check-licenses/readme:readme_test",
     "//tools/check-licenses/result:result_test",
     "//tools/check-licenses/util:util_test",
   ]

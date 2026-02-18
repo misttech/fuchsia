@@ -11,7 +11,7 @@ import (
 
 	spdx "github.com/spdx/tools-golang/spdx/v2_2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/project/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
 // Project struct follows the format of README.fuchsia files.

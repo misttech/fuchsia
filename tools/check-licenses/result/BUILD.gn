@@ -54,7 +54,7 @@ if (is_host) {
       "//tools/check-licenses/directory",
       "//tools/check-licenses/file",
       "//tools/check-licenses/project",
-      "//tools/check-licenses/project/readme",
+      "//tools/check-licenses/readme",
       "//tools/lib/logger",
     ]
   }
