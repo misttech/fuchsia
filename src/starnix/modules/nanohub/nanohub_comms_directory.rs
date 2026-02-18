@@ -6,10 +6,7 @@ use crate::display_sysfs_files::{
     DisplayBrightnessSysFsOps, DisplayInfoSysFsOps, DisplayPanelStateSysFsOps,
     DisplaySelectSysFsOps, DisplayStateSysFsOps,
 };
-use crate::nanohub_sysfs_files::{
-    FirmwareNameSysFsOps, FirmwareVersionSysFsOps, HardwareResetSysFsOps, TimeSyncSysFsOps,
-    WakeLockSysFsOps, WakeUpEventDuration,
-};
+use crate::nanohub_sysfs_files::{FirmwareNameSysFsOps, HardwareResetSysFsOps, TimeSyncSysFsOps};
 use crate::socket_tunnel_file::FirmwareFile;
 use crate::sysfs::SysfsNode;
 use starnix_core::device::kobject::Device;
@@ -66,11 +63,6 @@ pub fn build_nanohub_comms_directory(device: &Device, dir: &SimpleDirectoryMutat
         mode!(IFREG, 0o440),
     );
     dir.entry(
-        "firmware_version",
-        SysfsNode::<fnanohub::DeviceMarker, FirmwareVersionSysFsOps>::new(),
-        mode!(IFREG, 0o440),
-    );
-    dir.entry(
         "hw_reset",
         SysfsNode::<fnanohub::DeviceMarker, HardwareResetSysFsOps>::new(),
         mode!(IFREG, 0o220),
@@ -78,16 +70,6 @@ pub fn build_nanohub_comms_directory(device: &Device, dir: &SimpleDirectoryMutat
     dir.entry(
         "time_sync".into(),
         SysfsNode::<fnanohub::DeviceMarker, TimeSyncSysFsOps>::new(),
-        mode!(IFREG, 0o440),
-    );
-    dir.entry(
-        "wakeup_event_msec",
-        SysfsNode::<fnanohub::DeviceMarker, WakeUpEventDuration>::new(),
-        mode!(IFREG, 0o660),
-    );
-    dir.entry(
-        "wake_lock",
-        SysfsNode::<fnanohub::DeviceMarker, WakeLockSysFsOps>::new(),
         mode!(IFREG, 0o440),
     );
 }

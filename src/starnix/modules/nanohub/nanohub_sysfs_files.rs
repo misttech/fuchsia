@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 use crate::sysfs::{SysfsError, SysfsOps, try_get};
-use crate::{sysfs_errno, sysfs_error};
+use crate::sysfs_errno;
 use starnix_logging::log_error;
 use starnix_uapi::errno;
-use std::time::Duration;
 use {fidl_fuchsia_hardware_google_nanohub as fnanohub, zx};
 
 #[derive(Default)]
@@ -15,23 +14,6 @@ pub struct FirmwareNameSysFsOps {}
 impl SysfsOps<fnanohub::DeviceSynchronousProxy> for FirmwareNameSysFsOps {
     fn show(&self, service: &fnanohub::DeviceSynchronousProxy) -> Result<String, SysfsError> {
         Ok(service.get_firmware_name(zx::MonotonicInstant::INFINITE)?)
-    }
-}
-
-#[derive(Default)]
-pub struct FirmwareVersionSysFsOps {}
-
-impl SysfsOps<fnanohub::DeviceSynchronousProxy> for FirmwareVersionSysFsOps {
-    fn show(&self, service: &fnanohub::DeviceSynchronousProxy) -> Result<String, SysfsError> {
-        let v = service.get_firmware_version(zx::MonotonicInstant::INFINITE)?;
-        Ok(format!(
-            "hw type: {:04x} hw ver: {:04x} bl ver: {:04x} os ver: {:04x} variant ver: {:08x}\n",
-            v.hardware_type,
-            v.hardware_version,
-            v.bootloader_version,
-            v.os_version,
-            v.variant_version
-        ))
     }
 }
 
@@ -53,91 +35,6 @@ impl SysfsOps<fnanohub::DeviceSynchronousProxy> for TimeSyncSysFsOps {
         let ap = try_get(response.ap_boot_time)?;
         let mcu = try_get(response.mcu_boot_time)?;
         Ok(Self::format_time_sync(ap, mcu))
-    }
-}
-
-#[derive(Default)]
-pub struct WakeLockSysFsOps {}
-
-impl SysfsOps<fnanohub::DeviceSynchronousProxy> for WakeLockSysFsOps {
-    fn store(
-        &self,
-        service: &fidl_fuchsia_hardware_google_nanohub::DeviceSynchronousProxy,
-        value: String,
-    ) -> Result<(), SysfsError> {
-        let lock = value
-            .chars()
-            .next()
-            .ok_or_else(|| {
-                log_error!("Invalid wake lock value. String was empty.");
-                sysfs_errno!(EINVAL)
-            })
-            .and_then(|c| match c {
-                '0' => Ok(fnanohub::McuWakeLockValue::Release),
-                '1' => Ok(fnanohub::McuWakeLockValue::Acquire),
-                e => {
-                    log_error!("Invalid wake lock value. {e:?}");
-                    sysfs_error!(EINVAL)
-                }
-            })?;
-
-        Ok(service.set_wake_lock(lock, zx::MonotonicInstant::INFINITE)??)
-    }
-}
-
-#[derive(Default)]
-pub struct WakeUpEventDuration {}
-
-impl WakeUpEventDuration {
-    fn string_to_duration(value: String) -> Result<i64, SysfsError> {
-        // At the driver level, the value is expected to be within the range of u32.
-        let duration_msec = value.trim().parse::<u32>().map_err(|e| {
-            log_error!("Failed to parse wake up event duration: {e:?}");
-            sysfs_errno!(EINVAL)
-        })?;
-
-        // The duration conversion produces a u128, but we need an i64 to provide as a zx.Duration.
-        // In practice, this conversion should never fail because the driver represents this value
-        // as a u32.
-        let duration_ns: i64 =
-            Duration::from_millis(duration_msec.into()).as_nanos().try_into().map_err(|e| {
-                log_error!("Received out-of-bounds wake up event duration: {e:?}");
-                sysfs_errno!(EINVAL)
-            })?;
-
-        Ok(duration_ns)
-    }
-
-    fn duration_to_string(duration: i64) -> Result<String, SysfsError> {
-        // zx.Duration is an alias of i64 but we need a u64 to work the std::time::Duration.
-        // In practice, this conversion should never fail because the driver represents this
-        // value as a u32.
-        let duration_ns: u64 = duration.try_into().map_err(|e| {
-            log_error!("Received out-of-bounds wake up event duration: {e:?}");
-            sysfs_errno!(EINVAL)
-        })?;
-
-        let duration_msec = Duration::from_nanos(duration_ns).as_millis();
-        Ok(format!("{duration_msec}\n"))
-    }
-}
-
-impl SysfsOps<fnanohub::DeviceSynchronousProxy> for WakeUpEventDuration {
-    fn show(
-        &self,
-        service: &fidl_fuchsia_hardware_google_nanohub::DeviceSynchronousProxy,
-    ) -> Result<String, SysfsError> {
-        let response = service.get_wake_up_event_duration(zx::MonotonicInstant::INFINITE)??;
-        WakeUpEventDuration::duration_to_string(response)
-    }
-
-    fn store(
-        &self,
-        service: &fidl_fuchsia_hardware_google_nanohub::DeviceSynchronousProxy,
-        value: String,
-    ) -> Result<(), SysfsError> {
-        let duration_ns = WakeUpEventDuration::string_to_duration(value)?;
-        Ok(service.set_wake_up_event_duration(duration_ns, zx::MonotonicInstant::INFINITE)??)
     }
 }
 
@@ -208,37 +105,6 @@ impl SysfsOps<fnanohub::DeviceSynchronousProxy> for HardwareResetSysFsOps {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[::fuchsia::test]
-    fn test_wakeup_event_duration_string_to_duration_valid() {
-        let msec: i64 = 123_456;
-        let cases = [format!("{}", msec), format!("{}\n", msec)];
-
-        for case in cases {
-            let duration = WakeUpEventDuration::string_to_duration(case);
-            assert_eq!(duration.is_ok(), true);
-            assert_eq!(duration.unwrap(), msec * 1_000_000);
-        }
-    }
-
-    #[::fuchsia::test]
-    fn test_wakeup_event_duration_string_to_duration_invalid() {
-        let ns = "foobar";
-        let cases = [format!("{}", ns), format!("{}\n", ns)];
-
-        for case in cases {
-            let duration = WakeUpEventDuration::string_to_duration(case);
-            assert_eq!(duration.is_err(), true);
-        }
-    }
-
-    #[::fuchsia::test]
-    fn test_wakeup_event_duration_duration_to_string_valid() {
-        let ns: i64 = 123_456_000_000;
-        let value = WakeUpEventDuration::duration_to_string(ns);
-        assert_eq!(value.is_ok(), true);
-        assert_eq!(value.unwrap(), format!("123456\n"));
-    }
 
     #[::fuchsia::test]
     fn test_parse_hardware_reset_request_valid_integer() {
