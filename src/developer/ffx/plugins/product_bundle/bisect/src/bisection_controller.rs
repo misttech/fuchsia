@@ -6,16 +6,21 @@ use crate::bisection_plan::{BisectionPlan, MOSClientTrait};
 use crate::search_space::BisectionStatus;
 use crate::versioned_artifact_set::VersionedArtifactSet;
 use anyhow::{Context, Result};
-use assembly_artifact_cache::{ArtifactCache, MOSIdentifier};
+use assembled_system::AssembledSystem;
+use assembly_artifact_cache::{ArtifactCache, MOSIdentifier, Slot};
 use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::Architecture;
+use assembly_container::AssemblyContainer;
+use assembly_tool::PlatformToolProvider;
 use assembly_util::shorten_path;
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
+use product_bundle::{ProductBundleBuilder, Slot as PBSlot};
 use std::fs::{self, File};
 use std::io::{self, Write};
+use tempfile::tempdir;
 use {assembly_api, serde_json};
 
 /// The BisectionController runs the entire bisection process.
@@ -169,10 +174,12 @@ impl<'a> BisectionController<'a> {
     fn prompt_for_manual_test(&mut self, product_bundle_path: &Utf8PathBuf) -> Result<bool> {
         self.print("")?;
         let shortened_pb_path = shorten_path(product_bundle_path);
-        self.print("Flash this pb to a local device by running:\n")?;
-        self.print(&format!("  ffx target flash {}\n", shortened_pb_path))?;
+        self.print(
+            "Flash this pb to a local device by opening another terminal window and running:\n",
+        )?;
+        self.print(&format!("  ffx target flash \\\n    --no-bootloader-reboot \\\n    --skip-verify \\\n    --skip-authorized-keys \\\n    -b {}\n", shortened_pb_path))?;
         self.print("Then run a test to determine whether or not the original issue remains.")?;
-        self.print("Press Ctrl+C to cancel, and resume by repeating the 'ffx product-bundle bisect ...' command.")?;
+        self.print("Press Ctrl+C to cancel, and resume by repeating the same 'ffx product-bundle bisect ...' command.")?;
         self.print("-----")?;
 
         loop {
@@ -214,17 +221,28 @@ impl<'a> BisectionController<'a> {
     /// Run assembly with the current collection of assembly artifacts
     /// to generate a flashable fuchsia image.
     async fn assemble(&mut self, pb: VersionedArtifactSet) -> Result<Utf8PathBuf> {
+        let pb_outdir = self.plan.out_dir();
+        write!(self.writer, "Assembling into {} ... ", pb_outdir)?;
+        io::stdout().flush()?;
+
         // Ensure all of the artifacts have been downloaded.
         let product_config_path = self.cache.resolve_product(pb.product.id()).await?;
         let board_config_path = self.cache.resolve_board(pb.board.id()).await?;
         let platform_config_path =
             self.cache.resolve_platform(Some(pb.platform.id()), &Architecture::X64).await?;
 
+        let tools = PlatformToolProvider::new(platform_config_path.clone());
+
+        let tmp = tempdir().context("Creating temporary directory for assembly")?;
+        let tmp_path = Utf8Path::from_path(tmp.path())
+            .context("Creating Utf8Path pointing to the temporary directory")?;
+        let system_outdir = tmp_path.join("system");
+
         // Perform assembly
         let product_args = ProductArgs {
             product: product_config_path,
             board_config: board_config_path,
-            outdir: self.plan.out_dir(),
+            outdir: system_outdir,
             gendir: self.plan.gen_dir(),
             input_bundles_dir: platform_config_path,
             package_validation: Some(ValidationMode::Off),
@@ -236,12 +254,28 @@ impl<'a> BisectionController<'a> {
             mode: Default::default(),
         };
 
-        self.writer.write_all(b"Assembling image... ")?;
-        io::stdout().flush()?;
         let create_system_outputs = assembly_api::assemble(&self.env_context, product_args)?;
+        let system = AssembledSystem::from_dir(&create_system_outputs.outdir)
+            .context("Loading system instance from assembly output directory")?;
+        let pb_name = self.plan.name.clone();
+        let pb_version = pb.product.version.clone();
+
+        let pb_slot = match self.plan.slot {
+            Slot::A => PBSlot::A,
+            Slot::R => PBSlot::R,
+        };
+
+        let update_version_file = tmp_path.join("update_version.txt");
+        fs::write(&update_version_file, &pb_version)?;
+
+        let builder = ProductBundleBuilder::new(pb_name, pb_version)
+            .system(system, pb_slot)
+            .update_package(update_version_file, 1, None);
+
+        builder.build(Box::new(tools), &pb_outdir).await?;
         self.print("Done.")?;
 
-        Ok(create_system_outputs.outdir)
+        Ok(pb_outdir)
     }
 
     /// Saves the current state of the BisectionPlan to its `save_file` path.
