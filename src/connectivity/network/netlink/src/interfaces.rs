@@ -1701,6 +1701,7 @@ pub(crate) mod testutil {
             v4_rule_table: EventLoopComponent::Absent(Optional),
             v6_rule_table: EventLoopComponent::Absent(Optional),
             neighbors_view: EventLoopComponent::Absent(Optional),
+            neighbors_controller: EventLoopComponent::Absent(Optional),
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,

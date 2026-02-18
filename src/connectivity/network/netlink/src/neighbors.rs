@@ -171,6 +171,7 @@ impl GetNeighborArgs {
         let NeighbourHeader { family, flags, .. } = &message.header;
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
+            // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
             return Err(RequestError::UnsupportedFlags(*flags));
         }
         // TODO(https://fxbug.dev/456508664): Support strict validation of dump
@@ -212,6 +213,7 @@ impl GetNeighborArgs {
         }
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
+            // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
             return Err(RequestError::UnsupportedFlags(*flags));
         }
 
@@ -250,11 +252,47 @@ impl GetNeighborArgs {
     }
 }
 
+/// Arguments for an RTM_DELNEIGH [`Request`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DelNeighborArgs {
+    pub(crate) ip: fnet::IpAddress,
+    pub(crate) interface: NonZeroU64,
+}
+
+impl DelNeighborArgs {
+    // Attempts to convert a netlink_packet_route `NeighbourMessage` into
+    // `DelNeighborArgs`.
+    pub(crate) fn try_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
+        Self::try_from_rtnl_neighbor_internal(message)
+            .inspect_err(|e| log_warn!("{e} in del neighbor request"))
+    }
+
+    fn try_from_rtnl_neighbor_internal(message: &NeighbourMessage) -> Result<Self, RequestError> {
+        let NeighbourHeader { ifindex, family, flags, .. } = &message.header;
+        if flags.contains(NeighbourFlags::Proxy) {
+            // Netstack3 does not support ARP/NDP proxying.
+            // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
+            return Err(RequestError::UnsupportedFlags(*flags));
+        }
+
+        let address = message.attributes.iter().find_map(|attr| match attr {
+            NeighbourAttribute::Destination(addr) => Some(addr),
+            _ => None,
+        });
+        let ip = neighbor_fidl_ip(*family, address)?;
+        let interface =
+            u64::from(*ifindex).try_into().map_err(|_| RequestError::MissingInterface)?;
+        Ok(Self { interface, ip })
+    }
+}
+
 /// [`Request`] arguments associated with neighbors.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NeighborRequestArgs {
     /// RTM_GETNEIGH
     Get(GetNeighborArgs),
+    /// RTM_DELNEIGH
+    Del(DelNeighborArgs),
 }
 
 /// An error encountered while handling a [`Request`].
@@ -297,6 +335,15 @@ pub(crate) enum RequestError {
     /// Interface not found.
     #[error("no such interface")]
     InterfaceNotFound,
+    /// Invalid neighbor IP address.
+    #[error("invalid neighbor IP address")]
+    InvalidIpAddress,
+    /// Neighbor MAC address not unicast.
+    #[error("neighbor MAC address not unicast")]
+    InvalidMacAddress,
+    /// Interface not supported.
+    #[error("interface not supported")]
+    InterfaceUnsupported,
 }
 
 impl From<RequestError> for Errno {
@@ -313,6 +360,25 @@ impl From<RequestError> for Errno {
             RequestError::InvalidAttribute => Errno::EINVAL,
             RequestError::NeighborNotFound => Errno::ENOENT,
             RequestError::InterfaceNotFound => Errno::ENODEV,
+            RequestError::InvalidIpAddress => Errno::EINVAL,
+            RequestError::InvalidMacAddress => Errno::EINVAL,
+            RequestError::InterfaceUnsupported => Errno::ENOTSUP,
+        }
+    }
+}
+
+impl From<fnet_neighbor::ControllerError> for RequestError {
+    fn from(value: fnet_neighbor::ControllerError) -> Self {
+        use fnet_neighbor::ControllerError;
+        match value {
+            ControllerError::InterfaceNotFound => RequestError::InterfaceNotFound,
+            ControllerError::InterfaceNotSupported => RequestError::InterfaceUnsupported,
+            ControllerError::InvalidIpAddress => RequestError::InvalidIpAddress,
+            ControllerError::MacAddressNotUnicast => RequestError::InvalidMacAddress,
+            ControllerError::NeighborNotFound => RequestError::NeighborNotFound,
+            ControllerError::__SourceBreaking { unknown_ordinal: e } => {
+                panic!("encountered unknown controller error: {e:?}")
+            }
         }
     }
 }
@@ -352,6 +418,21 @@ pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>
     pub client: InternalClient<NetlinkRoute, S>,
     /// A completer that will have the result of the request sent over.
     pub completer: oneshot::Sender<Result<(), RequestError>>,
+}
+
+/// A subset of `NeighborRequestArgs`, containing only `Request` types that can be pending.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PendingNeighborRequestArgs {
+    /// RTM_DELNEIGH
+    Del(DelNeighborArgs),
+}
+
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub(crate) struct PendingNeighborRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
+    request_args: PendingNeighborRequestArgs,
+    client: InternalClient<NetlinkRoute, S>,
+    completer: oneshot::Sender<Result<(), RequestError>>,
 }
 
 /// Errors related to handling neighbor events from Netstack.
@@ -395,6 +476,7 @@ impl From<&fnet_neighbor_ext::Entry> for NeighborKey {
 /// Can respond to RTM_*NEIGH message requests.
 pub(crate) struct NeighborsWorker {
     neighbor_table: HashMap<NeighborKey, fnet_neighbor_ext::Entry>,
+    neighbors_controller: fnet_neighbor::ControllerProxy,
 }
 
 impl NeighborsWorker {
@@ -404,6 +486,7 @@ impl NeighborsWorker {
     /// `neighbors_view` or if the response contains conflicting neighbors.
     pub(crate) async fn create(
         neighbors_view: &fnet_neighbor::ViewProxy,
+        neighbors_controller: fnet_neighbor::ControllerProxy,
     ) -> (
         Self,
         impl futures::Stream<
@@ -429,7 +512,7 @@ impl NeighborsWorker {
             existing_count,
             "conflicting existing entry in neighbor table"
         );
-        (Self { neighbor_table }, neighbor_event_stream)
+        (Self { neighbor_table, neighbors_controller }, neighbor_event_stream)
     }
 
     pub(crate) fn handle_neighbor_watcher_event(
@@ -464,11 +547,15 @@ impl NeighborsWorker {
         }
     }
 
-    pub(crate) fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
+    pub(crate) async fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &mut self,
         Request { args, mut client, sequence_number, completer }: Request<S>,
         interface_lookup: &impl LookupIfInterfaceExists,
-    ) {
+    ) -> Option<PendingNeighborRequest<S>> {
+        enum HandleResult {
+            Done(Result<(), RequestError>),
+            Pending(PendingNeighborRequestArgs),
+        }
         let result = match args {
             NeighborRequestArgs::Get(args) => match args {
                 GetNeighborArgs::Dump { ip_version, interface } => {
@@ -485,7 +572,7 @@ impl NeighborsWorker {
                         .for_each(|m| {
                             client.send_unicast(m.into_rtnl_new_neighbor(sequence_number, true));
                         });
-                    Ok(())
+                    HandleResult::Done(Ok(()))
                 }
                 GetNeighborArgs::Get { ip, interface } => {
                     let neighbor = self
@@ -496,7 +583,7 @@ impl NeighborsWorker {
                     match neighbor {
                         Some(msg) => {
                             client.send_unicast(msg.into_rtnl_new_neighbor(sequence_number, false));
-                            Ok(())
+                            HandleResult::Done(Ok(()))
                         }
                         None => {
                             let err = if interface_lookup.exists(interface) {
@@ -504,15 +591,65 @@ impl NeighborsWorker {
                             } else {
                                 RequestError::InterfaceNotFound
                             };
-                            Err(err)
+                            HandleResult::Done(Err(err))
                         }
                     }
                 }
             },
+            NeighborRequestArgs::Del(args @ DelNeighborArgs { interface, ip }) => {
+                let response = self
+                    .neighbors_controller
+                    .remove_entry(interface.get(), &ip)
+                    .await
+                    .expect("sent neighbor controller request");
+                match response {
+                    Ok(_) => HandleResult::Pending(PendingNeighborRequestArgs::Del(args)),
+                    Err(e) => HandleResult::Done(Err(e.into())),
+                }
+            }
         };
 
-        log_debug!("handled request {args:?} from {client} with result = {result:?}");
-        respond_to_completer(client, completer, result, args);
+        match result {
+            HandleResult::Done(result) => {
+                log_debug!("handled request {args:?} from {client} with result = {result:?}");
+                respond_to_completer(client, completer, result, args);
+                None
+            }
+            HandleResult::Pending(request_args) => {
+                log_debug!("pending request {args:?} from {client}");
+                Some(PendingNeighborRequest { request_args, client, completer })
+            }
+        }
+    }
+
+    /// Checks whether a `PendingRequest` can be marked completed given the current state of the
+    /// worker. If so, notifies the request's completer and returns `None`. If not, returns
+    /// the `PendingRequest` as `Some`.
+    pub(crate) fn handle_pending_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
+        &self,
+        pending_neighbor_request: PendingNeighborRequest<S>,
+    ) -> Option<PendingNeighborRequest<S>> {
+        let PendingNeighborRequest { request_args, client: _, completer: _ } =
+            &pending_neighbor_request;
+
+        let done = match request_args {
+            PendingNeighborRequestArgs::Del(DelNeighborArgs { ip, interface }) => !self
+                .neighbor_table
+                .contains_key(&NeighborKey { interface: *interface, neighbor: *ip }),
+        };
+
+        if done {
+            log_debug!("completed pending request; req = {pending_neighbor_request:?}");
+            let PendingNeighborRequest { request_args, client, completer } =
+                pending_neighbor_request;
+
+            respond_to_completer(client, completer, Ok(()), request_args);
+            None
+        } else {
+            // Put the pending request back so that it can be handled later.
+            log_debug!("pending request not done yet; req = {pending_neighbor_request:?}");
+            Some(pending_neighbor_request)
+        }
     }
 }
 
@@ -523,8 +660,8 @@ mod tests {
     use crate::interfaces::testutil::FakeInterfacesHandler;
     use crate::messaging::testutil::FakeSender;
     use crate::route_eventloop::{
-        EventLoopComponent, EventLoopInputs, EventLoopSpec, IncludedWorkers, Optional, Required,
-        UnifiedRequest,
+        EventLoopComponent, EventLoopInputs, EventLoopSpec, EventLoopState, IncludedWorkers,
+        Optional, Required, UnifiedRequest,
     };
 
     use super::*;
@@ -533,7 +670,7 @@ mod tests {
     use fidl_fuchsia_net_neighbor::ViewRequest;
     use fidl_fuchsia_net_neighbor_ext::testutil::EventSpec;
     use futures::channel::mpsc;
-    use futures::{FutureExt as _, SinkExt as _, TryStreamExt as _};
+    use futures::{FutureExt as _, SinkExt as _, TryStreamExt as _, pin_mut};
     use maplit::hashset;
     use net_declare::{fidl_ip, std_ip_v4, std_ip_v6};
     use netlink_packet_core::NetlinkPayload;
@@ -764,16 +901,20 @@ mod tests {
     #[fuchsia::test]
     #[should_panic(expected = "determining existing neighbors should succeed")]
     async fn neighbors_worker_create_panics_on_view_protocol_error() {
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
         let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
         // Close the channel without responding.
         drop(view_server_end);
 
-        let (_worker, _remaining) = NeighborsWorker::create(&view).await;
+        let (_worker, _remaining) = NeighborsWorker::create(&view, controller).await;
     }
 
     #[fuchsia::test]
     #[should_panic(expected = "determining existing neighbors should succeed")]
     async fn neighbors_worker_create_panics_on_event_stream_error() {
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
         let (view, view_server_end) = fidl::endpoints::create_proxy::<fnet_neighbor::ViewMarker>();
         let mut view_request_stream = view_server_end.into_stream();
 
@@ -793,7 +934,7 @@ mod tests {
             })
             .fuse();
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (_worker, _remaining)) = futures::join!(entry_iter_fut, worker_fut);
     }
@@ -822,7 +963,9 @@ mod tests {
         let (view, server_fut) =
             fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (_worker, _remaining)) = futures::join!(server_fut, worker_fut);
     }
@@ -842,7 +985,9 @@ mod tests {
                 events.clone(),
             ]));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
@@ -911,7 +1056,9 @@ mod tests {
                 events.clone(),
             ]));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
@@ -949,7 +1096,9 @@ mod tests {
                 events.clone(),
             ]));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
@@ -987,7 +1136,9 @@ mod tests {
                 events.clone(),
             ]));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
@@ -1038,7 +1189,9 @@ mod tests {
                 events.clone(),
             ]));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
 
         let ((), (mut worker, event_stream)) = futures::join!(server_fut, worker_fut);
 
@@ -1118,10 +1271,15 @@ mod tests {
         let (view, server_fut) =
             fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
         let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
 
-        worker.handle_request(request, &interface_lookup);
+        assert_matches!(
+            worker.handle_request(request, &interface_lookup).await,
+            None // No pending work expected.
+        );
 
         let result = completer_rcv.await.expect("completer channel should not be closed");
         assert_matches!(result, Err(e) if e == expected_error);
@@ -1216,10 +1374,15 @@ mod tests {
         let (view, server_fut) =
             fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
 
-        let worker_fut = NeighborsWorker::create(&view);
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
         let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
 
-        worker.handle_request(request, &BTreeMap::new());
+        assert_matches!(
+            worker.handle_request(request, &BTreeMap::new()).await,
+            None // No pending work expected.
+        );
 
         completer_rcv
             .await
@@ -1239,6 +1402,150 @@ mod tests {
         }
         ifindexes_seen.sort();
         assert_eq!(&ifindexes_seen[..], expected_ifindexes);
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_del_request_controller_error() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, completer_rcv) = oneshot::channel();
+        let request = Request {
+            args: NeighborRequestArgs::Del(DelNeighborArgs {
+                ip: fidl_ip!("192.168.0.1"),
+                interface: NonZeroU64::new(1).unwrap(),
+            }),
+            sequence_number: 1,
+            client,
+            completer,
+        };
+
+        let events = {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            fnet_neighbor_ext::testutil::generate_events_from_spec(&[Idle])
+        };
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(vec![events]));
+        let (controller, mut controller_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let interfaces = BTreeMap::new();
+        let handle_request_fut = worker.handle_request(request, &interfaces);
+        let controller_fut = async {
+            match controller_request_stream
+                .next()
+                .await
+                .expect("controller stream should not be closed")
+                .expect("failed to receive controller request")
+            {
+                fnet_neighbor::ControllerRequest::RemoveEntry {
+                    interface: _,
+                    neighbor: _,
+                    responder,
+                } => {
+                    responder
+                        .send(Err(fnet_neighbor::ControllerError::InterfaceNotFound))
+                        .expect("failed to send error response");
+                }
+                _ => panic!("unexpected controller request"),
+            }
+        };
+
+        let (handle_result, ()) = futures::join!(handle_request_fut, controller_fut);
+        assert_matches!(handle_result, None);
+
+        let result = completer_rcv.await.expect("completer channel should not be closed");
+        assert_matches!(result, Err(RequestError::InterfaceNotFound));
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_del_request_success() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, _completer_rcv) = oneshot::channel();
+        let args =
+            DelNeighborArgs { ip: fidl_ip!("192.168.0.1"), interface: NonZeroU64::new(1).unwrap() };
+        let request =
+            Request { args: NeighborRequestArgs::Del(args), sequence_number: 1, client, completer };
+
+        let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+            fnet_neighbor_ext::testutil::EventSpec::Idle,
+        ]);
+        let batches = vec![events];
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
+        let (controller, mut controller_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let interfaces = BTreeMap::new();
+        let handle_request_fut = worker.handle_request(request, &interfaces);
+        let controller_fut = async {
+            match controller_request_stream
+                .next()
+                .await
+                .expect("controller stream should not be closed")
+                .expect("failed to receive controller request")
+            {
+                fnet_neighbor::ControllerRequest::RemoveEntry {
+                    interface: _,
+                    neighbor: _,
+                    responder,
+                } => {
+                    responder.send(Ok(())).expect("failed to send success response");
+                }
+                _ => panic!("unexpected controller request"),
+            }
+        };
+
+        let (handle_result, ()) = futures::join!(handle_request_fut, controller_fut);
+        let pending = handle_result.expect("expected pending request");
+        assert_eq!(pending.request_args, PendingNeighborRequestArgs::Del(args));
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_pending_del_request() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, mut completer_rcv) = oneshot::channel();
+        let args =
+            DelNeighborArgs { ip: fidl_ip!("192.168.0.1"), interface: NonZeroU64::new(1).unwrap() };
+        let pending = PendingNeighborRequest {
+            request_args: PendingNeighborRequestArgs::Del(args),
+            client,
+            completer,
+        };
+
+        let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+            fnet_neighbor_ext::testutil::EventSpec::Idle,
+        ]);
+        let batches = vec![events];
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(batches));
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let key = NeighborKey { interface: args.interface, neighbor: args.ip };
+        let _ = worker.neighbor_table.insert(
+            key,
+            fnet_neighbor_ext::Entry {
+                interface: args.interface,
+                neighbor: args.ip,
+                ..valid_neighbor_entry()
+            },
+        );
+
+        // Still present, should remain pending.
+        let pending = worker.handle_pending_request(pending).expect("expected pending");
+        assert_matches!(completer_rcv.try_recv(), Ok(None)); // Completer still blocked.
+
+        // Remove from table, should complete.
+        let _ = worker.neighbor_table.remove(&key);
+        assert_matches!(worker.handle_pending_request(pending), None);
+
+        let result = completer_rcv.try_recv().expect("completer channel should not be closed");
+        assert_matches!(result, Some(Ok(())));
     }
 
     #[test_case(
@@ -1466,6 +1773,76 @@ mod tests {
     }
 
     #[test_case(
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Ok(DelNeighborArgs {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "del ipv4 success"
+    )]
+    #[test_case(
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet6,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v6!("fe80::1").into()),
+        ] => Ok(DelNeighborArgs {
+            ip: fidl_ip!("fe80::1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "del ipv6 success"
+    )]
+    #[test_case(
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            flags: NeighbourFlags::Proxy,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::UnsupportedFlags(NeighbourFlags::Proxy));
+        "del unsupported request flag"
+    )]
+    #[test_case(
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::MissingInterface);
+        "del interface unspecified"
+    )]
+    #[test_case(
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[] => Err(RequestError::MissingAddress);
+        "del destination unspecified"
+    )]
+    #[fuchsia::test]
+    fn del_neighbor_args_try_from_rtnl_neighbor(
+        header: NeighbourHeader,
+        attrs: &[NeighbourAttribute],
+    ) -> Result<DelNeighborArgs, RequestError> {
+        let mut message = NeighbourMessage::default();
+        message.header = header;
+        message.attributes = attrs.to_vec();
+        DelNeighborArgs::try_from_rtnl_neighbor(&message)
+    }
+
+    #[test_case(
         RequestError::InvalidState(NeighbourState::Reachable) => Errno::EINVAL;
         "invalid state"
     )]
@@ -1491,29 +1868,33 @@ mod tests {
     #[test_case(RequestError::InvalidAttribute => Errno::EINVAL; "invalid attribute")]
     #[test_case(RequestError::NeighborNotFound => Errno::ENOENT; "neighbor not found")]
     #[test_case(RequestError::InterfaceNotFound => Errno::ENODEV; "interface not found")]
+    #[test_case(RequestError::InvalidIpAddress => Errno::EINVAL; "invalid IP address")]
+    #[test_case(RequestError::InvalidMacAddress => Errno::EINVAL; "invalid MAC address")]
+    #[test_case(RequestError::InterfaceUnsupported => Errno::ENOTSUP; "unsupported interface")]
     #[fuchsia::test]
     fn request_error_into_errno(error: RequestError) -> Errno {
         error.into()
     }
 
-    enum OnlyNeighbors {}
-    impl EventLoopSpec for OnlyNeighbors {
+    enum NeighborsAndInterfaces {}
+    impl EventLoopSpec for NeighborsAndInterfaces {
         type NeighborWorker = Required;
 
-        type InterfacesProxy = Optional;
-        type InterfacesStateProxy = Optional;
+        type InterfacesProxy = Required;
+        type InterfacesStateProxy = Required;
+        type InterfacesHandler = Required;
+        type RouteClients = Required;
+        type InterfacesWorker = Required;
+
         type V4RoutesState = Optional;
         type V6RoutesState = Optional;
         type V4RoutesSetProvider = Optional;
         type V6RoutesSetProvider = Optional;
         type V4RouteTableProvider = Optional;
         type V6RouteTableProvider = Optional;
-        type InterfacesHandler = Optional;
-        type RouteClients = Optional;
 
         type RoutesV4Worker = Optional;
         type RoutesV6Worker = Optional;
-        type InterfacesWorker = Optional;
         type RuleV4Worker = Optional;
         type RuleV6Worker = Optional;
         type NduseroptWorker = Optional;
@@ -1521,8 +1902,22 @@ mod tests {
 
     const TEST_SEQUENCE_NUMBER: u32 = 1234;
 
-    #[fuchsia::test]
-    async fn event_loop_with_watch_events_and_get_request() {
+    struct EventLoopSetup {
+        event_loop: EventLoopState<
+            FakeInterfacesHandler,
+            FakeSender<RouteNetlinkMessage>,
+            NeighborsAndInterfaces,
+        >,
+        request_sink: mpsc::Sender<UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
+        neighbors_controller_request_stream: fnet_neighbor::ControllerRequestStream,
+        neighbor_event_sink: mpsc::UnboundedSender<Vec<fnet_neighbor::EntryIteratorItem>>,
+        interface_event_sink: mpsc::UnboundedSender<fnet_interfaces::Event>,
+    }
+
+    async fn build_event_loop(
+        scope: &fuchsia_async::Scope,
+        neighbor_events: &[EventSpec],
+    ) -> EventLoopSetup {
         let included_workers = IncludedWorkers {
             routes_v4: EventLoopComponent::Absent(Optional),
             routes_v6: EventLoopComponent::Absent(Optional),
@@ -1532,20 +1927,15 @@ mod tests {
             neighbors: EventLoopComponent::Present(()),
             nduseropt: EventLoopComponent::Absent(Optional),
         };
-        let (mut request_sink, request_stream) = mpsc::channel(1);
+        let (request_sink, request_stream) = mpsc::channel(1);
 
         // Configure fake neighbor watch events.
 
-        let scope = fuchsia_async::Scope::new();
-        let (neighbors_view, neighbor_event_sender) = {
-            use fnet_neighbor_ext::testutil::EventSpec::*;
-            let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
-                Existing(1),
-                Existing(2),
-                Existing(3),
-                Idle,
-                Added(4),
-            ]);
+        let (neighbors_controller, neighbors_controller_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_neighbor::ControllerMarker>();
+
+        let (neighbors_view, neighbor_event_sink) = {
+            let events = fnet_neighbor_ext::testutil::generate_events_from_spec(neighbor_events);
             let (event_sender, event_receiver) = mpsc::unbounded();
             event_sender.unbounded_send(events).expect("failed to send events");
             let (neighbors_view, neighbors_fut) =
@@ -1564,7 +1954,7 @@ mod tests {
             fidl::endpoints::create_proxy::<fnet_interfaces::StateMarker>();
         let route_clients = ClientTable::default();
 
-        let interface_event_sender = {
+        let interface_event_sink = {
             let if_stream = interfaces_state.into_stream();
             let if_watcher_stream = if_stream
                 .and_then(|req| match req {
@@ -1598,9 +1988,10 @@ mod tests {
         let base_inputs: EventLoopInputs<
             FakeInterfacesHandler,
             FakeSender<RouteNetlinkMessage>,
-            OnlyNeighbors,
+            NeighborsAndInterfaces,
         > = EventLoopInputs {
             neighbors_view: EventLoopComponent::Present(neighbors_view),
+            neighbors_controller: EventLoopComponent::Present(neighbors_controller),
 
             route_clients: EventLoopComponent::Present(route_clients),
             interfaces_handler: EventLoopComponent::Present(interfaces_handler),
@@ -1622,9 +2013,31 @@ mod tests {
             unified_request_stream: request_stream,
         };
 
-        let mut state = base_inputs.initialize(included_workers).await;
+        let event_loop = base_inputs.initialize(included_workers).await;
+        EventLoopSetup {
+            event_loop,
+            request_sink,
+            neighbors_controller_request_stream,
+            neighbor_event_sink,
+            interface_event_sink,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn event_loop_with_watch_events_and_get_request() {
+        let scope = fuchsia_async::Scope::new();
+        use fnet_neighbor_ext::testutil::EventSpec::*;
+        let EventLoopSetup {
+            mut event_loop,
+            mut request_sink,
+            neighbors_controller_request_stream: _,
+            neighbor_event_sink,
+            interface_event_sink,
+        } = build_event_loop(&scope, &[Existing(1), Existing(2), Existing(3), Idle, Added(4)])
+            .await;
+
         // Wait for `Added` event to be processed.
-        state.run_one_step_in_tests().await;
+        event_loop.run_one_step_in_tests().await;
 
         // Send a dump request and check the response.
 
@@ -1649,7 +2062,7 @@ mod tests {
         request_sink.send(get_request).await.unwrap();
 
         // Wait for client request to be processed.
-        state.run_one_step_in_tests().await;
+        event_loop.run_one_step_in_tests().await;
         assert_matches!(waiter.await.unwrap(), Ok(()));
 
         let responses = response_sink.take_messages();
@@ -1661,8 +2074,124 @@ mod tests {
             );
         }
 
-        neighbor_event_sender.close_channel();
-        interface_event_sender.close_channel();
+        neighbor_event_sink.close_channel();
+        interface_event_sink.close_channel();
+        drop(neighbor_client);
+        scope.join().await;
+    }
+
+    #[fuchsia::test]
+    async fn event_loop_with_watch_events_and_delete_request() {
+        let scope = fuchsia_async::Scope::new();
+        let neighbor_events = {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            vec![Existing(1), Existing(2), Idle]
+        };
+        let EventLoopSetup {
+            mut event_loop,
+            mut request_sink,
+            neighbors_controller_request_stream,
+            neighbor_event_sink,
+            interface_event_sink,
+        } = build_event_loop(&scope, &neighbor_events).await;
+
+        let fnet_neighbor::EntryIteratorItem::Existing(to_delete) =
+            fnet_neighbor_ext::testutil::generate_event_from_spec(&neighbor_events[0])
+        else {
+            panic!("unexpected event")
+        };
+        let to_delete: fnet_neighbor_ext::Entry =
+            to_delete.try_into().expect("extension conversion failed");
+
+        let (mut response_sink, neighbor_client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<NetlinkRoute>(
+                crate::client::testutil::CLIENT_ID_1,
+                [],
+            );
+        let _join_handle = scope.spawn(async_work_drain_task);
+
+        // Send an RTM_DELNEIGH request for an existing neighbor.
+
+        let (completer, waiter) = oneshot::channel();
+        let waiter = waiter.fuse();
+        pin_mut!(waiter);
+
+        let del_request: UnifiedRequest<FakeSender<RouteNetlinkMessage>> =
+            UnifiedRequest::NeighborsRequest(Request {
+                args: NeighborRequestArgs::Del(DelNeighborArgs {
+                    ip: to_delete.neighbor,
+                    interface: to_delete.interface,
+                }),
+                sequence_number: TEST_SEQUENCE_NUMBER,
+                client: neighbor_client.clone(),
+                completer,
+            });
+        request_sink.send(del_request).await.expect("failed to send delete request");
+
+        // Handle the expected Controller.RemoveEntry request and verify that
+        // the RTM_DELNEIGH request is still pending.
+
+        let controller_req_fut = neighbors_controller_request_stream
+            .into_future()
+            .then(async move |(req, _rest)| {
+                match req
+                    .expect("Controller request stream unexpectedly ended")
+                    .expect("failed to receive `Controller` request")
+                {
+                    fnet_neighbor::ControllerRequest::RemoveEntry {
+                        interface,
+                        neighbor,
+                        responder,
+                        ..
+                    } => {
+                        assert_eq!(interface, to_delete.interface.get());
+                        assert_eq!(neighbor, to_delete.neighbor);
+                        responder.send(Ok(())).expect("failed to respond to RemoveEntry");
+                    }
+                    _ => panic!("unexpected controller request"),
+                }
+            })
+            .fuse();
+        let _join_handle = scope.spawn(controller_req_fut);
+        event_loop.run_one_step_in_tests().await;
+
+        assert_matches!(waiter.as_mut().now_or_never(), None);
+        assert_eq!(response_sink.take_messages().len(), 0);
+
+        // Send an unrelated neighbor watch event and verify that the request is
+        // still pending.
+
+        {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            neighbor_event_sink
+                .unbounded_send(fnet_neighbor_ext::testutil::generate_events_from_spec(&[Added(3)]))
+                .expect("failed to send event");
+        }
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.as_mut().now_or_never(), None);
+        assert_eq!(response_sink.take_messages().len(), 0);
+
+        // Send a neighbor watch event indicating successful removal and verify
+        // that the request is completed.
+
+        {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            neighbor_event_sink
+                .unbounded_send(fnet_neighbor_ext::testutil::generate_events_from_spec(&[Removed(
+                    1,
+                )]))
+                .expect("failed to send event");
+        }
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.await.expect("waiter channel should not be closed"), Ok(()));
+        // The event loop & worker aren't responsible for the final response to
+        // the client (either none, or ACK if requested), so there's nothing
+        // more to check here.
+
+        neighbor_event_sink.close_channel();
+        interface_event_sink.close_channel();
         drop(neighbor_client);
         scope.join().await;
     }

@@ -145,7 +145,7 @@ pub mod route {
     use crate::client::AsyncWorkCompletionWaiter;
     use crate::interfaces::AcceptRaRtTable;
     use crate::messaging::{MessageWithPermission, Permission};
-    use crate::neighbors::{GetNeighborArgs, NeighborRequestArgs};
+    use crate::neighbors::{DelNeighborArgs, GetNeighborArgs, NeighborRequestArgs};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self, NetlinkRequestType};
     use crate::route_eventloop::UnifiedRequest;
@@ -1338,6 +1338,35 @@ pub mod route {
                         ),
                     }
                 }
+                DelNeighbour(ref message) => {
+                    let (completer, waiter) = oneshot::channel();
+                    let request = match DelNeighborArgs::try_from_rtnl_neighbor(message) {
+                        Ok(del_args) => neighbors::Request {
+                            args: NeighborRequestArgs::Del(del_args),
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
+                            completer,
+                        },
+                        Err(e) => return client.send_unicast(
+                            netlink_packet::new_error(Err(e.into()), req_header)
+                        ),
+                    };
+                    unified_request_sink.send(UnifiedRequest::NeighborsRequest(request))
+                    .await
+                    .expect("route event loop should never terminate");
+                    let result =  waiter
+                    .await
+                    .expect("routes event loop should have handled the request");
+
+                    match result {
+                        Ok(()) => if expects_ack {
+                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                        },
+                        Err(e) => client.send_unicast(
+                            netlink_packet::new_error(Err(e.into()), req_header)
+                        ),
+                    }
+                }
                 NewLink(_)
                 | DelLink(_)
                 | NewLinkProp(_)
@@ -1365,8 +1394,6 @@ pub mod route {
                 | NewPrefix(_)
                 // TODO(https://issues.fuchsia.dev/285127790): Implement NewNeighbour.
                 | NewNeighbour(_)
-                // TODO(https://issues.fuchsia.dev/285127790): Implement DelNeighbour.
-                | DelNeighbour(_)
                 // TODO(https://issues.fuchsia.dev/283137907): Implement NewQueueDiscipline.
                 | NewQueueDiscipline(_)
                 // TODO(https://issues.fuchsia.dev/283137907): Implement GetQueueDiscipline.
@@ -1582,6 +1609,7 @@ mod test {
     };
     use net_declare::{
         fidl_ip, net_addr_subnet, net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6, std_ip_v4,
+        std_ip_v6,
     };
     use net_types::ip::{
         AddrSubnetEither, GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
@@ -4883,9 +4911,9 @@ mod test {
         )
     }
 
-    async fn test_get_neighbor_request(
+    async fn test_neighbor_request(
         request: NetlinkMessage<RouteNetlinkMessage>,
-        expected_request: Option<neighbors::GetNeighborArgs>,
+        expected_request: Option<neighbors::NeighborRequestArgs>,
     ) -> Vec<SentMessage<RouteNetlinkMessage>> {
         let (mut client_sink, mut client, async_work_drain_task) =
             crate::client::testutil::new_fake_client::<NetlinkRoute>(
@@ -4907,9 +4935,7 @@ mod test {
                     UnifiedRequest::NeighborsRequest(neigh_req) => {
                         let neighbors::Request { args, sequence_number: _, client: _, completer } =
                             neigh_req;
-                        assert_eq!(
-                            expected_request.map(|a| neighbors::NeighborRequestArgs::Get(a)),
-                            Some(args));
+                        assert_eq!(expected_request, Some(args));
                         completer.send(Ok(())).expect("handler should be alive");
                         handle_fut.await;
                     },
@@ -4990,14 +5016,90 @@ mod test {
         };
 
         pretty_assertions::assert_eq!(
-            test_get_neighbor_request(
+            test_neighbor_request(
                 NetlinkMessage::new(
                     nl_header,
                     NetlinkPayload::InnerMessage(RouteNetlinkMessage::GetNeighbour(
                         neighbor_message
                     )),
                 ),
-                expected_request_args,
+                expected_request_args.map(neighbors::NeighborRequestArgs::Get),
+            )
+            .await,
+            expected_sent_messages(expected_response, nl_header),
+        )
+    }
+
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        Some(neighbors::DelNeighborArgs {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        }),
+        None; "del ipv4")]
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Inet6, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v6!("fe80::1").into())],
+        Some(neighbors::DelNeighborArgs {
+            ip: fidl_ip!("fe80::1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        }),
+        None; "del ipv6")]
+    #[test_case(
+        NLM_F_ACK,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        Some(neighbors::DelNeighborArgs {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        }),
+        Some(ExpectedResponse::Ack); "del with ack")]
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Local, ifindex: 1, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        None,
+        Some(ExpectedResponse::Error(Errno::EAFNOSUPPORT)); "del invalid family")]
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
+        vec![],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "del missing destination")]
+    #[test_case(
+        0,
+        NeighbourHeader { family: AddressFamily::Inet, ifindex: 0, ..Default::default() },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "del missing interface")]
+    #[fuchsia::test]
+    async fn del_neighbor_with_faked_response(
+        flags: u16,
+        header: NeighbourHeader,
+        attrs: Vec<NeighbourAttribute>,
+        expected_request_args: Option<neighbors::DelNeighborArgs>,
+        expected_response: Option<ExpectedResponse>,
+    ) {
+        let nl_header = header_with_flags(flags);
+        let neighbor_message = {
+            let mut message = NeighbourMessage::default();
+            message.header = header;
+            message.attributes = attrs;
+            message
+        };
+
+        pretty_assertions::assert_eq!(
+            test_neighbor_request(
+                NetlinkMessage::new(
+                    nl_header,
+                    NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelNeighbour(
+                        neighbor_message
+                    )),
+                ),
+                expected_request_args.map(neighbors::NeighborRequestArgs::Del),
             )
             .await,
             expected_sent_messages(expected_response, nl_header),

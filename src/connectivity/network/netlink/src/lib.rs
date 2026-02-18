@@ -273,6 +273,7 @@ pub struct NetlinkWorkerDiscoverableProtocols {
     pub socket_diagnostics: fnet_sockets::DiagnosticsProxy,
     pub socket_control: fnet_sockets::ControlProxy,
     pub neighbors_view: fnet_neighbor::ViewProxy,
+    pub neighbors_controller: fnet_neighbor::ControllerProxy,
 }
 
 impl NetlinkWorkerDiscoverableProtocols {
@@ -320,6 +321,8 @@ impl NetlinkWorkerDiscoverableProtocols {
             .expect("connect to fuchsia.net.sockets.Control");
         let neighbors_view = connect_to_protocol::<fnet_neighbor::ViewMarker>()
             .expect("connect to fuchsia.net.neighbor.View");
+        let neighbors_controller = connect_to_protocol::<fnet_neighbor::ControllerMarker>()
+            .expect("connect to fuchsia.net.neighbor.Controller");
 
         Self {
             root_interfaces,
@@ -336,6 +339,7 @@ impl NetlinkWorkerDiscoverableProtocols {
             socket_diagnostics,
             socket_control,
             neighbors_view,
+            neighbors_controller,
         }
     }
 }
@@ -399,6 +403,7 @@ pub async fn run_netlink_worker_with_protocols<
         socket_diagnostics,
         socket_control,
         neighbors_view,
+        neighbors_controller,
     } = protocols;
 
     let route_clients = ClientTable::default();
@@ -420,6 +425,7 @@ pub async fn run_netlink_worker_with_protocols<
                 v6_rule_table,
                 ndp_option_watcher_provider,
                 neighbors_view,
+                neighbors_controller,
                 route_clients,
                 request_stream: route_request_stream,
                 interfaces_handler,

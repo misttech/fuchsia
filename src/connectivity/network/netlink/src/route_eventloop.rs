@@ -79,6 +79,7 @@ pub(crate) enum UnifiedPendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>
     RoutesV4(crate::routes::PendingRouteRequest<S, Ipv4>),
     RoutesV6(crate::routes::PendingRouteRequest<S, Ipv6>),
     Interfaces(crate::interfaces::PendingRequest<S>),
+    Neighbors(crate::neighbors::PendingNeighborRequest<S>),
 }
 
 /// Contains the asynchronous work related to routes and interfaces. Creates
@@ -101,6 +102,7 @@ pub(crate) struct RouteEventLoop<
     pub(crate) v6_rule_table: fnet_routes_admin::RuleTableV6Proxy,
     pub(crate) ndp_option_watcher_provider: fnet_ndp::RouterAdvertisementOptionWatcherProviderProxy,
     pub(crate) neighbors_view: fnet_neighbor::ViewProxy,
+    pub(crate) neighbors_controller: fnet_neighbor::ControllerProxy,
     pub(crate) interfaces_handler: H,
     pub(crate) route_clients: ClientTable<NetlinkRoute, S>,
     pub(crate) async_work_receiver:
@@ -258,6 +260,8 @@ pub(crate) struct EventLoopInputs<
         E::NduseroptWorker,
     >,
     pub(crate) neighbors_view: EventLoopComponent<fnet_neighbor::ViewProxy, E::NeighborWorker>,
+    pub(crate) neighbors_controller:
+        EventLoopComponent<fnet_neighbor::ControllerProxy, E::NeighborWorker>,
     pub(crate) interfaces_handler: EventLoopComponent<H, E::InterfacesHandler>,
     pub(crate) route_clients: EventLoopComponent<ClientTable<NetlinkRoute, S>, E::RouteClients>,
     pub(crate) async_work_receiver:
@@ -291,6 +295,7 @@ impl<
             v4_rule_table,
             v6_rule_table,
             neighbors_view,
+            neighbors_controller,
             ndp_option_watcher_provider,
             interfaces_handler,
             route_clients,
@@ -363,8 +368,11 @@ impl<
             async {
                 match included_workers.neighbors {
                     EventLoopComponent::Present(()) => {
-                        let (worker, stream) =
-                            neighbors::NeighborsWorker::create(neighbors_view.get_ref()).await;
+                        let (worker, stream) = neighbors::NeighborsWorker::create(
+                            neighbors_view.get_ref(),
+                            neighbors_controller.get(),
+                        )
+                        .await;
                         (EventLoopComponent::Present(worker), stream.left_stream())
                     }
                     EventLoopComponent::Absent(omitted) => (
@@ -826,11 +834,12 @@ impl<
                         }
                     },
                     UnifiedRequest::NeighborsRequest(request) => {
-                        neighbors_worker.get_mut()
+                        let pending = neighbors_worker.get_mut()
                             .handle_request(
                                 request,
                                 &interfaces_worker.get_ref().interface_properties
-                            );
+                            ).await;
+                        *unified_pending_request = pending.map(UnifiedPendingRequest::Neighbors);
                         Cleanup::None
                     },
                 }
@@ -867,6 +876,10 @@ impl<
                 .get_mut()
                 .handle_pending_request(pending_request)
                 .map(UnifiedPendingRequest::Interfaces),
+            UnifiedPendingRequest::Neighbors(pending_request) => neighbors_worker
+                .get_mut()
+                .handle_pending_request(pending_request)
+                .map(UnifiedPendingRequest::Neighbors),
         });
     }
 
@@ -986,6 +999,7 @@ impl<
             v6_rule_table,
             ndp_option_watcher_provider,
             neighbors_view,
+            neighbors_controller,
             interfaces_handler,
             route_clients,
             async_work_receiver,
@@ -1005,6 +1019,7 @@ impl<
             v6_rule_table: EventLoopComponent::Present(v6_rule_table),
             ndp_option_watcher_provider: EventLoopComponent::Present(ndp_option_watcher_provider),
             neighbors_view: EventLoopComponent::Present(neighbors_view),
+            neighbors_controller: EventLoopComponent::Present(neighbors_controller),
             interfaces_handler: EventLoopComponent::Present(interfaces_handler),
             route_clients: EventLoopComponent::Present(route_clients),
             async_work_receiver,

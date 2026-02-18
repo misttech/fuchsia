@@ -115,6 +115,9 @@ fn connect_to_netlink_protocols_in_realm(
     let neighbors_view = realm
         .connect_to_protocol::<fnet_neighbor::ViewMarker>()
         .expect("connect to fuchsia.net.neighbor.View");
+    let neighbors_controller = realm
+        .connect_to_protocol::<fnet_neighbor::ControllerMarker>()
+        .expect("connect to fuchsia.net.neighbor.Controller");
 
     netlink::NetlinkWorkerDiscoverableProtocols {
         root_interfaces,
@@ -131,6 +134,7 @@ fn connect_to_netlink_protocols_in_realm(
         socket_diagnostics,
         socket_control,
         neighbors_view,
+        neighbors_controller,
     }
 }
 
