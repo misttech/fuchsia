@@ -15,10 +15,7 @@ group("tests") {
       ":starnix_gvisor_tests",
     ]
     if (data_filesystem_format == "fxfs") {
-      deps += [
-        ":starnix_gvisor_tests_on_fxfs",
-        ":starnix_gvisor_tests_uncached",
-      ]
+      deps += [ ":starnix_gvisor_tests_on_fxfs" ]
     }
   }
 }
@@ -143,25 +140,9 @@ gvisor_tests_group("starnix_gvisor_tests_on_fxfs") {
   suffix = "_on_fxfs"
 }
 
-gvisor_tests_group("starnix_gvisor_tests_uncached") {
-  tests = gvisor_tests_uncached
-  run_as_root_tests = []
-  custom_manifest_tests = []
-  container_config_tests = []
-  expectations = "expectations/using_fxfs_test.json5"
-  use_persistent_storage = true
-  uncached = true
-  suffix = "_uncached"
-}
-
 group("benchmarks") {
   testonly = true
   if (!is_asan) {
     deps = all_benchmark_targets
   }
-}
-
-fuchsia_component("uncached_config") {
-  manifest = "meta/uncached_config.cml"
-  testonly = true
 }

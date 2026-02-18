@@ -187,12 +187,6 @@ gvisor_tests = [
   # keep-sorted end
 ]
 
-gvisor_tests_uncached = [
-  "stat_times_test",
-  "utimes_test",
-  "symlink_test",
-]
-
 gvisor_tests_run_as_root = [
   # keep-sorted start
   "affinity_test",
@@ -358,12 +352,6 @@ template("gvisor_test_package") {
     }
   }
 
-  _uncached = defined(invoker.uncached) && invoker.uncached
-  if (_uncached) {
-    _base_shard =
-        "//src/starnix/tests/gvisor/meta/gvisor_uncached_base.shard.cml"
-  }
-
   _container_package = "//src/starnix/containers/debian:debian_package"
   if (defined(invoker.container_package)) {
     _container_package = invoker.container_package
@@ -374,10 +362,6 @@ template("gvisor_test_package") {
 
   if (defined(invoker.container_config)) {
     _container_config = invoker.container_config
-  }
-
-  if (_uncached) {
-    _container_config.dirent_cache_size = 0
   }
 
   _manifest_label = "${target_name}.cml"
@@ -463,7 +447,7 @@ template("gvisor_test_package") {
         },
       ]
     }
-    deps = [ ":${_container_config_shard_label}" ]
+    deps = [ ":${_container_config_shard_label }" ]
   }
 
   _component_label = target_name + "_component"
@@ -496,9 +480,6 @@ template("gvisor_test_package") {
         ":${_container_config_component}",
         "//src/starnix/tests/gvisor:gvisor_runfiles",
       ]
-      if (_uncached) {
-        deps += [ "//src/starnix/tests/gvisor:uncached_config" ]
-      }
       subpackages = starnix_test_subpackages + [ _container_package ]
       test_components = [ ":${_component_label}" ]
       expectations = _expectations
@@ -534,34 +515,8 @@ template("gvisor_tests_group") {
     "use_persistent_storage",
     "container_shard",
     "container_package",
-    "uncached",
   ]
-
-  if (defined(invoker.tests)) {
-    _gvisor_tests = invoker.tests
-  } else {
-    _gvisor_tests = gvisor_tests
-  }
-
-  if (defined(invoker.run_as_root_tests)) {
-    _gvisor_tests_run_as_root = invoker.run_as_root_tests
-  } else {
-    _gvisor_tests_run_as_root = gvisor_tests_run_as_root
-  }
-
-  if (defined(invoker.custom_manifest_tests)) {
-    _gvisor_tests_custom_manifest = invoker.custom_manifest_tests
-  } else {
-    _gvisor_tests_custom_manifest = gvisor_tests_custom_manifest
-  }
-
-  if (defined(invoker.container_config_tests)) {
-    _gvisor_tests_container_config = invoker.container_config_tests
-  } else {
-    _gvisor_tests_container_config = gvisor_tests_container_config
-  }
-
-  foreach(test_name, _gvisor_tests) {
+  foreach(test_name, gvisor_tests) {
     _label = "starnix_gvisor_${test_name}${_suffix}"
     gvisor_test_package(_label) {
       forward_variables_from(invoker, _to_forward)
@@ -571,7 +526,7 @@ template("gvisor_tests_group") {
     _tests += [ ":${_label}" ]
   }
 
-  foreach(test_name, _gvisor_tests_run_as_root) {
+  foreach(test_name, gvisor_tests_run_as_root) {
     _label = "starnix_gvisor_${test_name}${_suffix}"
     gvisor_test_package(_label) {
       forward_variables_from(invoker, _to_forward)
@@ -581,7 +536,7 @@ template("gvisor_tests_group") {
     _tests += [ ":${_label}" ]
   }
 
-  foreach(test, _gvisor_tests_custom_manifest) {
+  foreach(test, gvisor_tests_custom_manifest) {
     _label = "starnix_gvisor_${test.test_name}${_suffix}"
     gvisor_test_package(_label) {
       forward_variables_from(invoker, _to_forward)
@@ -602,7 +557,7 @@ template("gvisor_tests_group") {
     _tests += [ ":${_label}" ]
   }
 
-  foreach(test, _gvisor_tests_container_config) {
+  foreach(test, gvisor_tests_container_config) {
     _label = "starnix_gvisor_${test.test_name}${_suffix}"
     gvisor_test_package(_label) {
       forward_variables_from(invoker, _to_forward)
