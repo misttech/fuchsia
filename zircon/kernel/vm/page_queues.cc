@@ -32,6 +32,10 @@ KCOUNTER(pq_accessed_normal, "pq.accessed.normal")
 KCOUNTER(pq_accessed_normal_same_queue, "pq.accessed.normal_same_queue")
 KCOUNTER(pq_accessed_isolate, "pq.accessed.isolate")
 KCOUNTER(pq_accessed_not_reclaim, "pq.accessed.not_reclaim")
+KCOUNTER(pq_peek_sync_aging, "pq.peek.sync_aging")
+KCOUNTER(pq_peek_process_lru, "pq.peek.process_lru")
+KCOUNTER(pq_peek_sync_aging_all_inactive, "pq.peek.sync_aging.all_inactive")
+KCOUNTER(pq_peek_process_lru_all_inactive, "pq.peek.process_lru.all_inactive")
 
 // Helper class for building an isolate list for deferred processing when acting on the LRU queues.
 // Pages are added while the page queues lock is held, and processed once the lock is dropped.
@@ -1329,6 +1333,8 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PopAnonymousZeroFork() {
 ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_queue) {
   // Ignore any requests to evict from the active queues as this is never allowed.
   lowest_queue = ktl::max(lowest_queue, kNumActiveQueues);
+  // Whether we're allowed to peek from all but the active queues. Typically true only under OOM.
+  const bool peek_all_inactive = lowest_queue == kNumActiveQueues;
 
   // TODO(adanis): Restructure this loop such that there is no question about its termination, but
   // for now be paranoid.
@@ -1353,6 +1359,11 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_que
     // happen if we update mru_gen_ every time.
     if (loop_iterations == 1) {
       SynchronizeWithAging();
+      if (peek_all_inactive) {
+        pq_peek_sync_aging_all_inactive.Add(1);
+      } else {
+        pq_peek_sync_aging.Add(1);
+      }
     }
     // The limit gen is 1 larger than the lowest queue because evicting from queue X is done by
     // attempting to make the lru queue be X+1.
@@ -1369,6 +1380,11 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_que
     // We do not want to process the entire LRU queue since it could contain tends to hundreds of
     // thousands of items and so the full processing is left to the LruThread.
     ProcessLruQueue(lru_target, 16);
+    if (peek_all_inactive) {
+      pq_peek_process_lru_all_inactive.Add(1);
+    } else {
+      pq_peek_process_lru.Add(1);
+    }
   }
 }
 
