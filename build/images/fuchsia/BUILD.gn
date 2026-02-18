@@ -13,10 +13,7 @@ import("//build/testing/host_test_data.gni")
 if (is_host) {
   host_test_data("fuchsia_zbi_for_host_tests") {
     sources = [ "$root_build_dir/fuchsia.zbi" ]
-    # This dep cannot be specified, because it creates a dependency cycle.  It
-    # could be added if all tests using this were not in any package set (and
-    # were just in host_labels)
-    #deps = [ ":fuchsia($default_toolchain)" ]
+    deps = [ ":fuchsia_assembly($default_toolchain)" ]
   }
 }
 
