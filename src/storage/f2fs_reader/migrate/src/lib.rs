@@ -193,6 +193,31 @@ pub async fn migrate(
     files_to_copy: &mut HashSet<u64>,
     f2fs_metadata_blocks: &mut HashSet<u32>,
 ) -> Result<(), Error> {
+    migrate_with_peek(offset, f2fs, fxfs, ino, dir, files_to_copy, f2fs_metadata_blocks, |_| {})
+        .await
+}
+
+/// Migrates f2fs nodes to fxfs.
+///
+/// We preserve inode mappings (to object_id), attributes, xattr -- basically everything we can.
+/// Some of these things are not easily achievable with standard fxfs interfaces like 'add_child'
+/// so much of this work has to be done at the raw transaction/mutation level.
+///
+/// `offset` specifies where the f2fs file system starts - typically 0 but may differ
+///   if migrating across partition boundaries.
+/// `existing_inodes` is used to handle hard links.
+/// `f2fs_metadata_blocks` must be preserved to ensure that the resulting image is still parsable
+/// as a valid f2fs image.
+pub async fn migrate_with_peek(
+    offset: u64,
+    f2fs: &F2fsReader,
+    fxfs: &mut OpenFxFilesystem,
+    ino: u32,
+    dir: Directory<ObjectStore>,
+    files_to_copy: &mut HashSet<u64>,
+    f2fs_metadata_blocks: &mut HashSet<u32>,
+    peek_inode_counts: impl Fn(usize),
+) -> Result<(), Error> {
     assert_eq!(
         F2FS_BLOCK_SIZE as u64, FXFS_BLOCK_SIZE,
         "We currently assume block sizes are the same."
@@ -200,6 +225,8 @@ pub async fn migrate(
     let mut existing_inodes = HashSet::new();
 
     let mut stack = vec![(ino, dir)];
+    let mut inode_count = 0;
+    let mut last_inode_count = 0;
     while let Some((ino, dir)) = stack.pop() {
         // Any dentry blocks for this directory are f2fs metadata.
         let inode = f2fs.read_inode(ino).await?;
@@ -212,6 +239,7 @@ pub async fn migrate(
             }
         }
 
+        inode_count += 1;
         for entry in f2fs.readdir(ino).await? {
             let object_id = entry.ino as u64;
             let inode = f2fs.read_inode(entry.ino).await?;
@@ -341,6 +369,7 @@ pub async fn migrate(
                     stack.push((entry.ino, new_dir));
                 }
                 FileType::RegularFile => {
+                    inode_count += 1;
                     // Add inode block and related blocks to set of f2fs metadata blocks.
                     for addr in &inode.block_addrs {
                         f2fs_metadata_blocks.insert(*addr);
@@ -496,6 +525,7 @@ pub async fn migrate(
                     transaction.commit().await?;
                 }
                 FileType::Symlink => {
+                    inode_count += 1;
                     // Add inode block and related blocks to set of f2fs metadata blocks.
                     for addr in &inode.block_addrs {
                         f2fs_metadata_blocks.insert(*addr);
@@ -563,8 +593,17 @@ pub async fn migrate(
                 }
                 _ => unimplemented!(),
             }
+            if inode_count - last_inode_count >= 1000 {
+                peek_inode_counts(inode_count);
+                last_inode_count = inode_count;
+            }
         }
     }
+
+    if inode_count - last_inode_count > 0 {
+        peek_inode_counts(inode_count);
+    }
+
     Ok(())
 }
 
@@ -1035,7 +1074,7 @@ pub async fn migrate_device(
         // Copy everything from f2fs to userdata, reusing existing extents.
         let mut files_to_copy = HashSet::new();
         let mut f2fs_metadata_blocks = HashSet::new();
-        migrate(
+        migrate_with_peek(
             offset,
             &f2fs,
             &mut fxfs,
@@ -1043,6 +1082,7 @@ pub async fn migrate_device(
             root_dir,
             &mut files_to_copy,
             &mut f2fs_metadata_blocks,
+            |_| {},
         )
         .await?;
 
