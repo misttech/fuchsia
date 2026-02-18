@@ -190,28 +190,43 @@ int main(int argc, const char** argv) {
     thrashers_set.insert(thrasher_type);
   }
 
+  auto clone_config = [&config]() {
+    ThrashConfig copy = {
+        .bursts_per_second = config.bursts_per_second,
+        .run_for_seconds = config.run_for_seconds,
+        .num_threads = config.num_threads,
+        .pages_per_read = config.pages_per_read,
+        .consecutive_pages_per_read = config.consecutive_pages_per_read,
+        .dispatcher = config.dispatcher,
+        .verbose = config.verbose,
+        .status_interval_ms = config.status_interval_ms,
+    };
+    return copy;
+  };
+
   std::vector<std::shared_ptr<Thrasher>> thrashers;
   if (thrashers_set.count("anon")) {
-    thrashers.push_back(CreateAnonThrasher(config, anon_size_mb * 1024 * 1024));
+    thrashers.push_back(CreateAnonThrasher(clone_config(), anon_size_mb * 1024 * 1024));
   }
   if (thrashers_set.count("file")) {
     if (file_path.empty()) {
       std::cerr << "--file must be specified for --thrashers=file" << std::endl;
       return 1;
     }
-    thrashers.push_back(CreateMmapThrasher(config, file_path));
+    thrashers.push_back(CreateMmapThrasher(clone_config(), file_path));
   }
   if (thrashers_set.count("dir")) {
     if (dir_path.empty()) {
       std::cerr << "--dir must be specified for --thrashers=dir" << std::endl;
       return 1;
     }
-    thrashers.push_back(CreateDirThrasher(config, dir_path));
+    thrashers.push_back(CreateDirThrasher(clone_config(), dir_path));
   }
   if (thrashers_set.count("blob")) {
     std::vector<std::string> merkle_roots = ListBlobMerkles();
     if (!merkle_roots.empty()) {
-      thrashers.push_back(CreateBlobThrasher(config, std::move(merkle_roots), max_blob_size_bytes));
+      thrashers.push_back(
+          CreateBlobThrasher(clone_config(), std::move(merkle_roots), max_blob_size_bytes));
     } else {
       std::cerr << "No blobs found in /blob" << std::endl;
     }

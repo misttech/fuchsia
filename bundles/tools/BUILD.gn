@@ -15,6 +15,7 @@ group("tools") {
     "//src/devices/bundles:tools",
     "//src/graphics/display:tools",
     "//src/graphics/lib/magma:magma-tools",
+    "//src/performance/memory/thrasher",
     "//src/performance/trace",
     "//src/recovery/factory_reset:tools",
     "//src/storage:tools",
