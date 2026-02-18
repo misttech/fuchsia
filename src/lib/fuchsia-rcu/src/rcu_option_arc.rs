@@ -181,4 +181,35 @@ mod tests {
         let arc: RcuOptionArc<DropCounter> = RcuOptionArc::default();
         assert!(arc.to_option_arc().is_none());
     }
+
+    #[test]
+    fn test_changing_scope() {
+        let object = DropCounter::new(42);
+        let object2 = object.clone();
+        let drops = object.drops.clone();
+
+        let arc = RcuOptionArc::from(Some(object));
+        let mut guard = arc.read().unwrap();
+        assert_eq!(guard.value, 42);
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        assert_eq!(Arc::strong_count(&object2), 2);
+        drop(object2);
+        drop(arc);
+
+        let _thread = std::thread::spawn(|| rcu_synchronize());
+
+        // Sleep so that `rcu_synchronize` has a chance to run.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        guard.scope = RcuReadScope::new();
+
+        // Sleep again so that if there is a bug, we're more likely to catch it with the assertion
+        // below.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        // We changed the scope; make sure it didn't cause the object to be dropped.  This currently
+        // works because taking new scopes on the same thread effectively clones the outermost
+        // scope.
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+    }
 }

@@ -163,6 +163,13 @@ pub(crate) fn rcu_read_lock() {
         } else {
             // This is the outermost read lock. Increment the read counter.
             let control_block = &RCU_CONTROL_BLOCK;
+
+            // There's a race here where we capture `index` and then go on to increment the read
+            // counter.  The choice of `index` here isn't actually important for correctness because
+            // we always wait at least two grace periods before calling the callbacks, so it doesn't
+            // matter which counter we increment.  It does mean that a thread waiting for the read
+            // counter to drop to zero, could actually find that the read counter increases before
+            // it eventually reaches zero, which should be fine.
             let index = control_block.generation.load(Ordering::Relaxed) & 1;
 
             #[cfg(feature = "rseq_backend")]
@@ -368,7 +375,9 @@ fn rcu_grace_period() {
     }
 }
 
-/// Block until all in-flight read operations and callbacks have completed.
+/// Block until all in-flight read operations have completed.  When this returns, the callbacks that
+/// are unblocked by those in-flight operations might still be running (or even not yet started) on
+/// another thread.
 pub fn rcu_synchronize() {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
@@ -379,11 +388,12 @@ pub fn rcu_synchronize() {
     }
 }
 
-/// Run all callbacks that have been scheduled from this thread.
+/// If any callbacks have been scheduled from this thread, call `rcu_synchronize`.
 ///
-/// If any callbacks have been scheduled from this thread, this function will block until all
-/// callbacks have been run. If no callbacks have been scheduled from this thread, this function
-/// will return immediately.
+/// If any callbacks have been scheduled from this thread, this function will block until the
+/// callbacks are unblocked and ready to be run (but have not yet necessarily finished, or even
+/// started).  If no callbacks have been scheduled from this thread, this function will return
+/// immediately.
 pub fn rcu_run_callbacks() {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
