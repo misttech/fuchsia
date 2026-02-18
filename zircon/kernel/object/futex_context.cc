@@ -114,7 +114,7 @@ void FutexContext::WakeHook::OnWakeOrRequeue(Thread& t) {
   // lock.
   if (t.user_thread() != nullptr) {
     t.user_thread()->blocking_futex_id_ = FutexId::Null();
-    LOCK_TRACE_FLOW_STEP("contend_futex", t.lock_flow_id());
+    LOCK_TRACE_FLOW_END("contend_futex", t.lock_flow_id());
   }
 }
 
@@ -496,8 +496,6 @@ zx_status_t FutexContext::FutexWait(user_in_ptr<const zx_futex_t> value_ptr,
         result = futex_ref->waiters_.BlockAndAssignOwnerLocked(
             current_kernel_thread, deadline, locking_details, ResourceOwnership::Normal,
             Interruptible::Yes);
-
-        LOCK_TRACE_FLOW_END("contend_futex", flow_id);
       }
 
       // Do _not_ allow the PendingOpRef helper to release our pending op

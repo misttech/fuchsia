@@ -432,8 +432,6 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
             this, current_thread, __GET_FRAME());
     }
 
-    LOCK_TRACE_FLOW_END("contend_mutex", flow_id);
-
     // Someone woke us up, we should be the holder of the mutex now.
     DEBUG_ASSERT(current_thread == holder());
 
@@ -567,7 +565,7 @@ __NO_INLINE void Mutex::ReleaseContendedMutex(Thread* current_thread, uintptr_t 
         DEBUG_ASSERT(wake_result.owner == nullptr);
         DEBUG_ASSERT(wait_.owner() == nullptr);
       }
-      LOCK_TRACE_FLOW_STEP("contend_mutex", new_owner->lock_flow_id());
+      LOCK_TRACE_FLOW_END("contend_mutex", new_owner->lock_flow_id());
     }
 
     // Finally release the OWQ's lock and we are finished.  Note: there are a few

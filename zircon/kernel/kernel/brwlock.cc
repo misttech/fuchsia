@@ -95,8 +95,6 @@ void BrwLock<PI>::Block(Thread* const current_thread, const BlockOpLockDetails<P
     current_thread->get_lock().Release();
   }
 
-  LOCK_TRACE_FLOW_END("contend_rwlock", flow_id);
-
   if (unlikely(ret < ZX_OK)) {
     panic(
         "BrwLock<%d>::Block: Block returned with error %d lock %p, thr %p, "
@@ -207,7 +205,7 @@ ktl::optional<ResourceOwnership> BrwLock<PI>::TryWake() {
     }
 
     for (const Thread& thread : unblock_list) {
-      LOCK_TRACE_FLOW_STEP("contend_rwlock", thread.lock_flow_id());
+      LOCK_TRACE_FLOW_END("contend_rwlock", thread.lock_flow_id());
     }
 
     // Now actually do the wake.
@@ -243,7 +241,7 @@ ktl::optional<ResourceOwnership> BrwLock<PI>::TryWake() {
     DEBUG_ASSERT(!lock_result->list.is_empty());
 
     for (const Thread& thread : lock_result->list) {
-      LOCK_TRACE_FLOW_STEP("contend_rwlock", thread.lock_flow_id());
+      LOCK_TRACE_FLOW_END("contend_rwlock", thread.lock_flow_id());
     }
 
     Thread& first_wake = lock_result->list.front();
