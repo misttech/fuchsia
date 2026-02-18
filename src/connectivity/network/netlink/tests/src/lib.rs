@@ -2038,7 +2038,8 @@ async fn sock_destroy_id_mismatch<I: Ip>(name: &str) {
         extensions: ExtensionFlags::empty(),
         states: StateFlags::all(),
         socket_id: SocketId {
-            source_port: local_addr.port() + 1, // Wrong port
+            // Wrong port, wrapping to a nonzero value.
+            source_port: local_addr.port().checked_add(1).unwrap_or(1),
             destination_port: peer_addr.port(),
             source_address: local_addr.ip(),
             destination_address: peer_addr.ip(),
