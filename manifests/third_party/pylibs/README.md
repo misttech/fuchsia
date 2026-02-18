@@ -34,6 +34,9 @@ dependency management and setup using requirements.txt.
 5. Run the `update-pylibs.sh` script and verify the changes in `pylibs`
     configuration file.
 
+    NOTE: If you're a Googler and `update-pylibs.sh` prompts you for a username,
+    try running `gpkg update-pylibs.sh` instead.
+
 
 ## Update existing package
 

@@ -27,11 +27,11 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/nedbat/coveragepy"
         revision="515034cba03fe602c6e0ce874f7921cac539ef9a"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- dill-0.4.0 -->
+    <!-- dill-0.4.1 -->
     <project name="third_party/pylibs/dill"
         path="third_party/pylibs/dill/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/uqfoundation/dill"
-        revision="16eb90b0895fa60c751bc4bdc18dbdf9a6b31a2e"
+        revision="a9d4d39c411296fb3608c4ffd142134559942d21"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- isort-5.13.2 -->
     <project name="third_party/pylibs/isort"
@@ -75,23 +75,29 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/pylint-dev/pylint"
         revision="efee9618894795cc8847727108522aa79431ee25"
         gerrithost="https://fuchsia-review.googlesource.com"/>
+    <!-- pyserial-3.5 -->
+    <project name="third_party/pylibs/pyserial"
+        path="third_party/pylibs/pyserial/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/pyserial/pyserial"
+        revision="0e7634747568547b8a7f9fd0c48ed74f16af4b23"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- pyusb-1.3.1 -->
     <project name="third_party/pylibs/pyusb"
         path="third_party/pylibs/pyusb/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/pyusb/pyusb"
         revision="b9b8a2b1ecb822af0c0f1d2cf0c0ec69f19765e3"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- tomlkit-0.13.3 -->
+    <!-- tomlkit-0.14.0 -->
     <project name="third_party/pylibs/tomlkit"
         path="third_party/pylibs/tomlkit/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/sdispater/tomlkit"
-        revision="8c963db32784623f8fc076ad4ef9b6b01ab0d542"
+        revision="090a28e46b58473210a74ec68a3c08b1535ff233"
         gerrithost="https://fuchsia-review.googlesource.com"/>
-    <!-- typing_extensions-4.14.1 -->
+    <!-- typing_extensions-4.15.0 -->
     <project name="third_party/pylibs/typing_extensions"
         path="third_party/pylibs/typing_extensions/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/typing_extensions"
-        revision="42027aba3558c9d9133a90bca17f6fecaecc48d8"
+        revision="9d1637e264b5c1a6b7acee3e907015f89b20c2c9"
         gerrithost="https://fuchsia-review.googlesource.com"/>
   </projects>
 </manifest>

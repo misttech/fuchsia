@@ -1,0 +1,12 @@
+Name: pyserial
+License: BSD-3-Clause
+License File: src/LICENSE.txt
+Upstream Git: https://github.com/pyserial/pyserial
+Description:
+
+Python serial port access library.
+
+
+Upgrading the version of pyserial:
+
+Visit `//manifests/third_party/pylibs/README.md` for instructions.
