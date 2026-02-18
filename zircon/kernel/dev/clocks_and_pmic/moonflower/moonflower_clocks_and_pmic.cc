@@ -63,19 +63,15 @@ class MoonflowerClocksAndPmic {
   TA_GUARDED(lock_) bool prepared_for_suspend_ { false };
   TA_GUARDED(lock_) uint32_t qup_v3_clockstate_at_halt_time_ { 0 };
 
-  // Note that this PLL does not appear to have the HW_CLK_CTRL_MODE set in its
-  // static linux configuration, however if we dump the registers after a fresh
-  // boot, the bit is set in the clock's config.  For now, we are configuring the
-  // clock to do the same, so that when we restore the clock, it gets restored to
-  // the same state.
+  // HW_CLK_CTRL_MODE is set by default, but is cleared in Linux during boot.
+  // Here we do the same by setting flags to 0. See https://fxbug.dev/483279438
   TA_GUARDED(lock_)
-  MoonflowerRcgClock gcc_qupv3_wrap0_s6_clk_src_{
-      gcc_parent_map_1,
-      ftbl_gcc_qupv3_wrap0_s5_clk_src,
-      0x1f88c,                                     // rcgr_offset
-      16,                                          // mnd_width
-      5,                                           // hid_width
-      MoonflowerRcgClock::FLAG_HW_CLK_CTRL_MODE};  // flags
+  MoonflowerRcgClock gcc_qupv3_wrap0_s6_clk_src_{gcc_parent_map_1,
+                                                 ftbl_gcc_qupv3_wrap0_s5_clk_src,
+                                                 0x1f88c,  // rcgr_offset
+                                                 16,       // mnd_width
+                                                 5,        // hid_width
+                                                 0};       // flags
 
   // GPLL0 is final PLL we need to turn off after we've shut off everything else.
   TA_GUARDED(lock_) MoonflowerAlphaPll gcc_gpll0_ { 0, 0 };
