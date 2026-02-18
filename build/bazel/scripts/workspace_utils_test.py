@@ -790,7 +790,7 @@ build:host_config_args --third_flag --fourth_flag
 common:fuchsia_config_args --common_flag
 build:fuchsia_config_args --configured_flag
 
-common:host --config=host_config_args --platforms=//build/bazel/platforms:linux_first_cpu
+common:host --config=host_config_args --platforms=//build/bazel/platforms:host
 common:fuchsia --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
 common:linux_first_cpu --config=host_config_args --platforms=//build/bazel/platforms:linux_first_cpu
 common:fuchsia_second_cpu --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
