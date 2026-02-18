@@ -618,7 +618,7 @@ impl FdTable {
         let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
-        guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+        guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
 
@@ -644,7 +644,7 @@ impl FdTable {
         let inner = self.inner.read();
         let guard = inner.write();
         let fd = guard.next_fd();
-        guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+        guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
     }
 
@@ -666,7 +666,7 @@ impl FdTable {
         let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
-        let file = guard.get_file(&inner.scope, oldfd).ok_or_else(|| errno!(EBADF))?;
+        let file = guard.get_file(inner.scope(), oldfd).ok_or_else(|| errno!(EBADF))?;
 
         let fd = match target {
             TargetFdNumber::Specific(fd) => {
@@ -678,16 +678,16 @@ impl FdTable {
                     // when we're past the rlimit.
                     return error!(EBADF);
                 }
-                guard.remove_entry(&inner.scope, &fd);
+                guard.remove_entry(inner.scope(), &fd);
                 fd
             }
-            TargetFdNumber::Minimum(fd) => guard.get_lowest_available_fd(&inner.scope, fd),
+            TargetFdNumber::Minimum(fd) => guard.get_lowest_available_fd(inner.scope(), fd),
             TargetFdNumber::Default => {
-                guard.get_lowest_available_fd(&inner.scope, FdNumber::from_raw(0))
+                guard.get_lowest_available_fd(inner.scope(), FdNumber::from_raw(0))
             }
         };
         let existing_entry =
-            guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+            guard.insert_entry(inner.scope(), fd, rlimit, FdTableEntry { file, flags })?;
         assert!(!existing_entry);
         Ok(fd)
     }
@@ -713,7 +713,7 @@ impl FdTable {
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
         let inner = self.inner.read();
-        let view = inner.read(&inner.scope);
+        let view = inner.read(inner.scope());
         view.get_entry(fd).map(|entry| (entry.file, entry.flags)).ok_or_else(|| errno!(EBADF))
     }
 
@@ -734,7 +734,7 @@ impl FdTable {
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
         let inner = self.inner.read();
         let guard = inner.write();
-        if guard.remove_entry(&inner.scope, &fd) { Ok(()) } else { error!(EBADF) }
+        if guard.remove_entry(inner.scope(), &fd) { Ok(()) } else { error!(EBADF) }
     }
 
     /// Returns the flags associated with the given file descriptor.
@@ -755,7 +755,7 @@ impl FdTable {
     ) -> Result<(), Errno> {
         let inner = self.inner.read();
         let guard = inner.write();
-        let file = guard.get_file(&inner.scope, fd).ok_or_else(|| errno!(EBADF))?;
+        let file = guard.get_file(inner.scope(), fd).ok_or_else(|| errno!(EBADF))?;
         if file.flags().contains(OpenFlags::PATH) {
             return error!(EBADF);
         }
@@ -767,7 +767,7 @@ impl FdTable {
             }
         };
         security::check_file_ioctl_access(current_task, &file, request)?;
-        guard.set_fd_flags(&inner.scope, fd, flags)
+        guard.set_fd_flags(inner.scope(), fd, flags)
     }
 
     /// Sets the flags associated with the given file descriptor.
@@ -776,7 +776,7 @@ impl FdTable {
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
         let inner = self.inner.read();
         let guard = inner.write();
-        guard.set_fd_flags(&inner.scope, fd, flags)
+        guard.set_fd_flags(inner.scope(), fd, flags)
     }
 
     /// Retains only the FDs matching the given `predicate`.
@@ -791,13 +791,13 @@ impl FdTable {
     {
         let inner = self.inner.read();
         let guard = inner.write();
-        guard.retain(&inner.scope, predicate);
+        guard.retain(inner.scope(), predicate);
     }
 
     /// Returns a vector of all current file descriptors in the table.
     pub fn get_all_fds(&self) -> Vec<FdNumber> {
         let inner = self.inner.read();
-        let view = inner.read(&inner.scope);
+        let view = inner.read(inner.scope());
         view.slice
             .iter()
             .enumerate()
@@ -821,7 +821,7 @@ impl FdTable {
     {
         let inner = self.inner.read();
         let guard = inner.write();
-        guard.remap(&inner.scope, predicate);
+        guard.remap(inner.scope(), predicate);
     }
 }
 

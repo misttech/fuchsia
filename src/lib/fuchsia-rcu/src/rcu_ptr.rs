@@ -126,16 +126,18 @@ impl<T> RcuPtr<T> {
 /// This guard ensures that the object remains valid until the guard is dropped.
 pub struct RcuReadGuard<T> {
     /// The scope in which the object is valid.
-    // NOTE: This is `pub` currently, which means, in theory, you can replace it with a different
-    // scope.  This currently works because nested scopes on a thread are effectively clones of the
-    // outermost scope.
-    pub scope: RcuReadScope,
+    scope: RcuReadScope,
 
     /// The pointer to the object.
     ptr: *const T,
 }
 
 impl<T> RcuReadGuard<T> {
+    /// Get the scope in which the object is valid.
+    pub fn scope(&self) -> &RcuReadScope {
+        &self.scope
+    }
+
     /// Get the raw pointer to the object.
     ///
     /// This function returns the raw pointer to the object. The caller is responsible for ensuring
