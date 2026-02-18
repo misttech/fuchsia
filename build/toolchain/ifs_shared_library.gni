@@ -263,9 +263,6 @@ template("ifs_shared_library") {
           ]
         }
 
-        # Output timestamps are not freshened if contents do not change.
-        all_outputs_fresh = false
-
         script = _llvm_ifs
         sources = [ invoker.abi ]
         outputs = [ gen_stub_file ]

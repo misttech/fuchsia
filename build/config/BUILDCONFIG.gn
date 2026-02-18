@@ -1990,13 +1990,6 @@ foreach(_target_type,
           "action_foreach",
         ]) {
   template(_target_type) {
-    # NOTE: all_outputs_fresh is obsolete, but still set by third_party/... rules.
-    if (defined(invoker.all_outputs_fresh)) {
-      assert(!invoker.all_outputs_fresh,
-             "all_outputs_fresh is obsolete, and should only be set to false!")
-      not_needed(invoker, [ "all_outputs_fresh" ])
-    }
-
     # If the action has inputs/outputs that are not explicitly stated then
     # it will fail verification against the trace.
     # Actions that are known non-hermetic should set `hermetic_deps = false`.
