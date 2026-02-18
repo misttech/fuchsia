@@ -36,6 +36,28 @@ fi
 
 export FUCHSIA_DIR
 export FUCHSIA_OUT_DIR="${FUCHSIA_OUT_DIR:-${FUCHSIA_DIR}/out}"
+
+# For all fx commands, we recommend pointing Python's cache dir outside of
+# the source tree, so that it is possible to mount the source tree read-only.
+# Honor PYTHONPYCACHEPREFIX from the user's environment over the defaults
+# chosen here.
+# Reasonable choices include: $HOME/.cache/__pycache__
+if [[ -z "${PYTHONPYCACHEPREFIX:-}" ]]; then
+  if [[ -f "${FUCHSIA_DIR}/.fx-build-dir" ]]; then
+    # If there is a build-dir, use it.  This will be cleaned by 'fx clean'.
+    _fx_build_dir="$(<"${FUCHSIA_DIR}/.fx-build-dir")"
+    if [[ "${_fx_build_dir:0:1}" != "/" ]]; then
+      _fx_build_dir="${FUCHSIA_DIR}/${_fx_build_dir}"
+    fi
+    export PYTHONPYCACHEPREFIX="${_fx_build_dir}/__pycache__"
+    unset _fx_build_dir
+  else
+    # Without a build-dir, use the out/ dir as a fallback.
+    # This location has the benefit of cache-sharing across all build dirs.
+    export PYTHONPYCACHEPREFIX="${FUCHSIA_OUT_DIR}/__pycache__"
+  fi
+fi
+
 # shellcheck source=/dev/null
 source "${devshell_lib_dir}/platform.sh"
 # shellcheck source=/dev/null
@@ -324,6 +346,7 @@ function fx-fail-if-main-pb-is-not-set {
 }
 
 function fx-regenerator {
+  env "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}" \
   "${FUCHSIA_DIR}/build/regenerator" \
     --fuchsia-dir="${FUCHSIA_DIR}" \
     --fuchsia-build-dir="${FUCHSIA_BUILD_DIR}" \
@@ -994,6 +1017,7 @@ function fx-standard-switches {
 function fx-uuid {
   # Emit a uuid string, same as the `uuidgen` tool.
   # Using Python avoids requiring a separate tool.
+  env "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}" \
   "${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())'
 }
 
@@ -1228,12 +1252,7 @@ EOF
     ${CLICOLOR_FORCE+"CLICOLOR_FORCE=$CLICOLOR_FORCE"}
     ${FX_BUILD_RBE_STATS+"FX_BUILD_RBE_STATS=$FX_BUILD_RBE_STATS"}
     ${FX_BUILD_QUIET+"FX_BUILD_QUIET=$FX_BUILD_QUIET"}
-
-    # Recommend pointing Python's cache dir outside of the source tree,
-    # so that it is possible to mount the source tree read-only.
-    # $FUCHSIA_OUT_DIR would also be a good choice that shares the cache
-    # among all build output dirs.
-    "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX:-"${FUCHSIA_BUILD_DIR}/__pycache__"}"
+    "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}"
   )
 
   if [[ "$BUILD_PROFILE_ENABLED" == 1 ]]
