@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 pub mod parser;
+pub mod processor;
 pub mod readers;
 pub mod structs;
 

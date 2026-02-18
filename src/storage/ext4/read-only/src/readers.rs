@@ -16,6 +16,10 @@ pub enum ReaderError {
     Read(u64),
     #[error("Out of bound read 0x{:X} when size is 0x{:X}", _0, _1)]
     OutOfBounds(u64, u64),
+    #[error("Write error at: 0x{:X}", _0)]
+    Write(u64),
+    #[error("Not supported")]
+    NotSupported,
 }
 
 pub trait Reader: Send + Sync {
@@ -25,7 +29,6 @@ pub trait Reader: Send + Sync {
 // For simpler usage of Reader trait objects with Parser, we also implement the Reader trait
 // for Arc and Box. This allows callers of Parser::new to pass trait objects or real objects
 // without having to create custom wrappers or duplicate implementations.
-
 impl Reader for Box<dyn Reader> {
     fn read(&self, offset: u64, data: &mut [u8]) -> Result<(), ReaderError> {
         self.as_ref().read(offset, data)
@@ -35,6 +38,37 @@ impl Reader for Box<dyn Reader> {
 impl Reader for Arc<dyn Reader> {
     fn read(&self, offset: u64, data: &mut [u8]) -> Result<(), ReaderError> {
         self.as_ref().read(offset, data)
+    }
+}
+
+// Same as Reader but has write capability.
+pub trait ReaderWriter: Reader {
+    fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
+        Err(ReaderError::NotSupported)
+    }
+}
+
+impl Reader for Box<dyn ReaderWriter> {
+    fn read(&self, offset: u64, data: &mut [u8]) -> Result<(), ReaderError> {
+        self.as_ref().read(offset, data)
+    }
+}
+
+impl ReaderWriter for Box<dyn ReaderWriter> {
+    fn write(&self, offset: u64, data: &[u8]) -> Result<(), ReaderError> {
+        self.as_ref().write(offset, data)
+    }
+}
+
+impl Reader for Arc<dyn ReaderWriter> {
+    fn read(&self, offset: u64, data: &mut [u8]) -> Result<(), ReaderError> {
+        self.as_ref().read(offset, data)
+    }
+}
+
+impl ReaderWriter for Arc<dyn ReaderWriter> {
+    fn write(&self, offset: u64, data: &[u8]) -> Result<(), ReaderError> {
+        self.as_ref().write(offset, data)
     }
 }
 
@@ -54,6 +88,8 @@ impl<T: Read + Seek + Send + Sync> Reader for IoAdapter<T> {
         reader.read_exact(data).map_err(|_| ReaderError::Read(offset))
     }
 }
+
+impl<T: Read + Seek + Send + Sync> ReaderWriter for IoAdapter<T> {}
 
 pub struct VecReader {
     data: Vec<u8>,
@@ -80,6 +116,12 @@ impl Reader for VecReader {
     }
 }
 
+impl ReaderWriter for VecReader {
+    fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
+        Err(ReaderError::NotSupported)
+    }
+}
+
 impl VecReader {
     pub fn new(filesystem: Vec<u8>) -> Self {
         VecReader { data: filesystem }
@@ -88,7 +130,7 @@ impl VecReader {
 
 #[cfg(target_os = "fuchsia")]
 mod fuchsia {
-    use super::{Reader, ReaderError};
+    use super::{Reader, ReaderError, ReaderWriter};
     use anyhow::Error;
     use block_client::{Cache, RemoteBlockClientSync};
     use fidl::endpoints::ClientEnd;
@@ -114,6 +156,12 @@ mod fuchsia {
         }
     }
 
+    impl ReaderWriter for VmoReader {
+        fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
+            Err(ReaderError::NotSupported)
+        }
+    }
+
     impl VmoReader {
         pub fn new(vmo: Arc<zx::Vmo>) -> Self {
             VmoReader { vmo }
@@ -129,6 +177,15 @@ mod fuchsia {
             self.block_cache.lock().read_at(data, offset).map_err(|e| {
                 error!("Encountered error while reading block device: {}", e);
                 ReaderError::Read(offset)
+            })
+        }
+    }
+
+    impl ReaderWriter for BlockDeviceReader {
+        fn write(&self, offset: u64, data: &[u8]) -> Result<(), ReaderError> {
+            self.block_cache.lock().write_at(data, offset).map_err(|e| {
+                error!("Encountered error while writing block device: {}", e);
+                ReaderError::Write(offset)
             })
         }
     }

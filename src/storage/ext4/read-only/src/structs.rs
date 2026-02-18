@@ -32,13 +32,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::readers::{Reader, ReaderError};
+use crate::readers::{Reader, ReaderError, ReaderWriter};
 use std::collections::HashMap;
 use std::mem::size_of;
 use std::{fmt, str};
 use thiserror::Error;
 use zerocopy::byteorder::little_endian::{U16 as LEU16, U32 as LEU32, U64 as LEU64};
-use zerocopy::{FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 // Block Group 0 Padding
 pub const FIRST_BG_PADDING: u64 = 1024;
@@ -53,7 +53,7 @@ pub const MIN_EXT4_SIZE: u64 = FIRST_BG_PADDING + size_of::<SuperBlock>() as u64
 /// The smallest supported INode size.
 pub const MINIMUM_INODE_SIZE: u64 = 128;
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct ExtentHeader {
     /// Magic number: 0xF30A
@@ -72,7 +72,7 @@ pub struct ExtentHeader {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(ExtentHeader, [u8; 12]);
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct ExtentIndex {
     /// Indexes logical blocks.
@@ -87,7 +87,7 @@ pub struct ExtentIndex {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(ExtentIndex, [u8; 12]);
 
-#[derive(Clone, KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(Clone, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, Debug)]
 #[repr(C)]
 pub struct Extent {
     /// First logical block.
@@ -118,7 +118,7 @@ pub struct DirEntry2 {
     pub e2d_name: [u8; 255],
 }
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned, std::fmt::Debug)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, std::fmt::Debug)]
 #[repr(C)]
 pub struct DirEntryHeader {
     /// INode number of entry
@@ -134,7 +134,7 @@ pub struct DirEntryHeader {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(DirEntryHeader, [u8; 8]);
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, Debug)]
 #[repr(C)]
 pub struct SuperBlock {
     /// INode count.
@@ -325,7 +325,7 @@ pub struct SuperBlock {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(SuperBlock, [u8; 1024]);
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct BlockGroupDesc32 {
     /// Blocks bitmap block.
@@ -357,7 +357,7 @@ pub struct BlockGroupDesc32 {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(BlockGroupDesc32, [u8; 32]);
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct BlockGroupDesc64 {
     pub base: BlockGroupDesc32,
@@ -377,14 +377,14 @@ pub struct BlockGroupDesc64 {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(BlockGroupDesc64, [u8; 64]);
 
-#[derive(KnownLayout, FromBytes, Immutable)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
 pub struct ExtentTreeNode<B: SplitByteSlice> {
     pub header: Ref<B, ExtentHeader>,
     pub entries: B,
 }
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
 #[repr(C)]
 pub struct INode {
     /// Access permission flags.
@@ -449,7 +449,7 @@ pub struct INode {
 // https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout
 assert_eq_size!(INode, [u8; 160]);
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned, Debug)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, Debug)]
 #[repr(C)]
 pub struct XattrHeader {
     pub e_magic: LEU32,
@@ -460,7 +460,7 @@ pub struct XattrHeader {
     e_reserved: [u8; 8],
 }
 
-#[derive(KnownLayout, FromBytes, Immutable, Unaligned, Debug)]
+#[derive(KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, Debug)]
 #[repr(C)]
 pub struct XattrEntryHeader {
     pub e_name_len: u8,
@@ -549,6 +549,9 @@ pub enum ParsingError {
 
     #[error("Not a file")]
     NotFile,
+
+    #[error("Writer failed to write at 0x{:X}", _0)]
+    WriterError(u64),
 }
 
 impl From<ReaderError> for ParsingError {
@@ -557,6 +560,10 @@ impl From<ReaderError> for ParsingError {
             ReaderError::Read(addr) => ParsingError::SourceReadError(addr),
             ReaderError::OutOfBounds(addr, max) => {
                 ParsingError::InvalidAddress(InvalidAddressErrorType::Upper, addr, max)
+            }
+            ReaderError::Write(addr) => ParsingError::WriterError(addr),
+            ReaderError::NotSupported => {
+                ParsingError::Incompatible("Write not supported".to_string())
             }
         }
     }
@@ -649,7 +656,9 @@ pub const BANNED_FEATURE_INCOMPAT: u32 = FeatureIncompat::Compression as u32
 
 // TODO(mbrunson): Update this trait to follow error conventions similar to ExtentTreeNode::parse.
 /// All functions to help parse data into respective structs.
-pub trait ParseToStruct: FromBytes + KnownLayout + Immutable + Unaligned + Sized {
+pub trait ParseToStruct:
+    FromBytes + KnownLayout + Immutable + Unaligned + IntoBytes + Sized
+{
     fn from_reader_with_offset(reader: &dyn Reader, offset: u64) -> Result<Self, ParsingError> {
         if offset < FIRST_BG_PADDING {
             return Err(ParsingError::InvalidAddress(
@@ -676,10 +685,20 @@ pub trait ParseToStruct: FromBytes + KnownLayout + Immutable + Unaligned + Sized
     fn to_struct_ref(data: &[u8], error_type: ParsingError) -> Result<&Self, ParsingError> {
         Ref::<&[u8], Self>::from_bytes(data).map(|res| Ref::into_ref(res)).map_err(|_| error_type)
     }
+
+    fn from_struct_to_writer(
+        &self,
+        writer: &dyn ReaderWriter,
+        offset: u64,
+    ) -> Result<(), ParsingError> {
+        let data = self.as_bytes();
+        writer.write(offset, data)?;
+        Ok(())
+    }
 }
 
 /// Apply to all EXT4 structs as seen above.
-impl<T: FromBytes + KnownLayout + Immutable + Unaligned> ParseToStruct for T {}
+impl<T: FromBytes + KnownLayout + Immutable + Unaligned + IntoBytes> ParseToStruct for T {}
 
 impl<B: SplitByteSlice> ExtentTreeNode<B> {
     /// Parses a slice of bytes to create an `ExtentTreeNode`.
@@ -797,6 +816,11 @@ impl INode {
     /// Size of the file/directory/entry represented by this INode.
     pub fn size(&self) -> u64 {
         (self.e2di_size_high.get() as u64) << 32 | self.e2di_size.get() as u64
+    }
+
+    pub fn update_size(&mut self, size: u64) {
+        self.e2di_size_high.set((size >> 32) as u32);
+        self.e2di_size.set((size & 0xFFFFFFFF) as u32);
     }
 
     pub fn facl(&self) -> u64 {

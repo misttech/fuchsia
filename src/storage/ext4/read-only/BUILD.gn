@@ -33,6 +33,8 @@ rustc_library("ext4-read-only") {
 
   test_deps = [
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/storage/lib/block_server:vmo_backed_block_server",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:sha2",
@@ -42,6 +44,7 @@ rustc_library("ext4-read-only") {
   sources = [
     "src/lib.rs",
     "src/parser.rs",
+    "src/processor.rs",
     "src/readers.rs",
     "src/structs.rs",
   ]

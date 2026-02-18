@@ -5,8 +5,8 @@
 use crate::directory::ExtDirectory;
 use crate::file::ExtFile;
 use crate::types::ExtAttributes;
-use ext4_read_only::parser::Parser;
-use ext4_read_only::readers::{BlockDeviceReader, Reader, VmoReader};
+use ext4_read_only::processor::Ext4Processor;
+use ext4_read_only::readers::{BlockDeviceReader, ReaderWriter, VmoReader};
 use ext4_read_only::structs::{self, EntryType, MIN_EXT4_SIZE};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_storage_block::BlockMarker;
@@ -37,10 +37,19 @@ impl From<structs::ParsingError> for ConstructFsError {
     }
 }
 
+// Default is to create read-only fs
 pub fn construct_fs(source: FsSourceType) -> Result<Arc<ExtDirectory>, ConstructFsError> {
-    let reader: Box<dyn Reader> = match source {
+    // TODO(https://fxbug.dev/479943428): Enable creating writeable fs when this is fully supported.
+    construct_fs_internal(source, true)
+}
+
+fn construct_fs_internal(
+    source: FsSourceType,
+    read_only: bool,
+) -> Result<Arc<ExtDirectory>, ConstructFsError> {
+    let reader: Arc<dyn ReaderWriter> = match source {
         FsSourceType::BlockDevice(block_device) => {
-            Box::new(BlockDeviceReader::from_client_end(block_device).map_err(|e| {
+            Arc::new(BlockDeviceReader::from_client_end(block_device).map_err(|e| {
                 error!("Error constructing file system: {}", e);
                 ConstructFsError::VmoReadError(zx::Status::IO_INVALID)
             })?)
@@ -52,19 +61,22 @@ pub fn construct_fs(source: FsSourceType) -> Result<Arc<ExtDirectory>, Construct
                 return Err(ConstructFsError::VmoReadError(zx::Status::NO_SPACE));
             }
 
-            Box::new(VmoReader::new(Arc::new(vmo)))
+            Arc::new(VmoReader::new(Arc::new(vmo)))
         }
     };
-
-    let parser = Parser::new(reader);
-    build_fs_dir(&parser, structs::ROOT_INODE_NUM)
+    let processor = Ext4Processor::new(reader, read_only);
+    build_fs_dir(Arc::new(processor), structs::ROOT_INODE_NUM, read_only)
 }
 
-fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, ConstructFsError> {
-    let inode = parser.inode(ino)?;
-    let entries = parser.entries_from_inode(&inode)?;
+fn build_fs_dir(
+    processor: Arc<Ext4Processor>,
+    ino: u32,
+    read_only: bool,
+) -> Result<Arc<ExtDirectory>, ConstructFsError> {
+    let inode = processor.inode(ino)?;
+    let entries = processor.entries_from_inode(&inode)?;
     let attributes = ExtAttributes::from_inode(inode);
-    let xattrs = parser.inode_xattrs(ino)?;
+    let xattrs = processor.inode_xattrs(ino)?;
     let dir = ExtDirectory::new(ino as u64, attributes, xattrs);
 
     for entry in entries {
@@ -76,14 +88,19 @@ fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, Construc
         let entry_ino = u32::from(entry.e2d_ino);
         match EntryType::from_u8(entry.e2d_type)? {
             EntryType::Directory => {
-                dir.insert_child(entry_name, build_fs_dir(parser, entry_ino)?)
-                    .map_err(ConstructFsError::NodeError)?;
+                dir.insert_child(
+                    entry_name,
+                    build_fs_dir(processor.clone(), entry_ino, read_only)?,
+                )
+                .map_err(ConstructFsError::NodeError)?;
             }
             EntryType::RegularFile => {
-                // TODO(https://fxbug.dev/479943428): Enable creating writeable file when this is
-                // properly supported.
-                dir.insert_child(entry_name, build_fs_file(parser, entry_ino, false)?)
-                    .map_err(ConstructFsError::NodeError)?;
+                dir.insert_child(
+                    entry_name,
+                    ExtFile::from_processor(processor.clone(), entry_ino, read_only)
+                        .map_err(ConstructFsError::NodeError)?,
+                )
+                .map_err(ConstructFsError::NodeError)?;
             }
             _ => {
                 // TODO(https://fxbug.dev/42073143): Handle other types.
@@ -94,30 +111,18 @@ fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, Construc
     Ok(dir)
 }
 
-fn build_fs_file(
-    parser: &Parser,
-    ino: u32,
-    writeable: bool,
-) -> Result<Arc<ExtFile>, ConstructFsError> {
-    let inode = parser.inode(ino)?;
-    let attributes = ExtAttributes::from_inode(inode);
-    let xattrs = parser.inode_xattrs(ino)?;
-    let data = parser.read_data(ino)?;
-    let file = ExtFile::from_data(ino as u64, attributes, xattrs, data, writeable)
-        .map_err(ConstructFsError::NodeError)?;
-    Ok(file)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{FsSourceType, construct_fs};
+    use super::{FsSourceType, construct_fs, construct_fs_internal};
 
     use ext4_read_only::structs::MIN_EXT4_SIZE;
-    use fidl_fuchsia_io as fio;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
-    use fuchsia_fs::file::read_to_string;
+    use fuchsia_fs::file::{read_to_string, write};
     use std::fs;
+    use std::sync::Arc;
+    use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::{Status, Vmo};
+    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     fn image_too_small() {
@@ -226,5 +231,97 @@ mod tests {
         }
 
         root.close().await.unwrap().map_err(Status::from_raw).unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_constructing_writeable_fs_and_writing_to_allocated_region() {
+        // Create a device that is Ext4 formatted.
+        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end1, block_server_end1) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+        });
+
+        // Write to the allocated extent of this file.
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end1),
+            /* read_only= */ false,
+        )
+        .expect("failed to parse the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open file");
+        let original_contents = "file1 contents.\n";
+        assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
+        let new_contents = "new contents.";
+        let offset = 5;
+        file.seek(fio::SeekOrigin::Start, offset)
+            .await
+            .expect("failed FIDL seek")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to seek file");
+        write(&file, new_contents).await.expect("failed to write to file");
+        file.close()
+            .await
+            .expect("failed FIDL file close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close file");
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
+
+        // Construct Ext4 fs again, and verify that the written data is still there.
+        let server_clone = server.clone();
+        let (block_client_end2, block_server_end2) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end2.into_stream()));
+        });
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end2),
+            /* read_only= */ true,
+        )
+        .expect("construct_fs parses the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let file =
+            open_file(&root, "file1", fio::PERM_READABLE).await.expect("failed to open file");
+        let mut expected_bytes = original_contents.as_bytes().to_vec();
+        expected_bytes.resize(offset as usize + new_contents.len(), 0);
+        expected_bytes[offset as usize..].copy_from_slice(new_contents.as_bytes());
+        assert_eq!(
+            read_to_string(&file).await.expect("failed to read file"),
+            String::from_utf8(expected_bytes).unwrap()
+        );
+        file.close()
+            .await
+            .expect("failed FIDL file close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close file");
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
     }
 }

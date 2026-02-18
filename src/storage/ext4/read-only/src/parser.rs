@@ -103,7 +103,7 @@ impl Parser {
     }
 
     /// Reads full raw data from a given block number.
-    fn block(&self, block_number: u64) -> Result<Box<[u8]>, ParsingError> {
+    pub(crate) fn block(&self, block_number: u64) -> Result<Box<[u8]>, ParsingError> {
         if block_number == 0 {
             return Err(ParsingError::InvalidAddress(
                 InvalidAddressErrorType::Lower,
@@ -123,7 +123,7 @@ impl Parser {
     }
 
     /// Returns the address of the given `inode_number` within `self.reader`.
-    fn inode_addr(&self, inode_number: u32) -> Result<u64, ParsingError> {
+    pub(crate) fn inode_addr(&self, inode_number: u32) -> Result<u64, ParsingError> {
         if inode_number < 1 {
             // INode number 0 is not allowed per ext4 spec.
             return Err(ParsingError::InvalidInode(inode_number));
@@ -322,7 +322,10 @@ impl Parser {
     }
 
     /// Handles traversal down an extent tree.
-    fn iterate_extents_in_tree<B: SplitByteSlice, F: FnMut(&Extent) -> Result<(), ParsingError>>(
+    pub(crate) fn iterate_extents_in_tree<
+        B: SplitByteSlice,
+        F: FnMut(&Extent) -> Result<(), ParsingError>,
+    >(
         &self,
         extent_tree_node: &ExtentTreeNode<B>,
         extent_handler: &mut F,
