@@ -33,7 +33,7 @@ impl AudioFrameSink {
         AudioFrameSink {
             frame_vmo: stream_config.frame_vmo(),
             next_frame_index: 0,
-            stream_config: StreamConfigOrTask::StreamConfig(stream_config),
+            stream_config: StreamConfigOrTask::StreamConfig(Box::new(stream_config)),
             inspect: Default::default(),
         }
     }

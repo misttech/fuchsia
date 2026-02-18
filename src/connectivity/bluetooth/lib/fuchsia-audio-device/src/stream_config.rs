@@ -10,7 +10,7 @@ use fidl_fuchsia_hardware_audio::*;
 use fuchsia_inspect_derive::{IValue, Inspect};
 use fuchsia_sync::Mutex;
 
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{info, warn};
 use std::sync::Arc;
 use {fuchsia_async as fasync, fuchsia_inspect as inspect};
@@ -20,9 +20,8 @@ use crate::audio_frame_stream::AudioFrameStream;
 use crate::frame_vmo;
 use crate::types::{AudioSampleFormat, Error, Result};
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087115)
 pub(crate) enum StreamConfigOrTask {
-    StreamConfig(SoftStreamConfig),
+    StreamConfig(Box<SoftStreamConfig>),
     Task(fasync::Task<Result<()>>),
     Complete,
 }

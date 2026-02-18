@@ -42,7 +42,7 @@ impl AudioFrameStream {
             next_frame: 0,
             packet_frames: stream.packet_frames(),
             next_packet: Vec::new().into(),
-            stream_task: StreamConfigOrTask::StreamConfig(stream),
+            stream_task: StreamConfigOrTask::StreamConfig(Box::new(stream)),
             inspect: Default::default(),
         }
     }

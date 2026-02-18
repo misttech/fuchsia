@@ -80,20 +80,19 @@ impl SysmemAllocatedBuffers {
     }
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087115)
 /// A Future that communicates with the `fuchsia.sysmem2.Allocator` service to allocate shared
 /// buffers.
 pub enum SysmemAllocation {
     Pending,
     /// Waiting for the Sync response from the Allocator
     WaitingForSync {
-        future: QueryResponseFut<()>,
+        future: Box<QueryResponseFut<()>>,
         token_fn: Option<Box<dyn FnOnce() -> () + Send + Sync>>,
         buffer_collection: BufferCollectionProxy,
     },
     /// Waiting for the buffers to be allocated, which should eventually happen after delivering the token.
     WaitingForAllocation(
-        QueryResponseFut<BufferCollectionWaitForAllBuffersAllocatedResult>,
+        Box<QueryResponseFut<BufferCollectionWaitForAllBuffersAllocatedResult>>,
         BufferCollectionProxy,
     ),
     /// Allocation is completed. The result here represents whether it completed successfully or an
@@ -184,7 +183,7 @@ impl SysmemAllocation {
             .context("sending constraints to sysmem")?;
 
         Ok(Self::WaitingForSync {
-            future: buffer_collection.sync(),
+            future: Box::new(buffer_collection.sync()),
             token_fn: None,
             buffer_collection,
         })
@@ -201,7 +200,7 @@ impl SysmemAllocation {
                     deliver_token_fn();
                 }
                 Self::WaitingForAllocation(
-                    buffer_collection.wait_for_all_buffers_allocated(),
+                    Box::new(buffer_collection.wait_for_all_buffers_allocated()),
                     buffer_collection,
                 )
             }
