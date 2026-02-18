@@ -68,6 +68,7 @@ if (is_host) {
   python_build_time_tests("export_host_tests_test") {
     tests = [ "export_host_tests_test.py" ]
     inputs = [
+      "//build/api/script_commands.py",
       "build_utils.py",
       "export_host_tests.py",
       "runfiles_utils.py",
