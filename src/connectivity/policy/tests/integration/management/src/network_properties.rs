@@ -327,12 +327,14 @@ impl PropertyUpdateExt for fnp_properties::PropertyUpdate {
 #[variant(N, Netstack)]
 #[variant(M, Manager)]
 async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(), anyhow::Error> {
-    const NDP_DNS_SERVER1: fnet::Ipv6Address = fidl_ip_v6!("20a::1234:5678");
-    const NDP_DNS_SERVER2: fnet::Ipv6Address = fidl_ip_v6!("20a::2345:6789");
-    const NDP_DNS_SERVER3: fnet::Ipv6Address = fidl_ip_v6!("20a::3456:7890");
+    const NDP_DNS_SERVER1: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::1");
+    const NDP_DNS_SERVER2: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::2");
+    const NDP_DNS_SERVER3: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::3");
 
     const DEFAULT_DNS_PORT: u16 = 53;
     const TEST_NETWORK_ID: u32 = 2;
+    const DNS_SERVER_LIST: [fnet::Ipv6Address; 3] =
+        [NDP_DNS_SERVER1, NDP_DNS_SERVER2, NDP_DNS_SERVER3];
 
     let _if_name = with_netcfg_owned_device::<M, N, _>(
         name,
@@ -415,9 +417,9 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     };
                 let mut watch = watch_update(&networks, &network);
                 let mut dns_sequence = std::collections::VecDeque::from([
-                    vec![NDP_DNS_SERVER1],
-                    vec![NDP_DNS_SERVER1, NDP_DNS_SERVER2],
-                    vec![NDP_DNS_SERVER1, NDP_DNS_SERVER2, NDP_DNS_SERVER3],
+                    vec![DNS_SERVER_LIST[0]],
+                    DNS_SERVER_LIST[0..2].to_vec(),
+                    DNS_SERVER_LIST.to_vec(),
                 ]);
                 let mut seen_updates = Vec::new();
 
@@ -450,8 +452,8 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                                     dns_sequence.push_front(list);
                                 }
                             }
-                            // The final update should have 3 DNS servers.
-                            if server_count >= 3 {
+                            // The final update should have all DNS servers.
+                            if server_count >= DNS_SERVER_LIST.len() {
                                 break 'main;
                             }
                         },
@@ -481,8 +483,9 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     })
                     .collect::<Vec<_>>();
 
-                // We expect there to be 4 total DNS server updates:
-                assert_eq!(dns_servers.len(), 4);
+                // We expect there initially be an empty update and then
+                // one update per DNS server in the list.
+                assert_eq!(dns_servers.len(), DNS_SERVER_LIST.len() + 1);
 
                 // 1st update: Initial empty list.
                 assert_eq!(dns_servers[0], HashSet::new());
@@ -575,12 +578,12 @@ async fn test_network_token_correlation<N: Netstack, M: Manager>(
                     .add(&network(if_id.try_into().unwrap(), None))
                     .await
                     .expect("fidl error")
-                    .expect("protocol error");
+                    .expect("failed to add network");
                 socket_proxy
                     .set_default(&fposix_socket::OptionalUint32::Value(if_id.try_into().unwrap()))
                     .await
                     .expect("fidl error")
-                    .expect("protocol error");
+                    .expect("failed to set default");
 
                 let networks = realm
                     .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
@@ -633,7 +636,7 @@ async fn test_network_token_correlation<N: Netstack, M: Manager>(
                     .set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty))
                     .await
                     .expect("fidl error")
-                    .expect("thingy");
+                    .expect("failed to set default");
 
                 // Resolving using a default network token for a network that is
                 // no longer the default should fail, since the default network
@@ -676,7 +679,7 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
         .expect("could not connect to FakeNetcfg");
 
     let expected_servers = vec![fnet_name::DnsServer_ {
-        address: Some(net_declare::fidl_socket_addr!("[20a::1234:5678]:53")),
+        address: Some(net_declare::fidl_socket_addr!("[2001:db8::1]:53")),
         source: Some(fnet_name::DnsServerSource::SocketProxy(
             fnet_name::SocketProxyDnsServerSource {
                 source_interface: Some(TEST_INTERFACE),
@@ -703,7 +706,7 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
                     fnp_socketproxy::StarnixNetworkInfo { mark: Some(1), ..Default::default() },
                 )),
                 dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
-                    v6: Some(vec![net_declare::fidl_ip_v6!("20a::1234:5678")]),
+                    v6: Some(vec![net_declare::fidl_ip_v6!("2001:db8::1")]),
                     v4: Some(vec![]),
                     ..Default::default()
                 }),
@@ -712,7 +715,9 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
             .await?
             .expect("add failed");
 
-        let res = network_registry.set_default(&fposix_socket::OptionalUint32::Value(1)).await?;
+        let res = network_registry
+            .set_default(&fposix_socket::OptionalUint32::Value(TEST_INTERFACE as u32))
+            .await?;
 
         Ok::<_, anyhow::Error>(res)
     };
