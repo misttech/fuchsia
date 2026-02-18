@@ -37,6 +37,7 @@ for file in ${added_or_modified_files[@]}; do
     sha256_cartfs=$(sha256sum "${CARTFS_FUCHSIA_DIR}/${file}" | awk '{print $1}')
   fi
   if [[ "${sha256_cog}" != "${sha256_cartfs}" ]]; then
+    mkdir -p "$(dirname "${CARTFS_FUCHSIA_DIR}/${file}")"
     cp "${COG_FUCHSIA_DIR}/${file}" "${CARTFS_FUCHSIA_DIR}/${file}"
   fi
 done
