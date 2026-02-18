@@ -68,3 +68,13 @@ func checkFileExists(filePath string) bool {
 	_, error := os.Stat(filePath)
 	return !errors.Is(error, os.ErrNotExist)
 }
+
+// newRunner returns a subprocess.Runner with PYTHONPYCACHEPREFIX set to a
+// directory within the build directory, to avoid writing to the source tree.
+func newRunner(contextSpec *fintpb.Context) *subprocess.Runner {
+	runner := &subprocess.Runner{}
+	if contextSpec != nil && contextSpec.BuildDir != "" && os.Getenv("PYTHONPYCACHEPREFIX") == "" {
+		runner.Env = append(runner.Env, fmt.Sprintf("PYTHONPYCACHEPREFIX=%s", filepath.Join(contextSpec.BuildDir, "__pycache__")))
+	}
+	return runner
+}

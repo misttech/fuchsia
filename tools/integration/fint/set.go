@@ -75,7 +75,7 @@ func Set(
 		return nil, err
 	}
 
-	artifacts, err := setImpl(ctx, &subprocess.Runner{}, staticSpec, contextSpec, platform, skipLocalArgs, assemblyOverridesStrings)
+	artifacts, err := setImpl(ctx, newRunner(contextSpec), staticSpec, contextSpec, platform, skipLocalArgs, assemblyOverridesStrings)
 	if err != nil && artifacts != nil && artifacts.FailureSummary == "" {
 		// Fall back to using the error text as the failure summary if the
 		// failure summary is unset. It's better than failing without emitting
@@ -156,7 +156,7 @@ func forceCleanIfNeeded(ctx context.Context, contextSpec *fintpb.Context, platfo
 		// no need to clean anything if there's nothing there
 		return nil
 	}
-	scriptRunner := &subprocess.Runner{}
+	scriptRunner := newRunner(contextSpec)
 	scriptRunner.Dir = contextSpec.CheckoutDir
 	return scriptRunner.Run(ctx, []string{
 		filepath.Join(append([]string{contextSpec.CheckoutDir}, vendoredPythonScriptPath...)...),

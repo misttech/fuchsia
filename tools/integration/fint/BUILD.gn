@@ -48,6 +48,7 @@ if (is_host) {
       "build.go",
       "build_test.go",
       "common.go",
+      "common_test.go",
       "ninja.go",
       "ninja_test.go",
       "parse.go",

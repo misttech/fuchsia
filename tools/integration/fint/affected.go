@@ -10,7 +10,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/build"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
 	"go.fuchsia.dev/fuchsia/tools/lib/hostplatform"
-	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 )
 
 // Affected does a ninja dry run and analyzes the output, to determine:
@@ -32,7 +31,7 @@ func Affected(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintp
 	if err != nil {
 		return &fintpb.BuildArtifacts{}, err
 	}
-	artifacts, err := affectedImpl(ctx, &subprocess.Runner{}, contextSpec, modules, platform, ninjaTargets)
+	artifacts, err := affectedImpl(ctx, newRunner(contextSpec), contextSpec, modules, platform, ninjaTargets)
 	if err != nil && artifacts != nil && artifacts.FailureSummary == "" {
 		// Fall back to using the error text as the failure summary if the
 		// failure summary is unset. It's better than failing without emitting

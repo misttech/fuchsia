@@ -207,7 +207,7 @@ func Build(ctx context.Context, staticSpec *fintpb.Static, contextSpec *fintpb.C
 		return nil, err
 	}
 
-	artifacts, err := buildImpl(ctx, &subprocess.Runner{}, subninjaTraceIsRecent, checkFileExists, staticSpec, contextSpec, modules, platform)
+	artifacts, err := buildImpl(ctx, newRunner(contextSpec), subninjaTraceIsRecent, checkFileExists, staticSpec, contextSpec, modules, platform)
 	if err != nil && artifacts != nil && artifacts.FailureSummary == "" {
 		// Fall back to using the error text as the failure summary if the
 		// failure summary is unset. It's better than failing without emitting
