@@ -126,12 +126,12 @@ where
     match Registration::route(registration_decl, registration_target, &sources, visitor, mapper)
         .await?
     {
-        RegistrationResult::Source(source) => return Ok(source),
+        RegistrationResult::Source(source) => return Ok(*source),
         RegistrationResult::FromParent(offer, component) => {
-            route_from_offer(offer, component, sources, visitor, mapper).await
+            route_from_offer(*offer, component, sources, visitor, mapper).await
         }
         RegistrationResult::FromChild(expose, component) => {
-            route_from_expose(expose, component, sources, visitor, mapper).await
+            route_from_expose(*expose, component, sources, visitor, mapper).await
         }
     }
 }
@@ -166,7 +166,7 @@ where
         }
     }
     match Offer::route(offer, offer_target.clone(), &sources, visitor, mapper).await? {
-        OfferResult::Source(source) => return Ok(source),
+        OfferResult::Source(source) => return Ok(*source),
         OfferResult::OfferFromChild(offer, component) => {
             let offer_decl: OfferDecl = offer.clone().into();
 
@@ -314,7 +314,7 @@ where
         }
     }
     match Expose::route(expose, expose_target, &sources, visitor, mapper).await? {
-        ExposeResult::Source(source) => Ok(source),
+        ExposeResult::Source(source) => Ok(*source),
         ExposeResult::ExposeFromAnonymizedAggregate(expose, aggregation_component) => {
             let mut members = vec![];
             for e in expose.iter() {
@@ -766,15 +766,14 @@ impl Use {
 /// The environment `Registration` phase of routing.
 pub struct Registration<R>(PhantomData<R>);
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087293)
 /// The result of routing a Registration declaration to the next phase.
 enum RegistrationResult<C: ComponentInstanceInterface + 'static, O: Clone + fmt::Debug> {
     /// The source of the Registration was found (Framework, AboveRoot, etc.).
-    Source(CapabilitySource),
+    Source(Box<CapabilitySource>),
     /// The Registration led to a parent Offer declaration.
-    FromParent(RouteBundle<O>, Arc<C>),
+    FromParent(Box<RouteBundle<O>>, Arc<C>),
     /// The Registration led to a child Expose declaration.
-    FromChild(RouteBundle<ExposeDecl>, Arc<C>),
+    FromChild(Box<RouteBundle<ExposeDecl>>, Arc<C>),
 }
 
 impl<R> Registration<R>
@@ -804,16 +803,18 @@ where
         match registration.source() {
             RegistrationSource::Self_ => {
                 let target_capabilities = target.lock_resolved_state().await?.capabilities();
-                Ok(RegistrationResult::Source(CapabilitySource::Component(ComponentSource {
-                    capability: sources.find_component_source(
-                        registration.source_name(),
-                        target.moniker(),
-                        &target_capabilities,
-                        visitor,
-                        mapper,
-                    )?,
-                    moniker: target.moniker().clone(),
-                })))
+                Ok(RegistrationResult::Source(Box::new(CapabilitySource::Component(
+                    ComponentSource {
+                        capability: sources.find_component_source(
+                            registration.source_name(),
+                            target.moniker(),
+                            &target_capabilities,
+                            visitor,
+                            mapper,
+                        )?,
+                        moniker: target.moniker().clone(),
+                    },
+                ))))
             }
             RegistrationSource::Parent => match target.try_get_parent()? {
                 ExtendedInstanceInterface::<C>::AboveRoot(top_instance) => {
@@ -825,8 +826,8 @@ where
                             visitor,
                             mapper,
                         )? {
-                            return Ok(RegistrationResult::Source(CapabilitySource::Namespace(
-                                NamespaceSource { capability },
+                            return Ok(RegistrationResult::Source(Box::new(
+                                CapabilitySource::Namespace(NamespaceSource { capability }),
                             )));
                         }
                     }
@@ -837,8 +838,8 @@ where
                         visitor,
                         mapper,
                     )? {
-                        return Ok(RegistrationResult::Source(CapabilitySource::Builtin(
-                            BuiltinSource { capability },
+                        return Ok(RegistrationResult::Source(Box::new(
+                            CapabilitySource::Builtin(BuiltinSource { capability }),
                         )));
                     }
                     Err(RoutingError::register_from_component_manager_not_found(
@@ -860,7 +861,7 @@ where
                             registration.source_name().clone(),
                         )
                     })?;
-                    Ok(RegistrationResult::FromParent(parent_offers, parent_component))
+                    Ok(RegistrationResult::FromParent(Box::new(parent_offers), parent_component))
                 }
             },
             RegistrationSource::Child(child) => {
@@ -894,7 +895,7 @@ where
                         registration.source_name().clone(),
                     )
                 })?;
-                Ok(RegistrationResult::FromChild(child_exposes, child_component.clone()))
+                Ok(RegistrationResult::FromChild(Box::new(child_exposes), child_component.clone()))
             }
         }
     }
@@ -906,7 +907,7 @@ pub struct Offer();
 /// The result of routing an Offer declaration to the next phase.
 enum OfferResult<C: ComponentInstanceInterface + 'static> {
     /// The source of the Offer was found (Framework, AboveRoot, Component, etc.).
-    Source(CapabilitySource),
+    Source(Box<CapabilitySource>),
     /// The Offer led to an Offer-from-child declaration.
     /// Not all capabilities can be exposed, so let the caller decide how to handle this.
     OfferFromChild(OfferDecl, Arc<C>),
@@ -918,7 +919,7 @@ enum OfferResult<C: ComponentInstanceInterface + 'static> {
 
 enum OfferSegment<C: ComponentInstanceInterface + 'static> {
     Done(OfferResult<C>),
-    Next(RouteBundle<OfferDecl>, Arc<C>),
+    Next(Box<RouteBundle<OfferDecl>>, Arc<C>),
 }
 
 impl Offer {
@@ -980,7 +981,7 @@ impl Offer {
                     match Self::route_segment(offer, target, sources, visitor, mapper).await? {
                         OfferSegment::Done(r) => return Ok(r),
                         OfferSegment::Next(o, t) => {
-                            offer_bundle = o;
+                            offer_bundle = *o;
                             target = t;
                         }
                     }
@@ -1009,15 +1010,15 @@ impl Offer {
         V: CapabilityVisitor,
     {
         let res = match offer.source() {
-            OfferSource::Void => {
-                OfferSegment::Done(OfferResult::Source(CapabilitySource::Void(VoidSource {
+            OfferSource::Void => OfferSegment::Done(OfferResult::Source(Box::new(
+                CapabilitySource::Void(VoidSource {
                     capability: InternalCapability::new(
                         (&offer).into(),
                         offer.source_name().clone(),
                     ),
                     moniker: target.moniker().clone(),
-                })))
-            }
+                }),
+            ))),
             OfferSource::Self_ => {
                 let target_capabilities = target.lock_resolved_state().await?.capabilities();
                 let capability = sources.find_component_source(
@@ -1036,29 +1037,27 @@ impl Offer {
                             || offer_service_decl.renamed_instances.is_some()
                         {
                             let source_name = offer_service_decl.source_name.clone();
-                            OfferResult::Source(CapabilitySource::FilteredProvider(
+                            OfferResult::Source(Box::new(CapabilitySource::FilteredProvider(
                                 FilteredProviderSource {
                                     capability: AggregateCapability::Service(source_name),
                                     moniker,
                                     service_capability: capability,
                                     offer_service_decl,
                                 },
-                            ))
+                            )))
                         } else {
-                            OfferResult::Source(CapabilitySource::Component(ComponentSource {
-                                capability,
-                                moniker: component.moniker,
-                            }))
+                            OfferResult::Source(Box::new(CapabilitySource::Component(
+                                ComponentSource { capability, moniker: component.moniker },
+                            )))
                         }
                     }
-                    _ => OfferResult::Source(CapabilitySource::Component(ComponentSource {
-                        capability,
-                        moniker: component.moniker,
-                    })),
+                    _ => OfferResult::Source(Box::new(CapabilitySource::Component(
+                        ComponentSource { capability, moniker: component.moniker },
+                    ))),
                 };
                 OfferSegment::Done(res)
             }
-            OfferSource::Framework => OfferSegment::Done(OfferResult::Source(
+            OfferSource::Framework => OfferSegment::Done(OfferResult::Source(Box::new(
                 CapabilitySource::Framework(FrameworkSource {
                     capability: sources.framework_source(
                         target.moniker(),
@@ -1067,15 +1066,15 @@ impl Offer {
                     )?,
                     moniker: target.moniker().clone(),
                 }),
-            )),
+            ))),
             OfferSource::Capability(_) => {
                 sources.capability_source(target.moniker())?;
-                OfferSegment::Done(OfferResult::Source(CapabilitySource::Capability(
+                OfferSegment::Done(OfferResult::Source(Box::new(CapabilitySource::Capability(
                     CapabilityToCapabilitySource {
                         source_capability: ComponentCapability::Offer(offer.into()),
                         moniker: target.moniker().clone(),
                     },
-                )))
+                ))))
             }
             OfferSource::Parent => {
                 let parent_component = match target.try_get_parent()? {
@@ -1088,9 +1087,9 @@ impl Offer {
                                 visitor,
                                 mapper,
                             )? {
-                                return Ok(OfferSegment::Done(OfferResult::Source(
+                                return Ok(OfferSegment::Done(OfferResult::Source(Box::new(
                                     CapabilitySource::Namespace(NamespaceSource { capability }),
-                                )));
+                                ))));
                             }
                         }
                         if let Some(capability) = sources.find_builtin_source(
@@ -1100,9 +1099,9 @@ impl Offer {
                             visitor,
                             mapper,
                         )? {
-                            return Ok(OfferSegment::Done(OfferResult::Source(
+                            return Ok(OfferSegment::Done(OfferResult::Source(Box::new(
                                 CapabilitySource::Builtin(BuiltinSource { capability }),
-                            )));
+                            ))));
                         }
                         return Err(RoutingError::offer_from_component_manager_not_found(
                             offer.source_name().to_string(),
@@ -1124,7 +1123,7 @@ impl Offer {
                         offer.source_name().clone(),
                     )
                 })?;
-                OfferSegment::Next(parent_offers, parent_component)
+                OfferSegment::Next(Box::new(parent_offers), parent_component)
             }
             OfferSource::Child(_) => OfferSegment::Done(OfferResult::OfferFromChild(offer, target)),
             OfferSource::Collection(_) => OfferSegment::Done(
@@ -1185,13 +1184,12 @@ where
 #[derive(Debug)]
 pub struct Expose();
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087293)
 /// The result of routing an Expose declaration to the next phase.
 enum ExposeResult<C: ComponentInstanceInterface + 'static> {
     /// The source of the Expose was found (Framework, Component, etc.).
-    Source(CapabilitySource),
+    Source(Box<CapabilitySource>),
     /// The source of the Expose comes from an aggregation of collections and/or static children
-    ExposeFromAnonymizedAggregate(RouteBundle<ExposeDecl>, Arc<C>),
+    ExposeFromAnonymizedAggregate(Box<RouteBundle<ExposeDecl>>, Arc<C>),
 }
 
 /// A bundle of one or more routing declarations to route together, that share the same target_name
@@ -1354,10 +1352,9 @@ impl<'a, T> Iterator for RouteBundleIter<'a, T> {
 
 impl<'a, T> ExactSizeIterator for RouteBundleIter<'a, T> {}
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087293)
 enum ExposeSegment<C: ComponentInstanceInterface + 'static> {
     Done(ExposeResult<C>),
-    Next(RouteBundle<ExposeDecl>, Arc<C>),
+    Next(Box<RouteBundle<ExposeDecl>>, Arc<C>),
 }
 
 impl Expose {
@@ -1403,13 +1400,16 @@ impl Expose {
                     match Self::route_segment(expose, target, sources, visitor, mapper).await? {
                         ExposeSegment::Done(r) => return Ok(r),
                         ExposeSegment::Next(e, t) => {
-                            expose_bundle = e;
+                            expose_bundle = *e;
                             target = t;
                         }
                     }
                 }
                 RouteBundle::Aggregate(_) => {
-                    return Ok(ExposeResult::ExposeFromAnonymizedAggregate(expose_bundle, target));
+                    return Ok(ExposeResult::ExposeFromAnonymizedAggregate(
+                        Box::new(expose_bundle),
+                        target,
+                    ));
                 }
             }
         }
@@ -1428,18 +1428,18 @@ impl Expose {
         V: CapabilityVisitor,
     {
         let res = match expose.source() {
-            ExposeSource::Void => {
-                ExposeSegment::Done(ExposeResult::Source(CapabilitySource::Void(VoidSource {
+            ExposeSource::Void => ExposeSegment::Done(ExposeResult::Source(Box::new(
+                CapabilitySource::Void(VoidSource {
                     capability: InternalCapability::new(
                         (&expose).into(),
                         expose.source_name().clone(),
                     ),
                     moniker: target.moniker().clone(),
-                })))
-            }
+                }),
+            ))),
             ExposeSource::Self_ => {
                 let target_capabilities = target.lock_resolved_state().await?.capabilities();
-                ExposeSegment::Done(ExposeResult::Source(CapabilitySource::Component(
+                ExposeSegment::Done(ExposeResult::Source(Box::new(CapabilitySource::Component(
                     ComponentSource {
                         capability: sources.find_component_source(
                             expose.source_name(),
@@ -1450,9 +1450,9 @@ impl Expose {
                         )?,
                         moniker: target.moniker().clone(),
                     },
-                )))
+                ))))
             }
-            ExposeSource::Framework => ExposeSegment::Done(ExposeResult::Source(
+            ExposeSource::Framework => ExposeSegment::Done(ExposeResult::Source(Box::new(
                 CapabilitySource::Framework(FrameworkSource {
                     capability: sources.framework_source(
                         target.moniker(),
@@ -1461,15 +1461,15 @@ impl Expose {
                     )?,
                     moniker: target.moniker().clone(),
                 }),
-            )),
+            ))),
             ExposeSource::Capability(_) => {
                 sources.capability_source(target.moniker())?;
-                ExposeSegment::Done(ExposeResult::Source(CapabilitySource::Capability(
+                ExposeSegment::Done(ExposeResult::Source(Box::new(CapabilitySource::Capability(
                     CapabilityToCapabilitySource {
                         source_capability: ComponentCapability::Expose(expose.into()),
                         moniker: target.moniker().clone(),
                     },
-                )))
+                ))))
             }
             ExposeSource::Child(child) => {
                 let child_component = {
@@ -1497,11 +1497,11 @@ impl Expose {
                         expose.source_name().clone(),
                     )
                 })?;
-                ExposeSegment::Next(child_exposes, child_component)
+                ExposeSegment::Next(Box::new(child_exposes), child_component)
             }
             ExposeSource::Collection(_) => {
                 ExposeSegment::Done(ExposeResult::ExposeFromAnonymizedAggregate(
-                    RouteBundle::from_expose(expose),
+                    Box::new(RouteBundle::from_expose(expose)),
                     target,
                 ))
             }
