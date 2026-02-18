@@ -5,6 +5,7 @@
 """Build information used in the Bazel product configs."""
 
 load("@fuchsia_build_info//:args.bzl", "build_info_product", "build_info_version", "truncate_build_info_commit_date")
+load("//build/bazel/rules/python:py_toolchain.bzl", "PY_TOOLCHAIN_ATTRS", "generate_python_build_action")
 
 DEFAULT_PRODUCT_BUILD_INFO = {
     "name": build_info_product,
@@ -13,23 +14,7 @@ DEFAULT_PRODUCT_BUILD_INFO = {
     "latest_commit_date": "LABEL(@//build/info:latest_commit_date)",
 }
 
-PY_TOOLCHAIN_DEPS = {
-    "_py_toolchain": attr.label(
-        default = "@rules_python//python:current_py_toolchain",
-        cfg = "exec",
-        providers = [DefaultInfo, platform_common.ToolchainInfo],
-    ),
-}
-
 def _gen_latest_date_and_timestamp_impl(ctx):
-    # Get Python3 interpreter and its runfiles.
-    toolchain_info = ctx.attr._py_toolchain[platform_common.ToolchainInfo]
-    if not toolchain_info.py3_runtime:
-        fail("A Bazel python3 runtime is required, and none was configured!")
-
-    python3_executable = toolchain_info.py3_runtime.interpreter
-    python3_runfiles = ctx.runfiles(transitive_files = toolchain_info.py3_runtime.files)
-
     # Declare output files.
     stamp_file = ctx.actions.declare_file("minimum_utc_stamp.txt")
     commit_hash = ctx.actions.declare_file("latest_commit_hash.txt")
@@ -40,7 +25,6 @@ def _gen_latest_date_and_timestamp_impl(ctx):
 
     # Build command line arguments.
     cmd_args = [
-        ctx.file._py_script.path,
         "--input-hash-file",
         ctx.file._commit_hash_file.path,
         "--input-stamp-file",
@@ -56,24 +40,23 @@ def _gen_latest_date_and_timestamp_impl(ctx):
     if truncate_build_info_commit_date:
         cmd_args += ["--truncate"]
 
-    runfiles = ctx.runfiles(
-        files = [
+    generate_python_build_action(
+        ctx = ctx,
+        py_script = ctx.file._py_script,
+        arguments = cmd_args,
+        outputs = outputs,
+        inputs = [
             ctx.file._commit_hash_file,
             ctx.file._commit_stamp_file,
         ],
-        transitive_files = python3_runfiles.files,
-    )
-
-    ctx.actions.run(
-        outputs = outputs,
-        inputs = runfiles.files,
-        executable = python3_executable,
-        arguments = cmd_args,
+        execution_requirements = {
+            # No need to remote this action.
+            "local": "1",
+        },
     )
 
     return DefaultInfo(
         files = depset(outputs),
-        runfiles = runfiles,
     )
 
 gen_latest_date_and_timestamp = rule(
@@ -91,7 +74,7 @@ gen_latest_date_and_timestamp = rule(
             allow_single_file = True,
             default = "//build/info:jiri_generated/integration_commit_stamp.txt",
         ),
-    } | PY_TOOLCHAIN_DEPS,
+    } | PY_TOOLCHAIN_ATTRS,
 )
 
 def _get_indexed_output_impl(ctx):
