@@ -39,9 +39,9 @@ cc_library(
         "aml-gpio.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
+    features = ["enable_zircon_asserts"],
     deps = [
         "//src/devices/lib/amlogic",
         "//src/lib/ddk:ddk_metadata",

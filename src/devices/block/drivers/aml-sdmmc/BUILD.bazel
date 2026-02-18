@@ -40,10 +40,10 @@ fuchsia_cc_driver(
         "aml-sdmmc-regs.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS=1",
     ],
+    features = ["enable_zircon_asserts"],
     output_name = "aml-sdmmc",
     deps = [
         ":aml-sdmmc-config",

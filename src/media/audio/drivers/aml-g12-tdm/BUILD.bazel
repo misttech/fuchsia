@@ -47,9 +47,9 @@ cc_library(
         "composite-server.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
+    features = ["enable_zircon_asserts"],
     deps = [
         "//sdk/lib/driver/compat/cpp",
         "//src/devices/lib/amlogic",

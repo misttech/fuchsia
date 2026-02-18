@@ -6,6 +6,7 @@ import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/compiler.gni")
+import("//build/config/fuchsia/zircon_asserts.gni")
 import("//build/config/fuchsia_cxx_version.gni")
 
 # Compute the list of `bazel build` arguments corresponding to the current
@@ -119,6 +120,12 @@ if (_is_compilation_mode_dbg) {
   }
 } else {
   assert("Unsupported mode optimize = $optimize")
+}
+
+if (zircon_asserts) {
+  # LINT.IfChange(enable_zircon_asserts_feature)
+  _build_args += [ "--features=enable_zircon_asserts" ]
+  # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:enable_zircon_asserts_feature)
 }
 
 # Forward GN C/C++ compiler optimization configuration to Bazel

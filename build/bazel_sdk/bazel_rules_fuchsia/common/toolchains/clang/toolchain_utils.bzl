@@ -152,6 +152,32 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
         ],
     )
 
+    # A feature used to enable assertions in ZX_DEBUG_ASSERT and ZX_DEBUG_ASSERT_MSG
+    # that are also used in Fuchsia and host build configurations, not only Zircon ones.
+    # Disabled by default, but //build/bazel/config/bazel_args.gni will enable that
+    # when it is also enabled in the top-level GN build.
+    enable_zircon_asserts_feature = feature(
+        # LINT.IfChange(enable_zircon_asserts_feature)
+        name = "enable_zircon_asserts",
+        # LINT.ThenChange(//build/bazel/config/bazel_args.gni:enable_zircon_asserts_feature)
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                    ACTION_NAMES.cpp_module_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        # LINT.IfChange(enable_zircon_asserts_flags)
+                        flags = ["-DZX_ASSERT_LEVEL=2"],
+                        # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:enable_zircon_asserts_flags)
+                    ),
+                ],
+            ),
+        ],
+    )
+
     coverage_feature = feature(
         name = "coverage",
         flag_sets = [
@@ -288,6 +314,7 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
         coverage_feature,
         dbg_feature,
         dependency_file_feature,
+        enable_zircon_asserts_feature,
         generate_linkmap_feature,
         ml_inliner_feature,
         opt_feature,

@@ -50,9 +50,9 @@ cc_library(
         "dwc3-types.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
+    features = ["enable_zircon_asserts"],
     deps = [
         ":dwc3-config",
         "//src/devices/lib/dma-buffer",

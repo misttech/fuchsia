@@ -22,9 +22,9 @@ cc_library(
         "adc-buttons-device.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
+    features = ["enable_zircon_asserts"],
     deps = [
         "//src/devices/lib/amlogic",
         "//zircon/system/ulib/ddk-platform-defs",

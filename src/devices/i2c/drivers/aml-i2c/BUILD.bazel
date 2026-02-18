@@ -35,9 +35,9 @@ cc_library(
         "aml-i2c-regs.h",
     ],
     defines = [
-        "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
+    features = ["enable_zircon_asserts"],
     deps = [
         "//src/devices/lib/amlogic",
         "@fuchsia_sdk//fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_cpp",

@@ -8,6 +8,7 @@ import("//build/config/clang/clang.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
 import("//build/config/current_target_tuple.gni")
 import("//build/config/fuchsia/target_api_level.gni")
+import("//build/config/fuchsia/zircon_asserts.gni")
 import("//build/config/sanitizers/sanitizer_default_options.gni")
 import("//build/config/sysroot.gni")
 import("//build/icu/third_party_icu_headers.gni")
@@ -189,11 +190,13 @@ config("executable_config") {
 }
 
 config("enable_zircon_asserts") {
+  # BAZEL_MIGRATION_NOTE: A Bazel C++ target that wants to force this feature should
+  # use `features = [ "enable_zircon_asserts" ]` in its definition. Likewise, to disable
+  # the feature, use `features = [ "-enable_zircon_asserts" ]`.
+  #
+  # LINT.IfChange(enable_zircon_asserts_flags)
   defines = [ "ZX_ASSERT_LEVEL=2" ]
-}
-
-declare_args() {
-  zircon_asserts = is_debug
+  # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:enable_zircon_asserts_flags)
 }
 
 config("zircon_asserts") {
