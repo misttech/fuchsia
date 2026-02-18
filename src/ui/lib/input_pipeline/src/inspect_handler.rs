@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{Handled, InputDeviceEvent, InputDeviceType, InputEvent, InputEventType};
+use crate::input_device::{Handled, InputDeviceType, InputEvent, InputEventType};
 use crate::input_handler::{Handler, InputHandler};
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
@@ -38,49 +38,6 @@ const LATENCY_HISTOGRAM_PROPERTIES: ExponentialHistogramParams<i64> = Exponentia
     buckets: 7,
 };
 
-#[derive(Debug, Hash, PartialEq, Eq)]
-enum EventType {
-    Keyboard,
-    LightSensor,
-    ConsumerControls,
-    Mouse,
-    TouchScreen,
-    Touchpad,
-    #[cfg(test)]
-    Fake,
-}
-
-impl std::fmt::Display for EventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &*self {
-            EventType::Keyboard => write!(f, "keyboard"),
-            EventType::LightSensor => write!(f, "light_sensor"),
-            EventType::ConsumerControls => write!(f, "consumer_controls"),
-            EventType::Mouse => write!(f, "mouse"),
-            EventType::TouchScreen => write!(f, "touch_screen"),
-            EventType::Touchpad => write!(f, "touchpad"),
-            #[cfg(test)]
-            EventType::Fake => write!(f, "fake"),
-        }
-    }
-}
-
-impl EventType {
-    /// Creates an `EventType` based on an [InputDeviceEvent].
-    pub fn for_device_event(event: &InputDeviceEvent) -> Self {
-        match event {
-            InputDeviceEvent::Keyboard(_) => EventType::Keyboard,
-            InputDeviceEvent::LightSensor(_) => EventType::LightSensor,
-            InputDeviceEvent::ConsumerControls(_) => EventType::ConsumerControls,
-            InputDeviceEvent::Mouse(_) => EventType::Mouse,
-            InputDeviceEvent::TouchScreen(_) => EventType::TouchScreen,
-            InputDeviceEvent::Touchpad(_) => EventType::Touchpad,
-            #[cfg(test)]
-            InputDeviceEvent::Fake => EventType::Fake,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct EventCounters {
     /// A node that contains the counters below.
@@ -99,9 +56,9 @@ struct EventCounters {
 
 impl EventCounters {
     fn add_new_into(
-        map: &mut HashMap<EventType, EventCounters>,
+        map: &mut HashMap<InputEventType, EventCounters>,
         root: &inspect::Node,
-        event_type: EventType,
+        event_type: InputEventType,
     ) {
         let node = root.create_child(format!("{}", event_type));
         let events_count = node.create_uint("events_count", 0);
@@ -204,7 +161,7 @@ pub struct InspectHandler<F> {
     /// 0 if unset.
     last_generated_timestamp_ns: inspect::IntProperty,
     /// An inventory of event counters by type.
-    events_by_type: HashMap<EventType, EventCounters>,
+    events_by_type: HashMap<InputEventType, EventCounters>,
     /// Log of recent events in the order they were received.
     recent_events_log: Option<Arc<Mutex<CircularBuffer<InputEvent>>>>,
     /// Histogram of latency from the binding timestamp for an `InputEvent` until
@@ -268,7 +225,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
         self.events_count.add(1);
         self.last_seen_timestamp_ns.set(now.into_nanos());
         self.last_generated_timestamp_ns.set(event_time.into_nanos());
-        let event_type = EventType::for_device_event(&input_event.device_event);
+        let event_type = InputEventType::from(&input_event.device_event);
         self.events_by_type
             .get(&event_type)
             .unwrap_or_else(|| panic!("no event counters for {}", event_type))
@@ -328,23 +285,27 @@ impl<F> InspectHandler<F> {
 
         let mut events_by_type = HashMap::new();
         if supported_input_devices.contains(&InputDeviceType::Keyboard) {
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::Keyboard);
+            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Keyboard);
         }
         if supported_input_devices.contains(&InputDeviceType::ConsumerControls) {
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::ConsumerControls);
+            EventCounters::add_new_into(
+                &mut events_by_type,
+                &node,
+                InputEventType::ConsumerControls,
+            );
         }
         if supported_input_devices.contains(&InputDeviceType::LightSensor) {
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::LightSensor);
+            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::LightSensor);
         }
         if supported_input_devices.contains(&InputDeviceType::Mouse) {
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::Mouse);
+            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Mouse);
         }
         if supported_input_devices.contains(&InputDeviceType::Touch) {
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::TouchScreen);
-            EventCounters::add_new_into(&mut events_by_type, &node, EventType::Touchpad);
+            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::TouchScreen);
+            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Touchpad);
         }
         #[cfg(test)]
-        EventCounters::add_new_into(&mut events_by_type, &node, EventType::Fake);
+        EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Fake);
 
         Rc::new(Self {
             now: RefCell::new(now),
@@ -377,7 +338,7 @@ fn record_lazy_recent_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input_device::{self, InputDeviceDescriptor};
+    use crate::input_device::{self, InputDeviceDescriptor, InputDeviceEvent};
     use crate::keyboard_binding::KeyboardDeviceDescriptor;
     use crate::light_sensor::types::Rgbc;
     use crate::light_sensor_binding::{LightSensorDeviceDescriptor, LightSensorEvent};

@@ -243,6 +243,21 @@ pub enum InputEventType {
     Fake,
 }
 
+impl std::fmt::Display for InputEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &*self {
+            InputEventType::Keyboard => write!(f, "keyboard"),
+            InputEventType::LightSensor => write!(f, "light_sensor"),
+            InputEventType::ConsumerControls => write!(f, "consumer_controls"),
+            InputEventType::Mouse => write!(f, "mouse"),
+            InputEventType::TouchScreen => write!(f, "touch_screen"),
+            InputEventType::Touchpad => write!(f, "touchpad"),
+            #[cfg(test)]
+            InputEventType::Fake => write!(f, "fake"),
+        }
+    }
+}
+
 impl From<&InputDeviceEvent> for InputEventType {
     fn from(event: &InputDeviceEvent) -> Self {
         match event {
