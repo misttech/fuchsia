@@ -25,7 +25,7 @@ use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
     SpecifiedAddr, SpecifiedAddress as _, Witness,
 };
-use netstack3_base::socket::{SocketCookie, SocketIpAddrExt as _};
+use netstack3_base::socket::{EitherStack, SocketCookie, SocketIpAddrExt as _};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
@@ -1781,6 +1781,27 @@ where
     fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie;
     /// Returns Socket Marks.
     fn marks(&self, core_ctx: &mut CC) -> Marks;
+}
+
+impl<T, O, CC> SocketMetadata<CC> for EitherStack<T, O>
+where
+    CC: ?Sized,
+    T: SocketMetadata<CC>,
+    O: SocketMetadata<CC>,
+{
+    fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
+        match self {
+            Self::ThisStack(t) => t.socket_cookie(core_ctx),
+            Self::OtherStack(o) => o.socket_cookie(core_ctx),
+        }
+    }
+
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        match self {
+            Self::ThisStack(t) => t.marks(core_ctx),
+            Self::OtherStack(o) => o.marks(core_ctx),
+        }
+    }
 }
 
 /// The IP context providing dispatch to the available transport protocols.

@@ -448,6 +448,11 @@ impl<I: Ip, A: SocketMapAddrSpec> IpAddrVec<I, A> {
             IpAddrVec::Connected(ip) => AddrVec::Conn(ConnAddr { ip, device }),
         }
     }
+
+    /// Creates a new listener address vector.
+    pub fn new_listener(ip: SocketIpAddr<I::Addr>, identifier: A::LocalIdentifier) -> Self {
+        IpAddrVec::Listener(ListenerIpAddr { addr: Some(ip), identifier })
+    }
 }
 
 impl<I: Ip, A: SocketMapAddrSpec> IpAddrVec<I, A> {

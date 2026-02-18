@@ -5,7 +5,6 @@
 //! Defines the entry point of TCP packets, by directing them into the correct
 //! state machine.
 
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU16;
 
@@ -14,8 +13,8 @@ use log::{debug, error, warn};
 use net_types::ip::Ip;
 use net_types::{SpecifiedAddr, Witness as _};
 use netstack3_base::socket::{
-    AddrIsMappedError, AddrVec, AddrVecIter, ConnAddr, ConnIpAddr, InsertError, ListenerAddr,
-    ListenerIpAddr, SocketCookie, SocketIpAddr, SocketIpAddrExt as _,
+    AddrIsMappedError, AddrVec, AddrVecIter, ConnAddr, ConnIpAddr, InsertError, IpAddrVec,
+    ListenerAddr, ListenerIpAddr, SocketCookie, SocketIpAddr, SocketIpAddrExt as _,
 };
 use netstack3_base::{
     BidirectionalConverter as _, Control, CounterContext, CtxPair, EitherDeviceId, IpDeviceAddr,
@@ -40,7 +39,7 @@ use packet_formats::error::ParseError;
 use packet_formats::ip::IpProto;
 use packet_formats::tcp::{
     TcpFlowAndSeqNum, TcpOptionsTooLongError, TcpParseArgs, TcpSegment, TcpSegmentBuilder,
-    TcpSegmentBuilderWithOptions,
+    TcpSegmentBuilderWithOptions, TcpSegmentRaw,
 };
 
 use crate::internal::base::{BufferSizes, ConnectionError, SocketOptions, TcpIpSockOptions};
@@ -50,11 +49,11 @@ use crate::internal::counters::{
 use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::socket::{
     self, AsThisStack as _, Connection, CoreTxMetadataContext, DemuxState, DeviceIpSocketHandler,
-    DoSendLimit, DualStackDemuxIdConverter as _, DualStackIpExt, EitherStack, HandshakeStatus,
-    Listener, ListenerAddrState, MaybeDualStack, PrimaryRc, TcpApi, TcpBindingsContext,
-    TcpBindingsTypes, TcpContext, TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext,
-    TcpPortSpec, TcpSocketId, TcpSocketSetEntry, TcpSocketState, TcpSocketStateInner,
-    TcpSocketTxMetadata,
+    DoSendLimit, DualStackBaseIpExt, DualStackDemuxIdConverter as _, DualStackIpExt, EitherStack,
+    HandshakeStatus, Listener, ListenerAddrState, MaybeDualStack, PrimaryRc, TcpApi,
+    TcpBindingsContext, TcpBindingsTypes, TcpContext, TcpDemuxContext, TcpDualStackContext,
+    TcpIpTransportContext, TcpPortSpec, TcpSocketId, TcpSocketSetEntry, TcpSocketState,
+    TcpSocketStateInner, TcpSocketTxMetadata,
 };
 use crate::internal::state::{
     BufferProvider, Closed, DataAcked, Initial, NewlyClosed, State, TimeWait,
@@ -72,6 +71,9 @@ impl<BT: TcpBindingsTypes> BufferProvider<BT::ReceiveBuffer, BT::SendBuffer> for
     }
 }
 
+/// Alias for a SocketId that can reference either V4 or V6 socket.
+pub type DualStackTcpSocketId<I, D, BT> = <I as DualStackBaseIpExt>::DemuxSocketId<D, BT>;
+
 impl<I, BC, CC> IpTransportContext<I, BC, CC> for TcpIpTransportContext
 where
     I: DualStackIpExt,
@@ -84,17 +86,16 @@ where
         >,
     CC: TcpContext<I, BC> + TcpContext<I::OtherVersion, BC>,
 {
-    // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
-    type EarlyDemuxSocket = Never;
+    type EarlyDemuxSocket = DualStackTcpSocketId<I, CC::WeakDeviceId, BC>;
 
     fn early_demux<B: ParseBuffer>(
-        _core_ctx: &mut CC,
-        _device: &CC::DeviceId,
-        _src_ip: I::Addr,
-        _dst_ip: I::Addr,
-        _buffer: B,
+        core_ctx: &mut CC,
+        device: &CC::DeviceId,
+        src_ip: I::Addr,
+        dst_ip: I::Addr,
+        buffer: B,
     ) -> Option<Self::EarlyDemuxSocket> {
-        None
+        early_demux_ip_packet::<I, _, _, _>(core_ctx, device, src_ip, dst_ip, buffer)
     }
 
     fn receive_icmp_error(
@@ -135,7 +136,7 @@ where
         local_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
-        _early_demux_socket: Option<Never>,
+        early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, TransportReceiveError)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
         let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
@@ -230,9 +231,44 @@ where
             header_info,
             &incoming,
             marks,
+            early_demux_socket,
         );
         Ok(())
     }
+}
+
+fn early_demux_ip_packet<I, BC, CC, B>(
+    core_ctx: &mut CC,
+    device: &CC::DeviceId,
+    src_ip: I::Addr,
+    dst_ip: I::Addr,
+    mut buffer: B,
+) -> Option<DualStackTcpSocketId<I, CC::WeakDeviceId, BC>>
+where
+    I: DualStackIpExt,
+    BC: TcpBindingsContext<CC::DeviceId>,
+    CC: TcpContext<I, BC> + TcpContext<I::OtherVersion, BC>,
+    B: ParseBuffer,
+{
+    let Ok(packet) = buffer.parse_with::<_, TcpSegmentRaw<_>>(()) else {
+        // If we fail to parse the packet then just return None. Invalid
+        // packets are handled later.
+        return None;
+    };
+
+    let src_ip = SocketIpAddr::new(src_ip)?;
+    let dst_ip = SocketIpAddr::new(dst_ip)?;
+    let (src_port, dst_port) = packet.flow_header().src_dst();
+    let src_port = NonZeroU16::new(src_port)?;
+    let dst_port = NonZeroU16::new(dst_port)?;
+    let device = device.downgrade();
+
+    core_ctx.with_demux(|demux: &DemuxState<I, _, _>| {
+        demux
+            .socketmap
+            .lookup_connected((src_ip, src_port), (dst_ip, dst_port), device)
+            .map(|entry| entry.id())
+    })
 }
 
 fn handle_incoming_packet<WireI, BC, CC, H>(
@@ -243,6 +279,7 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
     header_info: &H,
     incoming: &VerifiedTcpSegment<'_>,
     marks: &Marks,
+    mut early_demux_socket: Option<DualStackTcpSocketId<WireI, CC::WeakDeviceId, BC>>,
 ) where
     WireI: DualStackIpExt,
     BC: TcpBindingsContext<CC::DeviceId>
@@ -258,8 +295,17 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
     trace_duration!("tcp::handle_incoming_packet");
     let mut tw_reuse = None;
 
+    // If we have an early demux socket, then we don't need to look up
+    // connected sockets again. We may still need to lookup listener sockets
+    // when the socket we found a in the timed wait state.
+    let addr: IpAddrVec<WireI, _> = if early_demux_socket.is_some() {
+        let (ip, port) = conn_addr.local;
+        IpAddrVec::new_listener(ip, port)
+    } else {
+        conn_addr.into()
+    };
     let mut addrs_to_search = AddrVecIter::<WireI, CC::WeakDeviceId, TcpPortSpec>::with_device(
-        conn_addr.into(),
+        addr,
         incoming_device.downgrade(),
     );
 
@@ -270,8 +316,16 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
         No,
     }
     let found_socket = loop {
-        let sock = core_ctx
-            .with_demux(|demux| lookup_socket::<WireI, CC, BC>(demux, &mut addrs_to_search));
+        let sock = if let Some(early_demux_socket) = early_demux_socket.take() {
+            let device = match WireI::as_dual_stack_ip_socket(&early_demux_socket) {
+                EitherStack::ThisStack(conn_id) => conn_id.get_bound_device(core_ctx),
+                EitherStack::OtherStack(conn_id) => conn_id.get_bound_device(core_ctx),
+            };
+            let conn_addr = ConnAddr { ip: conn_addr, device };
+            Some(SocketLookupResult::Connection(early_demux_socket, conn_addr))
+        } else {
+            core_ctx.with_demux(|demux| lookup_socket::<WireI, CC, BC>(demux, &mut addrs_to_search))
+        };
         match sock {
             None => break FoundSocket::No,
             Some(SocketLookupResult::Connection(demux_conn_id, conn_addr)) => {

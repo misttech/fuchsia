@@ -57,8 +57,8 @@ use netstack3_base::{
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
     EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector, InspectorDeviceExt,
     InspectorExt, InstantBindingsTypes, InstantContext as _, IpDeviceAddr, IpExt,
-    IpSocketPropertiesMatcher, LocalAddressError, Mark, MarkDomain, MatcherBindingsTypes, Mss,
-    OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiersExt as _,
+    IpSocketPropertiesMatcher, LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes,
+    Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiersExt as _,
     RemoveResourceResult, ResourceCounterContext as _, RngContext, Segment, SeqNum,
     SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
@@ -69,7 +69,7 @@ use netstack3_ip::socket::{
     DeviceIpSocketHandler, IpSock, IpSockCreateAndSendError, IpSockCreationError, IpSocketArgs,
     IpSocketHandler,
 };
-use netstack3_ip::{self as ip, BaseTransportIpContext, TransportIpContext};
+use netstack3_ip::{self as ip, BaseTransportIpContext, SocketMetadata, TransportIpContext};
 use netstack3_trace::{TraceResourceId, trace_duration};
 use packet_formats::ip::IpProto;
 use smallvec::{SmallVec, smallvec};
@@ -1943,6 +1943,18 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
     pub(crate) fn either(&self) -> EitherTcpSocketId<'_, D, BT> {
         I::map_ip_in(self, EitherTcpSocketId::V4, EitherTcpSocketId::V6)
     }
+
+    pub(crate) fn get_bound_device<CC>(&self, core_ctx: &mut CC) -> Option<D>
+    where
+        CC: TcpContext<I, BT, WeakDeviceId = D>,
+    {
+        core_ctx.with_socket(self, |state| match &state.socket_state {
+            TcpSocketStateInner::Unbound(state) => state.bound_device.clone(),
+            TcpSocketStateInner::Listener(Listener { addr, .. })
+            | TcpSocketStateInner::Bound(BoundState { addr, .. }) => addr.device.clone(),
+            TcpSocketStateInner::Connected { conn, .. } => I::get_conn_info(&conn).device,
+        })
+    }
 }
 
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> Debug
@@ -1958,6 +1970,21 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
     pub(crate) fn downgrade(&self) -> WeakTcpSocketId<I, D, BT> {
         let Self(this) = self;
         WeakTcpSocketId(StrongRc::downgrade(this))
+    }
+}
+
+impl<CC, I, BT> SocketMetadata<CC> for TcpSocketId<I, CC::WeakDeviceId, BT>
+where
+    CC: ?Sized + TcpContext<I, BT>,
+    I: DualStackIpExt,
+    BT: TcpBindingsTypes,
+{
+    fn socket_cookie(&self, _core_ctx: &mut CC) -> SocketCookie {
+        self.socket_cookie()
+    }
+
+    fn marks(&self, core_ctx: &mut CC) -> Marks {
+        core_ctx.with_socket(self, |state| state.socket_options.ip_options.marks.clone())
     }
 }
 
@@ -5921,6 +5948,14 @@ mod tests {
             let TcpCtx { core_ctx, bindings_ctx } = ctx;
             match meta {
                 DualStackSendIpPacketMeta::V4(meta) => {
+                    let early_demux_socket =
+                        <TcpIpTransportContext as IpTransportContext<Ipv4, _, _>>::early_demux(
+                            core_ctx,
+                            &meta.device,
+                            *meta.src_ip,
+                            *meta.dst_ip,
+                            buffer.as_ref(),
+                        );
                     <TcpIpTransportContext as IpTransportContext<Ipv4, _, _>>::receive_ip_packet(
                         core_ctx,
                         bindings_ctx,
@@ -5932,11 +5967,19 @@ mod tests {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
-                        None,
+                        early_demux_socket,
                     )
                     .expect("failed to deliver bytes");
                 }
                 DualStackSendIpPacketMeta::V6(meta) => {
+                    let early_demux_socket =
+                        <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::early_demux(
+                            core_ctx,
+                            &meta.device,
+                            *meta.src_ip,
+                            *meta.dst_ip,
+                            buffer.as_ref(),
+                        );
                     <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
                         core_ctx,
                         bindings_ctx,
@@ -5948,7 +5991,7 @@ mod tests {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
-                        None,
+                        early_demux_socket,
                     )
                     .expect("failed to deliver bytes");
                 }

@@ -130,8 +130,8 @@ pub mod socket {
 
     pub use address::{
         AddrIsMappedError, AddrVecIter, ConnAddr, ConnInfoAddr, ConnIpAddr, DualStackConnIpAddr,
-        DualStackListenerIpAddr, DualStackLocalIp, DualStackRemoteIp, ListenerAddr, ListenerIpAddr,
-        SocketIpAddr, StrictlyZonedAddr,
+        DualStackListenerIpAddr, DualStackLocalIp, DualStackRemoteIp, IpAddrVec, ListenerAddr,
+        ListenerIpAddr, SocketIpAddr, StrictlyZonedAddr,
     };
     pub use base::{
         AddrEntry, AddrVec, Bound, BoundSocketMap, DualStackIpExt, DualStackTuple, EitherStack,

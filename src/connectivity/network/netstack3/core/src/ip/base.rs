@@ -39,7 +39,7 @@ use netstack3_ip::{
     SocketMetadata, TransportReceiveError,
 };
 use netstack3_sync::rc::Primary;
-use netstack3_tcp::TcpIpTransportContext;
+use netstack3_tcp::{DualStackTcpSocketId, TcpBindingsTypes, TcpIpTransportContext};
 use netstack3_udp::{DualStackUdpSocketId, UdpBindingsTypes, UdpIpTransportContext};
 use packet::{BufferMut, ParseBuffer};
 use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
@@ -396,22 +396,37 @@ where
 
 pub enum EarlyDemuxSocket<I, D, BT>
 where
-    I: netstack3_datagram::IpExt,
+    I: netstack3_datagram::IpExt + netstack3_tcp::DualStackIpExt,
     D: WeakDeviceIdentifier,
-    BT: UdpBindingsTypes,
+    BT: UdpBindingsTypes + TcpBindingsTypes,
 {
     UdpSocket(DualStackUdpSocketId<I, D, BT>),
+    TcpSocket(DualStackTcpSocketId<I, D, BT>),
 }
 
 impl<I, D, BT> EarlyDemuxSocket<I, D, BT>
 where
-    I: netstack3_datagram::IpExt,
+    I: netstack3_datagram::IpExt + netstack3_tcp::DualStackIpExt,
     D: WeakDeviceIdentifier,
-    BT: UdpBindingsTypes,
+    BT: UdpBindingsTypes + TcpBindingsTypes,
 {
+    // Returns the UDP socket ID if this is a UDP socket, panics otherwise.
+    // Used in `dispatch_receive_ip_packet()` when demultiplexing a UDP packet
+    // (`early_demux()` returns only UDP sockets for UDP packets).
     fn into_udp(self) -> DualStackUdpSocketId<I, D, BT> {
         match self {
             EarlyDemuxSocket::UdpSocket(id) => id,
+            EarlyDemuxSocket::TcpSocket(_) => panic!("not a udp socket"),
+        }
+    }
+
+    // Returns the TCP socket ID if this is a TCP socket, panics otherwise.
+    // Used in `dispatch_receive_ip_packet()` when demultiplexing a TCP packet
+    // (`early_demux()` returns only TCP sockets for TCP packets).
+    fn into_tcp(self) -> DualStackTcpSocketId<I, D, BT> {
+        match self {
+            EarlyDemuxSocket::TcpSocket(id) => id,
+            EarlyDemuxSocket::UdpSocket(_) => panic!("not a tcp socket"),
         }
     }
 }
@@ -419,20 +434,23 @@ where
 impl<I, D, BT, CC> SocketMetadata<CC> for EarlyDemuxSocket<I, D, BT>
 where
     CC: netstack3_base::DeviceIdContext<netstack3_base::AnyDevice, WeakDeviceId = D>,
-    I: netstack3_datagram::IpExt,
+    I: netstack3_datagram::IpExt + netstack3_tcp::DualStackIpExt,
     D: WeakDeviceIdentifier,
     BT: BindingsTypes,
     DualStackUdpSocketId<I, D, BT>: SocketMetadata<CC>,
+    DualStackTcpSocketId<I, D, BT>: SocketMetadata<CC>,
 {
     fn socket_cookie(&self, core_ctx: &mut CC) -> SocketCookie {
         match self {
             Self::UdpSocket(s) => s.socket_cookie(core_ctx),
+            Self::TcpSocket(s) => s.socket_cookie(core_ctx),
         }
     }
 
     fn marks(&self, core_ctx: &mut CC) -> Marks {
         match self {
             Self::UdpSocket(s) => s.marks(core_ctx),
+            Self::TcpSocket(s) => s.marks(core_ctx),
         }
     }
 }
@@ -469,8 +487,10 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 .map(EarlyDemuxSocket::UdpSocket)
             }
             Ipv4Proto::Proto(IpProto::Tcp) => {
-                // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
-                None
+                <TcpIpTransportContext as IpTransportContext<Ipv4, _, _>>::early_demux(
+                    self, device, src_ip, dst_ip, body,
+                )
+                .map(EarlyDemuxSocket::TcpSocket)
             }
             Ipv4Proto::Icmp
             | Ipv4Proto::Igmp
@@ -509,8 +529,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 Ok(())
             }
             Ipv4Proto::Proto(IpProto::Udp) => {
-                let early_demux_socket = early_demux_socket.map(EarlyDemuxSocket::into_udp);
-
                 <UdpIpTransportContext as IpTransportContext<Ipv4, _, _>>::receive_ip_packet(
                     self,
                     bindings_ctx,
@@ -519,7 +537,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
-                    early_demux_socket,
+                    early_demux_socket.map(EarlyDemuxSocket::into_udp),
                 )
                 .map_err(|(_body, err)| err)
             }
@@ -532,7 +550,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
-                    None,
+                    early_demux_socket.map(EarlyDemuxSocket::into_tcp),
                 )
                 .map_err(|(_body, err)| err)
             }
@@ -575,8 +593,10 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 .map(EarlyDemuxSocket::UdpSocket)
             }
             Ipv6Proto::Proto(IpProto::Tcp) => {
-                // TODO(https://fxbug.dev/473819144) Implement early demux for TCP.
-                None
+                <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::early_demux(
+                    self, device, src_ip, dst_ip, body,
+                )
+                .map(EarlyDemuxSocket::TcpSocket)
             }
             Ipv6Proto::Icmpv6
             | Ipv6Proto::NoNextHeader
@@ -623,13 +643,11 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
-                    None,
+                    early_demux_socket.map(EarlyDemuxSocket::into_tcp),
                 )
                 .map_err(|(_body, err)| err)
             }
             Ipv6Proto::Proto(IpProto::Udp) => {
-                let early_demux_socket = early_demux_socket.map(EarlyDemuxSocket::into_udp);
-
                 <UdpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
                     self,
                     bindings_ctx,
@@ -638,7 +656,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                     dst_ip,
                     body,
                     info,
-                    early_demux_socket,
+                    early_demux_socket.map(EarlyDemuxSocket::into_udp),
                 )
                 .map_err(|(_body, err)| err)
             }
