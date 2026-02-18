@@ -44,7 +44,13 @@ rustc_library("lib") {
     "//third_party/rust_crates:futures-lite",
   ]
   sources = [
+    "src/check_fastboot.rs",
+    "src/check_target_specifier.rs",
+    "src/connect_rcs.rs",
+    "src/connect_ssh.rs",
     "src/discovery_stream.rs",
     "src/lib.rs",
+    "src/resolve_target.rs",
+    "src/verify_ssh_keys.rs",
   ]
 }

@@ -1,0 +1,97 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use discovery::query::TargetInfoQuery;
+use ffx_config::EnvironmentContext;
+use ffx_diagnostics::{Check, CheckFut, Notifier};
+use std::marker::PhantomData;
+use termion::{color, style};
+
+pub struct GetTargetSpecifier<'a, N>(pub(crate) &'a EnvironmentContext, pub(crate) PhantomData<N>);
+
+impl<'a, N> GetTargetSpecifier<'a, N> {
+    pub fn new(ctx: &'a EnvironmentContext) -> Self {
+        Self(ctx, Default::default())
+    }
+}
+
+impl<N> Check for GetTargetSpecifier<'_, N>
+where
+    N: Notifier + Sized,
+{
+    type Input = ();
+    type Output = TargetInfoQuery;
+    type Notifier = N;
+
+    fn write_preamble(
+        &self,
+        _input: &Self::Input,
+        notifier: &mut Self::Notifier,
+    ) -> anyhow::Result<()> {
+        notifier.info("Getting target specifier from config... ")
+    }
+
+    fn on_success(
+        &self,
+        output: &Self::Output,
+        notifier: &mut Self::Notifier,
+    ) -> anyhow::Result<()> {
+        let ffx_diagnostics_formatting::ReadableQuery { kind, value } =
+            ffx_diagnostics_formatting::format_query(output);
+        if value.is_empty() {
+            notifier.on_success(format!("The target specifier is {kind}"))
+        } else {
+            notifier.on_success(format!(
+                "The target specifier is {kind} and is \"{}{}{}\"",
+                color::Fg(color::Green),
+                value,
+                style::Reset
+            ))
+        }
+    }
+
+    fn check<'a>(
+        &'a mut self,
+        _input: Self::Input,
+        _notifier: &'a mut Self::Notifier,
+    ) -> CheckFut<'a, Self::Output> {
+        Box::pin(std::future::ready(
+            ffx_target::get_target_specifier(self.0).map(Into::<Self::Output>::into),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[fuchsia::test]
+    async fn test_target_identifier() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::TARGET_DEFAULT_KEY, "foobar")
+            .build()
+            .expect("initializing config");
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let (target, _) = GetTargetSpecifier::new(&env.context)
+            .check_with_notifier((), &mut notifier)
+            .await
+            .expect("running checks");
+        if let TargetInfoQuery::NodenameOrSerial(n) = target {
+            assert_eq!(n, "foobar");
+        } else {
+            panic!("Unexpected target: {target:?}")
+        };
+    }
+
+    #[fuchsia::test]
+    async fn test_target_identifier_empty() {
+        let env = ffx_config::test_env().build().expect("initializing config");
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let (target, _) = GetTargetSpecifier::new(&env.context)
+            .check_with_notifier((), &mut notifier)
+            .await
+            .expect("running checks");
+        assert!(matches!(target, TargetInfoQuery::First));
+    }
+}
