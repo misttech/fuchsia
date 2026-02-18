@@ -146,19 +146,6 @@ impl IpAddressExt for fnet::Ipv6Address {
     }
 }
 
-trait IntoOptionalUint32 {
-    fn into_optional_uint32(self) -> fposix_socket::OptionalUint32;
-}
-
-impl IntoOptionalUint32 for Option<u32> {
-    fn into_optional_uint32(self) -> fposix_socket::OptionalUint32 {
-        match self {
-            Some(value) => fposix_socket::OptionalUint32::Value(value),
-            None => fposix_socket::OptionalUint32::Unset(fposix_socket::Empty),
-        }
-    }
-}
-
 trait NetworkInfoExt {
     fn mark(&self) -> Option<u32>;
 }
@@ -757,9 +744,8 @@ impl Registry {
 
         // Ensure the mark is updated prior to sending out the response
         // and dropping the registry.
-        // TODO(https://fxbug.dev/431822969): Replace this with a common definition of
-        // which mark domain is used for which purpose.
-        self.marks.lock().await.mark_1 = self.networks.current_mark().await.into_optional_uint32();
+        let mark = self.networks.current_mark().await;
+        self.marks.lock().await.set_mark(fnet::MARK_DOMAIN_SO_MARK, mark);
         Ok(())
     }
 }

@@ -58,6 +58,18 @@ impl SocketMarks {
             _ => false,
         }
     }
+
+    fn set_mark(&mut self, domain: fnet::MarkDomain, value: Option<u32>) {
+        let value = match value {
+            Some(value) => fposix_socket::OptionalUint32::Value(value),
+            None => fposix_socket::OptionalUint32::Unset(fposix_socket::Empty),
+        };
+
+        match domain {
+            fnet::MarkDomain::Mark1 => self.mark_1 = value,
+            fnet::MarkDomain::Mark2 => self.mark_2 = value,
+        }
+    }
 }
 
 impl Default for SocketMarks {

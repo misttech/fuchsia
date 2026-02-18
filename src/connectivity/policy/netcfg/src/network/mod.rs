@@ -102,6 +102,19 @@ impl UpdateGenerations {
     }
 }
 
+trait SetMark {
+    fn set_mark(&mut self, domain: fnet::MarkDomain, value: Option<u32>);
+}
+
+impl SetMark for fnet::Marks {
+    fn set_mark(&mut self, domain: fnet::MarkDomain, value: Option<u32>) {
+        match domain {
+            fnet::MarkDomain::Mark1 => self.mark_1 = value,
+            fnet::MarkDomain::Mark2 => self.mark_2 = value,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct NetworkPropertyResponder {
     token: fnp_properties::NetworkToken,
@@ -599,16 +612,17 @@ impl NetpolNetworksService {
                         return Err(NetworkRegistryAddError::MissingNetworkInfo);
                     };
 
-                    // TODO(https://fxbug.dev/431822969): Replace this with a common definition
-                    // of which mark domain is used for which purpose.
-                    let marks =
-                        Some(fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() });
+                    let mut marks = fnet::Marks::default();
+                    marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
 
                     // TODO(https://fxbug.dev/477980011): Also include DNS update here,
                     // rather than relying on DnsServerWatcher provided by socket-proxy.
                     self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        NetworkChange::Change(PropertyChangeEvent { added: true, marks }),
+                        NetworkChange::Change(PropertyChangeEvent {
+                            added: true,
+                            marks: Some(marks),
+                        }),
                     ))
                     .await;
                     Ok(())
@@ -628,13 +642,14 @@ impl NetpolNetworksService {
                         return Err(NetworkRegistryUpdateError::MissingNetworkInfo);
                     };
 
-                    // TODO(https://fxbug.dev/431822969): Replace this with a common definition
-                    // of which mark domain is used for which purpose.
-                    let marks =
-                        Some(fnet::Marks { mark_1: info.mark, mark_2: None, ..Default::default() });
+                    let mut marks = fnet::Marks::default();
+                    marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
                     self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        NetworkChange::Change(PropertyChangeEvent { added: false, marks }),
+                        NetworkChange::Change(PropertyChangeEvent {
+                            added: false,
+                            marks: Some(marks),
+                        }),
                     ))
                     .await;
                     Ok(())

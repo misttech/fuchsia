@@ -1991,12 +1991,6 @@ async fn disable_interface_while_having_dhcpv6_prefix<M: Manager, N: Netstack>(n
     .await;
 }
 
-// TODO(https://fxbug.dev/431822969): Replace this with a common definition of
-// which mark domain is used for which purpose.
-fn socket_option_mark() -> fnet::MarkDomain {
-    fnet::MarkDomain::Mark1
-}
-
 /// TODO(https://fxbug.dev/430075407): Replace this with hanging get to
 /// fuchsia.net.policy.properties/WatchProperties to prevent busy-looping.
 ///
@@ -2022,7 +2016,10 @@ async fn wait_for_socket_mark<F>(
                     .expect("stream socket")
                     .expect("create socket")
                     .into_proxy();
-                let mark = socket.get_mark(socket_option_mark()).await.expect("failed to get mark");
+                let mark = socket
+                    .get_mark(fidl_fuchsia_net::MARK_DOMAIN_SO_MARK)
+                    .await
+                    .expect("failed to get mark");
 
                 println!("attempt {} got socket mark {:?}", attempt, mark);
 
@@ -2133,7 +2130,7 @@ async fn fuchsia_networks_default_network<M: Manager>(name: &str, manager_config
             .into_proxy();
 
         assert_eq!(
-            socket.get_mark(socket_option_mark()).await.expect("get mark"),
+            socket.get_mark(fidl_fuchsia_net::MARK_DOMAIN_SO_MARK).await.expect("get mark"),
             Ok(OptionalUint32::Value(STARNIX_NETWORK_MARK))
         );
     }
