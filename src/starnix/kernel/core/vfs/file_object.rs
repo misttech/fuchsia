@@ -717,7 +717,7 @@ pub fn unbounded_seek(current_offset: off_t, target: SeekTarget) -> Result<off_t
 }
 
 #[macro_export]
-macro_rules! fileops_impl_delegate_read_and_seek {
+macro_rules! fileops_impl_delegate_read_write_and_seek {
     ($self:ident, $delegate:expr) => {
         fn is_seekable(&self) -> bool {
             true
@@ -732,6 +732,17 @@ macro_rules! fileops_impl_delegate_read_and_seek {
             data: &mut dyn $crate::vfs::buffers::OutputBuffer,
         ) -> Result<usize, starnix_uapi::errors::Errno> {
             $delegate.read(locked, file, current_task, offset, data)
+        }
+
+        fn write(
+            &$self,
+            locked: &mut starnix_sync::Locked<starnix_sync::FileOpsCore>,
+            file: &FileObject,
+            current_task: &$crate::task::CurrentTask,
+            offset: usize,
+            data: &mut dyn $crate::vfs::buffers::InputBuffer,
+        ) -> Result<usize, starnix_uapi::errors::Errno> {
+            $delegate.write(locked, file, current_task, offset, data)
         }
 
         fn seek(
@@ -912,7 +923,7 @@ macro_rules! fileops_impl_noop_sync {
 // Public re-export of macros allows them to be used like regular rust items.
 
 pub use {
-    fileops_impl_dataless, fileops_impl_delegate_read_and_seek, fileops_impl_directory,
+    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_directory,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
     fileops_impl_unbounded_seek,
 };

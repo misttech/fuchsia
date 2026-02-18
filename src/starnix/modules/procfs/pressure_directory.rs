@@ -18,7 +18,7 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, FileSystemHandle, FsNodeHandle, FsNodeOps,
-    fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync,
+    fileops_impl_delegate_read_write_and_seek, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
@@ -74,6 +74,7 @@ impl Default for PsiProvider {
 
 struct MemoryPressureFileSource {
     psi_provider: Arc<PsiProvider>,
+    monitor: Arc<OrderedMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
 }
 
 impl DynamicFileSource for MemoryPressureFileSource {
@@ -116,46 +117,11 @@ impl DynamicFileSource for MemoryPressureFileSource {
 
         Ok(())
     }
-}
-
-struct MemoryPressureFile {
-    source: DynamicFile<MemoryPressureFileSource>,
-    monitor: OrderedMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>,
-}
-
-impl MemoryPressureFile {
-    pub fn new_node(psi_provider: Arc<PsiProvider>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
-            Ok(Self {
-                source: DynamicFile::new(MemoryPressureFileSource {
-                    psi_provider: psi_provider.clone(),
-                }),
-                monitor: OrderedMutex::new(None),
-            })
-        })
-    }
-}
-
-impl FileOps for MemoryPressureFile {
-    fileops_impl_delegate_read_and_seek!(self, self.source);
-    fileops_impl_noop_sync!();
-
-    fn close(
-        self: Box<Self>,
-        locked: &mut Locked<FileOpsCore>,
-        _file: &FileObjectState,
-        _current_task: &CurrentTask,
-    ) {
-        if let Some(monitor) = self.monitor.lock(locked).take() {
-            monitor.stop();
-        }
-    }
 
     /// Pressure notifications are configured by writing to the file.
     fn write(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -216,6 +182,42 @@ impl FileOps for MemoryPressureFile {
         *monitor = Some(PressureMonitorThread::new(&current_task.kernel(), zircon_event, window));
 
         Ok(data.len())
+    }
+}
+
+struct MemoryPressureFile {
+    source: DynamicFile<MemoryPressureFileSource>,
+    monitor: Arc<OrderedMutex<Option<Arc<PressureMonitorThread>>, MemoryPressureMonitor>>,
+}
+
+impl MemoryPressureFile {
+    pub fn new_node(psi_provider: Arc<PsiProvider>) -> impl FsNodeOps {
+        SimpleFileNode::new(move |_, _| {
+            let monitor = Arc::new(OrderedMutex::new(None));
+            Ok(Self {
+                source: DynamicFile::new(MemoryPressureFileSource {
+                    psi_provider: psi_provider.clone(),
+                    monitor: monitor.clone(),
+                }),
+                monitor,
+            })
+        })
+    }
+}
+
+impl FileOps for MemoryPressureFile {
+    fileops_impl_delegate_read_write_and_seek!(self, self.source);
+    fileops_impl_noop_sync!();
+
+    fn close(
+        self: Box<Self>,
+        locked: &mut Locked<FileOpsCore>,
+        _file: &FileObjectState,
+        _current_task: &CurrentTask,
+    ) {
+        if let Some(monitor) = self.monitor.lock(locked).take() {
+            monitor.stop();
+        }
     }
 
     fn wait_async(
@@ -440,7 +442,9 @@ fn get_events_from_signals(signals: zx::Signals) -> FdEvents {
     }
 }
 
-struct StubPressureFileSource;
+struct StubPressureFileSource {
+    kind: StubPressureFileKind,
+}
 
 impl DynamicFileSource for StubPressureFileSource {
     fn generate(
@@ -452,36 +456,11 @@ impl DynamicFileSource for StubPressureFileSource {
         writeln!(sink, "full avg10=0.00 avg60=0.00 avg300=0.00 total=0")?;
         Ok(())
     }
-}
-
-#[derive(Clone, Copy)]
-enum StubPressureFileKind {
-    CPU,
-    IO,
-}
-
-struct StubPressureFile {
-    kind: StubPressureFileKind,
-    source: DynamicFile<StubPressureFileSource>,
-}
-
-impl StubPressureFile {
-    pub fn new_node(kind: StubPressureFileKind) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
-            Ok(Self { kind, source: DynamicFile::new(StubPressureFileSource) })
-        })
-    }
-}
-
-impl FileOps for StubPressureFile {
-    fileops_impl_delegate_read_and_seek!(self, self.source);
-    fileops_impl_noop_sync!();
 
     /// Pressure notifications are configured by writing to the file.
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -497,6 +476,25 @@ impl FileOps for StubPressureFile {
         );
         Ok(data.drain())
     }
+}
+
+#[derive(Clone, Copy)]
+enum StubPressureFileKind {
+    CPU,
+    IO,
+}
+
+struct StubPressureFile(DynamicFile<StubPressureFileSource>);
+
+impl StubPressureFile {
+    pub fn new_node(kind: StubPressureFileKind) -> impl FsNodeOps {
+        SimpleFileNode::new(move |_, _| Ok(Self(DynamicFile::new(StubPressureFileSource { kind }))))
+    }
+}
+
+impl FileOps for StubPressureFile {
+    fileops_impl_delegate_read_write_and_seek!(self, self.0);
+    fileops_impl_noop_sync!();
 
     fn wait_async(
         &self,

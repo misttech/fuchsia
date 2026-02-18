@@ -9,12 +9,10 @@
 //!
 //! Full details at https://docs.kernel.org/admin-guide/cgroup-v2.html#core-interface-files
 
+use starnix_core::fs_node_impl_not_dir;
 use starnix_core::task::{CgroupOps, CurrentTask, Kernel, ProcessEntryRef};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
-use starnix_core::vfs::{AppendLockGuard, FileObject, FileOps, FsNode, FsNodeOps, InputBuffer};
-use starnix_core::{
-    fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync, fs_node_impl_not_dir,
-};
+use starnix_core::vfs::{AppendLockGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -56,22 +54,7 @@ impl FsNodeOps for ControlGroupNode {
     }
 }
 
-struct ControlGroupFileSource {
-    kernel: Weak<Kernel>,
-    cgroup: Weak<dyn CgroupOps>,
-}
-
-impl ControlGroupFileSource {
-    fn cgroup(&self) -> Result<Arc<dyn CgroupOps>, Errno> {
-        self.cgroup.upgrade().ok_or_else(|| errno!(ENODEV))
-    }
-
-    fn kernel(&self) -> Result<Arc<Kernel>, Errno> {
-        self.kernel.upgrade().ok_or_else(|| errno!(ENODEV))
-    }
-}
-
-impl DynamicFileSource for ControlGroupFileSource {
+impl DynamicFileSource for ControlGroupFile {
     fn generate(
         &self,
         _current_task: &CurrentTask,
@@ -83,39 +66,10 @@ impl DynamicFileSource for ControlGroupFileSource {
         }
         Ok(())
     }
-}
-
-/// A `ControlGroupFile` currently represents the `cgroup.procs` file for the control group. Writing
-/// to this file will add tasks to the control group.
-pub struct ControlGroupFile {
-    cgroup: Weak<dyn CgroupOps>,
-    dynamic_file: DynamicFile<ControlGroupFileSource>,
-}
-
-impl ControlGroupFile {
-    fn new(kernel: &Kernel, cgroup: Weak<dyn CgroupOps>) -> Self {
-        Self {
-            cgroup: cgroup.clone(),
-            dynamic_file: DynamicFile::new(ControlGroupFileSource {
-                kernel: kernel.weak_self.clone(),
-                cgroup: cgroup.clone(),
-            }),
-        }
-    }
-
-    fn cgroup(&self) -> Result<Arc<dyn CgroupOps>, Errno> {
-        self.cgroup.upgrade().ok_or_else(|| errno!(ENODEV))
-    }
-}
-
-impl FileOps for ControlGroupFile {
-    fileops_impl_delegate_read_and_seek!(self, self.dynamic_file);
-    fileops_impl_noop_sync!();
 
     fn write(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -136,5 +90,26 @@ impl FileOps for ControlGroupFile {
         self.cgroup()?.add_process(locked, &thread_group)?;
 
         Ok(bytes.len())
+    }
+}
+
+/// A `ControlGroupFile` currently represents the `cgroup.procs` file for the control group. Writing
+/// to this file will add tasks to the control group.
+pub struct ControlGroupFile {
+    kernel: Weak<Kernel>,
+    cgroup: Weak<dyn CgroupOps>,
+}
+
+impl ControlGroupFile {
+    fn new(kernel: &Kernel, cgroup: Weak<dyn CgroupOps>) -> impl FileOps {
+        DynamicFile::new(Self { kernel: kernel.weak_self.clone(), cgroup: cgroup.clone() })
+    }
+
+    fn kernel(&self) -> Result<Arc<Kernel>, Errno> {
+        self.kernel.upgrade().ok_or_else(|| errno!(ENODEV))
+    }
+
+    fn cgroup(&self) -> Result<Arc<dyn CgroupOps>, Errno> {
+        self.cgroup.upgrade().ok_or_else(|| errno!(ENODEV))
     }
 }

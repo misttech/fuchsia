@@ -25,8 +25,8 @@ use starnix_core::vfs::{
     CallbackSymlinkNode, CloseFreeSafe, DirectoryEntryType, DirentSink, FdNumber, FileObject,
     FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
     ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget, default_seek, emit_dotdot,
-    fileops_impl_delegate_read_and_seek, fileops_impl_directory, fileops_impl_noop_sync,
-    fileops_impl_seekable, fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
+    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
@@ -864,27 +864,30 @@ impl DynamicFileSource for AuxvFile {
 /// `CommFile` implements `proc/<pid>/comm` file.
 pub struct CommFile {
     task: WeakRef<Task>,
-    dynamic_file: DynamicFile<CommFileSource>,
+    info: TaskPersistentInfo,
 }
 impl CommFile {
     pub fn new_node(task: WeakRef<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
         SimpleFileNode::new(move |_, _| {
-            Ok(CommFile {
-                task: task.clone(),
-                dynamic_file: DynamicFile::new(CommFileSource(info.clone())),
-            })
+            Ok(DynamicFile::new(CommFile { task: task.clone(), info: info.clone() }))
         })
     }
 }
 
-impl FileOps for CommFile {
-    fileops_impl_delegate_read_and_seek!(self, self.dynamic_file);
-    fileops_impl_noop_sync!();
+impl DynamicFileSource for CommFile {
+    fn generate(
+        &self,
+        _current_task: &CurrentTask,
+        sink: &mut DynamicFileBuf,
+    ) -> Result<(), Errno> {
+        sink.write(self.info.command_guard().comm_name());
+        sink.write(b"\n");
+        Ok(())
+    }
 
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
         current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
@@ -898,20 +901,6 @@ impl FileOps for CommFile {
         let bytes = data.read_all()?;
         task.set_command_name(TaskCommand::new(&bytes));
         Ok(bytes.len())
-    }
-}
-
-#[derive(Clone)]
-pub struct CommFileSource(TaskPersistentInfo);
-impl DynamicFileSource for CommFileSource {
-    fn generate(
-        &self,
-        _current_task: &CurrentTask,
-        sink: &mut DynamicFileBuf,
-    ) -> Result<(), Errno> {
-        sink.write(self.0.command_guard().comm_name());
-        sink.write(b"\n");
-        Ok(())
     }
 }
 

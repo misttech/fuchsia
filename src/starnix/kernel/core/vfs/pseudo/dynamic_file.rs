@@ -7,7 +7,7 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer, VecOutputBuffer};
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::{
     Buffer, FileObject, FileOps, FsNodeOps, OutputBufferCallback, PeekBufferSegmentsCallback,
-    SeekTarget, default_seek, fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync,
+    SeekTarget, default_seek, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
@@ -44,6 +44,15 @@ pub trait SequenceFileSource: Send + Sync + 'static {
     ) -> Result<Option<Self::Cursor>, Errno> {
         self.next(current_task, cursor, sink)
     }
+    fn write(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _current_task: &CurrentTask,
+        _offset: usize,
+        _data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        error!(ENOSYS)
+    }
 }
 
 pub trait DynamicFileSource: Send + Sync + 'static {
@@ -66,6 +75,15 @@ pub trait DynamicFileSource: Send + Sync + 'static {
     ) -> Result<(), Errno> {
         self.generate(current_task, sink)
     }
+    fn write(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _current_task: &CurrentTask,
+        _offset: usize,
+        _data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        error!(ENOSYS)
+    }
 }
 
 impl<T> SequenceFileSource for T
@@ -81,6 +99,15 @@ where
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<()>, Errno> {
         self.generate_locked(locked, current_task, sink).map(|_| None)
+    }
+    fn write(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        DynamicFileSource::write(self, locked, current_task, offset, data)
     }
 }
 
@@ -130,8 +157,7 @@ where
 /// }
 /// ```
 ///
-/// Writable files should wrap `DynamicFile` and delegate it `read()` and `seek()` using the
-/// `fileops_impl_delegate_read_and_seek!` macro, as shown in the example below:
+/// Writable files should implement the write method as shown in the example below:
 /// ```
 /// struct WritableProcFileSource {
 ///   data: usize,
@@ -141,27 +167,19 @@ where
 ///         writeln!("{}", self.data);
 ///         Ok(())
 ///     }
-/// }
-/// pub struct WritableProcFile {
-///   dynamic_file: DynamicFile<WritableProcFileSource>,
-///   ...
-/// }
-/// impl WritableProcFile {
-///     fn new() -> Self {
-///         Self { dynamic_file: DynamicFile::new(WritableProcFileSource { data: 42 }) }
-///     }
-/// }
-/// impl FileOps for WritableProcFile {
-///     fileops_impl_delegate_read_and_seek!(self, self.dynamic_file);
-///
 ///     fn write(
 ///         &self,
-///         _file: &FileObject,
+///         _locked: &mut Locked<FileOpsCore>,
 ///         _current_task: &CurrentTask,
 ///         _offset: usize,
 ///         data: &mut dyn InputBuffer,
 ///     ) -> Result<usize, Errno> {
 ///         ... Process write() ...
+///     }
+/// }
+/// impl WritableProcFile {
+///     fn new() -> DynamicFile {
+///         DynamicFile::new(WritableProcFileSource { data: 42 })
 ///     }
 /// }
 /// ```
@@ -192,6 +210,15 @@ impl<Source: SequenceFileSource> DynamicFile<Source> {
     ) -> Result<usize, Errno> {
         self.state.lock().read(locked, current_task, offset, data)
     }
+    fn write_internal(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        self.state.lock().write(locked, current_task, offset, data)
+    }
 }
 
 impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
@@ -214,13 +241,13 @@ impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
-        _offset: usize,
-        _data: &mut dyn InputBuffer,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        error!(ENOSYS)
+        self.write_internal(locked, current_task, offset, data)
     }
 
     fn seek(
@@ -332,6 +359,16 @@ impl<Source: SequenceFileSource> DynamicFileState<Source> {
         self.byte_offset += written;
         Ok(written)
     }
+
+    fn write(
+        &mut self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        self.source.write(locked, current_task, offset, data)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -395,13 +432,11 @@ impl OutputBuffer for DynamicFileBuf {
 }
 
 /// A file whose contents are fixed even if writes occur.
-pub struct ConstFile(DynamicFile<ConstFileSource>);
-
-struct ConstFileSource {
+pub struct ConstFile {
     data: Vec<u8>,
 }
 
-impl DynamicFileSource for ConstFileSource {
+impl DynamicFileSource for ConstFile {
     fn generate(
         &self,
         _current_task: &CurrentTask,
@@ -410,30 +445,22 @@ impl DynamicFileSource for ConstFileSource {
         sink.write(&self.data);
         Ok(())
     }
-}
-
-impl ConstFile {
-    /// Create a file with the given contents.
-    pub fn new_node(data: Vec<u8>) -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| {
-            Ok(Self(DynamicFile::new(ConstFileSource { data: data.clone() })))
-        })
-    }
-}
-
-impl FileOps for ConstFile {
-    fileops_impl_delegate_read_and_seek!(self, self.0);
-    fileops_impl_noop_sync!();
 
     fn write(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
         _current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         Ok(data.drain())
+    }
+}
+
+impl ConstFile {
+    /// Create a file with the given contents.
+    pub fn new_node(data: Vec<u8>) -> impl FsNodeOps {
+        SimpleFileNode::new(move |_, _| Ok(DynamicFile::new(ConstFile { data: data.clone() })))
     }
 }
 

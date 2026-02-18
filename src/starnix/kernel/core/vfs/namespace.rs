@@ -6,7 +6,6 @@ use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::task::{CurrentTask, EventHandler, Kernel, Task, WaitCanceler, Waiter};
 use crate::time::utc;
-use crate::vfs::buffers::InputBuffer;
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
@@ -15,7 +14,7 @@ use crate::vfs::{
     CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
     FileSystemOptions, FileWriteGuardMode, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
     PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
-    fileops_impl_delegate_read_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fs_node_impl_not_dir,
 };
 use fuchsia_rcu::RcuReadScope;
@@ -777,19 +776,8 @@ impl ProcMountsFile {
 }
 
 impl FileOps for ProcMountsFile {
-    fileops_impl_delegate_read_and_seek!(self, self.dynamic_file);
+    fileops_impl_delegate_read_write_and_seek!(self, self.dynamic_file);
     fileops_impl_noop_sync!();
-
-    fn write(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        _offset: usize,
-        _data: &mut dyn InputBuffer,
-    ) -> Result<usize, Errno> {
-        error!(ENOSYS)
-    }
 
     fn wait_async(
         &self,
