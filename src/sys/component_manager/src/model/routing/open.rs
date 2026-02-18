@@ -20,13 +20,12 @@ use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::remote::remote_dir;
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087881)
 /// A request to open a capability at its source.
 pub enum CapabilityOpenRequest<'a> {
     // Open a capability backed by a component's outgoing directory.
     OutgoingDirectory {
         open_request: OpenRequest<'a>,
-        source: CapabilitySource,
+        source: Box<CapabilitySource>,
         target: &'a Arc<ComponentInstance>,
     },
     // Open a storage capability.
@@ -51,7 +50,7 @@ impl<'a> CapabilityOpenRequest<'a> {
                 &relative_path.to_string().try_into().map_err(|_| OpenError::BadPath)?,
             );
         }
-        Ok(Self::OutgoingDirectory { open_request, source, target })
+        Ok(Self::OutgoingDirectory { open_request, source: Box::new(source), target })
     }
 
     /// Creates a request to open a storage capability with source `storage_source` for `target`.
@@ -68,7 +67,7 @@ impl<'a> CapabilityOpenRequest<'a> {
     pub async fn open(self) -> Result<(), OpenError> {
         match self {
             Self::OutgoingDirectory { open_request, source, target } => {
-                Self::open_outgoing_directory(open_request, source, target).await
+                Self::open_outgoing_directory(open_request, *source, target).await
             }
             Self::Storage { open_request, source, target } => {
                 Self::open_storage(open_request, &source, target)
