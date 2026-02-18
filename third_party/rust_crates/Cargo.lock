@@ -1814,7 +1814,7 @@ dependencies = [
  "trust-dns-resolver",
  "ttf-parser",
  "tuf",
- "typed-builder 0.23.2",
+ "typed-builder",
  "unic-char-range",
  "unic-ucd-block",
  "unicase",
@@ -2700,9 +2700,9 @@ version = "0.3.7"
 
 [[package]]
 name = "mock-omaha-server"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfaa15922a8601bd9299a1ec0066456d17cadec961706cc39f889556cebd1214"
+checksum = "ddbdf0ec15c9e18ad4253a14277a3c716eb7e77a4945e4e32a5994bf023dbcd0"
 dependencies = [
  "anyhow",
  "argh",
@@ -2988,9 +2988,9 @@ checksum = "b8f8bdf33df195859076e54ab11ee78a1b208382d3a26ec40d142ffc1ecc49ef"
 
 [[package]]
 name = "omaha_client"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a782d2dffd2d099ac2840415f11fba2716801b97c479ef94f5363031adfb672"
+checksum = "4aba0d049583279b116376ca854f62839bae4c768a2a63160feb35f66e4ecec4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3013,7 +3013,7 @@ dependencies = [
  "sha2",
  "signature 1.6.4",
  "thiserror 2.0.12",
- "typed-builder 0.21.2",
+ "typed-builder",
  "uuid 1.1.2",
 ]
 
@@ -5318,31 +5318,11 @@ checksum = "a9b2228007eba4120145f785df0f6c92ea538f5a3635a612ecf4e334c8c1446d"
 
 [[package]]
 name = "typed-builder"
-version = "0.21.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fef81aec2ca29576f9f6ae8755108640d0a86dd3161b2e8bca6cfa554e98f77d"
-dependencies = [
- "typed-builder-macro 0.21.2",
-]
-
-[[package]]
-name = "typed-builder"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31aa81521b70f94402501d848ccc0ecaa8f93c8eb6999eb9747e72287757ffda"
 dependencies = [
- "typed-builder-macro 0.23.2",
-]
-
-[[package]]
-name = "typed-builder-macro"
-version = "0.21.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ecb9ecf7799210407c14a8cfdfe0173365780968dc57973ed082211958e0b18"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
+ "typed-builder-macro",
 ]
 
 [[package]]

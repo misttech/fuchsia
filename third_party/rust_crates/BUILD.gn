@@ -585,7 +585,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("mock-omaha-server") {
-  public_deps = [ ":mock-omaha-server-v0_3_7" ]
+  public_deps = [ ":mock-omaha-server-v0_3_8" ]
 }
 
 group("mockall") {
@@ -645,7 +645,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("omaha_client") {
-  public_deps = [ ":omaha_client-v0_3_7" ]
+  public_deps = [ ":omaha_client-v0_3_8" ]
 }
 
 group("once_cell") {
@@ -10449,21 +10449,21 @@ rustc_library("miow-v0_3_7") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("mock-omaha-server-v0_3_7.license") {
+license("mock-omaha-server-v0_3_8.license") {
   public_package_name = "mock_omaha_server"
   license_files = [
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("mock-omaha-server-v0_3_7") {
+rustc_library("mock-omaha-server-v0_3_8") {
   crate_name = "mock_omaha_server"
   source_root =
-      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.7/src/lib.rs"
-  output_name = "mock_omaha_server-4a1652b280c41027"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8/src/lib.rs"
+  output_name = "mock_omaha_server-8d37cdc0bc038e85"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -10476,7 +10476,7 @@ rustc_library("mock-omaha-server-v0_3_7") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":hyper-v0_14_19" ]
   deps += [ ":log-v0_4_27" ]
-  deps += [ ":omaha_client-v0_3_7" ]
+  deps += [ ":omaha_client-v0_3_8" ]
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
@@ -10495,14 +10495,14 @@ rustc_library("mock-omaha-server-v0_3_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4a1652b280c41027",
-    "-Cextra-filename=-4a1652b280c41027",
+    "-Cmetadata=8d37cdc0bc038e85",
+    "-Cextra-filename=-8d37cdc0bc038e85",
     "--cfg=fasync",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mock-omaha-server-v0_3_7.license" ]
+  applicable_licenses = [ ":mock-omaha-server-v0_3_8.license" ]
 }
 
 license("mockall-v0_14_0.license") {
@@ -11507,20 +11507,20 @@ rustc_library("numtoa-v0_1_0") {
   applicable_licenses = [ ":numtoa-v0_1_0.license" ]
 }
 
-license("omaha_client-v0_3_7.license") {
+license("omaha_client-v0_3_8.license") {
   public_package_name = "omaha_client"
   license_files = [
-    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/omaha_client-0.3.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.8/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/omaha_client-0.3.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("omaha_client-v0_3_7") {
+rustc_library("omaha_client-v0_3_8") {
   crate_name = "omaha_client"
-  source_root = "//third_party/rust_crates/vendor/omaha_client-0.3.7/src/lib.rs"
-  output_name = "omaha_client-ab4f6762a2c8d3f8"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/omaha_client-0.3.8/src/lib.rs"
+  output_name = "omaha_client-c6cc43620dcdbb4"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -11547,20 +11547,20 @@ rustc_library("omaha_client-v0_3_7") {
   deps += [ ":sha2-v0_10_8" ]
   deps += [ ":signature-v1_6_4" ]
   deps += [ ":thiserror-v2_0_12" ]
-  deps += [ ":typed-builder-v0_21_2" ]
+  deps += [ ":typed-builder-v0_23_2" ]
   deps += [ ":uuid-v1_1_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ab4f6762a2c8d3f8",
-    "-Cextra-filename=-ab4f6762a2c8d3f8",
+    "-Cmetadata=c6cc43620dcdbb4",
+    "-Cextra-filename=-c6cc43620dcdbb4",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":omaha_client-v0_3_7.license" ]
+  applicable_licenses = [ ":omaha_client-v0_3_8.license" ]
 }
 
 license("once_cell-v1_21_3.license") {
@@ -19888,40 +19888,6 @@ rustc_library("typed-arena-v1_7_0") {
   applicable_licenses = [ ":typed-arena-v1_7_0.license" ]
 }
 
-license("typed-builder-v0_21_2.license") {
-  public_package_name = "typed_builder"
-  license_files = [
-    "//third_party/rust_crates/vendor/typed-builder-0.21.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/typed-builder-0.21.2/LICENSE-MIT",
-  ]
-}
-
-rustc_library("typed-builder-v0_21_2") {
-  crate_name = "typed_builder"
-  source_root =
-      "//third_party/rust_crates/vendor/typed-builder-0.21.2/src/lib.rs"
-  output_name = "typed_builder-b2fd8aa8c7a16593"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":typed-builder-macro-v0_21_2($host_toolchain)" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=b2fd8aa8c7a16593",
-    "-Cextra-filename=-b2fd8aa8c7a16593",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":typed-builder-v0_21_2.license" ]
-}
-
 license("typed-builder-v0_23_2.license") {
   public_package_name = "typed_builder"
   license_files = [
@@ -19954,42 +19920,6 @@ rustc_library("typed-builder-v0_23_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":typed-builder-v0_23_2.license" ]
-}
-
-license("typed-builder-macro-v0_21_2.license") {
-  public_package_name = "typed_builder_macro"
-  license_files = [
-    "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("typed-builder-macro-v0_21_2") {
-  crate_name = "typed_builder_macro"
-  source_root =
-      "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/src/lib.rs"
-  output_name = "typed_builder_macro-7510605f9acb39f5"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro2-v1_0_97" ]
-  deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v2_0_114" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=7510605f9acb39f5",
-    "-Cextra-filename=-7510605f9acb39f5",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":typed-builder-macro-v0_21_2.license" ]
 }
 
 license("typed-builder-macro-v0_23_2.license") {
