@@ -26,6 +26,7 @@ static_library("cpp") {
   sources = [
     "debug.cc",
     "vfs.cc",
+    "vfs_types.cc",
     "vnode.cc",
   ]
 
@@ -81,7 +82,6 @@ static_library("cpp") {
       "remote_dir.cc",
       "service.cc",
       "synchronous_vfs.cc",
-      "vfs_types.cc",
       "vmo_file.cc",
       "watcher.cc",
     ]

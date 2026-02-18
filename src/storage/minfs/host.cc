@@ -204,64 +204,72 @@ int emu_get_used_resources(const char* path, uint64_t* out_data_size, uint64_t* 
 
 bool emu_is_mounted() { return fake_fs.fake_root != nullptr; }
 
-// Converts POSIX open() flags to |DeprecatedOptions|.
-fs::DeprecatedOptions fdio_flags_to_connection_options(uint32_t flags) {
-  fs::DeprecatedOptions options;
+namespace {
+// Converts POSIX open() flags to an equivalent set of fuchsia.io flags.
+fuchsia_io::Flags posix_flags_to_fuchsia_io_flags(uint32_t posix_flags) {
+  fuchsia_io::Flags flags;
 
-  switch (flags & O_ACCMODE) {
+  switch (posix_flags & O_ACCMODE) {
     case O_RDONLY:
-      options.rights |= fuchsia_io::kRStarDir;
+      flags |= fuchsia_io::kPermReadable;
       break;
     case O_WRONLY:
-      options.rights |= fuchsia_io::kWStarDir;
+      flags |= fuchsia_io::kPermWritable;
       break;
     case O_RDWR:
-      options.rights |= fuchsia_io::kRwStarDir;
+      flags |= fuchsia_io::kPermReadable | fuchsia_io::kPermWritable;
       break;
   }
 #ifdef O_PATH
-  if (flags & O_PATH) {
-    options.flags |= fuchsia_io::OpenFlags::kNodeReference;
+  if (posix_flags & O_PATH) {
+    flags |= fuchsia_io::Flags::kProtocolNode;
   }
 #endif
 #ifdef O_DIRECTORY
-  if (flags & O_DIRECTORY) {
-    options.flags |= fuchsia_io::OpenFlags::kDirectory;
+  if (posix_flags & O_DIRECTORY) {
+    flags |= fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::Flags::kPermInheritWrite |
+             fuchsia_io::Flags::kPermInheritExecute;
   }
 #endif
-  if (flags & O_CREAT) {
-    options.flags |= fuchsia_io::OpenFlags::kCreate;
+  if (posix_flags & O_CREAT) {
+    flags |= fuchsia_io::Flags::kFlagMaybeCreate;
   }
-  if (flags & O_EXCL) {
-    options.flags |= fuchsia_io::OpenFlags::kCreateIfAbsent;
+  if (posix_flags & O_EXCL) {
+    flags |= fuchsia_io::Flags::kFlagMustCreate;
   }
-  if (flags & O_TRUNC) {
-    options.flags |= fuchsia_io::OpenFlags::kTruncate;
+  if (posix_flags & O_TRUNC) {
+    flags |= fuchsia_io::Flags::kFileTruncate;
   }
-  if (flags & O_APPEND) {
-    options.flags |= fuchsia_io::OpenFlags::kAppend;
+  if (posix_flags & O_APPEND) {
+    flags |= fuchsia_io::Flags::kFileAppend;
   }
 
-  return options;
+  if (flags & (fuchsia_io::Flags::kFlagMaybeCreate | fuchsia_io::Flags::kFlagMustCreate) &&
+      !(flags & fuchsia_io::kMaskKnownProtocols)) {
+    flags |= fuchsia_io::Flags::kProtocolFile;
+  }
+
+  return flags;
 }
+}  // namespace
 
-int emu_open(const char* path, int flags) {
+int emu_open(const char* path, int posix_flags) {
   // TODO: fdtab lock
   ZX_DEBUG_ASSERT_MSG(!host_path(path), "'emu_' functions can only operate on target paths");
-  if (flags & O_APPEND) {
+  if (posix_flags & O_APPEND) {
     errno = ENOTSUP;
     return -1;
   }
   for (int fd = 0; fd < kMaxFd; fd++) {
     if (fdtab[fd].vn == nullptr) {
       std::string_view str(path + PREFIX_SIZE);
-      fs::DeprecatedOptions options = fdio_flags_to_connection_options(flags);
+      fuchsia_io::Flags flags = posix_flags_to_fuchsia_io_flags(posix_flags);
       auto result =
-          fake_fs.fake_vfs->DeprecatedOpen(fake_fs.fake_root, str, options, fuchsia_io::kRwStarDir);
+          fake_fs.fake_vfs->Open(fake_fs.fake_root, str, flags, nullptr, fuchsia_io::kRwStarDir);
       if (result.is_error()) {
-        STATUS(result.error());
+        STATUS(result.error_value());
       }
-      fdtab[fd].vn = fbl::RefPtr<fs::Vnode>::Downcast(result.ok().vnode);
+      fdtab[fd].vn = fbl::RefPtr<fs::Vnode>::Downcast(result->TakeVnode());
       return fd | kFdMagic;
     }
   }
@@ -473,15 +481,14 @@ int emu_mkdir(const char* path) {
 DIR* emu_opendir(const char* name) {
   ZX_DEBUG_ASSERT_MSG(!host_path(name), "'emu_' functions can only operate on target paths");
   std::string_view path(name + PREFIX_SIZE);
-  fs::DeprecatedOptions options{.flags = fuchsia_io::OpenFlags::kPosixWritable,
-                                .rights = fuchsia_io::kRStarDir};
-  auto result =
-      fake_fs.fake_vfs->DeprecatedOpen(fake_fs.fake_root, path, options, fuchsia_io::kRwStarDir);
+  auto result = fake_fs.fake_vfs->Open(fake_fs.fake_root, path,
+                                       fuchsia_io::kPermReadable | fuchsia_io::kPermWritable,
+                                       nullptr, fuchsia_io::kRwStarDir);
   if (result.is_error()) {
     return nullptr;
   }
   MinDir* dir = new MinDir();
-  dir->vn = fbl::RefPtr<fs::Vnode>::Downcast(result.ok().vnode);
+  dir->vn = fbl::RefPtr<fs::Vnode>::Downcast(result->TakeVnode());
   return reinterpret_cast<DIR*>(dir);
 }
 
