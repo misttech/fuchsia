@@ -14,6 +14,7 @@
 
 #include <fbl/algorithm.h>
 
+#include "src/performance/trace_manager/shared_buffer.h"
 #include "src/performance/trace_manager/util.h"
 #include "zircon/syscalls.h"
 
@@ -24,23 +25,6 @@ static constexpr size_t kMaxDurableBufferSize = size_t{1024} * 1024;
 // LINT.ThenChange(//zircon/system/ulib/trace-engine/context_impl.h)
 
 namespace tracing {
-
-namespace {
-
-fuchsia_tracing::BufferingMode EngineBufferingModeToProviderMode(trace_buffering_mode_t mode) {
-  switch (mode) {
-    case TRACE_BUFFERING_MODE_ONESHOT:
-      return fuchsia_tracing::BufferingMode::kOneshot;
-    case TRACE_BUFFERING_MODE_CIRCULAR:
-      return fuchsia_tracing::BufferingMode::kCircular;
-    case TRACE_BUFFERING_MODE_STREAMING:
-      return fuchsia_tracing::BufferingMode::kStreaming;
-    default:
-      __UNREACHABLE;
-  }
-}
-
-}  // namespace
 
 Tracee::Tracee(async::Executor& executor, std::shared_ptr<const BufferForwarder> output,
                const TraceProviderBundle* bundle)
@@ -57,7 +41,7 @@ bool Tracee::Initialize(std::vector<std::string> categories, size_t buffer_size,
                         StopCallback stop_callback, TerminateCallback terminate_callback,
                         AlertCallback alert_callback) {
   FX_DCHECK(state_ == State::kReady);
-  FX_DCHECK(!buffer_vmo_);
+  FX_DCHECK(!buffer_);
   FX_DCHECK(start_callback);
   FX_DCHECK(stop_callback);
   FX_DCHECK(terminate_callback);
@@ -81,27 +65,18 @@ bool Tracee::Initialize(std::vector<std::string> categories, size_t buffer_size,
     }
   }
 
-  zx::vmo buffer_vmo;
-  if (zx_status_t status = zx::vmo::create(buffer_size, 0u, &buffer_vmo); status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << *bundle_ << ": Failed to create trace buffer";
-    return false;
-  }
-
-  char vmo_name[ZX_MAX_NAME_LEN];
-  size_t would_write = snprintf(vmo_name, ZX_MAX_NAME_LEN, "trace:%s", bundle_->name.data());
-  size_t name_length = std::min(ZX_MAX_NAME_LEN, would_write);
-  if (zx_status_t status = buffer_vmo.set_property(ZX_PROP_NAME, vmo_name, name_length);
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << *bundle_ << ": Failed to set name of trace buffer";
+  zx::result<SharedBuffer> shared_buffer =
+      SharedBuffer::Create(buffer_size, buffering_mode, bundle_->name, bundle_->id);
+  if (shared_buffer.is_error()) {
     return false;
   }
 
   zx::vmo buffer_vmo_for_provider;
-  if (zx_status_t status = buffer_vmo.duplicate(ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_MAP,
-                                                &buffer_vmo_for_provider);
+  if (zx_status_t status = shared_buffer->Vmo()->duplicate(
+          ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_MAP, &buffer_vmo_for_provider);
       status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << *bundle_
-                            << ": Failed to duplicate trace buffer for provider: status=" << status;
+    FX_PLOGS(ERROR, status) << std::format("{} Failed to duplicate trace buffer for provider",
+                                           bundle_->name);
     return false;
   }
 
@@ -124,9 +99,7 @@ bool Tracee::Initialize(std::vector<std::string> categories, size_t buffer_size,
     return false;
   }
 
-  buffering_mode_ = buffering_mode;
-  buffer_vmo_ = std::move(buffer_vmo);
-  buffer_vmo_size_ = buffer_size;
+  buffer_ = std::move(*shared_buffer);
   fifo_ = std::move(fifo);
 
   start_callback_ = std::move(start_callback);
@@ -262,9 +235,9 @@ void Tracee::OnFifoReadable(async_dispatcher_t* dispatcher, async::WaitBase* wai
       }
       break;
     case TRACE_PROVIDER_SAVE_BUFFER:
-      if (buffering_mode_ != fuchsia_tracing::BufferingMode::kStreaming) {
+      if (buffer_->BufferingMode() != fuchsia_tracing::BufferingMode::kStreaming) {
         FX_LOGS(WARNING) << *bundle_ << ": Received TRACE_PROVIDER_SAVE_BUFFER in mode "
-                         << ModeName(buffering_mode_);
+                         << ModeName(buffer_->BufferingMode());
       } else if (state_ == State::kStarted || state_ == State::kStopping ||
                  state_ == State::kTerminating) {
         uint32_t wrapped_count = packet.data32;
@@ -329,163 +302,23 @@ void Tracee::OnHandleError(zx_status_t status) {
   TransitionToState(State::kTerminated);
 }
 
-bool Tracee::VerifyBufferHeader(const trace::internal::BufferHeaderReader* header) const {
-  if (EngineBufferingModeToProviderMode(
-          static_cast<trace_buffering_mode_t>(header->buffering_mode())) != buffering_mode_) {
-    FX_LOGS(ERROR) << *bundle_
-                   << ": header corrupt, wrong buffering mode: " << header->buffering_mode();
-    return false;
-  }
-
-  return true;
-}
-
-TransferStatus Tracee::WriteChunk(uint64_t offset, uint64_t last, uint64_t end,
-                                  uint64_t buffer_size) const {
-  ZX_DEBUG_ASSERT(last <= buffer_size);
-  ZX_DEBUG_ASSERT(end <= buffer_size);
-  ZX_DEBUG_ASSERT(end == 0 || last <= end);
-  offset += last;
-  if (buffering_mode_ == fuchsia_tracing::BufferingMode::kOneshot ||
-      // If end is zero then the header wasn't updated when tracing stopped.
-      end == 0) {
-    uint64_t size = buffer_size - last;
-    return output_->WriteChunkBy(BufferForwarder::ForwardStrategy::Records, buffer_vmo_, offset,
-                                 size);
-  }
-  uint64_t size = end - last;
-  return output_->WriteChunkBy(BufferForwarder::ForwardStrategy::Size, buffer_vmo_, offset, size);
-}
-
 TransferStatus Tracee::TransferRecords() const {
-  FX_DCHECK(buffer_vmo_);
+  FX_DCHECK(buffer_);
 
   // Regardless of whether we succeed or fail, mark results as being written.
   results_written_ = true;
-
-  if (auto transfer_status = WriteProviderIdRecord();
-      transfer_status != TransferStatus::kComplete) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to write provider info record to trace.";
-    return transfer_status;
-  }
-
-  trace::internal::trace_buffer_header header_buffer;
-  if (buffer_vmo_.read(&header_buffer, 0, sizeof(header_buffer)) != ZX_OK) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to read header from buffer_vmo";
-    return TransferStatus::kProviderError;
-  }
-
-  std::unique_ptr<trace::internal::BufferHeaderReader> header;
-  auto error =
-      trace::internal::BufferHeaderReader::Create(&header_buffer, buffer_vmo_size_, &header);
-  if (error != "") {
-    FX_LOGS(ERROR) << *bundle_ << ": header corrupt, " << error.c_str();
-    return TransferStatus::kProviderError;
-  }
-  if (!VerifyBufferHeader(header.get())) {
-    return TransferStatus::kProviderError;
-  }
-
-  if (header->num_records_dropped() > 0) {
-    FX_LOGS(WARNING) << *bundle_ << ": " << header->num_records_dropped()
-                     << " records were dropped";
-    // If we can't write the buffer overflow record, it's not the end of the
-    // world.
-    if (output_->WriteProviderBufferOverflowEvent(bundle_->id) != TransferStatus::kComplete) {
-      FX_LOGS(DEBUG) << *bundle_
-                     << ": Failed to write provider event (buffer overflow) record to trace.";
-    }
-  }
-
-  if (buffering_mode_ != fuchsia_tracing::BufferingMode::kOneshot) {
-    uint64_t offset = header->get_durable_buffer_offset();
-    uint64_t last = last_durable_data_end_;
-    uint64_t end = header->durable_data_end();
-    uint64_t buffer_size = header->durable_buffer_size();
-    FX_LOGS(DEBUG) << "Writing durable buffer for " << bundle_->name;
-    if (auto transfer_status = WriteChunk(offset, last, end, buffer_size);
-        transfer_status != TransferStatus::kComplete) {
-      return transfer_status;
-    }
-  }
-
-  // There's only two buffers, thus the earlier one is not the current one.
-  // It's important to process them in chronological order on the off
-  // chance that the earlier buffer provides a stringref or threadref
-  // referenced by the later buffer.
-  //
-  // We want to handle the case of still capturing whatever records we can if
-  // the process crashes, in which case the header won't be up to date. In
-  // oneshot mode we're covered: We run through the records and see what's
-  // there. In circular and streaming modes after a buffer gets reused we can't
-  // do that. But if the process crashes it may be the last trace records that
-  // are important: we don't want to lose them. As a compromise, if the header
-  // is marked as valid use it. Otherwise run through the buffer to count the
-  // records we see.
-
-  auto write_rolling_chunk = [this, &header](int buffer_number) -> TransferStatus {
-    uint64_t offset = header->GetRollingBufferOffset(buffer_number);
-    uint64_t last = 0;
-    uint64_t end = header->rolling_data_end(buffer_number);
-    uint64_t buffer_size = header->rolling_buffer_size();
-    auto name = buffer_number == 0 ? "rolling buffer 0" : "rolling buffer 1";
-    FX_LOGS(DEBUG) << "Writing chunks for " << name;
-    return WriteChunk(offset, last, end, buffer_size);
-  };
-
-  if (header->wrapped_count() > 0) {
-    int buffer_number = get_buffer_number(header->wrapped_count() - 1);
-    if (buffering_mode_ != fuchsia_tracing::BufferingMode::kStreaming) {
-      // In non streaming modes, we haven't transferred any data yet, so we always need to transfer
-      // the non active buffer
-      if (auto transfer_status = write_rolling_chunk(buffer_number);
-          transfer_status != TransferStatus::kComplete) {
-        return transfer_status;
-      }
-    } else if (last_wrapped_count_ < header->wrapped_count() - 1) {
-      // Otherwise, in streaming mode, only write the previous buffer if our local record indicates
-      // that we haven't transferred this version of it yet.
-      if (auto transfer_status = write_rolling_chunk(buffer_number);
-          transfer_status != TransferStatus::kComplete) {
-        return transfer_status;
-      }
-    }
-  }
-  int buffer_number = get_buffer_number(header->wrapped_count());
-  if (auto transfer_status = write_rolling_chunk(buffer_number);
-      transfer_status != TransferStatus::kComplete) {
-    return transfer_status;
+  auto [status, stats] = buffer_->TransferAll(output_);
+  if (status != TransferStatus::kComplete) {
+    return status;
   }
 
   provider_stats_.name(bundle_->name);
   provider_stats_.pid(bundle_->pid);
-  provider_stats_.buffering_mode(EngineBufferingModeToProviderMode(header->buffering_mode()));
-  provider_stats_.buffer_wrapped_count(header->wrapped_count());
-  provider_stats_.records_dropped(header->num_records_dropped());
-  float durable_buffer_used = 0;
-  if (header->durable_buffer_size() > 0) {
-    durable_buffer_used = (static_cast<float>(header->durable_data_end()) /
-                           static_cast<float>(header->durable_buffer_size())) *
-                          100;
-  }
-  provider_stats_.percentage_durable_buffer_used(durable_buffer_used);
-  provider_stats_.non_durable_bytes_written(header->rolling_data_end(0) +
-                                            header->rolling_data_end(1));
-
-  if ((header->buffering_mode() == TRACE_BUFFERING_MODE_ONESHOT &&
-       header->rolling_data_end(0) > kInitRecordSizeBytes) ||
-      ((header->buffering_mode() != TRACE_BUFFERING_MODE_ONESHOT) &&
-       header->durable_data_end() > kInitRecordSizeBytes) ||
-      header->buffering_mode() == TRACE_BUFFERING_MODE_STREAMING) {
-    FX_LOGS(DEBUG) << *bundle_ << " trace stats";
-    FX_LOGS(DEBUG) << "Wrapped count: " << header->wrapped_count();
-    FX_LOGS(DEBUG) << "# records dropped: " << header->num_records_dropped();
-    FX_LOGS(DEBUG) << "Durable buffer: 0x" << std::hex << header->durable_data_end() << ", size 0x"
-                   << std::hex << header->durable_buffer_size();
-    FX_LOGS(DEBUG) << "Non-durable buffer: 0x" << std::hex << header->rolling_data_end(0) << ",0x"
-                   << std::hex << header->rolling_data_end(1) << ", size 0x" << std::hex
-                   << header->rolling_buffer_size();
-  }
+  provider_stats_.buffering_mode(buffer_->BufferingMode());
+  provider_stats_.buffer_wrapped_count(stats.wrapped_count);
+  provider_stats_.records_dropped(stats.records_dropped);
+  provider_stats_.percentage_durable_buffer_used(stats.durable_used_percent);
+  provider_stats_.non_durable_bytes_written(stats.non_durable_bytes_written);
 
   return TransferStatus::kComplete;
 }
@@ -498,91 +331,13 @@ std::optional<fuchsia_tracing_controller::ProviderStats> Tracee::GetStats() cons
 }
 
 void Tracee::TransferBuffer(uint32_t wrapped_count, uint64_t durable_data_end) {
-  FX_DCHECK(buffering_mode_ == fuchsia_tracing::BufferingMode::kStreaming);
-  FX_DCHECK(buffer_vmo_);
+  FX_DCHECK(buffer_);
 
-  if (!DoTransferBuffer(wrapped_count, durable_data_end)) {
+  if (!buffer_->StreamingTransfer(output_, wrapped_count, durable_data_end)) {
     Abort();
     return;
   }
-
-  // If a consumer isn't connected we still want to mark the buffer as having
-  // been saved in order to keep the trace engine running.
-  last_wrapped_count_ = wrapped_count;
-  last_durable_data_end_ = durable_data_end;
   NotifyBufferSaved(wrapped_count, durable_data_end);
-}
-
-bool Tracee::DoTransferBuffer(uint32_t wrapped_count, uint64_t durable_data_end) {
-  if (wrapped_count == 0 && last_wrapped_count_ == 0) {
-    // ok
-  } else if (wrapped_count != last_wrapped_count_ + 1) {
-    FX_LOGS(ERROR) << *bundle_ << ": unexpected wrapped_count from provider: " << wrapped_count;
-    return false;
-  } else if (durable_data_end < last_durable_data_end_ || (durable_data_end & 7) != 0) {
-    FX_LOGS(ERROR) << *bundle_
-                   << ": unexpected durable_data_end from provider: " << durable_data_end;
-    return false;
-  }
-
-  int buffer_number = get_buffer_number(wrapped_count);
-
-  if (WriteProviderIdRecord() != TransferStatus::kComplete) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to write provider section record to trace.";
-    return false;
-  }
-
-  trace::internal::trace_buffer_header header_buffer;
-  if (buffer_vmo_.read(&header_buffer, 0, sizeof(header_buffer)) != ZX_OK) {
-    FX_LOGS(ERROR) << *bundle_ << ": Failed to read header from buffer_vmo";
-    return false;
-  }
-
-  std::unique_ptr<trace::internal::BufferHeaderReader> header;
-  auto error =
-      trace::internal::BufferHeaderReader::Create(&header_buffer, buffer_vmo_size_, &header);
-  if (error != "") {
-    FX_LOGS(ERROR) << *bundle_ << ": header corrupt, " << error.c_str();
-    return false;
-  }
-  if (!VerifyBufferHeader(header.get())) {
-    return false;
-  }
-
-  FX_LOGS(DEBUG) << "Dropped records: " << header->num_records_dropped();
-
-  // Don't use |header.durable_data_end| here, we want the value at the time
-  // the message was sent.
-  if (durable_data_end < kInitRecordSizeBytes || durable_data_end > header->durable_buffer_size() ||
-      (durable_data_end & 7) != 0 || durable_data_end < last_durable_data_end_) {
-    FX_LOGS(ERROR) << *bundle_ << ": bad durable_data_end: " << durable_data_end;
-    return false;
-  }
-
-  // However we can use rolling_data_end from the header.
-  // This buffer is no longer being written to until we save it.
-  // [And if it does get written to it'll potentially result in corrupt
-  // data, but that's not our problem; as long as we can't crash, which is
-  // always the rule here.]
-  uint64_t rolling_data_end = header->rolling_data_end(buffer_number);
-
-  // Only transfer what's new in the durable buffer since the last time.
-  uint64_t durable_buffer_offset = header->get_durable_buffer_offset();
-  if (durable_data_end > last_durable_data_end_) {
-    uint64_t size = durable_data_end - last_durable_data_end_;
-    FX_LOGS(DEBUG) << "Writing durable buffer for " << bundle_->name;
-    if (output_->WriteChunkBy(BufferForwarder::ForwardStrategy::Size, buffer_vmo_,
-                              durable_buffer_offset + last_durable_data_end_,
-                              size) != TransferStatus::kComplete) {
-      return false;
-    }
-  }
-
-  uint64_t buffer_offset = header->GetRollingBufferOffset(buffer_number);
-  auto name = buffer_number == 0 ? "rolling buffer 0" : "rolling buffer 1";
-  FX_LOGS(DEBUG) << "Writing " << name << "for " << bundle_->name;
-  return output_->WriteChunkBy(BufferForwarder::ForwardStrategy::Size, buffer_vmo_, buffer_offset,
-                               rolling_data_end) == TransferStatus::kComplete;
 }
 
 void Tracee::NotifyBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end) {
@@ -605,31 +360,9 @@ void Tracee::NotifyBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end
   }
 }
 
-TransferStatus Tracee::WriteProviderIdRecord() const {
-  if (provider_info_record_written_) {
-    return output_->WriteProviderSectionRecord(bundle_->id);
-  }
-  auto status = output_->WriteProviderInfoRecord(bundle_->id, bundle_->name);
-  provider_info_record_written_ = true;
-  return status;
-}
-
 void Tracee::Abort() {
   FX_LOGS(ERROR) << *bundle_ << ": Aborting connection";
   Terminate();
-}
-
-const char* Tracee::ModeName(fuchsia_tracing::BufferingMode mode) {
-  switch (mode) {
-    case fuchsia_tracing::BufferingMode::kOneshot:
-      return "oneshot";
-    case fuchsia_tracing::BufferingMode::kCircular:
-      return "circular";
-    case fuchsia_tracing::BufferingMode::kStreaming:
-      return "streaming";
-    default:
-      return "unknown";
-  }
 }
 
 std::ostream& operator<<(std::ostream& out, Tracee::State state) {

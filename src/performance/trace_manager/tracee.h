@@ -21,6 +21,7 @@
 
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/performance/trace_manager/buffer_forwarder.h"
+#include "src/performance/trace_manager/shared_buffer.h"
 #include "src/performance/trace_manager/trace_provider_bundle.h"
 #include "src/performance/trace_manager/util.h"
 
@@ -53,9 +54,6 @@ class Tracee {
   using StopCallback = fit::function<void(bool write_results)>;
   using TerminateCallback = fit::closure;
   using AlertCallback = fit::function<void(const std::string& alert_name)>;
-
-  // The size of the initialization record.
-  static constexpr size_t kInitRecordSizeBytes = 16;
 
   explicit Tracee(async::Executor& executor, std::shared_ptr<const BufferForwarder> output,
                   const TraceProviderBundle* bundle);
@@ -98,27 +96,17 @@ class Tracee {
   // TODO(dje): The value will need playing with.
   static constexpr size_t kFifoSizeInPackets = 4u;
 
-  // Given |wrapped_count|, return the corresponding buffer number.
-  static uint32_t get_buffer_number(uint32_t wrapped_count) { return wrapped_count & 1; }
-
-  // TODO(dje): Until fidl prints names.
-  static const char* ModeName(fuchsia_tracing::BufferingMode mode);
-
   void TransitionToState(State new_state);
   void OnHandleReady(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                      const zx_packet_signal_t* signal);
   void OnFifoReadable(async_dispatcher_t* dispatcher, async::WaitBase* wait);
   void OnHandleError(zx_status_t status);
 
-  bool VerifyBufferHeader(const trace::internal::BufferHeaderReader* header) const;
-
   // Write a ProviderInfo record the first time this is called.
   // For subsequent calls write a ProviderSection record.
   // The ProviderInfo record defines the provider, and subsequent
   // ProviderSection records tell the reader to switch back to that provider.
   TransferStatus WriteProviderIdRecord() const;
-  TransferStatus WriteChunk(uint64_t offset, uint64_t last, uint64_t end,
-                            uint64_t buffer_size) const;
 
   void NotifyBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
 
@@ -129,8 +117,7 @@ class Tracee {
   const TraceProviderBundle* bundle_;
   State state_ = State::kReady;
 
-  fuchsia_tracing::BufferingMode buffering_mode_;
-  zx::vmo buffer_vmo_;
+  std::optional<SharedBuffer> buffer_;
   size_t buffer_vmo_size_ = 0u;
   zx::fifo fifo_;
 
@@ -141,10 +128,6 @@ class Tracee {
 
   async::Executor& executor_;
   async::WaitMethod<Tracee, &Tracee::OnHandleReady> wait_;
-
-  uint32_t last_wrapped_count_ = 0u;
-  uint64_t last_durable_data_end_ = 0;
-  mutable bool provider_info_record_written_ = false;
 
   // Set to true when starting. This is used to not write any results,
   // including provider info, if the tracee was never started.
