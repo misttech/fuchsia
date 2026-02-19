@@ -390,19 +390,19 @@ template("assembly_input_bundle") {
     creation_args += [ "--experimental" ]
   }
 
-  fuchsia_package(labels.bootfs_files_package) {
-    forward_variables_from(invoker, [ "testonly" ])
-    if (defined(invoker.bootfs_files_labels)) {
+  if (defined(invoker.bootfs_files_labels)) {
+    fuchsia_package(labels.bootfs_files_package) {
+      forward_variables_from(invoker, [ "testonly" ])
       deps = invoker.bootfs_files_labels
     }
-  }
 
-  # Pass the bootfs files package to the assembly tool.
-  creation_args += [
-    "--bootfs-files-package",
-    rebase_path(files.bootfs_files_package, root_build_dir),
-  ]
-  creation_deps += [ ":${labels.bootfs_files_package}" ]
+    # Pass the bootfs files package to the assembly tool.
+    creation_args += [
+      "--bootfs-files-package",
+      rebase_path(files.bootfs_files_package, root_build_dir),
+    ]
+    creation_deps += [ ":${labels.bootfs_files_package}" ]
+  }
 
   # Convert the list of config_data_labels into a set of config_data_entry.json
   # files that are inputs that define config data entry scopes.
