@@ -4274,14 +4274,9 @@ rustc_library("clap_lex-v0_7_6") {
   applicable_licenses = [ ":clap_lex-v0_7_6.license" ]
 }
 
-license("cloudabi-v0_0_3.license") {
-  public_package_name = "cloudabi"
-  license_files = [ "//third_party/rust_crates/vendor/cloudabi-0.0.3/LICENSE" ]
-}
-
 rustc_library("cloudabi-v0_0_3") {
   crate_name = "cloudabi"
-  source_root = "//third_party/rust_crates/vendor/cloudabi-0.0.3/cloudabi.rs"
+  source_root = "//third_party/rust_crates/empty/cloudabi/src/lib.rs"
   output_name = "cloudabi-e4327fa628aa1d7e"
   edition = "2015"
   disable_clippy = true
@@ -4289,7 +4284,6 @@ rustc_library("cloudabi-v0_0_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bitflags-v1_3_2" ]
 
   rustenv = []
 
@@ -4297,13 +4291,11 @@ rustc_library("cloudabi-v0_0_3") {
     "--cap-lints=allow",
     "-Cmetadata=e4327fa628aa1d7e",
     "-Cextra-filename=-e4327fa628aa1d7e",
-    "--cfg=feature=\"bitflags\"",
-    "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":cloudabi-v0_0_3.license" ]
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("cmac-v0_7_2.license") {

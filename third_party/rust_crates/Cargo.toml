@@ -382,6 +382,7 @@ android_system_properties = { path = "empty/android_system_properties" }
 backtrace = { path = "empty/backtrace" }
 cc = { path = "empty/cc" }
 cfg_aliases = { path = "empty/cfg_aliases"}
+cloudabi = { path = "empty/cloudabi"}
 crossterm_winapi = { path = "empty/crossterm_winapi" }
 ctor = { path = "empty/ctor" }
 hermit-abi = { path = "empty/hermit-abi" }
