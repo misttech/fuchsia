@@ -4,7 +4,7 @@
 
 use crate::sys_net::{
     PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
-    ProcSysNetIpv6Neigh, TcpRmemFile,
+    ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile,
 };
 use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_hardware_power_suspend as fhps;
@@ -465,11 +465,7 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874163")),
             file_mode,
         );
-        dir.entry(
-            "rmem_max",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322906968")),
-            file_mode,
-        );
+        dir.entry("rmem_max", RmemMaxFile::new_node(), file_mode);
         dir.entry("somaxconn", SystemLimitFile::<SoMaxConn>::new_node(), file_mode);
         dir.entry(
             "wmem_max",

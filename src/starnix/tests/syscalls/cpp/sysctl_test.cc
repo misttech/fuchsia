@@ -276,6 +276,7 @@ INSTANTIATE_TEST_SUITE_P(
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", "2"},
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", "0"},
         SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", "1"},
+        SysctlTestReadBackParam{"/proc/sys/net/core/rmem_max", "6291456"},
         SysctlTestReadBackParam{"/proc/sys/net/ipv4/tcp_rmem", "4096\t87380\t6291456"}),
     [](const testing::TestParamInfo<SysctlTestReadBackParam> &info) {
       auto path = std::filesystem::path(info.param.path);
