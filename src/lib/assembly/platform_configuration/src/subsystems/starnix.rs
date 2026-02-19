@@ -17,8 +17,13 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
         starnix_config: &PlatformStarnixConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        let PlatformStarnixConfig { enabled, enable_android_support, socket_mark, network_manager } =
-            starnix_config;
+        let PlatformStarnixConfig {
+            enabled,
+            enable_android_support,
+            socket_mark,
+            network_manager,
+            enable_wakeup_test,
+        } = starnix_config;
 
         if *enabled {
             ensure!(
@@ -34,6 +39,15 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
             let has_fullmac = context.board_config.provides_feature("fuchsia::wlan_fullmac");
             let has_softmac = context.board_config.provides_feature("fuchsia::wlan_softmac");
             let has_wifi = *enable_android_support && (has_fullmac || has_softmac);
+            let has_wakeup_test = if *enable_wakeup_test {
+                ensure!(
+                    *context.build_type != BuildType::User,
+                    "The wakeup_test feature is not supported on user builds."
+                );
+                true
+            } else {
+                false
+            };
             if has_wifi {
                 builder.platform_bundle("wlan_wlanix")?;
             }
@@ -78,6 +92,10 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                         },
                         has_wifi
                             .then_some(FeatureAndArgs { feature: Feature::Wifi, raw_args: None }),
+                        has_wakeup_test.then_some(FeatureAndArgs {
+                            feature: Feature::WakeupTest,
+                            raw_args: None,
+                        }),
                     ]
                     .into_iter()
                     .flatten()

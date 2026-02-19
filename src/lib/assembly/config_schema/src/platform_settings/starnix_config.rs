@@ -24,6 +24,11 @@ pub struct PlatformStarnixConfig {
     // the `include_socket_proxy` assembly argument.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub network_manager: NetworkManagerTreatment,
+
+    // Enables exposing the wakeup test ioctl device to userspace. This is used
+    // for testing wakeup latency.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub enable_wakeup_test: bool,
 }
 
 /// How starnix treats socket marks.
