@@ -1906,18 +1906,14 @@ const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(8080).unwrap();
     Action::TransparentProxy(TransparentProxy::LocalPort(LOCAL_PORT)),
     &[
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Ingress, priority: 0})),
-        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Ingress, priority: 0})),
     ],
     &[
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::LocalIngress, priority: 0})),
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Forwarding, priority: 0})),
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::LocalEgress, priority: 0})),
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Egress, priority: 0})),
-        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalIngress, priority: 0})),
-        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalEgress, priority: 0})),
-        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Egress, priority: 0})),
     ];
-    "TPROXY valid in IP and NAT INGRESS"
+    "TPROXY valid in IP INGRESS"
 )]
 #[test_case(
     Action::Redirect { dst_port: None },

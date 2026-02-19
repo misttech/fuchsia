@@ -133,7 +133,12 @@ impl<I: IpExt, BT: MatcherBindingsTypes> ValidRoutines<I, BT> {
         validate_hook(
             &ingress,
             &[UnavailableMatcher::OutInterface],
-            &[UnavailableAction::Masquerade, UnavailableAction::Mark, UnavailableAction::Reject],
+            &[
+                UnavailableAction::TransparentProxy,
+                UnavailableAction::Masquerade,
+                UnavailableAction::Mark,
+                UnavailableAction::Reject,
+            ],
         )?;
         validate_hook(
             &local_ingress,
@@ -689,17 +694,10 @@ mod tests {
                 }),
                 ..Default::default()
             },
-            nat: NatRoutines {
-                ingress: hook_with_rule(Rule {
-                    matcher: tcp_matcher(),
-                    action: Action::TransparentProxy(TransparentProxy::LocalPort(LOCAL_PORT)),
-                    validation_info: RuleId::Valid,
-                }),
-                ..Default::default()
-            },
+            ..Default::default()
         } =>
         Ok(());
-        "transparent proxy available in IP and NAT INGRESS routines"
+        "transparent proxy available in IP INGRESS routines"
     )]
     #[test_case(
         Routines {

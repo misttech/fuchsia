@@ -195,10 +195,6 @@ pub enum NatType {
 }
 
 pub(crate) trait NatHook<I: FilterIpExt> {
-    type Verdict<R: Debug>: FilterVerdict<R> + Debug;
-
-    fn verdict_behavior<R: Debug>(v: Self::Verdict<R>) -> ControlFlow<Self::Verdict<()>, R>;
-
     const NAT_TYPE: NatType;
 
     /// Evaluate the result of a given routine and returning the resulting control
@@ -211,7 +207,7 @@ pub(crate) trait NatHook<I: FilterIpExt> {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -256,15 +252,6 @@ impl<R> FilterVerdict<R> for Verdict<R> {
     }
 }
 
-impl<R> Verdict<R> {
-    fn into_behavior(self) -> ControlFlow<Verdict<()>, R> {
-        match self {
-            Self::Accept(result) => ControlFlow::Continue(result),
-            Self::Drop => ControlFlow::Break(Verdict::Drop),
-        }
-    }
-}
-
 #[derive(Derivative)]
 #[derivative(Debug(bound = "A: Debug"))]
 pub(crate) enum NatConfigurationResult<I: IpExt, A, BT: FilterBindingsTypes> {
@@ -275,12 +262,6 @@ pub(crate) enum NatConfigurationResult<I: IpExt, A, BT: FilterBindingsTypes> {
 pub(crate) enum IngressHook {}
 
 impl<I: FilterIpExt> NatHook<I> for IngressHook {
-    type Verdict<R: Debug> = IngressVerdict<I, R>;
-
-    fn verdict_behavior<R: Debug>(v: Self::Verdict<R>) -> ControlFlow<Self::Verdict<()>, R> {
-        v.into_behavior()
-    }
-
     const NAT_TYPE: NatType = NatType::Destination;
 
     fn evaluate_result<P, CC, BC>(
@@ -291,7 +272,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -299,10 +280,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
-            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop.into()),
-            RoutineResult::TransparentLocalDelivery { addr, port } => {
-                ControlFlow::Break(IngressVerdict::TransparentLocalDelivery { addr, port })
-            }
+            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop),
             RoutineResult::Redirect { dst_port } => {
                 ControlFlow::Break(configure_redirect_nat::<Self, _, _, _, _>(
                     core_ctx,
@@ -319,6 +297,9 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
             }
             RoutineResult::Reject(_reject_type) => {
                 unreachable!("REJECT not supported in NAT hooks")
+            }
+            RoutineResult::TransparentLocalDelivery { .. } => {
+                unreachable!("Transparent proxy not supported in NAT hooks")
             }
         }
     }
@@ -362,29 +343,9 @@ impl<I: IpExt, R> FilterVerdict<R> for IngressVerdict<I, R> {
     }
 }
 
-impl<I: IpExt, R> IngressVerdict<I, R> {
-    fn into_behavior(self) -> ControlFlow<IngressVerdict<I, ()>, R> {
-        match self {
-            Self::Verdict(v) => match v.into_behavior() {
-                ControlFlow::Continue(r) => ControlFlow::Continue(r),
-                ControlFlow::Break(v) => ControlFlow::Break(v.into()),
-            },
-            Self::TransparentLocalDelivery { addr, port } => {
-                ControlFlow::Break(IngressVerdict::TransparentLocalDelivery { addr, port })
-            }
-        }
-    }
-}
-
 pub(crate) enum LocalEgressHook {}
 
 impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
-    type Verdict<R: Debug> = Verdict<R>;
-
-    fn verdict_behavior<R: Debug>(v: Self::Verdict<R>) -> ControlFlow<Self::Verdict<()>, R> {
-        v.into_behavior()
-    }
-
     const NAT_TYPE: NatType = NatType::Destination;
 
     fn evaluate_result<P, CC, BC>(
@@ -395,7 +356,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -451,12 +412,6 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
 pub(crate) enum LocalIngressHook {}
 
 impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
-    type Verdict<R: Debug> = Verdict<R>;
-
-    fn verdict_behavior<R: Debug>(v: Self::Verdict<R>) -> ControlFlow<Self::Verdict<()>, R> {
-        v.into_behavior()
-    }
-
     const NAT_TYPE: NatType = NatType::Source;
 
     fn evaluate_result<P, CC, BC>(
@@ -467,7 +422,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
         _packet: &P,
         _interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BC>,
@@ -515,12 +470,6 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
 pub(crate) enum EgressHook {}
 
 impl<I: FilterIpExt> NatHook<I> for EgressHook {
-    type Verdict<R: Debug> = Verdict<R>;
-
-    fn verdict_behavior<R: Debug>(v: Self::Verdict<R>) -> ControlFlow<Self::Verdict<()>, R> {
-        v.into_behavior()
-    }
-
     const NAT_TYPE: NatType = NatType::Source;
 
     fn evaluate_result<P, CC, BC>(
@@ -531,7 +480,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -664,7 +613,7 @@ pub(crate) fn perform_nat<N, I, P, CC, BC>(
     hook: &Hook<I, BC, ()>,
     packet: &mut P,
     interfaces: Interfaces<'_, CC::DeviceId>,
-) -> N::Verdict<()>
+) -> Verdict
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -673,7 +622,7 @@ where
     BC: FilterBindingsContext<CC::DeviceId>,
 {
     if !nat_installed {
-        return Verdict::Accept(()).into();
+        return Verdict::Accept(());
     }
 
     let nat_config = if let Some(nat) = conn.nat_config(N::NAT_TYPE, direction) {
@@ -693,7 +642,7 @@ where
                 // Handle this by just configuring the connection not to be NATed. It does not
                 // make sense to NAT a self-connected flow since the original and reply
                 // directions are indistinguishable.
-                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)).into(), true)
+                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)), true)
             }
             (Connection::Shared(_), _) => {
                 // In most scenarios, NAT should be configured for every connection before it is
@@ -703,7 +652,7 @@ where
                 // NAT rules have been installed, performing NAT is skipped entirely, which can
                 // result in some connections being finalized without NAT being configured for
                 // them. To handle this, just don't NAT the connection.
-                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)).into(), false)
+                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)), false)
             }
             (Connection::Exclusive(conn), ConnectionDirection::Original) => {
                 let verdict = configure_nat::<N, _, _, _, _>(
@@ -731,7 +680,6 @@ where
                         None, /* src_port_range */
                         ConflictStrategy::AdoptExisting,
                     )
-                    .into()
                 } else {
                     verdict
                 };
@@ -739,11 +687,9 @@ where
             }
         };
 
-        let result = match N::verdict_behavior(verdict) {
-            ControlFlow::Break(verdict) => {
-                return verdict;
-            }
-            ControlFlow::Continue(result) => result,
+        let result = match verdict {
+            Verdict::Accept(result) => result,
+            Verdict::Drop => return Verdict::Drop,
         };
         let new_nat_config = match result {
             NatConfigurationResult::Result(config) => Some(config),
@@ -774,7 +720,7 @@ where
     };
 
     match nat_config {
-        ShouldNat::No => return Verdict::Accept(()).into(),
+        ShouldNat::No => return Verdict::Accept(()),
         // If we are NATing this connection, but are not using an IP address that is
         // dynamically assigned to an interface to do so, continue to rewrite the
         // packet.
@@ -793,12 +739,12 @@ where
                     conn.relevant_reply_tuple_addr(N::NAT_TYPE),
                 ) {
                     Verdict::Accept(()) => {}
-                    Verdict::Drop => return Verdict::Drop.into(),
+                    Verdict::Drop => return Verdict::Drop,
                 }
             }
         }
     }
-    rewrite_packet(conn, direction, N::NAT_TYPE, packet).into()
+    rewrite_packet(conn, direction, N::NAT_TYPE, packet)
 }
 
 /// Configure NAT by rewriting the provided reply tuple of a connection.
@@ -815,7 +761,7 @@ fn configure_nat<N, I, P, CC, BC>(
     hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, CC::DeviceId>,
-) -> N::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
+) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -832,7 +778,7 @@ where
             ControlFlow::Continue(()) => {}
         }
     }
-    Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)).into()
+    Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No))
 }
 
 /// Configure Redirect NAT, a special case of DNAT that redirects the packet to
@@ -845,7 +791,7 @@ fn configure_redirect_nat<N, I, P, CC, BC>(
     packet: &P,
     interfaces: &Interfaces<'_, CC::DeviceId>,
     dst_port_range: Option<RangeInclusive<NonZeroU16>>,
-) -> N::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
+) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -865,12 +811,12 @@ where
     // If we are in INGRESS, use the primary address of the incoming interface; if
     // we are in LOCAL_EGRESS, use the loopback address.
     let Some((addr, cached_addr)) = N::redirect_addr(core_ctx, packet, interfaces.ingress) else {
-        return Verdict::Drop.into();
+        return Verdict::Drop;
     };
     conn.rewrite_reply_src_addr(addr);
 
     let Some(range) = dst_port_range else {
-        return Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr))).into();
+        return Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr)));
     };
     match rewrite_reply_tuple_port(
         bindings_ctx,
@@ -892,7 +838,6 @@ where
         }
         Verdict::Drop => Verdict::Drop,
     }
-    .into()
 }
 
 /// Configure Masquerade NAT, a special case of SNAT that rewrites the source IP
@@ -1340,7 +1285,7 @@ mod tests {
         ArbitraryValue, FakeIpPacket, FakeUdpPacket, IcmpErrorMessage, Icmpv4DestUnreachableError,
         Icmpv6DestUnreachableError,
     };
-    use crate::state::{Action, Routine, Rule, TransparentProxy};
+    use crate::state::{Action, Routine, Rule};
     use crate::testutil::TestIpExt;
 
     impl<I: IpExt, A: PartialEq, BT: FilterBindingsTypes> PartialEq
@@ -1539,48 +1484,6 @@ mod tests {
     }
 
     #[test]
-    fn transparent_proxy_terminal_for_entire_hook() {
-        let mut bindings_ctx = FakeBindingsCtx::<Ipv4>::new();
-        let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
-        let mut core_ctx = FakeNatCtx::default();
-        let packet = FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value();
-        let mut conn = ConnectionExclusive::from_packet(&bindings_ctx, &packet);
-
-        let ingress = Hook {
-            routines: vec![
-                Routine {
-                    rules: vec![Rule::new(
-                        PacketMatcher::default(),
-                        Action::TransparentProxy(TransparentProxy::LocalPort(LOCAL_PORT)),
-                    )],
-                },
-                Routine {
-                    rules: vec![
-                        // Accept all traffic.
-                        Rule::new(PacketMatcher::default(), Action::Accept),
-                    ],
-                },
-            ],
-        };
-
-        assert_eq!(
-            configure_nat::<IngressHook, _, _, _, _>(
-                &mut core_ctx,
-                &mut bindings_ctx,
-                &conntrack,
-                &mut conn,
-                &ingress,
-                &packet,
-                Interfaces { ingress: None, egress: None },
-            ),
-            IngressVerdict::TransparentLocalDelivery {
-                addr: <Ipv4 as crate::packets::testutil::internal::TestIpExt>::DST_IP,
-                port: LOCAL_PORT
-            }
-        );
-    }
-
-    #[test]
     fn redirect_terminal_for_entire_hook() {
         let mut bindings_ctx = FakeBindingsCtx::<Ipv4>::new();
         let conntrack = Table::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
@@ -1693,7 +1596,7 @@ mod tests {
                     egress: None
                 },
             ),
-            Verdict::Drop.into()
+            Verdict::Drop
         );
     }
 
@@ -1731,7 +1634,7 @@ mod tests {
         );
     }
 
-    trait NatHookExt<I: FilterIpExt>: NatHook<I, Verdict<()>: PartialEq> {
+    trait NatHookExt<I: FilterIpExt>: NatHook<I> {
         fn interfaces<'a>(
             interface: &'a FakeMatcherDeviceId,
         ) -> Interfaces<'a, FakeMatcherDeviceId>;
@@ -1900,7 +1803,7 @@ mod tests {
             &mut reply,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(conn.external_data().destination.get(), None);
         assert_eq!(conn.external_data().source.get(), Some(&ShouldNat::No));
 
@@ -1983,7 +1886,7 @@ mod tests {
             &mut packet,
             Original::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         // The packet's destination should be rewritten, and DNAT should be configured
         // for the packet; the reply tuple's source should be rewritten to match the new
@@ -2038,7 +1941,7 @@ mod tests {
             &mut reply_packet,
             Reply::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(reply_packet, pre_nat_packet.reply());
     }
 
@@ -2130,7 +2033,7 @@ mod tests {
             &mut reply_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
         assert_eq!(reply_packet, pre_nat_packet.reply());
     }
 
@@ -2236,7 +2139,7 @@ mod tests {
             &mut packet,
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         // A weakly-held reference to the address assigned to the interface should be
         // cached in the NAT config.
@@ -2267,7 +2170,7 @@ mod tests {
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Drop.into());
+        assert_eq!(verdict, Verdict::Drop);
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
         let nat = nat.get().unwrap_or_else(|| panic!("{:?} NAT should be configured", N::NAT_TYPE));
         let id = assert_matches!(nat, ShouldNat::Yes(Some(CachedAddr { id, _marker })) => id);
@@ -2293,7 +2196,7 @@ mod tests {
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
         let nat = nat.get().unwrap_or_else(|| panic!("{:?} NAT should be configured", N::NAT_TYPE));
         let id = assert_matches!(nat, ShouldNat::Yes(Some(CachedAddr { id, _marker })) => id);
@@ -2619,7 +2522,7 @@ mod tests {
             &mut packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         // The packet's destination should be rewritten and DNAT should be
         // configured for the packet; the reply tuple's source should be
@@ -2770,7 +2673,7 @@ mod tests {
             &mut packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         // The packet's destination should be rewritten, and DNAT should be configured
         // for the packet; the reply tuple's source should be rewritten to match the new
@@ -2888,7 +2791,7 @@ mod tests {
             &mut error_packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         let error_packet_expected = IE::make_serializer(
             // Unlike in the reply case, we shouldn't expect this address to be
@@ -3052,7 +2955,7 @@ mod tests {
             &mut error_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         let error_packet_expected = IE::make_serializer(
             // We expect this address to be rewritten since `redirect_addr`
@@ -3192,7 +3095,7 @@ mod tests {
             &mut reply_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()).into());
+        assert_eq!(verdict, Verdict::Accept(()));
 
         let reply_packet_expected = EmptyBuf
             .wrap_in(UdpPacketBuilder::new(

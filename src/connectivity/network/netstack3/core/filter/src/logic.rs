@@ -417,15 +417,17 @@ where
                 }
             };
 
-            let mut verdict = match check_routines_for_ingress(
+            match check_routines_for_ingress(
                 &state.installed_routines.get().ip.ingress,
                 packet,
                 Interfaces { ingress: Some(interface), egress: None },
                 metadata,
             ) {
-                v @ IngressVerdict::Verdict(Verdict::Drop) => return v,
-                v @ IngressVerdict::Verdict(Verdict::Accept(()))
-                | v @ IngressVerdict::TransparentLocalDelivery { .. } => v,
+                v @ (IngressVerdict::Verdict(Verdict::Drop)
+                | IngressVerdict::TransparentLocalDelivery { .. }) => {
+                    return v;
+                }
+                IngressVerdict::Verdict(Verdict::Accept(())) => (),
             };
 
             if let Some((mut conn, direction)) = conn {
@@ -443,21 +445,15 @@ where
                     packet,
                     Interfaces { ingress: Some(interface), egress: None },
                 ) {
-                    // NB: we only overwrite the verdict returned from the IP routines if it is
-                    // `TransparentLocalDelivery`; in case of an `Accept` verdict from the NAT
-                    // routines, we do not change the existing verdict.
-                    v @ IngressVerdict::Verdict(Verdict::Drop) => return v,
-                    IngressVerdict::Verdict(Verdict::Accept(())) => {}
-                    v @ IngressVerdict::TransparentLocalDelivery { .. } => {
-                        verdict = v;
-                    }
+                    v @ Verdict::Drop => return IngressVerdict::Verdict(v),
+                    Verdict::Accept(()) => {}
                 }
 
                 let res = metadata.replace_connection_and_direction(conn, direction);
                 debug_assert!(res.is_none());
             }
 
-            verdict
+            IngressVerdict::Verdict(Verdict::Accept(()))
         })
     }
 
