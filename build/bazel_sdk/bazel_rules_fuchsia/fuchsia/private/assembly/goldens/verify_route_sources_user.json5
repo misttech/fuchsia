@@ -23,6 +23,13 @@
                 },
                 {
                     use_type: "protocol",
+                    source_name: "fuchsia.logger.LogSink",
+
+                    // PA_LOG_SINK
+                    use_numbered_handle: 0x3D,
+                },
+                {
+                    use_type: "protocol",
                     use_path: "/svc/fuchsia.net.name.Lookup",
                 },
                 {
@@ -118,6 +125,13 @@
                 {
                     use_type: "protocol",
                     use_path: "/svc/fuchsia.logger.LogSink",
+                },
+                {
+                    use_type: "protocol",
+                    source_name: "fuchsia.logger.LogSink",
+
+                    // PA_LOG_SINK
+                    use_numbered_handle: 0x3D,
                 },
             ],
 

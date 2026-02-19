@@ -141,6 +141,15 @@ fn example_cml_integration_test() {
             availability: Some(Availability::Required),
             ..Default::default()
         }),
+        Use::Protocol(UseProtocol {
+            dependency_type: Some(DependencyType::Strong),
+            source: Some(Ref::Parent(ParentRef {})),
+            source_name: Some("fuchsia.logger.LogSink".to_string()),
+            numbered_handle: Some(0x3D),
+            source_dictionary: Some("diagnostics".to_string()),
+            availability: Some(Availability::Required),
+            ..Default::default()
+        }),
         Use::Service(UseService {
             dependency_type: Some(DependencyType::Strong),
             source: Some(Ref::Parent(ParentRef {})),

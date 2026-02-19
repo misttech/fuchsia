@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "syslog/client.shard.cml" ],
     program: {
         runner: "elf",
         binary: "bin/sink_validator_rust_puppet",
@@ -14,6 +13,18 @@
     },
     capabilities: [
         { protocol: "fuchsia.validate.logs.LogSinkPuppet" },
+    ],
+    use: [
+        // Don't use the standard syslog shard because it routes a numbered
+        // handle. Rust logging library doesn't use the numbered handle yet so
+        // it causes a double connection wihch confuses the mock server in the
+        // test.
+        //
+        // TODO(https://fxbug.dev/442638676): Use the shard once rust library uses numbered handle
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent/diagnostics",
+        },
     ],
     expose: [
         {

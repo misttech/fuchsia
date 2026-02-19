@@ -31,4 +31,5 @@ fuchsia_component("component") {
   testonly = true
   manifest = "meta/puppet.cml"
   deps = [ ":rust-puppet" ]
+  check_includes = false  # see cml
 }

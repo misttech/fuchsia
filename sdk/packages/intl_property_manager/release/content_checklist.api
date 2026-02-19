@@ -3,10 +3,10 @@
   "content": {
     "files": {
       "meta/intl_property_manager.cm": {
-        "hash": "fdf2db7b43ff88662c4ed9ec67108bb27ae6e248b088565ee3cbdda150ed3328"
+        "hash": "5e7ddb1f825f4d83eb18e32d2691441c358e2ffa19b9eea3d3b59d4cb9a13ad9"
       },
       "meta/intl_property_manager_without_flags.cm": {
-        "hash": "a1453191138a4553310729d6921fc6a341290c5fc1fb47b33f9eb68b6435555a"
+        "hash": "2a41bf3ca72e4f79ffd3a73f5f8b127126330468476db9cc4fff794cf62529a2"
       }
     }
   }

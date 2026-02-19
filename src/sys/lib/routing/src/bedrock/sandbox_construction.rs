@@ -71,6 +71,7 @@ pub struct ProgramInput {
     // - namespace: Dict
     // - runner: Option<Router<Connector>>
     // - config: Dict
+    // - numbered_handles: Dict
     inner: Dict,
 }
 
@@ -273,6 +274,7 @@ impl ComponentSandbox {
             (&component_output.capabilities(), &self.component_output.capabilities()),
             (&component_output.framework(), &self.component_output.framework()),
             (&program_input.namespace(), &self.program_input.namespace()),
+            (&program_input.numbered_handles(), &self.program_input.numbered_handles()),
             (&program_input.config(), &self.program_input.config()),
             (&program_output_dict, &self.program_output_dict),
             (&capability_sourced_capabilities_dict, &self.capability_sourced_capabilities_dict),

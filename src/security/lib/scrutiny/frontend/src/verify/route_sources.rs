@@ -9,7 +9,7 @@ use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, SourceName as _,
     UseDecl,
 };
-use cm_types::{Name, Path, RelativePath};
+use cm_types::{HandleType, Name, Path, RelativePath};
 use futures::FutureExt;
 use moniker::Moniker;
 use routing::capability_source::CapabilitySource;
@@ -74,9 +74,12 @@ pub struct UseSpec {
     /// Route capability types.
     #[serde(rename = "use_type")]
     pub type_name: CapabilityTypeName,
-    /// Target capability path the match, if any.
+    /// Target capability path to match, if any.
     #[serde(rename = "use_path")]
     pub path: Option<Path>,
+    /// Target capability numbered handle to match, if any.
+    #[serde(rename = "use_numbered_handle")]
+    pub numbered_handle: Option<HandleType>,
     /// Target capability name, if any.
     #[serde(rename = "use_name")]
     pub name: Option<Name>,
@@ -92,11 +95,22 @@ impl Matches<UseDecl> for UseSpec {
     const OTHER_NAME: &'static str = USE_DECL_NAME;
 
     fn matches(&self, other: &UseDecl) -> Result<bool> {
-        Ok(self.type_name == other.into()
-            && (self.path.is_none() || self.path.as_ref() == other.path())
+        let source_matches = self.type_name == other.into()
             && (self.name.is_none() || self.name.as_ref() == other.name())
             && (self.source_name.is_none()
-                || self.source_name.as_ref().unwrap() == other.source_name()))
+                || self.source_name.as_ref().unwrap() == other.source_name());
+        if !source_matches {
+            return Ok(false);
+        }
+        if self.path.is_none() && self.numbered_handle.is_none() {
+            return Ok(true);
+        }
+        let other_numbered_handle = match other {
+            UseDecl::Protocol(u) => u.numbered_handle.as_ref(),
+            _ => None,
+        };
+        Ok(self.path.as_ref() == other.path()
+            && self.numbered_handle.as_ref() == other_numbered_handle)
     }
 }
 
@@ -592,11 +606,11 @@ mod tests {
     use cm_config::RuntimeConfig;
     use cm_fidl_analyzer::component_model::ModelBuilderForAnalyzer;
     use cm_rust::{
-        Availability, CapabilityTypeName, DirectoryDecl, ExposeSource, OfferSource, ProgramDecl,
-        UseStorageDecl,
+        Availability, CapabilityTypeName, DependencyType, DirectoryDecl, ExposeSource, OfferSource,
+        ProgramDecl, UseProtocolDecl, UseSource, UseStorageDecl,
     };
     use cm_rust_testing::*;
-    use cm_types::{Path, Url};
+    use cm_types::{HandleType, Path, Url};
     use fidl_fuchsia_io as fio;
     use fuchsia_merkle::{HASH_SIZE, Hash};
     use maplit::{hashmap, hashset};
@@ -625,6 +639,7 @@ mod tests {
                 path: Some(Path::from_str("/path").unwrap()),
                 name: None,
                 source_name: None,
+                numbered_handle: None,
             }
             .matches(
                 &UseStorageDecl {
@@ -644,6 +659,7 @@ mod tests {
                 path: None,
                 name: Some("name".parse().unwrap()),
                 source_name: None,
+                numbered_handle: None,
             }
             .matches(
                 &UseStorageDecl {
@@ -663,6 +679,7 @@ mod tests {
                 path: None,
                 name: None,
                 source_name: Some("name".parse().unwrap()),
+                numbered_handle: None,
             }
             .matches(
                 &UseStorageDecl {
@@ -674,6 +691,85 @@ mod tests {
             )
             .unwrap()
                 == true
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_match_numbered_handle() {
+        let some_ordinal = HandleType::from(0x30);
+        let other_ordinal = HandleType::from(0x31);
+
+        // Match Some(numbered_handle), ignoring None path and name.
+        assert!(
+            UseSpec {
+                type_name: CapabilityTypeName::Protocol,
+                path: None,
+                name: None,
+                source_name: None,
+                numbered_handle: Some(some_ordinal),
+            }
+            .matches(
+                &UseProtocolDecl {
+                    source: UseSource::Parent,
+                    source_name: "name".parse().unwrap(),
+                    source_dictionary: Default::default(),
+                    target_path: None,
+                    numbered_handle: Some(some_ordinal),
+                    dependency_type: DependencyType::Strong,
+                    availability: Availability::Required,
+                }
+                .into()
+            )
+            .unwrap()
+                == true
+        );
+        // Do not match Some(numbered_handle) when they differ.
+        assert!(
+            UseSpec {
+                type_name: CapabilityTypeName::Protocol,
+                path: None,
+                name: None,
+                source_name: Some("name".parse().unwrap()),
+                numbered_handle: Some(some_ordinal),
+            }
+            .matches(
+                &UseProtocolDecl {
+                    source: UseSource::Parent,
+                    source_name: "name".parse().unwrap(),
+                    source_dictionary: Default::default(),
+                    target_path: None,
+                    numbered_handle: Some(other_ordinal),
+                    dependency_type: DependencyType::Strong,
+                    availability: Availability::Required,
+                }
+                .into()
+            )
+            .unwrap()
+                == false
+        );
+        // Do not match Some(numbered_handle) when are equal but name differs.
+        assert!(
+            UseSpec {
+                type_name: CapabilityTypeName::Protocol,
+                path: None,
+                name: None,
+                source_name: Some("name".parse().unwrap()),
+                numbered_handle: Some(some_ordinal),
+            }
+            .matches(
+                &UseProtocolDecl {
+                    source: UseSource::Parent,
+                    source_name: "name2".parse().unwrap(),
+                    source_dictionary: Default::default(),
+                    target_path: None,
+                    numbered_handle: Some(some_ordinal),
+                    dependency_type: DependencyType::Strong,
+                    availability: Availability::Required,
+                }
+                .into()
+            )
+            .unwrap()
+                == false
         );
     }
 
@@ -1017,6 +1113,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1083,12 +1180,14 @@ mod tests {
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1127,18 +1226,21 @@ mod tests {
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/new/dir/route").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1173,6 +1275,7 @@ mod tests {
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1187,6 +1290,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1247,6 +1351,7 @@ mod tests {
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1261,6 +1366,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1322,6 +1428,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -1346,6 +1453,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1428,6 +1536,7 @@ mod tests {
                                 path: Some(Path::from_str("/data/from/root").unwrap()),
                                 name: None,
                                 source_name: None,
+                                numbered_handle: None,
                             },
                             source: SourceSpec {
                                 moniker: Moniker::root(),
@@ -1451,6 +1560,7 @@ mod tests {
                                 path: Some(Path::from_str("/data/from/provider").unwrap()),
                                 name: None,
                                 source_name: None,
+                                numbered_handle: None,
                             },
                             source: SourceSpec {
                                 moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1524,12 +1634,14 @@ mod tests {
                         // directory uses are matched by target path.
                         name: Some(source_name.parse().unwrap()),
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1576,12 +1688,14 @@ mod tests {
                         // directory uses are matched by target path.
                         name: Some(source_name.parse().unwrap()),
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1623,12 +1737,14 @@ mod tests {
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     // Unmatched `routes_to_skip` entry will be skipped; this
                     // pattern is allowed so that soft transitions that update
@@ -1639,6 +1755,7 @@ mod tests {
                         path: Some(Path::from_str(&bad_path).unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1668,12 +1785,14 @@ mod tests {
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     // Intentional error: Duplicate match for same
                     // route-to-skip.
@@ -1682,6 +1801,7 @@ mod tests {
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1709,6 +1829,7 @@ mod tests {
                     path: Some(Path::from_str("/data/from/root").unwrap()),
                     name: None,
                     source_name: None,
+                    numbered_handle: None,
                 }],
                 routes_to_verify: vec![
                     RouteMatch {
@@ -1717,6 +1838,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1739,6 +1861,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1775,12 +1898,14 @@ mod tests {
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1792,6 +1917,7 @@ mod tests {
                             path: Some(Path::from_str(dup_name).unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1836,6 +1962,7 @@ mod tests {
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
                         source_name: None,
+                        numbered_handle: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1847,6 +1974,7 @@ mod tests {
                             path: Some(Path::from_str(dup_name).unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1892,6 +2020,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -1916,6 +2045,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1976,6 +2106,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -2000,6 +2131,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -2060,6 +2192,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -2084,6 +2217,7 @@ mod tests {
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
                             source_name: None,
+                            numbered_handle: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),

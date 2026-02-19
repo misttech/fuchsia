@@ -150,6 +150,11 @@ pub enum HandleType {
     /// Equivalent to PA_ESCROWED_DICTIONARY.
     EscrowedDictionary = 0x3C,
 
+    /// A `fuchsia.logger.LogSink` channel handle.
+    ///
+    /// Equivalent to PA_LOG_SINK.
+    LogSink = 0x3D,
+
     /// A Handle to a resource object. Used by devcoordinator and devhosts.
     ///
     /// Equivalent to PA_RESOURCE.
@@ -185,11 +190,6 @@ pub enum HandleType {
     ///
     /// Equivalent to PA_SYSTEM_RESOURCE.
     SystemResource = 0x54,
-
-    /// A `fuchsia.logger.LogSink` channel handle.
-    ///
-    /// Equivalent to PA_LOG_SINK.
-    LogSink = 0x60,
 
     /// A handle type with user-defined meaning.
     ///

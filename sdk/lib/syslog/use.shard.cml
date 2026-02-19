@@ -7,5 +7,12 @@
             protocol: "fuchsia.logger.LogSink",
             from: "parent/diagnostics",
         },
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent/diagnostics",
+
+            // PA_LOG_SINK
+            numbered_handle: 0x3D,
+        },
     ],
 }

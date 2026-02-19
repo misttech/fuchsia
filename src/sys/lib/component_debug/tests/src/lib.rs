@@ -6,7 +6,7 @@ use assert_matches::assert_matches;
 use component_debug::capability;
 use component_debug::cli::*;
 use component_debug::config::{
-    resolve_raw_config_capabilities, resolve_raw_config_overrides, RawConfigEntry,
+    RawConfigEntry, resolve_raw_config_capabilities, resolve_raw_config_overrides,
 };
 use component_debug::realm::{get_resolved_declaration, resolve_declaration};
 use component_debug::route::{DeclType, RouteOutcome, RouteReport};
@@ -209,7 +209,7 @@ async fn route() {
     // The expected incoming capabilities are:
     // fidl.examples.routing.echo.Echo
     // fuchsia.foo.Bar
-    // fuchsia.logger.LogSink
+    // fuchsia.logger.LogSink (path, PA_LOG_SINK)
     // fuchsia.sys2.RealmExplorer
     // fuchsia.sys2.RealmQuery
     // fuchsia.sys2.RouteValidator
@@ -220,7 +220,7 @@ async fn route() {
     // fuchsia.foo.bar
     // fuchsia.test.Suite
     // data
-    assert_eq!(reports.len(), 8 + 3);
+    assert_eq!(reports.len(), 9 + 3);
 }
 
 #[fuchsia::test]

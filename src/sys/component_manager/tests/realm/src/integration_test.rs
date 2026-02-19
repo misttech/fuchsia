@@ -55,7 +55,7 @@ pub async fn get_manifest_self() {
     let uses = decl.uses.unwrap();
     let exposes = decl.exposes.unwrap();
     // Extra use (for debugdata) is possible on coverage builds.
-    assert!(uses.len() == 3 || uses.len() == 4, "{uses:?}");
+    assert!(uses.len() == 4 || uses.len() == 5, "{uses:?}");
     assert_eq!(exposes.len(), 1);
 }
 
