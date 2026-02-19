@@ -42,7 +42,7 @@ use starnix_uapi::errors::{EAGAIN, ETIMEDOUT, Errno};
 use starnix_uapi::file_lease::FileLeaseType;
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::inotify_mask::InotifyMask;
-use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::open_flags::{AtomicOpenFlags, OpenFlags};
 use starnix_uapi::seal_flags::SealFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
@@ -57,6 +57,7 @@ use starnix_uapi::{
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 pub const MAX_LFS_FILESIZE: usize = 0x7fff_ffff_ffff_ffff;
@@ -1460,7 +1461,7 @@ pub struct FileObjectState {
 
     pub offset: Mutex<off_t>,
 
-    flags: Mutex<OpenFlags>,
+    flags: AtomicOpenFlags,
 
     async_owner: Mutex<FileAsyncOwner>,
 
@@ -1497,19 +1498,15 @@ impl FileObjectState {
     }
 
     pub fn flags(&self) -> OpenFlags {
-        *self.flags.lock()
+        self.flags.load(Ordering::Relaxed)
     }
 
     pub fn can_read(&self) -> bool {
-        // TODO: Consider caching the access mode outside of this lock
-        // because it cannot change.
-        self.flags.lock().can_read()
+        self.flags.load(Ordering::Relaxed).can_read()
     }
 
     pub fn can_write(&self) -> bool {
-        // TODO: Consider caching the access mode outside of this lock
-        // because it cannot change.
-        self.flags.lock().can_write()
+        self.flags.load(Ordering::Relaxed).can_write()
     }
 
     /// Returns false if the file is not allowed to be executed.
@@ -1592,7 +1589,7 @@ impl FileObject {
                     name: name.into_active(),
                     fs,
                     offset: Mutex::new(0),
-                    flags: Mutex::new(flags - OpenFlags::CREAT),
+                    flags: AtomicOpenFlags::new(flags - OpenFlags::CREAT),
                     async_owner: Default::default(),
                     epoll_files: Default::default(),
                     lease: Default::default(),
@@ -1613,7 +1610,7 @@ impl FileObject {
         if self.can_exec() {
             access |= Access::EXEC;
         }
-        let flags = self.flags.lock();
+        let flags = self.flags.load(Ordering::Relaxed);
         if flags.can_read() {
             access |= Access::READ;
         }
@@ -2114,11 +2111,13 @@ impl FileObject {
         self.ops().as_thread_group_key(self)
     }
 
+    /// Update the file flags.
+    ///
+    /// Writes the bits in `value` that are set in `mask` into the file flags.
+    ///
+    /// Does not provide any synchronization.
     pub fn update_file_flags(&self, value: OpenFlags, mask: OpenFlags) {
-        let mask_bits = mask.bits();
-        let mut flags = self.flags.lock();
-        let bits = (flags.bits() & !mask_bits) | (value.bits() & mask_bits);
-        *flags = OpenFlags::from_bits_truncate(bits);
+        self.flags.update(value, mask, Ordering::Relaxed, Ordering::Relaxed);
     }
 
     /// Get the async owner of this file.

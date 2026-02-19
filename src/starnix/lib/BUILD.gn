@@ -4,6 +4,7 @@
 
 group("lib") {
   deps = [
+    "atomic_bitflags",
     "linux_uapi",
     "magma",
     "starnix_container",
@@ -21,6 +22,7 @@ group("tests") {
   testonly = true
 
   deps = [
+    "atomic_bitflags:tests",
     "bootreason:tests",
     "crash_throttling:tests",
     "devicetree:tests",

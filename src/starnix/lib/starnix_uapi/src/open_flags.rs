@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::uapi;
-use bitflags::bitflags;
 
 // The inner mod is required because bitflags cannot pass the attribute through to the single
 // variant, and attributes cannot be applied to macro invocations.
@@ -11,10 +10,11 @@ mod inner_flags {
     // Part of the code for the O_RDONLY case that's produced by the macro triggers the lint, but as
     // a whole, the produced code is still correct.
     #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
-    use super::{bitflags, uapi};
+    use super::uapi;
+    use atomic_bitflags::atomic_bitflags;
 
-    bitflags! {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    atomic_bitflags! {
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
         pub struct OpenFlags: u32 {
         const ACCESS_MASK = 0x3;
 
@@ -59,4 +59,4 @@ mod inner_flags {
     }
 }
 
-pub use inner_flags::OpenFlags;
+pub use inner_flags::{AtomicOpenFlags, OpenFlags};
