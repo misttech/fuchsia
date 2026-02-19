@@ -244,27 +244,11 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.media/ActivityReporter.WatchCaptureActivity",
-        "strictness": "strict",
-        "ordinal": "8135475162810736936",
-        "direction": "two_way",
-        "response": "fuchsia.media/ActivityReporterWatchCaptureActivityResponse"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.media/ActivityReporter.WatchCaptureActivity2",
         "strictness": "flexible",
         "ordinal": "4400999813915202896",
         "direction": "two_way",
         "response": "fuchsia.media/ActivityReporter_WatchCaptureActivity2_Response"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.media/ActivityReporter.WatchRenderActivity",
-        "strictness": "strict",
-        "ordinal": "2987269693612175135",
-        "direction": "two_way",
-        "response": "fuchsia.media/ActivityReporterWatchRenderActivityResponse"
     },
     {
         "kind": "protocol/member",
@@ -279,26 +263,6 @@
         "name": "fuchsia.media/ActivityReporter",
         "openness": "open",
         "transport": "channel"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media/ActivityReporterWatchCaptureActivityResponse.active_usages",
-        "ordinal": "1",
-        "type": "vector<fuchsia.media/AudioCaptureUsage>:4"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.media/ActivityReporterWatchCaptureActivityResponse"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media/ActivityReporterWatchRenderActivityResponse.active_usages",
-        "ordinal": "1",
-        "type": "vector<fuchsia.media/AudioRenderUsage>:5"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.media/ActivityReporterWatchRenderActivityResponse"
     },
     {
         "kind": "struct/member",
