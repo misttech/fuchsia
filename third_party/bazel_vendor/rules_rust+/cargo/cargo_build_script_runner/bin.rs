@@ -232,6 +232,17 @@ fn run_buildrs() -> Result<(), String> {
             .drain_runfiles_dir(&out_dir_abs)
             .unwrap();
     }
+
+    // Ensure the output directory is not empty.
+    // Workaround for https://github.com/bazelbuild/bazel/issues/28286
+    write(out_dir_abs.join(".rules_rust_empty"), "")
+        .unwrap_or_else(|e| {
+            panic!(
+                "Unable to create .rules_rust_empty file in {:?}: {}",
+                out_dir_abs, e
+            )
+        });
+
     Ok(())
 }
 

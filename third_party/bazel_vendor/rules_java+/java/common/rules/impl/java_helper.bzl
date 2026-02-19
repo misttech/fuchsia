@@ -20,7 +20,7 @@ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_helper.bzl", "cc_helper")
 load("//java/common:java_semantics.bzl", "semantics")
 
-# copybara: default visibility
+# copybara: rules_java visibility
 
 def _collect_all_targets_as_deps(ctx, classpath_type = "all"):
     deps = []
@@ -366,6 +366,7 @@ def _create_single_jar(
         tools = [toolchain.single_jar],
         outputs = [output],
         arguments = [args],
+        use_default_shell_env = True,
     )
     return output
 

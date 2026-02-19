@@ -35,7 +35,7 @@ def _collect_jars(ctx, jars):
     for info in jars:
         if JavaInfo in info:
             fail("'jars' attribute cannot contain labels of Java targets")
-        for jar in info.files.to_list():
+        for jar in info[DefaultInfo].files.to_list():
             jar_path = jar.dirname + jar.basename
             if jars_dict.get(jar_path) != None:
                 fail("in jars attribute of java_import rule //" + ctx.label.package + ":" + ctx.attr.name + ": " + jar.basename + " is a duplicate")
@@ -71,12 +71,8 @@ def _check_export_error(ctx, exports):
         fail("java_import.exports is no longer supported; use java_import.deps instead")
 
 def _check_empty_jars_error(ctx, jars):
-    # TODO(kotlaja): Remove temporary incompatible flag [disallow_java_import_empty_jars] once migration is done.
-    not_in_allowlist = hasattr(ctx.attr, "_allowlist_java_import_empty_jars") and not getattr(ctx.attr, "_allowlist_java_import_empty_jars")[PackageSpecificationInfo].contains(ctx.label)
-    disallow_java_import_empty_jars = ctx.fragments.java.disallow_java_import_empty_jars()
-
-    if len(jars) == 0 and disallow_java_import_empty_jars and not_in_allowlist:
-        fail("empty java_import.jars is no longer supported " + ctx.label.package)
+    if len(jars) == 0:
+        fail("empty java_import.jars is not supported " + ctx.label.package)
 
 def _create_java_info_with_dummy_output_file(ctx, srcjar, all_deps, exports, runtime_deps_list, neverlink, cc_info_list, add_exports, add_opens):
     dummy_jar = ctx.actions.declare_file(ctx.label.name + "_dummy.jar")
@@ -183,7 +179,7 @@ def bazel_java_import_rule(
     # TODO(kotlaja): Revise if collected_runtimes can be added into construct_defaultinfo directly.
     collected_runtimes = []
     for runtime_dep in ctx.attr.runtime_deps:
-        collected_runtimes.extend(runtime_dep.files.to_list())
+        collected_runtimes.extend(runtime_dep[DefaultInfo].files.to_list())
 
     target["DefaultInfo"] = construct_defaultinfo(
         ctx,

@@ -1,6 +1,9 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
-package(default_visibility = ["//visibility:public"])
+package(
+    default_applicable_licenses = ["@rules_java//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 licenses(["notice"])
 
@@ -85,7 +88,7 @@ filegroup(
         "//java/common:for_bazel_tests",
         "//java/private:for_bazel_tests",
         "//java/toolchains:for_bazel_tests",
-        "@bazel_skylib//lib:test_deps",
+        "@bazel_skylib//:test_deps",
     ],
     visibility = ["//visibility:public"],
 )

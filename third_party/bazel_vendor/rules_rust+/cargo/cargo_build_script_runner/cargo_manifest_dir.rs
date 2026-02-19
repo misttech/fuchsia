@@ -312,6 +312,16 @@ impl RunfilesMaker {
             self.drain_runfiles_dir_unix()?;
         }
 
+        // Ensure the output directory is not empty.
+        // Workaround for https://github.com/bazelbuild/bazel/issues/28286
+        std::fs::write(self.output_dir.join(".rules_rust_empty"), "").map_err(|e| {
+            format!(
+                "Failed to create .rules_rust_empty in {}: {:?}",
+                self.output_dir.display(),
+                e
+            )
+        })?;
+
         // Due to the symlinks in `CARGO_MANIFEST_DIR`, some build scripts
         // may have placed symlinks over real files in `OUT_DIR`. To counter
         // this, all non-relative symlinks are resolved.

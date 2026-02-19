@@ -343,19 +343,25 @@ class BazelRepositoryMap(object):
             "bazel_tools+remote_coverage_tools_extension+remote_coverage_tools": _bazel_vendor_dir
             / "bazel_tools+remote_coverage_tools_extension+remote_coverage_tools",
             "bazel_skylib": _bazel_vendor_dir / "bazel_skylib+",
+            "bazel_features+": _bazel_vendor_dir / "bazel_features+",
             "rules_python": _bazel_vendor_dir / "rules_python+",
             "platforms": _bazel_vendor_dir / "platforms",
             "com_google_googletest": fuchsia_source_dir
             / "third_party/googletest/src",
+            "com_google_protobuf": fuchsia_source_dir / "third_party/protobuf",
             "rules_fuchsia": fuchsia_source_dir
             / "build/bazel_sdk/bazel_rules_fuchsia",
+            "zlib": fuchsia_source_dir / "third_party/zlib",
             "prebuilt_python": self.IGNORED_REPO,
             "fuchsia_clang": self.IGNORED_REPO,
+            "bazel_features++version_extension+bazel_features_globals": self.IGNORED_REPO,
+            "bazel_features++version_extension+bazel_features_version": self.IGNORED_REPO,
             "bazel_tools": self.IGNORED_REPO,
             "bazel_tools+cc_configure_extension+local_config_cc": self.IGNORED_REPO,
             "platforms+host_platform+host_platform": self.IGNORED_REPO,
             "rules_python++internal_deps+rules_python_internal": self.IGNORED_REPO,
             "rules_python++python+pythons_hub": self.IGNORED_REPO,
+            "rules_shell+": self.IGNORED_REPO,
         }
 
         if not explicit_fuchsia_sdk:

@@ -135,6 +135,7 @@ def _bootclasspath_impl(ctx):
         arguments = [args],
         env = env,
         execution_requirements = _SUPPORTS_PATH_MAPPING,
+        use_default_shell_env = True,
     )
 
     bootclasspath = ctx.outputs.output_jar
@@ -164,10 +165,12 @@ def _bootclasspath_impl(ctx):
             tool_prefix = "tool_" if is_exec else ""
             fail("""
 No Java runtime found to extract the bootclasspath from for --{tool_prefix}java_language_version={language_version} and --{tool_prefix}java_runtime_version={runtime_version}.
-You can:
+The bootclasspath provides the particular version of the Java standard library to compile against.
+You can do one of the following:
 
-    * register a Java runtime with name "{bootstrap_runtime_version}" to provide the bootclasspath or
-    * set --java_language_version to the Java version of an available runtime.
+    * register a Java runtime with name "{bootstrap_runtime_version}" to provide the bootclasspath
+    * set --java_language_version=N for an available runtime "{runtime_version}_N"
+    * remove the suffix from your runtime's name to use it as the bootclasspath
 
 Rerun with --toolchain_resolution_debug='@bazel_tools//tools/jdk:bootstrap_runtime_toolchain_type' to see more details about toolchain resolution.
 """.format(
@@ -202,6 +205,7 @@ Rerun with --toolchain_resolution_debug='@bazel_tools//tools/jdk:bootstrap_runti
         arguments = [args],
         env = env,
         execution_requirements = _SUPPORTS_PATH_MAPPING,
+        use_default_shell_env = True,
     )
     return [
         DefaultInfo(files = depset([bootclasspath])),

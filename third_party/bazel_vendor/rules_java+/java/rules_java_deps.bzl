@@ -156,6 +156,69 @@ def bazel_skylib_repo():
         ],
     )
 
+def platforms_repo():
+    maybe(
+        http_archive,
+        name = "platforms",
+        sha256 = "29742e87275809b5e598dc2f04d86960cc7a55b3067d97221c9abbc9926bff0f",
+        urls = ["https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz"],
+    )
+
+def zlib_repo():
+    maybe(
+        http_archive,
+        name = "zlib",
+        sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+        urls = ["https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"],
+        strip_prefix = "zlib-1.3.1",
+        build_file_content = """
+cc_library(
+    name = "zlib",
+    srcs = glob(["*.c"]),
+    hdrs = glob(["*.h"]),
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-Wno-deprecated-non-prototype",
+            "-Wno-unused-variable",
+            "-Wno-implicit-function-declaration",
+        ],
+    }),
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
+            """,
+    )
+
+def absl_repo():
+    maybe(
+        http_archive,
+        name = "com_google_absl",
+        sha256 = "f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3",
+        strip_prefix = "abseil-cpp-20240722.0",
+        urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.0.tar.gz"],
+    )
+
+def rules_license_repo():
+    maybe(
+        http_archive,
+        name = "rules_license",
+        sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
+            "https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
+        ],
+    )
+
+def bazel_features_repo():
+    maybe(
+        http_archive,
+        name = "bazel_features",
+        sha256 = "a660027f5a87f13224ab54b8dc6e191693c554f2692fcca46e8e29ee7dabc43b",
+        strip_prefix = "bazel_features-1.30.0",
+        url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.30.0/bazel_features-v1.30.0.tar.gz",
+    )
+
 def rules_java_dependencies():
     """An utility method to load non-toolchain dependencies of rules_java.
 
@@ -165,3 +228,8 @@ def rules_java_dependencies():
     bazel_skylib_repo()
     rules_cc_repo()
     protobuf_repo()
+    platforms_repo()
+    zlib_repo()
+    absl_repo()
+    rules_license_repo()
+    bazel_features_repo()

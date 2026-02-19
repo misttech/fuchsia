@@ -22,7 +22,15 @@ bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "rules_go", version = "0.54.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "1.4.0")
+
+# @rules_rust needs to be patched to work-around bazelbuild/issues/28286
 bazel_dep(name = "rules_rust", version = "0.64.0")
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 4,
+    patches = ["//build/bazel:vendor_patches/rules_rust-0.64.0/0001-rules_rust-workaround-bazelbuild-issues-28286.patch"],
+)
+
 bazel_dep(name = "protobuf", version = "", repo_name = "com_google_protobuf")
 local_path_override(
     module_name = "protobuf",

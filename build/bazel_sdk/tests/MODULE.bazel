@@ -14,7 +14,14 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "1.4.0")
+bazel_dep(name = "zlib", version = "")
 bazel_dep(name = "protobuf", version = "", repo_name = "com_google_protobuf")
+
+local_path_override(
+    module_name = "zlib",
+    path = "{}/third_party/zlib".format(_FUCHSIA_SOURCE_ROOT),
+)
+
 local_path_override(
     module_name = "protobuf",
     path = "{}/third_party/protobuf".format(_FUCHSIA_SOURCE_ROOT),
