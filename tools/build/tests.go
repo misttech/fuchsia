@@ -165,6 +165,21 @@ func (ds DimensionSet) Pool() string {
 	return ds["pool"]
 }
 
+// IsSubset returns whether the dimensions of `ds` are a subset of the
+// dimensions of `other`, i.e. whether a test with dimensions `ds` can run on a
+// platform represented by `other`.
+func (ds DimensionSet) IsSubset(other DimensionSet) bool {
+	for k, v := range ds {
+		if v == "" {
+			continue
+		}
+		if v != other[k] {
+			return false
+		}
+	}
+	return true
+}
+
 // AccelMode is a supported mode to pass to `ffx emu start --accel`.
 type AccelMode string
 

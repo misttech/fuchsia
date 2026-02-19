@@ -5,68 +5,53 @@
 package testsharder
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
+	"slices"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 )
 
 // ValidateTests validates a list of test specs against a list of available test platforms.
-func ValidateTests(specs []build.TestSpec, platforms []build.DimensionSet) error {
-	var errMsgs []string
+func ValidateTests(specs []build.TestSpec, supportedPlatforms []build.DimensionSet) error {
+	var errs []error
 	for _, spec := range specs {
-		if err := validateAgainst(spec, platforms); err != nil {
-			errMsgs = append(errMsgs, err.Error())
-		}
+		errs = append(errs, validateTest(spec, supportedPlatforms))
 	}
-	if len(errMsgs) > 0 {
-		return fmt.Errorf(strings.Join(errMsgs, "\n"))
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
-func validateAgainst(spec build.TestSpec, platforms []build.DimensionSet) error {
+func validateTest(spec build.TestSpec, supportedPlatforms []build.DimensionSet) error {
 	if spec.Test.Name == "" {
-		return fmt.Errorf("A test spec's test must have a non-empty name")
+		return fmt.Errorf("test spec has empty name: %+v", spec)
 	}
 	if spec.Test.Path == "" && spec.PackageURL == "" {
-		return fmt.Errorf("A test spec must have its path or package URL set")
+		return fmt.Errorf("test %q has no path or package URL set", spec.Test.Name)
 	}
 	if spec.Test.OS == "" {
-		return fmt.Errorf("A test spec's test must have a non-empty OS")
-	}
-
-	resolvesToOneOf := func(env build.Environment, platforms []build.DimensionSet) bool {
-		for _, platform := range platforms {
-			if resolvesTo(env.Dimensions, platform) {
-				return true
-			}
-		}
-		return false
+		return fmt.Errorf("test %q has no OS set", spec.Test.Name)
 	}
 
 	var badEnvs []build.Environment
 	for _, env := range spec.Envs {
-		if !resolvesToOneOf(env, platforms) {
+		// A test's environment is valid if its dimensions are a subset of the
+		// dimensions of one of the supported platforms.
+		if !slices.ContainsFunc(supportedPlatforms, env.Dimensions.IsSubset) {
 			badEnvs = append(badEnvs, env)
 		}
 	}
 	if len(badEnvs) > 0 {
+		var envsStr string
+		if b, err := json.Marshal(badEnvs); err == nil {
+			envsStr = string(b)
+		} else {
+			// json.Marshal should never fail, but add a fallback just in case.
+			envsStr = fmt.Sprintf("%+v", badEnvs)
+		}
 		return fmt.Errorf(
-			`the following environments of test\n%+v were malformed
-			or did not match any available test platforms:\n%+v`,
-			spec.Test, badEnvs)
+			"the following environments of test %q were malformed or did not match any available test platforms: %s",
+			spec.Test.Name, envsStr)
 	}
 	return nil
-}
-
-// resolvesTo gives a partial ordering on DimensionSets in which one resolves to
-// another if the former's dimensions are given the latter.
-func resolvesTo(this, that build.DimensionSet) bool {
-	for k, v := range this {
-		if v != "" && v != that[k] {
-			return false
-		}
-	}
-	return true
 }
