@@ -92,6 +92,10 @@ func TestFFXInstance(t *testing.T) {
 
 	assertRunsExpectedCmd(ffx.RunWithTarget(ctx, "random", "cmd", "with", "args"), stdout, "--target target random cmd with args")
 
+	assertRunsExpectedCmd(ffx.StartFFXMonitor(ctx, "8080", "log.json", "aggregations.json"), stdout, "monitor start --nodename target --port 8080 --no-usb --log-file log.json --aggregations-file aggregations.json")
+
+	assertRunsExpectedCmd(ffx.StartFFXMonitor(ctx, "8081", "", ""), stdout, "monitor start --nodename target --port 8081 --no-usb")
+
 	assertRunsExpectedCmd(ffx.Stop(), stdout, "daemon stop -t 4000")
 
 	fPrivKey := ffx.GetSshPrivateKey()

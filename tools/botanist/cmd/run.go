@@ -437,16 +437,28 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					port = constants.DefaultFFXMonitorPort
 				}
 
+				// Create a new context for the monitor so that it isn't cancelled when the
+				// errgroup context is cancelled. This ensures that we can gracefully stop
+				// the monitor and flush logs.
+				monitorCtx, cancelMonitor := context.WithCancel(botanist.GetLoggerCtx(ctx))
+
 				// Stop the ffx monitor when done
 				defer func() {
-					ctx, cancel := context.WithTimeout(botanist.GetLoggerCtx(ctx), time.Minute)
-					defer cancel()
-					if err := ffx.StopFFXMonitor(ctx); err != nil {
+					// Use a separate timeout context for stopping
+					stopCtx, cancelStop := context.WithTimeout(botanist.GetLoggerCtx(ctx), time.Minute)
+					defer cancelStop()
+					if err := ffx.StopFFXMonitor(stopCtx); err != nil {
 						logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
+					} else {
+						logger.Debugf(ctx, "ffx monitor stopped")
 					}
+					cancelMonitor()
 				}()
 				go func() {
-					if err := ffx.StartFFXMonitor(ctx, port); err != nil && !errors.Is(err, context.Canceled) {
+					logDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "out", "ffx_monitor")
+					logFile := filepath.Join(logDir, "device.status.json")
+					aggregationsFile := filepath.Join(logDir, "aggregation.freeform.json")
+					if err := ffx.StartFFXMonitor(monitorCtx, port, logFile, aggregationsFile); err != nil && !errors.Is(err, context.Canceled) {
 						logger.Errorf(ctx, "failed to start ffx monitor: %s", err)
 					} else {
 						logger.Debugf(ctx, "ffx monitor process finished")

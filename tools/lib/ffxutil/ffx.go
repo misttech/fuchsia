@@ -943,8 +943,15 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 }
 
 // StartFFXMonitor start an ffx monitor instance.
-func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port string) error {
-	return f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port, "--no-usb"}).setTimeout(0).setStrict().run(ctx)
+func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port, logFile, aggregationsFile string) error {
+	args := []string{"monitor", "start", "--nodename", f.target, "--port", port, "--no-usb"}
+	if logFile != "" {
+		args = append(args, "--log-file", logFile)
+	}
+	if aggregationsFile != "" {
+		args = append(args, "--aggregations-file", aggregationsFile)
+	}
+	return f.invoker(args).setTimeout(0).setStrict().run(ctx)
 }
 
 // StopFFXMonitor stops the ffx monitor.
