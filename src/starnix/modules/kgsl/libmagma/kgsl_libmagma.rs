@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use magma::{
-    MAGMA_STATUS_OK, magma_connection_create_context2, magma_connection_create_semaphore,
-    magma_connection_release, magma_connection_release_context, magma_connection_release_semaphore,
-    magma_connection_t, magma_device_create_connection, magma_device_import, magma_device_query,
-    magma_device_release, magma_device_t, magma_handle_t, magma_initialize_logging,
-    magma_priority_t, magma_query_t, magma_semaphore_id_t, magma_semaphore_reset,
-    magma_semaphore_signal, magma_semaphore_t, magma_status_t,
+    MAGMA_STATUS_OK, magma_buffer_id_t, magma_buffer_t, magma_connection_create_buffer,
+    magma_connection_create_context2, magma_connection_create_semaphore, magma_connection_release,
+    magma_connection_release_buffer, magma_connection_release_context,
+    magma_connection_release_semaphore, magma_connection_t, magma_device_create_connection,
+    magma_device_import, magma_device_query, magma_device_release, magma_device_t, magma_handle_t,
+    magma_initialize_logging, magma_priority_t, magma_query_t, magma_semaphore_id_t,
+    magma_semaphore_reset, magma_semaphore_signal, magma_semaphore_t, magma_status_t,
 };
 use starnix_logging::log_error;
 use std::panic::Location;
@@ -163,6 +164,32 @@ impl Connection {
             }),
         })
     }
+
+    pub fn create_buffer(&self, size: u64) -> Result<Buffer, magma_status_t> {
+        let mut size_out: u64 = 0;
+        let mut magma_buffer: magma_buffer_t = 0;
+        let mut magma_buffer_id: magma_buffer_id_t = 0;
+        // Safety: magma_connection_create_buffer borrows the connection handle and
+        // returns a buffer handle.
+        let result = unsafe {
+            magma_connection_create_buffer(
+                self.inner.magma_connection,
+                size,
+                &mut size_out,
+                &mut magma_buffer,
+                &mut magma_buffer_id,
+            )
+        };
+        magma_result(result).kgsl_log_error()?;
+        Ok(Buffer {
+            inner: Arc::new(BufferInternal {
+                connection: self.inner.clone(),
+                magma_buffer,
+                magma_buffer_id,
+                size: size_out,
+            }),
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -227,6 +254,39 @@ impl Drop for SemaphoreInternal {
                 self.connection.magma_connection,
                 self.magma_semaphore,
             )
+        };
+    }
+}
+
+#[derive(Debug)]
+pub struct Buffer {
+    inner: Arc<BufferInternal>,
+}
+
+impl Buffer {
+    pub fn id(&self) -> magma_buffer_id_t {
+        self.inner.magma_buffer_id
+    }
+
+    pub fn size(&self) -> u64 {
+        self.inner.size
+    }
+}
+
+#[derive(Debug)]
+struct BufferInternal {
+    connection: Arc<ConnectionInternal>,
+    magma_buffer: magma_buffer_t,
+    magma_buffer_id: magma_buffer_id_t,
+    size: u64,
+}
+
+impl Drop for BufferInternal {
+    fn drop(&mut self) {
+        // Safety: magma_connection_release_buffer borrows the connection handle and
+        // takes ownership of the buffer handle.
+        unsafe {
+            magma_connection_release_buffer(self.connection.magma_connection, self.magma_buffer)
         };
     }
 }

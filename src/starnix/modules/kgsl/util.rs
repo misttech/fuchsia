@@ -139,6 +139,10 @@ pub mod maur {
         kgsl_qdss_stm_prop,
         kgsl_qtimer_prop,
         kgsl_syncsource_create,
-        kgsl_syncsource_destroy
+        kgsl_syncsource_destroy,
+        kgsl_gpuobj_alloc,
+        kgsl_gpuobj_free,
+        kgsl_gpuobj_info,
+        kgsl_shadowprop
     );
 }

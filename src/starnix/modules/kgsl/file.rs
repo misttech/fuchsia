@@ -4,8 +4,9 @@
 
 use crate::util::maur::{self, TaskWritable};
 use fdio::service_connect;
-use kgsl_libmagma::{Connection, Device, QueryOutput, Semaphore, initialize_logging};
+use kgsl_libmagma::{Buffer, Connection, Device, QueryOutput, Semaphore, initialize_logging};
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
+use kgsl_range_allocator::Allocator;
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
 use starnix_core::mm::MemoryAccessorExt;
@@ -21,6 +22,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error, uapi};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -38,6 +40,9 @@ macro_rules! kgsl_debug {
     ($($arg:tt)*) => {};
 }
 
+// TODO(b/393160668): this should be PAGE_SIZE of the container
+const BUFFER_ALIGNMENT: u64 = 4096;
+
 pub struct KgslFile {
     // This member will be read in a future change. A linter attribute is used
     // instead of an underscore prefix so that field init shorthand still works.
@@ -48,6 +53,23 @@ pub struct KgslFile {
     // TODO(b/481419355): transition to id-map container once available
     syncsources: Mutex<HashMap<u32, Semaphore>>,
     next_syncsource_id: AtomicU32,
+    // TODO(b/481419355): transition to id-map container once available
+    gpuobjs: Mutex<HashMap<u32, GpuObject>>,
+    next_gpuobj_id: AtomicU32,
+    allocator: Mutex<Allocator>,
+    #[expect(dead_code)]
+    shadow: GpuObject,
+    shadow_properties: uapi::kgsl_shadowprop,
+}
+
+struct GpuObject {
+    #[expect(dead_code)]
+    buffer: Buffer,
+    flags: u64,
+    size: u64,
+    #[expect(dead_code)]
+    mmapsize: u64,
+    gpuaddr: u64,
 }
 
 impl KgslFile {
@@ -109,16 +131,53 @@ impl KgslFile {
         else {
             return Err(errno!(ENXIO));
         };
+
         let adreno_kgsl_params = adreno_kgsl_params_vmo
             .read_to_object::<AdrenoKgslParams>(0)
             .map_err(|_| errno!(ENXIO))?;
+
         let connection = device.create_connection().map_err(|_| errno!(ENXIO))?;
+
+        let mut allocator = Allocator::create(0, adreno_kgsl_params.gpu_va64_size);
+
+        // Reserve GPU secure VA space.
+        allocator
+            .allocate(
+                adreno_kgsl_params.gpu_secure_va_size,
+                adreno_kgsl_params.secure_buf_alignment as u64,
+            )
+            .ok_or_else(|| errno!(ENOMEM))?;
+
+        // Shadow buffer must immediately follow the secure VA space.
+        let shadow_size = adreno_kgsl_params.device_shadow_size;
+        let shadow_buffer = connection.create_buffer(shadow_size).map_err(|_| errno!(ENOMEM))?;
+        let shadow_gpuaddr =
+            allocator.allocate(shadow_size, BUFFER_ALIGNMENT).ok_or_else(|| errno!(ENOMEM))?;
+        let shadow = GpuObject {
+            buffer: shadow_buffer,
+            flags: adreno_kgsl_params.device_shadow_flags.into(),
+            size: shadow_size,
+            mmapsize: shadow_size,
+            gpuaddr: shadow_gpuaddr,
+        };
+        let shadow_properties = uapi::kgsl_shadowprop {
+            gpuaddr: shadow_gpuaddr.try_into().map_err(|_| errno!(ENXIO))?,
+            size: shadow_size.try_into().map_err(|_| errno!(ENXIO))?,
+            flags: adreno_kgsl_params.device_shadow_flags,
+            ..Default::default()
+        };
+
         Ok(Box::new(Self {
             device,
             connection,
             adreno_kgsl_params,
             syncsources: Mutex::new(HashMap::new()),
             next_syncsource_id: AtomicU32::new(1),
+            gpuobjs: Mutex::new(HashMap::new()),
+            next_gpuobj_id: AtomicU32::new(1),
+            allocator: Mutex::new(allocator),
+            shadow,
+            shadow_properties,
         }))
     }
 
@@ -146,6 +205,11 @@ impl KgslFile {
                     ..Default::default()
                 };
                 kgsl_debug!("KGSL_PROP_DEVICE_INFO: {:?}", prop_value);
+                prop_value.write(&current_task, params.value)
+            }
+            uapi::KGSL_PROP_DEVICE_SHADOW => {
+                let prop_value = self.shadow_properties;
+                kgsl_debug!("KGSL_PROP_DEVICE_SHADOW: {:?}", prop_value);
                 prop_value.write(&current_task, params.value)
             }
             uapi::KGSL_PROP_UCHE_GMEM_VADDR => {
@@ -267,6 +331,82 @@ impl KgslFile {
         }
     }
 
+    fn kgsl_gpuobj_alloc(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_gpuobj_alloc::new(current_task, arg);
+        let mut params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_gpuobj_alloc {:?}", params);
+
+        let buffer = self.connection.create_buffer(params.size).map_err(|_| errno!(ENOMEM))?;
+        let size = buffer.size();
+
+        let gpuaddr =
+            self.allocator.lock().allocate(size, BUFFER_ALIGNMENT).ok_or_else(|| errno!(ENOMEM))?;
+
+        let id = self.next_gpuobj_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            log_error!("kgsl: gpuobj ids exhausted");
+            return error!(ENOMEM);
+        }
+
+        let gpuobj = GpuObject { buffer, flags: params.flags, size, mmapsize: size, gpuaddr };
+
+        self.gpuobjs.lock().insert(id, gpuobj);
+
+        params.size = size;
+        params.mmapsize = size;
+        params.id = id;
+
+        current_task.write_multi_arch_object(params_ref, params)?;
+        Ok(SUCCESS)
+    }
+
+    fn kgsl_gpuobj_free(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_gpuobj_free::new(current_task, arg);
+        let params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_gpuobj_free {:?}", params);
+
+        if let Entry::Occupied(entry) = self.gpuobjs.lock().entry(params.id) {
+            self.allocator
+                .lock()
+                .free(entry.get().gpuaddr, entry.get().size)
+                .map_err(|_| errno!(ENXIO))?;
+            entry.remove();
+            Ok(SUCCESS)
+        } else {
+            error!(EINVAL)
+        }
+    }
+
+    fn kgsl_gpuobj_info(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_gpuobj_info::new(current_task, arg);
+        let mut params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_gpuobj_info {:?}", params);
+
+        let gpuobjs = self.gpuobjs.lock();
+        let gpuobj = gpuobjs.get(&params.id).ok_or_else(|| errno!(EINVAL))?;
+
+        params.gpuaddr = gpuobj.gpuaddr;
+        params.size = gpuobj.size;
+        params.flags = gpuobj.flags;
+        params.va_len = gpuobj.size;
+        params.va_addr = 0;
+
+        current_task.write_multi_arch_object(params_ref, params)?;
+        Ok(SUCCESS)
+    }
+
     fn kgsl_syncsource_create(
         &self,
         current_task: &CurrentTask,
@@ -338,6 +478,9 @@ impl FileOps for KgslFile {
         }
         match crate::util::canonicalize_ioctl_request(current_task, request) {
             uapi::IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
+            uapi::IOCTL_KGSL_GPUOBJ_ALLOC => self.kgsl_gpuobj_alloc(current_task, arg),
+            uapi::IOCTL_KGSL_GPUOBJ_FREE => self.kgsl_gpuobj_free(current_task, arg),
+            uapi::IOCTL_KGSL_GPUOBJ_INFO => self.kgsl_gpuobj_info(current_task, arg),
             uapi::IOCTL_KGSL_SYNCSOURCE_CREATE => self.kgsl_syncsource_create(current_task, arg),
             uapi::IOCTL_KGSL_SYNCSOURCE_DESTROY => self.kgsl_syncsource_destroy(current_task, arg),
             _ => {
