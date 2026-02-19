@@ -1337,3 +1337,119 @@ impl BytesFileOps for RmemMaxFile {
         Ok(format!("{}\n", max).into_bytes().into())
     }
 }
+
+pub struct WmemMaxFile;
+
+impl WmemMaxFile {
+    pub fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self)
+    }
+}
+
+impl BytesFileOps for WmemMaxFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let max = std::str::from_utf8(&data)
+            .map_err(|_| errno!(EINVAL))?
+            .trim_ascii()
+            .parse::<u32>()
+            .map_err(|_| errno!(EINVAL))?;
+
+        let control =
+            connect_to_protocol_sync::<fnet_settings::ControlMarker>().map_err(|err| {
+                log_error!(
+                    "failed to connect to {}: {:?}",
+                    fnet_settings::ControlMarker::PROTOCOL_NAME,
+                    err
+                );
+                errno!(EIO)
+            })?;
+
+        let tcp_settings = fnet_settings::Tcp {
+            buffer_sizes: Some(fnet_settings::SocketBufferSizes {
+                send: Some(fnet_settings::SocketBufferSizeRange {
+                    max: Some(max),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        control
+            .update_tcp(&tcp_settings, zx::MonotonicInstant::INFINITE)
+            .map_err(|err| {
+                log_error!("failed to update tcp settings: {:?}", err);
+                errno!(EIO)
+            })?
+            .map_err(map_update_error)?;
+
+        let udp_settings = fnet_settings::Udp {
+            buffer_sizes: Some(fnet_settings::SocketBufferSizes {
+                send: Some(fnet_settings::SocketBufferSizeRange {
+                    max: Some(max),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        control
+            .update_udp(&udp_settings, zx::MonotonicInstant::INFINITE)
+            .map_err(|err| {
+                log_error!("failed to update udp settings: {:?}", err);
+                errno!(EIO)
+            })?
+            .map_err(map_update_error)?;
+
+        let icmp_settings = fnet_settings::Icmp {
+            echo_buffer_sizes: Some(fnet_settings::SocketBufferSizes {
+                send: Some(fnet_settings::SocketBufferSizeRange {
+                    max: Some(max),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        control
+            .update_icmp(&icmp_settings, zx::MonotonicInstant::INFINITE)
+            .map_err(|err| {
+                log_error!("failed to update icmp settings: {:?}", err);
+                errno!(EIO)
+            })?
+            .map_err(map_update_error)?;
+
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let state = connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
+            log_error!(
+                "failed to connect to {}: {:?}",
+                fnet_settings::StateMarker::PROTOCOL_NAME,
+                err
+            );
+            errno!(EIO)
+        })?;
+
+        // Note: The three max values may have changed and not agree with each other.
+        // Currently this is good enough to only get one of the max values.
+        let tcp_settings = state.get_tcp(zx::MonotonicInstant::INFINITE).map_err(|err| {
+            log_error!("failed to get tcp settings: {:?}", err);
+            errno!(EIO)
+        })?;
+
+        let max = tcp_settings
+            .buffer_sizes
+            .and_then(|sizes| sizes.send)
+            .and_then(|sizes| sizes.max)
+            .ok_or_else(|| {
+                log_error!("tcp settings missing send buffer sizes");
+                errno!(EIO)
+            })?;
+
+        Ok(format!("{}\n", max).into_bytes().into())
+    }
+}
