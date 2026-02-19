@@ -45,6 +45,8 @@ pub use socket::{Socket, SocketDisposition, SocketReadStream, SocketWriter};
 
 // Unsupported handle types.
 #[rustfmt::skip]
+pub use Handle as Clock;
+#[rustfmt::skip]
 pub use Handle as Fifo;
 #[rustfmt::skip]
 pub use Handle as Job;
