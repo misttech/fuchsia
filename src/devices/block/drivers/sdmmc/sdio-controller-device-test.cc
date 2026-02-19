@@ -638,6 +638,21 @@ TEST_F(SdioControllerDeviceTest, InterruptNotSupported) {
   // SDMMC driver returned an error. Verify that the SDIO driver can still shut down cleanly.
 }
 
+TEST_F(SdioControllerDeviceTest, IoNotReadyOnFirstCmd5) {
+  uint32_t count = 0;
+  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&count](uint32_t out_response[4]) mutable {
+    out_response[0] = (5 << SDIO_SEND_OP_COND_RESP_NUM_FUNC_LOC) | SDIO_SEND_OP_COND_IO_OCR_33V;
+    if (count++ > 1) {
+      // Set IORDY after the second cmd5.
+      out_response[0] |= SDIO_SEND_OP_COND_RESP_IORDY;
+    }
+  });
+
+  ASSERT_OK(StartDriver());
+
+  EXPECT_EQ(sdmmc_.command_counts().at(SDIO_SEND_OP_COND), 3u);
+}
+
 TEST_F(SdioControllerDeviceTest, SdioDoRwTxn) {
   // Report five IO functions.
   sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [](uint32_t out_response[4]) -> void {
@@ -2375,10 +2390,13 @@ TEST_F(SdioControllerDeviceTest, GetToken) {
 
 TEST_F(SdioControllerDeviceTest, PowerOnProbesDevice) {
   uint32_t probe_count = 0;
-  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&probe_count](uint32_t out_response[4]) -> void {
-    out_response[0] = OpCondFunctions(3) | SDIO_SEND_OP_COND_RESP_S18A;
-    probe_count++;
-  });
+  sdmmc_.set_command_callback(
+      SDIO_SEND_OP_COND, [&probe_count](const sdmmc_req_t& req, uint32_t out_response[4]) -> void {
+        out_response[0] = OpCondFunctions(3) | SDIO_SEND_OP_COND_RESP_S18A;
+        if (req.arg != 0) {
+          probe_count++;
+        }
+      });
   sdmmc_.set_host_info({
       .caps = SDMMC_HOST_CAP_VOLTAGE_330,
       .max_transfer_size = 0x1000,
@@ -2632,10 +2650,13 @@ TEST_F(SdioControllerDeviceTest, Function0AccessesSucceedWhenFunctionPoweredOff)
 
 TEST_F(SdioControllerDeviceTest, NoProbeAfterControllerOffToOn) {
   uint32_t probe_count = 0;
-  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&probe_count](uint32_t out_response[4]) -> void {
-    out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
-    probe_count++;
-  });
+  sdmmc_.set_command_callback(
+      SDIO_SEND_OP_COND, [&probe_count](const sdmmc_req_t& req, uint32_t out_response[4]) -> void {
+        out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
+        if (req.arg != 0) {
+          probe_count++;
+        }
+      });
   sdmmc_.set_host_info({
       .caps = SDMMC_HOST_CAP_VOLTAGE_330,
       .max_transfer_size = 0x1000,
@@ -2692,10 +2713,13 @@ TEST_F(SdioControllerDeviceTest, NoProbeAfterControllerOffToOn) {
 
 TEST_F(SdioControllerDeviceTest, ProbeAfterControllerOffToOn) {
   uint32_t probe_count = 0;
-  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [&probe_count](uint32_t out_response[4]) -> void {
-    out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
-    probe_count++;
-  });
+  sdmmc_.set_command_callback(
+      SDIO_SEND_OP_COND, [&probe_count](const sdmmc_req_t& req, uint32_t out_response[4]) -> void {
+        out_response[0] = OpCondFunctions(2) | SDIO_SEND_OP_COND_RESP_S18A;
+        if (req.arg != 0) {
+          probe_count++;
+        }
+      });
   sdmmc_.set_host_info({
       .caps = SDMMC_HOST_CAP_VOLTAGE_330,
       .max_transfer_size = 0x1000,

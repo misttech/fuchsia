@@ -95,13 +95,25 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
     return st;
   }
   // Select voltage 3.3 V. Also request for 1.8V. Section 3.2 SDIO spec
-  if (ocr & SDIO_SEND_OP_COND_IO_OCR_33V) {
-    uint32_t new_ocr = SDIO_SEND_OP_COND_IO_OCR_33V | SDIO_SEND_OP_COND_CMD_S18R;
-    if ((st = sdmmc_->SdioSendOpCond(new_ocr, &ocr)) != ZX_OK) {
+  constexpr uint32_t kOcr33vS18r = SDIO_SEND_OP_COND_IO_OCR_33V | SDIO_SEND_OP_COND_CMD_S18R;
+  if ((st = sdmmc_->SdioSendOpCond(kOcr33vS18r, &ocr)) != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "SDIO_SEND_OP_COND failed, retcode = %d", st);
+    return st;
+  }
+
+  const zx::time deadline = zx::deadline_after(zx::sec(1));
+  while (!(ocr & SDIO_SEND_OP_COND_RESP_IORDY)) {
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    if ((st = sdmmc_->SdioSendOpCond(kOcr33vS18r, &ocr)) != ZX_OK) {
       FDF_LOGL(ERROR, logger(), "SDIO_SEND_OP_COND failed, retcode = %d", st);
       return st;
     }
+
+    if (zx::clock::get_monotonic() >= deadline) {
+      break;
+    }
   }
+
   if (ocr & SDIO_SEND_OP_COND_RESP_MEM_PRESENT) {
     // Combo cards not supported
     FDF_LOGL(ERROR, logger(), "Combo card not supported");
