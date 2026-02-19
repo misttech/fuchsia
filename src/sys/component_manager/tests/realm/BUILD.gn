@@ -104,7 +104,13 @@ ctf_or_integration_test("realm_integration_tests-ctf") {
 
 group("tests") {
   testonly = true
-  deps = [ ":realm_integration_tests" ]
+  deps = []
+
+  # TODO(https://fxbug.dev/485919246): Flaky test disabled on coverage.
+  # Please fix the flake and remove the condition below.
+  if (!is_coverage) {
+    deps += [ ":realm_integration_tests" ]
+  }
 }
 
 group("ctf-tests") {
