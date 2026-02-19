@@ -513,20 +513,20 @@
     <!-- Packages in /infra/tools/ -->
     <package name="infra/tools/bb/${platform}"
              path="prebuilt/tools/buildbucket"
-             version="git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c"
+             version="git_revision:5bb955fb5846e7b36003510eef867a615122df80"
              platforms="linux-amd64,linux-arm64"/>
     <package name="infra/tools/luci/gsutil/${platform}"
              path="prebuilt/tools/gsutil"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c"/>
+             version="git_revision:5bb955fb5846e7b36003510eef867a615122df80"/>
     <package name="infra/tools/luci/logdog/logdog/${platform}"
              path="prebuilt/tools/logdog"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c"/>
+             version="git_revision:5bb955fb5846e7b36003510eef867a615122df80"/>
     <package name="infra/tools/luci/cas/${platform}"
              path="prebuilt/tools/cas"
              platforms="linux-amd64,linux-arm64"
-             version="git_revision:d29aedef008537a54ca177ec0a7933a2f06aa90c"/>
+             version="git_revision:5bb955fb5846e7b36003510eef867a615122df80"/>
 
     <!-- Packages in /fuchsia/infra -->
     <package name="fuchsia/infra/artifacts/${platform}"
