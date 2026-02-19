@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 /// A node in the atomic stack.
 struct Node<T: Send + Sync> {
     /// The next node in the stack.
-    next: AtomicPtr<Node<T>>,
+    next: *mut Node<T>,
 
     /// The data in the node.
     data: T,
@@ -37,13 +37,13 @@ impl<T: Send + Sync> AtomicStack<T> {
 
     /// Push an element onto the front of the stack.
     pub(crate) fn push_front(&self, data: T) {
-        let node = Box::new(Node { next: AtomicPtr::new(ptr::null_mut()), data });
+        let node = Box::new(Node { next: ptr::null_mut(), data });
         let node_ptr = Box::into_raw(node);
-        // SAFETY: The node pointer is valid for reads until we drop the node.
-        let node = unsafe { &*node_ptr };
+        // SAFETY: The node pointer is valid for mutable access until we drop the node.
+        let node = unsafe { &mut *node_ptr };
         loop {
             let head = self.head.load(Ordering::Acquire);
-            node.next.store(head, Ordering::Release);
+            node.next = head;
             if self
                 .head
                 .compare_exchange(head, node_ptr, Ordering::AcqRel, Ordering::Relaxed)
@@ -73,7 +73,7 @@ impl<T: Send + Sync> AtomicStack<T> {
     /// Takes the contents of the stack and returns them as an iterator.
     ///
     /// This function empties the stack.
-    fn take(&self) -> AtomicListIterator<T> {
+    pub fn take(&self) -> AtomicListIterator<T> {
         let head = self.take_head();
         AtomicListIterator { head }
     }
@@ -81,6 +81,7 @@ impl<T: Send + Sync> AtomicStack<T> {
     /// Takes the contents of the stack and returns them as a vector.
     ///
     /// This function empties the stack.
+    #[cfg(test)]
     pub(crate) fn drain(&self) -> Vec<T> {
         self.take().collect()
     }
@@ -94,10 +95,20 @@ impl<T: Send + Sync> Drop for AtomicStack<T> {
     }
 }
 
-struct AtomicListIterator<T: Send + Sync> {
+pub struct AtomicListIterator<T: Send + Sync> {
     // This pointer is the owning reference to the node.
     head: *mut Node<T>,
 }
+
+impl<T: Send + Sync> AtomicListIterator<T> {
+    /// Returns an empty iterator.
+    pub const fn empty() -> Self {
+        Self { head: std::ptr::null_mut() }
+    }
+}
+
+// SAFETY: AtomicListIterator can be moved between threads so long as T can.
+unsafe impl<T: Send + Sync> Send for AtomicListIterator<T> {}
 
 impl<T: Send + Sync> Iterator for AtomicListIterator<T> {
     type Item = T;
@@ -109,7 +120,7 @@ impl<T: Send + Sync> Iterator for AtomicListIterator<T> {
             // reference to the node. `T` is also Send + Sync, so we can access the object from
             // whatever thread we are currently on.
             let node = unsafe { Box::from_raw(self.head) };
-            self.head = node.next.load(Ordering::Acquire);
+            self.head = node.next;
             Some(node.data)
         }
     }

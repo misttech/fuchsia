@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::atomic_stack::AtomicStack;
+use crate::atomic_stack::{AtomicListIterator, AtomicStack};
 use fuchsia_sync::Mutex;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering, fence};
@@ -12,51 +12,6 @@ use std::thread_local;
 use crate::read_counters::RcuReadCounters;
 
 type RcuCallback = Box<dyn FnOnce() + Send + Sync + 'static>;
-
-/// The length of the queue of waiting callbacks.
-///
-/// The state machine waits for this many generations to complete before running these callbacks.
-const QUEUE_LENGTH: usize = 2;
-
-/// The queue of waiting callbacks.
-///
-/// The queue is a ring buffer of sets of callbacks of length `QUEUE_LENGTH`.
-struct CallbackQueue {
-    /// The callbacks that are waiting to be run.
-    ///
-    /// The callbacks are stored in a ring buffer.
-    callbacks: [Vec<RcuCallback>; QUEUE_LENGTH],
-}
-
-impl CallbackQueue {
-    /// Create an empty callback queue.
-    const fn new() -> Self {
-        Self { callbacks: [Vec::new(), Vec::new()] }
-    }
-
-    /// Add a set of callbacks to the queue for the given generation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the slot for the given generation is already occupied.
-    fn enqueue(&mut self, generation: usize, callbacks: Vec<RcuCallback>) {
-        let index = generation % QUEUE_LENGTH;
-        assert!(
-            self.callbacks[index].is_empty(),
-            "Queue slot for generation {} is already occupied",
-            generation
-        );
-        self.callbacks[index] = callbacks;
-    }
-
-    /// Pops the set of callbacks that are ready to be run after the given generation completes.
-    fn take_ready(&mut self, generation: usize) -> Vec<RcuCallback> {
-        // We take the callbacks that have reached the end of the queue, which is the same as the
-        // slot in the queue that the next generation will occupy.
-        let index = (generation + 1) % QUEUE_LENGTH;
-        std::mem::take(&mut self.callbacks[index])
-    }
-}
 
 struct RcuControlBlock {
     /// The generation counter.
@@ -84,12 +39,8 @@ struct RcuControlBlock {
     /// The futex used to wait for the state machine to advance.
     advancer: zx::Futex,
 
-    /// The queue of waiting callbacks.
-    ///
-    /// Callbacks are added to this queue when the state machine leaves the `Idle` state. They are
-    /// run when the state machine leaves the `Waiting` state after `QUEUE_LENGTH` generations
-    /// have completed.
-    waiting_callbacks: Mutex<CallbackQueue>,
+    /// Callbacks that are ready to run after the next grace period.
+    waiting_callbacks: Mutex<AtomicListIterator<RcuCallback>>,
 }
 
 const ADVANCER_IDLE: i32 = 0;
@@ -109,7 +60,7 @@ impl RcuControlBlock {
             read_counters,
             callback_chain: AtomicStack::new(),
             advancer: zx::Futex::new(ADVANCER_IDLE),
-            waiting_callbacks: Mutex::new(CallbackQueue::new()),
+            waiting_callbacks: Mutex::new(AtomicListIterator::empty()),
         }
     }
 }
@@ -265,8 +216,11 @@ pub(crate) fn rcu_replace_pointer<T>(ptr: &AtomicPtr<T>, new_ptr: *mut T) -> *mu
 
 /// Call a callback to run after all in-flight read operations have completed.
 ///
-/// To wait until the callback is run, call `rcu_synchronize()`. The callback might be called from
-/// an arbitrary thread.
+/// To wait until the callback is ready to run, call `rcu_synchronize()`. The callback might be
+/// called from an arbitrary thread.
+///
+/// NOTE: The order in which callbacks are called is not guaranteed since they can be called
+/// concurrently from multiple threads.
 pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
     RCU_THREAD_BLOCK.with(|block| {
         block.has_pending_callbacks.set(true);
@@ -360,24 +314,26 @@ fn rcu_advancer_wait(generation: usize) {
 fn rcu_grace_period() {
     let callbacks = {
         let mut waiting_callbacks = RCU_CONTROL_BLOCK.waiting_callbacks.lock();
+
         // We are in the *Idle* state.
 
+        // Swap out the callbacks that we can run when this grace period has passed with the
+        // callbacks that can run after the next period.
         // Synchronization point [H] (see design.md)
-        let callbacks = RCU_CONTROL_BLOCK.callback_chain.drain();
+        let callbacks =
+            std::mem::replace(&mut *waiting_callbacks, RCU_CONTROL_BLOCK.callback_chain.take());
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
-
-        waiting_callbacks.enqueue(generation, callbacks);
 
         // Enter the *Waiting* state.
         rcu_advancer_wait(generation);
-        waiting_callbacks.take_ready(generation)
 
         // Return to the *Idle* state.
+        callbacks
     };
 
-    // Run the callbacks in reverse order to ensure that the callbacks are run in the order in which
-    // they were scheduled.
-    for callback in callbacks.into_iter().rev() {
+    // We cannot control the order in which callbacks run since callbacks can be running on multiple
+    // threads concurrently.
+    for callback in callbacks {
         callback();
     }
 }
@@ -390,9 +346,11 @@ pub fn rcu_synchronize() {
         assert!(!block.holding_read_lock());
         block.has_pending_callbacks.set(false);
     });
-    for _ in 0..QUEUE_LENGTH {
-        rcu_grace_period();
-    }
+
+    // We need to run at least two grace periods to flush out all pending callbacks.  See the
+    // comment in `rcu_read_lock` and the design to understand why.
+    rcu_grace_period();
+    rcu_grace_period();
 }
 
 /// If any callbacks have been scheduled from this thread, call `rcu_synchronize`.
@@ -428,20 +386,15 @@ mod tests {
             moved_flag.store(true, Ordering::SeqCst);
         });
 
-        for _ in 0..QUEUE_LENGTH - 1 {
-            rcu_grace_period();
+        rcu_grace_period();
 
-            assert!(
-                !flag.load(Ordering::SeqCst),
-                "Callback executed too early! RCU requires QUEUE_LENGTH grace periods delay."
-            );
-        }
+        assert!(
+            !flag.load(Ordering::SeqCst),
+            "Callback executed too early! RCU requires 2 grace periods delay."
+        );
 
         rcu_grace_period();
-        assert!(
-            flag.load(Ordering::SeqCst),
-            "Callback should have executed after QUEUE_LENGTH grace periods"
-        );
+        assert!(flag.load(Ordering::SeqCst), "Callback should have executed after 2 grace periods");
     }
 
     #[test]
