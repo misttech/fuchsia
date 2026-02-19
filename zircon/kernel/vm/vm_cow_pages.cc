@@ -3978,7 +3978,10 @@ zx::result<uint64_t> VmCowPages::UnmapAndFreePagesLocked(uint64_t offset, uint64
 
   page_list_.RemovePages(
       [&](VmPageOrMarker* p, uint64_t off) {
-        if (p->IsPageOrRef()) {
+        // Despite there being no |parent_|, we must check for parent content markers here. See the
+        // comment on |tree_has_parent_content_markers| for more about spurious parent content
+        // markers.
+        if (p->IsPageOrRef() || p->IsParentContent()) {
           ++populated_slots_removed;
         }
         page_remover.PushContent(p);
@@ -7912,6 +7915,14 @@ bool VmCowPages::DebugIsMarker(uint64_t offset) const {
   Guard<CriticalMutex> guard{lock()};
   const VmPageOrMarker* p = page_list_.Lookup(offset);
   return p && p->IsMarker();
+}
+
+bool VmCowPages::DebugIsParentContent(uint64_t offset) const {
+  canary_.Assert();
+  DEBUG_ASSERT(IsPageRounded(offset));
+  Guard<CriticalMutex> guard{lock()};
+  const VmPageOrMarker* p = page_list_.Lookup(offset);
+  return p || p->IsParentContent();
 }
 
 bool VmCowPages::DebugIsEmpty(uint64_t offset) const {

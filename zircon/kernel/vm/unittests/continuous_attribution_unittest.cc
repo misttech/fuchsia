@@ -787,6 +787,68 @@ bool continuous_attribution_tracker_add_pages() {
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/483815044. Transfer a spurious parent content marker to a
+// child, and check that it can be decommitted successfully.
+bool continuous_attribution_tracker_merge_spurious_parent_content() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> child;
+  // Make |child|'s only slot hold a parent content marker.
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+
+    // Ensure we get a bidirectional clone.
+    ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+
+    fbl::RefPtr<VmObject> child_no_paged;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize,
+                               /*copy_name=*/false, &child_no_paged));
+    child = DownCastVmObject<VmObjectPaged>(child_no_paged);
+
+    fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+    ASSERT_NONNULL(hidden_parent);
+
+    vm_page_t *page = hidden_parent->DebugGetPage(0);
+    VmCompression *compression = Pmm::Node().GetPageCompression();
+    if (!compression) {
+      END_TEST;
+    }
+
+    auto compressor = compression->AcquireCompressor();
+    ASSERT_OK(compressor.get().Arm());
+
+    auto result = hidden_parent->ReclaimPage(page, 0, VmCowPages::EvictionAction::IgnoreHint,
+                                             &compressor.get());
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result.value().num_pages, 1u);
+    // The content was removed (we actually compressed the zero page).
+    EXPECT_TRUE(hidden_parent->DebugIsEmpty(0));
+    // There is now a spurious parent content marker.
+    EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+
+    // Let's drop |vmo| to trigger the hidden parent to merge into |child|. That will allow
+    // |child| to have no parent while still having a spurious parent content marker.
+  }
+
+  // There is 1 parent content marker.
+  EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
+  EXPECT_EQ(1u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+
+  EXPECT_OK(child->DecommitRange(0, kPageSize));
+
+  EXPECT_TRUE(child->DebugGetCowPages()->DebugIsEmpty(0));
+  EXPECT_EQ(0u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -809,6 +871,7 @@ VM_UNITTEST(continuous_attribution_tracker_decommit_range)
 VM_UNITTEST(continuous_attribution_tracker_detach_source)
 VM_UNITTEST(continuous_attribution_tracker_remove_loaned_high_priority)
 VM_UNITTEST(continuous_attribution_tracker_add_pages)
+VM_UNITTEST(continuous_attribution_tracker_merge_spurious_parent_content)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

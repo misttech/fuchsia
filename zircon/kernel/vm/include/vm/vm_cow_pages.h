@@ -348,7 +348,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // The presence of a parent content marker in a leaf node indicates that there *might* be content
   // in a parent node and that a tree walk *must* be performed to search for it. The reason for
   // spurious parent content markers is that zero page deduplication could happen on hidden nodes,
-  // which could remove the content, but leave the parent content markers in the leaf nodes. These
+  // which could remove the content, but leave the parent content markers in the leaf nodes.
+  // Spurious parent content markers can persist in VMOs when they lose their parent. Spurious
   // parent content markers are redundant and could be cleaned up.
   //
   // Use of parent content markers is just the inverse of having a page source, since if there is a
@@ -789,6 +790,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   uint64_t DebugGetPageCountLocked() const TA_REQ(lock());
   bool DebugIsPage(uint64_t offset) const;
   bool DebugIsMarker(uint64_t offset) const;
+  bool DebugIsParentContent(uint64_t offset) const;
   bool DebugIsEmpty(uint64_t offset) const;
   vm_page_t* DebugGetPage(uint64_t offset) const TA_EXCL(lock());
   vm_page_t* DebugGetPageLocked(uint64_t offset) const TA_REQ(lock());
