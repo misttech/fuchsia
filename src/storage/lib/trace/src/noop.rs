@@ -115,6 +115,22 @@ macro_rules! flow_end {
 #[inline]
 pub const fn use_flow_args(_category: &'static str, _name: &'static str, _flow_id: Id) {}
 
+/// Writes a counter event with the specified id.
+///
+/// See `fuchsia_trace::counter!` for more details.
+#[macro_export]
+macro_rules! counter {
+    ($category:expr, $name:expr, $counter_id:expr $(, $key:expr => $val:expr)*) => {
+        if false {
+            $crate::__backend::use_counter_args($category, $name, $counter_id);
+            $crate::__backend::use_args(&[$($crate::__backend::ArgValue::of($key, $val)),*]);
+        }
+    };
+}
+
+#[inline]
+pub const fn use_counter_args(_category: &'static str, _name: &'static str, _counter_id: u64) {}
+
 pub trait TraceFutureExt: Future + Sized {
     #[inline(always)]
     fn trace(self, _args: TraceFutureArgs) -> Self {

@@ -4,7 +4,7 @@
 
 #[cfg(feature = "tracing")]
 pub use fuchsia_trace::{
-    Id, Scope, TraceFutureExt, duration, flow_begin, flow_end, flow_step, instant,
+    Id, Scope, TraceFutureExt, counter, duration, flow_begin, flow_end, flow_step, instant,
     trace_future_args,
 };
 
@@ -94,5 +94,11 @@ mod tests {
         let mut value = 5u64;
         duration!("category", "name", "const-ptr" => &value as *const u64);
         duration!("category", "name", "mut-ptr" => &mut value as *mut u64);
+    }
+
+    #[fuchsia::test]
+    fn test_counter() {
+        counter!("category", "name", 1, "a" => 10);
+        counter!("category", "name", 1, "a" => 10, "b" => 20);
     }
 }

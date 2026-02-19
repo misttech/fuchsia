@@ -204,7 +204,9 @@ impl Future for ResponseFuture {
 
 impl Drop for ResponseFuture {
     fn drop(&mut self) {
-        self.fifo_state.lock().map.remove(&self.request_id).unwrap();
+        let mut state = self.fifo_state.lock();
+        state.map.remove(&self.request_id).unwrap();
+        update_outstanding_requests_counter(state.map.len());
     }
 }
 
@@ -447,6 +449,7 @@ impl Common {
                 state.map.insert(request_id, RequestState::default()).is_none(),
                 "request id in use!"
             );
+            update_outstanding_requests_counter(state.map.len());
             request.reqid = request_id;
             if request.trace_flow_id == NO_TRACE_ID {
                 request.trace_flow_id = generate_trace_flow_id(request_id);
@@ -961,6 +964,10 @@ impl Future for FifoPoller {
             }
         }
     }
+}
+
+fn update_outstanding_requests_counter(outstanding: usize) {
+    trace::counter!("storage", "block-requests", 0, "outstanding" => outstanding);
 }
 
 #[cfg(test)]
