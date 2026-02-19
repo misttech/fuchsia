@@ -143,16 +143,15 @@ fn to_type_path(ty: &syn::Type) -> Result<syn::TypePath, Error> {
     }
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087606)
 enum FieldAttrArg {
     Ident(syn::Ident),
-    NameValue(syn::MetaNameValue),
+    NameValue(Box<syn::MetaNameValue>),
 }
 
 impl syn::parse::Parse for FieldAttrArg {
     fn parse(input: syn::parse::ParseStream<'_>) -> Result<Self, syn::Error> {
         Ok(if input.peek2(syn::Token![=]) {
-            Self::NameValue(input.parse()?)
+            Self::NameValue(Box::new(input.parse()?))
         } else {
             Self::Ident(input.parse()?)
         })
