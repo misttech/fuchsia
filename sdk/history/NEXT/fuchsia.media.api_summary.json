@@ -4491,37 +4491,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.media/UsageAudioConsumerFactory.CreateAudioConsumer",
-        "strictness": "strict",
-        "ordinal": "5591039346426127779",
-        "direction": "one_way",
-        "request": "fuchsia.media/UsageAudioConsumerFactoryCreateAudioConsumerRequest"
-    },
-    {
-        "kind": "protocol",
-        "name": "fuchsia.media/UsageAudioConsumerFactory",
-        "openness": "closed",
-        "transport": "channel"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media/UsageAudioConsumerFactoryCreateAudioConsumerRequest.audio_consumer_request",
-        "ordinal": "2",
-        "type": "server_end:fuchsia.media/AudioConsumer"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.media/UsageAudioConsumerFactoryCreateAudioConsumerRequest.usage",
-        "ordinal": "1",
-        "type": "fuchsia.media/AudioRenderUsage"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.media/UsageAudioConsumerFactoryCreateAudioConsumerRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.media/UsageGainListener.OnGainMuteChanged",
         "strictness": "strict",
         "ordinal": "7500024061065181837",
