@@ -166,9 +166,8 @@ impl SecurityContext {
             .id();
         let type_ = policy_index
             .parsed_policy()
-            .type_by_name(type_)
-            .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?
-            .id();
+            .type_id_by_name(type_)
+            .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?;
 
         let low_level = SecurityLevel::parse(policy_index, low_level)?;
         let high_level = high_level.map(|x| SecurityLevel::parse(policy_index, x)).transpose()?;

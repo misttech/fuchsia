@@ -295,9 +295,9 @@ impl Policy {
             .collect()
     }
 
-    /// Returns the parsed `Type` corresponding to the specified `name` (including aliases).
+    /// Returns the parsed [`TypeId`] corresponding to the specified `name` (including aliases).
     pub(super) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
-        self.0.parsed_policy().type_by_name(name).map(|x| x.id())
+        self.0.parsed_policy().type_id_by_name(name)
     }
 
     /// Returns the set of permissions for the given class, including both the

@@ -375,9 +375,9 @@ impl ParsedPolicy {
         self.types.data.iter().find(|x| x.id() == id).unwrap()
     }
 
-    /// Returns the named type, if present in the policy.
-    pub(super) fn type_by_name(&self, name: &str) -> Option<&Type> {
-        self.types.data.iter().find(|x| x.name_bytes() == name.as_bytes())
+    /// Returns the [`TypeId`] of the [`Type`] with the given name, if present in the policy.
+    pub(super) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
+        self.types.data.iter().find(|x| x.name_bytes() == name.as_bytes()).map(|x| x.id())
     }
 
     /// Returns the extensible bitmap describing the set of types/domains for which permission
