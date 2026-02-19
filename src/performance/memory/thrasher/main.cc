@@ -66,7 +66,7 @@ int main(int argc, const char** argv) {
   const auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
 
   if (command_line.HasOption("verbose")) {
-    std::cout << "Starting (Version THRASHER_V3 " << __TIME__ << ")" << std::endl;
+    std::cout << "Starting (Version THRASHER_V3 time-redacted)" << std::endl;
   }
 
   if (command_line.HasOption("help")) {
