@@ -72,6 +72,10 @@ pub struct Connecting {
     cmd: ConnectCommand,
     protection_ie: Option<ProtectionIe>,
     reassociation_loop_count: u32,
+    // We saw instances where an EAPOL indication arrived out of order,
+    // before the connect confirm.
+    // Cache it here and process it once we transition to the Associated state.
+    eapol_cache: Vec<fidl_mlme::EapolIndication>,
 }
 
 // When a roam attempt starts, SME needs to keep track of where the attempt initiated, in order to
@@ -115,6 +119,9 @@ pub struct Roaming {
     cmd: ConnectCommand,
     auth_method: Option<auth::MethodName>,
     protection_ie: Option<ProtectionIe>,
+    // We saw instances where an EAPOL indication arrived out of order.
+    // Cache it here and process it once we transition to the Associated state.
+    eapol_cache: Vec<fidl_mlme::EapolIndication>,
 }
 
 #[derive(Debug)]
@@ -295,7 +302,13 @@ impl Idle {
             ssid: cmd.bss.ssid.clone(),
         });
 
-        Ok(Connecting { cfg: self.cfg, cmd, protection_ie, reassociation_loop_count: 0 })
+        Ok(Connecting {
+            cfg: self.cfg,
+            cmd,
+            protection_ie,
+            reassociation_loop_count: 0,
+            eapol_cache: vec![],
+        })
     }
 
     fn on_disconnect_complete(
@@ -493,7 +506,7 @@ impl Connecting {
             self.reassociation_loop_count = 0;
         }
 
-        Ok(Associated {
+        let mut associated = Associated {
             cfg: self.cfg,
             connect_txn_sink: self.cmd.connect_txn_sink,
             auth_method,
@@ -506,7 +519,11 @@ impl Connecting {
             reassociation_loop_count: self.reassociation_loop_count,
             authentication: self.cmd.authentication,
             roam_in_progress: None,
-        })
+        };
+        for ind in self.eapol_cache.drain(..) {
+            associated = associated.on_eapol_ind(ind, state_change_ctx, context)?;
+        }
+        Ok(associated)
     }
 
     fn on_deauthenticate_ind(
@@ -700,6 +717,7 @@ impl Associated {
                 cmd,
                 protection_ie: self.protection_ie,
                 reassociation_loop_count: self.reassociation_loop_count + 1,
+                eapol_cache: vec![],
             })
         }
     }
@@ -1292,6 +1310,11 @@ impl ClientState {
                     }
                     transition.to(connecting).into()
                 }
+                MlmeEvent::EapolInd { ind } => {
+                    let (transition, mut connecting) = state.release_data();
+                    connecting.eapol_cache.push(ind);
+                    transition.to(connecting).into()
+                }
                 _ => state.into(),
             },
             Self::Associated(mut state) => match event {
@@ -1444,6 +1467,11 @@ impl ClientState {
                             AfterRoamFailureState::Idle(idle) => transition.to(idle).into(),
                         },
                     }
+                }
+                MlmeEvent::EapolInd { ind } => {
+                    let (transition, mut roaming) = state.release_data();
+                    roaming.eapol_cache.push(ind);
+                    transition.to(roaming).into()
                 }
                 _ => state.into(),
             },
@@ -1846,6 +1874,7 @@ fn roam_internal(
         auth_method: state.auth_method,
         // protection_ie from original connection is preserved.
         protection_ie: state.protection_ie,
+        eapol_cache: vec![],
     })
 }
 
@@ -1960,7 +1989,7 @@ fn roam_handle_result(
                 _ => Some(roam_initiator),
             };
 
-            Ok(Associated {
+            let mut associated = Associated {
                 cfg: state.cfg,
                 connect_txn_sink: state.cmd.connect_txn_sink,
                 latest_ap_state: state.cmd.bss,
@@ -1974,7 +2003,13 @@ fn roam_handle_result(
                 reassociation_loop_count: 0,
                 authentication: state.cmd.authentication,
                 roam_in_progress,
-            })
+            };
+            for ind in state.eapol_cache.drain(..) {
+                associated = associated
+                    .on_eapol_ind(ind, state_change_ctx, context)
+                    .map_err(AfterRoamFailureState::Disconnecting)?;
+            }
+            Ok(associated)
         }
         // Roam attempt failed.
         _ => {
@@ -3240,6 +3275,56 @@ mod tests {
         });
     }
 
+    #[test]
+    fn eapol_caching_during_connecting() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_psk_supplicant();
+        let (command, _connect_txn_stream) = connect_command_wpa2(supplicant);
+        let bssid = command.bss.bssid;
+
+        // Start in an "Connecting" state
+        let state = ClientState::from(testing::new_state(Connecting {
+            cfg: ClientConfig::default(),
+            cmd: command,
+            protection_ie: None,
+            reassociation_loop_count: 0,
+            eapol_cache: vec![],
+        }));
+
+        // Send an EAPOL frame while connecting. It should be cached.
+        let eapol_ind = fidl_mlme::EapolIndication {
+            src_addr: bssid.to_array(),
+            dst_addr: fake_device_info().sta_addr,
+            data: test_utils::eapol_key_frame().into(),
+        };
+        let state =
+            state.on_mlme_event(MlmeEvent::EapolInd { ind: eapol_ind.clone() }, &mut h.context);
+        assert_matches!(state, ClientState::Connecting(_));
+
+        // Finish connection. The cached EAPOL frame should be processed.
+        // When Associated state is created, it starts the supplicant.
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+        // Mock the supplicant to complete the handshake when the cached EAPOL frame is processed.
+        // In a real scenario, more EAPOL frames would be exchanged, but we are just testing
+        // that the cached EAPOL frame is processed here.
+        suppl_mock.set_on_eapol_frame_updates(vec![SecAssocUpdate::Status(
+            SecAssocStatus::EssSaEstablished,
+        )]);
+
+        let assoc_conf = create_connect_conf(bssid, fidl_ieee80211::StatusCode::Success);
+        let state = state.on_mlme_event(assoc_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
+
+        let associated = match state {
+            ClientState::Associated(a) => a,
+            _ => panic!("Expected Associated state, got {:?}", state),
+        };
+
+        // If the cached EAPOL frame was processed successfully, the link should be up.
+        assert_matches!(associated.link_state, link_state::LinkState::LinkUp(_));
+    }
+
     fn expect_next_event_at_deadline<E: std::fmt::Debug>(
         executor: &mut fuchsia_async::TestExecutor,
         mut timed_event_stream: impl Stream<Item = timer::Event<E>> + std::marker::Unpin,
@@ -3279,6 +3364,7 @@ mod tests {
             cmd: command,
             protection_ie: None,
             reassociation_loop_count: 0,
+            eapol_cache: vec![],
         }));
         suppl_mock
             .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
@@ -3357,6 +3443,7 @@ mod tests {
             cmd: command,
             protection_ie: None,
             reassociation_loop_count: 0,
+            eapol_cache: vec![],
         }));
         suppl_mock
             .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
@@ -3473,6 +3560,7 @@ mod tests {
             cmd: command,
             protection_ie: None,
             reassociation_loop_count: 0,
+            eapol_cache: vec![],
         }));
         suppl_mock
             .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
@@ -3628,6 +3716,7 @@ mod tests {
             cmd: command,
             protection_ie: None,
             reassociation_loop_count: 0,
+            eapol_cache: vec![],
         }));
         suppl_mock
             .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
@@ -5845,6 +5934,7 @@ mod tests {
             cmd,
             protection_ie: None,
             reassociation_loop_count: 0,
+            eapol_cache: vec![],
         })
         .into()
     }
@@ -5931,6 +6021,7 @@ mod tests {
             },
             auth_method,
             protection_ie: None,
+            eapol_cache: vec![],
         })
         .into()
     }
