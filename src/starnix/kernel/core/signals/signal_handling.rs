@@ -23,7 +23,7 @@ use starnix_uapi::signals::{
     SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGUSR1, SIGUSR2, SIGVTALRM, SIGWINCH, SIGXCPU, SIGXFSZ,
     SigSet, sigaltstack_contains_pointer,
 };
-use starnix_uapi::user_address::UserAddress;
+use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
     SA_NODEFER, SA_ONSTACK, SA_RESETHAND, SA_SIGINFO, SIG_DFL, SIG_IGN, errno, error, sigaction_t,
 };
@@ -524,7 +524,9 @@ pub fn restore_from_signal_handler(current_task: &mut CurrentTask) -> Result<(),
     restore_registers(current_task, &signal_stack_frame, signal_frame_address)?;
 
     // Restore the stored signal mask.
-    current_task.write().set_signal_mask(signal_stack_frame.get_signal_mask());
+    current_task
+        .write()
+        .set_signal_mask(signal_stack_frame.get_signal_mask(current_task.is_arch32()));
 
     Ok(())
 }

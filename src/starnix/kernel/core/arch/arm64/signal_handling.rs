@@ -44,8 +44,6 @@ pub struct SignalStackFrame {
     pub siginfo_bytes: [u8; SIGINFO_RESERVED_DATA_SIZE],
     /// Bytes for the context struct relevant to the correct architecture padded with 0.
     pub context: [u8; UCONTEXT_RESERVED_DATA_SIZE],
-    is_arch32: u8,
-    _padding: [u8; 15],
 }
 
 /// The size, in bytes, of the signal stack frame.
@@ -126,12 +124,7 @@ impl SignalStackFrame {
             registers.r[14] = registers.r[30];
         }
 
-        Ok(SignalStackFrame {
-            context,
-            siginfo_bytes: siginfo.as_siginfo_bytes(arch_width)?,
-            is_arch32: if arch_width.is_arch32() { 1 } else { 0 },
-            _padding: Default::default(),
-        })
+        Ok(SignalStackFrame { context, siginfo_bytes: siginfo.as_siginfo_bytes(arch_width)? })
     }
 
     pub fn as_bytes(&self) -> &[u8; SIG_STACK_SIZE] {
@@ -142,8 +135,8 @@ impl SignalStackFrame {
         zerocopy::transmute!(bytes)
     }
 
-    pub fn get_signal_mask(&self) -> SigSet {
-        if self.is_arch32() {
+    pub fn get_signal_mask(&self, is_arch32: bool) -> SigSet {
+        if is_arch32 {
             uapi::sigset_t::from(self.get_ucontext32().uc_sigmask64).into()
         } else {
             self.get_ucontext64().uc_sigmask.into()
@@ -157,10 +150,6 @@ impl SignalStackFrame {
     fn get_ucontext32(&self) -> &uapi::arch32::ucontext {
         uapi::arch32::ucontext::ref_from_prefix(&self.context).unwrap().0
     }
-
-    fn is_arch32(&self) -> bool {
-        self.is_arch32 != 0
-    }
 }
 
 pub fn restore_registers(
@@ -168,7 +157,7 @@ pub fn restore_registers(
     signal_stack_frame: &SignalStackFrame,
     _stack_pointer: UserAddress,
 ) -> Result<(), Errno> {
-    if signal_stack_frame.is_arch32() {
+    if current_task.is_arch32() {
         restore_registers_32(current_task, signal_stack_frame)
     } else {
         restore_registers_64(current_task, signal_stack_frame)

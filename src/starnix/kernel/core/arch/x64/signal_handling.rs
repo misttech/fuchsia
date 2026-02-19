@@ -154,7 +154,7 @@ impl SignalStackFrame {
         }
     }
 
-    pub fn get_signal_mask(&self) -> SigSet {
+    pub fn get_signal_mask(&self, _is_arch32: bool) -> SigSet {
         self.context.uc_sigmask.into()
     }
 }
