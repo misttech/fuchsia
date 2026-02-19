@@ -120,7 +120,12 @@ closed protocol Coordinator {
     /// Returns `ZX_ERR_NO_MEMORY` if memory cannot be allocated for managing the image
     /// Additionally, this method delegates internally to `fuchsia.hardware.display.engine/Engine`,
     /// and will forward errors received from `ImportImage()` and `ImportImageForCapture()`.
-    // TODO(https://fxbug.dev/391698891): it's undesirable to expose this implementation dependency
+    ///
+    /// The implementation must ignore any Sysmem information around weak VMO
+    /// handles. Display stack consumers are responsible for ensuring that weak
+    /// VMOs are closed in a timely manner, which may involve calling
+    /// [`Coordinator.ReleaseImage`] and [`Coordinator.ApplyConfig`].
+    // TODO(https://fxbug.dev/391698891): it's undesirable to expose the implementation dependency
     //                                    on `fuchsia.hardware.display.engine/Engine`.
     strict ImportImage(struct {
         /// Must be compatible with the arguments passed to
