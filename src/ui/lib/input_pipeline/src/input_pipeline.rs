@@ -656,6 +656,13 @@ impl InputPipeline {
                         if event.handled == input_device::Handled::No {
                             log::warn!("unhandled input event: {:?}", &event);
                         }
+                        if let Some(trace_id) = event.trace_id {
+                            fuchsia_trace::flow_end!(
+                                "input",
+                                "event_in_input_pipeline",
+                                trace_id.into()
+                            );
+                        }
                     }
                 }
             }

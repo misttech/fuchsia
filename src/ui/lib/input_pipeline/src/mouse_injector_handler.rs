@@ -117,7 +117,7 @@ impl InputHandler for MouseInjectorHandler {
                 fuchsia_trace::duration!("input", "mouse_injector_handler[processing]");
                 let trace_id = match trace_id {
                     Some(id) => {
-                        fuchsia_trace::flow_end!("input", "event_in_input_pipeline", id.into());
+                        fuchsia_trace::flow_step!("input", "event_in_input_pipeline", id.into());
                         id
                     }
                     None => fuchsia_trace::Id::random(),

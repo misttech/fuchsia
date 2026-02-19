@@ -289,7 +289,7 @@ impl TouchInjectorHandler {
                 self.inspect_status.count_received_event(&event_time);
                 fuchsia_trace::duration!("input", "touch_injector_handler[processing]");
                 if let Some(trace_id) = trace_id {
-                    fuchsia_trace::flow_end!("input", "event_in_input_pipeline", trace_id.into());
+                    fuchsia_trace::flow_step!("input", "event_in_input_pipeline", trace_id.into());
                 }
 
                 let mut scenic_events = vec![];
