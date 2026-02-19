@@ -276,6 +276,15 @@ value before being loaded by the reader, which means the reader does not
 actually read from `o`. The callback runs after all the reads from `o` because
 there are no reads from `o`.
 
+*Note:* The logic described above suggests that the sequential consistency of
+`[C1]` and `[A]` combined with the synchronization between `[G]` and `[H]` is
+sufficient. However, this reasoning relies on transitivity across three
+different threads (Writer -> Synchronizer -> Reader), which is not automatically
+guaranteed by the memory model. A model checker (see
+https://fxbug.dev/484397559) has shown that this sequence does not strictly
+guarantee that the reader observes the new pointer. As a result, `rcu_call` now
+includes explicit synchronization with `rcu_read_lock` to cover this case.
+
 ## RSEQ Backend
 
 When the `rseq_backend` feature is enabled, the RCU implementation uses

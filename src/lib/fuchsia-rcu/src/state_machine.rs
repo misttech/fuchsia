@@ -5,7 +5,7 @@
 use crate::atomic_stack::AtomicStack;
 use fuchsia_sync::Mutex;
 use std::cell::Cell;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering, fence};
 use std::thread_local;
 
 #[cfg(feature = "rseq_backend")]
@@ -271,6 +271,13 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
     RCU_THREAD_BLOCK.with(|block| {
         block.has_pending_callbacks.set(true);
     });
+
+    // We need to synchronize with rcu_read_lock.  We need to ensure that all prior stores are
+    // visible to threads that have called rcu_read_lock.  We must synchronize with both read
+    // counters using a store operation.  We don't need to change the value.
+    fence(Ordering::Release);
+    RCU_CONTROL_BLOCK.read_counters[0].fetch_add(0, Ordering::Relaxed);
+    RCU_CONTROL_BLOCK.read_counters[1].fetch_add(0, Ordering::Relaxed);
 
     // Even though we push the callback to the front of the stack, we reverse the order of the stack
     // when we pop the callbacks from the stack to ensure that the callbacks are run in the order in
