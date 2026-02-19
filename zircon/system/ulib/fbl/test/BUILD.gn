@@ -39,6 +39,7 @@ test("fbl") {
     "intrusive_wavl_tree_tests.cc",
     "macro_tests.cc",
     "no_destructor_tests.cc",
+    "packed_pointer_tests.cc",
     "recycler_tests.cc",
     "ref_ptr_tests.cc",
     "string_buffer_tests.cc",
