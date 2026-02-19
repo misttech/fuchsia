@@ -34,9 +34,7 @@ pub use crate::types::capability_id::CapabilityId;
 pub use crate::types::child::Child;
 pub use crate::types::collection::Collection;
 use crate::types::common::{ContextCapabilityClause, ContextPathClause, ContextSpanned, Origin};
-pub use crate::types::document::{
-    Document, DocumentContext, ParsedDocument, convert_parsed_to_document,
-};
+pub use crate::types::document::{Document, DocumentContext, ParsedDocument, parse_and_hydrate};
 pub use crate::types::environment::{Environment, ResolverRegistration};
 pub use crate::types::expose::{ContextExpose, Expose};
 pub use crate::types::offer::{
@@ -70,11 +68,7 @@ pub fn load_cml_with_context(
     file: &std::path::Path,
 ) -> Result<DocumentContext, Error> {
     let file_arc = Arc::new(file.to_path_buf());
-    let parsed_doc: ParsedDocument = json_spanned_value::from_str(&buffer).map_err(|e| {
-        let location = Location { line: e.line(), column: e.column() };
-        Error::parse(e, Some(location), Some(file))
-    })?;
-    convert_parsed_to_document(parsed_doc, file_arc, buffer)
+    parse_and_hydrate(file_arc, buffer)
 }
 
 /// Parses a string `buffer` into a vector of [Document]. `file` is used for error reporting.
@@ -214,48 +208,59 @@ where
     T: CanonicalizeContext + ContextCapabilityClause + ContextPathClause + Clone + PartialEq,
 {
     fn canonicalize_context(&mut self) {
-        // Collapse like-entries into one. Like entries are those that are equal in all fields
-        // but their capability names. Accomplish this by collecting all the names into a vector
-        // keyed by an instance of T with its names removed.
-        let mut to_merge: Vec<(T, Vec<Name>)> = vec![];
+        let mut to_merge: Vec<(T, Vec<ContextSpanned<Name>>)> = Vec::new();
         let mut to_keep: Vec<T> = vec![];
+
         self.iter().for_each(|c| {
             // Any entry with a `path` set cannot be merged with another.
             if !c.are_many_names_allowed() || c.path().is_some() {
                 to_keep.push(c.clone());
                 return;
             }
-            let mut names: Vec<Name> = c.names().into_iter().map(Into::into).collect();
+
+            let mut names = c.names();
             let mut copy: T = c.clone();
-            copy.set_names(vec![Name::from_str("a").unwrap()]); // The name here is arbitrary.
+
+            let synthetic_name = Name::from_str("a").unwrap();
+            let spanned = ContextSpanned { value: synthetic_name, origin: c.origin().clone() };
+            copy.set_names(vec![spanned]);
+
             let r = to_merge.iter().position(|(t, _)| t == &copy);
             match r {
                 Some(i) => to_merge[i].1.append(&mut names),
                 None => to_merge.push((copy, names)),
             };
         });
+
         let mut merged = to_merge
             .into_iter()
-            .map(|(mut t, names)| {
+            .map(|(mut t, mut names)| {
+                names.sort_by(|a, b| a.value.cmp(&b.value));
+
                 t.set_names(names);
                 t
             })
             .collect::<Vec<_>>();
+
         to_keep.append(&mut merged);
         *self = to_keep;
 
         self.iter_mut().for_each(|c| c.canonicalize_context());
+
         self.sort_by(|a, b| {
-            // Sort by capability type, then by the name of the first entry for
-            // that type.
+            // Sort by capability type string first
             let a_type = a.capability_type(None).unwrap();
             let b_type = b.capability_type(None).unwrap();
+
             a_type.cmp(b_type).then_with(|| {
                 let a_names = a.names();
                 let b_names = b.names();
-                let a_first_name = a_names.first().unwrap();
-                let b_first_name = b_names.first().unwrap();
-                a_first_name.cmp(b_first_name)
+
+                // Compare the first name in the list (e.g., "fuchsia.logger.Log") ignoring Origin differences.
+                let a_first_val = &a_names.first().unwrap().value;
+                let b_first_val = &b_names.first().unwrap().value;
+
+                a_first_val.cmp(b_first_val)
             })
         });
     }
@@ -625,39 +630,50 @@ pub enum ConfigRuntimeSource {
 #[serde(tag = "type", deny_unknown_fields, rename_all = "lowercase")]
 pub enum ConfigValueType {
     Bool {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Uint8 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Uint16 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Uint32 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Uint64 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Int8 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Int16 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Int32 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Int64 {
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     String {
         max_size: NonZeroU32,
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
     Vector {
         max_count: NonZeroU32,
         element: ConfigNestedValueType,
+        #[serde(skip_serializing_if = "Option::is_none")]
         mutability: Option<Vec<ConfigRuntimeSource>>,
     },
 }
@@ -863,7 +879,6 @@ trait Canonicalize {
     fn canonicalize(&mut self);
 }
 
-#[allow(dead_code)]
 trait CanonicalizeContext {
     fn canonicalize_context(&mut self);
 }

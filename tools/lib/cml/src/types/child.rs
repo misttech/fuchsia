@@ -82,12 +82,15 @@ pub struct ParsedChild {
     pub environment: Option<Spanned<EnvironmentRef>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContextChild {
     pub name: ContextSpanned<Name>,
     pub url: ContextSpanned<Url>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub startup: Option<ContextSpanned<StartupMode>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub on_terminate: Option<ContextSpanned<OnTerminate>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<ContextSpanned<EnvironmentRef>>,
 }
 

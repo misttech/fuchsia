@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::features::{Feature, FeatureSet};
 use crate::types::child::Child;
 use crate::types::collection::Collection;
-use crate::types::document::Document;
+use crate::types::document::{Document, DocumentContext};
 use crate::types::environment::{
     DebugRegistration, Environment, EnvironmentExtends, EnvironmentRef, RunnerRegistration,
 };

@@ -113,17 +113,17 @@ struct ValidationContextV2<'a> {
     document: &'a DocumentContext,
     features: &'a FeatureSet,
     _capability_requirements: &'a CapabilityRequirements<'a>,
-    all_children: HashSet<&'a BorrowedName>,
-    all_collections: HashSet<&'a BorrowedName>,
-    all_resolvers: HashSet<&'a BorrowedName>,
-    all_runners: HashSet<&'a BorrowedName>,
-    all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
-    all_capability_names: HashSet<&'a BorrowedName>,
-    all_dictionaries: HashMap<&'a BorrowedName, &'a ContextCapability>,
-    all_directories: HashSet<&'a BorrowedName>,
-    all_protocols: HashSet<&'a BorrowedName>,
-    all_configs: HashSet<&'a BorrowedName>,
-    all_services: HashSet<&'a BorrowedName>,
+    all_children: HashSet<Name>,
+    all_collections: HashSet<Name>,
+    all_resolvers: HashSet<Name>,
+    all_runners: HashSet<Name>,
+    all_storages: HashMap<Name, &'a CapabilityFromRef>,
+    all_capability_names: HashSet<Name>,
+    all_dictionaries: HashMap<Name, &'a ContextCapability>,
+    all_directories: HashSet<Name>,
+    all_protocols: HashSet<Name>,
+    all_configs: HashSet<Name>,
+    all_services: HashSet<Name>,
 }
 
 impl<'a> ValidationContextV2<'a> {
@@ -145,6 +145,7 @@ impl<'a> ValidationContextV2<'a> {
                 caps.iter()
                     .filter(|c| c.value.service.is_some())
                     .flat_map(|c| c.value.names())
+                    .map(|n| n.value)
                     .collect()
             })
             .unwrap_or_default();
@@ -156,6 +157,7 @@ impl<'a> ValidationContextV2<'a> {
                 caps.iter()
                     .filter(|c| c.value.directory.is_some())
                     .flat_map(|c| c.value.names())
+                    .map(|n| n.value)
                     .collect()
             })
             .unwrap_or_default();
@@ -167,6 +169,7 @@ impl<'a> ValidationContextV2<'a> {
                 caps.iter()
                     .filter(|c| c.value.runner.is_some())
                     .flat_map(|c| c.value.names())
+                    .map(|n| n.value)
                     .collect()
             })
             .unwrap_or_default();
@@ -178,6 +181,7 @@ impl<'a> ValidationContextV2<'a> {
                 caps.iter()
                     .filter(|c| c.value.resolver.is_some())
                     .flat_map(|c| c.value.names())
+                    .map(|n| n.value)
                     .collect()
             })
             .unwrap_or_default();
@@ -189,6 +193,7 @@ impl<'a> ValidationContextV2<'a> {
                 caps.iter()
                     .filter(|c| c.value.protocol.is_some())
                     .flat_map(|c| c.value.names())
+                    .map(|n| n.value)
                     .collect()
             })
             .unwrap_or_default();
@@ -466,16 +471,16 @@ which is almost certainly a mistake: {}",
         used_ids: &mut HashMap<String, (CapabilityId<'a>, Origin)>,
     ) -> Result<(), Error> {
         use_wrapper.capability_type(Some(use_wrapper.origin.clone()))?;
+        let use_ = &use_wrapper.value;
+
         for checker in [
-            self.service_from_self_checker(use_wrapper),
-            self.protocol_from_self_checker(use_wrapper),
-            self.directory_from_self_checker(use_wrapper),
-            self.config_from_self_checker(use_wrapper),
+            self.service_from_self_checker(use_),
+            self.protocol_from_self_checker(use_),
+            self.directory_from_self_checker(use_),
+            self.config_from_self_checker(use_),
         ] {
             checker.validate("used")?;
         }
-
-        let use_ = &use_wrapper.value;
 
         if val!(&use_.from) == Some(&UseFromRef::Debug) && val!(&use_.protocol).is_none() {
             return Err(Error::validate_context(
@@ -806,8 +811,8 @@ which is almost certainly a mistake: {}",
                 for scope in &scopes.value {
                     match scope {
                         EventScope::Named(name) => {
-                            if !self.all_children.contains(&name.as_ref())
-                                && !self.all_collections.contains(&name.as_ref())
+                            if !self.all_children.contains::<BorrowedName>(name)
+                                && !self.all_collections.contains::<BorrowedName>(name)
                             {
                                 return Err(Error::validate_context(
                                     format!(
@@ -999,8 +1004,8 @@ which is almost certainly a mistake: {}",
                     }
 
                     // Check that any referenced child actually exists.
-                    if self.all_children.contains(&to_target.as_ref())
-                        || self.all_collections.contains(&to_target.as_ref())
+                    if self.all_children.contains::<BorrowedName>(to_target.as_ref())
+                        || self.all_collections.contains::<BorrowedName>(to_target.as_ref())
                     {
                         // Allowed.
                     } else {
@@ -1030,7 +1035,7 @@ which is almost certainly a mistake: {}",
                             // verified.
                             if let OneOrMany::One(OfferFromRef::Self_) = &offer.from.value {
                                 if let Some(CapabilityFromRef::Named(source)) =
-                                    self.all_storages.get(&storage.as_ref())
+                                    self.all_storages.get::<BorrowedName>(storage.as_ref())
                                 {
                                     if to_target == source {
                                         return Err(Error::validate_context(
@@ -1101,7 +1106,8 @@ which is almost certainly a mistake: {}",
                         }
                     }
                     // Check that any referenced child actually exists.
-                    let Some(d) = self.all_dictionaries.get(&to_target.as_ref()) else {
+                    let Some(d) = self.all_dictionaries.get::<BorrowedName>(to_target.as_ref())
+                    else {
                         return Err(Error::validate_context(
                             format!(
                                 "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
@@ -1207,9 +1213,9 @@ which is almost certainly a mistake: {}",
                 }
 
                 // Ensure runner exists if source is 'self'
-                let runner_ref: &BorrowedName = reg.runner.value.as_ref();
+                let runner_ref: Name = reg.runner.value.clone();
                 if reg.from.value == RegistrationRef::Self_
-                    && !self.all_runners.contains(runner_ref)
+                    && !self.all_runners.contains(&runner_ref)
                 {
                     return Err(Error::validate_context(
                         format!(
@@ -1503,7 +1509,7 @@ which is almost certainly a mistake: {}",
                                 "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"{}\", from: \"{}\"",
                                 cap.names()
                                     .iter()
-                                    .map(|n| n.as_str())
+                                    .map(|n| n.value.as_str())
                                     .collect::<Vec<_>>()
                                     .join(", "),
                                 cap.from_().value,
@@ -1523,7 +1529,7 @@ which is almost certainly a mistake: {}",
                                 "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"{}\", from: \"{}\"",
                                 cap.names()
                                     .iter()
-                                    .map(|n| n.as_str())
+                                    .map(|n| n.value.as_str())
                                     .collect::<Vec<_>>()
                                     .join(", "),
                                 cap.from_().value,
@@ -1556,7 +1562,7 @@ which is almost certainly a mistake: {}",
         match component_ref {
             AnyRef::Named(name) => {
                 // Ensure we have a child defined by that name.
-                if !self.all_children.contains(name) {
+                if !self.all_children.contains(*name) {
                     return Err(Error::validate_context(
                         format!(
                             "{} \"{}\" does not appear in \"children\"",
@@ -1587,7 +1593,7 @@ which is almost certainly a mistake: {}",
         match component_ref {
             AnyRef::Named(name) => {
                 // Ensure we have a child or collection defined by that name.
-                if !self.all_children.contains(name) && !self.all_collections.contains(name) {
+                if !self.all_children.contains(*name) && !self.all_collections.contains(*name) {
                     return Err(Error::validate_context(
                         format!(
                             "{} \"{}\" does not appear in \"children\" or \"collections\"",
@@ -1617,7 +1623,7 @@ which is almost certainly a mistake: {}",
     ) -> Result<(), Error> {
         match capability_ref {
             AnyRef::Named(name) => {
-                if !self.all_capability_names.contains(name) {
+                if !self.all_capability_names.contains(*name) {
                     return Err(Error::validate_context(
                         format!(
                             "{} \"{}\" does not appear in \"capabilities\"",
@@ -3412,7 +3418,7 @@ struct RouteFromSelfCheckerV2<'a> {
 
     container: &'a dyn Container,
 
-    all_dictionaries: &'a HashMap<&'a BorrowedName, &'a ContextCapability>,
+    all_dictionaries: &'a HashMap<Name, &'a ContextCapability>,
 
     typename: &'static str,
 }
@@ -3477,7 +3483,19 @@ impl<'a> Container for HashSet<&'a BorrowedName> {
     }
 }
 
+impl Container for HashSet<Name> {
+    fn contains(&self, key: &BorrowedName) -> bool {
+        self.contains(key)
+    }
+}
+
 impl<'a, T> Container for HashMap<&'a BorrowedName, T> {
+    fn contains(&self, key: &BorrowedName) -> bool {
+        self.contains_key(key)
+    }
+}
+
+impl<T> Container for HashMap<Name, T> {
     fn contains(&self, key: &BorrowedName) -> bool {
         self.contains_key(key)
     }

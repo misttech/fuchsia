@@ -5,8 +5,9 @@
 use crate::error::Location;
 use crate::types::common::*;
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, CapabilityId, DictionaryRef,
-    Error, EventScope, FromClause, FromClauseContext, PathClause, SourceAvailability,
+    AnyRef, AsClause, AsClauseContext, Canonicalize, CanonicalizeContext, CapabilityClause,
+    CapabilityId, DictionaryRef, Error, EventScope, FromClause, FromClauseContext, PathClause,
+    SourceAvailability,
 };
 
 use crate::one_or_many::{
@@ -644,27 +645,45 @@ pub struct ParsedOffer {
     pub target_availability: Option<Spanned<TargetAvailability>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContextOffer {
+    #[serde(skip)]
     pub origin: Origin,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub directory: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runner: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolver: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub storage: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dictionary: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<ContextSpanned<OneOrMany<Name>>>,
     pub from: ContextSpanned<OneOrMany<OfferFromRef>>,
     pub to: ContextSpanned<OneOrMany<OfferToRef>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<ContextSpanned<Name>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dependency: Option<ContextSpanned<DependencyType>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rights: Option<ContextSpanned<Rights>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subdir: Option<ContextSpanned<RelativePath>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub event_stream: Option<ContextSpanned<OneOrMany<Name>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<ContextSpanned<OneOrMany<EventScope>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub availability: Option<ContextSpanned<Availability>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_availability: Option<ContextSpanned<SourceAvailability>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_availability: Option<ContextSpanned<TargetAvailability>>,
 }
 
@@ -765,6 +784,37 @@ impl ContextCapabilityClause for ContextOffer {
     /// Helper to get the file path from the origin.
     fn file_path(&self) -> PathBuf {
         (*self.origin.file).clone()
+    }
+
+    fn availability(&self) -> Option<ContextSpanned<Availability>> {
+        self.availability.clone()
+    }
+    fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>) {
+        self.availability = a;
+    }
+}
+
+impl CanonicalizeContext for ContextOffer {
+    fn canonicalize_context(&mut self) {
+        // Sort the names of the capabilities. Only capabilities with OneOrMany values are included here.
+        if let Some(service) = &mut self.service {
+            service.value.canonicalize_context();
+        } else if let Some(protocol) = &mut self.protocol {
+            protocol.value.canonicalize_context();
+        } else if let Some(directory) = &mut self.directory {
+            directory.value.canonicalize_context();
+        } else if let Some(runner) = &mut self.runner {
+            runner.value.canonicalize_context();
+        } else if let Some(resolver) = &mut self.resolver {
+            resolver.value.canonicalize_context();
+        } else if let Some(storage) = &mut self.storage {
+            storage.value.canonicalize_context();
+        } else if let Some(event_stream) = &mut self.event_stream {
+            event_stream.value.canonicalize_context();
+            if let Some(scope) = &mut self.scope {
+                scope.value.canonicalize_context();
+            }
+        }
     }
 }
 

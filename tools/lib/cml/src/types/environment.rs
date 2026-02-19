@@ -248,10 +248,11 @@ impl Hydrate for ParsedRunnerRegistration {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct ContextRunnerRegistration {
     pub runner: ContextSpanned<Name>,
     pub from: ContextSpanned<RegistrationRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<ContextSpanned<Name>>,
 }
 
@@ -373,11 +374,14 @@ impl Hydrate for ParsedDebugRegistration {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ContextDebugRegistration {
+    #[serde(skip)]
     pub origin: Origin,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub from: ContextSpanned<OfferFromRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<ContextSpanned<Name>>,
 }
 
@@ -463,6 +467,11 @@ impl ContextCapabilityClause for ContextDebugRegistration {
     fn file_path(&self) -> PathBuf {
         (*self.origin.file).clone()
     }
+
+    fn availability(&self) -> Option<ContextSpanned<Availability>> {
+        None
+    }
+    fn set_availability(&mut self, _a: Option<ContextSpanned<Availability>>) {}
 }
 
 impl AsClause for DebugRegistration {
@@ -569,13 +578,19 @@ impl Hydrate for ParsedEnvironment {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct ContextEnvironment {
     pub name: ContextSpanned<Name>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub extends: Option<ContextSpanned<EnvironmentExtends>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runners: Option<Vec<ContextSpanned<ContextRunnerRegistration>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolvers: Option<Vec<ContextSpanned<ContextResolverRegistration>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<Vec<ContextSpanned<ContextDebugRegistration>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "__stop_timeout_ms")]
     pub stop_timeout_ms: Option<ContextSpanned<StopTimeoutMs>>,
 }
 

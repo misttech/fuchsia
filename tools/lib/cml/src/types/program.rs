@@ -133,8 +133,10 @@ impl Hydrate for ParsedProgram {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Default)]
+#[derive(Debug, PartialEq, Serialize, Default, Clone)]
 pub struct ContextProgram {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runner: Option<ContextSpanned<Name>>,
+    #[serde(flatten)]
     pub info: IndexMap<String, serde_json::Value>,
 }

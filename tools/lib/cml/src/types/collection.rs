@@ -73,7 +73,7 @@ pub struct ParsedCollection {
     pub persistent_storage: Option<Spanned<bool>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContextCollection {
     pub name: ContextSpanned<Name>,
     pub durability: ContextSpanned<Durability>,

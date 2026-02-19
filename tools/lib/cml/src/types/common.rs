@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,8 +11,8 @@ use json_spanned_value::Spanned;
 
 use crate::error::{Error, Location};
 use crate::{CanonicalizeContext, OneOrMany};
-use cm_types::{BorrowedName, Name};
-use serde::{Serialize, Serializer};
+use cm_types::{Availability, BorrowedName, Name};
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Origin {
@@ -25,10 +26,27 @@ impl Origin {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
 pub struct ContextSpanned<T> {
     pub value: T,
+
+    #[serde(skip)]
     pub origin: Origin,
+}
+
+impl<T: PartialEq> PartialEq for ContextSpanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T: Eq> Eq for ContextSpanned<T> {}
+
+impl<T: Hash> Hash for ContextSpanned<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
 }
 
 impl<T> ContextSpanned<T> {
@@ -57,18 +75,6 @@ impl<T: CanonicalizeContext> CanonicalizeContext for ContextSpanned<T> {
 impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
     fn path(&self) -> Option<&ContextSpanned<Path>> {
         self.value.path()
-    }
-}
-
-impl<T> Serialize for ContextSpanned<T>
-where
-    T: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.value.serialize(serializer)
     }
 }
 
@@ -179,7 +185,7 @@ pub trait ContextPathClause {
     fn path(&self) -> Option<&ContextSpanned<Path>>;
 }
 
-pub trait ContextCapabilityClause {
+pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
     fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
@@ -192,6 +198,9 @@ pub trait ContextCapabilityClause {
 
     fn origin(&self) -> &Origin;
     fn file_path(&self) -> PathBuf;
+
+    fn availability(&self) -> Option<ContextSpanned<Availability>>;
+    fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>);
 
     fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
     fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
@@ -265,59 +274,78 @@ pub trait ContextCapabilityClause {
         }
     }
 
-    /// Returns the names of the capabilities in this clause.
-    /// If `protocol()` returns `Some(OneOrMany::Many(vec!["a", "b"]))`, this returns!["a", "b"].
-    fn names(&self) -> Vec<&BorrowedName> {
-        let res = vec![
-            self.service(),
-            self.protocol(),
-            self.directory(),
-            self.storage(),
-            self.runner(),
-            self.config(),
-            self.resolver(),
-            self.event_stream(),
-            self.dictionary(),
-        ];
-        res.into_iter()
-            .map(|o| {
-                o.map(|o| o.value.into_iter().collect::<Vec<&BorrowedName>>()).unwrap_or(vec![])
-            })
-            .flatten()
-            .collect()
+    /// Returns the names of the capabilities in this clause, wrapped in ContextSpanned.
+    /// This allows the caller to know the file source of every individual name.
+    fn names(&self) -> Vec<ContextSpanned<Name>> {
+        let extract = |field: Option<&ContextSpanned<OneOrMany<&BorrowedName>>>| -> Vec<ContextSpanned<Name>> {
+        match field {
+                    Some(wrapper) => match &wrapper.value {
+                        // n is &&BorrowedName. We deref once to get &BorrowedName,
+                        // then .to_owned() converts it to Name.
+                        OneOrMany::One(n) => vec![ContextSpanned {
+                            value: (*n).to_owned(),
+                            origin: wrapper.origin.clone(),
+                        }],
+                        OneOrMany::Many(names) => names
+                            .iter()
+                            .map(|n| ContextSpanned {
+                                value: (*n).to_owned(),
+                                origin: wrapper.origin.clone(),
+                            })
+                            .collect(),
+                    },
+                    None => vec![],
+                }
+            };
+        // Collect names from all possible fields
+        let mut res = Vec::new();
+        res.extend(extract(self.service().as_ref()));
+        res.extend(extract(self.protocol().as_ref()));
+        res.extend(extract(self.directory().as_ref()));
+        res.extend(extract(self.storage().as_ref()));
+        res.extend(extract(self.runner().as_ref()));
+        res.extend(extract(self.config().as_ref()));
+        res.extend(extract(self.resolver().as_ref()));
+        res.extend(extract(self.event_stream().as_ref()));
+        res.extend(extract(self.dictionary().as_ref()));
+        res
     }
 
-    fn set_names(&mut self, names: Vec<Name>) {
-        let names_raw = match names.len() {
-            0 => None,
-            1 => Some(OneOrMany::One(names.first().unwrap().clone())),
-            _ => Some(OneOrMany::Many(names)),
+    /// Sets the names for this capability, preserving origin information.
+    fn set_names(&mut self, names: Vec<ContextSpanned<Name>>) {
+        let cap_type = self.capability_type(None).expect("Cannot set names on empty capability");
+
+        let mut update_field = |wrapped_val: Option<ContextSpanned<OneOrMany<Name>>>| match cap_type
+        {
+            "protocol" => self.set_protocol(wrapped_val),
+            "service" => self.set_service(wrapped_val),
+            "directory" => self.set_directory(wrapped_val),
+            "storage" => self.set_storage(wrapped_val),
+            "runner" => self.set_runner(wrapped_val),
+            "resolver" => self.set_resolver(wrapped_val),
+            "event_stream" => self.set_event_stream(wrapped_val),
+            "dictionary" => self.set_dictionary(wrapped_val),
+            "config" => self.set_config(wrapped_val),
+            _ => panic!("Unknown capability type {}", cap_type),
         };
 
-        let names = ContextSpanned::maybe_synthetic(names_raw, self.file_path());
-
-        let cap_type = self.capability_type(None).unwrap();
-        if cap_type == "protocol" {
-            self.set_protocol(names);
-        } else if cap_type == "service" {
-            self.set_service(names);
-        } else if cap_type == "directory" {
-            self.set_directory(names);
-        } else if cap_type == "storage" {
-            self.set_storage(names);
-        } else if cap_type == "runner" {
-            self.set_runner(names);
-        } else if cap_type == "resolver" {
-            self.set_resolver(names);
-        } else if cap_type == "event_stream" {
-            self.set_event_stream(names);
-        } else if cap_type == "dictionary" {
-            self.set_dictionary(names);
-        } else if cap_type == "config" {
-            self.set_config(names);
-        } else {
-            panic!("Unknown capability type {}", cap_type);
+        if names.is_empty() {
+            update_field(None);
+            return;
         }
+
+        let first_origin = names[0].origin.clone();
+
+        let raw_names: Vec<Name> = names.into_iter().map(|n| n.value).collect();
+        let one_or_many = if raw_names.len() == 1 {
+            OneOrMany::One(raw_names.into_iter().next().unwrap())
+        } else {
+            OneOrMany::Many(raw_names)
+        };
+
+        let wrapped = Some(ContextSpanned { value: one_or_many, origin: first_origin });
+
+        update_field(wrapped);
     }
 
     /// Returns true if this capability type allows the ::Many variant of OneOrMany.
@@ -400,6 +428,13 @@ impl<T: ContextCapabilityClause> ContextCapabilityClause for ContextSpanned<T> {
     }
     fn supported(&self) -> &[&'static str] {
         self.value.supported()
+    }
+
+    fn availability(&self) -> Option<ContextSpanned<Availability>> {
+        self.value.availability()
+    }
+    fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>) {
+        self.value.set_availability(a)
     }
 }
 
