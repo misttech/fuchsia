@@ -225,6 +225,7 @@ def _fuchsia_licenses_collection_impl(ctx):
         progress_message = "Verifying license collection %s" % licenses_collection_file.path,
         inputs = [licenses_collection_file],
         outputs = [verified_licenses_collection_file],
+        mnemonic = "FuchsiaLicensesCollectionVerify",
         executable = ctx.executable._verify_collection_tool,
         arguments = [
             "--licenses_collection_input=%s" % licenses_collection_file.path,

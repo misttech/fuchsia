@@ -24,6 +24,7 @@ def _fuchsia_package_size_check_impl(ctx):
     ctx.actions.run(
         outputs = [budgets_file],
         executable = ctx.executable._construct_budgets_file,
+        mnemonic = "FuchsiaPackageSizeCheckConstructBudgets",
         arguments = [
             "--name",
             ctx.attr.size_report_name,
@@ -70,6 +71,7 @@ def _fuchsia_package_size_check_impl(ctx):
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = outputs,
+        mnemonic = "FuchsiaPackageSizeCheck",
         command = script,
         progress_message = "Size checking for %s" % ctx.label.name,
         **LOCAL_ONLY_ACTION_KWARGS

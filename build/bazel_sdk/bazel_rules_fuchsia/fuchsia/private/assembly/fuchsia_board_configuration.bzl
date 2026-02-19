@@ -179,6 +179,7 @@ def _fuchsia_board_configuration_impl(ctx):
         arguments = args,
         inputs = input_files + ctx.files.filesystems_labels + ctx.files.partitions_configuration,
         outputs = [board_config_dir],
+        mnemonic = "FuchsiaBoardConfiguration",
         progress_message = "Creating board config for %s" % ctx.label,
         **LOCAL_ONLY_ACTION_KWARGS
     )
@@ -392,6 +393,7 @@ def _fuchsia_hybrid_board_configuration_impl(ctx):
         arguments = args,
         inputs = creation_inputs + ctx.files.board_configuration,
         outputs = [board_config_dir],
+        mnemonic = "FuchsiaHybridBoardConfiguration",
     )
 
     return [

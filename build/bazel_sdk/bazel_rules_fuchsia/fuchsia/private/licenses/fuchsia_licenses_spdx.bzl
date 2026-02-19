@@ -46,6 +46,7 @@ def _fuchsia_licenses_spdx_impl(ctx):
                            (licenses_collection_file.path, spdx_output.path),
         inputs = [licenses_collection_file] + license_files,
         outputs = [spdx_output],
+        mnemonic = "FuchsiaLicensesSpdxGen",
         executable = ctx.executable._generate_licenses_spdx_tool,
         arguments = [
             "--licenses_used=%s" % licenses_collection_file.path,

@@ -44,6 +44,7 @@ def _fuchsia_licenses_classification_impl(ctx):
         progress_message = "Generating license classifications into %s" % out_json.path,
         inputs = inputs,
         outputs = [out_json, identify_license_output_json],
+        mnemonic = "FuchsiaLicensesClassification",
         executable = ctx.executable._generate_licenses_classification_tool,
         arguments = arguments,
     )

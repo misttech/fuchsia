@@ -82,6 +82,7 @@ def _fuchsia_product_size_check_impl(ctx):
     ctx.actions.run_shell(
         inputs = ctx.files.product_image + get_ffx_assembly_inputs(fuchsia_toolchain),
         outputs = final_outputs + [ffx_isolate_dir],
+        mnemonic = "FuchsiaProductSizeCheck",
         command = _SIZE_CHECKER_RUNNER_SH.format(
             ffx_assembly_args = " ".join(get_ffx_assembly_args(fuchsia_toolchain)),
             extra_args = " ".join(extra_args),
