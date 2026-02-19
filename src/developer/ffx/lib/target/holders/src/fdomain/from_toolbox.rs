@@ -37,13 +37,10 @@ where
 }
 
 /// Uses the `/toolbox` to find the given proxy.
-//TODO(b/399977796): This will be used soon, as FDomain is implemented.
-#[allow(dead_code)]
 pub fn toolbox<P: FProxy>() -> WithToolbox<P, FDomainResourceDialect> {
     WithToolbox { backup: None, _p: PhantomData::default() }
 }
 
-#[allow(dead_code)]
 /// Uses the `/toolbox` to find the given proxy, and falls
 /// back to the given moniker if not.
 pub fn toolbox_or<P: FProxy>(
