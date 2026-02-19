@@ -379,8 +379,7 @@ TEST(ConstantFramePredictor, OffsetsGreaterThanVsyncIntervalAreRespected) {
   EXPECT_EQ(ms_to_time(48), prediction.presentation_time);
 }
 
-// TODO(https://fxbug.dev/469158041): Reenable when/if experimental rollback is rolled back.
-TEST(FramePredictor, DISABLED_ComputeNextSyncTime) {
+TEST(FramePredictor, ComputeNextSyncTime) {
   const zx::time base_vsync_time(123456789);
   zx::duration vsync_interval = zx::msec(16);
 

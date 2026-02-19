@@ -22,7 +22,11 @@ zx::time FramePredictor::ComputeNextVsyncTime(zx::time base_vsync_time, zx::dura
     return base_vsync_time;
   }
 
-  const int64_t num_intervals = (min_vsync_time - base_vsync_time) / vsync_interval;
+  // The "-1" is so that `ComputeNextVsyncTime(5, 10, 15)` returns 15 instead of 25.
+  // The latter would be surprising, because the if-statement above causes
+  // `ComputeNextVsyncTime(5, 10, 5)` to return 5.
+  const int64_t num_intervals =
+      (min_vsync_time.get() - base_vsync_time.get() - 1) / vsync_interval.get();
   return base_vsync_time + (vsync_interval * (num_intervals + 1));
 }
 
@@ -34,18 +38,16 @@ PredictedTimes FramePredictor::ComputePredictionFromDuration(
   // time plus the expected render time, whichever is larger, so we know we have
   // enough time to render for that sync.
   const zx::time min_presentation_time =
-      std::max((request.last_vsync_time + (request.vsync_interval / 2)),
-               (request.now + frame_preparation_duration));
-  const zx::time target_vsync_time =
+      std::max({// Guarantees a time at least one vsync interval greater than the last vsync time.
+                (request.last_vsync_time + (request.vsync_interval / 2)),
+                // Guarantees a time that (probably) gives enough time to prepare a frame.
+                (request.now + frame_preparation_duration),
+                // Guarantees a time that isn't earlier than the requested time.
+                request.requested_presentation_time});
+
+  // Clamp |min_presentation_time| to the subsequent predicted vsync time.
+  const zx::time target_presentation_time =
       ComputeNextVsyncTime(request.last_vsync_time, request.vsync_interval, min_presentation_time);
-
-  // Ensure the requested presentation time is current.
-  zx::time target_presentation_time = std::max(request.requested_presentation_time, request.now);
-
-  // Compute the next presentation time from the target vsync time (inclusive),
-  // that is at least the current requested present time.
-  target_presentation_time =
-      ComputeNextVsyncTime(target_vsync_time, request.vsync_interval, target_presentation_time);
 
   // Find time the client should latch and start rendering in order to
   // frame in time for the target present.
