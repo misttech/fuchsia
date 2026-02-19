@@ -8,6 +8,7 @@ use crate::vfs::{
     CheckAccessReason, FileHandle, FileObject, FsNodeHandle, FsNodeLinkBehavior, FsStr, FsString,
     MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
 };
+use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
 use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
 use starnix_rcu::RcuString;
@@ -22,7 +23,7 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 #[cfg(detect_lock_cycles)]
 use tracing_mutex::util;
@@ -75,7 +76,7 @@ pub trait DirEntryOps: Send + Sync + 'static {
     }
 }
 
-bitflags! {
+atomic_bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct DirEntryFlags: u8 {
         /// Whether this directory entry has been removed from the tree.
@@ -123,7 +124,7 @@ pub struct DirEntry {
     parent: RcuOptionArc<DirEntry>,
 
     /// The [`DirEntryFlags`] for this `DirEntry`.
-    flags: AtomicU8,
+    flags: AtomicDirEntryFlags,
 
     /// The name that this parent calls this child.
     ///
@@ -284,23 +285,21 @@ impl DirEntry {
 
     /// Returns the flags of this DirEntry.
     pub fn flags(&self) -> DirEntryFlags {
-        DirEntryFlags::from_bits_truncate(self.flags.load(Ordering::Acquire))
+        self.flags.load(Ordering::Acquire)
     }
 
     /// Raises the flags of this DirEntry.
     ///
     /// Returns the flags of this DirEntry before the flags were raised.
     pub fn raise_flags(&self, flags: DirEntryFlags) -> DirEntryFlags {
-        let old_flags = self.flags.fetch_or(flags.bits(), Ordering::AcqRel);
-        DirEntryFlags::from_bits_truncate(old_flags)
+        self.flags.fetch_or(flags, Ordering::AcqRel)
     }
 
     /// Lowers the flags of this DirEntry.
     ///
     /// Returns the flags of this DirEntry before the flags were lowered.
     pub fn lower_flags(&self, flags: DirEntryFlags) -> DirEntryFlags {
-        let old_flags = self.flags.fetch_and(!flags.bits(), Ordering::AcqRel);
-        DirEntryFlags::from_bits_truncate(old_flags)
+        self.flags.fetch_and(!flags, Ordering::AcqRel)
     }
 
     /// Returns true if this DirEntry is dead.

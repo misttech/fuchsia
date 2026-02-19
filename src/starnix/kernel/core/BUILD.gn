@@ -293,6 +293,7 @@ _starnix_core_deps = [
   "//src/performance/lib/fxt/rust",
   "//src/performance/memory/attribution/server",
   "//src/starnix/kernel/vdso",
+  "//src/starnix/lib/atomic_bitflags",
   "//src/starnix/lib/crash_throttling",
   "//src/starnix/lib/devicetree",
   "//src/starnix/lib/ebpf",

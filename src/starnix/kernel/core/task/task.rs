@@ -17,7 +17,7 @@ use crate::task::{
     ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
-use bitflags::bitflags;
+use atomic_bitflags::atomic_bitflags;
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
@@ -44,7 +44,7 @@ use starnix_uapi::{
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
 use zx::{Signals, Task as _};
@@ -103,7 +103,7 @@ impl ExitStatus {
     }
 }
 
-bitflags! {
+atomic_bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TaskFlags: u8 {
         const EXITED = 0x1;
@@ -113,28 +113,6 @@ bitflags! {
         /// Currently used to implement ExitStatus::CoreDump.
         const DUMP_ON_EXIT = 0x8;
         const KERNEL_SIGNALS_AVAILABLE = 0x10;
-    }
-}
-
-pub struct AtomicTaskFlags {
-    flags: AtomicU8,
-}
-
-impl AtomicTaskFlags {
-    fn new(flags: TaskFlags) -> Self {
-        Self { flags: AtomicU8::new(flags.bits()) }
-    }
-
-    fn load(&self, ordering: Ordering) -> TaskFlags {
-        let flags = self.flags.load(ordering);
-        // We only ever store values from a `TaskFlags`.
-        TaskFlags::from_bits_retain(flags)
-    }
-
-    fn swap(&self, flags: TaskFlags, ordering: Ordering) -> TaskFlags {
-        let flags = self.flags.swap(flags.bits(), ordering);
-        // We only ever store values from a `TaskFlags`.
-        TaskFlags::from_bits_retain(flags)
     }
 }
 

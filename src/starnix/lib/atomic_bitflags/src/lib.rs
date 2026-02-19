@@ -21,7 +21,7 @@ macro_rules! atomic_bitflags {
             }
 
             #[allow(dead_code)]
-            #[derive(Debug)]
+            #[derive(Debug, Default)]
             $vis struct [<Atomic $BitFlags>] {
                 inner: std::sync::atomic::[<Atomic $T:camel>],
             }
