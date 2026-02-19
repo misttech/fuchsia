@@ -12,7 +12,7 @@ use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, BlobInfo, MirrorConfig, Reposito
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
 use fuchsia_sync::Mutex;
-use fuchsia_url::AbsolutePackageUrl;
+use fuchsia_url::{AbsolutePackageUrl, PackageVariant};
 use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
@@ -423,11 +423,10 @@ pub async fn merkle_for_url(
     mut cobalt_sender: ProtocolSender<MetricEvent>,
 ) -> Result<BlobId, MerkleForError> {
     // TODO(https://fxbug.dev/338012491): Stop adding variants to package URLs.
-    #[allow(clippy::or_fun_call)] // TODO(https://fxbug.dev/379717246)
     let target_path = TargetPath::new(format!(
         "{}/{}",
         url.name(),
-        url.variant().unwrap_or(&fuchsia_url::PackageVariant::zero())
+        url.variant().map(|v| v.as_ref()).unwrap_or(PackageVariant::ZERO_STR)
     ))
     .map_err(MerkleForError::InvalidTargetPath)?;
     let mut repo = repo.lock().await;

@@ -94,14 +94,17 @@ impl<'de> Deserialize<'de> for PackageName {
 pub struct PackageVariant(String);
 
 impl PackageVariant {
+    /// The string representation, "0", of the zero package variant.
+    pub const ZERO_STR: &str = "0";
+
     /// Create a `PackageVariant` of "0".
     pub fn zero() -> Self {
-        "0".parse().expect("\"0\" is a valid variant")
+        Self::ZERO_STR.parse().expect("\"0\" is a valid variant")
     }
 
     /// Returns true iff the variant is "0".
     pub fn is_zero(&self) -> bool {
-        self.0 == "0"
+        self.0 == Self::ZERO_STR
     }
 }
 
