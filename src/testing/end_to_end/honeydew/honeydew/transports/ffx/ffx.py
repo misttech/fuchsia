@@ -243,9 +243,14 @@ class FFX(abc.ABC):
         """
 
     @abc.abstractmethod
-    def wait_for_rcs_connection(self) -> None:
+    def wait_for_rcs_connection(
+        self, include_target_name: bool = False
+    ) -> None:
         """Wait until FFX is able to establish a RCS connection to the target.
 
+        Args:
+            include_target_name: If set to True, target will be specified by name.
+                Otherwise, target will be specified by address.
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.

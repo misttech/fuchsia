@@ -980,7 +980,6 @@ class FuchsiaDeviceImpl(
 
         # Step #2 - Call all of the callback functions that were registered for IP address change.
         for on_device_ip_change_fns in self._on_device_ip_change_fns:
-            print(on_device_ip_change_fns)
             _LOGGER.info(
                 "Calling %s with arg %s",
                 on_device_ip_change_fns.__qualname__,
@@ -1072,7 +1071,24 @@ class FuchsiaDeviceImpl(
         """
         _LOGGER.info("Waiting for %s to go online...", self.device_name)
         try:
-            self.ffx.wait_for_rcs_connection()
+            if self._device_info.ip_port:
+                # If the device was specified as an address,
+                # just continue to use that address. This is the
+                # norm when run by builders in Infra, because they
+                # specify a static IP address so the address is
+                # expected not to change.
+                self.ffx.wait_for_rcs_connection(include_target_name=False)
+            else:
+                # If the device was not specified as an address, it may change
+                # IP addresses, so first wait for it by name, then update the
+                # IP address. This is the appropriate way when run locally,
+                # because in most environments the device may have a new
+                # address after reboots, so the target name is the stable
+                # query to use.
+                self.ffx.wait_for_rcs_connection(include_target_name=True)
+                # Now that we know that the device is available, update find
+                # out and store its new IP address.
+                self.resolve_device_ip()
             _LOGGER.info("%s is online.", self.device_name)
         except (
             errors.DeviceNotConnectedError,

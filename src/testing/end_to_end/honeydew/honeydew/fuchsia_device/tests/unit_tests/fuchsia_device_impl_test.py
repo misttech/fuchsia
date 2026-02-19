@@ -1429,17 +1429,57 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         mock_ffx_wait_for_rcs_disconnection.assert_called()
 
     @mock.patch.object(
+        fuchsia_device_impl.FuchsiaDeviceImpl,
+        "resolve_device_ip",
+        autospec=True,
+    )
+    @mock.patch.object(
         ffx_impl.FfxImpl,
         "wait_for_rcs_connection",
         autospec=True,
     )
-    def test_wait_for_online_success(
-        self, mock_ffx_wait_for_rcs_connection: mock.Mock
+    def test_wait_for_online_success_with_ip(
+        self,
+        mock_ffx_wait_for_rcs_connection: mock.Mock,
+        mock_resolve_device_ip: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.wait_for_online() success case"""
+        """Testcase for FuchsiaDevice.wait_for_online() success case when the
+        IP address is specified."""
         self.fd_fc_obj.wait_for_online()
 
-        mock_ffx_wait_for_rcs_connection.assert_called()
+        mock_ffx_wait_for_rcs_connection.assert_called_with(
+            mock.ANY, include_target_name=False
+        )
+        mock_resolve_device_ip.assert_not_called()
+
+    @mock.patch.object(
+        fuchsia_device_impl.FuchsiaDeviceImpl,
+        "resolve_device_ip",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "wait_for_rcs_connection",
+        autospec=True,
+    )
+    def test_wait_for_online_success_no_ip(
+        self,
+        mock_ffx_wait_for_rcs_connection: mock.Mock,
+        mock_resolve_device_ip: mock.Mock,
+    ) -> None:
+        """Testcase for FuchsiaDevice.wait_for_online() success case when the
+        IP address is not specified."""
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            ip_port=None,
+            serial_socket=None,
+        )
+        self.fd_fc_obj.wait_for_online()
+
+        mock_ffx_wait_for_rcs_connection.assert_called_with(
+            mock.ANY, include_target_name=True
+        )
+        mock_resolve_device_ip.assert_called()
 
     @mock.patch.object(
         ffx_impl.FfxImpl,
@@ -1448,7 +1488,8 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         autospec=True,
     )
     def test_wait_for_online_fail(
-        self, mock_ffx_wait_for_rcs_connection: mock.Mock
+        self,
+        mock_ffx_wait_for_rcs_connection: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.wait_for_online() failure case"""
         with self.assertRaisesRegex(
@@ -1456,7 +1497,9 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         ):
             self.fd_fc_obj.wait_for_online()
 
-        mock_ffx_wait_for_rcs_connection.assert_called()
+        mock_ffx_wait_for_rcs_connection.assert_called_with(
+            mock.ANY, include_target_name=False
+        )
 
     # List all the tests related to private properties
     @mock.patch.object(

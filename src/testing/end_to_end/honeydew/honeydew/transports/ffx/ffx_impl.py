@@ -84,6 +84,9 @@ class FfxImpl(ffx_interface.FFX):
         shared_data: str | None = None,
         device_ip_change: FuchsiaDeviceIpChange | None = None,
     ) -> None:
+        # TODO(b/485903228): Update this logic to reflect the correct relationship
+        # between the target specification (the "query") and the target address.
+        # See bug for details.
         invalid_target_name: bool = False
         try:
             ipaddress.ip_address(target_name)
@@ -550,9 +553,14 @@ class FfxImpl(ffx_interface.FFX):
             ffx_cmd, capture_output=capture_output, machine=MachineFormat.RAW
         )
 
-    def wait_for_rcs_connection(self) -> None:
+    def wait_for_rcs_connection(
+        self, include_target_name: bool = False
+    ) -> None:
         """Wait until FFX is able to establish a RCS connection to the target.
 
+        Args:
+            include_target_name: If set to True, target will be specified by name.
+                Otherwise, target will be specified by address.
         Raises:
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
@@ -565,7 +573,10 @@ class FfxImpl(ffx_interface.FFX):
                     _LOGGER.info("%s is connected to host", self._target_name)
                     return
 
-        self.run(cmd=_FFX_CMDS["TARGET_WAIT"])
+        self.run(
+            cmd=_FFX_CMDS["TARGET_WAIT"],
+            include_target_name=include_target_name,
+        )
 
         _LOGGER.info("%s is connected to host", self._target_name)
         return
