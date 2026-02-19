@@ -5,7 +5,6 @@
 package fint
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -20,9 +19,7 @@ func TestNewRunner(t *testing.T) {
 			BuildDir: buildDir,
 		}
 		// Ensure environment variable is not set during test.
-		orig := os.Getenv("PYTHONPYCACHEPREFIX")
-		os.Setenv("PYTHONPYCACHEPREFIX", "")
-		defer os.Setenv("PYTHONPYCACHEPREFIX", orig)
+		t.Setenv("PYTHONPYCACHEPREFIX", "")
 
 		runner := newRunner(contextSpec)
 		wantEnv := "PYTHONPYCACHEPREFIX=" + filepath.Join(buildDir, "__pycache__")
@@ -36,10 +33,8 @@ func TestNewRunner(t *testing.T) {
 		contextSpec := &fintpb.Context{
 			BuildDir: buildDir,
 		}
-		orig := os.Getenv("PYTHONPYCACHEPREFIX")
 		wantEnv := "/some/other/path"
-		os.Setenv("PYTHONPYCACHEPREFIX", wantEnv)
-		defer os.Setenv("PYTHONPYCACHEPREFIX", orig)
+		t.Setenv("PYTHONPYCACHEPREFIX", wantEnv)
 
 		runner := newRunner(contextSpec)
 		if slices.Contains(runner.Env, "PYTHONPYCACHEPREFIX=") {
@@ -51,9 +46,7 @@ func TestNewRunner(t *testing.T) {
 		contextSpec := &fintpb.Context{
 			BuildDir: "",
 		}
-		orig := os.Getenv("PYTHONPYCACHEPREFIX")
-		os.Setenv("PYTHONPYCACHEPREFIX", "")
-		defer os.Setenv("PYTHONPYCACHEPREFIX", orig)
+		t.Setenv("PYTHONPYCACHEPREFIX", "")
 
 		runner := newRunner(contextSpec)
 		if slices.Contains(runner.Env, "PYTHONPYCACHEPREFIX=") {
