@@ -9,7 +9,9 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <thread>
 
@@ -240,7 +242,7 @@ TEST_F(SysctlTest, DisableIpv6Default) {
 
 struct SysctlTestReadBackParam {
   std::string path;
-  int32_t value;
+  const char *value;
 };
 
 class SysctlTestReadBack : public SysctlTest,
@@ -261,17 +263,26 @@ TEST_P(SysctlTestReadBack, ReadBack) {
 INSTANTIATE_TEST_SUITE_P(
     SysctlTest, SysctlTestReadBack,
     ::testing::Values(
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/ucast_solicit", 3},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/ucast_solicit", 3},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/mcast_resolicit", 3},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/mcast_resolicit", 3},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/dad_transmits", 1},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms", 2000},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms", 2000},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/retrans_time_ms", 2000},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/retrans_time_ms", 2000},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 0},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", 2},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", 0},
-        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", 1}));
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/ucast_solicit", "3"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/ucast_solicit", "3"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/mcast_resolicit", "3"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/mcast_resolicit", "3"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/dad_transmits", "1"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/base_reachable_time_ms", "2000"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/base_reachable_time_ms", "2000"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/neigh/default/retrans_time_ms", "2000"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/neigh/default/retrans_time_ms", "2000"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", "0"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/use_tempaddr", "2"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", "0"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv6/conf/default/accept_ra_defrtr", "1"},
+        SysctlTestReadBackParam{"/proc/sys/net/ipv4/tcp_rmem", "4096\t87380\t6291456"}),
+    [](const testing::TestParamInfo<SysctlTestReadBackParam> &info) {
+      auto path = std::filesystem::path(info.param.path);
+      auto name = path.filename().string();
+      auto version = std::next(path.begin(), 4)->string();
+      std::string value = info.param.value;
+      std::ranges::replace(value, '\t', '_');
+      return std::format("{}_{}_{}", version, name, value);
+    });
 }  // namespace

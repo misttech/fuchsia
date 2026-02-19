@@ -1121,3 +1121,110 @@ impl InterfaceConfig for AcceptRaDefrtr {
             })
     }
 }
+
+pub struct TcpRmemFile;
+
+impl TcpRmemFile {
+    pub fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self)
+    }
+}
+
+impl BytesFileOps for TcpRmemFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let mut params = std::str::from_utf8(&data)
+            .map_err(|_| errno!(EINVAL))?
+            .trim_ascii()
+            .split_ascii_whitespace();
+
+        let min = params
+            .next()
+            .ok_or_else(|| errno!(EINVAL))?
+            .parse::<u32>()
+            .map_err(|_| errno!(EINVAL))?;
+        let default = params
+            .next()
+            .ok_or_else(|| errno!(EINVAL))?
+            .parse::<u32>()
+            .map_err(|_| errno!(EINVAL))?;
+        let max = params
+            .next()
+            .ok_or_else(|| errno!(EINVAL))?
+            .parse::<u32>()
+            .map_err(|_| errno!(EINVAL))?;
+
+        if params.next().is_some() {
+            return error!(EINVAL);
+        }
+
+        let control =
+            connect_to_protocol_sync::<fnet_settings::ControlMarker>().map_err(|err| {
+                log_error!(
+                    "failed to connect to {}: {:?}",
+                    fnet_settings::ControlMarker::PROTOCOL_NAME,
+                    err
+                );
+                errno!(EIO)
+            })?;
+
+        let tcp_settings = fnet_settings::Tcp {
+            buffer_sizes: Some(fnet_settings::SocketBufferSizes {
+                receive: Some(fnet_settings::SocketBufferSizeRange {
+                    min: Some(min),
+                    default: Some(default),
+                    max: Some(max),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        control
+            .update_tcp(&tcp_settings, zx::MonotonicInstant::INFINITE)
+            .map_err(|err| {
+                log_error!("failed to update tcp settings: {:?}", err);
+                errno!(EIO)
+            })?
+            .map_err(|err| match err {
+                fnet_settings::UpdateError::IllegalZeroValue
+                | fnet_settings::UpdateError::IllegalNegativeValue => errno!(EINVAL),
+                fnet_settings::UpdateError::OutOfRange => errno!(ERANGE),
+                fnet_settings::UpdateError::NotSupported => errno!(ENOTSUP),
+                fnet_settings::UpdateError::__SourceBreaking { unknown_ordinal } => {
+                    log_error!("unknown error with ordinal: {unknown_ordinal}");
+                    errno!(EIO)
+                }
+            })?;
+
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let state = connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
+            log_error!(
+                "failed to connect to {}: {:?}",
+                fnet_settings::StateMarker::PROTOCOL_NAME,
+                err
+            );
+            errno!(EIO)
+        })?;
+
+        let tcp_settings = state.get_tcp(zx::MonotonicInstant::INFINITE).map_err(|err| {
+            log_error!("failed to get tcp settings: {:?}", err);
+            errno!(EIO)
+        })?;
+
+        let receive_sizes =
+            tcp_settings.buffer_sizes.and_then(|sizes| sizes.receive).ok_or_else(|| {
+                log_error!("tcp settings missing receive buffer sizes");
+                errno!(EIO)
+            })?;
+
+        let min = receive_sizes.min.unwrap_or(0);
+        let default = receive_sizes.default.unwrap_or(0);
+        let max = receive_sizes.max.unwrap_or(0);
+
+        Ok(format!("{}\t{}\t{}\n", min, default, max).into_bytes().into())
+    }
+}

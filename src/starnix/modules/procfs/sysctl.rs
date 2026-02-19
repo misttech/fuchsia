@@ -4,7 +4,7 @@
 
 use crate::sys_net::{
     PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
-    ProcSysNetIpv6Neigh,
+    ProcSysNetIpv6Neigh, TcpRmemFile,
 };
 use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_hardware_power_suspend as fhps;
@@ -506,11 +506,7 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874120")),
             file_mode,
         );
-        dir.entry(
-            "tcp_rmem",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874549")),
-            file_mode,
-        );
+        dir.entry("tcp_rmem", TcpRmemFile::new_node(), file_mode);
     });
     dir.subdir("ipv6", 0o555, |dir| {
         dir.entry("conf", ProcSysNetIpv6Conf, dir_mode);
