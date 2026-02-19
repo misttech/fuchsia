@@ -331,6 +331,7 @@ impl RemoteFs {
                 server_end,
             )
             .map_err(|_| errno!(EIO))?;
+
         // Use remote IDs if the filesystem is Fxfs which we know will give us unique IDs.  Hard
         // links need to resolve to the same underlying FsNode, so we can only support hard links if
         // the remote file system will give us unique IDs.  The IDs are also used as the key in
@@ -345,11 +346,14 @@ impl RemoteFs {
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
 
+        // The OnRepresentation response will return an initial set of `attrs`, so create the node
+        // with `start_dirty=false`.
         let (remote_node, attrs, _) = create_with_on_representation(
             client_end.into(),
-            Factory { assume_special: false, start_dirty: true },
+            Factory { assume_special: false, start_dirty: false },
         )
         .map_err(map_sync_io_client_error)?;
+
         Ok((
             RemoteFs { use_remote_ids, root_proxy, root_rights },
             remote_node,
@@ -1066,6 +1070,7 @@ impl FsNodeOps for RemoteNode {
     fn update_attributes(
         &self,
         _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
         _current_task: &CurrentTask,
         info: &FsNodeInfo,
         has: zxio_node_attr_has_t,
@@ -2099,8 +2104,9 @@ mod test {
     use crate::vfs::socket::{SocketFile, SocketMessageFlags};
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_request_stream;
+    use fidl::endpoints::{ServerEnd, create_request_stream};
     use flyweights::FlyByteStr;
+    use fuchsia_runtime::UtcDuration;
     use futures::StreamExt;
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_uapi::auth::Credentials;
@@ -3672,59 +3678,126 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_update_attributes_invalidates_cache() {
-        let (client, mut stream) = create_request_stream::<fio::FileMarker>();
+        let (client, mut stream) = create_request_stream::<fio::DirectoryMarker>();
         let get_attrs_count = Arc::new(AtomicU32::new(0));
         let get_attrs_count_clone = get_attrs_count.clone();
 
         let server_task = fasync::Task::spawn(async move {
+            let mut sub_tasks = Vec::new();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fio::FileRequest::GetAttributes { query: _, responder } => {
-                        get_attrs_count_clone.fetch_add(1, Ordering::SeqCst);
-                        let mutable_attrs = fio::MutableNodeAttributes { ..Default::default() };
-                        let immutable_attrs = fio::ImmutableNodeAttributes {
-                            id: Some(1),
-                            link_count: Some(1),
-                            ..Default::default()
-                        };
-                        responder.send(Ok((&mutable_attrs, &immutable_attrs))).unwrap();
+                    fio::DirectoryRequest::Open { path, object, flags, .. } => {
+                        assert_eq!(path, ".", "Unexpected open() for non-self");
+                        let get_attrs_count = get_attrs_count_clone.clone();
+                        sub_tasks.push(fasync::Task::spawn(async move {
+                            let (mut stream, control_handle) =
+                                ServerEnd::<fio::DirectoryMarker>::new(object)
+                                    .into_stream_and_control_handle();
+                            assert!(flags.contains(fio::Flags::FLAG_SEND_REPRESENTATION));
+
+                            // The Representation provides the initial attributes to cache.
+                            let mutable_attributes =
+                                fio::MutableNodeAttributes { ..Default::default() };
+                            let immutable_attributes = fio::ImmutableNodeAttributes {
+                                id: Some(1),
+                                link_count: Some(1),
+                                ..Default::default()
+                            };
+                            let info = fio::DirectoryInfo {
+                                attributes: Some(fio::NodeAttributes2 {
+                                    mutable_attributes,
+                                    immutable_attributes,
+                                }),
+                                ..Default::default()
+                            };
+                            let _ = control_handle
+                                .send_on_representation(fio::Representation::Directory(info));
+
+                            while let Some(Ok(request)) = stream.next().await {
+                                match request {
+                                    fio::DirectoryRequest::GetAttributes {
+                                        query: _,
+                                        responder,
+                                    } => {
+                                        get_attrs_count.fetch_add(1, Ordering::SeqCst);
+                                        let mutable_attrs =
+                                            fio::MutableNodeAttributes { ..Default::default() };
+                                        let immutable_attrs = fio::ImmutableNodeAttributes {
+                                            id: Some(1),
+                                            link_count: Some(1),
+                                            ..Default::default()
+                                        };
+                                        responder
+                                            .send(Ok((&mutable_attrs, &immutable_attrs)))
+                                            .unwrap();
+                                    }
+                                    fio::DirectoryRequest::UpdateAttributes {
+                                        payload: _,
+                                        responder,
+                                    } => {
+                                        responder.send(Ok(())).unwrap();
+                                    }
+                                    fio::DirectoryRequest::Close { responder } => {
+                                        responder.send(Ok(())).unwrap();
+                                    }
+                                    _ => {
+                                        panic!("Unexpected request: {:?}", request)
+                                    }
+                                }
+                            }
+                        }));
                     }
-                    fio::FileRequest::UpdateAttributes { payload: _, responder } => {
+                    fio::DirectoryRequest::Close { responder } => {
                         responder.send(Ok(())).unwrap();
                     }
-                    fio::FileRequest::Close { responder } => {
-                        responder.send(Ok(())).unwrap();
+                    fio::DirectoryRequest::QueryFilesystem { responder } => {
+                        responder.send(0i32, None).unwrap();
                     }
                     _ => panic!("Unexpected request: {:?}", request),
                 }
             }
+
+            for sub_task in sub_tasks {
+                let _ = sub_task.await;
+            }
         });
 
         spawn_kernel_and_run(async move |locked, current_task| {
-            let io = RemoteIo::new(client.into_channel().into());
-            let node = RemoteNode::new(io, false); // Start clean
-            let info = RwLock::new(FsNodeInfo::default());
+            let fs = RemoteFs::new_fs(
+                locked,
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
 
-            // 1. Initial fetch. Should use cached info (start_dirty=false).
+            // 1. Initial fetch. Should use cached info because the root node has start_dirty=false.
             {
-                let _info = node.node.fetch_and_refresh_info(&info).expect("fetch failed");
+                let _info = fs
+                    .root()
+                    .node
+                    .fetch_and_refresh_info(locked, current_task)
+                    .expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
 
-            let mut locked = locked.cast_locked::<FileOpsCore>();
-
             // 2. Update attributes. This should dirty the node.
-            node.update_attributes(
-                &mut locked,
-                current_task,
-                &info.read(),
-                zxio_node_attr_has_t { modification_time: true, ..Default::default() },
-            )
-            .expect("update_attributes failed");
+            fs.root()
+                .node
+                .update_attributes(locked, current_task, |attrs| {
+                    attrs.time_modify += UtcDuration::from_seconds(1);
+                    Ok(())
+                })
+                .expect("update_attributes failed");
 
             // 3. Fetch again. Should trigger a request.
             {
-                let _info = node.node.fetch_and_refresh_info(&info).expect("fetch failed");
+                let _info = fs
+                    .root()
+                    .node
+                    .fetch_and_refresh_info(locked, current_task)
+                    .expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
         })
