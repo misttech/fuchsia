@@ -314,4 +314,35 @@ TEST_F(LayerTest, CleanUpAllImages_CheckConfigChange) {
   }
 }
 
+TEST_F(LayerTest, ReuseImageInDifferentConfigs) {
+  Layer layer(display::LayerId(1));
+
+  const display::ImageMetadata image_metadata({.width = kDisplayWidth,
+                                               .height = kDisplayHeight,
+                                               .tiling_type = display::ImageTilingType::kLinear});
+  const display::Rectangle display_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+  layer.SetPrimaryConfig(image_metadata);
+  layer.SetPrimaryPosition(display::CoordinateTransformation::kIdentity, display_area,
+                           display_area);
+  layer.SetPrimaryAlpha(display::AlphaMode::kDisable, 0);
+
+  fbl::RefPtr<Image> image = CreateReadyImage();
+  layer.SetImage(image, display::kInvalidEventId);
+  layer.ApplyChanges();
+  ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(1)));
+  ASSERT_TRUE(layer.ActivateLatestReadyImage());
+
+  EXPECT_TRUE(layer.applied_image());
+  EXPECT_EQ(layer.applied_image()->id(), image->id());
+
+  layer.SetImage(image, display::kInvalidEventId);
+  layer.ApplyChanges();
+  ASSERT_TRUE(layer.ResolveDraftImage(&fences_, display::ConfigStamp(2)));
+  ASSERT_TRUE(layer.ActivateLatestReadyImage());
+
+  EXPECT_TRUE(layer.applied_image());
+  EXPECT_EQ(layer.applied_image()->id(), image->id());
+}
+
 }  // namespace display_coordinator

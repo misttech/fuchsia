@@ -178,8 +178,22 @@ bool Layer::ActivateLatestReadyImage() {
   if (!newest_ready_image) {
     return false;
   }
-  ZX_DEBUG_ASSERT(applied_image_ == nullptr || (newest_ready_image->latest_client_config_stamp() >
-                                                applied_image_->latest_client_config_stamp()));
+
+  // `newest_ready_image` can have the same config stamp as `applied_image_`,
+  // since an image can be reused across multiple configs.
+  if (applied_image_ != nullptr) {
+    ZX_DEBUG_ASSERT_MSG(
+        newest_ready_image->latest_client_config_stamp() >=
+            applied_image_->latest_client_config_stamp(),
+        "Invalid image applied on Layer #%" PRIu64 ": The most recent ready image (#%" PRIu64
+        ") was applied in config #%" PRIu64 "; the current applied image (#%" PRIu64
+        ") was applied in config #%" PRIu64
+        ". It's not allowed to apply an image in a config "
+        "with an earlier stamp.",
+        id().value(), newest_ready_image->id().value(),
+        newest_ready_image->latest_client_config_stamp().value(), applied_image_->id().value(),
+        applied_image_->latest_client_config_stamp().value());
+  }
 
   applied_image_ = std::move(newest_ready_image);
   applied_layer_config_ = display::DriverLayer({
