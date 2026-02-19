@@ -412,97 +412,103 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_attribute_of_inline_encrypted_files() {
         let mut fixture = TestFixture::new_default().await;
+        {
+            // Use Starnix CryptService which supports creating and storing keys in the format
+            // expected for inline encryption.
+            let (starnix_vol, crypt_service) =
+                fixture.create_vol_with_starnix_crypt("starnix").await;
 
-        // Use Starnix CryptService which supports creating and storing keys in the format expected
-        // for inline encryption.
-        let (starnix_vol, crypt_service) = fixture.create_vol_with_starnix_crypt("starnix").await;
+            let starnix_vol_root_dir =
+                Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
+                    .await
+                    .expect("open failed");
 
-        let starnix_vol_root_dir =
-            Directory::open(&starnix_vol, starnix_vol.root_directory_object_id())
+            // Create a directory that has a wrapping key identifier.
+            let mut transaction = fixture
+                .filesystem
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        starnix_vol.store_object_id(),
+                        starnix_vol.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
                 .await
-                .expect("open failed");
+                .expect("new_transaction failed");
+            let dir = starnix_vol_root_dir
+                .create_child_dir(&mut transaction, "dir")
+                .await
+                .expect("create_child_dir failed");
+            transaction.commit().await.expect("transaction commit failed");
+            // `crypt_service` uses the (sync) crypt proxy to add wrapping keys. Wrap this with
+            // `fuchsia_async::unblock` so that the test thread will not block on this operation.
+            let key_identifier = fuchsia_async::unblock(move || {
+                crypt_service.add_wrapping_key(&[0xab; 32], 0).expect("add_wrapping_key failed")
+            })
+            .await;
+            let transaction = fixture
+                .filesystem
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new transaction failed");
+            dir.update_attributes(
+                transaction,
+                Some(&fio::MutableNodeAttributes {
+                    wrapping_key_id: Some(key_identifier),
+                    ..Default::default()
+                }),
+                0,
+                None,
+            )
+            .await
+            .expect("update attributes failed");
 
-        // Create a directory that has a wrapping key identifier.
-        let mut transaction = fixture
-            .filesystem
-            .clone()
-            .new_transaction(
-                lock_keys![LockKey::object(
+            let mut transaction = fixture
+                .filesystem
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file_object = dir
+                .create_child_file(&mut transaction, "file")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            let vol = Arc::new(
+                FxVolume::new(
+                    Weak::new(),
+                    starnix_vol.clone(),
                     starnix_vol.store_object_id(),
-                    starnix_vol.root_directory_object_id()
-                )],
-                Options::default(),
-            )
-            .await
-            .expect("new_transaction failed");
-        let dir = starnix_vol_root_dir
-            .create_child_dir(&mut transaction, "dir")
-            .await
-            .expect("create_child_dir failed");
-        transaction.commit().await.expect("transaction commit failed");
-        // `crypt_service` uses the (sync) crypt proxy to add wrapping keys. Wrap this with
-        // `fuchsia_async::unblock` so that the test thread will not block on this operation.
-        let key_identifier = fuchsia_async::unblock(move || {
-            crypt_service.add_wrapping_key(&[0xab; 32], 0).expect("add_wrapping_key failed")
-        })
-        .await;
-        let transaction = fixture
-            .filesystem
-            .clone()
-            .new_transaction(
-                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
-                Options::default(),
-            )
-            .await
-            .expect("new transaction failed");
-        dir.update_attributes(
-            transaction,
-            Some(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(key_identifier),
-                ..Default::default()
-            }),
-            0,
-            None,
-        )
-        .await
-        .expect("update attributes failed");
-
-        let mut transaction = fixture
-            .filesystem
-            .clone()
-            .new_transaction(
-                lock_keys![LockKey::object(starnix_vol.store_object_id(), dir.object_id())],
-                Options::default(),
-            )
-            .await
-            .expect("new_transaction failed");
-        let file_object = dir
-            .create_child_file(&mut transaction, "file")
-            .await
-            .expect("create_child_file failed");
-        transaction.commit().await.expect("commit failed");
-
-        let vol = Arc::new(
-            FxVolume::new(
-                Weak::new(),
-                starnix_vol.clone(),
-                starnix_vol.store_object_id(),
-                Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
-                MemoryPressureConfig::default(),
-            )
-            .expect("FxVolume::new failed"),
-        );
-        let file = FxFile::new(
-            ObjectStore::open_object(&vol, file_object.object_id(), HandleOptions::default(), None)
+                    Arc::new(PageRefaultCounter::new().expect("PageRefaultCounter::new failed")),
+                    MemoryPressureConfig::default(),
+                )
+                .expect("FxVolume::new failed"),
+            );
+            let file = FxFile::new(
+                ObjectStore::open_object(
+                    &vol,
+                    file_object.object_id(),
+                    HandleOptions::default(),
+                    None,
+                )
                 .await
                 .expect("open_object failed"),
-        );
-        let attributes = file
-            .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
-            .await
-            .expect("get_attributes failed");
-        assert_eq!(attributes.mutable_attributes.wrapping_key_id, Some(key_identifier));
-
+            );
+            let attributes = file
+                .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
+                .await
+                .expect("get_attributes failed");
+            assert_eq!(attributes.mutable_attributes.wrapping_key_id, Some(key_identifier));
+        }
         fixture.close().await;
     }
 
