@@ -20,13 +20,11 @@ pub struct ProcessesMemoryUsage {
 /// The plugin can output one of these based on the options:
 /// * A complete digest of the memory usage.
 /// * A digest of the memory usage of a subset of the processes running on the targeted device.
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Serialize)]
 pub enum ProfileMemoryOutput {
-    CompleteDigest(processed::Digest),
-    ProcessDigest(ProcessesMemoryUsage),
-    ComponentDigest(ComponentSummaryProfileResult),
+    CompleteDigest(Box<processed::Digest>),
+    ProcessDigest(Box<ProcessesMemoryUsage>),
+    ComponentDigest(Box<ComponentSummaryProfileResult>),
 }
 
 /// Returns a ProfileMemoryOutput that only contains information related to the process identified by `koid`.
@@ -41,10 +39,10 @@ pub fn filter_digest_by_process(
             vec.push(process);
         }
     }
-    return ProfileMemoryOutput::ProcessDigest(ProcessesMemoryUsage {
+    return ProfileMemoryOutput::ProcessDigest(Box::new(ProcessesMemoryUsage {
         process_data: vec,
         capture_time: digest.time,
-    });
+    }));
 }
 
 #[cfg(test)]
@@ -83,10 +81,10 @@ mod tests {
         let digest = mock_digest();
         let capture_time = digest.time;
         let observed = filter_digest_by_process(digest, &[processed::ProcessKoid::new(1)], &[]);
-        let expected = ProfileMemoryOutput::ProcessDigest(ProcessesMemoryUsage {
+        let expected = ProfileMemoryOutput::ProcessDigest(Box::new(ProcessesMemoryUsage {
             process_data: vec![mock_process(processed::ProcessKoid::new(1), "process1")],
             capture_time,
-        });
+        }));
         assert_eq!(observed, expected);
     }
 
@@ -95,10 +93,10 @@ mod tests {
         let digest = mock_digest();
         let capture_time = digest.time;
         let observed = filter_digest_by_process(digest, &[], &[String::from("process1")]);
-        let expected = ProfileMemoryOutput::ProcessDigest(ProcessesMemoryUsage {
+        let expected = ProfileMemoryOutput::ProcessDigest(Box::new(ProcessesMemoryUsage {
             process_data: vec![mock_process(processed::ProcessKoid::new(1), "process1")],
             capture_time,
-        });
+        }));
         assert_eq!(observed, expected);
     }
 
@@ -111,13 +109,13 @@ mod tests {
             &[processed::ProcessKoid::new(2)],
             &[String::from("process1")],
         );
-        let expected = ProfileMemoryOutput::ProcessDigest(ProcessesMemoryUsage {
+        let expected = ProfileMemoryOutput::ProcessDigest(Box::new(ProcessesMemoryUsage {
             process_data: vec![
                 mock_process(processed::ProcessKoid::new(1), "process1"),
                 mock_process(processed::ProcessKoid::new(2), "process2"),
             ],
             capture_time,
-        });
+        }));
         assert_eq!(observed, expected);
     }
 }

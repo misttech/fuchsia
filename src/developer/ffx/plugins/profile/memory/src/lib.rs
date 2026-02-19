@@ -40,7 +40,7 @@ impl PluginOutput<ComponentProfileResult> for ComponentProfileResultWriter {
     fn machine(&mut self, output: ComponentProfileResult) -> Result<()> {
         match output {
             ComponentProfileResult::Summary(summary) => {
-                self.writer.machine(&ProfileMemoryOutput::ComponentDigest(summary))?;
+                self.writer.machine(&ProfileMemoryOutput::ComponentDigest(Box::new(summary)))?;
                 Ok(())
             }
             _ => unimplemented!(),
@@ -163,7 +163,7 @@ pub async fn print_output(
             cmd.undigested,
         );
         let output = if cmd.process_koids.is_empty() && cmd.process_names.is_empty() {
-            ProfileMemoryOutput::CompleteDigest(processed_digest)
+            ProfileMemoryOutput::CompleteDigest(Box::new(processed_digest))
         } else {
             let process_koids = cmd
                 .process_koids

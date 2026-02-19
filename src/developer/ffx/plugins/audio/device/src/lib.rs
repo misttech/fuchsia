@@ -37,13 +37,12 @@ mod serde_ext;
 use control::DeviceControl;
 use list::QueryExt;
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087076)
 #[derive(Debug, Serialize)]
 pub enum DeviceResult {
-    Play(ffx_audio_common::PlayResult),
-    Record(ffx_audio_common::RecordResult),
-    Info(info::InfoResult),
-    List(list::ListResult),
+    Play(Box<ffx_audio_common::PlayResult>),
+    Record(Box<ffx_audio_common::RecordResult>),
+    Info(Box<info::InfoResult>),
+    List(Box<list::ListResult>),
 }
 
 #[derive(FfxTool)]
@@ -211,7 +210,7 @@ async fn device_info(
     let device_info = info::get_info(dev_class, registry, selector.clone()).await?;
 
     let info_result = info::InfoResult::from((device_info, selector));
-    let result = DeviceResult::Info(info_result.clone());
+    let result = DeviceResult::Info(Box::new(info_result.clone()));
 
     if writer.is_machine() {
         writer.machine(&result)?;
@@ -258,7 +257,7 @@ async fn device_play(
     let result =
         ffx_audio_common::play(request, player_controller, play_local, input_reader).await?;
     let bytes_processed = result.bytes_processed;
-    let value = DeviceResult::Play(result);
+    let value = DeviceResult::Play(Box::new(result));
 
     writer.machine_or_else(&value, || {
         format!("Successfully processed all audio data. Bytes processed: {:?}", {
@@ -336,7 +335,7 @@ async fn device_set_gain_state(
 
 fn device_list(devices: list::Devices, mut writer: MachineWriter<DeviceResult>) -> Result<()> {
     let list_result = list::ListResult::from(devices);
-    let result = DeviceResult::List(list_result.clone());
+    let result = DeviceResult::List(Box::new(list_result.clone()));
     writer
         .machine_or_else(&result, || format!("{}", list_result))
         .bug_context("Failed to write result")

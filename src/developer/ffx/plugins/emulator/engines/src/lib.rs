@@ -202,7 +202,7 @@ impl EngineBuilder {
         if let Some(local_name) = name {
             let instance_dir = self.emu_instances.get_instance_dir(local_name, false)?;
             match read_from_disk(&instance_dir)? {
-                EngineOption::DoesExist(data) => Ok(Some(self.from_data(data))),
+                EngineOption::DoesExist(data) => Ok(Some(self.from_data(*data))),
                 EngineOption::DoesNotExist(_) => Ok(None),
             }
         } else {

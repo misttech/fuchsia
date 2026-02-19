@@ -113,7 +113,7 @@ pub fn write_csv_output<'a, W: Write>(
     bucketize: bool,
 ) -> Result<()> {
     match internal_output {
-        ProfileMemoryOutput::CompleteDigest(digest) => write_complete_digest(w, digest, bucketize),
+        ProfileMemoryOutput::CompleteDigest(digest) => write_complete_digest(w, *digest, bucketize),
         ProfileMemoryOutput::ProcessDigest(processes_digest) => {
             write_detailed_processes_digest(w, &processes_digest)
         }
@@ -129,7 +129,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     fn process_digest_for_test() -> crate::ProfileMemoryOutput {
-        ProcessDigest(ProcessesMemoryUsage {
+        ProcessDigest(Box::new(ProcessesMemoryUsage {
             capture_time: 123000111222,
             process_data: vec![processed::Process {
                 koid: processed::ProcessKoid::new(4),
@@ -185,7 +185,7 @@ mod tests {
                 },
                 vmos: HashSet::new(),
             }],
-        })
+        }))
     }
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
     }
 
     fn complete_digest_for_test() -> crate::ProfileMemoryOutput {
-        CompleteDigest(processed::Digest {
+        CompleteDigest(Box::new(processed::Digest {
             time: 123000111222,
             total_committed_bytes_in_vmos: 0,
             kernel: Kernel::default(),
@@ -222,7 +222,7 @@ mod tests {
             buckets: None,
             total_undigested: None,
             kmem_stats_compression: Default::default(),
-        })
+        }))
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
     }
 
     fn bucket_data_for_test() -> crate::ProfileMemoryOutput {
-        CompleteDigest(processed::Digest {
+        CompleteDigest(Box::new(processed::Digest {
             time: 567000111222,
             total_committed_bytes_in_vmos: 0,
             kernel: Kernel::default(),
@@ -247,7 +247,7 @@ mod tests {
             ]),
             total_undigested: None,
             kmem_stats_compression: Default::default(),
-        })
+        }))
     }
 
     #[test]

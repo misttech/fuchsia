@@ -42,15 +42,14 @@ pub struct EmulatorWatcher {
     // Hold a reference here to the watcher to keep it in scope.
     _watcher: RecommendedWatcher,
 }
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
+
 #[derive(Clone, Debug, PartialEq)]
 /// Enum for the payload of emulator instances to check.
 /// This is done to allow non-async events from notify::Watcher
 /// to be handled as async tasks.
 pub(crate) enum EmulatorInstanceEvent {
     Name(String, EventKind),
-    Data(EmulatorInstanceData),
+    Data(Box<EmulatorInstanceData>),
 }
 /// Action to take for a Target based on an
 /// emulator instance. Either Add/Update it
@@ -262,7 +261,7 @@ impl EmulatorWatcher {
     pub async fn check_all_instances(&mut self) -> Result<()> {
         let instances = self.emu_instances.get_all_instances()?;
         for emu in instances {
-            self.emu_instance_tx.send(EmulatorInstanceEvent::Data(emu)).await?;
+            self.emu_instance_tx.send(EmulatorInstanceEvent::Data(Box::new(emu))).await?;
         }
         Ok(())
     }
@@ -575,7 +574,7 @@ mod tests {
                 })),
             ),
             (
-                EmulatorInstanceEvent::Data(instance_data.clone()),
+                EmulatorInstanceEvent::Data(Box::new(instance_data.clone())),
                 Some(EmulatorTargetAction::Add(ffx::TargetInfo {
                     nodename: Some(instance_data.get_name().to_string()),
                     addresses: Some(vec![loopback]),
@@ -583,7 +582,7 @@ mod tests {
                     ..Default::default()
                 })),
             ),
-            (EmulatorInstanceEvent::Data(tap_instance_data.clone()), None),
+            (EmulatorInstanceEvent::Data(Box::new(tap_instance_data.clone())), None),
         ];
         for (event, expected) in testdata {
             // create a new watcher and channel.

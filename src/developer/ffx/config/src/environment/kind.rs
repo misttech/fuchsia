@@ -6,14 +6,13 @@ use ffx_config_domain::ConfigDomain;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087076)
 /// The type of environment we're running in, along with relevant information about
 /// that environment.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvironmentKind {
     /// In a project with a fuchsia_env file at its root with config domain info
     /// in it.
-    ConfigDomain { domain: ConfigDomain, isolate_root: Option<PathBuf> },
+    ConfigDomain { domain: Box<ConfigDomain>, isolate_root: Option<PathBuf> },
     /// In a fuchsia.git build tree with a jiri root and possibly a build directory.
     InTree { tree_root: PathBuf, build_dir: Option<PathBuf> },
     /// Isolated within a particular directory for testing or consistency purposes

@@ -62,7 +62,7 @@ impl EmulatorInstances {
                         if let Some(name_as_os_str) = entry.path().file_name() {
                             if let Some(name) = name_as_os_str.to_str() {
                                 match read_from_disk(&entry.path()) {
-                                    Ok(EngineOption::DoesExist(data)) => result.push(data),
+                                    Ok(EngineOption::DoesExist(data)) => result.push(*data),
                                     Ok(EngineOption::DoesNotExist(name)) => {
                                         result.push(EmulatorInstanceData::new_with_state(
                                             &name,
@@ -104,7 +104,7 @@ pub fn read_from_disk(instance_directory: &PathBuf) -> Result<EngineOption> {
             log::warn!("Failed to parse emulator instance: {res:?}");
         }
         let value = res?;
-        Ok(EngineOption::DoesExist(value))
+        Ok(EngineOption::DoesExist(Box::new(value)))
     } else {
         Ok(EngineOption::DoesNotExist(filepath.to_string_lossy().into()))
     }

@@ -193,7 +193,7 @@ pub fn write_human_readable_output<'a, W: Write>(
 
     match output {
         ProfileMemoryOutput::CompleteDigest(digest) => {
-            print_complete_digest(w, digest, size_to_string_formatter).map_err(|err| {
+            print_complete_digest(w, *digest, size_to_string_formatter).map_err(|err| {
                 match err.kind() {
                     std::io::ErrorKind::BrokenPipe => fho::Error::ExitWithCode(141).into(),
                     _ => fho::Error::Unexpected(err.into()).into(),
@@ -282,7 +282,7 @@ mod tests {
     }
 
     fn data_for_test() -> crate::ProfileMemoryOutput {
-        ProcessDigest(ProcessesMemoryUsage {
+        ProcessDigest(Box::new(ProcessesMemoryUsage {
             capture_time: 123,
             process_data: vec![processed::Process {
                 koid: processed::ProcessKoid::new(4),
@@ -338,11 +338,11 @@ mod tests {
                 },
                 vmos: HashSet::new(),
             }],
-        })
+        }))
     }
 
     fn data_for_test_with_compression() -> crate::ProfileMemoryOutput {
-        ProcessDigest(ProcessesMemoryUsage {
+        ProcessDigest(Box::new(ProcessesMemoryUsage {
             capture_time: 123,
             process_data: vec![processed::Process {
                 koid: processed::ProcessKoid::new(4),
@@ -422,11 +422,11 @@ mod tests {
                 },
                 vmos: HashSet::new(),
             }],
-        })
+        }))
     }
 
     fn data_for_bucket_test() -> crate::ProfileMemoryOutput {
-        CompleteDigest(processed::Digest {
+        CompleteDigest(Box::new(processed::Digest {
             time: 1,
             total_committed_bytes_in_vmos: 1000,
             kernel: processed::Kernel {
@@ -489,7 +489,7 @@ mod tests {
                 vmos: HashSet::from_iter(vec![processed::VmoKoid::new(20)]),
             }]),
             total_undigested: Some(200),
-        })
+        }))
     }
 
     #[test]

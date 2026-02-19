@@ -141,7 +141,7 @@ impl EnvironmentContext {
         no_environment: bool,
     ) -> Self {
         Self::new(
-            EnvironmentKind::ConfigDomain { domain, isolate_root },
+            EnvironmentKind::ConfigDomain { domain: Box::new(domain), isolate_root },
             exe_kind,
             None,
             runtime_args,

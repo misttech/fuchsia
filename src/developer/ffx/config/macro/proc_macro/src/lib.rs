@@ -58,10 +58,9 @@ fn option_wrapped_type<'a>(ty: &'a syn::Type) -> Option<&'a syn::Type> {
     None
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087076)
 enum ConfigArgs {
     Str(syn::LitStr),
-    MetaNameValue(syn::MetaNameValue),
+    MetaNameValue(Box<syn::MetaNameValue>),
 }
 
 impl syn::parse::Parse for ConfigArgs {
@@ -69,7 +68,7 @@ impl syn::parse::Parse for ConfigArgs {
         Ok(if input.peek(syn::LitStr) {
             ConfigArgs::Str(input.parse()?)
         } else {
-            ConfigArgs::MetaNameValue(input.parse()?)
+            ConfigArgs::MetaNameValue(Box::new(input.parse()?))
         })
     }
 }

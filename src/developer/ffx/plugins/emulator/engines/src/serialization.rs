@@ -16,7 +16,7 @@ pub async fn read_engine_from_disk(
     let instance_dir = emu_instances.get_instance_dir(name, false)?;
     let builder = EngineBuilder::new(context, emu_instances.clone());
     match read_from_disk(&instance_dir) {
-        Ok(EngineOption::DoesExist(data)) => Ok(builder.from_data(data)),
+        Ok(EngineOption::DoesExist(data)) => Ok(builder.from_data(*data)),
         Ok(EngineOption::DoesNotExist(_)) => return_user_error!("{name} instance does not exist"),
         Err(e) => return_bug!("Could not read engine {name} from disk: {e}"),
     }
