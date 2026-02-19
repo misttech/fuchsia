@@ -221,15 +221,15 @@ impl<'a> BisectionController<'a> {
     /// Run assembly with the current collection of assembly artifacts
     /// to generate a flashable fuchsia image.
     async fn assemble(&mut self, pb: VersionedArtifactSet) -> Result<Utf8PathBuf> {
-        let pb_outdir = self.plan.out_dir();
-        write!(self.writer, "Assembling into {} ... ", pb_outdir)?;
-        io::stdout().flush()?;
-
         // Ensure all of the artifacts have been downloaded.
         let product_config_path = self.cache.resolve_product(pb.product.id()).await?;
         let board_config_path = self.cache.resolve_board(pb.board.id()).await?;
         let platform_config_path =
             self.cache.resolve_platform(Some(pb.platform.id()), &Architecture::X64).await?;
+
+        let pb_outdir = self.plan.out_dir();
+        write!(self.writer, "Assembling into {} ... ", pb_outdir)?;
+        io::stdout().flush()?;
 
         let tools = PlatformToolProvider::new(platform_config_path.clone());
 
