@@ -219,7 +219,6 @@ impl StoredEvent {
     }
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401086995)
 /// State contains the current observed state of the dead key state machine.
 ///
 /// The dead key composition is started by observing a key press that amounts
@@ -270,19 +269,23 @@ enum State {
     S0000,
 
     /// We saw an actuation of a dead key.
-    S0001 { dead_key_down: StoredEvent },
+    S0001 { dead_key_down: Box<StoredEvent> },
 
     /// A dead key was pressed and released.
-    S0011 { dead_key_down: StoredEvent, dead_key_up: StoredEvent },
+    S0011 { dead_key_down: Box<StoredEvent>, dead_key_up: Box<StoredEvent> },
 
     /// A dead key was pressed and released, followed by a live key press.
-    S0111 { dead_key_down: StoredEvent, dead_key_up: StoredEvent, live_key_down: StoredEvent },
+    S0111 {
+        dead_key_down: Box<StoredEvent>,
+        dead_key_up: Box<StoredEvent>,
+        live_key_down: Box<StoredEvent>,
+    },
 
     /// A dead key was pressed, followed by a live key press.
-    S0101 { dead_key_down: StoredEvent, live_key_down: StoredEvent },
+    S0101 { dead_key_down: Box<StoredEvent>, live_key_down: Box<StoredEvent> },
 
     /// A dead key was pressed, then a live key was pressed and released.
-    S1101 { dead_key_down: StoredEvent },
+    S1101 { dead_key_down: Box<StoredEvent> },
 }
 
 #[derive(Debug)]
@@ -414,7 +417,7 @@ impl DeadKeysHandler {
                 // state machine state, and eliminate any key meaning from the
                 // key event, since we anticipate its use in composition.
                 (Liveness::Dead, KeyEventType::Pressed) => {
-                    self.set_state(State::S0001 { dead_key_down: event.clone() });
+                    self.set_state(State::S0001 { dead_key_down: Box::new(event.clone()) });
                     event.remove_key_meaning().into()
                 }
 
@@ -438,7 +441,10 @@ impl DeadKeysHandler {
                     // The same dead key that was pressed the other time was released.
                     // Emit a stripped version, and start waiting for a live key.
                     (Liveness::Dead, Sameness::Same, KeyEventType::Released) => {
-                        self.set_state(State::S0011 { dead_key_down, dead_key_up: event.clone() });
+                        self.set_state(State::S0011 {
+                            dead_key_down,
+                            dead_key_up: Box::new(event.clone()),
+                        });
                         event.remove_key_meaning().into()
                     }
 
@@ -465,8 +471,8 @@ impl DeadKeysHandler {
                     // for the *new* key, but with a key meaning of the stripped
                     // version of the current key.
                     (Liveness::Dead, Sameness::Other, KeyEventType::Pressed) => {
-                        let current_removed = dead_key_down.clone().into_base_character();
-                        self.set_state(State::S0001 { dead_key_down: event.clone() });
+                        let current_removed = dead_key_down.as_ref().clone().into_base_character();
+                        self.set_state(State::S0001 { dead_key_down: Box::new(event.clone()) });
                         event.into_with_code_point(current_removed.code_point()).into()
                     }
 
@@ -488,14 +494,14 @@ impl DeadKeysHandler {
                             let composed_event = event.into_with_code_point(maybe_composed as u32);
                             self.set_state(State::S0101 {
                                 dead_key_down,
-                                live_key_down: composed_event.clone(),
+                                live_key_down: Box::new(composed_event.clone()),
                             });
                             return composed_event.into();
                         } else {
                             // FAIL!
                             self.set_state(State::S0101 {
                                 dead_key_down,
-                                live_key_down: event.clone(),
+                                live_key_down: Box::new(event.clone()),
                             });
                             return event.into();
                         }
@@ -519,7 +525,7 @@ impl DeadKeysHandler {
                                 self.set_state(State::S0111 {
                                     dead_key_down,
                                     dead_key_up,
-                                    live_key_down: event.clone(),
+                                    live_key_down: Box::new(event.clone()),
                                 });
                                 event.into()
                             }
@@ -562,7 +568,7 @@ impl DeadKeysHandler {
                             self.set_state(State::S0111 {
                                 dead_key_down,
                                 dead_key_up,
-                                live_key_down: composed_event.clone(),
+                                live_key_down: Box::new(composed_event.clone()),
                             });
                             return composed_event.into();
                         } else {
@@ -581,7 +587,7 @@ impl DeadKeysHandler {
                             self.set_state(State::S0111 {
                                 dead_key_down,
                                 dead_key_up,
-                                live_key_down: event.clone(),
+                                live_key_down: Box::new(event.clone()),
                             });
                             return event.into();
                         }
@@ -624,7 +630,7 @@ impl DeadKeysHandler {
                         self.set_state(State::S0111 {
                             dead_key_down,
                             dead_key_up,
-                            live_key_down: event.into_with_code_point(base_codepoint),
+                            live_key_down: Box::new(event.into_with_code_point(base_codepoint)),
                         });
                         combined_event.into()
                     }
@@ -691,7 +697,7 @@ impl DeadKeysHandler {
                             Sameness::Same => {
                                 self.set_state(State::S0111 {
                                     dead_key_down,
-                                    dead_key_up: event.clone(),
+                                    dead_key_up: Box::new(event.clone()),
                                     live_key_down,
                                 });
                                 event.remove_key_meaning().into()
@@ -714,7 +720,9 @@ impl DeadKeysHandler {
                                     event.clone().into_with_code_point(live_key_down.code_point());
                                 self.set_state(State::S0101 {
                                     dead_key_down,
-                                    live_key_down: event.into_with_code_point(base_codepoint),
+                                    live_key_down: Box::new(
+                                        event.into_with_code_point(base_codepoint),
+                                    ),
                                 });
                                 combined_event.into()
                             }
