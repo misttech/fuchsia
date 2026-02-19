@@ -11,3 +11,4 @@ fuchsia.extended_pstate: SaveAndRestore/FXSave [optional]
 
 # Supported only on aarch64
 fuchsia.extended_pstate: SaveAndRestore/Aarch64 [optional]
+fuchsia.extended_pstate: SaveAndRestore/Aarch32 [optional]

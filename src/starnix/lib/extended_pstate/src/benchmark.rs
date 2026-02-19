@@ -22,7 +22,7 @@
 // aarch64 processors provide only one mechanism for saving and restoring state.
 
 use criterion::Criterion;
-use extended_pstate::ExtendedPstateState;
+use extended_pstate::{ExtendedPstateState, restore_extended_pstate, save_extended_pstate};
 use fuchsia as _;
 use fuchsia_criterion::FuchsiaCriterion;
 use std::mem;
@@ -46,7 +46,8 @@ fn main() {
                 let mut state = ExtendedPstateState::with_strategy(strategy);
                 #[allow(clippy::undocumented_unsafe_blocks)]
                 b.iter(|| unsafe {
-                    state.run_with_saved_state(|| {});
+                    save_extended_pstate(&mut state as *mut _ as usize);
+                    restore_extended_pstate(&state as *const _ as usize);
                 });
             })
         } else {
@@ -71,8 +72,22 @@ fn main() {
     {
         bench = bench.with_function("SaveAndRestore/Aarch64", |b| {
             let mut state = ExtendedPstateState::default();
+            #[allow(clippy::undocumented_unsafe_blocks)]
             b.iter(|| unsafe {
-                state.run_with_saved_state(|| {});
+                save_extended_pstate(&mut state as *mut _ as usize);
+                restore_extended_pstate(&state as *const _ as usize);
+            });
+        });
+        bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
+            use extended_pstate::{
+                ExtendedAarch32PstateState, restore_extended_aarch32_pstate,
+                save_extended_aarch32_pstate,
+            };
+            let mut state = ExtendedAarch32PstateState::default();
+            #[allow(clippy::undocumented_unsafe_blocks)]
+            b.iter(|| unsafe {
+                save_extended_aarch32_pstate(&mut state as *mut _ as usize);
+                restore_extended_aarch32_pstate(&state as *const _ as usize);
             });
         });
     }
