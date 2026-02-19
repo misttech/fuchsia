@@ -4,6 +4,7 @@
 """UserInput affordance implementation using FuchsiaController."""
 
 import asyncio
+import json
 import time
 
 import fidl_fuchsia_input_report as f_input_report
@@ -264,14 +265,29 @@ class UserInputUsingFc(user_input.UserInput):
 
         self.verify_supported()
 
+    def _is_moniker_present(self, target_moniker: str) -> bool:
+        """
+        Determines if a target moniker is present in the JSON output from
+        'ffx component list'.
+        Args:
+            target_moniker: The moniker to search for (e.g., "core/ui/input-helper").
+        Returns:
+            bool: True if the moniker is found, False otherwise.
+        """
+        components_json = self._ffx_transport.run(["component", "list"])
+        data = json.loads(components_json)
+        instances = data.get("instances", [])
+        return any(
+            instance.get("moniker") == target_moniker for instance in instances
+        )
+
     def verify_supported(self) -> None:
         """Check if User Input affordance  is supported on the DUT.
         Raises:
             NotSupportedError: User Input affordance is not supported by Fuchsia device.
         """
         # check if the device have component to support virtual devices.
-        components = self._ffx_transport.run(["component", "list"])
-        if _INPUT_HELPER_COMPONENT not in components.splitlines():
+        if not self._is_moniker_present(_INPUT_HELPER_COMPONENT):
             raise errors.NotSupportedError(
                 f"{_INPUT_HELPER_COMPONENT} is not available in device {self._device_name}"
             )

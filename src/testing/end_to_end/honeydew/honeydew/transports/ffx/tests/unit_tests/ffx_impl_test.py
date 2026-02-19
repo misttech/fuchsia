@@ -152,11 +152,28 @@ _INPUT_ARGS: dict[str, Any] = {
     "run_machine_cmd": ffx_impl._FFX_CMDS["TARGET_WAIT"],
 }
 
+_MOCK_ADDRESS = json.dumps(
+    [
+        {
+            "nodename": "fuchsia-emulator",
+            "rcs_state": "Y",
+            "serial": "<unknown>",
+            "target_type": "core.x64",
+            "target_state": "Product",
+            "addresses": [
+                {"type": "Ip", "ip": str(_SSH_ADDRESS), "ssh_port": _SSH_PORT}
+            ],
+            "is_default": False,
+            "is_manual": False,
+        }
+    ]
+)
+
 _MOCK_ARGS: dict[str, Any] = {
     "ffx_target_show_output": _FFX_TARGET_SHOW_OUTPUT,
     "ffx_target_show_json": _FFX_TARGET_SHOW_JSON,
     "ffx_target_show_object": _FFX_TARGET_SHOW_INFO,
-    "ffx_target_ssh_address_output": f"[{_SSH_ADDRESS}]:{_SSH_PORT}",
+    "ffx_target_ssh_address_output": _MOCK_ADDRESS,
     "ffx_target_list_output": _FFX_TARGET_LIST_OUTPUT,
     "ffx_target_list_json": _FFX_TARGET_LIST_JSON,
     "ffx_target_wait_machine": _FFX_TARGET_WAIT_MACHINE_RAW,
@@ -403,6 +420,8 @@ class FfxImplTests(unittest.TestCase):
                 str(_TARGET_SSH_ADDRESS),
                 "--isolate-dir",
                 _ISOLATE_DIR,
+                "--machine",
+                "json",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
                 "--direct",
@@ -572,6 +591,7 @@ class FfxImplTests(unittest.TestCase):
                 "killall iperf3",
             ],
             capture_output=True,
+            machine=MachineFormat.RAW,
         )
 
     @mock.patch.object(
@@ -595,6 +615,8 @@ class FfxImplTests(unittest.TestCase):
                 str(_TARGET_SSH_ADDRESS),
                 "--isolate-dir",
                 _ISOLATE_DIR,
+                "--machine",
+                "raw",
                 "-o",
                 str(Path(_LOGS_DIR) / "ffx.log"),
                 "--direct",
@@ -679,6 +701,8 @@ class FfxImplTests(unittest.TestCase):
                 "[fe80::4fce:3102:ef13:888c%qemu]:8022",
                 "--isolate-dir",
                 "/tmp/isolate",
+                "--machine",
+                "json",
                 "-o",
                 "/tmp/logs/ffx.log",
                 "--direct",

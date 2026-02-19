@@ -15,6 +15,7 @@ from typing import Any
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import errors as ffx_errors
+from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts, test_runner
 
 
@@ -31,9 +32,6 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         """setup_class is called once before running tests."""
         super().setup_class()
         self.dut: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
-        self.dut.ffx.run(
-            ["config", "set", "ffx_profile_memory_components", "true"]
-        )
 
     def write_output(self, cmd_output: str, filename: str) -> None:
         """Writes the command output to a dedicated file for investigation."""
@@ -54,13 +52,24 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
                 "--component",
                 "memory_monitor2",
                 "dump",
-            ]
+            ],
+            machine=ffx_types.MachineFormat.RAW,
         )
         asserts.assert_equal("", errors.strip())
 
     def test_ffx_profile_memory_component_without_args(self) -> None:
+        # This test parses the "raw" output of the ffx command. It probably
+        # should be ported to use the JSON output.
         profile = self.dut.ffx.run(
-            ["profile", "memory", "components"], log_output=False
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "profile",
+                "memory",
+                "components",
+            ],
+            log_output=False,
+            machine=ffx_types.MachineFormat.RAW,
         )
         self.write_output(profile, "profile_memory_components.txt")
 
@@ -77,13 +86,22 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_ffx_profile_memory_component_stdin_cycle(self) -> None:
         debug_json = self.dut.ffx.run(
-            ["profile", "memory", "components", "--debug-json"],
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "profile",
+                "memory",
+                "components",
+                "--debug-json",
+            ],
             log_output=False,
         )
         import subprocess
 
         process = self.dut.ffx.popen(
             [
+                "-c",
+                "ffx_profile_memory_components=true",
                 "profile",
                 "memory",
                 "components",
@@ -102,7 +120,15 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         self,
     ) -> None:
         cmd_output = self.dut.ffx.run(
-            ["--machine", "json-pretty", "profile", "memory", "components"],
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "--machine",
+                "json-pretty",
+                "profile",
+                "memory",
+                "components",
+            ],
             log_output=False,
         )
         self.write_output(
@@ -128,7 +154,15 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         # check the new, lower number and send us the change for review.
 
         cmd_output = self.dut.ffx.run(
-            ["--machine", "json-pretty", "profile", "memory", "components"],
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "--machine",
+                "json-pretty",
+                "profile",
+                "memory",
+                "components",
+            ],
             log_output=False,
         )
 
@@ -148,7 +182,14 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_ffx_profile_memory_component_with_debug_json_output(self) -> None:
         cmd_output = self.dut.ffx.run(
-            ["profile", "memory", "components", "--debug-json"],
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "profile",
+                "memory",
+                "components",
+                "--debug-json",
+            ],
             log_output=False,
         )
         self.write_output(
@@ -221,6 +262,8 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             asserts.assert_equal(v, "ok", msg=f"task health {k} is not ok")
 
     def test_profile_memory_with_monitor2_report(self) -> None:
+        # This test parses the "raw" output of the ffx command. It probably
+        # should be ported to use the JSON output.
         profile = self.dut.ffx.run(
             [
                 "profile",
@@ -229,6 +272,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
                 "memory_monitor_2",
             ],
             log_output=False,
+            machine=ffx_types.MachineFormat.RAW,
         )
         # Verifies that the report comes from memory_monitor2.
         assertContainsRegex(r"(?m)^ Principal name:", profile)

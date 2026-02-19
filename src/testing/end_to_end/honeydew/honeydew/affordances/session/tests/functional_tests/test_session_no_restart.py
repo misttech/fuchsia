@@ -12,6 +12,7 @@ from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,7 +67,10 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
 
     def _elements(self) -> set[str]:
         """Get current components"""
-        res = self.dut.ffx.run(["component", "list"])
+        # Should be using JSON. TODO(b/484355868)
+        res = self.dut.ffx.run(
+            ["component", "list"], machine=ffx_types.MachineFormat.RAW
+        )
         lines = [
             line
             for line in res.splitlines()

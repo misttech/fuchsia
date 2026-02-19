@@ -203,7 +203,14 @@ class SessionUsingFfx(session.Session):
         _LOGGER.info("cleanup session on device %s", self._name)
 
         try:
-            res = self._ffx.run(["component", "list"])
+            # "ffx component list" supports "--machine json", but the "raw" output
+            # is simply the list of components, which is all that is necessary here.
+            # On the other hand, the json form has a schema which means there is
+            # a migration path if the output changes, which is not guaranteed for
+            # raw output. So it should really be using JSON. TODO(b/484355868)
+            res = self._ffx.run(
+                ["component", "list"], machine=ffx_types.MachineFormat.RAW
+            )
             components = res.splitlines()
             for component in components:
                 if component.startswith(ELEMENT_PREFIX):

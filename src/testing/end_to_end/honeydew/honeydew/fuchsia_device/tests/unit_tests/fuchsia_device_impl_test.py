@@ -5,6 +5,7 @@
 
 import base64
 import ipaddress
+import json
 import os
 import unittest
 from collections.abc import Callable
@@ -153,12 +154,29 @@ _INPUT_ARGS: dict[str, Any] = {
 }
 
 
+_MOCK_ADDRESS = json.dumps(
+    [
+        {
+            "nodename": "fuchsia-emulator",
+            "rcs_state": "Y",
+            "serial": "<unknown>",
+            "target_type": "core.x64",
+            "target_state": "Product",
+            "addresses": [
+                {"type": "Ip", "ip": str(_SSH_ADDRESS), "ssh_port": _SSH_PORT}
+            ],
+            "is_default": False,
+            "is_manual": False,
+        }
+    ]
+)
+
 _MOCK_ARGS: dict[str, str] = {
     "board": "x64",
     "product": "core",
     "INSPECT_DATA_JSON_TEXT": _INSPECT_DATA_JSON_TEXT,
     "INSPECT_DATA_BAD_VERSION": _INSPECT_DATA_BAD_VERSION,
-    "ffx_target_ssh_address_output": f"[{_SSH_ADDRESS}]:{_SSH_PORT}",
+    "ffx_target_ssh_address_output": f"{_MOCK_ADDRESS}",
 }
 
 _BASE64_ENCODED_BYTES: bytes = base64.b64decode("some base64 encoded string==")
@@ -567,9 +585,11 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         """Test case to make sure fuchsia_device supports
         user_input affordance."""
 
-        mock_ffx_run.return_value = (
-            user_input_using_fc._INPUT_HELPER_COMPONENT  # pylint: disable=protected-access
-        )
+        moniker = (
+            user_input_using_fc._INPUT_HELPER_COMPONENT
+        )  # pylint: disable=protected-access
+        mock_output = {"instances": [{"moniker": moniker}]}
+        mock_ffx_run.return_value = json.dumps(mock_output)
 
         self.assertIsInstance(
             self.fd_fc_obj.user_input,
@@ -2079,8 +2099,9 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             self.fd_fc_obj.resolve_device_ip()
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
-            cmd=fuchsia_device_impl._FFX_CMDS["RESOLVE_IP"],
-            include_target_name=True,
+            cmd=ffx_impl._FFX_CMDS["TARGET_SSH_ADDRESS"]
+            + [self.fd_fc_obj.ffx._target_name],
+            include_target=False,
         )
         mock_fuchsia_device_health_check.assert_called_once()
 

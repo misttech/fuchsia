@@ -465,7 +465,10 @@ core/session-manager/session:session/elements:main/unrelated
         )
         self.assertEqual(
             self.ffx_obj.run.call_args_list[1],
-            mock.call(["component", "list"]),
+            # Should be using JSON. TODO(b/484355868)
+            mock.call(
+                ["component", "list"], machine=ffx_types.MachineFormat.RAW
+            ),
         )
         self.assertEqual(
             self.ffx_obj.run.call_args_list[2],
@@ -491,7 +494,10 @@ core/session-manager/session:session/elements:main/unrelated
         )
         self.assertEqual(
             self.ffx_obj.run.call_args_list[1],
-            mock.call(["component", "list"]),
+            # Should be using JSON. TODO(b/484355868)
+            mock.call(
+                ["component", "list"], machine=ffx_types.MachineFormat.RAW
+            ),
         )
 
     def test_cleanup_timeout_error(self) -> None:
@@ -510,7 +516,10 @@ core/session-manager/session:session/elements:main/unrelated
         )
         self.assertEqual(
             self.ffx_obj.run.call_args_list[1],
-            mock.call(["component", "list"]),
+            # Should be using JSON. TODO(b/484355868)
+            mock.call(
+                ["component", "list"], machine=ffx_types.MachineFormat.RAW
+            ),
         )
 
 

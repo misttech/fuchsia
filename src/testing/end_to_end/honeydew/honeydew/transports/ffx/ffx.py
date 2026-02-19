@@ -115,7 +115,7 @@ class FFX(abc.ABC):
         log_output: bool = True,
         include_target: bool = True,
         include_target_name: bool = False,
-        machine: ffx_types.MachineFormat | None = None,
+        machine: ffx_types.MachineFormat = ffx_types.MachineFormat.JSON,
         log_status_on_failure: bool = True,
     ) -> str:
         """Runs an FFX command.
@@ -135,7 +135,8 @@ class FFX(abc.ABC):
                 Otherwise, `ffx {cmd}` will be run.
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
-            machine: If set, `ffx --machine {machine} {cmd}` will be run.
+            machine: Specifies the machine format used for the ffx command (defaults
+                to "json")
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
                 if the command fails or times out. Defaults to True.
 
@@ -265,7 +266,7 @@ class FFX(abc.ABC):
         cmd: list[str],
         include_target: bool = True,
         include_target_name: bool = False,
-        machine: ffx_types.MachineFormat | None = None,
+        machine: ffx_types.MachineFormat = ffx_types.MachineFormat.JSON,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
@@ -274,7 +275,8 @@ class FFX(abc.ABC):
             include_target: True to include "-t <target_name>", False otherwise.
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
-            machine: If set, `--machine {machine} {cmd}` will be added.
+            machine: Specifies the machine format used for the ffx command (defaults
+                to "json")
 
         Returns:
             FFX command to be run as list of string.

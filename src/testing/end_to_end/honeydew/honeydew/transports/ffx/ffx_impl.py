@@ -27,21 +27,27 @@ from honeydew.utils import host_shell, properties
 _FFX_BINARY: str = "ffx"
 
 _FFX_CMDS: dict[str, list[str]] = {
-    "TARGET_SHOW": ["--machine", "json", "target", "show"],
+    "TARGET_SHOW": ["target", "show"],
     "TARGET_SSH_ADDRESS": [
         "target",
         "list",
         "--format",
         "addresses",
+        "--no-usb",  # do not do USB discovery
+        "--no-probe",  # do not connect to targets
     ],
-    "TARGET_LIST": ["--machine", "json", "target", "list"],
+    "TARGET_LIST": ["target", "list"],
     "TARGET_WAIT": ["target", "wait", "--timeout", "0"],
     "TARGET_WAIT_DOWN": ["target", "wait", "--down", "--timeout", "0"],
     "TEST_RUN": ["test", "run"],
     "TARGET_SSH": ["target", "ssh"],
-    "MONITOR_STATUS": ["--machine", "json", "monitor", "status"],
-    "MONITOR_CONFIG_GET": ["config", "get", "monitor.pid_file"],
     "TARGET_STATUS": ["target", "status"],
+    "MONITOR_STATUS": ["monitor", "status"],
+    "MONITOR_CONFIG_GET": [
+        "config",
+        "get",
+        "monitor.pid_file",
+    ],
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -149,7 +155,8 @@ class FfxImpl(ffx_interface.FFX):
         if self._shared_data:
             cmd.extend(["-c", f"shared_data={self._shared_data}"])
         cmd.extend(_FFX_CMDS["MONITOR_CONFIG_GET"])
-        output: str = self.run(cmd=cmd).strip('"')
+        # "ffx config get" does not support JSON
+        output: str = self.run(cmd=cmd, machine=MachineFormat.RAW).strip('"')
         _LOGGER.info(
             "Fetched config: `%s` returned: %s path exists: `%s`",
             " ".join(cmd),
@@ -255,22 +262,31 @@ class FfxImpl(ffx_interface.FFX):
             FfxCommandError: In case of other FFX command failure.
         """
         if self._use_monitor:
-            target = self._get_target_status()
-            address = target.addresses[0]
+            monitor_target = self._get_target_status()
+            monitor_address = monitor_target.addresses[0]
 
             return custom_types.TargetSshAddress(
-                ip=address.ip,
-                port=address.port,
+                ip=monitor_address.ip,
+                port=monitor_address.port,
             )
 
-        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"]
-        output: str = self.run(cmd=cmd)
-
-        # in '[fe80::6a47:a931:1e84:5077%qemu]:22', ":22" is SSH port.
-        # Ports can be 1-5 chars, clip off everything after the last ':'.
-        ssh_info: list[str] = output.rsplit(":", 1)
-        ssh_ip: str = ssh_info[0].replace("[", "").replace("]", "")
-        ssh_port: int = int(ssh_info[1])
+        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [self._target_name]
+        output: str = self.run(cmd=cmd, include_target=False)
+        targets = json.loads(output)
+        if not targets:
+            raise ffx_errors.FfxCommandError(
+                f"Target '{self._target_name}' not found in 'ffx target list'"
+            )
+        target = targets[0]
+        if not target.get("addresses"):
+            raise ffx_errors.FfxCommandError(
+                f"No addresses found for target '{self._target_name}'"
+            )
+        address = target["addresses"][0]
+        ssh_ip = address["ip"]
+        ssh_port = address["ssh_port"]
+        if ssh_port == 0:
+            ssh_port = None
 
         return custom_types.TargetSshAddress(
             ip=ipaddress.ip_address(ssh_ip), port=ssh_port
@@ -352,7 +368,7 @@ class FfxImpl(ffx_interface.FFX):
         log_output: bool = True,
         include_target: bool = True,
         include_target_name: bool = False,
-        machine: MachineFormat | None = None,
+        machine: MachineFormat = MachineFormat.JSON,
         log_status_on_failure: bool = True,
     ) -> str:
         """Runs an FFX command.
@@ -372,7 +388,8 @@ class FfxImpl(ffx_interface.FFX):
                 Otherwise, `ffx {cmd}` will be run.
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
-            machine: If set, `ffx --machine {machine} {cmd}` will be run.
+            machine: Specifies the machine format used for the ffx command (defaults
+                to "json")
             log_status_on_failure: Whether to run diagnostic triage ('ffx target status')
                 if the command fails or times out. Defaults to True.
 
@@ -392,6 +409,8 @@ class FfxImpl(ffx_interface.FFX):
             machine=machine,
         )
         try:
+            # TODO(b/484362368): when machine == `JSON`, we should parse the output
+            # with json.loads() before returning
             return (
                 host_shell.run(
                     cmd=ffx_cmd,
@@ -450,7 +469,7 @@ class FfxImpl(ffx_interface.FFX):
             subprocess.Popen[bytes] will be returned.
         """
         return host_shell.popen(
-            cmd=self.generate_ffx_cmd(cmd=cmd),
+            cmd=self.generate_ffx_cmd(cmd=cmd, machine=MachineFormat.RAW),
             **kwargs,
         )
 
@@ -527,7 +546,9 @@ class FfxImpl(ffx_interface.FFX):
         """
         ffx_cmd: list[str] = _FFX_CMDS["TARGET_SSH"][:]
         ffx_cmd.append(cmd)
-        return self.run(ffx_cmd, capture_output=capture_output)
+        return self.run(
+            ffx_cmd, capture_output=capture_output, machine=MachineFormat.RAW
+        )
 
     def wait_for_rcs_connection(self) -> None:
         """Wait until FFX is able to establish a RCS connection to the target.
@@ -618,7 +639,7 @@ class FfxImpl(ffx_interface.FFX):
         cmd: list[str],
         include_target: bool = True,
         include_target_name: bool = False,
-        machine: MachineFormat | None = None,
+        machine: MachineFormat = MachineFormat.JSON,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
@@ -627,7 +648,8 @@ class FfxImpl(ffx_interface.FFX):
             include_target: True to include "-t <target_name>", False otherwise.
             include_target_name: If set to True, `ffx -t {target-name} {cmd}` will be run.
                 Otherwise, `ffx -t {target-ip} {cmd}` will be run.
-            machine: If set, `--machine {machine} {cmd}` will be added.
+            machine: Specifies the machine format used for the ffx command (defaults
+                to "json")
 
         Returns:
             FFX command to be run as list of string.
@@ -644,8 +666,7 @@ class FfxImpl(ffx_interface.FFX):
         ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
         # Don't add "--machine" if the machine type is already specified
         if "--machine" not in cmd:
-            if machine is not None:
-                ffx_args.extend(["--machine", str(machine)])
+            ffx_args.extend(["--machine", str(machine)])
 
         # Add log file path
         ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])

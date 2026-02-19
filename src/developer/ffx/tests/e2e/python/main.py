@@ -10,6 +10,7 @@ import subprocess
 
 import ffxtestcase
 from honeydew.transports.ffx.errors import FfxCommandError
+from honeydew.transports.ffx.types import MachineFormat
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ class FfxTest(ffxtestcase.FfxTestCase):
     def test_target_list_includes_port(self) -> None:
         """Test `ffx target list` output returns as expected."""
         # NOTE: This test fails if the device under test is an user-mode networking emulator.
-        output = self.dut.ffx.run(["target", "list", "--format", "a"])
+        output = self.dut.ffx.run(
+            ["target", "list", "--format", "a"], machine=MachineFormat.RAW
+        )
         asserts.assert_true(
             ":22" in output, f"expected stdout to contain ':22',got {output}"
         )
@@ -297,7 +300,8 @@ class FfxTest(ffxtestcase.FfxTestCase):
         self.dut.ffx.run(["daemon", "stop"])
         # We're validating that this command doesn't throw an exception
         self.dut.ffx.run(
-            ["-c", "daemon.autostart=false", "daemon", "start", "--background"]
+            ["-c", "daemon.autostart=false", "daemon", "start", "--background"],
+            machine=MachineFormat.RAW,
         )
 
     def test_shared_data(self) -> None:

@@ -937,17 +937,26 @@ class FuchsiaDeviceImpl(
                 self.device_name,
             )
         try:
-            cmd: list[str] = _FFX_CMDS["RESOLVE_IP"]
+            cmd: list[str] = _FFX_CMDS["RESOLVE_IP"] + [self.device_name]
             output: str = self.ffx.run(
                 cmd=cmd,
-                include_target_name=True,
+                include_target=False,
             )
-
-            # in '[fe80::6a47:a931:1e84:5077%qemu]:22', ":22" is SSH port.
-            # Ports can be 1-5 chars, clip off everything after the last ':'.
-            ssh_info: list[str] = output.rsplit(":", 1)
-            ssh_ip: str = ssh_info[0].replace("[", "").replace("]", "")
-            ssh_port: int = int(ssh_info[1])
+            targets = json.loads(output)
+            if not targets:
+                raise ffx_errors.FfxCommandError(
+                    f"Target '{self.device_name}' not found in 'ffx target list'"
+                )
+            target = targets[0]
+            if not target.get("addresses"):
+                raise ffx_errors.FfxCommandError(
+                    f"No addresses found for target '{self.device_name}'"
+                )
+            address = target["addresses"][0]
+            ssh_ip = address["ip"]
+            ssh_port = address["ssh_port"]
+            if ssh_port == 0:
+                ssh_port = None
 
             ip_port: custom_types.IpPort = custom_types.IpPort(
                 ip=ipaddress.ip_address(ssh_ip),

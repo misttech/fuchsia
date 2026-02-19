@@ -9,6 +9,7 @@ from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -84,7 +85,8 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     def test_ffx_run(self) -> None:
         """Test case for FFX.run()."""
         cmd: list[str] = ["target", "ssh", "ls"]
-        self.device.ffx.run(cmd)
+        # `ffx target ssh` does support JSON
+        self.device.ffx.run(cmd, machine=ffx_types.MachineFormat.RAW)
 
     def test_ffx_run_subtool(self) -> None:
         """Test case for FFX.run() with a subtool.
