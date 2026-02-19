@@ -173,8 +173,8 @@ pub trait Raster: Add<Output = Self> + Clone + Eq {
 pub trait RasterBuilder<B: Backend> {
     /// Add a path to the raster with optional transform.
     fn add(&mut self, path: &B::Path, transform: Option<&Transform2D<f32>>) -> &mut Self {
-        #[allow(clippy::or_fun_call)] // TODO(https://fxbug.dev/379717231)
-        self.add_with_transform(path, transform.unwrap_or(&Transform2D::identity()))
+        let identity = Transform2D::identity();
+        self.add_with_transform(path, transform.unwrap_or(&identity))
     }
     /// Add a path to the raster with transform.
     fn add_with_transform(&mut self, path: &B::Path, transform: &Transform2D<f32>) -> &mut Self;
