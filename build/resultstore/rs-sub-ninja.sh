@@ -19,11 +19,34 @@ readonly SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 readonly fuchsia_rsproxy_wrap="$SCRIPT_DIR/fuchsia-rsproxy-wrap.sh"
 readonly rsninja="$SCRIPT_DIR/rsninja.sh"
 
-full_cmd=(
-  "$fuchsia_rsproxy_wrap"
-  --
-  "$rsninja"
-  "$@"
-)
+# Determine if we should bypass the rsproxy wrapper.
+# Dry-runs, tools, and help commands do not produce build events or artifacts.
+use_resultstore=1
+for arg in "$@"
+do
+  case "$arg" in
+    -n | --dry-run | -t | -t*)
+      use_resultstore=0
+      break
+      ;;
+    -h | --help | --version)
+      use_resultstore=0
+      break
+      ;;
+  esac
+done
 
-exec "${full_cmd[@]}"
+if [[ "$use_resultstore" == 0 ]]
+then
+  # Invoke rsninja.sh without the rsproxy wrapper.
+  # rsninja.sh will detect that RSPROXY_FIFO is unset and fall back to plain ninja.
+  exec "$rsninja" "$@"
+else
+  full_cmd=(
+    "$fuchsia_rsproxy_wrap"
+    --
+    "$rsninja"
+    "$@"
+  )
+  exec "${full_cmd[@]}"
+fi
