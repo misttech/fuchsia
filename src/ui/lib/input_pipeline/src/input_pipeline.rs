@@ -640,16 +640,8 @@ impl InputPipeline {
                     let handlers = handlers_by_type.get(&event_type).unwrap();
 
                     for handler in handlers {
-                        let handler_name = handler.get_name();
-                        events_in_group = {
-                            let _async_trace = fuchsia_trace::async_enter!(
-                                fuchsia_trace::Id::random(),
-                                "input",
-                                "handle_input_events",
-                                "name" => handler_name
-                            );
-                            handler.clone().handle_input_events(events_in_group).await
-                        };
+                        events_in_group =
+                            handler.clone().handle_input_events(events_in_group).await;
                     }
 
                     for event in events_in_group {
