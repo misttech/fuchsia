@@ -5,13 +5,16 @@
 #include "src/ui/lib/escher/renderer/semaphore.h"
 
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
+#include "src/ui/lib/escher/util/trace_macros.h"
 
 namespace escher {
 
 Semaphore::Semaphore(vk::Device device) : Semaphore(device, false) {}
 
 Semaphore::Semaphore(vk::Device device, bool exportable) : device_(device) {
+  TRACE_DURATION("gfx", "escher::Semaphore::New");
   vk::SemaphoreCreateInfo info;
+
 #ifdef __Fuchsia__
   vk::ExternalSemaphoreHandleTypeFlags flags(
       vk::ExternalSemaphoreHandleTypeFlagBits::eZirconEventFUCHSIA);

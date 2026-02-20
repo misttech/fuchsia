@@ -804,6 +804,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
   // to be accessed via a lock. We're just doing a shallow copy via the copy assignment
   // operator since the texture and render target data is just referenced through pointers.
   // We manually unlock the lock after copying over the data.
+  TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[copy_maps]");
   lock_.lock();
   const auto local_texture_map = texture_map_;
   const auto local_render_target_map = render_target_map_;
@@ -816,6 +817,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
   pending_textures_.clear();
   pending_render_targets_.clear();
   lock_.unlock();
+  TRACE_DURATION_END("gfx", "VkRenderer::Render[copy_maps]");
 
   // If the |render_target| is protected, we should switch to a protected escher::Frame. Otherwise,
   // we should ensure that there is no protected content in |images|.
@@ -852,6 +854,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
         VK_QUEUE_FAMILY_FOREIGN_EXT, escher_->device()->vk_main_queue_family());
   }
 
+  TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[transform_display_list]");
   std::vector<escher::TexturePtr> textures;
   std::vector<escher::RectangleCompositor::ColorData> color_data;
   textures.reserve(images.size());
@@ -886,6 +889,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
     }
     color_data.emplace_back(multiply, opacity);
   }
+  TRACE_DURATION_END("gfx", "VkRenderer::Render[transform_display_list]");
 
   // Grab the output image and use it to generate a depth texture. The depth texture needs to
   // be the same width and height as the output image.

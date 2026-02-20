@@ -383,10 +383,10 @@ void GlobalTopologyData::Clear() {
     topology_vector.clear();
     child_counts.clear();
     parent_indices.clear();
-    live_handles.clear();
   }
   {
     TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[unordered]");
+    live_handles.clear();
     view_refs.clear();
     root_transforms.clear();
     debug_names.clear();
