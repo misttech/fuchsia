@@ -26,12 +26,26 @@ type VmoBuffer = resource table {
     /// actually checking this field.
     2: vmo_usable_start uint64;
 
-    /// This field is set iff `vmo` is a sysmem weak VMO handle. The client must
-    /// keep `close_weak_asap` around for as long as `vmo`, and must notice
-    /// `ZX_EVENTPAIR_PEER_CLOSED`. If that signal occurs, the client must close
-    /// `vmo` asap. Not doing so is considered a VMO leak by the client and in
-    /// that case sysmem will eventually complain loudly via syslog (currently
-    /// 5s later).
+    /// This field is set iff `vmo` is a sysmem weak VMO handle.
+    ///
+    /// If the client sent `SetWeakOk`, the client must keep `close_weak_asap`
+    /// around for as long as `vmo`, and must notice `ZX_EVENTPAIR_PEER_CLOSED`.
+    /// If that signal occurs, the client must close `vmo` asap.
+    ///
+    /// If the `vmo` is a sysmem weak VMO handle but the client didn't send
+    /// `SetWeakOk`, this means that a holder of a parent node sent `SetWeakOk`
+    /// with `for_child_nodes_also` true, and the owner of that parent node is
+    /// responsible for paying attention to `close_weak_asap` and informing
+    /// child token participants to close handles. In this case the participant
+    /// that never sent `SetWeakOk` is allowed to retain and/or pay attention to
+    /// `close_weak_asap` (to close the handle faster, or for other reasons such
+    /// as diagnosing overall buffer cleanup timing), but is not required to
+    /// retain or pay attention to `close_weak_asap`.
+    ///
+    /// If sysmem closing the sysmem end of `close_weak_asap` does not result in
+    /// quick closure of all sysmem weak VMO handles to the buffer, that's
+    /// considered a VMO leak, and in that case sysmem will eventually complain
+    /// loudly via syslog (currently 5s later).
     3: close_weak_asap zx.Handle:EVENTPAIR;
 };
 
