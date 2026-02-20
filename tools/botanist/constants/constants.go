@@ -39,4 +39,15 @@ const (
 
 	FFXMonitorPort        = "FUCHSIA_FFX_MONITOR_PORT"
 	DefaultFFXMonitorPort = "11000"
+
+	// These env vars cause botanist to only run an explicitly specified list
+	// of tests, skipping all others, for example when doing retries of
+	// failed tests in presubmit. If the allowlist is empty, all tests will
+	// be run.
+	//
+	// `TEST_ALLOWLIST_LENGTH ` lists how many tests there are to run, and
+	// `TEST_ALLOWLIST_INDEX_N` variables specify the test at each index in
+	// the list of tests to run (starting from 0).
+	TestAllowlistLengthEnvKey        = "TEST_ALLOWLIST_LENGTH"
+	TestAllowlistIndexEnvKeyTemplate = "TEST_ALLOWLIST_INDEX_%d"
 )

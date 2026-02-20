@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
+	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
@@ -247,6 +248,132 @@ func failedTest(name string, runIndex int, duration time.Duration) runtests.Test
 
 func timedOutTest(name string, runIndex int, duration time.Duration) runtests.TestDetails {
 	return testDetails(name, runIndex, duration, runtests.TestAborted)
+}
+
+func TestFilterTests(t *testing.T) {
+	testCases := []struct {
+		name                string
+		tests               []testsharder.Test
+		testAllowlistLength string
+		testAllowlist       []string
+		expectedResults     []testsharder.Test
+		expectErr           bool
+	}{
+		{
+			name:            "empty tests",
+			tests:           []testsharder.Test{},
+			expectedResults: []testsharder.Test{},
+			expectErr:       false,
+		},
+		{
+			name: "no test allowlist",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{
+						Name: "test1",
+					},
+				},
+			},
+			expectedResults: []testsharder.Test{
+				{
+					Test: build.Test{
+						Name: "test1",
+					},
+				},
+			},
+		},
+		{
+			name: "valid test allowlist",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{Name: "foo"},
+				},
+				{
+					Test: build.Test{Name: "bar"},
+				},
+				{
+					Test: build.Test{Name: "baz"},
+				},
+				{
+					Test: build.Test{Name: "quux"},
+				},
+			},
+			testAllowlistLength: "2",
+			testAllowlist:       []string{"bar", "quux"},
+			expectedResults: []testsharder.Test{
+				{
+					Test: build.Test{Name: "bar"},
+				},
+				{
+					Test: build.Test{Name: "quux"},
+				},
+			},
+		},
+		{
+			name: "test allowlist length is not an integer",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{Name: "foo"},
+				},
+			},
+			testAllowlistLength: "not an integer",
+			testAllowlist:       []string{"bar", "quux"},
+			expectErr:           true,
+		},
+		{
+			name: "test allowlist length mismatch",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{Name: "foo"},
+				},
+			},
+			testAllowlistLength: "2",
+			testAllowlist:       []string{"bar"},
+			expectErr:           true,
+		},
+		{
+			name: "test allowlist entry is an empty string",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{Name: "foo"},
+				},
+			},
+			testAllowlistLength: "1",
+			testAllowlist:       []string{""},
+			expectErr:           true,
+		},
+		{
+			name: "test allowlist entry is not found in the test list",
+			tests: []testsharder.Test{
+				{
+					Test: build.Test{Name: "foo"},
+				},
+			},
+			testAllowlistLength: "1",
+			testAllowlist:       []string{"bar"},
+			expectErr:           true,
+		},
+	}
+	for _, c := range testCases {
+		t.Run(c.name, func(t *testing.T) {
+			// Set the environment variables for the test.
+			if c.testAllowlistLength != "" {
+				t.Setenv(botanistconstants.TestAllowlistLengthEnvKey, c.testAllowlistLength)
+			}
+			for i, testName := range c.testAllowlist {
+				t.Setenv(fmt.Sprintf(botanistconstants.TestAllowlistIndexEnvKeyTemplate, i), testName)
+			}
+			filteredTests, err := filterTests(c.tests)
+			if c.expectErr != (err != nil) {
+				t.Errorf("got error: %q, expectErr: %t", err, c.expectErr)
+			}
+			if !c.expectErr {
+				if diff := cmp.Diff(c.expectedResults, filteredTests); diff != "" {
+					t.Errorf("Wrong tests (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
 }
 
 func TestRunAndOutputTests(t *testing.T) {

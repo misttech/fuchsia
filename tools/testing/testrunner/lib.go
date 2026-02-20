@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -295,8 +296,14 @@ func execute(
 		}
 	}
 
+	// filter tests if a testAllowlist is present in the environment variables.
+	filteredTests, err := filterTests(tests)
+	if err != nil {
+		return fmt.Errorf("failed to filter tests using test allowlist: %w", err)
+	}
+
 	var finalError error
-	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, reconnectSSH, opts.FuchsiaTarget, opts.Experiments)
+	cleanup, err := runAndOutputTests(ctx, filteredTests, testerForTest, outputs, outDir, fuchsiaTester, reconnectSSH, opts.FuchsiaTarget, opts.Experiments)
 	if err != nil {
 		finalError = err
 	}
@@ -356,6 +363,44 @@ func execute(
 		finalError = err
 	}
 	return finalError
+}
+
+func filterTests(tests []testsharder.Test) ([]testsharder.Test, error) {
+	// Get a list of tests to run from environment variables set by the recipe.
+	var testAllowlist []string
+	allowlistLengthStr, exists := os.LookupEnv(botanistconstants.TestAllowlistLengthEnvKey)
+	if exists {
+		allowlistLength, err := strconv.Atoi(allowlistLengthStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert %s to int: %w", botanistconstants.TestAllowlistLengthEnvKey, err)
+		}
+		for i := 0; i < allowlistLength; i++ {
+			allowedTest, exists := os.LookupEnv(fmt.Sprintf(botanistconstants.TestAllowlistIndexEnvKeyTemplate, i))
+			if !exists || allowedTest == "" {
+				return nil, fmt.Errorf("failed to find test for environment variable %s", fmt.Sprintf(botanistconstants.TestAllowlistIndexEnvKeyTemplate, i))
+			}
+			testAllowlist = append(testAllowlist, allowedTest)
+		}
+	}
+	if len(testAllowlist) == 0 {
+		return tests, nil
+	}
+
+	filteredTests := []testsharder.Test{}
+	testNames := make(map[string]struct{})
+	for _, test := range tests {
+		testNames[test.Name] = struct{}{}
+		if slices.Contains(testAllowlist, test.Name) {
+			filteredTests = append(filteredTests, test)
+		}
+	}
+	for _, testName := range testAllowlist {
+		if _, exists := testNames[testName]; !exists {
+			return nil, fmt.Errorf("test %q from allowlist not found in the test list", testName)
+		}
+	}
+
+	return filteredTests, nil
 }
 
 func validateTest(test testsharder.Test) error {
