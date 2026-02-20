@@ -5,6 +5,7 @@
 import asyncio
 
 _ASYNC_EVENT_LOOP: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+_ASYNC_EVENT_LOOP._name = "fuchsia_async_extension loop"  # type: ignore[attr-defined]
 
 
 def get_test_loop() -> asyncio.AbstractEventLoop:

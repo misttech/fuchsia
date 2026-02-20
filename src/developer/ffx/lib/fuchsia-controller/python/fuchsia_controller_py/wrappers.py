@@ -62,6 +62,7 @@ class AsyncAdapter:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._async_adapter_loop = asyncio.new_event_loop()
+        self._async_adapter_loop._name = self.__class__.__qualname__  # type: ignore[attr-defined]
 
     def loop(self) -> asyncio.AbstractEventLoop:
         """Returns a copy of this class's event loop.

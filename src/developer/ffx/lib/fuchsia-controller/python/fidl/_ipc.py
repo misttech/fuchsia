@@ -49,10 +49,20 @@ class _QueueWrapper:
                 self._queue = asyncio.Queue()
 
             if self._loop is not current_loop:
+                if hasattr(self._loop, "_name"):
+                    queue_loop_name = self._loop._name
+                else:
+                    queue_loop_name = repr(self._loop)
+
+                if hasattr(current_loop, "_name"):
+                    current_loop_name = current_loop._name
+                else:
+                    current_loop_name = repr(current_loop)
+
                 raise RuntimeError(
                     f"Event loop mismatch while calling {func.__name__} (with args={args} kwargs={kwargs}).\n"
-                    f"Queue {self._name} bound to {self._loop}; "
-                    f"attempted use from {current_loop}."
+                    f"Queue {self._name} bound to {queue_loop_name}; "
+                    f"attempted use from {current_loop_name}."
                 )
 
             return func(self, *args, **kwargs)
