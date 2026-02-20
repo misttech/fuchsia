@@ -203,7 +203,10 @@ void CommandBuffer::BeginRenderPass(const RenderPassInfo& info) {
   // Escher's use-cases are not amenable to creating reusable secondary command
   // buffers.  Therefore, we always encode commands for the render pass inline,
   // in the same command buffer.
-  vk_.beginRenderPass(begin_info, vk::SubpassContents::eInline);
+  {
+    TRACE_DURATION("gfx", "CommandBuffer::BeginRenderPass[vulkan]");
+    vk_.beginRenderPass(begin_info, vk::SubpassContents::eInline);
+  }
 
   // BeginGraphics() will dirty everything; no need to dirty anything here.
   scissor_ = rect;
@@ -217,7 +220,10 @@ void CommandBuffer::EndRenderPass() {
   TRACE_DURATION("gfx", "CommandBuffer::EndRenderPass");
   FX_DCHECK(IsInRenderPass());
 
-  vk().endRenderPass();
+  {
+    TRACE_DURATION("gfx", "CommandBuffer::EndRenderPass[vulkan]");
+    vk().endRenderPass();
+  }
 
   framebuffer_ = nullptr;
   pipeline_state_.set_render_pass(nullptr);
@@ -333,8 +339,8 @@ void CommandBuffer::BindTexture(unsigned set_index, unsigned binding, const Text
 
   vk::ImageLayout vk_layout = image->layout();
   if (texture->uid() == set->uids[binding] && b->image.fp.imageLayout == vk_layout &&
-      // TODO(https://fxbug.dev/42151125): if we reify Samplers as a separate resource type, then use
-      // the sampler's uid instead of the texture.
+      // TODO(https://fxbug.dev/42151125): if we reify Samplers as a separate resource type, then
+      // use the sampler's uid instead of the texture.
       texture->uid() == set->secondary_uids[binding]) {
     // The image, layout, and sampler are all unchanged, so we do not need to
     // update any bindings, nor mark the descriptor set as dirty.
@@ -364,8 +370,8 @@ void CommandBuffer::BindInputAttachment(unsigned set_index, unsigned binding,
 
   vk::ImageLayout vk_layout = image->layout();
   if (view->uid() == set->uids[binding] && b->image.fp.imageLayout == vk_layout &&
-      // TODO(https://fxbug.dev/42151125): if we reify Samplers as a separate resource type, then use
-      // the sampler's uid instead of the texture.
+      // TODO(https://fxbug.dev/42151125): if we reify Samplers as a separate resource type, then
+      // use the sampler's uid instead of the texture.
       view->uid() == set->secondary_uids[binding]) {
     // The image, layout, and sampler are all unchanged, so we do not need to
     // update any bindings, nor mark the descriptor set as dirty.
