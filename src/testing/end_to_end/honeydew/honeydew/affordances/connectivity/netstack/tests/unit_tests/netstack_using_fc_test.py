@@ -37,7 +37,7 @@ async def _async_response(response: _T) -> _T:
 
 
 # pylint: disable=protected-access
-class NetstackFCTests(unittest.TestCase):
+class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.netstack."""
 
     def setUp(self) -> None:
@@ -69,11 +69,6 @@ class NetstackFCTests(unittest.TestCase):
 
         self.watcher: asyncio.Task[None] | None = None
 
-    def tearDown(self) -> None:
-        self.netstack_obj.loop().stop()
-        self.netstack_obj.loop().run_forever()  # Handle pending tasks
-        self.netstack_obj.loop().close()
-
     def test_verify_supported(self) -> None:
         """Test if verify_supported works."""
         self.ffx_transport_obj.run.return_value = ""
@@ -96,7 +91,7 @@ class NetstackFCTests(unittest.TestCase):
         """Test if Netstack connects to fuchsia.net.interface/State."""
         self.assertIsNotNone(self.netstack_obj._state_proxy)
 
-    def test_list_interfaces(self) -> None:
+    async def test_list_interfaces(self) -> None:
         """Test if list_interfaces works."""
         self.netstack_obj._state_proxy = mock.MagicMock(
             spec=f_net_interfaces.StateClient
@@ -136,7 +131,7 @@ class NetstackFCTests(unittest.TestCase):
                     ),
                 ],
             )
-            self.watcher = self.netstack_obj.loop().create_task(server.serve())
+            self.watcher = asyncio.create_task(server.serve())
 
         self.netstack_obj._state_proxy.get_watcher = mock.Mock(
             wraps=get_watcher,
@@ -161,7 +156,7 @@ class NetstackFCTests(unittest.TestCase):
         ]
 
         self.assertEqual(
-            self.netstack_obj.list_interfaces(),
+            await self.netstack_obj.list_interfaces(),
             [
                 InterfaceProperties(
                     1,

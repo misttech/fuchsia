@@ -56,7 +56,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + WLAN_INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = self.device.netstack.list_interfaces()
+            interfaces = self.device.netstack.list_interfaces_sync()
             for interface in interfaces:
                 if interface.port_class is PortClass.WLAN_CLIENT:
                     return
@@ -70,17 +70,17 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.device.wlan_policy_ap.stop_all()
         return super().teardown_test()
 
-    def test_ap_methods(self) -> None:
+    async def test_ap_methods(self) -> None:
         """Verify WLAN policy access point methods."""
         self.device.wlan_policy_ap.stop_all()
-        self.device.wlan_policy_ap.set_new_update_listener()
+        await self.device.wlan_policy_ap.set_new_update_listener()
         asserts.assert_equal(
-            self.device.wlan_policy_ap.get_update(),
+            await self.device.wlan_policy_ap.get_update(),
             [],
         )
 
         test_ssid = random_str()
-        self.device.wlan_policy_ap.start(
+        await self.device.wlan_policy_ap.start(
             test_ssid,
             SecurityType.NONE,
             None,
@@ -88,7 +88,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             OperatingBand.ONLY_2_4GHZ,
         )
         asserts.assert_equal(
-            self.device.wlan_policy_ap.get_update(),
+            await self.device.wlan_policy_ap.get_update(),
             [
                 AccessPointState(
                     state=OperatingState.STARTING,
@@ -103,7 +103,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ],
         )
         asserts.assert_equal(
-            self.device.wlan_policy_ap.get_update(),
+            await self.device.wlan_policy_ap.get_update(),
             [
                 AccessPointState(
                     state=OperatingState.ACTIVE,
@@ -117,7 +117,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 )
             ],
         )
-        got_states = self.device.wlan_policy_ap.get_update()
+        got_states = await self.device.wlan_policy_ap.get_update()
         asserts.assert_greater_equal(got_states[0].frequency, 2412)  # channel 1
         asserts.assert_less_equal(got_states[0].frequency, 2484)  # channel 14
         asserts.assert_equal(
@@ -136,8 +136,8 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ],
         )
 
-        self.device.wlan_policy_ap.set_new_update_listener()
-        got_states = self.device.wlan_policy_ap.get_update()
+        await self.device.wlan_policy_ap.set_new_update_listener()
+        got_states = await self.device.wlan_policy_ap.get_update()
         asserts.assert_is_not_none(got_states[0].frequency)
         asserts.assert_equal(
             got_states,
@@ -155,9 +155,11 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ],
         )
 
-        self.device.wlan_policy_ap.stop(test_ssid, SecurityType.NONE, None)
+        await self.device.wlan_policy_ap.stop(
+            test_ssid, SecurityType.NONE, None
+        )
         asserts.assert_equal(
-            self.device.wlan_policy_ap.get_update(),
+            await self.device.wlan_policy_ap.get_update(),
             [],
         )
 

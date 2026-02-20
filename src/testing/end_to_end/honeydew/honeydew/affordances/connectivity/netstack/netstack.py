@@ -14,7 +14,11 @@ class Netstack(affordance.Affordance):
 
     # List all the public methods
     @abc.abstractmethod
-    def list_interfaces(self) -> list[InterfaceProperties]:
+    def list_interfaces_sync(self) -> list[InterfaceProperties]:
+        pass
+
+    @abc.abstractmethod
+    async def list_interfaces(self) -> list[InterfaceProperties]:
         """List interfaces.
 
         Returns:

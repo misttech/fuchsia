@@ -20,7 +20,7 @@ INTERFACE_TIMEOUT = 30
 class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Wlan base test class."""
 
-    def wait_for_interface(
+    async def wait_for_interface(
         self, netstack: Netstack, port_class: PortClass
     ) -> None:
         """Wait for an interface to become available.
@@ -35,7 +35,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + INTERFACE_TIMEOUT
         while time.time() < end_time:
-            interfaces = netstack.list_interfaces()
+            interfaces = await netstack.list_interfaces()
             for interface in interfaces:
                 if interface.port_class is port_class:
                     return

@@ -9,8 +9,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-import asyncio
-
 import fidl_fuchsia_wlan_common_security as fidl_security
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fidl_fuchsia_wlan_internal as fidl_internal
@@ -42,7 +40,9 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
     def name_func(self, scenario: fidl_internal.TxPowerScenario) -> str:
         return f"test_connect_with_sar_{scenario}"
 
-    def _test_logic(self, scenario: fidl_internal.TxPowerScenario) -> None:
+    async def _test_logic(
+        self, scenario: fidl_internal.TxPowerScenario
+    ) -> None:
         # Setup AP
         ssid: str = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
         setup_ap(
@@ -63,15 +63,15 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
         )
 
         # Set the SAR scenario
-        asyncio.run(
-            device_monitor_proxy.set_tx_power_scenario(
+        (
+            await device_monitor_proxy.set_tx_power_scenario(
                 phy_id=self.test_kit.phy_id,
                 scenario=scenario,
             )
         ).unwrap()
 
         # Find the matching bss_description
-        scan_results = self.fuchsia_device.wlan_core.scan_for_bss_info()
+        scan_results = await self.fuchsia_device.wlan_core.scan_for_bss_info()
         try:
             bss_description = scan_results[ssid][0]
         except KeyError:
@@ -81,7 +81,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
             )
 
         # Connect to the AP
-        self.fuchsia_device.wlan_core.connect(
+        await self.fuchsia_device.wlan_core.connect(
             ssid=ssid,
             bss_desc=bss_description,
             authentication=fidl_security.Authentication(
@@ -91,8 +91,8 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
         )
 
         # confirm the SAR scenario is still set
-        get_sar_resp = asyncio.run(
-            device_monitor_proxy.get_tx_power_scenario(
+        get_sar_resp = (
+            await device_monitor_proxy.get_tx_power_scenario(
                 phy_id=self.test_kit.phy_id,
             )
         ).unwrap()

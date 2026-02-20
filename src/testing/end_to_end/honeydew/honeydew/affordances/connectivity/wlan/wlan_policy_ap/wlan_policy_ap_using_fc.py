@@ -5,16 +5,18 @@
 Controller."""
 
 import asyncio
+import functools
 import logging
 from dataclasses import dataclass
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel, ZxStatus
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable, errors
+from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     AccessPointState,
@@ -59,7 +61,7 @@ class _AccessPointControllerState:
     access_point_state_updates_server_task: asyncio.Task[None]
 
 
-class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
+class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
     """WlanPolicyAp affordance implemented with Fuchsia Controller."""
 
     def __init__(
@@ -87,8 +89,20 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         self._reboot_affordance = reboot_affordance
         self._fuchsia_device_close = fuchsia_device_close
 
+        self._access_point_controller: _AccessPointControllerState | None = None
+
         self.verify_supported()
 
+        @functools.wraps(self.make_ready)
+        def make_ready() -> None:
+            fuchsia_async_extension.get_test_loop().run_until_complete(
+                self.make_ready()
+            )
+
+        self._reboot_affordance.register_for_on_device_boot(make_ready)
+
+    async def make_ready(self) -> None:
+        await super().make_ready()
         device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
             self._fc_transport.connect_device_proxy(
                 FidlEndpoint(
@@ -97,12 +111,10 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
                 )
             )
         )
-        phy_list = asyncio.run(device_monitor_proxy.list_phys()).phy_list
+        phy_list = (await device_monitor_proxy.list_phys()).phy_list
 
         phy_supported_roles = [
-            asyncio.run(
-                device_monitor_proxy.get_supported_mac_roles(phy_id=phy_id)
-            )
+            (await device_monitor_proxy.get_supported_mac_roles(phy_id=phy_id))
             .unwrap()
             .supported_mac_roles
             for phy_id in phy_list
@@ -117,28 +129,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
                 "Device does not support an access point interface."
             )
 
-        self._connect_proxy()
-        self._reboot_affordance.register_for_on_device_boot(self._connect_proxy)
-        self._fuchsia_device_close.register_for_on_device_close(self._close)
-
-    def _close(self) -> None:
-        """Release handle on ap controller.
-
-        This needs to be called on test class teardown otherwise the device may
-        be left in an inoperable state where no other components or tests can
-        access state-changing WLAN Policy AP APIs.
-
-        This is idempotent and irreversible. No other methods should be called
-        after this one.
-        """
-        # TODO(http://b/324948461): Finish implementation
-
-        if not self.loop().is_closed():
-            self.loop().stop()
-            # Allow the loop to finish processing pending tasks. This is
-            # necessary to finish cancelling any tasks, which doesn't take long.
-            self.loop().run_forever()
-            self.loop().close()
+        await self._connect_proxy()
 
     def verify_supported(self) -> None:
         """Verifies that the WlanPolicyAp affordance using FuchsiaController is supported by the
@@ -172,7 +163,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
                     "WLAN FC affordance."
                 )
 
-    def _connect_proxy(self) -> None:
+    async def _connect_proxy(self) -> None:
         """Re-initializes connection to the WLAN stack.
 
         See fuchsia.wlan.policy/AccessPointProvider.GetController().
@@ -191,9 +182,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         access_point_state_updates_server = AccessPointStateUpdatesImpl(
             updates_server, updates
         )
-        task = self.loop().create_task(
-            access_point_state_updates_server.serve()
-        )
+        task = asyncio.create_task(access_point_state_updates_server.serve())
 
         access_point_provider_proxy = f_wlan_policy.AccessPointProviderClient(
             self._fc_transport.connect_device_proxy(
@@ -217,8 +206,19 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
             access_point_state_updates_server_task=task,
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def start_sync(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+        mode: ConnectivityMode,
+        band: OperatingBand,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.start(ssid, security, password, mode, band)
+        )
+
+    @ensure_ready
     async def start(
         self,
         ssid: str,
@@ -241,6 +241,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
             HoneydewWlanError: Error from WLAN stack
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
+        assert self._access_point_controller is not None
         cred = Credential.from_password(password)
 
         try:
@@ -263,8 +264,17 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
                 request_status,
             )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def stop_sync(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.stop(ssid, security, password)
+        )
+
+    @ensure_ready
     async def stop(
         self,
         ssid: str,
@@ -283,6 +293,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
             HoneydewWlanError: Error from WLAN stack
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
+        assert self._access_point_controller is not None
         cred = Credential.from_password(password)
 
         try:
@@ -309,9 +320,16 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         Raises:
             HoneydewWlanError: Error from WLAN stack
         """
-        self._access_point_controller.proxy.stop_all_access_points()
+        if self._access_point_controller:
+            self._access_point_controller.proxy.stop_all_access_points()
 
-    def set_new_update_listener(self) -> None:
+    def set_new_update_listener_sync(self) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.set_new_update_listener()
+        )
+
+    @ensure_ready
+    async def set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -326,9 +344,12 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         # API is designed to only allow a single caller to make AccessPointController
         # calls which would impact WLAN state. If we lose our handle to the
         # AccessPointController, some other component on the system could take it.
-        self.cancel_task(
-            self._access_point_controller.access_point_state_updates_server_task
-        )
+        assert self._access_point_controller is not None
+        self._access_point_controller.access_point_state_updates_server_task.cancel()
+        try:
+            await self._access_point_controller.access_point_state_updates_server_task
+        except asyncio.CancelledError:
+            pass
 
         access_point_listener_proxy = f_wlan_policy.AccessPointListenerClient(
             self._fc_transport.connect_device_proxy(
@@ -341,9 +362,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         access_point_state_updates_server = AccessPointStateUpdatesImpl(
             updates_server, updates
         )
-        task = self._async_adapter_loop.create_task(
-            access_point_state_updates_server.serve()
-        )
+        task = asyncio.create_task(access_point_state_updates_server.serve())
 
         try:
             access_point_listener_proxy.get_listener(
@@ -359,8 +378,15 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
             task
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_update_sync(
+        self,
+        timeout: float | None = None,
+    ) -> list[AccessPointState]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_update(timeout)
+        )
+
+    @ensure_ready
     async def get_update(
         self,
         timeout: float | None = None,
@@ -385,6 +411,7 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
             HoneydewWlanError: Error from WLAN stack.
             TimeoutError: Reached timeout without any updates.
         """
+        assert self._access_point_controller is not None
         return await asyncio.wait_for(
             self._access_point_controller.updates.get(), timeout
         )

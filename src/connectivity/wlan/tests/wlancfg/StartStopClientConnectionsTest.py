@@ -74,8 +74,7 @@ class StartStopClientConnectionsTest(
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             try:
-                self.device.wlan_policy.create_client_controller()
-                self.device.wlan_policy.start_client_connections()
+                self.device.wlan_policy.start_client_connections_sync()
                 logger.info("Acquired control of the WLAN policy layer.")
                 break
             except Exception as e:
@@ -92,45 +91,45 @@ class StartStopClientConnectionsTest(
 
     def setup_test(self) -> None:
         super().setup_test()
-        self.device.wlan_policy.remove_all_networks()
-        self.device.wlan_policy.wait_for_no_connections()
+        self.device.wlan_policy.remove_all_networks_sync()
+        self.device.wlan_policy.wait_for_no_connections_sync()
 
     def teardown_class(self) -> None:
-        self.device.wlan_policy.remove_all_networks()
-        self.device.wlan_policy.wait_for_no_connections()
+        self.device.wlan_policy.remove_all_networks_sync()
+        self.device.wlan_policy.wait_for_no_connections_sync()
 
         self.access_point.stop_all_aps()
         super().teardown_class()
 
-    def test_stop_client_connections_update(self) -> None:
+    async def test_stop_client_connections_update(self) -> None:
         """Test that we can stop client connections.
 
         The fuchsia device always starts client connections during configure_wlan. We
         verify first that we are in a client connections enabled state.
         """
-        self.device.wlan_policy.start_client_connections()
-        self.device.wlan_policy.set_new_update_listener()
-        self.device.wlan_policy.wait_until_update(
+        await self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.set_new_update_listener()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
 
-        self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.stop_client_connections()
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
 
-    def test_start_client_connections_update(self) -> None:
+    async def test_start_client_connections_update(self) -> None:
         """Test that we can start client connections."""
-        self.device.wlan_policy.stop_client_connections()
-        self.device.wlan_policy.set_new_update_listener()
-        self.device.wlan_policy.wait_until_update(
+        await self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.set_new_update_listener()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
@@ -138,31 +137,31 @@ class StartStopClientConnectionsTest(
             timeout=30,
         )
 
-        self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.start_client_connections()
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
 
-    def test_stop_client_connections_rejects_connections(self) -> None:
+    async def test_stop_client_connections_rejects_connections(self) -> None:
         """Test that if client connections are disabled connection attempts fail."""
-        self.device.wlan_policy.start_client_connections()
-        self.device.wlan_policy.set_new_update_listener()
-        self.device.wlan_policy.wait_until_update(
+        await self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.set_new_update_listener()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
 
-        self.device.wlan_policy.save_network(
+        await self.device.wlan_policy.save_network(
             self.ssid, self.security_type, self.password
         )
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
@@ -178,9 +177,9 @@ class StartStopClientConnectionsTest(
         )
 
         # Stop connections interrupts connect attempt.
-        self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.stop_client_connections()
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[
@@ -196,44 +195,46 @@ class StartStopClientConnectionsTest(
         )
 
         # Subsequent attempt to connect fails.
-        status = self.device.wlan_policy.connect(self.ssid, self.security_type)
+        status = await self.device.wlan_policy.connect(
+            self.ssid, self.security_type
+        )
         assert (
             status is f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
         ), "Expected connection request rejected as incompatible."
 
-    def test_start_stop_client_connections(self) -> None:
+    async def test_start_stop_client_connections(self) -> None:
         """Test automated behavior when starting/stopping client connections.
 
         When starting and stopping the client connections the device should connect and
         disconnect from the saved network.
         """
-        self.device.wlan_policy.stop_client_connections()
-        self.device.wlan_policy.set_new_update_listener()
-        self.device.wlan_policy.wait_until_update(
+        await self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.set_new_update_listener()
+        await self.device.wlan_policy.wait_until_update(
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
         )
 
-        self.device.wlan_policy.save_network(
+        await self.device.wlan_policy.save_network(
             self.ssid, self.security_type, self.password
         )
         logger.info(
             f'Saved network "{self.ssid}" with password "{self.password}" ({self.security_type})'
         )
 
-        self.device.wlan_policy.start_client_connections()
+        await self.device.wlan_policy.start_client_connections()
         logger.info("WLAN client connections enabled, expecting auto-connect")
 
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
             ),
         )
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
@@ -249,7 +250,7 @@ class StartStopClientConnectionsTest(
             f'Expected auto-connect request to "{self.ssid}"',
         )
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(timeout=60),
+            await self.device.wlan_policy.get_update(timeout=60),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
@@ -266,11 +267,11 @@ class StartStopClientConnectionsTest(
         )
         logger.info(f'Connected to network "{self.ssid}"')
 
-        self.device.wlan_policy.stop_client_connections()
+        await self.device.wlan_policy.stop_client_connections()
         logger.info("Stopped client connections")
 
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
@@ -286,7 +287,7 @@ class StartStopClientConnectionsTest(
             f'Expected auto-disconnect from "{self.ssid}"',
         )
         asserts.assert_equal(
-            self.device.wlan_policy.get_update(),
+            await self.device.wlan_policy.get_update(),
             ClientStateSummary(
                 state=WlanClientState.CONNECTIONS_DISABLED, networks=[]
             ),

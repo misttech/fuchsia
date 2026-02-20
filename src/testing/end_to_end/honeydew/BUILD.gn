@@ -163,6 +163,7 @@ python_library("honeydew_no_testonly") {
     ":honeydew_ffx_tool_deps",
     ":honeydew_fidl_ir_and_deps",
     "//src/lib/diagnostics/python/fuchsia_inspect",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//third_party/pypng",
   ]
 

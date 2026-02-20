@@ -4,6 +4,7 @@
 """WLAN affordance implementation using Fuchsia Controller."""
 
 import asyncio
+import functools
 import logging
 from collections.abc import Sequence
 
@@ -12,11 +13,12 @@ import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_sme as f_wlan_sme
+import fuchsia_async_extension
 from fidl._client import FidlClient
 from fuchsia_controller_py import Channel, ZxStatus
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable, errors
+from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     BssDescriptionParser,
@@ -51,7 +53,7 @@ _REGULATORY_REGION_CONFIGURATOR_PROXY = FidlEndpoint(
 )
 
 
-class WlanCore(AsyncAdapter, wlan_core.WlanCore):
+class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
     """WLAN Core affordance implemented with Fuchsia Controller."""
 
     def __init__(
@@ -71,7 +73,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             reboot_affordance: Object that implements RebootCapableDevice.
             fuchsia_device_close: Object that implements FuchsiaDeviceClose.
         """
-        AsyncAdapter.__init__(self)
+        AsyncLazyReady.__init__(self)
 
         self._device_name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
@@ -81,21 +83,13 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         self.verify_supported()
 
-        self._connect_proxy()
-        self._reboot_affordance.register_for_on_device_boot(self._connect_proxy)
+        @functools.wraps(self.make_ready)
+        def make_ready() -> None:
+            fuchsia_async_extension.get_test_loop().run_until_complete(
+                self.make_ready()
+            )
 
-        self._fuchsia_device_close.register_for_on_device_close(self.close)
-
-    def close(self) -> None:
-        """Clean up async tasks.
-
-        This is idempotent and irreversible. No other methods should be called
-        after this one.
-        """
-        if not self.loop().is_closed():
-            self.loop().stop()
-            self.loop().run_forever()  # Handle pending tasks
-            self.loop().close()
+        self._reboot_affordance.register_for_on_device_boot(make_ready)
 
     def verify_supported(self) -> None:
         """Verifies that the WLAN affordance using FuchsiaController is supported by the Fuchsia
@@ -129,14 +123,24 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                     "WLAN FC affordance."
                 )
 
-    def _connect_proxy(self) -> None:
+    async def make_ready(self) -> None:
         """Re-initializes connection to the WLAN stack."""
         self._device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
             self._fc_transport.connect_device_proxy(_DEVICE_MONITOR_PROXY)
         )
+        await super().make_ready()
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def connect_sync(
+        self,
+        ssid: str,
+        bss_desc: f_wlan_common.BssDescription,
+        authentication: f_wlan_common_security.Authentication,
+    ) -> bool:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.connect(ssid, bss_desc, authentication)
+        )
+
+    @ensure_ready
     async def connect(
         self,
         ssid: str,
@@ -179,7 +183,7 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         event_handler = ConnectTransactionEventHandler(
             connect_transaction_client, results
         )
-        event_handler_task = self.loop().create_task(event_handler.serve())
+        event_handler_task = asyncio.create_task(event_handler.serve())
 
         try:
             # Initiate the connect.
@@ -227,8 +231,17 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         return True
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def create_iface_sync(
+        self,
+        phy_id: int,
+        role: f_wlan_common.WlanMacRole,
+        sta_addr: str | None = None,
+    ) -> int:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.create_iface(phy_id, role, sta_addr)
+        )
+
+    @ensure_ready
     async def create_iface(
         self,
         phy_id: int,
@@ -273,8 +286,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
         ), f"{create_iface_response!r} missing iface_id"
         return create_iface_response.iface_id
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def destroy_iface_sync(self, iface_id: int) -> None:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.destroy_iface(iface_id)
+        )
+
+    @ensure_ready
     async def destroy_iface(self, iface_id: int) -> None:
         """Destroy WLAN interface by ID.
 
@@ -296,8 +313,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 f"DeviceMonitor.DestroyIface() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def disconnect_sync(self) -> None:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.disconnect()
+        )
+
+    @ensure_ready
     async def disconnect(self) -> None:
         """Disconnect all client WLAN connections.
 
@@ -319,8 +340,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                         f"SmeClient.Disconnect() error {status}"
                     ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_country_sync(self, phy_id: int) -> CountryCode:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_country(phy_id)
+        )
+
+    @ensure_ready
     async def get_country(self, phy_id: int) -> CountryCode:
         """Queries the currently configured country code from phy `phy_id`.
 
@@ -346,8 +371,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
             bytes(get_country_response.resp.alpha2).decode("utf-8")
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def set_country_sync(self, phy_id: int, code: CountryCode) -> None:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.set_country(phy_id, code)
+        )
+
+    @ensure_ready
     async def set_country(self, phy_id: int, code: CountryCode) -> None:
         try:
             await self._device_monitor_proxy.set_country(
@@ -361,8 +390,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 f"DeviceMonitor.SetCountry() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_iface_id_list_sync(self) -> Sequence[int]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_iface_id_list()
+        )
+
+    @ensure_ready
     async def get_iface_id_list(self) -> Sequence[int]:
         """Get list of wlan iface IDs on device.
 
@@ -382,8 +415,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 f"DeviceMonitor.ListIfaces() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_phy_id_list_sync(self) -> Sequence[int]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_phy_id_list()
+        )
+
+    @ensure_ready
     async def get_phy_id_list(self) -> Sequence[int]:
         """Get list of phy ids on device.
 
@@ -400,8 +437,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 f"DeviceMonitor.ListPhys() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def query_interfaces_sync(self) -> WlanInterfaces:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.query_interfaces()
+        )
+
+    @ensure_ready
     async def query_interfaces(self) -> WlanInterfaces:
         """Retrieves a QueryIfaceResponse for every WLAN interface on the device.
 
@@ -433,8 +474,14 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         return WlanInterfaces(client=client, ap=ap)
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def query_iface_sync(
+        self, iface_id: int
+    ) -> f_wlan_device_service.QueryIfaceResponse:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.query_iface(iface_id)
+        )
+
+    @ensure_ready
     async def query_iface(
         self, iface_id: int
     ) -> f_wlan_device_service.QueryIfaceResponse:
@@ -480,8 +527,14 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
                 "DeviceMonitor.QueryIface() error"
             ) from e
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def scan_for_bss_info_sync(
+        self,
+    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.scan_for_bss_info()
+        )
+
+    @ensure_ready
     async def scan_for_bss_info(
         self,
     ) -> dict[str, list[f_wlan_common.BssDescription]]:
@@ -585,8 +638,12 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
         return sme_client
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def status_sync(self) -> ClientStatusResponse:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.status()
+        )
+
+    @ensure_ready
     async def status(self) -> ClientStatusResponse:
         """Request connection status
 

@@ -33,6 +33,9 @@ class WlanController:
             },
         )
 
+    def set_country_code_sync(self, country_code: CountryCode) -> None:
+        self.set_country_code(country_code)
+
     def set_country_code(self, country_code: CountryCode) -> None:
         """Sets country code through the regulatory region service and waits
         for the code to be applied to WLAN PHY.
@@ -50,12 +53,12 @@ class WlanController:
         self.log.info(
             f"Verifying DUT country code was correctly set to {country_code}."
         )
-        phy_ids_response = self.honeydew.wlan_core.get_phy_id_list()
+        phy_ids_response = self.honeydew.wlan_core.get_phy_id_list_sync()
 
         end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
         while time.time() < end_time:
             for id in phy_ids_response:
-                resp = self.honeydew.wlan_core.get_country(id)
+                resp = self.honeydew.wlan_core.get_country_sync(id)
                 if resp == country_code:
                     return
                 time.sleep(TIME_TO_SLEEP_BETWEEN_RETRIES)

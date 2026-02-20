@@ -464,7 +464,7 @@ class SoftApTest(base_test.WifiBaseTest):
                     - 'any', 'only_5_ghz', 'only_2_4_ghz'
         """
         self.log.info(f"Starting SoftAP on DUT with settings: {params}")
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start_sync(
             params.ssid,
             SecurityType(params.security_type.fuchsia_security_type()),
             params.password,
@@ -919,7 +919,7 @@ class SoftApTest(base_test.WifiBaseTest):
             EnvironmentError, if client and AP can still communicate
         """
         self.log.info("Stopping SoftAP on DUT.")
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop_sync(
             soft_ap_params.ssid,
             SecurityType(soft_ap_params.security_type.fuchsia_security_type()),
             soft_ap_params.password,

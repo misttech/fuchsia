@@ -7,6 +7,7 @@ import time
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_common_security as f_wlan_common_security
+import fuchsia_async_extension
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -40,9 +41,11 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             access_points[0] if access_points else None
         )
 
-        self.wait_for_interface(self.device.netstack, PortClass.WLAN_CLIENT)
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.wait_for_interface(self.device.netstack, PortClass.WLAN_CLIENT)
+        )
 
-    def test_iface_methods(self) -> None:
+    async def test_iface_methods(self) -> None:
         """Test case for device wlan_core iface methods.
 
         This test gets the list of phy IDs present, creates an iface, then checks that
@@ -62,40 +65,40 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # needed.
         driver_list = self.device.ffx.run(["driver", "list"])
         if driver_list.find("iwlwifi") != -1:
-            phy_ids = self.device.wlan_core.get_phy_id_list()
-            iface_ids = self.device.wlan_core.get_iface_id_list()
+            phy_ids = await self.device.wlan_core.get_phy_id_list()
+            iface_ids = await self.device.wlan_core.get_iface_id_list()
 
-            iface_id = self.device.wlan_core.create_iface(
+            iface_id = await self.device.wlan_core.create_iface(
                 phy_id=phy_ids[0], role=f_wlan_common.WlanMacRole.CLIENT
             )
 
-            query_resp = self.device.wlan_core.query_iface(iface_id)
+            query_resp = await self.device.wlan_core.query_iface(iface_id)
             asserts.assert_equal(
                 query_resp.role, f_wlan_common.WlanMacRole.CLIENT
             )
             asserts.assert_equal(query_resp.id_, iface_id)
             asserts.assert_equal(query_resp.phy_id, phy_ids[0])
 
-            self.device.wlan_core.destroy_iface(iface_id)
-            expected_iface_ids = self.device.wlan_core.get_iface_id_list()
+            await self.device.wlan_core.destroy_iface(iface_id)
+            expected_iface_ids = await self.device.wlan_core.get_iface_id_list()
 
             asserts.assert_equal(iface_ids, expected_iface_ids)
         else:
-            phy_ids = self.device.wlan_core.get_phy_id_list()
-            iface_ids = self.device.wlan_core.get_iface_id_list()
+            phy_ids = await self.device.wlan_core.get_phy_id_list()
+            iface_ids = await self.device.wlan_core.get_iface_id_list()
             if iface_ids:
-                self.device.wlan_core.destroy_iface(iface_ids[0])
+                await self.device.wlan_core.destroy_iface(iface_ids[0])
 
-    def test_phy_response_to_country_code_change(self) -> None:
+    async def test_phy_response_to_country_code_change(self) -> None:
         """Tests that all phys respond to a country code setting change."""
 
-        def check_country_code(
+        async def check_country_code(
             phy_id: int, country_code: str, timeout: float
         ) -> None:
             deadline = time.time() + timeout
             while True:
-                last_get_country_response = self.device.wlan_core.get_country(
-                    phy_id
+                last_get_country_response = (
+                    await self.device.wlan_core.get_country(phy_id)
                 )
                 if last_get_country_response == country_code:
                     return
@@ -107,14 +110,14 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 time.sleep(1)
 
         self.device.location.set_region("US")
-        for phy_id in self.device.wlan_core.get_phy_id_list():
-            check_country_code(phy_id, "US", 10)
+        for phy_id in await self.device.wlan_core.get_phy_id_list():
+            await check_country_code(phy_id, "US", 10)
 
         self.device.location.set_region("WW")
-        for phy_id in self.device.wlan_core.get_phy_id_list():
-            check_country_code(phy_id, "WW", 10)
+        for phy_id in await self.device.wlan_core.get_phy_id_list():
+            await check_country_code(phy_id, "WW", 10)
 
-    def test_scan_and_connect(self) -> None:
+    async def test_scan_and_connect(self) -> None:
         """Test case for scanning, connecting and disconnecting to a network.
 
         This test sets up an access point with a network, then scans and connects to
@@ -140,17 +143,17 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         end_time = time.time() + 30
         while time.time() < end_time:
-            iface_ids = self.device.wlan_core.get_iface_id_list()
+            iface_ids = await self.device.wlan_core.get_iface_id_list()
             if len(iface_ids) > 0:
                 break
         else:
             asserts.fail("No iface ids present")
 
-        bss_scan_response = self.device.wlan_core.scan_for_bss_info()
+        bss_scan_response = await self.device.wlan_core.scan_for_bss_info()
         bss_desc_for_ssid = bss_scan_response.get(test_ssid)
         if bss_desc_for_ssid:
             asserts.assert_true(
-                self.device.wlan_core.connect(
+                await self.device.wlan_core.connect(
                     ssid=test_ssid,
                     bss_desc=bss_desc_for_ssid[0],
                     authentication=f_wlan_common_security.Authentication(
@@ -162,8 +165,8 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         else:
             asserts.fail("Scan did not find bss descriptions for test ssid")
 
-        self.device.wlan_core.disconnect()
-        status = self.device.wlan_core.status()
+        await self.device.wlan_core.disconnect()
+        status = await self.device.wlan_core.status()
         if status == ClientStatusIdle():
             return
         asserts.fail(

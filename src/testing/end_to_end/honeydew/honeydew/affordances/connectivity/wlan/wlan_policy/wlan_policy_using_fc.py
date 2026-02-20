@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 import logging
 import pprint
@@ -15,10 +16,11 @@ from datetime import datetime, timedelta
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel, ZxStatus
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable, errors
+from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
@@ -155,7 +157,7 @@ class ClientControllerState:
     client_state_updates_server_task: asyncio.Task[None]
 
 
-class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
+class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
     """WlanPolicy affordance implemented with Fuchsia Controller."""
 
     def __init__(
@@ -188,12 +190,79 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         self.verify_supported()
 
-        self._connect_proxy()
-        self._reboot_affordance.register_for_on_device_boot(self._connect_proxy)
+        @functools.wraps(self.make_ready)
+        def make_ready() -> None:
+            fuchsia_async_extension.get_test_loop().run_until_complete(
+                self.make_ready()
+            )
 
-        self._fuchsia_device_close.register_for_on_device_close(self._close)
+        self._reboot_affordance.register_for_on_device_boot(make_ready)
 
-    def _close(self) -> None:
+        @functools.wraps(self._close)
+        def _close() -> None:
+            fuchsia_async_extension.get_test_loop().run_until_complete(
+                self._close()
+            )
+
+        self._fuchsia_device_close.register_for_on_device_close(_close)
+
+    async def make_ready(self) -> None:
+        await super().make_ready()
+        await self._create_client_controller()
+
+    async def _create_client_controller(self) -> None:
+        """Initializes the client controller.
+
+        See fuchsia.wlan.policy/ClientProvider.GetController().
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+        self._client_provider_proxy = f_wlan_policy.ClientProviderClient(
+            self._fc_transport.connect_device_proxy(_CLIENT_PROVIDER_PROXY)
+        )
+        self._device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
+            self._fc_transport.connect_device_proxy(_DEVICE_MONITOR_PROXY)
+        )
+
+        if self._client_controller:
+            self._client_controller.client_state_updates_server_task.cancel()
+            self._client_controller = None
+
+        controller_client, controller_server = Channel.create()
+        client_controller_proxy = f_wlan_policy.ClientControllerClient(
+            controller_client.take()
+        )
+
+        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
+
+        updates_client, updates_server = Channel.create()
+        client_state_updates_server = ClientStateUpdatesImpl(
+            updates_server, updates
+        )
+        task = asyncio.create_task(client_state_updates_server.serve())
+
+        _LOGGER.debug(
+            "Calling fuchsia.wlan.policy/ClientProvider.GetController()"
+        )
+
+        try:
+            self._client_provider_proxy.get_controller(
+                requests=controller_server.take(),
+                updates=updates_client.take(),
+            )
+        except ZxStatus as status:
+            raise wlan_errors.HoneydewWlanError(
+                f"ClientProvider.GetController() error {status}"
+            ) from status
+
+        self._client_controller = ClientControllerState(
+            proxy=client_controller_proxy,
+            updates=updates,
+            client_state_updates_server_task=task,
+        )
+
+    async def _close(self) -> None:
         """Release handle on client controller.
 
         This needs to be called on test class teardown otherwise the device may
@@ -204,15 +273,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         after this one.
         """
         if self._client_controller:
-            self.cancel_task(
-                self._client_controller.client_state_updates_server_task
-            )
+            self._client_controller.client_state_updates_server_task.cancel()
+            try:
+                await self._client_controller.client_state_updates_server_task
+            except asyncio.CancelledError:
+                pass
             self._client_controller = None
-
-        if not self.loop().is_closed():
-            self.loop().stop()
-            self.loop().run_forever()  # Handle pending tasks
-            self.loop().close()
 
     def verify_supported(self) -> None:
         """Verifies that the WlanPolicy affordance using FuchsiaController is supported by the
@@ -246,17 +312,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                     "WLAN FC affordance."
                 )
 
-    def _connect_proxy(self) -> None:
-        """Re-initializes connection to the WLAN stack."""
-        self._client_provider_proxy = f_wlan_policy.ClientProviderClient(
-            self._fc_transport.connect_device_proxy(_CLIENT_PROVIDER_PROXY)
-        )
-        self._device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
-            self._fc_transport.connect_device_proxy(_DEVICE_MONITOR_PROXY)
+    def set_country_code_sync(self, country_code: CountryCode) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.set_country_code(country_code)
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    @ensure_ready
     async def set_country_code(self, country_code: CountryCode) -> None:
         await self._set_country_code(country_code)
 
@@ -318,8 +379,19 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             "All PHYs configured for new country code: %s", country_code
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def connect_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> f_wlan_policy.RequestStatus:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.connect(target_ssid, security_type, timeout=timeout)
+        )
+
+    @ensure_ready
     async def connect(
         self,
         target_ssid: str,
@@ -344,11 +416,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             TypeError: Return value not a string.
             RuntimeError: Client controller has not been initialized.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before connect()"
-            )
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.Connect("
@@ -370,55 +438,17 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.Connect() error {status}"
             ) from status
 
-    def create_client_controller(self) -> None:
-        """Initializes the client controller.
-
-        See fuchsia.wlan.policy/ClientProvider.GetController().
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack.
-        """
-        if self._client_controller:
-            self.cancel_task(
-                self._client_controller.client_state_updates_server_task
-            )
-            self._client_controller = None
-
-        controller_client, controller_server = Channel.create()
-        client_controller_proxy = f_wlan_policy.ClientControllerClient(
-            controller_client.take()
+    def get_saved_networks_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[NetworkConfig]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_saved_networks(timeout=timeout)
         )
 
-        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
-
-        updates_client, updates_server = Channel.create()
-        client_state_updates_server = ClientStateUpdatesImpl(
-            updates_server, updates
-        )
-        task = self.loop().create_task(client_state_updates_server.serve())
-
-        _LOGGER.debug(
-            "Calling fuchsia.wlan.policy/ClientProvider.GetController()"
-        )
-
-        try:
-            self._client_provider_proxy.get_controller(
-                requests=controller_server.take(),
-                updates=updates_client.take(),
-            )
-        except ZxStatus as status:
-            raise wlan_errors.HoneydewWlanError(
-                f"ClientProvider.GetController() error {status}"
-            ) from status
-
-        self._client_controller = ClientControllerState(
-            proxy=client_controller_proxy,
-            updates=updates,
-            client_state_updates_server_task=task,
-        )
-
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    @ensure_ready
     async def get_saved_networks(
         self,
         *,
@@ -435,11 +465,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             TypeError: Return values not correct types.
             RuntimeError: Client controller has not been initialized.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before get_saved_networks()"
-            )
+        assert self._client_controller is not None
 
         client, server = Channel.create()
         iterator = f_wlan_policy.NetworkConfigIteratorClient(client.take())
@@ -465,8 +491,16 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 configs.append(NetworkConfig.from_fidl(config))
         return configs
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_status_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_status(timeout=timeout)
+        )
+
     async def get_status(
         self,
         *,
@@ -501,7 +535,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
         )
-        task = self.loop().create_task(client_state_updates_server.serve())
+        task = asyncio.create_task(client_state_updates_server.serve())
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientListener.GetListener() for get_status"
@@ -528,8 +562,17 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             except asyncio.CancelledError:
                 pass
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def get_update_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.get_update(timeout=timeout)
+        )
+
+    @ensure_ready
     async def get_update(
         self,
         *,
@@ -558,9 +601,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             HoneydewWlanError: Error from WLAN stack.
             TimeoutError: Reached timeout without any updates.
         """
-        if self._client_controller is None:
-            self.create_client_controller()
-            assert self._client_controller is not None
+        assert self._client_controller is not None
 
         return await asyncio.wait_for(
             self._client_controller.updates.get(), timeout
@@ -582,11 +623,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         Raises:
              HoneydewWlanError: Error from WLAN stack.
         """
-        client_state_summaries = []
-        if self._client_controller is None:
-            self.create_client_controller()
-            assert self._client_controller is not None
+        assert self._client_controller is not None
 
+        client_state_summaries = []
         while True:
             try:
                 client_state_summaries.append(
@@ -606,8 +645,18 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                     f"{pprint.pformat(client_state_summaries, indent=4)}"
                 ) from e
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def wait_until_update_sync(
+        self,
+        expected_update: ClientStateSummary,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.wait_until_update(expected_update, timeout=timeout)
+        )
+
+    @ensure_ready
     async def wait_until_update(
         self,
         expected_update: ClientStateSummary,
@@ -630,7 +679,18 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"Never received {expected_update}."
             ) from e
 
-    def remove_all_networks(
+    def remove_all_networks_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.remove_all_networks(timeout=timeout)
+        )
+
+    @ensure_ready
+    async def remove_all_networks(
         self,
         *,
         timeout: float
@@ -643,26 +703,36 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet.
+            RuntimeError: A client controller has not been initialized.
             TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT.
             per network.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before remove_all_networks()"
-            )
+        assert self._client_controller is not None
 
-        for network in self.get_saved_networks():
-            self.remove_network(
+        for network in await self.get_saved_networks():
+            await self.remove_network(
                 target_ssid=network.ssid,
                 security_type=network.security_type,
                 target_pwd=network.credential_value,
                 timeout=timeout,
             )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def remove_network_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.remove_network(
+                target_ssid, security_type, target_pwd, timeout=timeout
+            )
+        )
+
+    @ensure_ready
     async def remove_network(
         self,
         target_ssid: str,
@@ -683,14 +753,10 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet.
+            RuntimeError: A client controller has not been initialized.
             TimeoutError: Operation takes longer than DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before remove_network()"
-            )
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.RemoveNetwork("
@@ -724,8 +790,22 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.RemoveNetwork() ZxStatus error {status}"
             )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def save_network_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.save_network(
+                target_ssid, security_type, target_pwd, timeout=timeout
+            )
+        )
+
+    @ensure_ready
     async def save_network(
         self,
         target_ssid: str,
@@ -746,13 +826,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
-            RuntimeError: A client controller has not been created yet.
+            RuntimeError: A client controller has not been initialized.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before save_network()"
-            )
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.SaveNetwork("
@@ -787,8 +863,17 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.SaveNetwork() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def scan_for_networks_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[str]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.scan_for_networks(timeout=timeout)
+        )
+
+    @ensure_ready
     async def scan_for_networks(
         self,
         *,
@@ -805,11 +890,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             TypeError: Return value not a list.
             RuntimeError: Client controller has not been initialized.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before scan_for_networks()"
-            )
+        assert self._client_controller is not None
 
         client, server = Channel.create()
         iterator = f_wlan_policy.ScanResultIteratorClient(client.take())
@@ -841,21 +922,13 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         return list(scan_results)
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def set_new_update_listener_sync(self) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.set_new_update_listener()
+        )
+
+    @ensure_ready
     async def set_new_update_listener(self) -> None:
-        """Sets the update listener stream of the facade to a new stream.
-
-        This causes updates to be reset. Intended to be used between tests so
-        that the behavior of updates in a test is independent from previous
-        tests.
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack.
-        """
-        await self._set_new_update_listener()
-
-    async def _set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -866,11 +939,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: Client controller has not been initialized.
         """
-        if self._client_controller is None:
-            # There is no running fuchsia.wlan.policy/ClientStateUpdates server.
-            # Creating one is equivalent to creating a new update listener.
-            self.create_client_controller()
-            return
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "WLAN client state updates server is being restarted; unconsumed "
@@ -902,9 +971,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
         )
-        task = self._async_adapter_loop.create_task(
-            client_state_updates_server.serve()
-        )
+        task = asyncio.create_task(client_state_updates_server.serve())
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientListener.GetListener()"
@@ -922,8 +989,17 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         self._client_controller.updates = updates
         self._client_controller.client_state_updates_server_task = task
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def start_client_connections_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.start_client_connections(timeout=timeout)
+        )
+
+    @ensure_ready
     async def start_client_connections(
         self,
         *,
@@ -942,11 +1018,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             RuntimeError: A client controller has not been created yet.
             TimeoutError: timeout.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before start_client_connections()"
-            )
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.StartClientConnections()"
@@ -968,8 +1040,17 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.StartClientConnections() ZxStatus error {status}"
             )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def stop_client_connections_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.stop_client_connections(timeout=timeout)
+        )
+
+    @ensure_ready
     async def stop_client_connections(
         self,
         *,
@@ -987,11 +1068,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet.
         """
-        if self._client_controller is None:
-            raise RuntimeError(
-                "Client controller has not been initialized; call "
-                "create_client_controller() before stop_client_connections()"
-            )
+        assert self._client_controller is not None
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.StopClientConnections()"
@@ -1011,15 +1088,23 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.StopClientConnections() error {status}"
             ) from status
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def wait_for_no_connections_sync(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.wait_for_no_connections(timeout=timeout)
+        )
+
     async def wait_for_no_connections(
         self,
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        await self._set_new_update_listener()
+        await self.set_new_update_listener()
         connection_states = {
             ConnectionState.CONNECTING,
             ConnectionState.CONNECTED,

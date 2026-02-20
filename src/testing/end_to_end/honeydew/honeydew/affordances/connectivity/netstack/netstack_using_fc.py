@@ -9,8 +9,8 @@ import logging
 
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel, ZxStatus
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.netstack import netstack
@@ -42,7 +42,7 @@ _INTERFACES_PROXY = FidlEndpoint(
 )
 
 
-class NetstackUsingFc(AsyncAdapter, netstack.Netstack):
+class NetstackUsingFc(netstack.Netstack):
     """WLAN affordance implemented with Fuchsia Controller."""
 
     def __init__(
@@ -109,8 +109,11 @@ class NetstackUsingFc(AsyncAdapter, netstack.Netstack):
             self._fc_transport.connect_device_proxy(_INTERFACES_PROXY)
         )
 
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
+    def list_interfaces_sync(self) -> list[InterfaceProperties]:
+        return fuchsia_async_extension.get_test_loop().run_until_complete(
+            self.list_interfaces()
+        )
+
     async def list_interfaces(self) -> list[InterfaceProperties]:
         """List interfaces.
 

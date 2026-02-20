@@ -5,11 +5,10 @@
 
 import asyncio
 import unittest
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import TypeVar
 from unittest import mock
 
+import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from fuchsia_controller_py import Channel, ZxStatus
 
@@ -35,6 +34,7 @@ from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from honeydew.typing import custom_types
 
 _TEST_SSID = "ThepromisedLAN"
 _TEST_SSID_BYTES = list(str.encode(_TEST_SSID))
@@ -127,11 +127,11 @@ async def _async_error(err: Exception) -> None:
 
 
 # pylint: disable=protected-access
-class WlanPolicyFCTests(unittest.TestCase):
+class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for wlan_policy_using_fc.py"""
 
-    def setUp(self) -> None:
-        super().setUp()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.RebootCapableDevice,
@@ -166,44 +166,49 @@ class WlanPolicyFCTests(unittest.TestCase):
             fuchsia_device_close=self.fuchsia_device_close_obj,
             location=self.location_obj,
         )
+
+        self.client_provider_proxy = mock.MagicMock(
+            spec=f_wlan_policy.ClientProviderClient
+        )
+        self.client_listener_proxy = mock.MagicMock(
+            spec=f_wlan_policy.ClientListenerClient
+        )
+        self.device_monitor_proxy = mock.MagicMock(
+            spec=f_wlan_device_service.DeviceMonitorClient
+        )
+        self.client_controller_proxy = mock.MagicMock(
+            spec=f_wlan_policy.ClientControllerClient
+        )
+
         self.client_state_updates_proxy: (
             f_wlan_policy.ClientStateUpdatesClient | None
         ) = None
         self.scan_result_iterator: asyncio.Task[None] | None = None
         self.network_config_iterator: asyncio.Task[None] | None = None
 
-    def tearDown(self) -> None:
-        self.wlan_policy_obj._close()
-        return super().tearDown()
+        def connect_device_proxy(
+            fidl_endpoint: custom_types.FidlEndpoint,
+        ) -> mock.MagicMock:
+            if fidl_endpoint in [
+                wlan_policy_using_fc._CLIENT_PROVIDER_PROXY,
+                wlan_policy_using_fc._DEVICE_MONITOR_PROXY,
+                wlan_policy_using_fc._CLIENT_LISTENER_PROXY,
+            ]:
+                return mock.MagicMock(spec=Channel)
+            raise ValueError(f"Unexpected endpoint: {fidl_endpoint}")
 
-    @contextmanager
-    def _mock_create_client_controller(self) -> Iterator[mock.MagicMock]:
-        """Mock the creation of a fuchsia.wlan.policy/ClientController."""
+        self.fc_transport_obj.connect_device_proxy.side_effect = (
+            connect_device_proxy
+        )
 
         # Create a FIDL client to the ClientStateUpdates server.
-        # pylint: disable-next=unused-argument
         def get_controller(requests: Channel, updates: Channel) -> None:
             self.client_state_updates_proxy = (
                 f_wlan_policy.ClientStateUpdatesClient(updates)
             )
 
-        self.wlan_policy_obj._client_provider_proxy.get_controller = mock.Mock(wraps=get_controller)  # type: ignore[method-assign]
-
-        client_controller_proxy = mock.MagicMock(
-            spec=f_wlan_policy.ClientControllerClient
-        )
-        with mock.patch(
-            "fidl_fuchsia_wlan_policy.ClientControllerClient", autospec=True
-        ) as f_client_controller:
-            f_client_controller.return_value = client_controller_proxy
-            yield client_controller_proxy
-
-    @contextmanager
-    def _mock_client_listener(self) -> Iterator[mock.MagicMock]:
-        """Mock the creation of a fuchsia.wlan.policy/ClientListener."""
-
-        client_listener_proxy = mock.MagicMock(
-            spec=f_wlan_policy.ClientListenerClient
+        self.client_provider_proxy.get_controller = mock.Mock(
+            wraps=get_controller
         )
 
         # Create a FIDL client to the ClientListener server.
@@ -212,13 +217,39 @@ class WlanPolicyFCTests(unittest.TestCase):
                 f_wlan_policy.ClientStateUpdatesClient(updates)
             )
 
-        client_listener_proxy.get_listener = mock.Mock(wraps=get_listener)
+        self.client_listener_proxy.get_listener = mock.Mock(wraps=get_listener)
 
-        with mock.patch(
-            "fidl_fuchsia_wlan_policy.ClientListenerClient", autospec=True
-        ) as f_client_listener:
-            f_client_listener.return_value = client_listener_proxy
-            yield client_listener_proxy
+        for target, return_value in [
+            (
+                "fidl_fuchsia_wlan_policy.ClientProviderClient",
+                self.client_provider_proxy,
+            ),
+            (
+                "fidl_fuchsia_wlan_policy.ClientListenerClient",
+                self.client_listener_proxy,
+            ),
+            (
+                "fidl_fuchsia_wlan_device_service.DeviceMonitorClient",
+                self.device_monitor_proxy,
+            ),
+            (
+                "fidl_fuchsia_wlan_policy.ClientControllerClient",
+                self.client_controller_proxy,
+            ),
+        ]:
+            patcher = mock.patch(target, return_value=return_value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        # Call make_ready() to ensure the affordance is initialized. This is
+        # necessary because some tests push updates through the update server
+        # task which is created during initialization. Normally make_ready()
+        # is called lazily via the @ensure_ready decorator.
+        await self.wlan_policy_obj.make_ready()
+
+    async def asyncTearDown(self) -> None:
+        await self.wlan_policy_obj._close()
+        return await super().asyncTearDown()
 
     def test_verify_supported(self) -> None:
         """Test if verify_supported works."""
@@ -234,606 +265,506 @@ class WlanPolicyFCTests(unittest.TestCase):
                 location=self.location_obj,
             )
 
-    def test_init_connect_proxy(self) -> None:
-        """Test if WlanPolicy connects to WLAN Policy proxies."""
-        self.assertIsNotNone(self.wlan_policy_obj._client_provider_proxy)
-
-    def test_connect(self) -> None:
+    async def test_connect(self) -> None:
         """Test if connect works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            for msg, resp, expected in [
-                (
-                    "acknowledged",
-                    _async_response(
-                        f_wlan_policy.ClientControllerConnectResponse(
-                            status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
-                        )
-                    ),
-                    f_wlan_policy.RequestStatus.ACKNOWLEDGED,
+        client_controller = self.client_controller_proxy
+        for msg, resp, expected in [
+            (
+                "acknowledged",
+                _async_response(
+                    f_wlan_policy.ClientControllerConnectResponse(
+                        status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
+                    )
                 ),
-                (
-                    "not supported",
-                    _async_response(
-                        f_wlan_policy.ClientControllerConnectResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
-                        )
-                    ),
-                    f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED,
+                f_wlan_policy.RequestStatus.ACKNOWLEDGED,
+            ),
+            (
+                "not supported",
+                _async_response(
+                    f_wlan_policy.ClientControllerConnectResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
+                    )
                 ),
-                (
-                    "incompatible mode",
-                    _async_response(
-                        f_wlan_policy.ClientControllerConnectResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
-                        )
-                    ),
-                    f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE,
+                f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED,
+            ),
+            (
+                "incompatible mode",
+                _async_response(
+                    f_wlan_policy.ClientControllerConnectResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
+                    )
                 ),
-                (
-                    "already in use",
-                    _async_response(
-                        f_wlan_policy.ClientControllerConnectResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
-                        )
-                    ),
-                    f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE,
+                f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE,
+            ),
+            (
+                "already in use",
+                _async_response(
+                    f_wlan_policy.ClientControllerConnectResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
+                    )
                 ),
-                (
-                    "duplicate request",
-                    _async_response(
-                        f_wlan_policy.ClientControllerConnectResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
-                        )
-                    ),
-                    f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST,
+                f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE,
+            ),
+            (
+                "duplicate request",
+                _async_response(
+                    f_wlan_policy.ClientControllerConnectResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
+                    )
                 ),
-                (
-                    "internal error",
-                    _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
-                    None,
-                ),
-            ]:
-                with self.subTest(msg=msg, resp=resp, expected=expected):
-                    client_controller.connect.reset_mock()
-                    client_controller.connect.return_value = resp
-                    if expected is not None:
-                        connect_resp = self.wlan_policy_obj.connect(
+                f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST,
+            ),
+            (
+                "internal error",
+                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+                None,
+            ),
+        ]:
+            with self.subTest(msg=msg, resp=resp, expected=expected):
+                client_controller.connect.reset_mock()
+                client_controller.connect.return_value = resp
+                if expected is not None:
+                    connect_resp = await self.wlan_policy_obj.connect(
+                        _TEST_SSID, SecurityType.NONE
+                    )
+                    self.assertEqual(connect_resp, expected)
+                else:
+                    with self.assertRaises(HoneydewWlanError):
+                        await self.wlan_policy_obj.connect(
                             _TEST_SSID, SecurityType.NONE
                         )
-                        self.assertEqual(connect_resp, expected)
-                    else:
-                        with self.assertRaises(HoneydewWlanError):
-                            self.wlan_policy_obj.connect(
-                                _TEST_SSID, SecurityType.NONE
-                            )
-                    client_controller.connect.assert_called_once()
+                client_controller.connect.assert_called_once()
 
-    def test_create_client_controller(self) -> None:
-        """Test if create_client_controller works."""
-        with self._mock_create_client_controller():
-            self.wlan_policy_obj.create_client_controller()
+    async def test_get_saved_networks(self) -> None:
+        """Test if get_saved_networks works."""
+        client_controller = self.client_controller_proxy
 
-            self.assertIsNotNone(self.client_state_updates_proxy)
-            self.assertIsNotNone(self.wlan_policy_obj._client_controller)
-            assert self.client_state_updates_proxy is not None
-            assert self.wlan_policy_obj._client_controller is not None
-
-            self.assertEqual(
-                self.wlan_policy_obj._client_controller.updates.qsize(), 0
+        def get_saved_networks(iterator: int) -> None:
+            server = TestNetworkConfigIteratorImpl(
+                Channel(iterator),
+                items=[
+                    [
+                        _TEST_NETWORK_CONFIG_NONE_FIDL,
+                        _TEST_NETWORK_CONFIG_PASSWORD_FIDL,
+                    ],
+                    [_TEST_NETWORK_CONFIG_PSK_FIDL],
+                ],
             )
+            self.network_config_iterator = asyncio.create_task(server.serve())
 
-            self.wlan_policy_obj.loop().run_until_complete(
-                self.client_state_updates_proxy.on_client_state_update(
-                    summary=f_wlan_policy.ClientStateSummary(
-                        state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
-                        networks=[],
-                    ),
-                )
-            )
+        client_controller.get_saved_networks = mock.Mock(
+            wraps=get_saved_networks
+        )
 
-            update = self.wlan_policy_obj.loop().run_until_complete(
-                self.wlan_policy_obj._client_controller.updates.get()
-            )
-            self.assertEqual(
-                update,
+        networks = await self.wlan_policy_obj.get_saved_networks()
+        self.assertEqual(
+            networks,
+            [
+                _TEST_NETWORK_CONFIG_NONE,
+                _TEST_NETWORK_CONFIG_PASSWORD,
+                _TEST_NETWORK_CONFIG_PSK,
+            ],
+        )
+
+        assert self.network_config_iterator is not None
+        self.network_config_iterator.cancel()
+
+    async def test_get_update(self) -> None:
+        """Test if get_update works."""
+        for msg, fidl, expected in [
+            (
+                "enabled",
+                f_wlan_policy.ClientStateSummary(
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+                    networks=[],
+                ),
                 ClientStateSummary(
                     state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
                 ),
-            )
-
-    def test_get_saved_networks(self) -> None:
-        """Test if get_saved_networks works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            def get_saved_networks(iterator: int) -> None:
-                server = TestNetworkConfigIteratorImpl(
-                    Channel(iterator),
-                    items=[
-                        [
-                            _TEST_NETWORK_CONFIG_NONE_FIDL,
-                            _TEST_NETWORK_CONFIG_PASSWORD_FIDL,
-                        ],
-                        [_TEST_NETWORK_CONFIG_PSK_FIDL],
+            ),
+            (
+                "connecting",
+                f_wlan_policy.ClientStateSummary(
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+                    networks=[
+                        f_wlan_policy.NetworkState(
+                            id_=f_wlan_policy.NetworkIdentifier(
+                                ssid=list(b"Google Guest"),
+                                type_=f_wlan_policy.SecurityType.WPA2,
+                            ),
+                            state=f_wlan_policy.ConnectionState.CONNECTING,
+                            status=None,
+                        ),
                     ],
+                ),
+                ClientStateSummary(
+                    state=WlanClientState.CONNECTIONS_ENABLED,
+                    networks=[
+                        NetworkState(
+                            network_identifier=NetworkIdentifier(
+                                ssid="Google Guest",
+                                security_type=SecurityType.WPA2,
+                            ),
+                            connection_state=ConnectionState.CONNECTING,
+                            disconnect_status=None,
+                        )
+                    ],
+                ),
+            ),
+            (
+                "disabled",
+                f_wlan_policy.ClientStateSummary(
+                    state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
+                    networks=[],
+                ),
+                ClientStateSummary(
+                    state=WlanClientState.CONNECTIONS_DISABLED, networks=[]
+                ),
+            ),
+        ]:
+            with self.subTest(msg=msg, fidl=fidl, expected=expected):
+                assert self.client_state_updates_proxy is not None
+                await self.client_state_updates_proxy.on_client_state_update(
+                    summary=fidl,
                 )
-                self.network_config_iterator = (
-                    self.wlan_policy_obj.loop().create_task(server.serve())
+                self.assertEqual(
+                    await self.wlan_policy_obj.get_update(),
+                    expected,
                 )
 
-            client_controller.get_saved_networks = mock.Mock(
-                wraps=get_saved_networks
-            )
+    async def test_remove_all_networks(self) -> None:
+        """Test if remove_all_networks works."""
+        client_controller = self.client_controller_proxy
 
-            networks = self.wlan_policy_obj.get_saved_networks()
-            self.assertEqual(
-                networks,
-                [
-                    _TEST_NETWORK_CONFIG_NONE,
-                    _TEST_NETWORK_CONFIG_PASSWORD,
-                    _TEST_NETWORK_CONFIG_PSK,
+        # Mock get_saved_networks
+        def get_saved_networks(iterator: int) -> None:
+            server = TestNetworkConfigIteratorImpl(
+                Channel(iterator),
+                items=[
+                    [
+                        _TEST_NETWORK_CONFIG_NONE_FIDL,
+                        _TEST_NETWORK_CONFIG_PASSWORD_FIDL,
+                        _TEST_NETWORK_CONFIG_PSK_FIDL,
+                    ],
                 ],
             )
+            self.network_config_iterator = asyncio.create_task(server.serve())
 
-            assert self.network_config_iterator is not None
-            self.wlan_policy_obj.cancel_task(self.network_config_iterator)
+        client_controller.get_saved_networks = mock.Mock(
+            wraps=get_saved_networks
+        )
 
-    def test_get_update(self) -> None:
-        """Test if get_update works."""
-        with self._mock_create_client_controller():
-            self.wlan_policy_obj.create_client_controller()
+        # Mock remove_network, which should be called once for each saved
+        # network.
+        res = f_wlan_policy.ClientControllerRemoveNetworkResult(response=None)
+        client_controller.remove_network.side_effect = [
+            _async_response(res),
+            _async_response(res),
+            _async_response(res),
+        ]
 
-            assert self.client_state_updates_proxy is not None
-            assert self.wlan_policy_obj._client_controller is not None
-
-            for msg, fidl, expected in [
-                (
-                    "enabled",
-                    f_wlan_policy.ClientStateSummary(
-                        state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
-                        networks=[],
-                    ),
-                    ClientStateSummary(
-                        state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
-                    ),
-                ),
-                (
-                    "connecting",
-                    f_wlan_policy.ClientStateSummary(
-                        state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
-                        networks=[
-                            f_wlan_policy.NetworkState(
-                                id_=f_wlan_policy.NetworkIdentifier(
-                                    ssid=list(b"Google Guest"),
-                                    type_=f_wlan_policy.SecurityType.WPA2,
-                                ),
-                                state=f_wlan_policy.ConnectionState.CONNECTING,
-                                status=None,
-                            ),
-                        ],
-                    ),
-                    ClientStateSummary(
-                        state=WlanClientState.CONNECTIONS_ENABLED,
-                        networks=[
-                            NetworkState(
-                                network_identifier=NetworkIdentifier(
-                                    ssid="Google Guest",
-                                    security_type=SecurityType.WPA2,
-                                ),
-                                connection_state=ConnectionState.CONNECTING,
-                                disconnect_status=None,
-                            )
-                        ],
-                    ),
-                ),
-                (
-                    "disabled",
-                    f_wlan_policy.ClientStateSummary(
-                        state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
-                        networks=[],
-                    ),
-                    ClientStateSummary(
-                        state=WlanClientState.CONNECTIONS_DISABLED, networks=[]
-                    ),
-                ),
-            ]:
-                with self.subTest(msg=msg, fidl=fidl, expected=expected):
-                    self.wlan_policy_obj.loop().run_until_complete(
-                        self.client_state_updates_proxy.on_client_state_update(
-                            summary=fidl,
-                        )
-                    )
-                    self.assertEqual(
-                        self.wlan_policy_obj.get_update(),
-                        expected,
-                    )
-
-    def test_remove_all_networks(self) -> None:
-        """Test if remove_all_networks works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            # Mock get_saved_networks
-            def get_saved_networks(iterator: int) -> None:
-                server = TestNetworkConfigIteratorImpl(
-                    Channel(iterator),
-                    items=[
-                        [
-                            _TEST_NETWORK_CONFIG_NONE_FIDL,
-                            _TEST_NETWORK_CONFIG_PASSWORD_FIDL,
-                            _TEST_NETWORK_CONFIG_PSK_FIDL,
-                        ],
-                    ],
-                )
-                self.network_config_iterator = (
-                    self.wlan_policy_obj.loop().create_task(server.serve())
-                )
-
-            client_controller.get_saved_networks = mock.Mock(
-                wraps=get_saved_networks
-            )
-
-            # Mock remove_network, which should be called once for each saved
-            # network.
-            res = f_wlan_policy.ClientControllerRemoveNetworkResult(
-                response=None
-            )
-            client_controller.remove_network.side_effect = [
-                _async_response(res),
-                _async_response(res),
-                _async_response(res),
+        # Remove all networks
+        await self.wlan_policy_obj.remove_all_networks()
+        client_controller.remove_network.assert_has_calls(
+            [
+                mock.call(config=_TEST_NETWORK_CONFIG_NONE_FIDL),
+                mock.call(config=_TEST_NETWORK_CONFIG_PASSWORD_FIDL),
+                mock.call(config=_TEST_NETWORK_CONFIG_PSK_FIDL),
             ]
+        )
 
-            # Remove all networks
-            self.wlan_policy_obj.remove_all_networks()
-            client_controller.remove_network.assert_has_calls(
-                [
-                    mock.call(config=_TEST_NETWORK_CONFIG_NONE_FIDL),
-                    mock.call(config=_TEST_NETWORK_CONFIG_PASSWORD_FIDL),
-                    mock.call(config=_TEST_NETWORK_CONFIG_PSK_FIDL),
-                ]
-            )
+        # Cleanup
+        assert self.network_config_iterator is not None
+        self.network_config_iterator.cancel()
 
-            # Cleanup
-            assert self.network_config_iterator is not None
-            self.wlan_policy_obj.cancel_task(self.network_config_iterator)
-
-    def test_remove_network_passes(self) -> None:
+    async def test_remove_network_passes(self) -> None:
         """Test if remove_network works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
+        client_controller = self.client_controller_proxy
+        res = f_wlan_policy.ClientControllerRemoveNetworkResult(response=None)
+        client_controller.remove_network.return_value = _async_response(res)
 
+        await self.wlan_policy_obj.remove_network(
+            _TEST_SSID, SecurityType.NONE, None
+        )
+        client_controller.remove_network.assert_called_with(
+            config=_TEST_NETWORK_CONFIG_NONE_FIDL
+        )
+
+    async def test_remove_network_fails(self) -> None:
+        """Test if remove_network throws HoneydewWlanError as expected."""
+        client_controller = self.client_controller_proxy
+        with self.subTest(msg="NetworkConfigChangeError"):
             res = f_wlan_policy.ClientControllerRemoveNetworkResult(
-                response=None
+                err=int(
+                    f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
+                )
             )
             client_controller.remove_network.return_value = _async_response(res)
 
-            self.wlan_policy_obj.remove_network(
-                _TEST_SSID, SecurityType.NONE, None
+            with self.assertRaises(HoneydewWlanError):
+                await self.wlan_policy_obj.remove_network(
+                    _TEST_SSID, SecurityType.NONE, None
+                )
+            client_controller.remove_network.assert_called_once()
+
+        with self.subTest(msg="ZxStatus"):
+            res = f_wlan_policy.ClientControllerRemoveNetworkResult(
+                err=int(
+                    f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
+                )
             )
-            client_controller.remove_network.assert_called_with(
-                config=_TEST_NETWORK_CONFIG_NONE_FIDL
+            client_controller.remove_network.reset_mock()
+            client_controller.remove_network.return_value = _async_error(
+                ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
             )
 
-    def test_remove_network_fails(self) -> None:
-        """Test if remove_network throws HoneydewWlanError as expected."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            with self.subTest(msg="NetworkConfigChangeError"):
-                res = f_wlan_policy.ClientControllerRemoveNetworkResult(
-                    err=int(
-                        f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
-                    )
+            with self.assertRaises(HoneydewWlanError):
+                await self.wlan_policy_obj.remove_network(
+                    _TEST_SSID, SecurityType.NONE, None
                 )
-                client_controller.remove_network.return_value = _async_response(
-                    res
-                )
+            client_controller.remove_network.assert_called_once()
 
-                with self.assertRaises(HoneydewWlanError):
-                    self.wlan_policy_obj.remove_network(
-                        _TEST_SSID, SecurityType.NONE, None
-                    )
-                client_controller.remove_network.assert_called_once()
-
-            with self.subTest(msg="ZxStatus"):
-                res = f_wlan_policy.ClientControllerRemoveNetworkResult(
-                    err=int(
-                        f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
-                    )
-                )
-                client_controller.remove_network.reset_mock()
-                client_controller.remove_network.return_value = _async_error(
-                    ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
-                )
-
-                with self.assertRaises(HoneydewWlanError):
-                    self.wlan_policy_obj.remove_network(
-                        _TEST_SSID, SecurityType.NONE, None
-                    )
-                client_controller.remove_network.assert_called_once()
-
-    def test_save_network_passes(self) -> None:
+    async def test_save_network_passes(self) -> None:
         """Test if save_network works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
+        client_controller = self.client_controller_proxy
+        res = f_wlan_policy.ClientControllerSaveNetworkResult(response=None)
+        client_controller.save_network.return_value = _async_response(res)
 
-            res = f_wlan_policy.ClientControllerSaveNetworkResult(response=None)
+        await self.wlan_policy_obj.save_network(
+            _TEST_SSID, SecurityType.NONE, None
+        )
+        client_controller.save_network.assert_called_once()
+
+    async def test_save_network_fails(self) -> None:
+        """Test if save_network throws HoneydewWlanError as expected."""
+        client_controller = self.client_controller_proxy
+        with self.subTest(msg="NetworkConfigChangeError"):
+            res = f_wlan_policy.ClientControllerSaveNetworkResult(
+                err=int(
+                    f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
+                )
+            )
             client_controller.save_network.return_value = _async_response(res)
 
-            self.wlan_policy_obj.save_network(
-                _TEST_SSID, SecurityType.NONE, None
-            )
+            with self.assertRaises(HoneydewWlanError):
+                await self.wlan_policy_obj.save_network(
+                    _TEST_SSID, SecurityType.NONE, None
+                )
             client_controller.save_network.assert_called_once()
 
-    def test_save_network_fails(self) -> None:
-        """Test if save_network throws HoneydewWlanError as expected."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            with self.subTest(msg="NetworkConfigChangeError"):
-                res = f_wlan_policy.ClientControllerSaveNetworkResult(
-                    err=int(
-                        f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
-                    )
+        with self.subTest(msg="ZxStatus"):
+            res = f_wlan_policy.ClientControllerSaveNetworkResult(
+                err=int(
+                    f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
                 )
-                client_controller.save_network.return_value = _async_response(
-                    res
+            )
+            client_controller.save_network.reset_mock()
+            client_controller.save_network.return_value = _async_error(
+                ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
+            )
+
+            with self.assertRaises(HoneydewWlanError):
+                await self.wlan_policy_obj.save_network(
+                    _TEST_SSID, SecurityType.NONE, None
                 )
+            client_controller.save_network.assert_called_once()
 
-                with self.assertRaises(HoneydewWlanError):
-                    self.wlan_policy_obj.save_network(
-                        _TEST_SSID, SecurityType.NONE, None
-                    )
-                client_controller.save_network.assert_called_once()
-
-            with self.subTest(msg="ZxStatus"):
-                res = f_wlan_policy.ClientControllerSaveNetworkResult(
-                    err=int(
-                        f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
-                    )
-                )
-                client_controller.save_network.reset_mock()
-                client_controller.save_network.return_value = _async_error(
-                    ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
-                )
-
-                with self.assertRaises(HoneydewWlanError):
-                    self.wlan_policy_obj.save_network(
-                        _TEST_SSID, SecurityType.NONE, None
-                    )
-                client_controller.save_network.assert_called_once()
-
-    def test_scan_for_networks(self) -> None:
+    async def test_scan_for_networks(self) -> None:
         """Test if scan_for_networks works."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
+        client_controller = self.client_controller_proxy
 
-            def scan_for_networks(iterator: int) -> None:
-                server = TestScanResultIteratorImpl(
-                    Channel(iterator),
-                    items=[
-                        [
-                            _TEST_SSID,
-                            _TEST_SSID + "2",
-                        ],
-                        [
-                            _TEST_SSID,
-                            _TEST_SSID + "3",
-                        ],
+        def scan_for_networks(iterator: int) -> None:
+            server = TestScanResultIteratorImpl(
+                Channel(iterator),
+                items=[
+                    [
+                        _TEST_SSID,
+                        _TEST_SSID + "2",
                     ],
-                )
-                self.scan_result_iterator = (
-                    self.wlan_policy_obj.loop().create_task(server.serve())
-                )
-
-            client_controller.scan_for_networks = mock.Mock(
-                wraps=scan_for_networks
+                    [
+                        _TEST_SSID,
+                        _TEST_SSID + "3",
+                    ],
+                ],
             )
+            self.scan_result_iterator = asyncio.create_task(server.serve())
 
-            networks = self.wlan_policy_obj.scan_for_networks()
-            networks.sort()
-            expected = list(
-                {
-                    _TEST_SSID,
-                    _TEST_SSID + "2",
-                    _TEST_SSID + "3",
-                }
-            )
-            expected.sort()
-            self.assertEqual(
-                networks,
-                expected,
-            )
+        client_controller.scan_for_networks = mock.Mock(wraps=scan_for_networks)
 
-            assert self.scan_result_iterator is not None
-            self.wlan_policy_obj.cancel_task(self.scan_result_iterator)
+        networks = await self.wlan_policy_obj.scan_for_networks()
+        networks.sort()
+        expected = list(
+            {
+                _TEST_SSID,
+                _TEST_SSID + "2",
+                _TEST_SSID + "3",
+            }
+        )
+        expected.sort()
+        self.assertEqual(
+            networks,
+            expected,
+        )
 
-    def test_set_new_update_listener_without_client_controller(self) -> None:
+        assert self.scan_result_iterator is not None
+        self.scan_result_iterator.cancel()
+
+    async def test_set_new_update_listener_without_client_controller(
+        self,
+    ) -> None:
         """Test if set_new_update_listener creates a client controller if it
         doesn't already exist."""
-        with self._mock_create_client_controller():
-            self.wlan_policy_obj.set_new_update_listener()
+        await self.wlan_policy_obj.set_new_update_listener()
 
-            self.assertIsNotNone(self.client_state_updates_proxy)
-            self.assertIsNotNone(self.wlan_policy_obj._client_controller)
-            assert self.wlan_policy_obj._client_controller is not None
-            self.assertEqual(
-                self.wlan_policy_obj._client_controller.updates.qsize(), 0
-            )
+        self.assertIsNotNone(self.client_state_updates_proxy)
+        self.assertIsNotNone(self.wlan_policy_obj._client_controller)
+        assert self.wlan_policy_obj._client_controller is not None
+        self.assertEqual(
+            self.wlan_policy_obj._client_controller.updates.qsize(), 0
+        )
 
-    def test_set_new_update_listener_overrides(self) -> None:
+    async def test_set_new_update_listener_overrides(self) -> None:
         """Test if set_new_update_listener overrides an existing client state
         updates server."""
-        with (
-            self._mock_create_client_controller(),
-            self._mock_client_listener(),
-        ):
-            self.wlan_policy_obj.create_client_controller()
+        self.assertIsNotNone(self.wlan_policy_obj._client_controller)
+        assert self.wlan_policy_obj._client_controller is not None
+        old_server = (
+            self.wlan_policy_obj._client_controller.client_state_updates_server_task
+        )
 
-            self.assertIsNotNone(self.wlan_policy_obj._client_controller)
-            assert self.wlan_policy_obj._client_controller is not None
-            old_server = (
-                self.wlan_policy_obj._client_controller.client_state_updates_server_task
-            )
+        await self.wlan_policy_obj.set_new_update_listener()
 
-            self.wlan_policy_obj.set_new_update_listener()
+        self.assertIsNotNone(self.wlan_policy_obj._client_controller)
+        assert self.wlan_policy_obj._client_controller is not None
+        new_server = (
+            self.wlan_policy_obj._client_controller.client_state_updates_server_task
+        )
 
-            self.assertIsNotNone(self.wlan_policy_obj._client_controller)
-            assert self.wlan_policy_obj._client_controller is not None
-            new_server = (
-                self.wlan_policy_obj._client_controller.client_state_updates_server_task
-            )
+        self.assertNotEqual(new_server, old_server)
+        self.assertTrue(old_server.cancelled())
+        self.assertFalse(new_server.cancelled())
 
-            self.assertNotEqual(new_server, old_server)
-            self.assertTrue(old_server.cancelled())
-            self.assertFalse(new_server.cancelled())
-
-    def test_start_client_connections_passes(self) -> None:
+    async def test_start_client_connections_passes(self) -> None:
         """Test if start_client_connections passes as expected."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-            client_controller.start_client_connections.return_value = _async_response(
+        client_controller = self.client_controller_proxy
+        client_controller.start_client_connections.return_value = (
+            _async_response(
                 f_wlan_policy.ClientControllerStartClientConnectionsResponse(
                     status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
                 )
             )
-            self.wlan_policy_obj.start_client_connections()
-            client_controller.start_client_connections.assert_called_once_with()
+        )
+        await self.wlan_policy_obj.start_client_connections()
+        client_controller.start_client_connections.assert_called_once_with()
 
-    def test_start_client_connections_fails(self) -> None:
+    async def test_start_client_connections_fails(self) -> None:
         """Test if start_client_connections fails in expected ways."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            for msg, resp in [
-                (
-                    "not supported",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStartClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
-                        )
-                    ),
-                ),
-                (
-                    "incompatible mode",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStartClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
-                        )
-                    ),
-                ),
-                (
-                    "already in use",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStartClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
-                        )
-                    ),
-                ),
-                (
-                    "duplicate request",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStartClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
-                        )
-                    ),
-                ),
-                (
-                    "internal error",
-                    _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
-                ),
-            ]:
-                with self.subTest(msg=msg, resp=resp):
-                    client_controller.start_client_connections.reset_mock()
-                    client_controller.start_client_connections.return_value = (
-                        resp
-                    )
-                    with self.assertRaises(HoneydewWlanError):
-                        self.wlan_policy_obj.start_client_connections()
-                    client_controller.start_client_connections.assert_called_once_with()
-
-    def test_start_client_connections_fails_without_client_controller(
-        self,
-    ) -> None:
-        """Test if start_client_connections fails without a client controller."""
-        with self.assertRaises(RuntimeError):
-            self.wlan_policy_obj.start_client_connections()
-
-    def test_stop_client_connections(self) -> None:
-        """Test if stop_client_connections passes as expected."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-            client_controller.stop_client_connections.return_value = (
+        client_controller = self.client_controller_proxy
+        for msg, resp in [
+            (
+                "not supported",
                 _async_response(
-                    f_wlan_policy.ClientControllerStopClientConnectionsResponse(
-                        status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
+                    f_wlan_policy.ClientControllerStartClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
                     )
+                ),
+            ),
+            (
+                "incompatible mode",
+                _async_response(
+                    f_wlan_policy.ClientControllerStartClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
+                    )
+                ),
+            ),
+            (
+                "already in use",
+                _async_response(
+                    f_wlan_policy.ClientControllerStartClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
+                    )
+                ),
+            ),
+            (
+                "duplicate request",
+                _async_response(
+                    f_wlan_policy.ClientControllerStartClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
+                    )
+                ),
+            ),
+            (
+                "internal error",
+                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+            ),
+        ]:
+            with self.subTest(msg=msg, resp=resp):
+                client_controller.start_client_connections.reset_mock()
+                client_controller.start_client_connections.return_value = resp
+                with self.assertRaises(HoneydewWlanError):
+                    await self.wlan_policy_obj.start_client_connections()
+                client_controller.start_client_connections.assert_called_once_with()
+
+    async def test_stop_client_connections(self) -> None:
+        """Test if stop_client_connections passes as expected."""
+        client_controller = self.client_controller_proxy
+        client_controller.stop_client_connections.return_value = (
+            _async_response(
+                f_wlan_policy.ClientControllerStopClientConnectionsResponse(
+                    status=f_wlan_policy.RequestStatus.ACKNOWLEDGED
                 )
             )
-            self.wlan_policy_obj.stop_client_connections()
-            client_controller.stop_client_connections.assert_called_once_with()
+        )
+        await self.wlan_policy_obj.stop_client_connections()
+        client_controller.stop_client_connections.assert_called_once_with()
 
-    def test_stop_client_connections_fails(self) -> None:
+    async def test_stop_client_connections_fails(self) -> None:
         """Test if stop_client_connections fails in expected ways."""
-        with self._mock_create_client_controller() as client_controller:
-            self.wlan_policy_obj.create_client_controller()
-
-            for msg, resp in [
-                (
-                    "not supported",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStopClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
-                        )
-                    ),
-                ),
-                (
-                    "incompatible mode",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStopClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
-                        )
-                    ),
-                ),
-                (
-                    "already in use",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStopClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
-                        )
-                    ),
-                ),
-                (
-                    "duplicate request",
-                    _async_response(
-                        f_wlan_policy.ClientControllerStopClientConnectionsResponse(
-                            status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
-                        )
-                    ),
-                ),
-                (
-                    "internal error",
-                    _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
-                ),
-            ]:
-                with self.subTest(msg=msg, resp=resp):
-                    client_controller.stop_client_connections.reset_mock()
-                    client_controller.stop_client_connections.return_value = (
-                        resp
+        client_controller = self.client_controller_proxy
+        for msg, resp in [
+            (
+                "not supported",
+                _async_response(
+                    f_wlan_policy.ClientControllerStopClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED
                     )
-                    with self.assertRaises(HoneydewWlanError):
-                        self.wlan_policy_obj.stop_client_connections()
-                    client_controller.stop_client_connections.assert_called_once_with()
-
-    def test_stop_client_connections_fails_without_client_controller(
-        self,
-    ) -> None:
-        """Test if stop_client_connections fails without a client controller."""
-        with self.assertRaises(RuntimeError):
-            self.wlan_policy_obj.stop_client_connections()
+                ),
+            ),
+            (
+                "incompatible mode",
+                _async_response(
+                    f_wlan_policy.ClientControllerStopClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_INCOMPATIBLE_MODE
+                    )
+                ),
+            ),
+            (
+                "already in use",
+                _async_response(
+                    f_wlan_policy.ClientControllerStopClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_ALREADY_IN_USE
+                    )
+                ),
+            ),
+            (
+                "duplicate request",
+                _async_response(
+                    f_wlan_policy.ClientControllerStopClientConnectionsResponse(
+                        status=f_wlan_policy.RequestStatus.REJECTED_DUPLICATE_REQUEST
+                    )
+                ),
+            ),
+            (
+                "internal error",
+                _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL)),
+            ),
+        ]:
+            with self.subTest(msg=msg, resp=resp):
+                client_controller.stop_client_connections.reset_mock()
+                client_controller.stop_client_connections.return_value = resp
+                with self.assertRaises(HoneydewWlanError):
+                    await self.wlan_policy_obj.stop_client_connections()
+                client_controller.stop_client_connections.assert_called_once_with()
 
 
 class TestScanResultIteratorImpl(f_wlan_policy.ScanResultIteratorServer):

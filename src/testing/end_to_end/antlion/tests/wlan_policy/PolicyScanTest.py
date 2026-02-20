@@ -101,8 +101,8 @@ class PolicyScanTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         super().setup_test()
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.remove_all_networks_sync()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
 
     def teardown_test(self) -> None:
         self.download_logs()
@@ -128,7 +128,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
     def test_basic_scan_request(self) -> None:
         """Verify a scan returns all expected networks"""
         for fd in self.fuchsia_devices:
-            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks()
+            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
             if len(scan_results) == 0:
                 raise signals.TestFailure("Scan did not find any networks")
             for ssid in self.all_ssids:
@@ -137,96 +137,96 @@ class PolicyScanTest(base_test.WifiBaseTest):
     def test_scan_while_connected_open_network_2g(self) -> None:
         """Connect to an open 2g network and perform a scan"""
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.save_network(
+            fd.honeydew_fd.wlan_policy.save_network_sync(
                 self.open_network_2g["SSID"],
                 SecurityType(
                     self.open_network_2g["security"].fuchsia_security_type()
                 ),
                 self.open_network_2g["password"],
             )
-            fd.honeydew_fd.wlan_policy.connect(
+            fd.honeydew_fd.wlan_policy.connect_sync(
                 self.open_network_2g["SSID"],
                 SecurityType(
                     self.open_network_2g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.wlan_policy_controller.wait_for_network_state_sync(
                 self.open_network_2g["SSID"], ConnectionState.CONNECTED
             )
 
-            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks()
+            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
             for ssid in self.all_ssids:
                 self._assert_network_is_in_results(scan_results, ssid)
 
     def test_scan_while_connected_wpa2_network_2g(self) -> None:
         """Connect to a WPA2 2g network and perform a scan"""
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.save_network(
+            fd.honeydew_fd.wlan_policy.save_network_sync(
                 self.wpa2_network_2g["SSID"],
                 SecurityType(
                     self.wpa2_network_2g["security"].fuchsia_security_type()
                 ),
                 self.wpa2_network_2g["password"],
             )
-            fd.honeydew_fd.wlan_policy.connect(
+            fd.honeydew_fd.wlan_policy.connect_sync(
                 self.wpa2_network_2g["SSID"],
                 SecurityType(
                     self.wpa2_network_2g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.wlan_policy_controller.wait_for_network_state_sync(
                 self.wpa2_network_2g["SSID"], ConnectionState.CONNECTED
             )
 
-            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks()
+            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
             for ssid in self.all_ssids:
                 self._assert_network_is_in_results(scan_results, ssid)
 
     def test_scan_while_connected_open_network_5g(self) -> None:
         """Connect to an open 5g network and perform a scan"""
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.save_network(
+            fd.honeydew_fd.wlan_policy.save_network_sync(
                 self.open_network_5g["SSID"],
                 SecurityType(
                     self.open_network_5g["security"].fuchsia_security_type()
                 ),
                 self.open_network_5g["password"],
             )
-            fd.honeydew_fd.wlan_policy.connect(
+            fd.honeydew_fd.wlan_policy.connect_sync(
                 self.open_network_5g["SSID"],
                 SecurityType(
                     self.open_network_5g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.wlan_policy_controller.wait_for_network_state_sync(
                 self.open_network_5g["SSID"], ConnectionState.CONNECTED
             )
 
-            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks()
+            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
             for ssid in self.all_ssids:
                 self._assert_network_is_in_results(scan_results, ssid)
 
     def test_scan_while_connected_wpa2_network_5g(self) -> None:
         """Connect to a WPA2 5g network and perform a scan"""
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy.save_network(
+            fd.honeydew_fd.wlan_policy.save_network_sync(
                 self.wpa2_network_5g["SSID"],
                 SecurityType(
                     self.wpa2_network_5g["security"].fuchsia_security_type()
                 ),
                 self.wpa2_network_5g["password"],
             )
-            fd.honeydew_fd.wlan_policy.connect(
+            fd.honeydew_fd.wlan_policy.connect_sync(
                 self.wpa2_network_5g["SSID"],
                 SecurityType(
                     self.wpa2_network_5g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.wlan_policy_controller.wait_for_network_state_sync(
                 self.wpa2_network_5g["SSID"], ConnectionState.CONNECTED
             )
 
-            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks()
+            scan_results = fd.honeydew_fd.wlan_policy.scan_for_networks_sync()
             for ssid in self.all_ssids:
                 self._assert_network_is_in_results(scan_results, ssid)
 

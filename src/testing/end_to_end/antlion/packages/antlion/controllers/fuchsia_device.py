@@ -377,8 +377,10 @@ class FuchsiaDevice:
         # because only netstack has that information. The bug linked here is
         # to reconcile some of the information between the two perspectives, at
         # which point we can eliminate this step.
-        netstack_interfaces = self.honeydew_fd.netstack.list_interfaces()
-        wlan_interfaces_by_mac = self.honeydew_fd.wlan_core.query_interfaces()
+        netstack_interfaces = self.honeydew_fd.netstack.list_interfaces_sync()
+        wlan_interfaces_by_mac = (
+            self.honeydew_fd.wlan_core.query_interfaces_sync()
+        )
 
         for netstack_iface in netstack_interfaces:
             if netstack_iface.mac is None:
@@ -425,7 +427,7 @@ class FuchsiaDevice:
         Raises:
             FuchsiaDeviceError, if configuration fails
         """
-        self.wlan_controller.set_country_code(
+        self.wlan_controller.set_country_code_sync(
             CountryCode(self.config_country_code)
         )
 
@@ -457,7 +459,7 @@ class FuchsiaDevice:
                 "policy layer."
             )
         else:
-            self.wlan_policy_controller.configure_wlan(
+            self.wlan_policy_controller.configure_wlan_sync(
                 clear_networks=clear_networks
             )
 
@@ -482,7 +484,7 @@ class FuchsiaDevice:
         # If using policy, stop client connections. Otherwise, just clear
         # variables.
         if self.association_mechanism != "drivers":
-            self.wlan_policy_controller._deconfigure_wlan()
+            self.wlan_policy_controller._deconfigure_wlan_sync()
         self.association_mechanism = None
 
     def reboot(
@@ -661,7 +663,7 @@ class FuchsiaDevice:
         # If and only if wlan is configured, and using the policy layer
         if self.association_mechanism == "policy":
             try:
-                self.wlan_policy_controller.clean_up()
+                self.wlan_policy_controller.clean_up_sync()
             except Exception as err:
                 self.log.warning(f"Unable to clean up WLAN Policy layer: {err}")
 

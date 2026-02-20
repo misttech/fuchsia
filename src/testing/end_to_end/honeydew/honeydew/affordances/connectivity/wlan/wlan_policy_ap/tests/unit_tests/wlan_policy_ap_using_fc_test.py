@@ -5,8 +5,6 @@
 
 import asyncio
 import unittest
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import TypeVar
 from unittest import mock
 
@@ -72,11 +70,11 @@ async def _async_error(err: Exception) -> None:
 
 
 # pylint: disable=protected-access
-class WlanPolicyApFCTests(unittest.TestCase):
+class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for wlan_policy_ap_using_fc.py"""
 
-    def setUp(self) -> None:
-        super().setUp()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.RebootCapableDevice,
@@ -103,38 +101,7 @@ class WlanPolicyApFCTests(unittest.TestCase):
             f_wlan_policy.AccessPointStateUpdatesClient | None
         ) = None
 
-        with (
-            self.mock_ap_provider(),
-            self.mock_ap_listener(),
-            self.mock_ap_controller() as ap_controller_client,
-            self.mock_device_monitor(),
-        ):
-            self.access_point_controller_obj = ap_controller_client
-
-            self.wlan_policy_ap_obj = wlan_policy_ap_using_fc.WlanPolicyAp(
-                device_name="fuchsia-emulator",
-                ffx=self.ffx_transport_obj,
-                fuchsia_controller=self.fc_transport_obj,
-                reboot_affordance=self.reboot_affordance_obj,
-                fuchsia_device_close=self.fuchsia_device_close_obj,
-            )
-
-        self.assertFalse(
-            self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task.cancelled(),
-            "Expected access point state update server to be running",
-        )
-
-        self.assertIsNotNone(self.access_point_state_updates_proxy)
-        assert self.access_point_state_updates_proxy is not None
-
-    def tearDown(self) -> None:
-        self.wlan_policy_ap_obj._close()
-        return super().tearDown()
-
-    @contextmanager
-    def mock_ap_provider(self) -> Iterator[mock.MagicMock]:
-        """Mock requests to fuchsia.wlan.policy/AccessPointProviderClient."""
-        ap_provider_client = mock.MagicMock(
+        self.ap_provider_proxy = mock.MagicMock(
             spec=f_wlan_policy.AccessPointProviderClient,
             autospec=True,
         )
@@ -145,18 +112,9 @@ class WlanPolicyApFCTests(unittest.TestCase):
                 f_wlan_policy.AccessPointStateUpdatesClient(updates)
             )
 
-        ap_provider_client.get_controller = mock.Mock(wraps=get_controller)
+        self.ap_provider_proxy.get_controller = mock.Mock(wraps=get_controller)
 
-        with mock.patch(
-            "fidl_fuchsia_wlan_policy.AccessPointProviderClient", autospec=True
-        ) as fidl_mock:
-            fidl_mock.return_value = ap_provider_client
-            yield ap_provider_client
-
-    @contextmanager
-    def mock_ap_listener(self) -> Iterator[mock.MagicMock]:
-        """Mock requests to fuchsia.wlan.policy/AccessPointListenerClient."""
-        ap_listener_client = mock.MagicMock(
+        self.ap_listener_proxy = mock.MagicMock(
             spec=f_wlan_policy.AccessPointListenerClient,
             autospec=True,
         )
@@ -166,41 +124,18 @@ class WlanPolicyApFCTests(unittest.TestCase):
                 f_wlan_policy.AccessPointStateUpdatesClient(updates)
             )
 
-        ap_listener_client.get_listener = mock.Mock(wraps=get_listener)
+        self.ap_listener_proxy.get_listener = mock.Mock(wraps=get_listener)
 
-        with mock.patch(
-            "fidl_fuchsia_wlan_policy.AccessPointListenerClient", autospec=True
-        ) as fidl_mock:
-            fidl_mock.return_value = ap_listener_client
-            yield ap_listener_client
-
-    @contextmanager
-    def mock_ap_controller(self) -> Iterator[mock.MagicMock]:
-        """Create an iterator for AP controller mocks.
-
-        Yields:
-            Iterator[mock.MagicMock]: Yielded iterator of mocks.
-        """
-        ap_controller_client = mock.MagicMock(
+        self.access_point_controller_obj = mock.MagicMock(
             spec=f_wlan_policy.AccessPointControllerClient,
             autospec=True,
         )
 
-        with mock.patch(
-            "fidl_fuchsia_wlan_policy.AccessPointControllerClient",
-            autospec=True,
-        ) as fidl_mock:
-            fidl_mock.return_value = ap_controller_client
-            yield ap_controller_client
-
-    @contextmanager
-    def mock_device_monitor(self) -> Iterator[mock.MagicMock]:
-        """Mock requests to fuchsia.wlan.device.service/DeviceMonitorClient."""
-        device_monitor_client = mock.MagicMock(
+        self.device_monitor_proxy = mock.MagicMock(
             spec=f_wlan_device_service.DeviceMonitorClient,
             autospec=True,
         )
-        device_monitor_client.list_phys.return_value = _async_response(
+        self.device_monitor_proxy.list_phys.return_value = _async_response(
             f_wlan_device_service.DeviceMonitorListPhysResponse(phy_list=[1])
         )
 
@@ -209,16 +144,47 @@ class WlanPolicyApFCTests(unittest.TestCase):
             f_wlan_common.WlanMacRole.AP
         ]
 
-        device_monitor_client.get_supported_mac_roles.return_value = (
+        self.device_monitor_proxy.get_supported_mac_roles.return_value = (
             _async_response(mock_get_supported_mac_roles_response)
         )
 
-        with mock.patch(
-            "fidl_fuchsia_wlan_device_service.DeviceMonitorClient",
-            autospec=True,
-        ) as fidl_mock:
-            fidl_mock.return_value = device_monitor_client
-            yield device_monitor_client
+        for target, return_value in [
+            (
+                "fidl_fuchsia_wlan_policy.AccessPointProviderClient",
+                self.ap_provider_proxy,
+            ),
+            (
+                "fidl_fuchsia_wlan_policy.AccessPointListenerClient",
+                self.ap_listener_proxy,
+            ),
+            (
+                "fidl_fuchsia_wlan_policy.AccessPointControllerClient",
+                self.access_point_controller_obj,
+            ),
+            (
+                "fidl_fuchsia_wlan_device_service.DeviceMonitorClient",
+                self.device_monitor_proxy,
+            ),
+        ]:
+            patcher = mock.patch(target, return_value=return_value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        self.wlan_policy_ap_obj = wlan_policy_ap_using_fc.WlanPolicyAp(
+            device_name="fuchsia-emulator",
+            ffx=self.ffx_transport_obj,
+            fuchsia_controller=self.fc_transport_obj,
+            reboot_affordance=self.reboot_affordance_obj,
+            fuchsia_device_close=self.fuchsia_device_close_obj,
+        )
+
+        # Call make_ready() to ensure the affordance is initialized. This is
+        # necessary because some tests push updates through the update server
+        # task which is created during initialization. Normally make_ready()
+        # is called lazily via the @ensure_ready decorator.
+        await self.wlan_policy_ap_obj.make_ready()
+
+        assert self.access_point_state_updates_proxy is not None
 
     def test_verify_supported(self) -> None:
         """Verify verify_supported fails."""
@@ -235,16 +201,19 @@ class WlanPolicyApFCTests(unittest.TestCase):
 
     def test_init_register_for_on_device_boot(self) -> None:
         """Verify WlanPolicyAp registers on_device_boot."""
-        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once_with(
-            self.wlan_policy_ap_obj._connect_proxy
-        )
+        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once()
+        (
+            args,
+            _,
+        ) = self.reboot_affordance_obj.register_for_on_device_boot.call_args
+        self.assertTrue(args[0].__name__ == "make_ready")
 
     def test_init_connect_proxy(self) -> None:
         """Verify WlanPolicyAp connects to
         fuchsia.wlan.policy/AccessPointProvider."""
         self.assertIsNotNone(self.wlan_policy_ap_obj._access_point_controller)
 
-    def test_start(self) -> None:
+    async def test_start(self) -> None:
         """Verify WlanPolicyAp.start()."""
         self.access_point_controller_obj.start_access_point.side_effect = [
             _async_response(
@@ -254,7 +223,7 @@ class WlanPolicyApFCTests(unittest.TestCase):
             )
         ]
 
-        self.wlan_policy_ap_obj.start(
+        await self.wlan_policy_ap_obj.start(
             _TEST_SSID,
             SecurityType.NONE,
             None,
@@ -262,14 +231,14 @@ class WlanPolicyApFCTests(unittest.TestCase):
             OperatingBand.ANY,
         )
 
-    def test_start_fails(self) -> None:
+    async def test_start_fails(self) -> None:
         """Verify WlanPolicyAp.start() throws HoneydewWlanError on internal error."""
         self.access_point_controller_obj.start_access_point.side_effect = [
             _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL))
         ]
 
         with self.assertRaises(HoneydewWlanError):
-            self.wlan_policy_ap_obj.start(
+            await self.wlan_policy_ap_obj.start(
                 _TEST_SSID,
                 SecurityType.NONE,
                 None,
@@ -277,7 +246,7 @@ class WlanPolicyApFCTests(unittest.TestCase):
                 OperatingBand.ANY,
             )
 
-    def test_stop(self) -> None:
+    async def test_stop(self) -> None:
         """Verify WlanPolicyAp.stop()."""
         self.access_point_controller_obj.stop_access_point.side_effect = [
             _async_response(
@@ -287,20 +256,20 @@ class WlanPolicyApFCTests(unittest.TestCase):
             )
         ]
 
-        self.wlan_policy_ap_obj.stop(
+        await self.wlan_policy_ap_obj.stop(
             _TEST_SSID,
             SecurityType.NONE,
             None,
         )
 
-    def test_stop_fails(self) -> None:
+    async def test_stop_fails(self) -> None:
         """Verify WlanPolicyAp.stop() throws HoneydewWlanError on internal error."""
         self.access_point_controller_obj.stop_access_point.side_effect = [
             _async_error(ZxStatus(ZxStatus.ZX_ERR_INTERNAL))
         ]
 
         with self.assertRaises(HoneydewWlanError):
-            self.wlan_policy_ap_obj.stop(
+            await self.wlan_policy_ap_obj.stop(
                 _TEST_SSID,
                 SecurityType.NONE,
                 None,
@@ -310,15 +279,15 @@ class WlanPolicyApFCTests(unittest.TestCase):
         """Verify WlanPolicyAp.stop_all()."""
         self.wlan_policy_ap_obj.stop_all()
 
-    def test_set_new_update_listener_overrides(self) -> None:
+    async def test_set_new_update_listener_overrides(self) -> None:
         """Verify WlanPolicyAp.set_new_update_listener() overrides the existing
         access point state updates server."""
+        assert self.wlan_policy_ap_obj._access_point_controller is not None
         old_server = (
             self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task
         )
 
-        with self.mock_ap_listener():
-            self.wlan_policy_ap_obj.set_new_update_listener()
+        await self.wlan_policy_ap_obj.set_new_update_listener()
 
         new_server = (
             self.wlan_policy_ap_obj._access_point_controller.access_point_state_updates_server_task
@@ -332,49 +301,51 @@ class WlanPolicyApFCTests(unittest.TestCase):
             0,
         )
 
-    def test_get_update(self) -> None:
+    async def test_get_update(self) -> None:
         """Verify WlanPolicyAp.get_update()."""
         self.assertIsNotNone(self.access_point_state_updates_proxy)
         assert self.access_point_state_updates_proxy is not None
 
-        self.wlan_policy_ap_obj.loop().run_until_complete(
-            self.access_point_state_updates_proxy.on_access_point_state_update(
+        (
+            await self.access_point_state_updates_proxy.on_access_point_state_update(
                 access_points=[
                     _ACCESS_POINT_STATE_FIDL,
                 ]
             )
         )
         self.assertEqual(
-            self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
+            await self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
         )
 
-    def test_get_update_queuing(self) -> None:
+    async def test_get_update_queuing(self) -> None:
         """Verify WlanPolicyAp.get_update() queues updates."""
         self.assertIsNotNone(self.access_point_state_updates_proxy)
         assert self.access_point_state_updates_proxy is not None
 
-        self.wlan_policy_ap_obj.loop().run_until_complete(
-            self.access_point_state_updates_proxy.on_access_point_state_update(
+        (
+            await self.access_point_state_updates_proxy.on_access_point_state_update(
                 access_points=[]
             )
         )
-        self.wlan_policy_ap_obj.loop().run_until_complete(
-            self.access_point_state_updates_proxy.on_access_point_state_update(
+        (
+            await self.access_point_state_updates_proxy.on_access_point_state_update(
                 access_points=[_ACCESS_POINT_STATE_FIDL]
             )
         )
-        self.assertEqual(self.wlan_policy_ap_obj.get_update(), [])
+        self.assertEqual(await self.wlan_policy_ap_obj.get_update(), [])
         self.assertEqual(
-            self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
+            await self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
         )
 
     @mock.patch(
         "asyncio.wait_for", autospec=True, side_effect=[asyncio.TimeoutError]
     )
-    def test_get_update_timeout(self, wait_for_mock: mock.MagicMock) -> None:
+    async def test_get_update_timeout(
+        self, wait_for_mock: mock.MagicMock
+    ) -> None:
         """Verify WlanPolicyAp.get_update() throws TimeoutError on timeout."""
         with self.assertRaises(TimeoutError):
-            self.wlan_policy_ap_obj.get_update(timeout=10)
+            await self.wlan_policy_ap_obj.get_update(timeout=10)
         wait_for_mock.assert_called_once()
 
 

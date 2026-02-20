@@ -396,7 +396,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         match self.association_mode:
             case AssociationMode.DRIVER:
                 ssid_bss_desc_map = (
-                    self.device.honeydew_fd.wlan_core.scan_for_bss_info()
+                    self.device.honeydew_fd.wlan_core.scan_for_bss_info_sync()
                 )
 
                 bss_descs_for_ssid = ssid_bss_desc_map.get(target_ssid, None)
@@ -432,24 +432,24 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     protocol=protocol, credentials=credentials
                 )
 
-                return self.device.honeydew_fd.wlan_core.connect(
+                return self.device.honeydew_fd.wlan_core.connect_sync(
                     ssid=target_ssid,
                     bss_desc=bss_descs_for_ssid[0],
                     authentication=authentication,
                 )
             case AssociationMode.POLICY:
                 try:
-                    self.device.honeydew_fd.wlan_policy.save_network(
+                    self.device.honeydew_fd.wlan_policy.save_network_sync(
                         target_ssid,
                         HdSecurityType(target_security.fuchsia_security_type()),
                         target_pwd=target_pwd,
                     )
-                    status = self.device.honeydew_fd.wlan_policy.connect(
+                    status = self.device.honeydew_fd.wlan_policy.connect_sync(
                         target_ssid,
                         HdSecurityType(target_security.fuchsia_security_type()),
                     )
                     if status is f_wlan_policy.RequestStatus.ACKNOWLEDGED:
-                        self.device.wlan_policy_controller.wait_for_network_state(
+                        self.device.wlan_policy_controller.wait_for_network_state_sync(
                             target_ssid,
                             ConnectionState.CONNECTED,
                             timeout_sec=timeout_sec,
@@ -475,10 +475,10 @@ class FuchsiaWlanDevice(SupportsWLAN):
         """
         match self.association_mode:
             case AssociationMode.DRIVER:
-                self.device.honeydew_fd.wlan_core.disconnect()
+                self.device.honeydew_fd.wlan_core.disconnect_sync()
             case AssociationMode.POLICY:
-                self.device.honeydew_fd.wlan_policy.remove_all_networks()
-                self.device.honeydew_fd.wlan_policy.wait_for_no_connections()
+                self.device.honeydew_fd.wlan_policy.remove_all_networks_sync()
+                self.device.honeydew_fd.wlan_policy.wait_for_no_connections_sync()
 
     def ping(
         self,
@@ -499,7 +499,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         )
 
     def get_wlan_interface_id_list(self) -> list[int]:
-        return self.device.honeydew_fd.wlan_core.get_iface_id_list()
+        return self.device.honeydew_fd.wlan_core.get_iface_id_list_sync()
 
     def get_default_wlan_test_interface(self) -> str:
         if self.device.wlan_client_test_interface_name is None:
@@ -509,10 +509,10 @@ class FuchsiaWlanDevice(SupportsWLAN):
         return self.device.wlan_client_test_interface_name
 
     def destroy_wlan_interface(self, iface_id: int) -> None:
-        self.device.honeydew_fd.wlan_core.destroy_iface(iface_id)
+        self.device.honeydew_fd.wlan_core.destroy_iface_sync(iface_id)
 
     def is_connected(self, ssid: str | None = None) -> bool:
-        result = self.device.honeydew_fd.wlan_core.status()
+        result = self.device.honeydew_fd.wlan_core.status_sync()
         match result:
             case ClientStatusIdle():
                 self.device.log.info("Client status idle")

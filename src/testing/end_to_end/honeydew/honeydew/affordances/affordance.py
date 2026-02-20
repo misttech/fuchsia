@@ -4,6 +4,11 @@
 """Abstract base class for Honeydew affordance."""
 
 import abc
+import functools
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 class Affordance(abc.ABC):
@@ -24,3 +29,25 @@ class Affordance(abc.ABC):
         Raises:
             NotSupportedError: If affordance is not supported.
         """
+
+
+class AsyncLazyReady:
+    def __init__(self) -> None:
+        self._ready = False
+
+    async def make_ready(self) -> None:
+        self._ready = True
+
+
+def ensure_ready(
+    method: Callable[P, Coroutine[Any, Any, T]]
+) -> Callable[P, Coroutine[Any, Any, T]]:
+    @functools.wraps(method)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        self: AsyncLazyReady = args[0]  # type: ignore[assignment]
+        assert isinstance(self, AsyncLazyReady)
+        if not self._ready:
+            await self.make_ready()
+        return await method(*args, **kwargs)
+
+    return wrapper

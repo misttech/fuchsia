@@ -17,9 +17,20 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 class WlanPolicyAp(affordance.Affordance):
     """Abstract base class for the WLAN Policy Access Point affordance."""
 
+    @abc.abstractmethod
+    def start_sync(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+        mode: ConnectivityMode,
+        band: OperatingBand,
+    ) -> None:
+        pass
+
     # List all the public methods
     @abc.abstractmethod
-    def start(
+    async def start(
         self,
         ssid: str,
         security: SecurityType,
@@ -43,7 +54,16 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def stop(
+    def stop_sync(
+        self,
+        ssid: str,
+        security: SecurityType,
+        password: str | None,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def stop(
         self,
         ssid: str,
         security: SecurityType,
@@ -71,7 +91,11 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def set_new_update_listener(self) -> None:
+    def set_new_update_listener_sync(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -83,7 +107,14 @@ class WlanPolicyAp(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def get_update(
+    def get_update_sync(
+        self,
+        timeout: float | None = None,
+    ) -> list[AccessPointState]:
+        pass
+
+    @abc.abstractmethod
+    async def get_update(
         self,
         timeout: float | None = None,
     ) -> list[AccessPointState]:

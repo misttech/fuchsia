@@ -201,7 +201,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             WlanError if the DUT interface query fails.
         """
         for wlan_iface in self.dut.get_wlan_interface_id_list():
-            result = self.fuchsia_device.honeydew_fd.wlan_core.query_iface2(
+            result = self.fuchsia_device.honeydew_fd.wlan_core.query_iface_sync(
                 wlan_iface
             )
             if result.role is f_wlan_common.WlanMacRole.CLIENT:

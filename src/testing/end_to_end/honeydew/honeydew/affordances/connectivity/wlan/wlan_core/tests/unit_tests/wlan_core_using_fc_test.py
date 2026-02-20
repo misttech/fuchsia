@@ -134,11 +134,11 @@ async def _async_error(err: Exception) -> None:
 
 
 # pylint: disable=protected-access
-class WlanCoreFCTests(unittest.TestCase):
+class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for wlan_core_using_fc.py."""
 
-    def setUp(self) -> None:
-        super().setUp()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.RebootCapableDevice,
@@ -152,10 +152,6 @@ class WlanCoreFCTests(unittest.TestCase):
             spec=fc_transport.FuchsiaController,
             autospec=True,
         )
-        self.fuchsia_device_close_obj = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceClose,
-            autospec=True,
-        )
         self.ffx_transport_obj = mock.MagicMock(
             spec=ffx_transport.FFX,
             autospec=True,
@@ -165,6 +161,21 @@ class WlanCoreFCTests(unittest.TestCase):
             wlan_core_using_fc._REQUIRED_CAPABILITIES
         )
 
+        self.device_monitor_proxy = mock.MagicMock(
+            spec=f_wlan_device_service.DeviceMonitorClient,
+            autospec=True,
+        )
+
+        for target, return_value in [
+            (
+                "fidl_fuchsia_wlan_device_service.DeviceMonitorClient",
+                self.device_monitor_proxy,
+            ),
+        ]:
+            patcher = mock.patch(target, return_value=return_value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
         self.wlan_core_obj = wlan_core_using_fc.WlanCore(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
@@ -173,11 +184,10 @@ class WlanCoreFCTests(unittest.TestCase):
             fuchsia_device_close=self.fuchsia_device_close_obj,
         )
 
-    def tearDown(self) -> None:
-        self.wlan_core_obj.close()
-        super().tearDown()
+        # Call make_ready() to ensure the affordance is initialized.
+        await self.wlan_core_obj.make_ready()
 
-    def test_verify_supported(self) -> None:
+    async def test_verify_supported(self) -> None:
         """Test if verify_supported() works."""
         self.ffx_transport_obj.run.return_value = ""
         with self.assertRaises(NotSupportedError):
@@ -192,29 +202,27 @@ class WlanCoreFCTests(unittest.TestCase):
     def _mock_list_ifaces(self, zx_err: int | None = None) -> None:
         """Mock fuchsia.wlan.device.service.DeviceMonitor/QueryIface."""
         if zx_err:
-            self.wlan_core_obj._device_monitor_proxy.list_ifaces.return_value = _async_error(  # type: ignore[attr-defined]
+            self.device_monitor_proxy.list_ifaces.return_value = _async_error(
                 ZxStatus(zx_err)
             )
             return
 
-        self.wlan_core_obj._device_monitor_proxy.list_ifaces.return_value = (  # type: ignore[attr-defined]
-            _async_response(
-                f_wlan_device_service.DeviceMonitorListIfacesResponse(
-                    iface_list=[1]
-                )
+        self.device_monitor_proxy.list_ifaces.return_value = _async_response(
+            f_wlan_device_service.DeviceMonitorListIfacesResponse(
+                iface_list=[1]
             )
         )
 
     def _mock_query_iface(self, zx_err: int | None = None) -> None:
         """Mock fuchsia.wlan.device.service.DeviceMonitor/QueryIface."""
         if zx_err:
-            self.wlan_core_obj._device_monitor_proxy.query_iface.return_value = _async_error(  # type: ignore[attr-defined]
+            self.device_monitor_proxy.query_iface.return_value = _async_error(
                 ZxStatus(zx_err)
             )
             return
 
-        self.wlan_core_obj._device_monitor_proxy.query_iface.return_value = (  # type: ignore[attr-defined]
-            _async_response(_TEST_QUERY_IFACE_RESP_FC)
+        self.device_monitor_proxy.query_iface.return_value = _async_response(
+            _TEST_QUERY_IFACE_RESP_FC
         )
 
     @contextmanager
@@ -222,25 +230,18 @@ class WlanCoreFCTests(unittest.TestCase):
         """Mock fuchsia.wlan.sme.ClientSme for the duration of this context."""
         client_sme = mock.MagicMock(spec=f_wlan_sme.ClientSmeClient)
         with mock.patch(
-            "fidl_fuchsia_wlan_sme.ClientSmeClient", autospec=True
-        ) as f_client_sme:
-            f_client_sme.return_value = client_sme
-            self.wlan_core_obj._device_monitor_proxy.get_client_sme.return_value = _async_response(  # type: ignore[attr-defined]
-                None
+            "fidl_fuchsia_wlan_sme.ClientSmeClient", return_value=client_sme
+        ):
+            self.device_monitor_proxy.get_client_sme.return_value = (
+                _async_response(None)
             )
             yield client_sme
 
-    def test_init_register_for_on_device_boot(self) -> None:
+    async def test_init_register_for_on_device_boot(self) -> None:
         """Test if Wlan registers on_device_boot."""
-        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once_with(
-            self.wlan_core_obj._connect_proxy
-        )
+        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once()
 
-    def test_init_connect_proxy(self) -> None:
-        """Test if Wlan connects to WLAN proxies."""
-        self.assertIsNotNone(self.wlan_core_obj._device_monitor_proxy)
-
-    def test_connect_passes(self) -> None:
+    async def test_connect_passes(self) -> None:
         """Verify connect works with multiple authentication modes."""
         for msg, auth in [
             (
@@ -302,9 +303,6 @@ class WlanCoreFCTests(unittest.TestCase):
             ),
         ]:
             with self.subTest(msg=msg, auth=auth):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
@@ -350,17 +348,14 @@ class WlanCoreFCTests(unittest.TestCase):
                         f_wlan_sme.ClientSmeStatusResponse(resp=status_resp)
                     )
 
-                    self.wlan_core_obj.connect(
+                    await self.wlan_core_obj.connect(
                         _TEST_SSID,
                         _TEST_BSS_DESC_1,
                         auth,
                     )
 
-    def test_connect_fails_sme_connect(self) -> None:
+    async def test_connect_fails_sme_connect(self) -> None:
         """Verify connect fails when ClientSme.Connect() errors."""
-        self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-            spec=f_wlan_device_service.DeviceMonitorClient
-        )
         self._mock_list_ifaces()
         self._mock_query_iface()
 
@@ -369,7 +364,7 @@ class WlanCoreFCTests(unittest.TestCase):
                 ZxStatus(ZxStatus.ZX_ERR_INTERNAL)
             ]
             with self.assertRaises(HoneydewWlanError):
-                self.wlan_core_obj.connect(
+                await self.wlan_core_obj.connect(
                     _TEST_SSID,
                     _TEST_BSS_DESC_1,
                     f_wlan_common_security.Authentication(
@@ -377,11 +372,8 @@ class WlanCoreFCTests(unittest.TestCase):
                     ),
                 )
 
-    def test_connect_fails_connect_timeout(self) -> None:
+    async def test_connect_fails_connect_timeout(self) -> None:
         """Verify connect fails when ClientSme.Connect() takes too long."""
-        self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-            spec=f_wlan_device_service.DeviceMonitorClient
-        )
         self._mock_list_ifaces()
         self._mock_query_iface()
 
@@ -389,7 +381,7 @@ class WlanCoreFCTests(unittest.TestCase):
             client_sme.connect.side_effect = [None]
             with mock.patch("asyncio.wait_for", side_effect=[TimeoutError()]):
                 with self.assertRaises(HoneydewWlanError):
-                    self.wlan_core_obj.connect(
+                    await self.wlan_core_obj.connect(
                         _TEST_SSID,
                         _TEST_BSS_DESC_1,
                         f_wlan_common_security.Authentication(
@@ -397,7 +389,7 @@ class WlanCoreFCTests(unittest.TestCase):
                         ),
                     )
 
-    def test_connect_fails_driver_error(self) -> None:
+    async def test_connect_fails_driver_error(self) -> None:
         """Verify connect fails when the driver returns an error."""
         for msg, code, is_credentials_rejected in [
             (
@@ -416,9 +408,6 @@ class WlanCoreFCTests(unittest.TestCase):
                 code=code,
                 is_credentials_rejected=is_credentials_rejected,
             ):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
@@ -445,7 +434,7 @@ class WlanCoreFCTests(unittest.TestCase):
                     client_sme.connect = mock.Mock(wraps=connect)
 
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.connect(
+                        await self.wlan_core_obj.connect(
                             _TEST_SSID,
                             _TEST_BSS_DESC_1,
                             f_wlan_common_security.Authentication(
@@ -453,11 +442,8 @@ class WlanCoreFCTests(unittest.TestCase):
                             ),
                         )
 
-    def test_connect_fails_client_status_wrong_ssid(self) -> None:
+    async def test_connect_fails_client_status_wrong_ssid(self) -> None:
         """Verify connect fails when status() returns the wrong ssid."""
-        self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-            spec=f_wlan_device_service.DeviceMonitorClient
-        )
         self._mock_list_ifaces()
         self._mock_query_iface()
 
@@ -501,7 +487,7 @@ class WlanCoreFCTests(unittest.TestCase):
             )
 
             with self.assertRaises(HoneydewWlanError):
-                self.wlan_core_obj.connect(
+                await self.wlan_core_obj.connect(
                     _TEST_SSID,
                     _TEST_BSS_DESC_1,
                     f_wlan_common_security.Authentication(
@@ -509,7 +495,7 @@ class WlanCoreFCTests(unittest.TestCase):
                     ),
                 )
 
-    def test_connect_fails_client_status_error(self) -> None:
+    async def test_connect_fails_client_status_error(self) -> None:
         """Verify connect fails when status() returns an erroneous value."""
         resp_wrong_ssid = f_wlan_sme.ClientStatusResponse(
             connected=copy.deepcopy(_TEST_SERVING_AP_INFO)
@@ -532,9 +518,6 @@ class WlanCoreFCTests(unittest.TestCase):
             ),
         ]:
             with self.subTest(msg=msg, status_resp=status_resp):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
@@ -575,7 +558,7 @@ class WlanCoreFCTests(unittest.TestCase):
                     client_sme.status.return_value = status_resp
 
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.connect(
+                        await self.wlan_core_obj.connect(
                             _TEST_SSID,
                             _TEST_BSS_DESC_1,
                             f_wlan_common_security.Authentication(
@@ -583,7 +566,7 @@ class WlanCoreFCTests(unittest.TestCase):
                             ),
                         )
 
-    def test_create_iface(self) -> None:
+    async def test_create_iface(self) -> None:
         """Test if create_iface creates WLAN interfaces successfully."""
         for phy_id, sta_addr, role in [
             (1, "12:34:56:78:90:ab", f_wlan_common.WlanMacRole.CLIENT),
@@ -592,11 +575,7 @@ class WlanCoreFCTests(unittest.TestCase):
             (4, None, f_wlan_common.WlanMacRole.CLIENT),
         ]:
             with self.subTest(phy_id=phy_id, sta_addr=sta_addr, role=role):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-
-                self.wlan_core_obj._device_monitor_proxy.create_iface.return_value = _async_response(
+                self.device_monitor_proxy.create_iface.return_value = _async_response(
                     f_wlan_device_service.DeviceMonitorCreateIfaceResult(
                         response=f_wlan_device_service.DeviceMonitorCreateIfaceResponse(
                             iface_id=phy_id,
@@ -604,13 +583,13 @@ class WlanCoreFCTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(
-                    self.wlan_core_obj.create_iface(
+                    await self.wlan_core_obj.create_iface(
                         phy_id=phy_id, role=role, sta_addr=sta_addr
                     ),
                     phy_id,
                 )
 
-    def test_create_iface_invalid_mac(self) -> None:
+    async def test_create_iface_invalid_mac(self) -> None:
         """Test if create_iface errors on invalid MAC."""
         for msg, phy_id, sta_addr in [
             ("not defined", 1, ""),
@@ -620,42 +599,38 @@ class WlanCoreFCTests(unittest.TestCase):
         ]:
             with self.subTest(msg=msg, phy_id=phy_id, sta_addr=sta_addr):
                 with self.assertRaises(ValueError):
-                    self.wlan_core_obj.create_iface(
+                    await self.wlan_core_obj.create_iface(
                         phy_id, f_wlan_common.WlanMacRole.CLIENT, sta_addr
                     )
 
-    def test_destroy_iface(self) -> None:
+    async def test_destroy_iface(self) -> None:
         """Test if destroy_iface works."""
         for msg, iface_id, status in [
             ("valid", 1, ZxStatus.ZX_OK),
             ("invalid", 2, ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, iface_id=iface_id, status=status):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-                self.wlan_core_obj._device_monitor_proxy.destroy_iface.return_value = _async_response(
-                    f_wlan_device_service.DeviceMonitorDestroyIfaceResponse(
-                        status=status
+                self.device_monitor_proxy.destroy_iface.return_value = (
+                    _async_response(
+                        f_wlan_device_service.DeviceMonitorDestroyIfaceResponse(
+                            status=status
+                        )
                     )
                 )
 
                 if status == ZxStatus.ZX_OK:
-                    self.wlan_core_obj.destroy_iface(iface_id)
+                    await self.wlan_core_obj.destroy_iface(iface_id)
                 else:
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.destroy_iface(iface_id)
+                        await self.wlan_core_obj.destroy_iface(iface_id)
 
-    def test_disconnect(self) -> None:
+    async def test_disconnect(self) -> None:
         """Test if disconnect works."""
         for msg, zx_err in [
             ("valid", None),
             ("invalid", ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, zx_err=zx_err):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
@@ -664,33 +639,29 @@ class WlanCoreFCTests(unittest.TestCase):
                         client_sme.disconnect.return_value = _async_response(
                             f_wlan_sme.Empty()
                         )
-                        self.wlan_core_obj.disconnect()
+                        await self.wlan_core_obj.disconnect()
                     else:
                         client_sme.disconnect.return_value = _async_error(
                             ZxStatus(zx_err)
                         )
                         with self.assertRaises(HoneydewWlanError):
-                            self.wlan_core_obj.disconnect()
+                            await self.wlan_core_obj.disconnect()
 
-    def test_get_iface_id_list(self) -> None:
+    async def test_get_iface_id_list(self) -> None:
         """Test if get_iface_id_list works."""
         for msg, zx_err in [
             ("valid", None),
             ("invalid", ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, zx_err=zx_err):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-
                 self._mock_list_ifaces(zx_err)
                 if not zx_err:
-                    self.wlan_core_obj.get_iface_id_list()
+                    await self.wlan_core_obj.get_iface_id_list()
                 else:
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.get_iface_id_list()
+                        await self.wlan_core_obj.get_iface_id_list()
 
-    def test_get_country(self) -> None:
+    async def test_get_country(self) -> None:
         """Test if get_country works."""
         for msg, country_code, zx_err, expected, expected_err in [
             ("valid - WW", [87, 87], None, CountryCode.WORLDWIDE, None),
@@ -721,13 +692,9 @@ class WlanCoreFCTests(unittest.TestCase):
                 assert isinstance(country_code, list)
                 assert all(isinstance(b, int) for b in country_code)
 
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-
                 if zx_err:
-                    self.wlan_core_obj._device_monitor_proxy.get_country.return_value = _async_error(
-                        ZxStatus(zx_err)
+                    self.device_monitor_proxy.get_country.return_value = (
+                        _async_error(ZxStatus(zx_err))
                     )
                 else:
                     res = f_wlan_device_service.DeviceMonitorGetCountryResult(
@@ -739,62 +706,56 @@ class WlanCoreFCTests(unittest.TestCase):
                             )
                         )
                     )
-                    self.wlan_core_obj._device_monitor_proxy.get_country.return_value = _async_response(
-                        res
+                    self.device_monitor_proxy.get_country.return_value = (
+                        _async_response(res)
                     )
 
                 if expected_err:
                     with self.assertRaises(expected_err):
-                        self.wlan_core_obj.get_country(1)
+                        await self.wlan_core_obj.get_country(1)
                 else:
-                    got = self.wlan_core_obj.get_country(1)
+                    got = await self.wlan_core_obj.get_country(1)
                     self.assertEqual(got, expected)
 
-    def test_get_phy_id_list(self) -> None:
+    async def test_get_phy_id_list(self) -> None:
         """Test if get_phy_id_list works."""
         for msg, zx_err in [
             ("valid", None),
             ("invalid", ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, zx_err=zx_err):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-
                 if not zx_err:
-                    self.wlan_core_obj._device_monitor_proxy.list_phys.return_value = _async_response(
-                        f_wlan_device_service.DeviceMonitorListPhysResponse(
-                            phy_list=[1]
+                    self.device_monitor_proxy.list_phys.return_value = (
+                        _async_response(
+                            f_wlan_device_service.DeviceMonitorListPhysResponse(
+                                phy_list=[1]
+                            )
                         )
                     )
-                    self.wlan_core_obj.get_phy_id_list()
+                    await self.wlan_core_obj.get_phy_id_list()
                 else:
-                    self.wlan_core_obj._device_monitor_proxy.list_phys.return_value = _async_error(
-                        ZxStatus(zx_err)
+                    self.device_monitor_proxy.list_phys.return_value = (
+                        _async_error(ZxStatus(zx_err))
                     )
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.get_phy_id_list()
+                        await self.wlan_core_obj.get_phy_id_list()
 
-    def test_query_iface(self) -> None:
+    async def test_query_iface(self) -> None:
         """Test if query_iface works."""
         for msg, zx_err in [
             ("valid", None),
             ("invalid", ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, zx_err=zx_err):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
-
                 self._mock_query_iface(zx_err)
                 if not zx_err:
-                    got = self.wlan_core_obj.query_iface(1)
+                    got = await self.wlan_core_obj.query_iface(1)
                     self.assertEqual(got, _TEST_QUERY_IFACE_RESP)
                 else:
                     with self.assertRaises(HoneydewWlanError):
-                        self.wlan_core_obj.query_iface(1)
+                        await self.wlan_core_obj.query_iface(1)
 
-    def test_scan_for_bss_info(self) -> None:
+    async def test_scan_for_bss_info(self) -> None:
         """Test if scan_for_bss_info works."""
         for msg, err, zx_err in [
             ("valid", None, None),
@@ -806,9 +767,6 @@ class WlanCoreFCTests(unittest.TestCase):
             ("invalid - internal", None, ZxStatus.ZX_ERR_INTERNAL),
         ]:
             with self.subTest(msg=msg, err=err, zx_err=zx_err):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
@@ -856,15 +814,17 @@ class WlanCoreFCTests(unittest.TestCase):
 
                     if err is not None or zx_err is not None:
                         with self.assertRaises(HoneydewWlanError):
-                            self.wlan_core_obj.scan_for_bss_info()
+                            await self.wlan_core_obj.scan_for_bss_info()
                     else:
-                        scan_results = self.wlan_core_obj.scan_for_bss_info()
+                        scan_results = (
+                            await self.wlan_core_obj.scan_for_bss_info()
+                        )
                         self.assertEqual(
                             scan_results,
                             {_TEST_SSID: [_TEST_BSS_DESC_1, _TEST_BSS_DESC_2]},
                         )
 
-    def test_status(self) -> None:
+    async def test_status(self) -> None:
         """Test if status works."""
 
         for msg, resp, zx_err, expected in [
@@ -903,23 +863,20 @@ class WlanCoreFCTests(unittest.TestCase):
             with self.subTest(
                 msg=msg, resp=resp, zx_err=zx_err, expected=expected
             ):
-                self.wlan_core_obj._device_monitor_proxy = mock.MagicMock(
-                    spec=f_wlan_device_service.DeviceMonitorClient
-                )
                 self._mock_list_ifaces()
                 self._mock_query_iface()
 
                 with self._mock_client_sme() as client_sme:
                     if not zx_err:
                         client_sme.status.return_value = _async_response(resp)
-                        got = self.wlan_core_obj.status()
+                        got = await self.wlan_core_obj.status()
                         self.assertEqual(got, expected)
                     else:
                         client_sme.status.return_value = _async_error(
                             ZxStatus(zx_err)
                         )
                         with self.assertRaises(HoneydewWlanError):
-                            self.wlan_core_obj.status()
+                            await self.wlan_core_obj.status()
 
 
 if __name__ == "__main__":

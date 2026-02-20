@@ -30,11 +30,25 @@ class WlanPolicy(affordance.Affordance):
 
     # List all the public methods
     @abc.abstractmethod
-    def set_country_code(self, country_code: CountryCode) -> None:
+    def set_country_code_sync(self, country_code: CountryCode) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def set_country_code(self, country_code: CountryCode) -> None:
         """Set regulatory region and wait for wlancfg to change country code of each phy."""
 
     @abc.abstractmethod
-    def connect(
+    def connect_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> f_wlan_policy.RequestStatus:
+        pass
+
+    @abc.abstractmethod
+    async def connect(
         self,
         target_ssid: str,
         security_type: SecurityType,
@@ -57,17 +71,13 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def create_client_controller(self) -> None:
-        """Initializes the client controller.
-
-        See fuchsia.wlan.policy/ClientProvider.GetController().
-
-        Raises:
-            HoneydewWlanError: Error from WLAN stack.
-        """
+    def get_saved_networks_sync(
+        self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+    ) -> list[NetworkConfig]:
+        pass
 
     @abc.abstractmethod
-    def get_saved_networks(
+    async def get_saved_networks(
         self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
     ) -> list[NetworkConfig]:
         """Gets networks saved on device.
@@ -81,7 +91,45 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def get_update(
+    def get_status_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        pass
+
+    @abc.abstractmethod
+    async def get_status(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        """Gets the current client listener state immediately.
+
+        Args:
+            timeout: Timeout in seconds to wait for the get_status command to
+                return.
+
+        Returns:
+            An update of connection status. If there is no error, the result is
+            a WlanPolicyUpdate with a structure that matches the FIDL
+            ClientStateSummary struct given for updates.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+            TimeoutError: Reached timeout without any updates.
+        """
+
+    @abc.abstractmethod
+    def get_update_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ClientStateSummary:
+        pass
+
+    @abc.abstractmethod
+    async def get_update(
         self,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -111,7 +159,16 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def wait_until_update(
+    def wait_until_update_sync(
+        self,
+        expected_update: ClientStateSummary,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def wait_until_update(
         self,
         expected_update: ClientStateSummary,
         *,
@@ -124,7 +181,15 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def remove_all_networks(
+    def remove_all_networks_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def remove_all_networks(
         self,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -137,7 +202,18 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def remove_network(
+    def remove_network_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def remove_network(
         self,
         target_ssid: str,
         security_type: SecurityType,
@@ -159,7 +235,18 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def save_network(
+    def save_network_sync(
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        target_pwd: str | None = None,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def save_network(
         self,
         target_ssid: str,
         security_type: SecurityType,
@@ -180,7 +267,15 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def scan_for_networks(
+    def scan_for_networks_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[str]:
+        pass
+
+    @abc.abstractmethod
+    async def scan_for_networks(
         self,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -196,7 +291,11 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def set_new_update_listener(self) -> None:
+    def set_new_update_listener_sync(self) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -208,7 +307,15 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def start_client_connections(
+    def start_client_connections_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def start_client_connections(
         self,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -227,7 +334,15 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def stop_client_connections(
+    def stop_client_connections_sync(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def stop_client_connections(
         self,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
@@ -245,7 +360,13 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def wait_for_no_connections(
+    def wait_for_no_connections_sync(
+        self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+    ) -> None:
+        pass
+
+    @abc.abstractmethod
+    async def wait_for_no_connections(
         self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
     ) -> None:
         """Waits until the WLAN network state is disconnected
