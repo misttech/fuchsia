@@ -467,21 +467,24 @@ template("rust_auxiliary") {
 
     gen_deps = []
     data_deps = []
+    validations = []
     _include_rustdoc_first_party =
         defined(invoker.include_rustdoc_first_party) &&
         invoker.include_rustdoc_first_party
     if (_define_rustdoc) {
       gen_deps += [ ":${_rustdoc_name}" ]
-    }
-    if (_define_rustdoc && _include_rustdoc_first_party) {
-      data_deps += [ ":${_rustdoc_name}" ]
+
+      if (_include_rustdoc_first_party) {
+        data_deps += [ ":${_rustdoc_name}" ]
+      }
     }
 
     if (_define_clippy) {
       gen_deps += [ ":${_clippy_name}" ]
-    }
-    if (_define_clippy && include_clippy) {
-      data_deps += [ ":${_clippy_name}" ]
+
+      if (include_clippy) {
+        validations += [ ":${_clippy_name}" ]
+      }
     }
 
     assert(invoker.crate_type != "lib",
