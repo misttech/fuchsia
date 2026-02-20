@@ -70,7 +70,7 @@ Before proceeding further please ensure you have completed the
           # The library below provides device interaction APIs.
           libraries = [
             "//src/testing/end_to_end/honeydew",
-            "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+            "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
           ]
           local_config_source = "Bluetooth_Test.yaml"
           params_source = "params.yaml"

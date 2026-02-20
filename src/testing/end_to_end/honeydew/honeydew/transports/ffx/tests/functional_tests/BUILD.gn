@@ -14,7 +14,7 @@ if (is_host) {
     main_source = "test_ffx.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     test_data_deps =
         [ "//src/developer/ffx/tools/power:ffx_power_tool_test_data" ]
@@ -35,7 +35,7 @@ if (is_host) {
     main_source = "test_ffx.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     test_data_deps =
         [ "//src/developer/ffx/tools/power:ffx_power_tool_test_data" ]
@@ -52,7 +52,7 @@ if (is_host) {
     main_source = "test_ffx.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     test_data_deps =
         [ "//src/developer/ffx/tools/power:ffx_power_tool_test_data" ]
@@ -80,7 +80,7 @@ if (is_host) {
     main_source = "test_ffx_wait_for_rcs_disconnection.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     environments = [
       # Only enable for AEMU-x64 as host-tests aren't supported on QEMU-arm64.

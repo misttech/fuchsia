@@ -48,7 +48,7 @@ if (is_host) {
     main_source = "e2e_tests/test_ffx_inspect.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
       "//src/lib/diagnostics/python/fuchsia_inspect",
       ":ffx_cmd",
     ]

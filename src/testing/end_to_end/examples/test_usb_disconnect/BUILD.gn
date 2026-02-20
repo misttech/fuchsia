@@ -11,7 +11,7 @@ python_mobly_test("usb_disconnect_test") {
   main_source = "test_usb_disconnect.py"
   libraries = [
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
   ]
   params = {
     num_usb_disconnects = 1

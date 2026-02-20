@@ -73,7 +73,7 @@ def create(
         ssh_keepalive_timeout=ffx_config_dict.get("ssh_keepalive_timeout"),
     )
 
-    fuchsia_devices: list[fuchsia_device_interface.FuchsiaDevice] = []
+    fuchsia_devices = []
     for config in configs:
         device_config: dict[str, Any] = _parse_device_config(config)
 

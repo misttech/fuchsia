@@ -316,7 +316,7 @@ template("fuchsia_component_perf_test") {
       "//src/performance/lib/host_driven",
       "//src/performance/lib/perf_publish",
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
       "//third_party/mobly",
     ]
 

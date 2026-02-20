@@ -12,7 +12,7 @@ python_mobly_test("data_resource_access_test") {
   main_source = "test_data_resource_access.py"
   libraries = [
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ":my_resources",
   ]
   environments = [

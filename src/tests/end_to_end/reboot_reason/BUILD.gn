@@ -18,7 +18,7 @@ python_library("suite") {
   testonly = true
   library_deps = [
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
   ]
 }
 

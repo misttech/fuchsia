@@ -135,7 +135,7 @@ python_mobly_test("my_test_target") {
       # Honeydew provides device interaction APIs.
       "//src/testing/end_to_end/honeydew",
       # Base class provides common Fuchsia testing setup and teardown logic.
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
 }
 ```

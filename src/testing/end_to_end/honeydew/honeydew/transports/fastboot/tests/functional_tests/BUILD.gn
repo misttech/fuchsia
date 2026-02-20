@@ -10,7 +10,7 @@ if (is_host) {
     main_source = "test_fastboot.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     params = {
       expected_values = {
@@ -28,7 +28,7 @@ if (is_host) {
     main_source = "test_fastboot_using_serial.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     environments = [
       # Note - Infra does not support putting the NUCs into Fastboot mode

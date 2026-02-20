@@ -8,6 +8,8 @@ from typing import Any, Dict, List
 
 from libs.openwrt_lib import OpenwrtAp
 
+__all__ = ["OpenwrtAp"]
+
 MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"
 
 

@@ -14,7 +14,7 @@ if (is_host) {
     main_source = "test_system_power_state_controller.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     params = {
       is_starnix_supported = true
@@ -26,7 +26,7 @@ if (is_host) {
     main_source = "test_system_power_state_controller.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     params = {
       is_starnix_supported = false

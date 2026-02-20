@@ -22,7 +22,7 @@ template("lacewing_fidl_wrapper") {
       testonly = true
       main_source = "//sdk/ctf/build/scripts/snoop_fidl.py"
       libraries = [
-        "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+        "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
         "//src/performance/lib/trace_processing",
       ]
       deps = [ ":${invoker.device_test_target_name}" ]

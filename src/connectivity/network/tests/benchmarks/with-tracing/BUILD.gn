@@ -9,7 +9,7 @@ if (is_host) {
   python_mobly_test("netstack_benchmarks_with_tracing_test") {
     main_source = "test.py"
     libraries =
-        [ "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test" ]
+        [ "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test" ]
     params = {
       skip_netstack2 = target_cpu == "riscv64"
     }

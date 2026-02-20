@@ -14,9 +14,9 @@ from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_CUSTOM_FUCHSIA_DEVICE_CLASS: (
-    type[fuchsia_device_interface.FuchsiaDevice] | None
-) = None
+_CUSTOM_FUCHSIA_DEVICE_CLASS: type[
+    fuchsia_device_interface.FuchsiaDevice
+] = fuchsia_device_impl.FuchsiaDeviceImpl
 
 
 def create_device(
@@ -86,13 +86,8 @@ def create_device(
                 device_info.ip_port,
             )
 
-        device_class: type[
-            fuchsia_device_interface.FuchsiaDevice
-        ] | None = get_custom_fuchsia_device()
-
-        if device_class is None:
-            device_class = fuchsia_device_impl.FuchsiaDeviceImpl
-        return device_class(  # type: ignore[call-arg]
+        device_class = get_custom_fuchsia_device()
+        return device_class(
             device_info,
             ffx_config_data,
             config,
@@ -119,9 +114,7 @@ def register_custom_fuchsia_device(
     _CUSTOM_FUCHSIA_DEVICE_CLASS = fuchsia_device_class
 
 
-def get_custom_fuchsia_device() -> (
-    type[fuchsia_device_interface.FuchsiaDevice] | None
-):
+def get_custom_fuchsia_device() -> type:
     """Returns if any custom fuchsia device class implementation is available. Otherwise, None.
 
     Returns:

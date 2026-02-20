@@ -11,7 +11,7 @@ if (is_host) {
     main_source = "test_screenshot.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
-      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     ]
     environments = [
       # Only enable for AEMU-x64 as host-tests aren't supported on QEMU-arm64.
@@ -34,7 +34,7 @@ python_library("screenshot_test_lib") {
   ]
   library_deps = [
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
   ]
 }
 

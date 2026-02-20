@@ -18,6 +18,7 @@ python_library("mobly_controller_no_testonly") {
   visibility = [
     ":*",
     "//src/testing/end_to_end/mobly_base_tests:*",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test:*",
   ]
 
   library_name = "mobly_controller"
