@@ -416,6 +416,8 @@ def main() -> int:
             *ninja_cmd_prefix,
             "--chrome_trace",
             "ninja_build_trace.json.gz",
+            "--action_metrics_output",
+            "ninja_action_metrics.json",
             f"--edge_weights_list={ninja_edge_weights_path}",
             "-C",
             str(build_dir),

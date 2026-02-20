@@ -112,6 +112,9 @@ fi
 # This path is relative to the the ninja -C dir ($FUCHSIA_BUILD_DIR).
 readonly NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
 
+# Output action metrics to this JSON file.
+readonly NINJA_ACTION_METRICS_FILE="ninja_action_metrics.json"
+
 # Record the set if inputs that triggered some build actions.
 readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
 
@@ -1270,9 +1273,14 @@ EOF
     # This log dir is suitable for per-invocation ninja artifacts
     # like trace files.
     mkdir -p "$ninja_log_dir"
+
     local -r dirty_sources_abspath="$ninja_log_dir/$NINJA_DIRTY_SOURCES_FILE"
+    # Produce a summary of the action counts by mnemonic.
+    local -r action_metrics_abspath="$ninja_log_dir/$NINJA_ACTION_METRICS_FILE"
+
     local -a auto_ninja_args=(
       --dirty_sources_list "$dirty_sources_abspath"
+      --action_metrics_output "$action_metrics_abspath"
     )
     build_command=(
       # ninja or equivalent drop-in replacement
