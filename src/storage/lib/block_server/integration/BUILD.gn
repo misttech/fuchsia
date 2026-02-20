@@ -24,6 +24,7 @@ rustc_test("block_server_integration_tests") {
     "//src/storage/lib/block_protocol",
     "//src/storage/lib/block_server",
     "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/ramdevice_client/rust",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:futures",

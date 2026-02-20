@@ -19,6 +19,7 @@ use std::sync::Arc;
 pub struct PartitionBackend {
     partition: Arc<GptPartition>,
     vmo_keys_to_vmoids_map: Mutex<BTreeMap<usize, Arc<VmoId>>>,
+    passthrough: bool,
 }
 
 impl block_server::async_interface::Interface for PartitionBackend {
@@ -29,7 +30,7 @@ impl block_server::async_interface::Interface for PartitionBackend {
         offset_map: OffsetMap,
         block_size: u32,
     ) -> Result<(), Error> {
-        if !offset_map.is_empty() {
+        if !self.passthrough || !offset_map.is_empty() {
             // For now, we don't support double-passthrough.  We could as needed for nested GPT.
             // If we support this, we can remove I/O and vmoid management from this struct.
             return session_manager.serve_session(stream, offset_map, block_size).await;
@@ -105,8 +106,12 @@ impl block_server::async_interface::Interface for PartitionBackend {
 }
 
 impl PartitionBackend {
-    pub fn new(partition: Arc<GptPartition>) -> Arc<Self> {
-        Arc::new(Self { partition, vmo_keys_to_vmoids_map: Mutex::new(BTreeMap::new()) })
+    pub fn new(partition: Arc<GptPartition>, passthrough: bool) -> Arc<Self> {
+        Arc::new(Self {
+            partition,
+            vmo_keys_to_vmoids_map: Mutex::new(BTreeMap::new()),
+            passthrough,
+        })
     }
 
     /// Returns the old info.

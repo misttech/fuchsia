@@ -14,6 +14,9 @@ use block_server::BlockServer;
 use block_server::async_interface::SessionManager;
 
 use fidl::endpoints::ServerEnd;
+use fs_management::format::constants::{
+    ALL_BENCHMARK_PARTITION_LABELS, ALL_SYSTEM_PARTITION_LABELS,
+};
 use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt as _;
 use std::collections::BTreeMap;
@@ -27,6 +30,20 @@ use {
 
 fn partition_directory_entry_name(index: u32) -> String {
     format!("part-{:03}", index)
+}
+
+// We use heuristics to decide which partitions to pass through.
+// Partitions which are passed through consume more resources on the underlying block device (e.g. a
+// dedicated per-session thread in some implementations), but have better performance due to not
+// needing to proxy requests through this component.  As such, the idea is that we only pass through
+// "hot" partitions.
+// This list should stay small.
+fn should_passthrough_partition(info: &gpt::PartitionInfo) -> bool {
+    // Partition contains the main filesystem
+    ALL_SYSTEM_PARTITION_LABELS.contains(&info.label.as_str())
+    // Partitions are used for benchmarks which should replicate the performance
+    // of the main filesystem
+    || ALL_BENCHMARK_PARTITION_LABELS.contains(&info.label.as_str())
 }
 
 /// A single partition in a GPT device.
@@ -244,15 +261,19 @@ impl Inner {
         info: gpt::PartitionInfo,
         overlay_indexes: Vec<usize>,
     ) -> Result<(), Error> {
-        log::trace!(
-            "GPT part {index}{}: {info:?}",
-            if !overlay_indexes.is_empty() { " (overlay)" } else { "" }
+        let passthrough = should_passthrough_partition(&info);
+        log::debug!(
+            "GPT part {index}{}{}: {info:?}",
+            if !overlay_indexes.is_empty() { " (overlay)" } else { "" },
+            if passthrough { " (passthrough)" } else { "" },
         );
         info.start_block
             .checked_add(info.num_blocks)
             .ok_or_else(|| anyhow!("Overflow in partition end"))?;
-        let partition =
-            PartitionBackend::new(GptPartition::new(parent, self.gpt.client().clone(), info));
+        let partition = PartitionBackend::new(
+            GptPartition::new(parent, self.gpt.client().clone(), info),
+            passthrough,
+        );
         let block_server = Arc::new(BlockServer::new(parent.block_size, partition));
         if !overlay_indexes.is_empty() {
             self.partitions_dir.add_overlay(
@@ -663,6 +684,7 @@ mod tests {
     };
     use block_server::{BlockInfo, DeviceInfo, WriteOptions};
     use fidl::HandleBased as _;
+    use fs_management::format::constants::FVM_PARTITION_LABEL;
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::num::NonZero;
@@ -1709,7 +1731,7 @@ mod tests {
     async fn offset_map_does_not_allow_partition_overwrite() {
         const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
-        const PART_NAME: &str = "part";
+        const PART_NAME: &str = FVM_PARTITION_LABEL;
 
         let (block_device, partitions_dir) = setup_with_options(
             VmoBackedServerOptions {

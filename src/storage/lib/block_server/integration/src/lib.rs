@@ -6,6 +6,7 @@ use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
 use block_server::{BlockInfo, DeviceInfo};
 use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
+use fs_management::format::constants::FVM_PARTITION_LABEL;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
@@ -348,7 +349,7 @@ async fn test_gpt_on_ramdisk() {
     const PART1_INSTANCE_GUID: [u8; 16] = [2u8; 16];
     const PART1_NAME: &str = "part";
     const PART2_INSTANCE_GUID: [u8; 16] = [3u8; 16];
-    const PART2_NAME: &str = "part2";
+    const PART2_NAME: &str = FVM_PARTITION_LABEL;
     {
         let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
         ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
@@ -479,7 +480,7 @@ async fn test_gpt_passthrough_is_enabled() {
 
     const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
     const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
-    const PART_NAME: &str = "part";
+    const PART_NAME: &str = FVM_PARTITION_LABEL;
     {
         let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
         ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");

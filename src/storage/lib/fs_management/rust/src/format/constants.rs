@@ -53,10 +53,22 @@ pub const SUPER_PARTITION_LABEL: &str = "super";
 // TODO(https://fxbug.dev/443980711): This should come from configuration.
 pub const SUPER_AND_USERDATA_PARTITION_LABEL: &str = "super_and_userdata";
 
-pub const ALL_FVM_LABELS: [&str; 5] = [
+/// The set of partition labels which might contain the main system partition.
+pub const ALL_SYSTEM_PARTITION_LABELS: [&str; 5] = [
     FVM_PARTITION_LABEL,
     FUCHSIA_FVM_PARTITION_LABEL,
     FTL_PARTITION_LABEL,
     SUPER_PARTITION_LABEL,
     SUPER_AND_USERDATA_PARTITION_LABEL,
 ];
+
+pub const BENCHMARK_FVM_TYPE_GUID: [u8; 16] = [
+    0x67, 0x45, 0x23, 0x01, 0xab, 0x89, 0xef, 0xcd, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+];
+pub const BENCHMARK_FVM_VOLUME_NAME: &str = "benchmark-fvm";
+
+pub const PAD_RW_PARTITION_LABEL: &str = "pad_rw";
+
+/// The set of partition labels which might be used to run benchmarks out of.
+pub const ALL_BENCHMARK_PARTITION_LABELS: [&str; 2] =
+    [BENCHMARK_FVM_VOLUME_NAME, PAD_RW_PARTITION_LABEL];

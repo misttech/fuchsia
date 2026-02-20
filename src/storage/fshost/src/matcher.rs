@@ -14,7 +14,8 @@ use fidl_fuchsia_storage_block::DeviceFlag as BlockDeviceFlag;
 use fs_management::FVM_TYPE_GUID;
 use fs_management::format::DiskFormat;
 use fs_management::format::constants::{
-    ALL_FVM_LABELS, FVM_PARTITION_LABEL, SUPER_AND_USERDATA_PARTITION_LABEL, SUPER_PARTITION_LABEL,
+    ALL_SYSTEM_PARTITION_LABELS, FVM_PARTITION_LABEL, SUPER_AND_USERDATA_PARTITION_LABEL,
+    SUPER_PARTITION_LABEL,
 };
 
 mod config_matcher;
@@ -241,7 +242,7 @@ impl Matcher for FxblobMatcher {
                 // any of them, this isn't the right partition.
                 // TODO(https://fxbug.dev/344018917): Use another mechanism to keep
                 // track of partition labels.
-                if !ALL_FVM_LABELS.contains(&label) {
+                if !ALL_SYSTEM_PARTITION_LABELS.contains(&label) {
                     return false;
                 }
                 // If device is labelled with SUPER_AND_USERDATA_PARTITION_LABEL, we treat this as
@@ -613,7 +614,7 @@ impl Matcher for FxblobOnRecoveryMatcher {
             // them, this isn't the right partition.
             // TODO(https://fxbug.dev/344018917): Use another mechanism to keep track of partition
             // labels.
-            Ok(label) if ALL_FVM_LABELS.contains(&label) => true,
+            Ok(label) if ALL_SYSTEM_PARTITION_LABELS.contains(&label) => true,
             _ => false,
         }
     }
@@ -667,7 +668,7 @@ impl Matcher for FvmOnRecoveryMatcher {
             // them, this isn't the right partition.
             // TODO(https://fxbug.dev/344018917): Use another mechanism to keep track of partition
             // labels.
-            Ok(label) if ALL_FVM_LABELS.contains(&label) => true,
+            Ok(label) if ALL_SYSTEM_PARTITION_LABELS.contains(&label) => true,
             _ => false,
         }
     }
@@ -714,7 +715,7 @@ mod tests {
     use fs_management::FVM_TYPE_GUID;
     use fs_management::filesystem::{BlockConnector, ServingMultiVolumeFilesystem};
     use fs_management::format::constants::{
-        ALL_FVM_LABELS, FUCHSIA_FVM_PARTITION_LABEL, FVM_PARTITION_LABEL,
+        ALL_SYSTEM_PARTITION_LABELS, FUCHSIA_FVM_PARTITION_LABEL, FVM_PARTITION_LABEL,
     };
     use fuchsia_sync::Mutex;
     use std::sync::Arc;
@@ -1867,7 +1868,7 @@ mod tests {
         assert!(env.registered_devices.get_topological_path(DeviceTag::Ramdisk).is_some());
 
         // The non-ramdisk FVM should be able to match on label as well.
-        for label in ALL_FVM_LABELS {
+        for label in ALL_SYSTEM_PARTITION_LABELS {
             let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
             matchers = Matchers::new(&fshost_config::Config {
                 ramdisk_image: true,

@@ -36,6 +36,12 @@ pub enum DeviceInfo {
 }
 
 impl DeviceInfo {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Block(BlockInfo { .. }) => "",
+            Self::Partition(PartitionInfo { name, .. }) => name,
+        }
+    }
     pub fn device_flags(&self) -> fblock::DeviceFlag {
         match self {
             Self::Block(BlockInfo { device_flags, .. }) => *device_flags,

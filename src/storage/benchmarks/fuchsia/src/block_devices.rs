@@ -18,6 +18,7 @@ use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
 use fs_management::format::DiskFormat;
+use fs_management::format::constants::{BENCHMARK_FVM_TYPE_GUID, BENCHMARK_FVM_VOLUME_NAME};
 use fs_management::{BLOBFS_TYPE_GUID, Fvm};
 use fuchsia_component::client::{
     Service, connect_to_named_protocol_at_dir_root, connect_to_protocol,
@@ -48,11 +49,6 @@ const BENCHMARK_FVM_SLICE_SIZE_BYTES: usize = 8 * 1024 * 1024;
 
 // On systems which don't have FVM (i.e. Fxblob), we create an FVM partition the test can use, with
 // this GUID.  See connect_to_test_fvm for details.
-
-const BENCHMARK_FVM_TYPE_GUID: &Guid = &[
-    0x67, 0x45, 0x23, 0x01, 0xab, 0x89, 0xef, 0xcd, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-];
-const BENCHMARK_FVM_VOLUME_NAME: &str = "benchmark-fvm";
 
 const BENCHMARK_TYPE_GUID: &Guid = &[
     0x67, 0x45, 0x23, 0x01, 0xab, 0x89, 0xef, 0xcd, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
