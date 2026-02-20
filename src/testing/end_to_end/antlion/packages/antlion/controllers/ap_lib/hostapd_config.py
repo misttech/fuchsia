@@ -100,6 +100,7 @@ class HostapdConfig(object):
         additional_parameters: dict[str, Any] | None = None,
         set_ap_defaults_profile: str = "whirlwind",
         ap_max_inactivity: int | None = None,
+        country: str = "US",
     ) -> None:
         """Construct a HostapdConfig.
 
@@ -147,6 +148,8 @@ class HostapdConfig(object):
                 to the hostapd config.
             set_ap_defaults_profile: profile name to load defaults from
             ap_max_inactivity: See hostapd.conf's ap_max_inactivity setting.
+            country: The two-character country code for the AP to beacon that
+                it is operating in.
         """
         if n_capabilities is None:
             n_capabilities = []
@@ -279,6 +282,7 @@ class HostapdConfig(object):
             self._bss_lookup[bss.name] = bss
 
         self._ap_max_inactivity = ap_max_inactivity
+        self._country = country
 
     def _get_11ac_center_channel_from_channel(self, channel: int) -> int:
         """Returns the center channel of the selected channel band based
@@ -684,7 +688,9 @@ class HostapdConfig(object):
             # local_pwr_constraint. And to set local_pwr_constraint,
             # we must first set ieee80211d. And to set ieee80211d, ...
             # Point being: order matters here.
-            conf["country_code"] = "US"  # Required for local_pwr_constraint
+            conf[
+                "country_code"
+            ] = self._country  # Required for local_pwr_constraint
             conf["ieee80211d"] = 1  # Required for local_pwr_constraint
             conf["local_pwr_constraint"] = 0  # No local constraint
             conf["spectrum_mgmt_required"] = 1  # Requires local_pwr_constraint

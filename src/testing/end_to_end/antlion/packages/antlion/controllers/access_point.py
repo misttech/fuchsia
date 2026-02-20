@@ -889,6 +889,7 @@ def setup_ap(
     setup_bridge: bool = False,
     is_ipv6_enabled: bool = False,
     is_nat_enabled: bool = True,
+    country: str = "US",
 ) -> list[str]:
     """Creates a hostapd profile and runs it on an ap. This is a convenience
     function that allows us to start an ap with a single function, without first
@@ -916,6 +917,8 @@ def setup_ap(
         is_ipv6_enabled: If True, start a IPv6 router advertisement daemon
         is_nat_enabled: If True, start NAT on the AP to allow the DUT to be able
             to access the internet if the WAN port is connected to the internet.
+        country: the 2 char country code that the AP will operate with. The AP
+            should be configured consistently with the regulatory domain's rules.
 
     Returns:
         An identifier for each ssid being started. These identifiers can be
@@ -948,6 +951,7 @@ def setup_ap(
         ac_capabilities=ac_capabilities,
         vht_bandwidth=vht_bandwidth,
         wnm_features=wnm_features,
+        country=country,
     )
     return access_point.start_ap(
         hostapd_config=ap,

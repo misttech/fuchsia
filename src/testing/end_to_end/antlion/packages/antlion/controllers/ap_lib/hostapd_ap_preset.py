@@ -61,6 +61,7 @@ def create_ap_preset(
     wnm_features: FrozenSet[hostapd_constants.WnmFeature] = frozenset(),
     bss_settings: list[Any] = [],
     ap_max_inactivity: int | None = None,
+    country: str = "US",
 ) -> hostapd_config.HostapdConfig:
     """AP preset config generator.  This a wrapper for hostapd_config but
        but supplies the default settings for the preset that is selected.
@@ -93,6 +94,8 @@ def create_ap_preset(
         ac_capabilities: 802.11ac capabilities for for BSS to advertise.
         wnm_features: WNM features to enable on the AP.
         ap_max_inactivity: See hostapd.conf's ap_max_inactivity setting.
+        country: The two-character country code for the AP to beacon that
+            it is operating in.
 
     Returns: A hostapd_config object that can be used by the hostapd object.
     """
@@ -156,6 +159,7 @@ def create_ap_preset(
                 wnm_features=wnm_features,
                 bss_settings=bss_settings,
                 ap_max_inactivity=ap_max_inactivity,
+                country=country,
             )
         else:
             interface = iface_wlan_5g
@@ -229,6 +233,7 @@ def create_ap_preset(
                 ac_capabilities=ac_capabilities,
                 bss_settings=bss_settings,
                 ap_max_inactivity=ap_max_inactivity,
+                country=country,
             )
     elif profile_name == "whirlwind_11ab_legacy":
         if frequency < 5000:
@@ -342,6 +347,7 @@ def create_ap_preset(
                 additional_parameters=additional_params,
                 set_ap_defaults_profile=profile_name,
                 ap_max_inactivity=ap_max_inactivity,
+                country=country,
             )
         else:
             interface = iface_wlan_5g
@@ -420,6 +426,7 @@ def create_ap_preset(
                 additional_parameters=additional_params,
                 set_ap_defaults_profile=profile_name,
                 ap_max_inactivity=ap_max_inactivity,
+                country=country,
             )
     elif profile_name == "actiontec_pk5000":
         config = actiontec.actiontec_pk5000(
