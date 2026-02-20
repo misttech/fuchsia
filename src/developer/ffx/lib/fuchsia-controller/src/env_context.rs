@@ -38,7 +38,6 @@ pub struct FfxConfigEntry {
     pub(crate) value: String,
 }
 
-
 pub struct EnvContext {
     lib_ctx: Weak<LibContext>,
     target_spec: TargetInfoQuery,
