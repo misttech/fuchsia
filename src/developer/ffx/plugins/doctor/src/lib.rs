@@ -1368,9 +1368,7 @@ async fn check_single_target_via_daemon<W: Write>(
     ledger: &mut DoctorLedger<W>,
     target: &TargetInfo,
     tc_proxy: &TargetCollectionProxy,
-    env_context: &EnvironmentContext,
     show_tool: Option<&mut ShowToolWrapper>,
-    run_additional_diagnostics: bool,
     retry_delay: Duration,
 ) -> Result<()> {
     let target_name = target_name(target);
@@ -1401,15 +1399,6 @@ async fn check_single_target_via_daemon<W: Write>(
     }
 
     show_target(ledger, target, show_tool).await?;
-
-    if run_additional_diagnostics {
-        let node = ledger.add_node(
-            &format!("Running additional diagnostics against {target_name}"),
-            LedgerMode::Automatic,
-        )?;
-        run_target_diagnostics(ledger, target, env_context, retry_delay).await?;
-        ledger.close(node)?;
-    }
 
     ledger.close(target_node)?;
     Ok(())
@@ -1829,16 +1818,40 @@ async fn check_targets_via_daemon<W: Write>(
     verify_inode.set_fold_function(OutcomeFoldFunction::FailureToSuccess, LedgerOutcome::Failure);
     let main_node = ledger.add(verify_inode)?;
     for target in targets.iter() {
-        check_single_target_via_daemon(
+        match check_single_target_via_daemon(
             ledger,
             target,
             &tc_proxy,
-            env_context,
             show_tool.as_mut(),
-            run_additional_diagnostics,
             retry_delay,
         )
-        .await?;
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                // This might be formatted strangely, as it's covering edge cases around things
+                // like being unable to get info from a target FIDL proxy, but generally if we're
+                // able to connect to RCS the above function will succeed.
+                let node = ledger.add_node(
+                    format!("Error checking target: {e}").as_str(),
+                    LedgerMode::Automatic,
+                )?;
+                ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            }
+        }
+
+        if run_additional_diagnostics {
+            let target_name = target_name(target);
+            let node = ledger.add_node(
+                &format!("Running additional diagnostics against {target_name}"),
+                LedgerMode::Automatic,
+            )?;
+
+            // This function is only intended to return an error if it is surfaced from the ledger
+            // itself, so don't worry about it prematurely breaking out of the loop.
+            run_target_diagnostics(ledger, target, env_context, retry_delay).await?;
+            ledger.close(node)?;
+        }
     }
     ledger.close(main_node)?;
     Ok(())
