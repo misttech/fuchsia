@@ -751,3 +751,23 @@ pub extern "C" fn advertise_service(psm: u16, timeout: u64) -> u64 {
         }
     }
 }
+
+/// Enable notifications/indications on the GATT characteristic with the given handles.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+#[unsafe(no_mangle)]
+pub extern "C" fn register_characteristic_notifier(
+    service_handle: u64,
+    characteristic_handle: u64,
+) -> i32 {
+    let service_handle = ServiceHandle { value: service_handle };
+    let characteristic_handle = Handle { value: characteristic_handle };
+
+    if let Err(err) = block_on(
+        STATE.worker.register_characteristic_notifier(service_handle, characteristic_handle),
+    ) {
+        eprintln!("register_characteristic_notifier encountered error: {err}");
+        return zx::Status::INTERNAL.into_raw();
+    }
+    zx::Status::OK.into_raw()
+}

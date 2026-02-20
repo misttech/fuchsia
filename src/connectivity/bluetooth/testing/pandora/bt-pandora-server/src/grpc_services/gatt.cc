@@ -140,11 +140,34 @@ Status GattService::WaitCharacteristicNotification(
 Status GattService::NotifyOnCharacteristic(::grpc::ServerContext* context,
                                            const ::pandora::NotifyOnCharacteristicRequest* request,
                                            ::pandora::NotifyOnCharacteristicResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  // TODO(https://fxbug.dev/467722411): fuchsia.bluetooth.gatt2 uses a "ServiceHandle" and
+  // "CharacteristicHandle" to identify ATT characteristics. We need either (1) a mode that is
+  // enabled for PTS that does not munge ATT Handles, or (2) a test-only FIDL protocol that resolves
+  // ATT Handles to (ServiceHandle, CharacteristicHandle).
+  return Status(StatusCode::UNIMPLEMENTED, "Todo. See https://fxbug.dev/467722411.");
+
+  uint64_t service_handle = 0;
+  uint64_t characteristic_handle = 0;
+
+  if (register_characteristic_notifier(service_handle, characteristic_handle) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+
+  return {/*OK*/};
 }
 
 Status GattService::IndicateOnCharacteristic(
     ::grpc::ServerContext* context, const ::pandora::IndicateOnCharacteristicRequest* request,
     ::pandora::IndicateOnCharacteristicResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  // TODO(https://fxbug.dev/467722411): See above `NotifyOnCharacteristic`.
+  return Status(StatusCode::UNIMPLEMENTED, "Todo. See https://fxbug.dev/467722411.");
+
+  uint64_t service_handle = 0;
+  uint64_t characteristic_handle = 0;
+
+  if (register_characteristic_notifier(service_handle, characteristic_handle) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+
+  return {/*OK*/};
 }

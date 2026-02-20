@@ -226,6 +226,11 @@ int32_t read_characteristic(uint64_t service_handle, uint64_t characteristic_han
 /// arbitrary valid PeerId (1). In case of error, return 0.
 uint64_t advertise_service(uint16_t psm, uint64_t timeout);
 
+/// Enable notifications/indications on the GATT characteristic with the given handles.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+int32_t register_characteristic_notifier(uint64_t service_handle, uint64_t characteristic_handle);
+
 }  // extern "C"
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_BT_AFFORDANCES_FFI_C_BINDINGS_H_
