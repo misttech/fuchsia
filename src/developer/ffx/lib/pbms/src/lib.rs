@@ -72,7 +72,7 @@ impl FromStr for AuthFlowChoice {
                 if path.is_file() {
                     Ok(AuthFlowChoice::Exec(path.to_path_buf()))
                 } else {
-                    Err("Unknown auth flow choice. Use one of oob, \
+                    Err("Unknown auth flow choice. Use one of \
                         device-experimental, pkce, default, a path to an \
                         executable which prints an access token to stdout, or \
                         no-auth to enforce that no auth flow will be used."
