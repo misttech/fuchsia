@@ -22,7 +22,7 @@ class MsrAccess;
 
 #define MAX_SUPPORTED_CPUID (0x17)
 #define MAX_SUPPORTED_CPUID_HYP (0x40000001)
-#define MAX_SUPPORTED_CPUID_EXT (0x8000001e)
+#define MAX_SUPPORTED_CPUID_EXT (0x80000021)
 
 struct cpuid_leaf {
   uint32_t a;

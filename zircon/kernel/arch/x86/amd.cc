@@ -46,7 +46,8 @@ void x86_amd_set_lfence_serializing(const cpu_id::CpuId* cpuid, MsrAccess* msr) 
   // To mitigate certain speculative execution infoleaks (Spectre) efficiently, configure the
   // CPU to treat LFENCE as a dispatch serializing instruction. This allows code to use LFENCE
   // in contexts to restrict speculative execution.
-  if (cpuid->ReadProcessorId().family() >= 0x10) {
+  if (cpuid->ReadProcessorId().family() >= 0x10 &&
+      !cpuid->ReadFeatures().HasFeature(cpu_id::Features::LFENCE_RDTSC)) {
     uint64_t de_cfg = msr->read_msr(X86_MSR_AMD_F10_DE_CFG);
     if (!(de_cfg & X86_MSR_AMD_F10_DE_CFG_LFENCE_SERIALIZE)) {
       msr->write_msr(X86_MSR_AMD_F10_DE_CFG, de_cfg | X86_MSR_AMD_F10_DE_CFG_LFENCE_SERIALIZE);

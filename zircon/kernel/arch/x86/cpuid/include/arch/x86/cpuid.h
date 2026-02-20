@@ -106,6 +106,7 @@ class Features {
     LEAF7,  // Structured Extended Feature Flags
     LEAF8_01,
     LEAF8_07,
+    LEAF8_21,  // AMD defined extended features
     INVALID_SET = 254,
   };
 
@@ -236,8 +237,10 @@ class Features {
 
   static constexpr Feature CPB = {.leaf = LEAF8_07, .reg = Registers::EDX, .bit = 9};
 
+  static constexpr Feature LFENCE_RDTSC = {.leaf = LEAF8_21, .reg = Registers::EAX, .bit = 2};
+
   Features(Registers leaf1, Registers leaf6, Registers leaf7, Registers leaf8_01,
-           Registers leaf8_07);
+           Registers leaf8_07, Registers leaf8_21);
 
   inline bool HasFeature(Feature feature) const {
     DEBUG_ASSERT_MSG(
