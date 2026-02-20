@@ -16,13 +16,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
+	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/streams"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 )
@@ -210,9 +210,6 @@ type ninjaParser struct {
 	// All lines printed for the rule currently being run, including the first
 	// line that starts with an index like [0/1].
 	currentRuleLines []string
-
-	// Action statistics.
-	ninjaActionData *fintpb.NinjaActionMetrics
 }
 
 func (p *ninjaParser) parse(ctx context.Context) error {
@@ -239,27 +236,6 @@ func (p *ninjaParser) parseLine(line string) error {
 	if len(ruleMatches) == 6 {
 		// Group each rule line with the non-rule lines of text that follow.
 		p.currentRuleLines = nil
-
-		// Ignore the line:
-		//   [0/1] Regenerating ninja files
-		actionIndex, err := strconv.Atoi(ruleMatches[1])
-		if err == nil && actionIndex > 0 {
-			// Track action counts and types.
-			totalActionsTmp, err := strconv.Atoi(ruleMatches[2])
-			if err != nil {
-				return err
-			}
-			totalActions := int32(totalActionsTmp)
-			if p.ninjaActionData == nil {
-				p.ninjaActionData = &fintpb.NinjaActionMetrics{
-					InitialActions: totalActions,
-					ActionsByType:  make(map[string]int32),
-				}
-			}
-			p.ninjaActionData.FinalActions = totalActions
-			actionType := ruleMatches[4]
-			p.ninjaActionData.ActionsByType[actionType]++
-		}
 	}
 	p.currentRuleLines = append(p.currentRuleLines, line)
 
@@ -305,6 +281,12 @@ func (p *ninjaParser) failureMessage() string {
 		lines = append(p.failureOutputLines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+type ninjaActionMetrics struct {
+	InitialActions int32            `json:"initial_actions"`
+	FinalActions   int32            `json:"final_actions"`
+	ActionCounts   map[string]int32 `json:"action_counts"`
 }
 
 // runNinja runs ninja as a subprocess to build the specified targets.
@@ -365,12 +347,25 @@ func runNinja(
 		return "", nil, parserErr
 	}
 
+	var metrics *fintpb.NinjaActionMetrics
+	metricsPath := filepath.Join(r.buildDir, actionMetricsName)
+	var am ninjaActionMetrics
+	if jsonErr := jsonutil.ReadFromFile(metricsPath, &am); jsonErr == nil {
+		metrics = &fintpb.NinjaActionMetrics{
+			InitialActions: am.InitialActions,
+			FinalActions:   am.FinalActions,
+			ActionsByType:  am.ActionCounts,
+		}
+	} else if !errors.Is(jsonErr, os.ErrNotExist) {
+		return "", nil, fmt.Errorf("reading action metrics file %s: %w", metricsPath, jsonErr)
+	}
+
 	if err != nil {
-		return parser.failureMessage(), parser.ninjaActionData, err
+		return parser.failureMessage(), metrics, err
 	}
 
 	// No failure message necessary if Ninja succeeded.
-	return "", parser.ninjaActionData, nil
+	return "", metrics, nil
 }
 
 // ninjaDryRun does a `ninja explain` dry run against a build directory and

@@ -21,6 +21,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
+	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/streams"
 )
 
@@ -366,6 +367,27 @@ func TestRunNinja(t *testing.T) {
 				ninjaPath: filepath.Join(t.TempDir(), "ninja"),
 				buildDir:  filepath.Join(t.TempDir(), "out"),
 				jobCount:  23, // Arbitrary but distinctive value.
+			}
+			if tc.expectedActionData != nil {
+				sr.run = func(cmd []string, stdout io.Writer) error {
+					stdout.Write(sr.mockStdout)
+					metrics := ninjaActionMetrics{
+						InitialActions: tc.expectedActionData.InitialActions,
+						FinalActions:   tc.expectedActionData.FinalActions,
+						ActionCounts:   tc.expectedActionData.ActionsByType,
+					}
+					path := filepath.Join(r.buildDir, actionMetricsName)
+					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+						return err
+					}
+					if err := jsonutil.WriteToFile(path, metrics); err != nil {
+						return err
+					}
+					if sr.fail {
+						return errSubprocessFailure
+					}
+					return nil
+				}
 			}
 			msg, gotActionData, err := runNinja(ctx, r, []string{}, []string{"foo", "bar"}, false, nil)
 			if tc.fail {

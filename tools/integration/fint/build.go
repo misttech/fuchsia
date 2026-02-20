@@ -58,6 +58,9 @@ const (
 	// The directory is unspecified.
 	buildstatsJSONName = "buildstats.json.gz"
 
+	// actionMetricsName is the name of the JSON file with ninja action metrics.
+	actionMetricsName = "ninja_action_metrics.json"
+
 	// subbuildsJSONName names the JSON file listing potential ninja sub-build directories.
 	// It is expected to be located in the top build directory.
 	subbuildsJSONName = "ninja_subbuilds.json"
@@ -290,7 +293,11 @@ func buildImpl(
 		[]byte("[]"), 0o644)
 
 	// Tell Ninja to generate a compressed Chrome trace after the build completes.
-	ninjaExtraArgs := []string{"--chrome_trace", ninjaBuildTraceName}
+	// Also emit a metrics file that contains action counts by mnemonic.
+	ninjaExtraArgs := []string{
+		"--chrome_trace", ninjaBuildTraceName,
+		"--action_metrics_output", actionMetricsName,
+	}
 
 	if jobserverPool {
 		ninjaExtraArgs = append(ninjaExtraArgs, "--jobserver")
