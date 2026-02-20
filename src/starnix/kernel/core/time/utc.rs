@@ -111,7 +111,9 @@ fn check_mapped_clock_started(
 
 // Returns the details of `clock`.
 // Takes around `500ns`.
-fn get_utc_clock_details(clock: &MemoryMappedClock) -> zx::ClockDetails<zx::BootTimeline, UtcTimeline> {
+fn get_utc_clock_details(
+    clock: &MemoryMappedClock,
+) -> zx::ClockDetails<zx::BootTimeline, UtcTimeline> {
     // 500ns.
     clock.get_details().expect("clock details are readable")
 }
@@ -123,7 +125,7 @@ fn get_utc_clock_details(clock: &MemoryMappedClock) -> zx::ClockDetails<zx::Boot
 // initially, Once the UTC clock is started, the synthetic utc clock is replaced by a real utc
 // clock.
 #[derive(Debug)]
-struct UtcClock {
+pub struct UtcClock {
     // The real underlying Fuchsia UTC clock. This clock may never start,
     // see module-level documentation for details.
     real_utc_clock: UtcClockHandle,
@@ -165,8 +167,7 @@ impl UtcClock {
         let mapped_clock: MemoryMappedClock =
             MappedClock::try_new(real_utc_clock_clone, &vmar_parent, zx::VmarFlags::PERM_READ)
                 .expect("failed to map clock into VMAR");
-        let (is_real_utc_clock_started, _) =
-            check_mapped_clock_started(&mapped_clock, backstop);
+        let (is_real_utc_clock_started, _) = check_mapped_clock_started(&mapped_clock, backstop);
         let utc_clock = Self { real_utc_clock, mapped_clock, synthetic_transform, backstop };
         if !is_real_utc_clock_started {
             log_warn!(

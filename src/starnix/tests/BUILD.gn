@@ -61,6 +61,7 @@ group("benchmarks") {
   deps = [
     "ebpf_bench:benchmarks",
     "gvisor:benchmarks",
+    "kernel_core_bench:benchmarks",
   ]
 }
 
