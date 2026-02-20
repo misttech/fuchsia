@@ -12,6 +12,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include "fidl/fuchsia.io/cpp/natural_types.h"
 #include "src/ui/lib/escher/escher_process_init.h"
 #include "src/ui/lib/escher/fs/hack_filesystem.h"
 #include "src/ui/lib/escher/hmd/pose_buffer_latching_shader.h"
@@ -21,18 +22,25 @@
 
 namespace utils {
 
-escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context) {
+escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
+#ifdef __Fuchsia__
+                                     ,
+                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir
+#endif
+) {
   // Initialize Vulkan.
   constexpr bool kRequiresSurface = false;
-  escher::VulkanInstance::Params instance_params(
-      {{},
-       {
-           VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-           VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
-           VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
-           VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-       },
-       kRequiresSurface});
+  escher::VulkanInstance::Params instance_params({
+      .layer_names = {},
+      .extension_names =
+          {
+              VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+              VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+              VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+              VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+          },
+      .requires_surface = kRequiresSurface,
+  });
 
   // Only enable Vulkan validation layers when in debug mode.
 #if defined(SCENIC_ENABLE_VULKAN_VALIDATION)
@@ -80,16 +88,39 @@ escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context) {
 
   auto shader_fs = escher::HackFilesystem::New(debug_dir);
   {
+#ifdef __Fuchsia__
+    zx::channel client, server;
+    zx::channel::create(0, &client, &server);
+    fuchsia_io::DirectoryOpenRequest request;
+    request.path() = "data";
+    request.flags() = fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable;
+    request.options() = fuchsia_io::Options{};
+    request.object() = std::move(server);
+    auto res = pkg_dir->Open(std::move(request));
+    if (res.is_error()) {
+      FX_LOGS(ERROR) << "Failed to open /pkg/data: " << res.error_value();
+    }
+    fidl::ClientEnd<fuchsia_io::Directory> dir(std::move(client));
+#endif
+
 #if ESCHER_USE_RUNTIME_GLSL
     auto paths = escher::kPaperRendererShaderPaths;
     paths.insert(paths.end(), escher::hmd::kPoseBufferLatchingPaths.begin(),
                  escher::hmd::kPoseBufferLatchingPaths.end());
+#ifdef __Fuchsia__
+    bool success = shader_fs->InitializeWithRealFilesInDir(paths, std::move(dir));
+#else
     bool success = shader_fs->InitializeWithRealFiles(paths);
+#endif
 #else
     auto paths = escher::kPaperRendererShaderSpirvPaths;
     paths.insert(paths.end(), escher::hmd::kPoseBufferLatchingSpirvPaths.begin(),
                  escher::hmd::kPoseBufferLatchingSpirvPaths.end());
+#ifdef __Fuchsia__
+    bool success = shader_fs->InitializeWithRealFilesInDir(paths, std::move(dir));
+#else
     bool success = shader_fs->InitializeWithRealFiles(paths);
+#endif
 #endif
     FX_DCHECK(success) << "Failed to init shader files.";
   }

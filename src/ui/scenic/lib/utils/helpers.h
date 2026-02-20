@@ -11,6 +11,7 @@
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
+#include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/event.h>
 
 #include "fuchsia/images2/cpp/fidl.h"
@@ -57,6 +58,10 @@ bool IsEventSignalled(const zx::event& event, zx_signals_t signal);
 // Create sysmem allocator.
 fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
     const std::string& debug_name_suffix = std::string());
+
+// Create sysmem allocator.
+fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtrWithSvc(
+    sys::ServiceDirectory* svc, const std::string& debug_name_suffix = std::string());
 
 // Create local and dup tokens for sysmem.
 SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);

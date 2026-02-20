@@ -40,11 +40,23 @@ FuchsiaDataSource::FuchsiaDataSource() : root_dir_(std::make_shared<vfs::PseudoD
 
 bool FuchsiaDataSource::InitializeWithRealFiles(const std::vector<HackFilePath>& paths,
                                                 const char* root) {
-  const std::string kRoot(root);
-  base_path_ = kRoot;
+  base_path_.emplace(root);
+  auto load_file = [this, root](const HackFilePath& path) { return LoadFile(this, root, path); };
+  return DoInitializeWithRealFiles(paths, std::move(load_file));
+}
+
+bool FuchsiaDataSource::InitializeWithRealFilesInDir(
+    const std::vector<HackFilePath>& paths, fidl::ClientEnd<fuchsia_io::Directory> client) {
+  base_dir_.emplace(std::move(client));
+  auto load_file = [this](const HackFilePath& path) { return LoadFileAtDir(this, path); };
+  return DoInitializeWithRealFiles(paths, std::move(load_file));
+}
+
+bool FuchsiaDataSource::DoInitializeWithRealFiles(
+    const std::vector<HackFilePath>& paths, fit::function<bool(const HackFilePath& path)> load) {
   bool success = true;
   for (const auto& path : paths) {
-    success &= LoadFile(this, kRoot, path);
+    success &= load(path);
 
     auto segs = StrSplit(path, "/");
     FX_DCHECK(segs.size() > 0);
@@ -97,6 +109,40 @@ bool FuchsiaDataSource::InitializeWithRealFiles(const std::vector<HackFilePath>&
     }
   }
   return success;
+}
+
+// static
+bool FuchsiaDataSource::LoadFileAtDir(HackFilesystem* fs, const HackFilePath& path) {
+  std::string contents;
+  const auto flags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile;
+  auto [client, server] = *fidl::CreateEndpoints<fuchsia_io::File>();
+  fidl::Request<fuchsia_io::Directory::Open> dir_request;
+  dir_request.path(path);
+  dir_request.flags(flags);
+  dir_request.options(fuchsia_io::Options{});
+  dir_request.object(server.TakeChannel());
+  if (auto r = (*fs->base_dir())->Open(std::move(dir_request)); r.is_error()) {
+    FX_LOGS(WARNING) << "Failed to open directory: " << r.error_value();
+    return false;
+  }
+
+  fidl::SyncClient<fuchsia_io::File> file(std::move(client));
+  while (true) {
+    fidl::Request<fuchsia_io::File::Read> file_request;
+    file_request.count(fuchsia_io::kMaxBuf);
+    auto r = file->Read(file_request);
+    if (r.is_error()) {
+      FX_LOGS(WARNING) << "Failed to read file " << path << ": " << r.error_value();
+      return false;
+    }
+    if (r->data().empty()) {
+      break;
+    }
+    contents.append(reinterpret_cast<const char*>(r->data().data()), r->data().size());
+  }
+
+  fs->WriteFile(path, contents);
+  return true;
 }
 
 }  // namespace escher

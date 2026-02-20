@@ -5,6 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_UTILS_ESCHER_PROVIDER_H_
 #define SRC_UI_SCENIC_LIB_UTILS_ESCHER_PROVIDER_H_
 
+#ifdef __Fuchsia__
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#endif
 #include <lib/sys/cpp/component_context.h>
 
 #include "src/ui/lib/escher/escher.h"
@@ -13,7 +16,12 @@
 
 namespace utils {
 
-escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context);
+escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context
+#ifdef __Fuchsia__
+                                     ,
+                                     const fidl::SyncClient<fuchsia_io::Directory>& pkg_dir
+#endif
+);
 
 VkBool32 HandleDebugUtilsMessage(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                  VkDebugUtilsMessageTypeFlagsEXT message_types,

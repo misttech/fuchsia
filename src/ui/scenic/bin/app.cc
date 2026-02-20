@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
-#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdint>
@@ -42,10 +41,6 @@
 namespace {
 
 using scenic_impl::RendererType;
-
-// App installs the loader manifest FS at this path so it can use
-// fsl::DeviceWatcher on it.
-const char* kDependencyPath = "/gpu-manifest-fs";
 
 constexpr zx::duration kShutdownTimeout = zx::sec(1);
 
@@ -135,9 +130,9 @@ uint64_t GetDisplayRotation(scenic_structured_config::Config values) {
 }
 
 // Gets Scenic's structured config values and logs them.
-scenic_structured_config::Config GetConfig() {
+scenic_structured_config::Config GetConfig(zx::vmo config) {
   // Retrieve structured configuration
-  auto values = scenic_structured_config::Config::TakeFromStartupHandle();
+  auto values = scenic_structured_config::Config::CreateFromVmo(std::move(config));
 
   FX_LOGS(INFO) << "Scenic renderer: " << ToString(GetRendererType(values))
                 << " min_predicted_frame_duration(us): "
@@ -188,20 +183,22 @@ fuchsia::math::SizeU DisplayInfoDelegate::GetDisplayDimensions() {
   return {display_->width_in_px(), display_->height_in_px()};
 }
 
-App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspect_node,
+App::App(std::unique_ptr<sys::ComponentContext> app_context,
+         fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
+         fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node inspect_node,
          fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
          fit::closure quit_callback)
     : executor_(async_get_default_dispatcher()),
       app_context_(std::move(app_context)),
-      config_values_(GetConfig()),
+      config_values_(GetConfig(std::move(config))),
       // TODO(https://fxbug.dev/42117030): subsystems requiring graceful shutdown *on a loop* should
       // register themselves. It is preferable to cleanly shutdown using destructors only, if
       // possible.
       shutdown_manager_(
           ShutdownManager::New(async_get_default_dispatcher(), std::move(quit_callback))),
-      metrics_logger_(
-          async_get_default_dispatcher(),
-          fidl::ClientEnd<fuchsia_io::Directory>(component::OpenServiceRoot()->TakeChannel())),
+      metrics_logger_(async_get_default_dispatcher(),
+                      fidl::ClientEnd<fuchsia_io::Directory>(
+                          app_context_->svc()->CloneChannel().TakeChannel())),
       inspect_node_(std::move(inspect_node)),
       frame_scheduler_(
           std::make_unique<scheduling::WindowedFramePredictor>(
@@ -232,17 +229,14 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
       geometry_provider_(),
       observer_registry_(geometry_provider_),
       scoped_observer_registry_(geometry_provider_) {
+  pkg_dir_.Bind(std::move(pkg_dir));
   fpromise::bridge<escher::EscherUniquePtr> escher_bridge;
   fpromise::bridge<std::shared_ptr<display::Display>> display_bridge;
 
   auto vulkan_loader = app_context_->svc()->Connect<fuchsia::vulkan::loader::Loader>();
-  fidl::InterfaceHandle<fuchsia::io::Directory> dir;
+  auto [dir, dir_server] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
   vulkan_loader->ConnectToManifestFs(fuchsia::vulkan::loader::ConnectToManifestOptions{},
-                                     dir.NewRequest().TakeChannel());
-
-  fdio_ns_t* ns;
-  FX_CHECK(fdio_ns_get_installed(&ns) == ZX_OK);
-  FX_CHECK(fdio_ns_bind(ns, kDependencyPath, dir.TakeChannel().release()) == ZX_OK);
+                                     dir_server.TakeChannel());
 
   // Publish all protocols that are ready.
   view_ref_installed_impl_.Publish(app_context_.get());
@@ -257,13 +251,14 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
   if (renderer_type_ == RendererType::VULKAN) {
     // Wait for a Vulkan ICD to become advertised before trying to launch escher.
     FX_DCHECK(!device_watcher_);
-    device_watcher_ = fsl::DeviceWatcher::Create(
-        kDependencyPath, [this, vulkan_loader = std::move(vulkan_loader),
-                          completer = std::move(escher_bridge.completer),
-                          vulkan_wait_log = std::move(vulkan_wait_log)](
-                             const fidl::ClientEnd<fuchsia_io::Directory>& dir,
-                             const std::string& filename) mutable {
-          auto escher = utils::CreateEscher(app_context_.get());
+    device_watcher_ = fsl::DeviceWatcher::CreateWithIdleCallback(
+        std::move(dir),
+        [this, vulkan_loader = std::move(vulkan_loader),
+         completer = std::move(escher_bridge.completer),
+         vulkan_wait_log = std::move(vulkan_wait_log)](
+            const fidl::ClientEnd<fuchsia_io::Directory>& dir,
+            const std::string& filename) mutable {
+          auto escher = utils::CreateEscher(app_context_.get(), pkg_dir_);
           if (!escher) {
             FX_LOGS(WARNING) << "Escher creation failed.";
             // This should almost never happen, but might if the device was removed quickly after it
@@ -273,7 +268,8 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
           }
           completer.complete_ok(std::move(escher));
           device_watcher_.reset();
-        });
+        },
+        [] {});
     FX_DCHECK(device_watcher_);
   } else {
     // Immediately complete promise if we aren't using vulkan renderer.
@@ -308,14 +304,17 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspe
   {
     auto p =
         fpromise::join_promises(escher_bridge.consumer.promise(), display_bridge.consumer.promise())
-            .and_then(
-                [this](std::tuple<fpromise::result<escher::EscherUniquePtr>,
-                                  fpromise::result<std::shared_ptr<display::Display>>>& results) {
-                  InitializeServices(std::move(std::get<0>(results).value()),
-                                     std::move(std::get<1>(results).value()));
-                  // Should be run after all outgoing services are published.
-                  app_context_->outgoing()->ServeFromStartupInfo();
-                });
+            .and_then([this, out_dir = std::move(out_dir)](
+                          std::tuple<fpromise::result<escher::EscherUniquePtr>,
+                                     fpromise::result<std::shared_ptr<display::Display>>>&
+                              results) mutable {
+              InitializeServices(std::move(std::get<0>(results).value()),
+                                 std::move(std::get<1>(results).value()));
+              fidl::InterfaceRequest<fuchsia::io::Directory> directory_request(
+                  out_dir.TakeChannel());
+              // Should be run after all outgoing services are published.
+              app_context_->outgoing()->Serve(std::move(directory_request));
+            });
 
     executor_.schedule_task(std::move(p));
   }
@@ -355,11 +354,7 @@ void App::InitializeServices(escher::EscherUniquePtr escher,
   InitializeHeartbeat(*display);
 }
 
-App::~App() {
-  fdio_ns_t* ns;
-  FX_CHECK(fdio_ns_get_installed(&ns) == ZX_OK);
-  FX_CHECK(fdio_ns_unbind(ns, kDependencyPath) == ZX_OK);
-}
+App::~App() {}
 
 void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   TRACE_DURATION("gfx", "App::InitializeGraphics");
@@ -430,7 +425,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     flatland_compositor_ = std::make_shared<flatland::DisplayCompositor>(
         async_get_default_dispatcher(), display_manager_->coordinator_proxy(), flatland_renderer,
-        utils::CreateSysmemAllocatorSyncPtr("flatland::DisplayCompositor"),
+        utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(),
+                                                   "flatland::DisplayCompositor"),
         flatland::DisplayCompositorConfig{
             .enable_direct_to_display = config_values_.display_composition(),
             .max_display_layers = kMaxDisplayLayers,
@@ -500,7 +496,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
   const auto screen_capture_buffer_collection_importer =
       std::make_shared<screen_capture::ScreenCaptureBufferCollectionImporter>(
-          utils::CreateSysmemAllocatorSyncPtr("ScreenCaptureBufferCollectionImporter"),
+          utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(),
+                                                     "ScreenCaptureBufferCollectionImporter"),
           flatland_renderer);
 
   // Allocator service needs Flatland DisplayCompositor to act as a BufferCollectionImporter.
@@ -513,7 +510,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     allocator_ = std::make_shared<allocation::Allocator>(
         app_context_.get(), default_importers, screen_capture_importers,
-        utils::CreateSysmemAllocatorSyncPtr("ScenicAllocator"),
+        utils::CreateSysmemAllocatorSyncPtrWithSvc(app_context_->svc().get(), "ScenicAllocator"),
         inspect_node_.CreateChild("Allocator API"));
   }
 

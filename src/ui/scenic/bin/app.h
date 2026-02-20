@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_BIN_APP_H_
 #define SRC_UI_SCENIC_BIN_APP_H_
 
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 
 #include <memory>
@@ -65,7 +66,9 @@ enum class RendererType : uint8_t {
 
 class App {
  public:
-  App(std::unique_ptr<sys::ComponentContext> app_context, inspect::Node inspect_node,
+  App(std::unique_ptr<sys::ComponentContext> app_context,
+      fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
+      fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node inspect_node,
       fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
       fit::closure quit_callback);
 
@@ -80,6 +83,7 @@ class App {
 
   async::Executor executor_;
   std::unique_ptr<sys::ComponentContext> app_context_;
+  fidl::SyncClient<fuchsia_io::Directory> pkg_dir_;
   const scenic_structured_config::Config config_values_;
 
   std::shared_ptr<ShutdownManager> shutdown_manager_;

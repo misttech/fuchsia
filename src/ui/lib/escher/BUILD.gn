@@ -426,6 +426,7 @@ template("escher_library") {
       ]
       public_deps += [
         "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
         "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",

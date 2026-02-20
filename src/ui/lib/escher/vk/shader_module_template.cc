@@ -7,6 +7,9 @@
 #include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
 #include "src/ui/lib/escher/util/hasher.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
+#ifdef __Fuchsia__
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#endif
 
 #if ESCHER_USE_RUNTIME_GLSL
 #include <shaderc/shaderc.hpp>  // nogncheck
@@ -242,7 +245,8 @@ void ShaderModuleTemplate::Variant::UpdateModule() {
 void ShaderModuleTemplate::Variant::UpdateModule() {
   std::vector<uint32_t> spirv;
   const std::optional<std::string>& base_path = template_->filesystem_->base_path();
-  if (!base_path.has_value()) {
+  const auto& base_dir = template_->filesystem_->base_dir();
+  if (!base_path.has_value() && !base_dir.has_value()) {
     // Mimic ReadSpirvFromDisk
     auto path = template_->path_ + std::to_string(args_.hash().val);
     std::replace(path.begin(), path.end(), '.', '_');
@@ -254,10 +258,30 @@ void ShaderModuleTemplate::Variant::UpdateModule() {
     const size_t num = (contents.size() + 3) / sizeof(uint32_t);
     spirv.resize(num);
     memcpy(spirv.data(), contents.data(), num * sizeof(uint32_t));
-  } else {
+  } else if (base_path.has_value()) {
     bool result =
         shader_util::ReadSpirvFromDisk(args_, *base_path + "/shaders/", template_->path_, &spirv);
     FX_CHECK(result) << "Read SPIR-V file failed!";
+  } else if (base_dir.has_value()) {
+#ifdef __Fuchsia__
+    zx::channel client, server;
+    zx::channel::create(0, &client, &server);
+    fuchsia_io::DirectoryOpenRequest request;
+    request.path("shaders");
+    request.flags(fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable);
+    request.options(fuchsia_io::Options{});
+    request.object(std::move(server));
+    auto _res = (*base_dir)->Open(std::move(request));
+    fidl::SyncClient<fuchsia_io::Directory> shader_base_dir(
+        fidl::ClientEnd<fuchsia_io::Directory>(std::move(client)));
+    const bool result =
+        shader_util::ReadSpirvFromDiskAtDir(args_, shader_base_dir, template_->path_, &spirv);
+    FX_CHECK(result) << "Read SPIR-V file from dir failed!";
+#else
+    FX_CHECK(false) << "Found base_dir but it is not on Fuchsia";
+#endif
+  } else {
+    FX_CHECK(false) << "Unreachable";
   }
   RecreateModuleFromSpirvAndNotifyListeners(spirv);
 }

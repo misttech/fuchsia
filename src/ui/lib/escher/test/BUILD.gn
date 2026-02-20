@@ -126,12 +126,14 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
         "flib/frame_unittest.cc",
         "flib/util.cc",
         "flib/util.h",
+        "fs/spirv_file_util_unittest.cc",
       ]
       deps += [
         "//sdk/lib/async:async-cpp",
         "//sdk/lib/async-default",
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/vfs/cpp",
         "//src/lib/testing/loop_fixture",
       ]
     }

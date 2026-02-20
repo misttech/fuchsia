@@ -8,14 +8,16 @@
 #include <lib/fit/function.h>
 
 #include <functional>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <string>
 #include <vector>
 
 #include "src/lib/fxl/memory/ref_counted.h"
 
 #ifdef __Fuchsia__
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/vfs/cpp/pseudo_dir.h>
 #endif
 
@@ -63,6 +65,13 @@ class HackFilesystem : public fxl::RefCountedThreadSafe<HackFilesystem> {
                                                                                    "escher"
 #endif
                                        ) = 0;
+#ifdef __Fuchsia__
+  // Load the specified files from the real filesystem, given a root directory handle.
+  virtual bool InitializeWithRealFilesInDir(const std::vector<HackFilePath>& paths,
+                                            fidl::ClientEnd<fuchsia_io::Directory> dir) {
+    return false;
+  }
+#endif
 
   // Notifies all watchers that their watched file has changed (it actually hasn't).
   void InvalidateFile(const HackFilePath& path);
@@ -75,6 +84,13 @@ class HackFilesystem : public fxl::RefCountedThreadSafe<HackFilesystem> {
   // root path that was provided. If the file system was not initialized, then the
   // optional return value will be null.
   const std::optional<std::string>& base_path() const { return base_path_; }
+
+#ifdef __Fuchsia__
+  virtual const std::optional<fidl::SyncClient<fuchsia_io::Directory>>& base_dir() const {
+    static std::optional<fidl::SyncClient<fuchsia_io::Directory>> empty;
+    return empty;
+  }
+#endif
 
  protected:
   HackFilesystem() = default;

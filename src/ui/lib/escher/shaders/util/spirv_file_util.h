@@ -9,6 +9,9 @@
 
 #include "src/ui/lib/escher/vk/shader_variant_args.h"
 
+#ifdef __Fuchsia__
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#endif
 namespace escher {
 namespace shader_util {
 
@@ -22,6 +25,11 @@ bool WriteSpirvToDisk(const std::vector<uint32_t>& spirv, const ShaderVariantArg
 // If so, the function returns true and the code is stored in the out_spirv parameter.
 bool ReadSpirvFromDisk(const ShaderVariantArgs& args, const std::string& base_path,
                        const std::string& shader_name, std::vector<uint32_t>* out_spirv);
+#ifdef __Fuchsia__
+bool ReadSpirvFromDiskAtDir(const ShaderVariantArgs& args,
+                            const fidl::SyncClient<fuchsia_io::Directory>& base_dir,
+                            const std::string& shader_name, std::vector<uint32_t>* out_spirv);
+#endif
 
 // Checks to see if there already exists a spirv file on disk and if the newly compiled spirv
 // is different from it. If a file already exists and the contents are the same, then the shader

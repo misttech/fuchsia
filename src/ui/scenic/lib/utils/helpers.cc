@@ -103,9 +103,18 @@ std::vector<zx_koid_t> ExtractKoids(const std::vector<zx::event>& events) {
 
 fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
     const std::string& debug_name_suffix) {
+  return CreateSysmemAllocatorSyncPtrWithSvc(nullptr, debug_name_suffix);
+}
+
+#define ALLOCATOR_PROTOCOL "fuchsia.sysmem2.Allocator"
+
+fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtrWithSvc(
+    sys::ServiceDirectory* svc, const std::string& debug_name_suffix) {
   FX_CHECK(!debug_name_suffix.empty());
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator;
-  zx_status_t status = fdio_service_connect("/svc/fuchsia.sysmem2.Allocator",
+  zx_status_t status =
+      svc != nullptr ? svc->Connect(ALLOCATOR_PROTOCOL, sysmem_allocator.NewRequest().TakeChannel())
+                     : fdio_service_connect("/svc/" ALLOCATOR_PROTOCOL,
                                             sysmem_allocator.NewRequest().TakeChannel().release());
   FX_DCHECK(status == ZX_OK);
   auto debug_name = fsl::GetCurrentProcessName() + " " + debug_name_suffix;

@@ -2,16 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fuchsia/io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/fdio/directory.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/scheduler/role.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/thread.h>
+#include <zircon/process.h>
+#include <zircon/processargs.h>
+#include <zircon/status.h>
 
 #include <memory>
 
@@ -23,8 +29,9 @@
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
-  if (!fxl::SetLogSettingsFromCommandLine(command_line, {"scenic"}))
+  if (!fxl::SetLogSettingsFromCommandLine(command_line, {"scenic"})) {
     return 1;
+  }
 
   trace::TraceProviderWithFdio trace_provider(loop.dispatcher());
   // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
@@ -43,8 +50,21 @@ int main(int argc, const char** argv) {
   fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
   auto display_coordinator_promise = display::GetCoordinator(std::move(provider));
 
+  zx::channel pkg_dir, pkg_server;
+  zx::channel::create(0, &pkg_dir, &pkg_server);
+  const zx_status_t pkg_status =
+      fdio_open3("/pkg", static_cast<uint64_t>(fuchsia::io::PERM_READABLE), pkg_server.release());
+  FX_CHECK(pkg_status == ZX_OK) << "Failed to open /pkg: " << zx_status_get_string(pkg_status);
+  const zx_handle_t directory_request_handle = zx_take_startup_handle(PA_DIRECTORY_REQUEST);
+  zx::channel out_dir{directory_request_handle};
+  const zx_handle_t config_handle = zx_take_startup_handle(PA_VMO_COMPONENT_CONFIG);
+  zx::vmo config{config_handle};
+
   // Instantiate Scenic app.
-  scenic_impl::App app(std::move(app_context), inspector.root().CreateChild("scenic"),
+  scenic_impl::App app(std::move(app_context),
+                       fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
+                       fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
+                       std::move(config), inspector.root().CreateChild("scenic"),
                        std::move(display_coordinator_promise), [&loop] { loop.Quit(); });
 
   // Apply the scheduler role defined for Scenic.
