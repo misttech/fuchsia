@@ -287,8 +287,8 @@ impl BootfsSvc {
                 }
             };
             if matches!(vmo.get_name(), Ok(s) if s == "") {
-                // No name was preset on this vmo, attribute it generally to bootfs.
-                vmo.set_name(&zx::Name::new_lossy(BOOTFS_VMO_NAME)).map_err(BootfsError::Vmo)?;
+                vmo.set_name(&zx::Name::new_lossy(&format!("{BOOTFS_VMO_NAME}:{}", entry.name)))
+                    .map_err(BootfsError::Vmo)?;
             }
 
             // TODO(https://fxbug.dev/353380758): this strategy of granting
@@ -491,7 +491,18 @@ mod tests {
             // (i.e. it does not have a parent VMO).
             let vmo = file.get_backing_memory(fio::VmoFlags::READ).await.unwrap().unwrap();
             assert_eq!(vmo.info().unwrap().parent_koid, zx::Koid::from_raw(0));
-            assert_eq!(vmo.info().unwrap().name, "bootfs");
+            assert_eq!(
+                vmo.info().unwrap().name.to_string(),
+                // VMO are reused between files with the same content which can causes a mismatch.
+                format!(
+                    "bootfs:{}",
+                    match entry.name.as_str() {
+                        "empty" => "dir/empty",
+                        "simple.txt" => "dir/simple-copy.txt",
+                        _ => &entry.name,
+                    }
+                )
+            );
         }
 
         // Confirm that the only committed bytes of the Bootfs VMO is up to the

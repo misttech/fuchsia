@@ -284,7 +284,7 @@ impl PartialEq for VmoSummary {
             && self.populated_total == other.populated_total
     }
 }
-const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 13] = [
+const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 14] = [
     ("ld\\.so\\.1-internal-heap|(^stack: msg of.*)", "[process-bootstrap]"),
     ("^blob-[0-9a-f]+$", "[blobs]"),
     ("^inactive-blob-[0-9a-f]+$", "[inactive blobs]"),
@@ -298,6 +298,7 @@ const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 13] = [
     ("^stack_and_tls:.*$", "[bionic-stack]"),
     ("^ext4!.*$", "[ext4]"),
     ("^dalvik-.*$", "[dalvik]"),
+    ("^bootfs(:.*)?$", "[bootfs]"),
 ];
 
 /// Returns the name of a VMO category when the name match on of the rules.

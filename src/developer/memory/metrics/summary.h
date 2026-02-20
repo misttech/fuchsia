@@ -93,7 +93,9 @@ class Summary {
       {.regex = "relro:.*", .name = "[relro]"},
       {.regex = "", .name = "[unnamed]"},
       {.regex = "scudo:.*", .name = "[scudo]"},
-      {.regex = ".*\\.so.*", .name = "[bootfs-libraries]"}};
+      {.regex = ".*\\.so.*", .name = "[bootfs-libraries]"},
+      {.regex = "bootfs(:.*)?", .name = "[bootfs]"},
+  };
 
   void SortProcessSummaries();
   zx_instant_boot_t time() const { return time_; }
