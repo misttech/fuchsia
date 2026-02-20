@@ -934,11 +934,16 @@ where
         &egress_device,
         &mut packet_metadata,
     ) {
-        filter::Verdict::Drop => {
+        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Accept(()) => {}
+        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
+            // TODO(https://fxbug.dev/466098884): Send reject packet.
+            packet_metadata.acknowledge_drop();
+            return Ok(());
+        }
+        filter::Verdict::Proceed(()) => {}
     }
 
     let Some(mut local_ip) = IpDeviceAddr::new(packet.src_addr()) else {
@@ -990,11 +995,16 @@ where
                 &egress_device,
                 &mut packet_metadata,
             ) {
-                filter::Verdict::Drop => {
+                filter::Verdict::Stop(filter::DropOrReject::Drop) => {
                     packet_metadata.acknowledge_drop();
                     return Ok(());
                 }
-                filter::Verdict::Accept(()) => {}
+                filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
+                    // TODO(https://fxbug.dev/466098884): Send reject packet.
+                    packet_metadata.acknowledge_drop();
+                    return Ok(());
+                }
+                filter::Verdict::Proceed(()) => {}
             }
         }
         InternalForwarding::NotUsed => {}

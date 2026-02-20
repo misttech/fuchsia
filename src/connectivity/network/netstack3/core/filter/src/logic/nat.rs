@@ -26,7 +26,7 @@ use crate::conntrack::{
     Tuple,
 };
 use crate::context::{FilterBindingsTypes, NatContext};
-use crate::logic::{IngressVerdict, Interfaces, RoutineResult, Verdict};
+use crate::logic::{DropPacket, Interfaces, RoutineResult, Verdict};
 use crate::packets::{
     FilterIpExt, FilterIpPacket, IcmpErrorMut, IpPacket, MaybeIcmpErrorMut as _,
     MaybeTransportPacketMut as _, TransportPacketMut as _,
@@ -144,7 +144,7 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
         core_ctx: &mut CC,
         device: &CC::DeviceId,
         addr: I::Addr,
-    ) -> Verdict
+    ) -> Verdict<DropPacket>
     where
         CC: NatContext<I, BT, WeakAddressId = A>,
         BT: FilterBindingsTypes,
@@ -154,7 +154,7 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
         // If the address ID is still valid, use the address for NAT.
         {
             if id.lock().as_ref().map(|id| id.is_assigned()).unwrap_or(false) {
-                return Verdict::Accept(());
+                return Verdict::Proceed(());
             }
         }
 
@@ -171,7 +171,7 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
         match IpDeviceAddr::new(addr).and_then(|addr| core_ctx.get_address_id(device, addr)) {
             Some(new) => {
                 *id.lock() = Some(new.downgrade());
-                Verdict::Accept(())
+                Verdict::Proceed(())
             }
             // If either the address we are using for NAT is not a valid `IpDeviceAddr` or
             // the address is no longer assigned to the device, drop the ID, both to avoid
@@ -179,7 +179,7 @@ impl<I: IpExt, A: WeakIpAddressId<I::Addr>> CachedAddr<I, A> {
             // backing memory to be deallocated.
             None => {
                 *id.lock() = None;
-                Verdict::Drop
+                Verdict::Stop(DropPacket)
             }
         }
     }
@@ -207,7 +207,7 @@ pub(crate) trait NatHook<I: FilterIpExt> {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -239,19 +239,6 @@ pub(crate) trait NatHook<I: FilterIpExt> {
     fn interface<DeviceId>(interfaces: Interfaces<'_, DeviceId>) -> &DeviceId;
 }
 
-pub(crate) trait FilterVerdict<R>: From<Verdict<R>> {
-    fn accept(&self) -> Option<&R>;
-}
-
-impl<R> FilterVerdict<R> for Verdict<R> {
-    fn accept(&self) -> Option<&R> {
-        match self {
-            Self::Accept(result) => Some(result),
-            Self::Drop => None,
-        }
-    }
-}
-
 #[derive(Derivative)]
 #[derivative(Debug(bound = "A: Debug"))]
 pub(crate) enum NatConfigurationResult<I: IpExt, A, BT: FilterBindingsTypes> {
@@ -272,7 +259,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -280,7 +267,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
-            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop),
+            RoutineResult::Drop => ControlFlow::Break(Verdict::Stop(DropPacket)),
             RoutineResult::Redirect { dst_port } => {
                 ControlFlow::Break(configure_redirect_nat::<Self, _, _, _, _>(
                     core_ctx,
@@ -334,15 +321,6 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
     }
 }
 
-impl<I: IpExt, R> FilterVerdict<R> for IngressVerdict<I, R> {
-    fn accept(&self) -> Option<&R> {
-        match self {
-            Self::Verdict(Verdict::Accept(result)) => Some(result),
-            Self::Verdict(Verdict::Drop) | Self::TransparentLocalDelivery { .. } => None,
-        }
-    }
-}
-
 pub(crate) enum LocalEgressHook {}
 
 impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
@@ -356,7 +334,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -364,7 +342,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
-            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop),
+            RoutineResult::Drop => ControlFlow::Break(Verdict::Stop(DropPacket)),
             result @ RoutineResult::TransparentLocalDelivery { .. } => {
                 unreachable!(
                     "transparent local delivery is only valid in INGRESS hook; got {result:?}"
@@ -422,7 +400,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
         _packet: &P,
         _interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: IpPacket<I>,
         CC: NatContext<I, BC>,
@@ -430,7 +408,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalIngressHook {
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
-            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop),
+            RoutineResult::Drop => ControlFlow::Break(Verdict::Stop(DropPacket)),
             result @ RoutineResult::Masquerade { .. } => {
                 unreachable!("Masquerade not supported in LOCAL_INGRESS; got {result:?}")
             }
@@ -480,7 +458,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
         packet: &P,
         interfaces: &Interfaces<'_, CC::DeviceId>,
         result: RoutineResult<I>,
-    ) -> ControlFlow<Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
+    ) -> ControlFlow<Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
         P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
@@ -488,7 +466,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
     {
         match result {
             RoutineResult::Accept | RoutineResult::Return => ControlFlow::Continue(()),
-            RoutineResult::Drop => ControlFlow::Break(Verdict::Drop),
+            RoutineResult::Drop => ControlFlow::Break(Verdict::Stop(DropPacket)),
             RoutineResult::Masquerade { src_port } => {
                 ControlFlow::Break(configure_masquerade_nat::<_, _, _, _>(
                     core_ctx,
@@ -613,7 +591,7 @@ pub(crate) fn perform_nat<N, I, P, CC, BC>(
     hook: &Hook<I, BC, ()>,
     packet: &mut P,
     interfaces: Interfaces<'_, CC::DeviceId>,
-) -> Verdict
+) -> Verdict<DropPacket>
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -622,7 +600,7 @@ where
     BC: FilterBindingsContext<CC::DeviceId>,
 {
     if !nat_installed {
-        return Verdict::Accept(());
+        return Verdict::Proceed(());
     }
 
     let nat_config = if let Some(nat) = conn.nat_config(N::NAT_TYPE, direction) {
@@ -642,7 +620,7 @@ where
                 // Handle this by just configuring the connection not to be NATed. It does not
                 // make sense to NAT a self-connected flow since the original and reply
                 // directions are indistinguishable.
-                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)), true)
+                (Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No)), true)
             }
             (Connection::Shared(_), _) => {
                 // In most scenarios, NAT should be configured for every connection before it is
@@ -652,7 +630,7 @@ where
                 // NAT rules have been installed, performing NAT is skipped entirely, which can
                 // result in some connections being finalized without NAT being configured for
                 // them. To handle this, just don't NAT the connection.
-                (Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)), false)
+                (Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No)), false)
             }
             (Connection::Exclusive(conn), ConnectionDirection::Original) => {
                 let verdict = configure_nat::<N, _, _, _, _>(
@@ -669,8 +647,8 @@ where
                 // locally-generated traffic do not clash with ports used by existing NATed
                 // connections (such as for forwarded masqueraded traffic).
                 let verdict = if matches!(
-                    verdict.accept(),
-                    Some(&NatConfigurationResult::Result(ShouldNat::No))
+                    verdict,
+                    Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No))
                 ) && N::NAT_TYPE == NatType::Source
                 {
                     configure_snat_port(
@@ -688,8 +666,8 @@ where
         };
 
         let result = match verdict {
-            Verdict::Accept(result) => result,
-            Verdict::Drop => return Verdict::Drop,
+            Verdict::Proceed(result) => result,
+            Verdict::Stop(reason) => return Verdict::Stop(reason),
         };
         let new_nat_config = match result {
             NatConfigurationResult::Result(config) => Some(config),
@@ -720,7 +698,7 @@ where
     };
 
     match nat_config {
-        ShouldNat::No => return Verdict::Accept(()),
+        ShouldNat::No => return Verdict::Proceed(()),
         // If we are NATing this connection, but are not using an IP address that is
         // dynamically assigned to an interface to do so, continue to rewrite the
         // packet.
@@ -738,8 +716,8 @@ where
                     N::interface(interfaces),
                     conn.relevant_reply_tuple_addr(N::NAT_TYPE),
                 ) {
-                    Verdict::Accept(()) => {}
-                    Verdict::Drop => return Verdict::Drop,
+                    Verdict::Proceed(()) => {}
+                    v @ Verdict::Stop(_) => return v,
                 }
             }
         }
@@ -761,7 +739,7 @@ fn configure_nat<N, I, P, CC, BC>(
     hook: &Hook<I, BC, ()>,
     packet: &P,
     interfaces: Interfaces<'_, CC::DeviceId>,
-) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
+) -> Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -778,7 +756,7 @@ where
             ControlFlow::Continue(()) => {}
         }
     }
-    Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No))
+    Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No))
 }
 
 /// Configure Redirect NAT, a special case of DNAT that redirects the packet to
@@ -791,7 +769,7 @@ fn configure_redirect_nat<N, I, P, CC, BC>(
     packet: &P,
     interfaces: &Interfaces<'_, CC::DeviceId>,
     dst_port_range: Option<RangeInclusive<NonZeroU16>>,
-) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
+) -> Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     N: NatHook<I>,
     I: FilterIpExt,
@@ -811,12 +789,12 @@ where
     // If we are in INGRESS, use the primary address of the incoming interface; if
     // we are in LOCAL_EGRESS, use the loopback address.
     let Some((addr, cached_addr)) = N::redirect_addr(core_ctx, packet, interfaces.ingress) else {
-        return Verdict::Drop;
+        return Verdict::Stop(DropPacket);
     };
     conn.rewrite_reply_src_addr(addr);
 
     let Some(range) = dst_port_range else {
-        return Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr)));
+        return Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr)));
     };
     match rewrite_reply_tuple_port(
         bindings_ctx,
@@ -829,14 +807,14 @@ where
     ) {
         // We are already NATing the address, so even if NATing the port is unnecessary,
         // the connection as a whole still needs to be NATed.
-        Verdict::Accept(
+        Verdict::Proceed(
             NatConfigurationResult::Result(ShouldNat::Yes(_))
             | NatConfigurationResult::Result(ShouldNat::No),
-        ) => Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr))),
-        Verdict::Accept(NatConfigurationResult::AdoptExisting(_)) => {
+        ) => Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(cached_addr))),
+        Verdict::Proceed(NatConfigurationResult::AdoptExisting(_)) => {
             unreachable!("cannot adopt existing connection")
         }
-        Verdict::Drop => Verdict::Drop,
+        Verdict::Stop(DropPacket) => Verdict::Stop(DropPacket),
     }
 }
 
@@ -851,7 +829,7 @@ fn configure_masquerade_nat<I, P, CC, BC>(
     packet: &P,
     interfaces: &Interfaces<'_, CC::DeviceId>,
     src_port_range: Option<RangeInclusive<NonZeroU16>>,
-) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
+) -> Verdict<DropPacket, NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     I: FilterIpExt,
     P: FilterIpPacket<I>,
@@ -872,7 +850,7 @@ where
             "cannot masquerade because there is no address assigned to the outgoing interface \
             {interface:?}; dropping packet",
         );
-        return Verdict::Drop;
+        return Verdict::Stop(DropPacket);
     };
     conn.rewrite_reply_dst_addr(addr.addr().addr());
 
@@ -887,16 +865,16 @@ where
     ) {
         // We are already NATing the address, so even if NATing the port is unnecessary,
         // the connection as a whole still needs to be NATed.
-        Verdict::Accept(
+        Verdict::Proceed(
             NatConfigurationResult::Result(ShouldNat::Yes(_))
             | NatConfigurationResult::Result(ShouldNat::No),
-        ) => Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(Some(
+        ) => Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(Some(
             CachedAddr::new(addr.downgrade()),
         )))),
-        Verdict::Accept(NatConfigurationResult::AdoptExisting(_)) => {
+        Verdict::Proceed(NatConfigurationResult::AdoptExisting(_)) => {
             unreachable!("cannot adopt existing connection")
         }
-        Verdict::Drop => Verdict::Drop,
+        Verdict::Stop(DropPacket) => Verdict::Stop(DropPacket),
     }
 }
 
@@ -906,7 +884,7 @@ fn configure_snat_port<I, A, BC, D>(
     conn: &mut ConnectionExclusive<I, NatConfig<I, A>, BC>,
     src_port_range: Option<RangeInclusive<NonZeroU16>>,
     conflict_strategy: ConflictStrategy,
-) -> Verdict<NatConfigurationResult<I, A, BC>>
+) -> Verdict<DropPacket, NatConfigurationResult<I, A, BC>>
 where
     I: IpExt,
     BC: FilterBindingsContext<D>,
@@ -923,7 +901,7 @@ where
         let Some(range) =
             similar_port_or_id_range(reply_tuple.protocol, reply_tuple.dst_port_or_id)
         else {
-            return Verdict::Drop;
+            return Verdict::Stop(DropPacket);
         };
         (range, false)
     };
@@ -987,7 +965,7 @@ fn rewrite_reply_tuple_port<I, A, BC, D>(
     port_range: RangeInclusive<NonZeroU16>,
     ensure_port_in_range: bool,
     conflict_strategy: ConflictStrategy,
-) -> Verdict<NatConfigurationResult<I, A, BC>>
+) -> Verdict<DropPacket, NatConfigurationResult<I, A, BC>>
 where
     I: IpExt,
     A: PartialEq,
@@ -1004,14 +982,14 @@ where
         || NonZeroU16::new(current_port).map(|port| port_range.contains(&port)).unwrap_or(false);
     if already_in_range {
         match table.get_shared_connection(conn.reply_tuple()) {
-            None => return Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No)),
+            None => return Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No)),
             Some(conflict) => match conflict_strategy {
                 ConflictStrategy::AdoptExisting => {
                     // If this connection is identical to the conflicting one that's already in the
                     // table, including both its original and reply tuple and its NAT configuration,
                     // simply adopt the existing one rather than attempting port remapping.
                     if conflict.compatible_with(&*conn) {
-                        return Verdict::Accept(NatConfigurationResult::AdoptExisting(
+                        return Verdict::Proceed(NatConfigurationResult::AdoptExisting(
                             Connection::Shared(conflict),
                         ));
                     }
@@ -1043,70 +1021,74 @@ where
             ReplyTuplePort::Destination => conn.rewrite_reply_dst_port_or_id(new_port.get()),
         };
         if !table.contains_tuple(conn.reply_tuple()) {
-            return Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(None)));
+            return Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(None)));
         }
     }
 
-    Verdict::Drop
+    Verdict::Stop(DropPacket)
 }
 
 fn rewrite_packet_for_dst_nat<I, P>(
     packet: &mut P,
     new_dst_addr: I::Addr,
     new_dst_port: u16,
-) -> Verdict
+) -> Verdict<DropPacket>
 where
     I: FilterIpExt,
     P: IpPacket<I>,
 {
     packet.set_dst_addr(new_dst_addr);
     let Some(proto) = packet.protocol() else {
-        return Verdict::Accept(());
+        return Verdict::Proceed(());
     };
     let mut transport = packet.transport_packet_mut();
     let Some(mut transport) = transport.transport_packet_mut() else {
-        return Verdict::Accept(());
+        return Verdict::Proceed(());
     };
     let Some(new_dst_port) = NonZeroU16::new(new_dst_port) else {
         // TODO(https://fxbug.dev/341128580): allow rewriting port to zero if
         // allowed by the transport-layer protocol.
         error!("cannot rewrite dst port to unspecified; dropping {proto} packet");
-        return Verdict::Drop;
+        return Verdict::Stop(DropPacket);
     };
     transport.set_dst_port(new_dst_port);
 
-    Verdict::Accept(())
+    Verdict::Proceed(())
 }
 
 fn rewrite_packet_for_src_nat<I, P>(
     packet: &mut P,
     new_src_addr: I::Addr,
     new_src_port: u16,
-) -> Verdict
+) -> Verdict<DropPacket>
 where
     I: FilterIpExt,
     P: IpPacket<I>,
 {
     packet.set_src_addr(new_src_addr);
     let Some(proto) = packet.protocol() else {
-        return Verdict::Accept(());
+        return Verdict::Proceed(());
     };
     let mut transport = packet.transport_packet_mut();
     let Some(mut transport) = transport.transport_packet_mut() else {
-        return Verdict::Accept(());
+        return Verdict::Proceed(());
     };
     let Some(new_src_port) = NonZeroU16::new(new_src_port) else {
         // TODO(https://fxbug.dev/341128580): allow rewriting port to zero if
         // allowed by the transport-layer protocol.
         error!("cannot rewrite src port to unspecified; dropping {proto} packet");
-        return Verdict::Drop;
+        return Verdict::Stop(DropPacket);
     };
     transport.set_src_port(new_src_port);
 
-    Verdict::Accept(())
+    Verdict::Proceed(())
 }
 
-fn rewrite_icmp_error_payload<I, E>(icmp_error: &mut E, nat: NatType, tuple: &Tuple<I>) -> Verdict
+fn rewrite_icmp_error_payload<I, E>(
+    icmp_error: &mut E,
+    nat: NatType,
+    tuple: &Tuple<I>,
+) -> Verdict<DropPacket>
 where
     I: FilterIpExt,
     E: IcmpErrorMut<I>,
@@ -1198,8 +1180,8 @@ where
             };
 
             match verdict {
-                Verdict::Accept(_) => true,
-                Verdict::Drop => return Verdict::Drop,
+                Verdict::Proceed(()) => true,
+                Verdict::Stop(DropPacket) => return Verdict::Stop(DropPacket),
             }
         }
         None => false,
@@ -1212,11 +1194,11 @@ where
         // larger than a u32, which is not possible for NS3 (nor most networks)
         // to handle.
         if !icmp_error.recalculate_checksum() {
-            return Verdict::Drop;
+            return Verdict::Stop(DropPacket);
         }
     }
 
-    Verdict::Accept(())
+    Verdict::Proceed(())
 }
 
 /// Perform NAT on a packet, using its connection in the conntrack table as a
@@ -1226,7 +1208,7 @@ fn rewrite_packet<I, P, A, BT>(
     direction: ConnectionDirection,
     nat: NatType,
     packet: &mut P,
-) -> Verdict
+) -> Verdict<DropPacket>
 where
     I: FilterIpExt,
     P: IpPacket<I>,
@@ -1246,8 +1228,8 @@ where
 
     if let Some(mut icmp_error) = packet.icmp_error_mut().icmp_error_mut() {
         match rewrite_icmp_error_payload(&mut icmp_error, nat, tuple) {
-            Verdict::Accept(_) => (),
-            Verdict::Drop => return Verdict::Drop,
+            Verdict::Proceed(()) => (),
+            Verdict::Stop(DropPacket) => return Verdict::Stop(DropPacket),
         }
     }
 
@@ -1356,7 +1338,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No))
         );
     }
 
@@ -1383,7 +1365,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No))
         );
     }
 
@@ -1414,7 +1396,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::No))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::No))
         );
 
         // The first installed routine should terminate at its `Accept` result, but the
@@ -1440,7 +1422,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Drop
+            Verdict::Stop(DropPacket)
         );
     }
 
@@ -1479,7 +1461,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Drop
+            Verdict::Stop(DropPacket)
         );
     }
 
@@ -1518,7 +1500,7 @@ mod tests {
                 &packet,
                 Interfaces { ingress: None, egress: None },
             ),
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(None)))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(None)))
         );
     }
 
@@ -1562,7 +1544,7 @@ mod tests {
                     egress: Some(&FakeMatcherDeviceId::ethernet_interface())
                 },
             ),
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(Some(_))))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(Some(_))))
         );
     }
 
@@ -1596,7 +1578,7 @@ mod tests {
                     egress: None
                 },
             ),
-            Verdict::Drop
+            Verdict::Stop(DropPacket)
         );
     }
 
@@ -1630,7 +1612,7 @@ mod tests {
                     egress: Some(&FakeMatcherDeviceId::ethernet_interface())
                 },
             ),
-            Verdict::Drop
+            Verdict::Stop(DropPacket)
         );
     }
 
@@ -1708,7 +1690,7 @@ mod tests {
                 &FakeMatcherDeviceId::ethernet_interface(),
             ),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let verdict = perform_nat::<EgressHook, _, _, _, _>(
             &mut core_ctx,
@@ -1728,7 +1710,7 @@ mod tests {
             &mut packet,
             <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         assert_eq!(conn.external_data().destination.get(), Some(&ShouldNat::No));
         assert_eq!(conn.external_data().source.get(), Some(&ShouldNat::No));
@@ -1760,7 +1742,7 @@ mod tests {
                 &FakeMatcherDeviceId::ethernet_interface(),
             ),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(conn.external_data().destination.get(), None);
         assert_eq!(conn.external_data().source.get(), None);
 
@@ -1776,7 +1758,7 @@ mod tests {
             &mut packet,
             <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(conn.external_data().destination.get(), None);
         assert_eq!(conn.external_data().source.get(), None);
 
@@ -1803,7 +1785,7 @@ mod tests {
             &mut reply,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(conn.external_data().destination.get(), None);
         assert_eq!(conn.external_data().source.get(), Some(&ShouldNat::No));
 
@@ -1819,7 +1801,7 @@ mod tests {
             &mut reply,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(conn.external_data().destination.get(), Some(&ShouldNat::No));
         assert_eq!(conn.external_data().source.get(), Some(&ShouldNat::No));
     }
@@ -1886,7 +1868,7 @@ mod tests {
             &mut packet,
             Original::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's destination should be rewritten, and DNAT should be configured
         // for the packet; the reply tuple's source should be rewritten to match the new
@@ -1941,7 +1923,7 @@ mod tests {
             &mut reply_packet,
             Reply::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(reply_packet, pre_nat_packet.reply());
     }
 
@@ -1984,7 +1966,7 @@ mod tests {
             &mut packet,
             Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's source address should be rewritten, and SNAT should be
         // configured for the packet; the reply tuple's destination should be rewritten
@@ -2033,7 +2015,7 @@ mod tests {
             &mut reply_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         assert_eq!(reply_packet, pre_nat_packet.reply());
     }
 
@@ -2090,7 +2072,7 @@ mod tests {
         // table.
         assert_matches!(
             verdict,
-            Verdict::Accept(NatConfigurationResult::Result(ShouldNat::Yes(Some(_))))
+            Verdict::Proceed(NatConfigurationResult::Result(ShouldNat::Yes(Some(_))))
         );
         let reply_tuple = conn.reply_tuple();
         assert_eq!(reply_tuple.dst_addr, I::SRC_IP_2);
@@ -2139,7 +2121,7 @@ mod tests {
             &mut packet,
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // A weakly-held reference to the address assigned to the interface should be
         // cached in the NAT config.
@@ -2170,7 +2152,7 @@ mod tests {
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Drop);
+        assert_eq!(verdict, Verdict::Stop(DropPacket));
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
         let nat = nat.get().unwrap_or_else(|| panic!("{:?} NAT should be configured", N::NAT_TYPE));
         let id = assert_matches!(nat, ShouldNat::Yes(Some(CachedAddr { id, _marker })) => id);
@@ -2196,7 +2178,7 @@ mod tests {
             &mut FakeIpPacket::<_, FakeUdpPacket>::arbitrary_value(),
             N::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
         let (nat, _nat_type) = conn.relevant_config(N::NAT_TYPE, ConnectionDirection::Original);
         let nat = nat.get().unwrap_or_else(|| panic!("{:?} NAT should be configured", N::NAT_TYPE));
         let id = assert_matches!(nat, ShouldNat::Yes(Some(CachedAddr { id, _marker })) => id);
@@ -2231,7 +2213,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Accept(NatConfigurationResult::Result(
+            Verdict::Proceed(NatConfigurationResult::Result(
                 ShouldNat::<_, FakeWeakAddressId<Ipv4>>::No
             ))
         );
@@ -2262,7 +2244,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Accept(NatConfigurationResult::Result(
+            Verdict::Proceed(NatConfigurationResult::Result(
                 ShouldNat::<_, FakeWeakAddressId<Ipv4>>::No
             ))
         );
@@ -2291,7 +2273,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Accept(NatConfigurationResult::Result(
+            Verdict::Proceed(NatConfigurationResult::Result(
                 ShouldNat::<_, FakeWeakAddressId<Ipv4>>::Yes(None)
             ))
         );
@@ -2331,7 +2313,7 @@ mod tests {
             true, /* ensure_port_in_range */
             ConflictStrategy::RewritePort,
         );
-        assert_eq!(result, Verdict::Drop);
+        assert_eq!(result, Verdict::Stop(DropPacket));
     }
 
     #[test_case(ReplyTuplePort::Source)]
@@ -2378,7 +2360,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Verdict::Accept(NatConfigurationResult::Result(
+            Verdict::Proceed(NatConfigurationResult::Result(
                 ShouldNat::<_, FakeWeakAddressId<Ipv4>>::Yes(None)
             ))
         );
@@ -2420,7 +2402,7 @@ mod tests {
         );
         let conn = assert_matches!(
             result,
-            Verdict::Accept(NatConfigurationResult::AdoptExisting(Connection::Shared(conn))) => conn
+            Verdict::Proceed(NatConfigurationResult::AdoptExisting(Connection::Shared(conn))) => conn
         );
         assert!(Arc::ptr_eq(&existing, &conn));
     }
@@ -2522,7 +2504,7 @@ mod tests {
             &mut packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's destination should be rewritten and DNAT should be
         // configured for the packet; the reply tuple's source should be
@@ -2591,7 +2573,7 @@ mod tests {
             &mut error_packet,
             <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let error_packet_expected = IE::make_serializer(
             // We expect this address to be rewritten since `redirect_addr`
@@ -2673,7 +2655,7 @@ mod tests {
             &mut packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's destination should be rewritten, and DNAT should be configured
         // for the packet; the reply tuple's source should be rewritten to match the new
@@ -2744,7 +2726,7 @@ mod tests {
             &mut reply_packet,
             <EgressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let reply_packet_expected = EmptyBuf
             .wrap_in(UdpPacketBuilder::new(
@@ -2791,7 +2773,7 @@ mod tests {
             &mut error_packet,
             <IngressHook as NatHookExt<I>>::interfaces(&FakeMatcherDeviceId::ethernet_interface()),
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let error_packet_expected = IE::make_serializer(
             // Unlike in the reply case, we shouldn't expect this address to be
@@ -2898,7 +2880,7 @@ mod tests {
             &mut packet,
             Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's source address should be rewritten, and SNAT should be
         // configured for the packet; the reply tuple's destination should be rewritten
@@ -2955,7 +2937,7 @@ mod tests {
             &mut error_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let error_packet_expected = IE::make_serializer(
             // We expect this address to be rewritten since `redirect_addr`
@@ -3034,7 +3016,7 @@ mod tests {
             &mut packet,
             Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         // The packet's source address should be rewritten, and SNAT should be
         // configured for the packet; the reply tuple's destination should be rewritten
@@ -3095,7 +3077,7 @@ mod tests {
             &mut reply_packet,
             Interfaces { ingress: Some(&FakeMatcherDeviceId::ethernet_interface()), egress: None },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let reply_packet_expected = EmptyBuf
             .wrap_in(UdpPacketBuilder::new(
@@ -3140,7 +3122,7 @@ mod tests {
             &mut error_packet,
             Interfaces { ingress: None, egress: Some(&FakeMatcherDeviceId::ethernet_interface()) },
         );
-        assert_eq!(verdict, Verdict::Accept(()));
+        assert_eq!(verdict, Verdict::Proceed(()));
 
         let error_packet_expected =
             I::PacketBuilder::new(I::NETSTACK, I::ULTIMATE_DST, u8::MAX, IE::proto()).wrap_body(

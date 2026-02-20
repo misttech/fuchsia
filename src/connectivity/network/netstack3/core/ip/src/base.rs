@@ -39,8 +39,8 @@ use netstack3_base::{
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
-    FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IngressVerdict, IpPacket,
-    MarkAction, MaybeTransportPacket as _, TransportPacketSerializer, Tuple, WeakConnectionError,
+    FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IpPacket, MarkAction,
+    MaybeTransportPacket as _, TransportPacketSerializer, Tuple, WeakConnectionError,
     WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
@@ -2610,11 +2610,16 @@ fn dispatch_receive_ipv4_packet<
         device,
         &mut packet_metadata,
     ) {
-        filter::Verdict::Drop => {
+        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Accept(()) => {}
+        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
+            // TODO(https://fxbug.dev/466098884): Send reject packet.
+            packet_metadata.acknowledge_drop();
+            return Ok(());
+        }
+        filter::Verdict::Proceed(()) => {}
     }
     let marks = packet_metadata.marks;
     packet_metadata.acknowledge_drop();
@@ -2745,11 +2750,16 @@ fn dispatch_receive_ipv6_packet<
         device,
         &mut packet_metadata,
     ) {
-        filter::Verdict::Drop => {
+        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Accept(()) => {}
+        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
+            // TODO(https://fxbug.dev/466098884): Send reject packet.
+            packet_metadata.acknowledge_drop();
+            return Ok(());
+        }
+        filter::Verdict::Proceed(()) => {}
     }
 
     // These invariants are validated by the caller of this function, but it's
@@ -3102,12 +3112,21 @@ where
         outbound_device,
         &mut packet_meta,
     ) {
-        filter::Verdict::Drop => {
+        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
             packet_meta.acknowledge_drop();
             trace!("determine_ip_packet_forwarding_action: filter verdict: Drop");
             return ForwardingAction::SilentlyDrop;
         }
-        filter::Verdict::Accept(()) => {}
+        filter::Verdict::Stop(filter::DropOrReject::Reject(reject_type)) => {
+            // TODO(https://fxbug.dev/466098884): Send reject packet.
+            packet_meta.acknowledge_drop();
+            trace!(
+                "determine_ip_packet_forwarding_action: filter verdict: Reject({:?})",
+                reject_type
+            );
+            return ForwardingAction::SilentlyDrop;
+        }
+        filter::Verdict::Proceed(()) => {}
     }
 
     packet.set_ttl(ttl - 1);
@@ -3147,11 +3166,11 @@ where
         &mut packet_metadata,
     );
     match verdict {
-        filter::Verdict::Drop => {
+        filter::Verdict::Stop(filter::DropPacket) => {
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Accept(()) => {}
+        filter::Verdict::Proceed(()) => {}
     }
 
     // If the packet is leaving through the loopback device, attempt to extract a
@@ -3597,12 +3616,15 @@ pub fn receive_ipv4_packet<
     );
     let mut filter = core_ctx.filter_handler();
     match filter.ingress_hook(bindings_ctx, &mut packet, device, &mut packet_metadata) {
-        IngressVerdict::Verdict(filter::Verdict::Accept(())) => {}
-        IngressVerdict::Verdict(filter::Verdict::Drop) => {
+        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Stop(filter::IngressStopReason::Drop) => {
             packet_metadata.acknowledge_drop();
             return;
         }
-        IngressVerdict::TransparentLocalDelivery { addr, port } => {
+        filter::Verdict::Stop(filter::IngressStopReason::TransparentLocalDelivery {
+            addr,
+            port,
+        }) => {
             // Drop the filter handler since it holds a mutable borrow of `core_ctx`, which
             // we need to provide to the packet dispatch function.
             drop(filter);
@@ -3716,11 +3738,16 @@ pub fn receive_ipv4_packet<
                         &outbound_device,
                         &mut packet_metadata,
                     ) {
-                        filter::Verdict::Drop => {
+                        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
                             packet_metadata.acknowledge_drop();
                             return;
                         }
-                        filter::Verdict::Accept(()) => {}
+                        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
+                            // TODO(https://fxbug.dev/466098884): Send reject packet.
+                            packet_metadata.acknowledge_drop();
+                            return;
+                        }
+                        filter::Verdict::Proceed(()) => {}
                     }
                 }
                 InternalForwarding::NotUsed => {}
@@ -3994,12 +4021,15 @@ pub fn receive_ipv6_packet<
     let mut filter = core_ctx.filter_handler();
 
     match filter.ingress_hook(bindings_ctx, &mut packet, device, &mut packet_metadata) {
-        IngressVerdict::Verdict(filter::Verdict::Accept(())) => {}
-        IngressVerdict::Verdict(filter::Verdict::Drop) => {
+        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Stop(filter::IngressStopReason::Drop) => {
             packet_metadata.acknowledge_drop();
             return;
         }
-        IngressVerdict::TransparentLocalDelivery { addr, port } => {
+        filter::Verdict::Stop(filter::IngressStopReason::TransparentLocalDelivery {
+            addr,
+            port,
+        }) => {
             // Drop the filter handler since it holds a mutable borrow of `core_ctx`, which
             // we need to provide to the packet dispatch function.
             drop(filter);
@@ -4128,11 +4158,18 @@ pub fn receive_ipv6_packet<
                                 &outbound_device,
                                 &mut packet_metadata,
                             ) {
-                                filter::Verdict::Drop => {
+                                filter::Verdict::Stop(filter::DropOrReject::Drop) => {
                                     packet_metadata.acknowledge_drop();
                                     return;
                                 }
-                                filter::Verdict::Accept(()) => {}
+                                filter::Verdict::Stop(filter::DropOrReject::Reject(
+                                    _reject_type,
+                                )) => {
+                                    // TODO(https://fxbug.dev/466098884): Send reject packet.
+                                    packet_metadata.acknowledge_drop();
+                                    return;
+                                }
+                                filter::Verdict::Proceed(()) => {}
                             }
                         }
                         InternalForwarding::NotUsed => {}

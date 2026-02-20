@@ -41,8 +41,8 @@ pub use context::{
     SocketOpsFilterBindingContext,
 };
 pub use logic::{
-    FilterHandler, FilterImpl, FilterTimerId, IngressVerdict, Interfaces, ProofOfEgressCheck,
-    Verdict,
+    DropOrReject, DropPacket, FilterHandler, FilterImpl, FilterTimerId, IngressStopReason,
+    IngressVerdict, Interfaces, ProofOfEgressCheck, Verdict,
 };
 pub use matchers::{BindingsPacketMatcher, PacketMatcher, TransportProtocolMatcher};
 pub use packets::{
