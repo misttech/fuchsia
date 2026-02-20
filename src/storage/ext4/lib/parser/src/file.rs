@@ -216,6 +216,12 @@ impl File for ExtFile {
     }
 
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
+        if let Some(ref processor) = self.processor {
+            processor.sync().map_err(|e| {
+                log::warn!("Error syncing: {:?}", e);
+                Status::INTERNAL
+            })?;
+        }
         Ok(())
     }
 }

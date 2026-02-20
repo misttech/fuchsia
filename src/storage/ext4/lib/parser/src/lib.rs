@@ -121,7 +121,7 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
-    use zx::{Status, Vmo};
+    use zx::{HandleBased, Status, Vmo};
     use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
@@ -410,6 +410,89 @@ mod tests {
             .expect("failed FIDL file close")
             .map_err(zx::Status::from_raw)
             .expect("failed to close file");
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
+    }
+
+    #[fuchsia::test]
+    async fn test_file_sync() {
+        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+
+        // Clone VMO to observe underlying changes made by the server.
+        let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("failed to clone vmo");
+
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end, block_server_end) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+        });
+
+        // Write to the allocated extent of this file.
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end),
+            /* read_only= */ false,
+        )
+        .expect("failed to parse the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open file");
+
+        let mut old_vmo_contents = vec![0u8; data.len()];
+        vmo_clone.read(&mut old_vmo_contents, 0).expect("failed to read from vmo clone");
+
+        let new_contents = "new cached contents!";
+        file.seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("failed FIDL seek")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to seek file");
+        write(&file, new_contents).await.expect("failed to write to file");
+
+        let mut vmo_contents_after_write = vec![0u8; data.len()];
+        vmo_clone.read(&mut vmo_contents_after_write, 0).expect("failed to read from vmo clone");
+
+        // The write is stored in the device cache but has not yet been been flushed to the
+        // underlying VMO.
+        assert_eq!(
+            old_vmo_contents, vmo_contents_after_write,
+            "Data should be cached and not yet flushed to VmoBackedServer"
+        );
+
+        // Closing the file will call sync to flush the contents to the backing VMO.
+        file.close()
+            .await
+            .expect("sync check failed")
+            .map_err(zx::Status::from_raw)
+            .expect("sync error");
+
+        let mut vmo_contents_after_sync = vec![0u8; data.len()];
+        vmo_clone.read(&mut vmo_contents_after_sync, 0).expect("failed to read from vmo clone");
+
+        // Data should now be flushed to underlying VMO.
+        assert_ne!(
+            old_vmo_contents, vmo_contents_after_sync,
+            "Data should be flushed to VmoBackedServer after sync"
+        );
+
         root.close()
             .await
             .expect("failed FIDL dir close")

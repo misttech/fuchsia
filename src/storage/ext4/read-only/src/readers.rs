@@ -20,6 +20,8 @@ pub enum ReaderError {
     Write(u64),
     #[error("{} not supported", _0)]
     NotSupported(String),
+    #[error("Write flush error")]
+    WriteFlush,
 }
 
 pub trait Reader: Send + Sync {
@@ -46,6 +48,9 @@ pub trait ReaderWriter: Reader {
     fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
         Err(ReaderError::NotSupported("Write".to_string()))
     }
+    fn sync(&self) -> Result<(), ReaderError> {
+        Ok(())
+    }
 }
 
 impl Reader for Box<dyn ReaderWriter> {
@@ -58,6 +63,9 @@ impl ReaderWriter for Box<dyn ReaderWriter> {
     fn write(&self, offset: u64, data: &[u8]) -> Result<(), ReaderError> {
         self.as_ref().write(offset, data)
     }
+    fn sync(&self) -> Result<(), ReaderError> {
+        self.as_ref().sync()
+    }
 }
 
 impl Reader for Arc<dyn ReaderWriter> {
@@ -69,6 +77,9 @@ impl Reader for Arc<dyn ReaderWriter> {
 impl ReaderWriter for Arc<dyn ReaderWriter> {
     fn write(&self, offset: u64, data: &[u8]) -> Result<(), ReaderError> {
         self.as_ref().write(offset, data)
+    }
+    fn sync(&self) -> Result<(), ReaderError> {
+        self.as_ref().sync()
     }
 }
 
@@ -137,6 +148,7 @@ mod fuchsia {
     use fidl_fuchsia_storage_block::BlockMarker;
     use fuchsia_sync::Mutex;
     use log::error;
+    use std::io::Write as _;
     use std::sync::Arc;
 
     pub struct VmoReader {
@@ -186,6 +198,13 @@ mod fuchsia {
             self.block_cache.lock().write_at(data, offset).map_err(|e| {
                 error!("Encountered error while writing block device: {}", e);
                 ReaderError::Write(offset)
+            })
+        }
+
+        fn sync(&self) -> Result<(), ReaderError> {
+            self.block_cache.lock().flush().map_err(|e| {
+                error!("Encountered error while flushing block cache: {}", e);
+                ReaderError::WriteFlush
             })
         }
     }

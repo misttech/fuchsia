@@ -555,6 +555,9 @@ pub enum ParsingError {
 
     #[error("{} not supported", _0)]
     NotSupported(String),
+
+    #[error("Writer failed to flush")]
+    WriterFlushError,
 }
 
 impl From<ReaderError> for ParsingError {
@@ -566,6 +569,7 @@ impl From<ReaderError> for ParsingError {
             }
             ReaderError::Write(addr) => ParsingError::WriterError(addr),
             ReaderError::NotSupported(msg) => ParsingError::NotSupported(msg),
+            ReaderError::WriteFlush => ParsingError::WriterFlushError,
         }
     }
 }

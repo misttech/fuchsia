@@ -163,6 +163,11 @@ impl Ext4Processor {
         }
         Ok(())
     }
+
+    pub fn sync(&self) -> Result<(), ParsingError> {
+        self.reader_writer.sync()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
