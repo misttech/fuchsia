@@ -907,18 +907,6 @@ alias(
 )
 
 alias(
-    name = "fs_extra-1.2.0",
-    actual = "//third_party/rust_crates/vendor/fs_extra-1.2.0:fs_extra",
-    tags = ["manual"],
-)
-
-alias(
-    name = "fs_extra",
-    actual = "//third_party/rust_crates/vendor/fs_extra-1.2.0:fs_extra",
-    tags = ["manual"],
-)
-
-alias(
     name = "futures-0.3.31",
     actual = "//third_party/rust_crates/vendor/futures-0.3.31:futures",
     tags = ["manual"],

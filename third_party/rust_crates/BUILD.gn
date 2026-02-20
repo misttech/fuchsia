@@ -364,12 +364,6 @@ group("fragile") {
 }
 
 if (!(current_os == "fuchsia")) {
-  group("fs_extra") {
-    public_deps = [ ":fs_extra-v1_2_0" ]
-  }
-}
-
-if (!(current_os == "fuchsia")) {
   group("fuse3") {
     public_deps = [ ":fuse3-v0_6_1" ]
   }
@@ -7092,35 +7086,6 @@ rustc_library("fragile-v2_0_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":fragile-v2_0_1.license" ]
-}
-
-license("fs_extra-v1_2_0.license") {
-  public_package_name = "fs_extra"
-  license_files = [ "//third_party/rust_crates/vendor/fs_extra-1.2.0/LICENSE" ]
-}
-
-rustc_library("fs_extra-v1_2_0") {
-  crate_name = "fs_extra"
-  source_root = "//third_party/rust_crates/vendor/fs_extra-1.2.0/src/lib.rs"
-  output_name = "fs_extra-ea7c546e9eec1d22"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=ea7c546e9eec1d22",
-    "-Cextra-filename=-ea7c546e9eec1d22",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":fs_extra-v1_2_0.license" ]
 }
 
 license("fsevent-sys-v4_1_0.license") {
