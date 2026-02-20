@@ -14,3 +14,12 @@ other observers of the same underlying clock, a property guaranteed by Zircon.
 
 As a tradeoff, a memory mapped clock may offer a restricted set of methods,
 and has more complex construction and lifecycle as compared to [zx::Clock].
+
+## Benchmarks
+
+When making changes, ensure that you verify the performance with the benchmarks.
+
+See [benchmarks README.md][br] for details.
+
+[br]: benchmarks/README.md
+
