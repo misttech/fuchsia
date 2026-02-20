@@ -6,7 +6,7 @@ use crate::graph::{NodeGraph, NodeId, Path, PathId};
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::Inspector;
+use fuchsia_inspect::{Inspector, Property, UintProperty};
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info, warn};
 use std::cell::{Cell, RefCell};
@@ -30,7 +30,10 @@ struct Child {
     #[allow(unused)]
     controller: NodeControllerProxy,
     device: icc::DeviceProxy,
+    #[allow(unused)]
     inspect: fuchsia_inspect::Node,
+    average_bandwidth_bps: UintProperty,
+    peak_bandwidth_bps: UintProperty,
     sync_state: Rc<Cell<bool>>,
 }
 
@@ -45,13 +48,13 @@ impl Child {
         let peak_bandwidth_bps = peak_bandwidth_bps.ok_or(Status::INVALID_ARGS)?;
         let tag = tag.or(self.tag);
 
+        self.average_bandwidth_bps.set(average_bandwidth_bps);
+        self.peak_bandwidth_bps.set(peak_bandwidth_bps);
+
         ftrace::duration!(c"interconnect", c"set_bandwidth",
             "path" => self.path.name(),
             "average_bandwidth_bps" => average_bandwidth_bps,
             "peak_bandwidth_bps" => peak_bandwidth_bps);
-
-        self.inspect.record_uint("average_bandwidth_bps", average_bandwidth_bps);
-        self.inspect.record_uint("peak_bandwidth_bps", peak_bandwidth_bps);
 
         // If we've not hit sync_state yet, update the graph and return right away.
         if !self.sync_state.get() {
@@ -195,6 +198,8 @@ impl InterconnectDriver {
             let graph = graph.clone();
             let device = device.clone();
             let inspect = paths_inspect.create_child(path.name());
+            let average_bandwidth_bps = inspect.create_uint("average_bandwidth_bps", 0);
+            let peak_bandwidth_bps = inspect.create_uint("peak_bandwidth_bps", 0);
             path.record_inspect(&inspect);
 
             let controller_clone = controller.clone();
@@ -211,9 +216,20 @@ impl InterconnectDriver {
             });
 
             let sync_state = sync_state.clone();
+
             children.insert(
                 name.clone(),
-                Child { path, graph, controller, device, inspect, sync_state, tag },
+                Child {
+                    path,
+                    graph,
+                    controller,
+                    device,
+                    inspect,
+                    average_bandwidth_bps,
+                    peak_bandwidth_bps,
+                    sync_state,
+                    tag,
+                },
             );
         }
         inspector.root().record(paths_inspect);
