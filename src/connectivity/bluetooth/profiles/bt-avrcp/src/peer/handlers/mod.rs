@@ -1120,7 +1120,7 @@ mod test {
         cmd_handler
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_get_element_attribute_cmd() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1210,16 +1210,16 @@ mod test {
     /// Test continuations work
     /// 1. Crafts a get_element_attribute response that spans 3 AVC packets.
     /// 2. Fetches the first packet and validate it's the first packet and the length
-    /// 3. Fetches the second and validate it's a middle packet and the length
+    /// 3. Fetches the second packet and validate it's a middle packet and the length
     /// 4. Sends an abort for the rest of the continuation, dropping the third
     /// 5. Attempts to fetch the last packet after aborting, expecting an error to validate abort
     ///    works.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_continuations() -> Result<(), Error> {
         let (target_proxy, mut target_stream) = create_proxy_and_stream::<TargetHandlerMarker>();
 
         // spawn a target handler that responds with a large element response
-        fasync::Task::spawn(async move {
+        fasync::Task::local(async move {
             while let Some(Ok(event)) = target_stream.next().await {
                 let _result = match event {
                     TargetHandlerRequest::GetMediaAttributes { responder } => {
@@ -1314,7 +1314,7 @@ mod test {
 
             let response = command.response();
 
-            let _ = cmd_handler.handle_command_internal(command).await?;
+            cmd_handler.handle_command_internal(command).await?;
 
             let response_guard = response.lock();
             let response_data = response_guard.data.as_ref().expect("data");
@@ -1342,7 +1342,7 @@ mod test {
 
             let response = command.response();
 
-            let _ = cmd_handler.handle_command_internal(command).await?;
+            cmd_handler.handle_command_internal(command).await?;
 
             let response_guard = response.lock();
             let response_data = response_guard.data.as_ref().expect("data");
@@ -1368,7 +1368,7 @@ mod test {
             )
             .expect_accept();
 
-            let _ = cmd_handler.handle_command_internal(command).await?;
+            cmd_handler.handle_command_internal(command).await?;
         }
 
         // send another continuation packet to test abort worked
@@ -1389,14 +1389,14 @@ mod test {
             )
             .expect_reject();
 
-            let _ = cmd_handler.handle_command_internal(command).await?;
+            cmd_handler.handle_command_internal(command).await?;
         }
 
         Ok(())
     }
 
     /// send get_capabilities
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_send_get_capabilities() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1426,7 +1426,7 @@ mod test {
     /// Validate our interim timers fire
     #[test]
     fn send_status_interim_fired() {
-        let mut exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
 
         // stall the responses from the target handler by 10 seconds
         let target_proxy = create_dummy_target_handler(true);
@@ -1458,8 +1458,8 @@ mod test {
         // we drop the mock command and if the expected interim wasn't called, the test will fail
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_list_player_application_setting_attributes_cmd() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_list_player_application_setting_attributes_cmd() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1487,10 +1487,10 @@ mod test {
         .expect_body(expected_packet_response)
         .expect_response_type(AvcResponseType::ImplementedStable);
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_list_player_application_setting_values_cmd() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1523,8 +1523,8 @@ mod test {
         cmd_handler.handle_command_internal(command).await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_get_player_application_settings_cmd() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_get_player_application_settings_cmd() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1555,11 +1555,11 @@ mod test {
         .expect_body(expected_packet_response)
         .expect_response_type(AvcResponseType::ImplementedStable);
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_get_player_application_setting_attribute_text_cmd() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_get_player_application_setting_attribute_text_cmd() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1593,11 +1593,11 @@ mod test {
         .expect_body(expected_packet_response)
         .expect_response_type(AvcResponseType::ImplementedStable);
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_get_player_application_setting_value_text_cmd() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_get_player_application_setting_value_text_cmd() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1637,11 +1637,11 @@ mod test {
         .expect_body(expected_packet_response)
         .expect_response_type(AvcResponseType::ImplementedStable);
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_set_player_application_setting_value() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_set_player_application_setting_value() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1670,11 +1670,11 @@ mod test {
         )
         .expect_accept();
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_set_addressed_player_command() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_set_addressed_player_command() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
 
@@ -1703,11 +1703,11 @@ mod test {
         .expect_accept()
         .expect_body(expected_packet_response);
 
-        cmd_handler.handle_command_internal(command).await
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
     }
 
     /// send passthrough is implemented. expect it's accepted
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_send_passthrough() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1732,7 +1732,7 @@ mod test {
     }
 
     /// Test correctness of response of a passthrough command that is not implemented.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_send_passthrough_not_implemented() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1758,7 +1758,7 @@ mod test {
 
     #[test]
     fn validate_passthrough_reject_timer_fired() {
-        let mut exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
 
         let target_proxy = create_dummy_target_handler(true);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1786,13 +1786,13 @@ mod test {
     }
 
     /// test notifications on absolute volume handler
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_register_notification_volume() -> Result<(), Error> {
         let (volume_proxy, mut volume_stream) =
             create_proxy_and_stream::<AbsoluteVolumeHandlerMarker>();
         let cmd_handler = create_command_handler(None, Some(volume_proxy));
 
-        fasync::Task::spawn(async move {
+        fasync::Task::local(async move {
             while let Some(Ok(event)) = volume_stream.next().await {
                 match event {
                     AbsoluteVolumeHandlerRequest::GetCurrentVolume { responder } => {
@@ -1827,7 +1827,7 @@ mod test {
     }
 
     /// test notifications on target handler
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_register_notification_target() -> Result<(), Error> {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1852,7 +1852,7 @@ mod test {
     }
 
     /// Test notifications on target handler for track changed.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_register_notification_target_track_changed() {
         let target_proxy = create_dummy_target_handler(false);
         let cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1874,7 +1874,7 @@ mod test {
         .expect_changed();
 
         let response = command.response();
-        let _ = cmd_handler.handle_command_internal(command).await.expect("should be success");
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
         let response_lock = response.lock();
         assert!(response_lock.send_called);
         assert_eq!(
@@ -1890,7 +1890,7 @@ mod test {
     }
 
     /// Test notifications on target handler for track changed.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_register_notification_target_track_changed_supports_browsing() {
         let target_proxy = create_dummy_target_handler(false);
         let mut cmd_handler = create_command_handler(Some(target_proxy), None);
@@ -1918,7 +1918,7 @@ mod test {
         .expect_changed();
 
         let response = command.response();
-        let _ = cmd_handler.handle_command_internal(command).await.expect("should be success");
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
         let response_lock = response.lock();
         assert!(response_lock.send_called);
         assert_eq!(
@@ -1935,7 +1935,7 @@ mod test {
     }
 
     /// test we get a command and it responds as expected.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn handle_set_absolute_volume_cmd() -> Result<(), Error> {
         let (volume_proxy, mut volume_stream) =
             create_proxy_and_stream::<AbsoluteVolumeHandlerMarker>();
@@ -1993,8 +1993,8 @@ mod test {
     }
 
     /// send a command with a badly formed packet and see if we get the reject error we are expecting.
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn handle_set_absolute_volume_cmd_bad_packet() -> Result<(), Error> {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn handle_set_absolute_volume_cmd_bad_packet() {
         // absolute volume handler shouldn't even get called since the packet decode should fail.
         let (volume_proxy, volume_stream) =
             create_proxy_and_stream::<AbsoluteVolumeHandlerMarker>();
@@ -2016,9 +2016,8 @@ mod test {
         )
         .expect_reject_with_status_code(0x50, StatusCode::ParameterContentError);
 
-        cmd_handler.handle_command_internal(command).await?;
+        cmd_handler.handle_command_internal(command).await.expect("command handler failed");
 
         drop(volume_stream);
-        Ok(())
     }
 }
