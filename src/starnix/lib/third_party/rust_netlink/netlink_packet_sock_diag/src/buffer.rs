@@ -99,12 +99,12 @@ impl<'a, T: AsRef<[u8]>> ParseableParametrized<SockDiagBuffer<&'a T>, u16> for S
             (SOCK_DIAG_BY_FAMILY, AF_INET | AF_INET6) => {
                 let err = "invalid AF_INET/AF_INET6 response";
                 let buf = inet::InetResponseBuffer::new(buf.inner()).context(err)?;
-                InetResponse(inet::InetResponse::parse(&buf).context(err)?)
+                InetResponse(Box::new(inet::InetResponse::parse(&buf).context(err)?))
             }
             (SOCK_DIAG_BY_FAMILY, AF_UNIX) => {
                 let err = "invalid AF_UNIX response";
                 let buf = unix::UnixResponseBuffer::new(buf.inner()).context(err)?;
-                UnixResponse(unix::UnixResponse::parse(&buf).context(err)?)
+                UnixResponse(Box::new(unix::UnixResponse::parse(&buf).context(err)?))
             }
             (SOCK_DIAG_BY_FAMILY, af) => return Err(format!("unknown address family {af}").into()),
             _ => return Err(format!("unknown message type {message_type}").into()),

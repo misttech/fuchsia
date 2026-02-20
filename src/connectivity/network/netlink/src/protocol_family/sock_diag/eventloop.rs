@@ -265,7 +265,7 @@ fn ip_socket_to_netlink_response_inner<I: Ip>(
         nlas: nlas.into(),
     };
 
-    SockDiagResponse::InetResponse(resp)
+    SockDiagResponse::InetResponse(Box::new(resp))
 }
 
 fn make_socket_id<I: Ip>(
@@ -726,7 +726,7 @@ mod tests {
             nlas: vec![Nla::Mark(0x11111111)].into(),
         };
         let mut expected: NetlinkMessage<SockDiagResponse> =
-            SockDiagResponse::InetResponse(payload).into();
+            SockDiagResponse::InetResponse(Box::new(payload)).into();
         expected.finalize();
 
         assert_eq!(response, expected);
@@ -858,7 +858,7 @@ mod tests {
             .into(),
         };
         let mut expected: NetlinkMessage<SockDiagResponse> =
-            SockDiagResponse::InetResponse(payload).into();
+            SockDiagResponse::InetResponse(Box::new(payload)).into();
         expected.finalize();
 
         assert_eq!(response, expected);
@@ -916,7 +916,7 @@ mod tests {
             nlas: vec![].into(),
         };
         let mut expected: NetlinkMessage<SockDiagResponse> =
-            SockDiagResponse::InetResponse(payload).into();
+            SockDiagResponse::InetResponse(Box::new(payload)).into();
         expected.finalize();
 
         assert_eq!(response, expected);

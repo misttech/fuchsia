@@ -893,7 +893,7 @@ fn wait_on_pid(
                 }
                 match thread_group.get_waitable_child(selector, options, &mut pids) {
                     WaitableChildResult::ReadyNow(child) => {
-                        return Ok(Some(child));
+                        return Ok(Some(*child));
                     }
                     WaitableChildResult::ShouldWait => (),
                     WaitableChildResult::NoneFound => {

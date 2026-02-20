@@ -73,10 +73,9 @@ impl From<SockDiagRequest> for NetlinkPayload<SockDiagRequest> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum SockDiagResponse {
-    InetResponse(inet::InetResponse),
-    UnixResponse(unix::UnixResponse),
+    InetResponse(Box<inet::InetResponse>),
+    UnixResponse(Box<unix::UnixResponse>),
 }
 
 impl SockDiagResponse {

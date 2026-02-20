@@ -1800,12 +1800,8 @@ impl ThreadGroup {
     }
 }
 
-#[cfg_attr(
-    feature = "debug_and_trace_logs_enabled",
-    allow(clippy::large_enum_variant, reason = "no need to optimize enum size in debug builds")
-)]
 pub enum WaitableChildResult {
-    ReadyNow(WaitResult),
+    ReadyNow(Box<WaitResult>),
     ShouldWait,
     NoneFound,
 }
@@ -2000,14 +1996,16 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 };
                 let child_stopped = child.base.load_stopped();
                 if child_stopped == StopState::Awake && options.wait_for_continued {
-                    return WaitableChildResult::ReadyNow(build_wait_result(child, &|siginfo| {
-                        ExitStatus::Continue(siginfo, PtraceEvent::None)
-                    }));
+                    return WaitableChildResult::ReadyNow(Box::new(build_wait_result(
+                        child,
+                        &|siginfo| ExitStatus::Continue(siginfo, PtraceEvent::None),
+                    )));
                 }
                 if child_stopped == StopState::GroupStopped && options.wait_for_stopped {
-                    return WaitableChildResult::ReadyNow(build_wait_result(child, &|siginfo| {
-                        ExitStatus::Stop(siginfo, PtraceEvent::None)
-                    }));
+                    return WaitableChildResult::ReadyNow(Box::new(build_wait_result(
+                        child,
+                        &|siginfo| ExitStatus::Stop(siginfo, PtraceEvent::None),
+                    )));
                 }
             }
         }
@@ -2033,7 +2031,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 options,
                 pids,
             ) {
-                return WaitableChildResult::ReadyNow(waitable_zombie);
+                return WaitableChildResult::ReadyNow(Box::new(waitable_zombie));
             }
         }
 
