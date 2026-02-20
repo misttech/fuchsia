@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crossbeam_utils::CachePadded;
+use starnix_logging::{CATEGORY_STARNIX_SECURITY, trace_duration};
 use starnix_rcu::rcu_cache::RcuCacheInsertionResult;
 use starnix_rcu::{RcuCache, RcuReadScope};
 use std::hash::Hash;
@@ -165,6 +166,7 @@ where
             return Ok(result.clone());
         }
 
+        trace_duration!(CATEGORY_STARNIX_SECURITY, "selinux.access_cache.miss");
         // Wait for our turn to write to the cache.
         let guard = self.cache.lock();
         let scope = RcuReadScope::new();
