@@ -10,6 +10,7 @@ import("//build/test.gni")
 block_server_sources = [
   "src/async_interface.rs",
   "src/c_interface.rs",
+  "src/callback_interface.rs",
   "src/decompression_tests.rs",
   "src/lib.rs",
 ]

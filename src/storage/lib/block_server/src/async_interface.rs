@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::{
-    ActiveRequests, DecodedRequest, DeviceInfo, FIFO_MAX_REQUESTS, IntoSessionManager, OffsetMap,
+    ActiveRequests, DecodedRequest, DeviceInfo, FIFO_MAX_REQUESTS, IntoOrchestrator, OffsetMap,
     Operation, SessionHelper, TraceFlowId,
 };
 use anyhow::Error;
@@ -270,7 +270,7 @@ impl<I: Interface + ?Sized> Session<I> {
         let mut fifo = fasync::Fifo::from_fifo(fifo);
         let (mut reader, mut writer) = fifo.async_io();
         let mut requests = [MaybeUninit::<BlockFifoRequest>::uninit(); FIFO_MAX_REQUESTS];
-        let active_requests = &self.helper.session_manager.active_requests;
+        let active_requests = &self.helper.session_manager().active_requests;
         let mut active_request_futures = FuturesUnordered::new();
         let mut responses = Vec::new();
 
@@ -385,7 +385,7 @@ impl<I: Interface + ?Sized> Session<I> {
         let request_id = request.request_id;
         self.map_request(request).await.map_err(|status| {
             self.helper
-                .session_manager
+                .orchestrator
                 .active_requests
                 .complete_and_take_response(request_id, status)
                 .map(|(_, r)| r)
@@ -426,7 +426,7 @@ impl<I: Interface + ?Sized> Session<I> {
                 block_count,
                 options,
             } => {
-                let allocator = match self.helper.session_manager.buffer_allocator.get() {
+                let allocator = match self.helper.session_manager().buffer_allocator.get() {
                     Some(a) => a,
                     None => {
                         // This isn't racy because there should only be one `map_request` future
@@ -440,8 +440,8 @@ impl<I: Interface + ?Sized> Session<I> {
                             ),
                             source,
                         );
-                        self.helper.session_manager.buffer_allocator.set(allocator).unwrap();
-                        self.helper.session_manager.buffer_allocator.get().unwrap()
+                        self.helper.session_manager().buffer_allocator.set(allocator).unwrap();
+                        self.helper.session_manager().buffer_allocator.get().unwrap()
                     }
                 };
 
@@ -459,7 +459,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     unsafe { std::mem::transmute(buffer) }
                 }
 
-                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_requests = self.helper.session_manager().active_requests.0.lock();
                 active_request = &mut active_requests.requests[request.request_id.0];
 
                 // SAFETY: We guarantee that `buffer_allocator` is dropped after `active_requests`,
@@ -484,7 +484,7 @@ impl<I: Interface + ?Sized> Session<I> {
                 block_count,
                 options,
             } => {
-                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_requests = self.helper.session_manager().active_requests.0.lock();
                 active_request = &mut active_requests.requests[request.request_id.0];
 
                 let buffer =
@@ -506,11 +506,11 @@ impl<I: Interface + ?Sized> Session<I> {
                     options,
                 };
 
-                let allocator = self.helper.session_manager.buffer_allocator.get().unwrap();
+                let allocator = self.helper.session_manager().buffer_allocator.get().unwrap();
                 request.vmo = Some(allocator.buffer_source().vmo().clone());
             }
             _ => {
-                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_requests = self.helper.session_manager().active_requests.0.lock();
                 active_request = &mut active_requests.requests[request.request_id.0];
             }
         }
@@ -544,13 +544,16 @@ impl<I: Interface + ?Sized> Session<I> {
                     async {
                         if commit_decompression_buffers {
                             let (target_slice, buffer_slice, buffer_range) = {
-                                let active_request =
-                                    self.helper.session_manager.active_requests.request(request_id);
+                                let active_request = self
+                                    .helper
+                                    .session_manager()
+                                    .active_requests
+                                    .request(request_id);
                                 let info = active_request.decompression_info.as_ref().unwrap();
                                 (
                                     info.uncompressed_slice(),
                                     self.helper
-                                        .session_manager
+                                        .orchestrator
                                         .buffer_allocator
                                         .get()
                                         .unwrap()
@@ -628,7 +631,7 @@ impl<I: Interface + ?Sized> Session<I> {
         };
         let response = self
             .helper
-            .session_manager
+            .orchestrator
             .active_requests
             .complete_and_take_response(request_id, result.into())
             .map(|(_, r)| r);
@@ -654,22 +657,31 @@ impl<I: Interface + ?Sized> Session<I> {
 }
 
 impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
+    type Orchestrator = Self;
+
     const SUPPORTS_DECOMPRESSION: bool = true;
 
     // We don't need the session, we just need something unique to identify the session.
     type Session = usize;
 
-    async fn on_attach_vmo(self: Arc<Self>, vmo: &Arc<zx::Vmo>) -> Result<(), zx::Status> {
-        self.interface.on_attach_vmo(vmo).await
+    async fn on_attach_vmo(orchestrator: Arc<Self>, vmo: &Arc<zx::Vmo>) -> Result<(), zx::Status> {
+        I::on_attach_vmo(&orchestrator.interface, vmo).await
     }
 
     async fn open_session(
-        self: Arc<Self>,
+        orchestrator: Arc<Self>,
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
     ) -> Result<(), Error> {
-        self.interface.clone().open_session(self, stream, offset_map, block_size).await
+        I::open_session(
+            &orchestrator.interface,
+            orchestrator.clone(),
+            stream,
+            offset_map,
+            block_size,
+        )
+        .await
     }
 
     fn get_info(&self) -> Cow<'_, DeviceInfo> {
@@ -702,10 +714,10 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     }
 }
 
-impl<I: Interface> IntoSessionManager for Arc<I> {
+impl<I: Interface> IntoOrchestrator for Arc<I> {
     type SM = SessionManager<I>;
 
-    fn into_session_manager(self) -> Arc<Self::SM> {
+    fn into_orchestrator(self) -> Arc<Self::SM> {
         Arc::new(SessionManager {
             interface: self,
             active_requests: ActiveRequests::default(),

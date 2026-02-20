@@ -8,7 +8,7 @@ use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
 use futures::{Future, FutureExt as _, TryStreamExt as _};
 use slab::Slab;
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::ops::Range;
@@ -20,6 +20,7 @@ use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 pub mod async_interface;
 pub mod c_interface;
+pub mod callback_interface;
 
 #[cfg(test)]
 mod decompression_tests;
@@ -235,9 +236,9 @@ impl<S> ActiveRequestsInner<S> {
 
 /// BlockServer is an implementation of fuchsia.hardware.block.partition.Partition.
 /// cbindgen:no-export
-pub struct BlockServer<SM> {
+pub struct BlockServer<SM: SessionManager> {
     block_size: u32,
-    session_manager: Arc<SM>,
+    orchestrator: Arc<SM::Orchestrator>,
 }
 
 /// A single entry in `[OffsetMap]`.
@@ -302,12 +303,18 @@ impl OffsetMap {
 // Methods take Arc<Self> rather than &self because of
 // https://github.com/rust-lang/rust/issues/42940.
 pub trait SessionManager: 'static {
+    /// The Orchestrator is an object that holds the `SessionManager` and any other state that needs
+    /// to be shared between sessions.  It is responsible for keeping the `SessionManager` alive.
+    /// We use this type instead of directly holding an Arc<SessionManager> in BlockServer, to avoid
+    /// nested Arcs in concrete implementations which need to keep additional state.
+    type Orchestrator: Borrow<Self> + Send + Sync;
+
     const SUPPORTS_DECOMPRESSION: bool;
 
     type Session;
 
     fn on_attach_vmo(
-        self: Arc<Self>,
+        orchestrator: Arc<Self::Orchestrator>,
         vmo: &Arc<zx::Vmo>,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
@@ -316,7 +323,7 @@ pub trait SessionManager: 'static {
     /// closes.
     /// `offset_map`, will be used to adjust the block offset/length of FIFO requests.
     fn open_session(
-        self: Arc<Self>,
+        orchestrator: Arc<Self::Orchestrator>,
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
@@ -363,19 +370,22 @@ pub trait SessionManager: 'static {
     fn active_requests(&self) -> &ActiveRequests<Self::Session>;
 }
 
-pub trait IntoSessionManager {
+/// A helper trait for converting various types into an `Orchestrator`.
+///
+/// This exists to simplify [`BlockServer::new`].
+pub trait IntoOrchestrator {
     type SM: SessionManager;
 
-    fn into_session_manager(self) -> Arc<Self::SM>;
+    fn into_orchestrator(self) -> Arc<<Self::SM as SessionManager>::Orchestrator>;
 }
 
 impl<SM: SessionManager> BlockServer<SM> {
-    pub fn new(block_size: u32, session_manager: impl IntoSessionManager<SM = SM>) -> Self {
-        Self { block_size, session_manager: session_manager.into_session_manager() }
+    pub fn new(block_size: u32, orchestrator: impl IntoOrchestrator<SM = SM>) -> Self {
+        Self { block_size, orchestrator: orchestrator.into_orchestrator() }
     }
 
     pub fn session_manager(&self) -> &SM {
-        self.session_manager.as_ref()
+        self.orchestrator.as_ref().borrow()
     }
 
     /// Called to process requests for fuchsia.storage.block.Block.
@@ -417,7 +427,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                         let block_count = if let Some(range) = partition_info.block_range.as_ref() {
                             range.end - range.start
                         } else {
-                            let volume_info = self.session_manager.get_volume_info().await?;
+                            let volume_info = self.session_manager().get_volume_info().await?;
                             volume_info.0.slice_size * volume_info.1.partition_slice_count
                                 / self.block_size as u64
                         };
@@ -436,7 +446,8 @@ impl<SM: SessionManager> BlockServer<SM> {
             }
             fblock::BlockRequest::OpenSession { session, control_handle: _ } => {
                 let info = self.device_info();
-                return Ok(Some(self.session_manager.clone().open_session(
+                return Ok(Some(SM::open_session(
+                    self.orchestrator.clone(),
                     session.into_stream(),
                     OffsetMap::empty(info.max_transfer_blocks()),
                     self.block_size,
@@ -462,7 +473,8 @@ impl<SM: SessionManager> BlockServer<SM> {
                         return Ok(None);
                     }
                 }
-                return Ok(Some(self.session_manager.clone().open_session(
+                return Ok(Some(SM::open_session(
+                    self.orchestrator.clone(),
                     session.into_stream(),
                     OffsetMap::new(initial_mapping, info.max_transfer_blocks()),
                     self.block_size,
@@ -518,7 +530,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                 }
             }
             fblock::BlockRequest::QuerySlices { responder, start_slices } => {
-                match self.session_manager.query_slices(&start_slices).await {
+                match self.session_manager().query_slices(&start_slices).await {
                     Ok(mut results) => {
                         let results_len = results.len();
                         assert!(results_len <= 16);
@@ -539,7 +551,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                 }
             }
             fblock::BlockRequest::GetVolumeInfo { responder, .. } => {
-                match self.session_manager.get_volume_info().await {
+                match self.session_manager().get_volume_info().await {
                     Ok((manager_info, volume_info)) => {
                         responder.send(zx::sys::ZX_OK, Some(&manager_info), Some(&volume_info))?
                     }
@@ -548,13 +560,13 @@ impl<SM: SessionManager> BlockServer<SM> {
             }
             fblock::BlockRequest::Extend { responder, start_slice, slice_count } => {
                 responder.send(
-                    zx::Status::from(self.session_manager.extend(start_slice, slice_count).await)
+                    zx::Status::from(self.session_manager().extend(start_slice, slice_count).await)
                         .into_raw(),
                 )?;
             }
             fblock::BlockRequest::Shrink { responder, start_slice, slice_count } => {
                 responder.send(
-                    zx::Status::from(self.session_manager.shrink(start_slice, slice_count).await)
+                    zx::Status::from(self.session_manager().shrink(start_slice, slice_count).await)
                         .into_raw(),
                 )?;
             }
@@ -566,12 +578,12 @@ impl<SM: SessionManager> BlockServer<SM> {
     }
 
     fn device_info(&self) -> Cow<'_, DeviceInfo> {
-        self.session_manager.get_info()
+        self.session_manager().get_info()
     }
 }
 
 struct SessionHelper<SM: SessionManager> {
-    session_manager: Arc<SM>,
+    orchestrator: Arc<SM::Orchestrator>,
     offset_map: OffsetMap,
     block_size: u32,
     peer_fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest>,
@@ -608,15 +620,16 @@ impl Drop for VmoMapping {
 
 impl<SM: SessionManager> SessionHelper<SM> {
     fn new(
-        session_manager: Arc<SM>,
+        orchestrator: Arc<SM::Orchestrator>,
         offset_map: OffsetMap,
         block_size: u32,
     ) -> Result<(Self, zx::Fifo<BlockFifoRequest, BlockFifoResponse>), zx::Status> {
         let (peer_fifo, fifo) = zx::Fifo::create(16)?;
-        Ok((
-            Self { session_manager, offset_map, block_size, peer_fifo, vmos: Mutex::default() },
-            fifo,
-        ))
+        Ok((Self { orchestrator, offset_map, block_size, peer_fifo, vmos: Mutex::default() }, fifo))
+    }
+
+    fn session_manager(&self) -> &SM {
+        self.orchestrator.as_ref().borrow()
     }
 
     async fn handle_request(&self, request: fblock::SessionRequest) -> Result<(), Error> {
@@ -661,7 +674,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                         vmo_id
                     }
                 };
-                self.session_manager.clone().on_attach_vmo(&vmo).await?;
+                SM::on_attach_vmo(self.orchestrator.clone(), &vmo).await?;
                 responder.send(Ok(&fblock::VmoId { id: vmo_id }))?;
                 Ok(())
             }
@@ -763,7 +776,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
             GroupOrRequest::Request(request.reqid)
         };
 
-        let mut active_requests = self.session_manager.active_requests().0.lock();
+        let mut active_requests = self.session_manager().active_requests().0.lock();
         let mut request_id = None;
 
         // Multiple Block I/O request may be sent as a group.
@@ -1054,12 +1067,12 @@ impl<SM: SessionManager> SessionHelper<SM> {
     }
 
     fn drop_active_requests(&self, pred: impl Fn(&SM::Session) -> bool) {
-        self.session_manager.active_requests().0.lock().requests.retain(|_, r| !pred(&r.session));
+        self.session_manager().active_requests().0.lock().requests.retain(|_, r| !pred(&r.session));
     }
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RequestId(usize);
 
 #[derive(Clone, Debug)]
