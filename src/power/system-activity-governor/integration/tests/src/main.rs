@@ -960,6 +960,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
+            "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: {},
             config: {
@@ -1055,6 +1056,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
+            "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: {},
             config: {
@@ -2859,6 +2861,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
+            "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: {},
             config: {
@@ -2954,6 +2957,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
+            "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: {},
             config: {

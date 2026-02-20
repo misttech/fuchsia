@@ -7,11 +7,13 @@ use fuchsia_inspect::{ArrayProperty, LazyNode as ILazyNode, Node as INode};
 use fuchsia_inspect_contrib::nodes::BoundedListNode as IRingBuffer;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
+use state_recorder::{EnumStateRecorder, RecorderOptions};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use strum_macros::{Display, EnumIter};
 
 const SUSPEND_EVENT_BUFFER_SIZE: usize = 8192;
 
@@ -60,6 +62,20 @@ pub enum SagEvent {
     ResumeCallbackPhaseEnded,
 }
 
+/// The state of the system with respect to suspend.
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq, EnumIter)]
+#[repr(u8)]
+pub enum SystemSuspendState {
+    Suspended = 0,
+    Active = 1,
+}
+
+impl From<SystemSuspendState> for u64 {
+    fn from(s: SystemSuspendState) -> u64 {
+        s as u64
+    }
+}
+
 /// A logger for SagEvent objects that inserts the event into a circular buffer
 /// in inspect.
 #[derive(Clone, Debug)]
@@ -78,6 +94,8 @@ pub struct SagEventLogger {
     /// Total time that the device has spent suspended since boot (or at least
     /// since this logger was created), in nanoseconds.
     cumulative_suspend_duration: Arc<AtomicI64>,
+    /// State recorder for `SystemSuspendState`.
+    system_suspend_state: Arc<Mutex<EnumStateRecorder<SystemSuspendState>>>,
 }
 
 impl SagEventLogger {
@@ -119,6 +137,16 @@ impl SagEventLogger {
             event_log_times,
             _event_log_stats: Rc::new(RefCell::new(event_log_stats)),
             cumulative_suspend_duration: Arc::new(AtomicI64::new(0)),
+            system_suspend_state: Arc::new(Mutex::new(
+                EnumStateRecorder::new(
+                    "system_suspend_state".to_string(),
+                    c"power",
+                    // Current capacity would cover 3 hours with one suspend/resume cycle per
+                    // minute.
+                    RecorderOptions { lazy_record: false, capacity: 360, ..Default::default() },
+                )
+                .expect("Failed to create system_suspend_state recorder"),
+            )),
         }
     }
 
@@ -129,6 +157,7 @@ impl SagEventLogger {
             match event {
                 SagEvent::SuspendAttempted => {
                     node.record_int(fobs::SUSPEND_ATTEMPTED_AT, time);
+                    self.system_suspend_state.lock().record(SystemSuspendState::Suspended);
                 }
                 SagEvent::SuspendResumed { suspend_duration } => {
                     node.record_int(fobs::SUSPEND_RESUMED_AT, time);
@@ -138,9 +167,11 @@ impl SagEventLogger {
                         .fetch_add(suspend_duration, Ordering::SeqCst)
                         + suspend_duration;
                     node.record_int(fobs::SUSPEND_CUMULATIVE_DURATION, cumulative);
+                    self.system_suspend_state.lock().record(SystemSuspendState::Active);
                 }
                 SagEvent::SuspendFailed => {
                     node.record_int(fobs::SUSPEND_FAILED_AT, time);
+                    self.system_suspend_state.lock().record(SystemSuspendState::Active);
                 }
                 SagEvent::SuspendAttemptBlocked => {
                     node.record_int(fobs::SUSPEND_ATTEMPT_BLOCKED_AT, time);
