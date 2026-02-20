@@ -9,7 +9,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -61,6 +60,9 @@ func execute(ctx context.Context, serialLogPath string, stdout io.Writer) error 
 	}
 	logger.Debugf(ctx, "serial log: %s", serialLogPath)
 	defer serialReader.Close()
+	success := iomisc.NewMatcher([]byte(successString))
+	failure := iomisc.NewMatcher([]byte(failureString))
+
 	serialTee := io.TeeReader(serialReader, stdout)
 
 	// Print out a log periodically to give an estimate of the timestamp at which
@@ -74,30 +76,38 @@ func execute(ctx context.Context, serialLogPath string, stdout io.Writer) error 
 		}
 	}()
 
-	for {
-		if match, err := iomisc.ReadUntilMatchString(ctx, serialTee, successString, failureString); err != nil {
-			if ctx.Err() != nil {
-				// LINT.IfChange(timed_out)
-				return fmt.Errorf("timed out before success string %q was read from serial", successString)
-				// LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out,/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out_exception)
-			}
-			if !errors.Is(err, io.EOF) {
-				return fmt.Errorf("error trying to read from serial log: %w", err)
-			}
-			// The serial log is continuously being written to, so ReadUntilMatchString() may
-			// return an EOF if it's read everything that's been written so far. Keep trying
-			// to read until the success string is found or the timeout is hit.
-			time.Sleep(100 * time.Millisecond)
-			continue
-		} else if match == failureString {
+	b := make([]byte, 1024)
+	n, err := 0, nil
+
+ReadLoop:
+	// Check that context hasn't been canceled first of all and then first thing after sleeping on EOF.
+	for ctx.Err() == nil {
+		n, err = serialTee.Read(b)
+
+		switch {
+		// Check that context hasn't been canceled first thing after Read() to
+		// ensure that match doesn't succeed when the context was already canceled.
+		case ctx.Err() != nil:
+			break ReadLoop
+		case success.Match(b[:n]):
+			logger.Debugf(ctx, "success string found: %q", successString)
+			return nil
+		case failure.Match(b[:n]):
 			return fmt.Errorf("failure string found: %q", failureString)
-		} else if match != successString {
-			return fmt.Errorf("match found %q doesn't match successString %q", match, successString)
+		case err == io.EOF:
+			// The serial log is continuously being written to, so the io.Reader may
+			// return an EOF if it has read everything that's been written so far. Keep
+			// reading until the success/failure string matches or the timeout is hit.
+			time.Sleep(100 * time.Millisecond)
+		case err != nil:
+			return fmt.Errorf("error trying to read from serial log: %w", err)
 		}
-		break
 	}
-	logger.Debugf(ctx, "success string found: %q", successString)
-	return nil
+	// If we time out, it is helpful to see the last bytes processed.
+	logger.Debugf(ctx, "Matcher(%q): last %d bytes read before cancellation: %q", successString, n, b[:n])
+	// LINT.IfChange(timed_out)
+	return fmt.Errorf("timed out before success string %q was read from serial", successString)
+	// LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out,/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out_exception)
 }
 
 func main() {

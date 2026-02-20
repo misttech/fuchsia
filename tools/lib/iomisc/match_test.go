@@ -8,7 +8,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -175,4 +178,134 @@ func TestReadUntilMatch(t *testing.T) {
 			t.Errorf("ReadUntilMatch() returned %v, want DeadlineExceeded ", err)
 		}
 	})
+}
+
+func TestMatcherWithDifferentReadSteps(t *testing.T) {
+	tests := []struct {
+		needle string
+		in     []string
+		want   []bool
+	}{
+		// "" matches empty haystack.
+		{
+			needle: "",
+			in:     []string{""},
+			want:   []bool{true},
+		},
+		// "" matches non-empty haystack.
+		{
+			needle: "",
+			in:     []string{"AB"},
+			want:   []bool{true},
+		},
+		// Unsplit haystack and needle equals the haystack.
+		{
+			needle: "ABC",
+			in:     []string{"ABC"},
+			want:   []bool{true},
+		},
+		// Unsplit haystack and needle is NOT in the haystack.
+		{
+			needle: "DE",
+			in:     []string{"ABC"},
+			want:   []bool{false},
+		},
+		// Unsplit haystack and needle is a prefix of the haystack.
+		{
+			needle: "AB",
+			in:     []string{"ABCD"},
+			want:   []bool{true},
+		},
+		// Unsplit haystack and needle is a suffix of the haystack.
+		{
+			needle: "CD",
+			in:     []string{"ABCD"},
+			want:   []bool{true},
+		},
+		// Unsplit haystack and needle is a substring of the haystack.
+		{
+			needle: "BC",
+			in:     []string{"ABCD"},
+			want:   []bool{true},
+		},
+		// Split haystack and needle equals the joined haystack.
+		{
+			needle: "ABCDE",
+			in:     []string{"AB", "CDE"},
+			want:   []bool{false, true},
+		},
+		// Split haystack and needle is NOT in the joined haystack.
+		{
+			needle: "ABCDE",
+			in:     []string{"CAB", "CDF"},
+			want:   []bool{false, false},
+		},
+		// Split haystack and needle is a prefix of the joined haystack.
+		{
+			needle: "ABC",
+			in:     []string{"AB", "CDE"},
+			want:   []bool{false, true},
+		},
+		// Split haystack and needle is a suffix of the joined haystack.
+		{
+			needle: "CDE",
+			in:     []string{"ABC", "DE"},
+			want:   []bool{false, true},
+		},
+		// Split haystack and needle is a suffix of the joined haystack.
+		{
+			needle: "AB",
+			in:     []string{"A", "AB"},
+			want:   []bool{false, true},
+		},
+		// Split haystack and needle is a substring of the joined haystack.
+		{
+			needle: "ABCDE",
+			in:     []string{"CAB", "CD", "EFG"},
+			want:   []bool{false, false, true},
+		},
+		// Split haystack and needle is a substring of the joined haystack.
+		{
+			needle: "DE",
+			in:     []string{"AB", "CDEF", "G"},
+			want:   []bool{false, true, true},
+		},
+		// Split haystack and needle is a substring of the joined haystack.
+		{
+			needle: "AB",
+			in:     []string{"A", "CA", "B"},
+			want:   []bool{false, false, true},
+		},
+		// Split haystack and needle is a substring of the joined haystack.
+		{
+			needle: "AAAB",
+			in:     []string{"AA", "A", "AB"},
+			want:   []bool{false, false, true},
+		},
+		// Split haystack and needle is a substring of the joined haystack.
+		{
+			needle: "BABC",
+			in:     []string{"B", "AB", "ABC"},
+			want:   []bool{false, false, true},
+		},
+		// Split haystack and needle is NOT a substring of the joined haystack.
+		{
+			needle: "ABC",
+			in:     []string{"B", "AB", "BC"},
+			want:   []bool{false, false, false},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("Match(%q)<-[%s]", test.needle, strings.Join(test.in, ",")), func(t *testing.T) {
+			m := NewMatcher([]byte(test.needle))
+			got := make([]bool, 0, len(test.in))
+			for _, p := range test.in {
+				got = append(got, m.Match([]byte(p)))
+			}
+			if !slices.Equal(got, test.want) {
+				t.Errorf("%s, got matches %v, want matches %v", t.Name(), got, test.want)
+			}
+		})
+	}
 }

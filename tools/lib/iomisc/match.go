@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -124,4 +125,68 @@ func ReadUntilMatchString(ctx context.Context, reader io.Reader, strings ...stri
 	}
 	b, err := ReadUntilMatch(ctx, reader, toMatch...)
 	return string(b), err
+}
+
+// Matcher checks if a needle is present in an incrementally gathered haystack.
+type Matcher struct {
+	// needle is the sequence to match.
+	needle []byte
+	// i is the length of the needle prefix matched so far.
+	i int
+}
+
+// NewMatcher creates a Matcher that matches the given needle.
+func NewMatcher(needle []byte) *Matcher {
+	return &Matcher{
+		needle: needle,
+		i:      0,
+	}
+}
+
+// String returns a string representation for Matcher.
+//
+// It is formatted as Matcher("matched so far"_"not yet matched"). The
+// quotes are omitted if the matched or the unmatched portion is empty.
+// This is primarily useful in tests.
+func (m *Matcher) String() string {
+	switch m.i {
+	case 0:
+		return fmt.Sprintf("Matcher(_%q)", m.needle)
+	case len(m.needle):
+		return fmt.Sprintf("Matcher(%q_)", m.needle)
+	default:
+		return fmt.Sprintf("Matcher(%q_%q)", m.needle[:m.i], m.needle[m.i:])
+	}
+}
+
+// Match checks if the needle is present in the partial haystack concatenated with prior haystacks.
+//
+// Once the needle is found, it always returns true.
+func (m *Matcher) Match(haystack []byte) bool {
+	nl, hl := len(m.needle), len(haystack)
+	// Exit early if needle is already found or for a trivial match ("" matches everything).
+	if m.i == nl {
+		return true
+	}
+	// hb is the beginning of the haystack suffix.
+	for hb := 0; hb < hl; hb++ {
+		// Match a substring of the needle that excludes the matched prefix and extends
+		// up to the end of the shorter of the needle or the current haystack suffix.
+		needle := m.needle[m.i:min(nl, m.i+hl-hb)]
+		if bytes.HasPrefix(haystack[hb:], needle) {
+			m.i += len(needle)
+			return m.i == nl
+		}
+		// Find a non-trivial suffix of the matched needle that is a prefix of the needle.
+		// On success, attempt another match at the same position in the haystack but with
+		// the prefix of the needle found previously.
+		for j := 1; j <= m.i; j++ {
+			if bytes.HasPrefix(m.needle, m.needle[j:m.i]) {
+				m.i -= j // shorten the matched needle
+				hb -= 1  // retry the match
+				break
+			}
+		}
+	}
+	return false
 }
