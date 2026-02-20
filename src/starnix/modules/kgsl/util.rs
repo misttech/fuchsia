@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use bitfield::bitfield;
 use starnix_core::task::CurrentTask;
 use starnix_uapi::uapi;
 use starnix_uapi::user_address::ArchSpecific;
@@ -143,6 +144,73 @@ pub mod maur {
         kgsl_gpuobj_alloc,
         kgsl_gpuobj_free,
         kgsl_gpuobj_info,
-        kgsl_shadowprop
+        kgsl_shadowprop,
+        kgsl_drawctxt_create,
+        kgsl_drawctxt_destroy,
     );
+}
+
+macro_rules! kgsl_bitfield {
+    (
+        pub struct $name:ident($type:ty);
+        $(
+            pub $field_name:ident,
+            $(bit($bit:path))?
+            $(range($mask:path, $shift:path))?
+            ;
+        )*
+    ) => {
+        bitfield! {
+            pub struct $name($type);
+            impl Debug;
+            $($(
+                pub $field_name, _: $bit.trailing_zeros().try_into().unwrap();
+            )?)*
+            $($(
+                pub $field_name, _: ($shift + $mask.count_ones() - 1) as usize, $shift.try_into().unwrap();
+            )?)*
+        }
+    }
+}
+
+kgsl_bitfield! {
+    // KGSL_CONTEXT flags
+    pub struct KgslContextFlags(u32);
+    pub save_gmem, bit(uapi::KGSL_CONTEXT_SAVE_GMEM);
+    pub no_gmem_alloc, bit(uapi::KGSL_CONTEXT_NO_GMEM_ALLOC);
+    pub submit_ib_list, bit(uapi::KGSL_CONTEXT_SUBMIT_IB_LIST);
+    pub ctx_switch, bit(uapi::KGSL_CONTEXT_CTX_SWITCH);
+    pub preamble, bit(uapi::KGSL_CONTEXT_PREAMBLE);
+    pub trash_state, bit(uapi::KGSL_CONTEXT_TRASH_STATE);
+    pub per_context_ts, bit(uapi::KGSL_CONTEXT_PER_CONTEXT_TS);
+    pub user_generated_ts, bit(uapi::KGSL_CONTEXT_USER_GENERATED_TS);
+    pub end_of_frame, bit(uapi::KGSL_CONTEXT_END_OF_FRAME);
+    pub no_fault_tolerance, bit(uapi::KGSL_CONTEXT_NO_FAULT_TOLERANCE);
+    pub sync, bit(uapi::KGSL_CONTEXT_SYNC);
+    pub pwr_constraint, bit(uapi::KGSL_CONTEXT_PWR_CONSTRAINT);
+    pub priority, range(uapi::KGSL_CONTEXT_PRIORITY_MASK, uapi::KGSL_CONTEXT_PRIORITY_SHIFT);
+    pub ifh_nop, bit(uapi::KGSL_CONTEXT_IFH_NOP);
+    pub secure, bit(uapi::KGSL_CONTEXT_SECURE);
+    pub no_snapshot, bit(uapi::KGSL_CONTEXT_NO_SNAPSHOT);
+    pub sparse, bit(uapi::KGSL_CONTEXT_SPARSE);
+    pub preempt_style, range(uapi::KGSL_CONTEXT_PREEMPT_STYLE_MASK, uapi::KGSL_CONTEXT_PREEMPT_STYLE_SHIFT);
+    pub type_, range(uapi::KGSL_CONTEXT_TYPE_MASK, uapi::KGSL_CONTEXT_TYPE_SHIFT);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bitfields() {
+        let raw_flags = uapi::KGSL_CONTEXT_SAVE_GMEM
+            | uapi::KGSL_CONTEXT_PREAMBLE
+            | (9 << uapi::KGSL_CONTEXT_PRIORITY_SHIFT)
+            | (uapi::KGSL_CONTEXT_TYPE_VK << uapi::KGSL_CONTEXT_TYPE_SHIFT);
+        let flags = KgslContextFlags(raw_flags);
+        assert!(flags.save_gmem());
+        assert!(flags.preamble());
+        assert_eq!(flags.priority(), 9);
+        assert_eq!(flags.type_(), uapi::KGSL_CONTEXT_TYPE_VK);
+    }
 }

@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::util::KgslContextFlags;
 use crate::util::maur::{self, TaskWritable};
 use fdio::service_connect;
-use kgsl_libmagma::{Buffer, Connection, Device, QueryOutput, Semaphore, initialize_logging};
+use kgsl_libmagma::{
+    Buffer, Connection, Context, Device, QueryOutput, Semaphore, initialize_logging,
+};
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
 use kgsl_range_allocator::Allocator;
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
@@ -60,6 +63,9 @@ pub struct KgslFile {
     #[expect(dead_code)]
     shadow: GpuObject,
     shadow_properties: uapi::kgsl_shadowprop,
+    // TODO(b/481419355): transition to id-map container once available
+    contexts: Mutex<HashMap<u32, Context>>,
+    next_context_id: AtomicU32,
 }
 
 struct GpuObject {
@@ -178,6 +184,8 @@ impl KgslFile {
             allocator: Mutex::new(allocator),
             shadow,
             shadow_properties,
+            contexts: Mutex::new(HashMap::new()),
+            next_context_id: AtomicU32::new(1),
         }))
     }
 
@@ -447,6 +455,45 @@ impl KgslFile {
             error!(EINVAL)
         }
     }
+
+    fn kgsl_drawctxt_create(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_drawctxt_create::new(current_task, arg);
+        let mut params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_drawctxt_create {:?}", params);
+        let flags = KgslContextFlags(params.flags);
+        let context =
+            self.connection.create_context(flags.priority().into()).map_err(|_| errno!(ENXIO))?;
+        let id = self.next_context_id.fetch_add(1, Ordering::Relaxed);
+        if id == 0 {
+            // fetch_add wraps to zero on overflow. Transitioning to id-map container
+            // will avoid this issue.
+            log_error!("kgsl: ids exhausted");
+            return error!(ENOMEM);
+        }
+        self.contexts.lock().insert(id, context);
+        params.drawctxt_id = id;
+        current_task.write_multi_arch_object(params_ref, params)?;
+        Ok(SUCCESS)
+    }
+
+    fn kgsl_drawctxt_destroy(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_drawctxt_destroy::new(current_task, arg);
+        let params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_drawctxt_destroy {:?}", params);
+        if self.contexts.lock().remove(&params.drawctxt_id).is_some() {
+            Ok(SUCCESS)
+        } else {
+            error!(EINVAL)
+        }
+    }
 }
 
 impl Drop for KgslFile {
@@ -483,6 +530,8 @@ impl FileOps for KgslFile {
             uapi::IOCTL_KGSL_GPUOBJ_INFO => self.kgsl_gpuobj_info(current_task, arg),
             uapi::IOCTL_KGSL_SYNCSOURCE_CREATE => self.kgsl_syncsource_create(current_task, arg),
             uapi::IOCTL_KGSL_SYNCSOURCE_DESTROY => self.kgsl_syncsource_destroy(current_task, arg),
+            uapi::IOCTL_KGSL_DRAWCTXT_CREATE => self.kgsl_drawctxt_create(current_task, arg),
+            uapi::IOCTL_KGSL_DRAWCTXT_DESTROY => self.kgsl_drawctxt_destroy(current_task, arg),
             _ => {
                 track_stub!(TODO("https://fxbug.dev/393160668"), "kgsl ioctl", request);
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));
