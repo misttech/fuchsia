@@ -75,6 +75,13 @@ toc:
     path: /docs/concepts/kernel/tracing-system.md
   - title: "Tracing provider buffering modes"
     path: /docs/concepts/kernel/tracing-provider-buffering-modes.md
+- title: "Entropy quality tests"
+  path:  /docs/concepts/kernel/entropy_quality_tests.md
+- title: "Jitterentropy"
+  section:
+  - include: /docs/concepts/kernel/jitterentropy/_toc.yaml
+- title: "Suspend"
+  path:  /docs/concepts/kernel/suspend.md
 - title: "Advanced"
   section:
   - title: "Kernel invariants"
@@ -85,8 +92,3 @@ toc:
     path: /docs/concepts/kernel/watchdog.md
   - title: "Kernel Thread Signaling"
     path: /docs/concepts/kernel/kernel_thread_signaling.md
-- title: "Entropy quality tests"
-  path:  /docs/concepts/kernel/entropy_quality_tests.md
-- title: "Jitterentropy"
-  section:
-  - include: /docs/concepts/kernel/jitterentropy/_toc.yaml
