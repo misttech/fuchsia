@@ -8,12 +8,9 @@ use cml::types::document::Document;
 use std::fs;
 use std::path::PathBuf;
 
-// Allow a size difference between these enum variants: the difference is small (~300 bytes), and
-// this tool is only used at compile time, so optimizing a few hundred bytes isn't a priority.
-#[allow(clippy::large_enum_variant)]
 enum ComponentManifest {
-    Cml(Document),
-    Cm(cm_rust::ComponentDecl),
+    Cml(Box<Document>),
+    Cm(Box<cm_rust::ComponentDecl>),
 }
 
 // These runners respect `program.binary`. We only validate the `program` section for components
@@ -146,8 +143,8 @@ fn read_component_manifest(path: &PathBuf) -> Result<ComponentManifest, Error> {
                                  (.cm or .cml)";
     let ext = path.extension().and_then(|e| e.to_str());
     Ok(match ext {
-        Some("cml") => ComponentManifest::Cml(util::read_cml(path)?),
-        Some("cm") => ComponentManifest::Cm(util::read_cm(path)?),
+        Some("cml") => ComponentManifest::Cml(Box::new(util::read_cml(path)?)),
+        Some("cm") => ComponentManifest::Cm(Box::new(util::read_cm(path)?)),
         _ => {
             return Err(Error::invalid_args(BAD_EXTENSION));
         }
