@@ -446,7 +446,6 @@ impl KeyboardBinding {
                 inspect_sender.clone(),
             );
         }
-
         (previous_report, Some(inspect_receiver))
     }
 

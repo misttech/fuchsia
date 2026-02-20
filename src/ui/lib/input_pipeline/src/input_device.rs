@@ -354,6 +354,8 @@ pub trait InputDeviceBinding: Send {
 /// - `process_reports`: A function that generates InputEvent(s) from an InputReport and the
 ///                      InputReport that precedes it. Each type of input device defines how it
 ///                      processes InputReports.
+///                      The [`InputReport`] returned by `process_reports` must have no
+///                      `wake_lease`.
 ///
 pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     device_proxy: fidl_input_report::InputDeviceProxy,
@@ -405,6 +407,13 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                         &feature_flags,
                     );
                     previous_report = prev_report;
+
+                    if let Some(previous_report) = previous_report.as_ref() {
+                        debug_assert!(
+                            previous_report.wake_lease.is_none(),
+                            "previous_report must not have a wake lease"
+                        );
+                    }
 
                     // If a report generates multiple events asynchronously, we send them over a mpsc channel
                     // to inspect_receiver. We update the event count on inspect_status here since we cannot

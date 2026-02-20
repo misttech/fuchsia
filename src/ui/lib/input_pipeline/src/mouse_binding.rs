@@ -442,6 +442,8 @@ impl MouseBinding {
     /// A [`UnboundedReceiver<InputEvent>`] which will poll asynchronously generated events to be
     /// recorded by `inspect_status` in `input_device::initialize_report_stream()`. If device
     /// binding does not generate InputEvents asynchronously, this will be `None`.
+    ///
+    /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
         reports: Vec<InputReport>,
         mut previous_report: Option<InputReport>,
