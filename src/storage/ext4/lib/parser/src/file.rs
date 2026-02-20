@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use ext4_read_only::parser::XattrMap;
+use ext4_read_only::structs::ParsingError;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
@@ -240,14 +241,22 @@ impl FileIo for ExtFile {
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
         // TODO(https://fxbug.dev/479943428): This is a basic WIP implementation, we'll need to
         // expand on this like adding an allocator and journalling.
-        self.vmo.write(content, offset)?;
 
         // We can only write to pre-allocated extents currently.
         if let Some(ref processor) = self.processor {
-            processor.overwrite_extents(self.inode as u32, content, offset).map_err(|error| {
-                log::warn!(error:?; "Failed to overwrite extents");
-                Status::INTERNAL
-            })?;
+            match processor.overwrite_extents(self.inode as u32, content, offset) {
+                Ok(_) => {
+                    self.vmo.write(content, offset)?;
+                }
+                Err(ParsingError::NotSupported(msg)) => {
+                    log::warn!("Failed to overwrite ({} not supported)", msg);
+                    return Err(Status::NOT_SUPPORTED);
+                }
+                Err(error) => {
+                    log::warn!(error:?; "Failed to overwrite");
+                    return Err(Status::INTERNAL);
+                }
+            }
         }
         Ok(content.len() as u64)
     }
@@ -627,5 +636,79 @@ mod tests {
             .expect("close FIDL error")
             .map_err(zx::Status::from_raw)
             .expect("close error");
+    }
+
+    #[fuchsia::test]
+    async fn test_writing_to_unallocated_extents_fails() {
+        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end1, block_server_end1) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+        });
+        let processor = Arc::new(Ext4Processor::new(
+            Arc::new(
+                BlockDeviceReader::from_client_end(block_client_end1)
+                    .expect("failed to create block device reader"),
+            ),
+            /* read_only=*/ false,
+        ));
+
+        let file_ino = processor
+            .entry_at_path(Path::new("file1"))
+            .expect("failed entry at path")
+            .e2d_ino
+            .get();
+
+        let rw_file =
+            ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ false)
+                .expect("from_data error");
+        let proxy = vfs::file::serve_proxy(rw_file, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let original_content = proxy
+            .read(1024)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+
+        // Write a really long content, past allocated extents of this file.
+        let write_content = [1u8; 8192];
+        let error = proxy.write_at(&write_content, 0).await.expect("write FIDL error");
+        assert_eq!(error, Err(zx::Status::NOT_SUPPORTED.into_raw()));
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+
+        // Make sure no data was written
+        let ro_file =
+            ExtFile::from_processor(processor.clone(), file_ino, /* read_only=*/ true)
+                .expect("from_data error");
+        let ro_proxy = vfs::file::serve_proxy(ro_file, fio::PERM_READABLE);
+        let verify_content = ro_proxy
+            .read(1024)
+            .await
+            .expect("read FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("read error");
+        assert_eq!(verify_content, original_content);
     }
 }

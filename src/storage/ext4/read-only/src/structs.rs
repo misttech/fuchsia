@@ -552,6 +552,9 @@ pub enum ParsingError {
 
     #[error("Writer failed to write at 0x{:X}", _0)]
     WriterError(u64),
+
+    #[error("{} not supported", _0)]
+    NotSupported(String),
 }
 
 impl From<ReaderError> for ParsingError {
@@ -562,9 +565,7 @@ impl From<ReaderError> for ParsingError {
                 ParsingError::InvalidAddress(InvalidAddressErrorType::Upper, addr, max)
             }
             ReaderError::Write(addr) => ParsingError::WriterError(addr),
-            ReaderError::NotSupported => {
-                ParsingError::Incompatible("Write not supported".to_string())
-            }
+            ReaderError::NotSupported(msg) => ParsingError::NotSupported(msg),
         }
     }
 }

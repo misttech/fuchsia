@@ -18,8 +18,8 @@ pub enum ReaderError {
     OutOfBounds(u64, u64),
     #[error("Write error at: 0x{:X}", _0)]
     Write(u64),
-    #[error("Not supported")]
-    NotSupported,
+    #[error("{} not supported", _0)]
+    NotSupported(String),
 }
 
 pub trait Reader: Send + Sync {
@@ -44,7 +44,7 @@ impl Reader for Arc<dyn Reader> {
 // Same as Reader but has write capability.
 pub trait ReaderWriter: Reader {
     fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
-        Err(ReaderError::NotSupported)
+        Err(ReaderError::NotSupported("Write".to_string()))
     }
 }
 
@@ -118,7 +118,7 @@ impl Reader for VecReader {
 
 impl ReaderWriter for VecReader {
     fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
-        Err(ReaderError::NotSupported)
+        Err(ReaderError::NotSupported("Write".to_string()))
     }
 }
 
@@ -158,7 +158,7 @@ mod fuchsia {
 
     impl ReaderWriter for VmoReader {
         fn write(&self, _offset: u64, _data: &[u8]) -> Result<(), ReaderError> {
-            Err(ReaderError::NotSupported)
+            Err(ReaderError::NotSupported("Write".to_string()))
         }
     }
 

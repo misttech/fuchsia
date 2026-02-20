@@ -117,7 +117,7 @@ mod tests {
 
     use ext4_read_only::structs::MIN_EXT4_SIZE;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
-    use fuchsia_fs::file::{read_to_string, write};
+    use fuchsia_fs::file::{WriteError, read_to_string, write};
     use std::fs;
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
@@ -313,6 +313,98 @@ mod tests {
             read_to_string(&file).await.expect("failed to read file"),
             String::from_utf8(expected_bytes).unwrap()
         );
+        file.close()
+            .await
+            .expect("failed FIDL file close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close file");
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
+    }
+
+    #[fuchsia::test]
+    async fn test_writing_to_unallocated_region_fails() {
+        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
+        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
+        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
+        let server = Arc::new(
+            VmoBackedServerOptions {
+                block_size: 512,
+                initial_contents: InitialContents::FromVmo(vmo),
+                ..Default::default()
+            }
+            .build()
+            .expect("build from VmoBackedServerOptions failed"),
+        );
+
+        let server_clone = server.clone();
+        let (block_client_end1, block_server_end1) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+        });
+
+        // Write to the allocated extent of this file.
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end1),
+            /* read_only= */ false,
+        )
+        .expect("failed to parse the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
+        let file = open_file(&root, "file1", fio::PERM_READABLE | fio::PERM_WRITABLE)
+            .await
+            .expect("failed to open file");
+        let original_contents = read_to_string(&file).await.expect("failed to read file");
+
+        // There is not enough allocated bytes in this file to write this new content.
+        let new_contents = [1u8; 8192];
+        file.seek(fio::SeekOrigin::Start, 0)
+            .await
+            .expect("failed FIDL seek")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to seek file");
+        let error = write(&file, &new_contents)
+            .await
+            .expect_err("write to unallocated region passed unexpectedly");
+        match error {
+            WriteError::WriteError(status) => assert_eq!(status, zx::Status::NOT_SUPPORTED),
+            _ => panic!("Unexpected error: {:?}", error),
+        }
+
+        file.close()
+            .await
+            .expect("failed FIDL file close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close file");
+        root.close()
+            .await
+            .expect("failed FIDL dir close")
+            .map_err(zx::Status::from_raw)
+            .expect("failed to close root");
+
+        // Construct Ext4 fs again, and verify that the written data is still there.
+        let server_clone = server.clone();
+        let (block_client_end2, block_server_end2) =
+            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
+        std::thread::spawn(move || {
+            let mut executor = fasync::TestExecutor::new();
+            let _task =
+                executor.run_singlethreaded(server_clone.serve(block_server_end2.into_stream()));
+        });
+        let tree = construct_fs_internal(
+            FsSourceType::BlockDevice(block_client_end2),
+            /* read_only= */ true,
+        )
+        .expect("construct_fs parses the vmo");
+        let root = vfs::directory::serve(tree, fio::PERM_READABLE);
+        let file =
+            open_file(&root, "file1", fio::PERM_READABLE).await.expect("failed to open file");
+        assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
         file.close()
             .await
             .expect("failed FIDL file close")
