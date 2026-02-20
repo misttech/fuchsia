@@ -5,11 +5,14 @@
 
 import enum
 import importlib
+import inspect
 import logging
 import os
 import pathlib
-from typing import Any, Dict
+from functools import wraps
+from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar
 
+import fuchsia_async_extension
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch,
@@ -21,12 +24,16 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 )
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
-from mobly import base_test, signals, test_runner
+from mobly import signals, test_runner
+from mobly.base_test import BaseTestClass as MoblyBaseTestClass
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 from mobly_controller import openwrt_ap
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
 class SnapshotOn(enum.StrEnum):
@@ -70,8 +77,8 @@ class TracingOn(enum.StrEnum):
     NEVER = "never"
 
 
-class FuchsiaBaseTest(base_test.BaseTestClass):
-    """Fuchsia base test class.
+class FuchsiaBaseTest(MoblyBaseTestClass):
+    """Fuchsia-specific base test class
 
     Attributes:
         fuchsia_devices: List of FuchsiaDevice objects.
@@ -89,9 +96,19 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
         # TODO(b/378563090): Switch the default to `teardown_class_on_fail` after
         # refactoring lacewing tests
             Default value is "never".
+
+    Extensions for async methods:
+        Test method defined as async, e.g., `async def test_*`, will be
+        transformed into synchronous methods that run the original test method
+        on a global event loop.
     """
 
-    def setup_class(self) -> None:
+    def pre_run(self) -> None:
+        pass
+
+    def setup_class(
+        self,
+    ) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
@@ -274,6 +291,12 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
 
     def output_file_path(self, file_name: str) -> pathlib.Path:
         return self._output_dir().joinpath(file_name)
+
+    def on_pass(self, record: TestResultRecord) -> None:
+        pass
+
+    def on_skip(self, record: TestResultRecord) -> None:
+        pass
 
     def _collect_snapshot(self, directory: str) -> None:
         """Collects snapshots for all the FuchsiaDevice objects and stores them
@@ -695,6 +718,68 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
             self.tracing_on: TracingOn = TracingOn(tracing_on)
         except ValueError as e:
             raise signals.TestAbortClass("invalid metric user_param") from e
+
+    def generate_tests(
+        self,
+        test_logic: Callable[P, None | Coroutine[Any, Any, None]],
+        name_func: Callable[P, str],
+        arg_sets: list[P.args],
+        uid_func: Callable[P, str] | None = None,
+    ) -> None:
+        if inspect.iscoroutinefunction(test_logic):
+
+            @wraps(test_logic)
+            def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
+                return (
+                    fuchsia_async_extension.get_test_loop().run_until_complete(
+                        test_logic(*t_args, **t_kwargs)
+                    )
+                )
+
+            return super().generate_tests(
+                wrapper, name_func, arg_sets, uid_func
+            )
+        return super().generate_tests(test_logic, name_func, arg_sets, uid_func)
+
+    def __init_subclass__(cls) -> None:
+        """Creates an async Mobly entrypoint method for each overridden async
+        method and each async test method.
+        """
+
+        super().__init_subclass__()
+
+        # The `make_sync_wrapper` closure factory safely captures the wrapped func
+        # and correctly provide types for the wrapped func.
+        def make_sync_wrapper(
+            func: Callable[P, Coroutine[Any, Any, T]]
+        ) -> Callable[P, T]:
+            @wraps(func)
+            def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                return (
+                    fuchsia_async_extension.get_test_loop().run_until_complete(
+                        func(*args, **kwargs)
+                    )
+                )
+
+            return wrapper
+
+        # Copy original cls.__dict__ items so the for-loop can modify attributes of cls as needed.
+        dict_items = list(cls.__dict__.items())
+        for attr_name, attr_value in dict_items:
+            # Handle async test methods (e.g., 'async def test_my_feature').
+            #
+            # Mobly expects test methods to be synchronous. To support async tests,
+            # we do the following:
+            #   a. Rename the original async test method (e.g., 'test_my_feature')
+            #      to a private name (e.g., '__async_test_my_feature').
+            #   b. Replace the original method name ('test_my_feature') with a
+            #      synchronous wrapper created by make_sync_wrapper.
+            if attr_name.startswith("test_") and inspect.iscoroutinefunction(
+                attr_value
+            ):
+                async_attr_name = f"__async_{attr_name}"
+                setattr(cls, async_attr_name, attr_value)
+                setattr(cls, attr_name, make_sync_wrapper(attr_value))
 
 
 if __name__ == "__main__":
