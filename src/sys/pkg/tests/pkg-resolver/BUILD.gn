@@ -343,6 +343,18 @@ rustc_test("ota_downloader") {
   sources = [ "src/ota_downloader.rs" ]
 }
 
+rustc_test("resolve_overwrites_blobs") {
+  edition = "2024"
+  source_root = "src/resolve_overwrites_blobs.rs"
+  deps = [
+    ":lib",
+    "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs_rust",
+    "//src/lib/fuchsia",
+    "//src/sys/pkg/lib/fuchsia-pkg-testing",
+  ]
+  sources = [ "src/resolve_overwrites_blobs.rs" ]
+}
+
 fuchsia_test_component("dynamic_repositories_disabled-component") {
   component_name = "dynamic-repositories-disabled"
   manifest = "meta/dynamic-repositories-disabled.cml"
@@ -448,6 +460,15 @@ fuchsia_test_component("ota_downloader-component") {
   deps = [ ":ota_downloader" ]
 }
 
+fuchsia_test_component("resolve_overwrites_blobs-component") {
+  component_name = "resolve-overwrites-blobs"
+  manifest = "meta/resolve-overwrites-blobs.cml"
+  deps = [
+    ":resolve_overwrites_blobs",
+    "//src/storage/fxfs:fxfs_component",
+  ]
+}
+
 fuchsia_component_manifest("pkg-resolver-manifest") {
   component_name = "pkg-resolver"
   manifest = "meta/pkg-resolver-for-test.cml"
@@ -504,6 +525,7 @@ fuchsia_test_package("pkg-resolver-integration-tests") {
     ":resolve_with_context-component",
     ":resolve_succeeds_with_broken_minfs-component",
     ":system_cache_fallback-component",
+    ":resolve_overwrites_blobs-component",
   ]
   deps = [
     ":ca.cert-resource",

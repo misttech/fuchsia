@@ -31,6 +31,7 @@ enum WriterFailure {
 #[derive(Clone)]
 enum CreatorFailure {
     OnCreate,
+    OnNeedsOverwrite,
 }
 
 #[derive(Clone)]
@@ -136,6 +137,13 @@ impl FakeCreator {
                                     .send_no_shutdown_on_err(Err(ffxfs::CreateBlobError::Internal))
                                     .unwrap();
                             }
+                            FailureSource::Creator(CreatorFailure::OnNeedsOverwrite) => {
+                                responder
+                                    .send_no_shutdown_on_err(
+                                        self.inner.create(&hash, allow_existing).await.unwrap(),
+                                    )
+                                    .unwrap();
+                            }
                             FailureSource::Writer(writer_failure) => {
                                 let (client, server) = fidl::endpoints::create_request_stream::<
                                     ffxfs::BlobWriterMarker,
@@ -152,8 +160,21 @@ impl FakeCreator {
                             .unwrap();
                     }
                 }
-                ffxfs::BlobCreatorRequest::NeedsOverwrite { .. } => {
-                    unreachable!("This code path is not yet exercised.");
+                ffxfs::BlobCreatorRequest::NeedsOverwrite { responder, blob_hash } => {
+                    match &self.target.1 {
+                        FailureSource::Creator(CreatorFailure::OnNeedsOverwrite) => {
+                            responder
+                                .send_no_shutdown_on_err(Err(Status::BAD_STATE.into_raw()))
+                                .unwrap();
+                        }
+                        _ => {
+                            responder
+                                .send_no_shutdown_on_err(
+                                    self.inner.needs_overwrite(&blob_hash).await.unwrap(),
+                                )
+                                .unwrap();
+                        }
+                    }
                 }
             }
         }
@@ -285,6 +306,17 @@ async fn fails_on_create_far_in_install_pkg() {
 }
 
 #[fuchsia::test]
+async fn fails_on_needs_overwrite_far_in_install_pkg() {
+    let (blobfs, pkg) = make_mock_blobfs_with_failing_install_pkg(
+        "fails_on_needs_overwrite_far_in_install_pkg",
+        FailureSource::Creator(CreatorFailure::OnNeedsOverwrite),
+    )
+    .await;
+
+    assert_resolve_package_with_failing_blobfs_fails(blobfs, pkg).await
+}
+
+#[fuchsia::test]
 async fn fails_get_vmo_far_in_install_pkg() {
     let (blobfs, pkg) = make_mock_blobfs_with_failing_install_pkg(
         "fails_truncate_far_in_install_pkg",
@@ -311,6 +343,17 @@ async fn fails_on_create_blob_in_install_blob() {
     let (blobfs, pkg) = make_mock_blobfs_with_failing_install_blob(
         "fails_on_open_blob_in_install_blob",
         FailureSource::Creator(CreatorFailure::OnCreate),
+    )
+    .await;
+
+    assert_resolve_package_with_failing_blobfs_fails(blobfs, pkg).await
+}
+
+#[fuchsia::test]
+async fn fails_on_needs_overwrite_blob_in_install_blob() {
+    let (blobfs, pkg) = make_mock_blobfs_with_failing_install_blob(
+        "fails_on_needs_overwrite_blob_in_install_blob",
+        FailureSource::Creator(CreatorFailure::OnNeedsOverwrite),
     )
     .await;
 

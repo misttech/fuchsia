@@ -56,11 +56,11 @@ async fn cached_packages_are_retained() {
 
     // Verify no retained package blobs are deleted, directly from blobfs.
     for pkg in packages.iter() {
-        assert!(env.blobfs.client().has_blob(pkg.hash()).await);
+        assert!(env.blobfs.client().blob_present_and_up_to_date(pkg.hash()).await);
     }
 
     for pkg in garbage_packages.iter() {
-        assert_eq!(env.blobfs.client().has_blob(pkg.hash()).await, false);
+        assert_eq!(env.blobfs.client().blob_present_and_up_to_date(pkg.hash()).await, false);
     }
 
     // Verify no retained package blobs are deleted, using PackageCache API.
@@ -107,7 +107,7 @@ async fn packages_are_retained_gc_mid_process() {
     assert_matches!(env.proxies.space_manager.gc().await, Ok(Ok(())));
 
     // Verify the package’s meta far is not deleted.
-    assert!(env.blobfs.client().has_blob(package.hash()).await);
+    assert!(env.blobfs.client().blob_present_and_up_to_date(package.hash()).await);
 
     write_needed_blobs(&needed_blobs, contents).await;
 

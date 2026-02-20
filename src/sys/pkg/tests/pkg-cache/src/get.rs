@@ -640,7 +640,7 @@ async fn get_with_retained_protection_refetches_blobs() {
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
     let blobfs = env.blobfs.client();
     let () = blobfs.delete_blob(&blob_hash).await.unwrap();
-    assert!(!blobfs.has_blob(&blob_hash).await);
+    assert!(!blobfs.blob_present_and_up_to_date(&blob_hash).await);
 
     // Get with OpenPackageTracking protection, package should *not* validate because the package
     // is in the cache packages manifest which short-circuits the fetch, so the deleted content
@@ -662,7 +662,7 @@ async fn get_with_retained_protection_refetches_blobs() {
         pkg.verify_contents(&dir).await,
         Err(fuchsia_pkg_testing::VerificationError::MissingFile{path}) if path == "blob-to-refetch"
     );
-    assert!(!blobfs.has_blob(&blob_hash).await);
+    assert!(!blobfs.blob_present_and_up_to_date(&blob_hash).await);
 
     // Get with Retained protection, package *should* validate because Retained Gets always
     // check all the blobs.
@@ -691,7 +691,7 @@ async fn get_with_retained_protection_refetches_blobs() {
     let () = blob_written(&needed_blobs, blob_hash).await;
     let () = get_fut.await.unwrap().unwrap();
     let () = pkg.verify_contents(&dir).await.unwrap();
-    assert!(blobfs.has_blob(&blob_hash).await);
+    assert!(blobfs.blob_present_and_up_to_date(&blob_hash).await);
 
     let () = env.stop().await;
 }
@@ -820,7 +820,7 @@ async fn bootfs_used_to_serve_package_directories_but_not_prevent_fetching() {
     // will short-circuit and not check for the blobs.
     let pkg_dir = env.get_already_cached(&base_package.hash().to_string()).await.unwrap();
     // Double-check that the blob is still missing from blobfs.
-    assert!(!env.blobfs.client().has_blob(&blob_hash).await);
+    assert!(!env.blobfs.client().blob_present_and_up_to_date(&blob_hash).await);
     // The content blob is readable from the package directory because it is served from bootfs.
     let () = base_package.verify_contents(&pkg_dir).await.unwrap();
 
@@ -851,7 +851,7 @@ async fn bootfs_used_to_serve_package_directories_but_not_prevent_fetching() {
     let () = blob.blob_written().await.unwrap();
     let _: fuchsia_pkg::PackageDirectory = get.finish().await.unwrap();
     // Double-check that the blob is now in blobfs.
-    assert!(env.blobfs.client().has_blob(&blob_hash).await);
+    assert!(env.blobfs.client().blob_present_and_up_to_date(&blob_hash).await);
 
     let () = env.stop().await;
 }

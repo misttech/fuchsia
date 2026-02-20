@@ -21,6 +21,16 @@ use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 pub mod mock;
 pub use mock::Mock;
 
+#[derive(Debug, Error)]
+#[allow(missing_docs)]
+pub enum BlobStatusError {
+    #[error("this client was not created with a blob creator so it cannot write blobs")]
+    WritingNotConfigured,
+
+    #[error("the fidl call returned an unexpected error")]
+    NeedsOverwrite(#[source] Status),
+}
+
 /// Blobfs client errors.
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
@@ -54,6 +64,9 @@ pub enum BlobfsError {
 
     #[error("while setting the VmexResource")]
     InitVmexResource(#[source] anyhow::Error),
+
+    #[error("while checking NeedsOverwrite for blob status")]
+    BlobStatus(BlobStatusError),
 }
 
 /// An error encountered while creating a blob
@@ -77,6 +90,18 @@ pub enum CreateError {
 
     #[error("this client was not created with a blob creator so it cannot write blobs")]
     WritingNotConfigured,
+}
+
+/// The response to a `BlobCreator.NeedsOverwrite` call, excepting unexpected internal errors.
+pub enum BlobStatus {
+    /// The blob is present and considered up to date.
+    UpToDate,
+
+    /// The blob is present, but should be overwritten.
+    NeedsOverwrite,
+
+    /// The blob is not present.
+    Absent,
 }
 
 impl From<ffxfs::CreateBlobError> for CreateError {
@@ -290,15 +315,29 @@ impl Client {
         Ok(creator.create(blob, allow_existing).await??)
     }
 
-    /// Returns whether blobfs has a blob with the given hash.
-    /// On c++blobfs, this should only be called if there are no concurrent attempts to write the
-    /// blob. On c++blobfs, open connections to even partially written blobs keep the blob alive,
-    /// and so if this call overlaps with a concurrent attempt to create the blob that fails and
-    /// is then retried, this open connection will prevent the partially written blob from being
-    /// removed and block the creation of the new write connection.
-    pub async fn has_blob(&self, blob: &Hash) -> bool {
-        // TODO(https://fxbug.dev/295552228): Use faster API for determining blob presence.
-        matches!(self.reader.get_vmo(blob).await, Ok(Ok(_)))
+    /// Returns whether blobfs has a blob with the given hash and blobfs considers it up to date.
+    pub async fn blob_present_and_up_to_date(&self, blob: &Hash) -> bool {
+        // This call is only used when we're considering writing a blob, so we should have a
+        // creator.
+        matches!(
+            self.creator.as_ref().expect("Missing BlobCreator access").needs_overwrite(blob).await,
+            Ok(Ok(false))
+        )
+    }
+
+    /// Looks up the current status of a blob using `BlobCreator.NeedsOverwrite`.
+    pub async fn blob_status(&self, blob: &Hash) -> Result<BlobStatus, BlobfsError> {
+        let Some(creator) = &self.creator else {
+            return Err(BlobfsError::BlobStatus(BlobStatusError::WritingNotConfigured));
+        };
+        match creator.needs_overwrite(blob).await? {
+            Ok(true) => Ok(BlobStatus::NeedsOverwrite),
+            Ok(false) => Ok(BlobStatus::UpToDate),
+            Err(status) if status == Status::NOT_FOUND.into_raw() => Ok(BlobStatus::Absent),
+            Err(s) => {
+                Err(BlobfsError::BlobStatus(BlobStatusError::NeedsOverwrite(Status::from_raw(s))))
+            }
+        }
     }
 
     /// Determines which blobs of `candidates` are missing from blobfs.
@@ -324,11 +363,7 @@ impl Client {
         // missing blobs is not worth a rarely taken branch deep within package resolution.
         stream::iter(candidates)
             .map(move |blob| async move {
-                if self.has_blob(&blob).await {
-                    None
-                } else {
-                    Some(blob)
-                }
+                if self.blob_present_and_up_to_date(&blob).await { None } else { Some(blob) }
             })
             // Emulator testing suggests both c++blobfs and fxblob show diminishing returns after
             // even three concurrent `has_blob` calls.
@@ -513,8 +548,10 @@ mod tests {
             .unwrap();
         let client = Client::for_ramdisk(&blobfs);
 
-        assert!(client.has_blob(&fuchsia_merkle::root_from_slice(b"blob 1")).await);
-        assert!(!client.has_blob(&Hash::from([1; 32])).await);
+        assert!(
+            client.blob_present_and_up_to_date(&fuchsia_merkle::root_from_slice(b"blob 1")).await
+        );
+        assert!(!client.blob_present_and_up_to_date(&Hash::from([1; 32])).await);
 
         blobfs.stop().await.unwrap();
     }
@@ -534,19 +571,19 @@ mod tests {
             delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Always);
 
         let writer = client.open_blob_for_write(&hash, false).await.unwrap().into_proxy();
-        assert!(!client.has_blob(&hash).await);
+        assert!(!client.blob_present_and_up_to_date(&hash).await);
 
         let n = delivery_content.len();
         let vmo = writer.get_vmo(n.try_into().unwrap()).await.unwrap().unwrap();
-        assert!(!client.has_blob(&hash).await);
+        assert!(!client.blob_present_and_up_to_date(&hash).await);
 
         let () = vmo.write(&delivery_content[0..n - 1], 0).unwrap();
         let () = writer.bytes_ready((n - 1).try_into().unwrap()).await.unwrap().unwrap();
-        assert!(!client.has_blob(&hash).await);
+        assert!(!client.blob_present_and_up_to_date(&hash).await);
 
         let () = vmo.write(&delivery_content[n - 1..], (n - 1).try_into().unwrap()).unwrap();
         let () = writer.bytes_ready(1.try_into().unwrap()).await.unwrap().unwrap();
-        assert!(client.has_blob(&hash).await);
+        assert!(client.blob_present_and_up_to_date(&hash).await);
 
         blobfs.stop().await.unwrap();
     }

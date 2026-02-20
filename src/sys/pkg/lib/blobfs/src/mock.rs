@@ -39,16 +39,20 @@ impl Mock {
     }
 
     /// Consume the next BlobCreator request, verifying it is intended to create the blob identified
-    /// by `merkle`. Return a `BlobWriter` for validating the writes.
+    /// by `merkle` with the same `allow_existing`. Return a `BlobWriter` for validating the writes.
     ///
     /// # Panics
     ///
     /// Panics on error or assertion violation (unexpected requests or a mismatched open call)
-    pub async fn expect_create_blob(&mut self, merkle: Hash) -> BlobWriter {
+    pub async fn expect_create_blob(
+        &mut self,
+        merkle: Hash,
+        expected_allow_existing: bool,
+    ) -> BlobWriter {
         match self.creator_stream.next().await {
             Some(Ok(ffxfs::BlobCreatorRequest::Create { hash, allow_existing, responder })) => {
                 assert_eq!(Hash::from(hash), merkle);
-                assert!(!allow_existing);
+                assert_eq!(allow_existing, expected_allow_existing);
                 let (writer, stream) =
                     fidl::endpoints::create_request_stream::<ffxfs::BlobWriterMarker>();
                 let () = responder.send(Ok(writer)).unwrap();
@@ -83,9 +87,33 @@ impl Mock {
         }
     }
 
+    /// Consume the next BlobCreator request, verifying it is intended to check whether the blob
+    /// identified by `merkle` needs to be overwritten. Either respond with `res.ok()` or fail with
+    /// `res.err()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics on error or assertion violation (unexpected requests or a mismatched call)
+    pub async fn expect_needs_overwrite(&mut self, merkle: Hash, res: Result<bool, zx::Status>) {
+        match self.creator_stream.next().await {
+            Some(Ok(ffxfs::BlobCreatorRequest::NeedsOverwrite { blob_hash, responder })) => {
+                assert_eq!(Hash::from(blob_hash), merkle);
+                match res {
+                    Ok(needs_overwrite) => {
+                        let () = responder.send(Ok(needs_overwrite)).unwrap();
+                    }
+                    Err(s) => {
+                        let () = responder.send(Err(s.into_raw())).unwrap();
+                    }
+                }
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
     /// Consume N directory requests, verifying they are intended to determine whether the blobs
-    /// specified `readable` and `missing` are readable or not, responding to the check based on
-    /// which collection the hash is in.
+    /// specified `readable` and `missing` are readable or not using `GetVmo`, responding to the
+    /// check based on which collection the hash is in.
     ///
     /// # Panics
     ///
@@ -95,12 +123,11 @@ impl Mock {
         let mut missing = missing.iter().copied().collect::<HashSet<_>>();
 
         while !(readable.is_empty() && missing.is_empty()) {
-            match self.reader_stream.next().await {
-                Some(Ok(ffxfs::BlobReaderRequest::GetVmo { blob_hash, responder })) => {
+            match self.creator_stream.next().await {
+                Some(Ok(ffxfs::BlobCreatorRequest::NeedsOverwrite { blob_hash, responder })) => {
                     let hash = Hash::from(blob_hash);
                     if readable.remove(&hash) {
-                        let vmo = zx::Vmo::create(0).unwrap();
-                        let () = responder.send(Ok(vmo)).unwrap();
+                        let () = responder.send(Ok(false)).unwrap();
                     } else if missing.remove(&hash) {
                         let () = responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
                     } else {

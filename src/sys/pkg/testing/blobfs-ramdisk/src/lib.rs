@@ -267,6 +267,15 @@ impl ServingFilesystem {
         .context("connecting to fuchsia.fxfs.BlobReader")
     }
 
+    fn overwrite_configuration_proxy(
+        &self,
+    ) -> Result<fidl_fuchsia_storage_blobfs::OverwriteConfigurationProxy, Error> {
+        fuchsia_component::client::connect_to_protocol_at_dir_root::<
+            fidl_fuchsia_storage_blobfs::OverwriteConfigurationMarker,
+        >(&self.svc_dir()?)
+        .context("connecting to fuchsia.storage.blobfs.OverwriteConfiguration")
+    }
+
     fn implementation(&self) -> Implementation {
         match self {
             Self::SingleVolume(_) => Implementation::CppBlobfs,
@@ -413,6 +422,13 @@ impl BlobfsRamdisk {
     /// Returns a new connection to blobfs's fuchsia.fxfs/BlobReader API.
     pub fn blob_reader_proxy(&self) -> Result<ffxfs::BlobReaderProxy, Error> {
         self.fs.blob_reader_proxy()
+    }
+
+    /// Returns a new connection to blobfs's fuchsia.storage.blobfs/OverwriteConfiguration API.
+    pub fn overwrite_configuration_proxy(
+        &self,
+    ) -> Result<fidl_fuchsia_storage_blobfs::OverwriteConfigurationProxy, Error> {
+        self.fs.overwrite_configuration_proxy()
     }
 }
 

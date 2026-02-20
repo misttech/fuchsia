@@ -459,6 +459,11 @@ where
         Self { blob_implementation: Some(blobfs_ramdisk::Implementation::Fxblob), ..self }
     }
 
+    pub fn cpp_blobfs(self) -> Self {
+        assert_eq!(self.blob_implementation, None);
+        Self { blob_implementation: Some(blobfs_ramdisk::Implementation::CppBlobfs), ..self }
+    }
+
     pub async fn build(self) -> TestEnv<ConcreteBlobfs> {
         let blob_implementation =
             self.blob_implementation.unwrap_or(blobfs_ramdisk::Implementation::CppBlobfs);
