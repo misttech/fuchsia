@@ -191,7 +191,7 @@
              path="prebuilt/tools/cgpt/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <package name="fuchsia/tools/futility/${platform}"
-             version="git_revision:ac74162e39b25eb9de95e31f66358e265e7a272f"
+             version="git_revision:dcd8a03346fb8550c2a0c681cc92b07b52c19657"
              path="prebuilt/tools/futility/{{.OS}}-{{.Arch}}"
              platforms="linux-amd64"/>
     <package name="fuchsia/tools/buildstats/${platform}"
