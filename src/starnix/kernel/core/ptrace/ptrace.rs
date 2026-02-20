@@ -374,7 +374,7 @@ impl PtraceState {
                 info.instruction_pointer = registers.instruction_pointer_register();
                 info.stack_pointer = registers.stack_pointer_register();
                 #[cfg(target_arch = "aarch64")]
-                if captured.thread_state.arch_width.is_arch32() {
+                if captured.thread_state.is_arch32() {
                     // If any additional arch32 archs are added, just use a cfg
                     // macro here.
                     info.arch = starnix_uapi::AUDIT_ARCH_ARM;
@@ -383,7 +383,7 @@ impl PtraceState {
                     StopState::SyscallEnterStopped => {
                         let syscall_decl = SyscallDecl::from_number(
                             registers.syscall_register(),
-                            captured.thread_state.arch_width,
+                            captured.thread_state.arch_width(),
                         );
                         let syscall = new_syscall_from_state(syscall_decl, &captured.thread_state);
                         info.op = PTRACE_SYSCALL_INFO_ENTRY as u8;

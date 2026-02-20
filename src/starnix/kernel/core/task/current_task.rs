@@ -187,13 +187,18 @@ pub struct ThreadState<T: RegisterStorage> {
     /// To use, call set_syscall_restart_func and return ERESTART_RESTARTBLOCK. sys_restart_syscall
     /// will eventually call it.
     pub syscall_restart_func: Option<Box<SyscallRestartFunc>>,
-
-    /// An architecture agnostic enum indicating the width (32 or 64 bits) of the execution
-    /// environment in use.
-    pub arch_width: ArchWidth,
 }
 
 impl<T: RegisterStorage> ThreadState<T> {
+    pub fn arch_width(&self) -> ArchWidth {
+        #[cfg(target_arch = "aarch64")]
+        {
+            return if self.is_arch32() { ArchWidth::Arch32 } else { ArchWidth::Arch64 };
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        ArchWidth::Arch64
+    }
+
     /// Returns a new `ThreadState` with the same `registers` as this one.
     fn snapshot<R: RegisterStorage>(&self) -> ThreadState<R>
     where
@@ -204,7 +209,6 @@ impl<T: RegisterStorage> ThreadState<T> {
             extended_pstate: Default::default(),
             restart_code: self.restart_code,
             syscall_restart_func: None,
-            arch_width: self.arch_width,
         }
     }
 
@@ -217,14 +221,12 @@ impl<T: RegisterStorage> ThreadState<T> {
             extended_pstate: self.extended_pstate.clone(),
             restart_code: self.restart_code,
             syscall_restart_func: None,
-            arch_width: self.arch_width,
         }
     }
 
     pub fn replace_registers<O: RegisterStorage>(&mut self, other: &ThreadState<O>) {
         self.registers.load(*other.registers);
         self.extended_pstate = other.extended_pstate;
-        self.arch_width = other.arch_width;
     }
 
     pub fn get_user_register(&mut self, offset: usize) -> Result<usize, Errno> {
@@ -245,14 +247,20 @@ impl From<ThreadState<HeapRegs>> for ThreadState<RegisterStorageEnum> {
             extended_pstate: value.extended_pstate,
             restart_code: value.restart_code,
             syscall_restart_func: value.syscall_restart_func,
-            arch_width: value.arch_width,
         }
     }
 }
 
 impl<T: RegisterStorage> ArchSpecific for ThreadState<T> {
     fn is_arch32(&self) -> bool {
-        self.arch_width.is_arch32()
+        #[cfg(target_arch = "aarch64")]
+        {
+            (self.registers.cpsr as u64) & zx::sys::ZX_REG_CPSR_ARCH_32_MASK != 0
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            false
+        }
     }
 }
 
@@ -1194,8 +1202,6 @@ impl CurrentTask {
         let security_state = resolved_elf.security_state.clone();
 
         let start_info = load_executable(self, resolved_elf, &path)?;
-        // Before consuming start_info below, note if the task is 32-bit.
-        self.thread_state.arch_width = start_info.arch_width;
 
         let regs: zx_restricted_state_t = start_info.into();
         self.thread_state.registers.load(regs);

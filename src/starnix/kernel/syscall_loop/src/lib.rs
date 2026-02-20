@@ -208,7 +208,7 @@ fn process_restricted_exit(
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
             let syscall_decl = SyscallDecl::from_number(
                 current_task.thread_state.registers.syscall_register(),
-                current_task.thread_state.arch_width,
+                current_task.thread_state.arch_width(),
             );
 
             if let Some(new_error_context) = execute_syscall(locked, current_task, syscall_decl) {
@@ -272,7 +272,7 @@ fn process_completed_exception(
 
             if let Some(status) = deliver_signal(
                 current_task.task.as_ref(),
-                current_task.thread_state.arch_width,
+                current_task.thread_state.arch_width(),
                 task_state,
                 signal.into(),
                 &mut current_task.thread_state.registers,

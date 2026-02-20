@@ -297,7 +297,7 @@ pub fn dequeue_signal(locked: &mut Locked<Unlocked>, current_task: &mut CurrentT
         }
         if let Some(status) = deliver_signal(
             &task,
-            current_task.thread_state.arch_width,
+            current_task.thread_state.arch_width(),
             task_state,
             siginfo.clone(),
             &mut current_task.thread_state.registers,

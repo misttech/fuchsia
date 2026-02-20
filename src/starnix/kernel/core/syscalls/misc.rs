@@ -237,7 +237,7 @@ pub fn sys_unknown(
     #[allow(unused_variables)] current_task: &CurrentTask,
     syscall_number: u64,
 ) -> Result<SyscallResult, Errno> {
-    let decl = SyscallDecl::from_number(syscall_number, current_task.thread_state.arch_width);
+    let decl = SyscallDecl::from_number(syscall_number, current_task.thread_state.arch_width());
     track_stub!(TODO("https://fxbug.dev/322874143"), decl.name(), syscall_number);
 
     // TODO(https://fxbug.dev/454657040) We should send SIGSYS once we have signals.
