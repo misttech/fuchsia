@@ -527,9 +527,6 @@
                 "MsgqueueTest.MsgCtlIpcInfo",
                 "MsgqueueTest.MsgCtlIpcStat",
 
-                // msync_test
-                "All/MsyncNoFlagsTest.BothSyncAndAsyncFails/*",
-
                 // network_namespace_test
                 "NetworkNamespaceTest.BindMount",
                 "NetworkNamespaceTest.LoopbackExists",

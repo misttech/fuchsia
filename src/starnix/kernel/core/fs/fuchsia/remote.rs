@@ -807,6 +807,10 @@ impl FsNodeOps for RemoteNode {
         Ok(Box::new(RemoteFileObject::default()))
     }
 
+    fn sync(&self, _node: &FsNode, _current_task: &CurrentTask) -> Result<(), Errno> {
+        self.node.io.sync().map_err(map_sync_io_client_error)
+    }
+
     fn mknod(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -1563,10 +1567,6 @@ impl FileOps for RemoteFileObject {
             .map(|c| Some(c.0.into_handle().into()))
     }
 
-    fn sync(&self, file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno> {
-        Self::io(file).sync().map_err(map_sync_io_client_error)
-    }
-
     fn ioctl(
         &self,
         locked: &mut Locked<Unlocked>,
@@ -2116,6 +2116,8 @@ mod test {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use std::sync::atomic::AtomicU32;
+    use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
     use zx::HandleBased;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -3873,5 +3875,151 @@ mod test {
             .unwrap();
 
         assert_eq!(state.0.load(Ordering::Relaxed), 0);
+    }
+
+    #[::fuchsia::test]
+    async fn test_sync() {
+        let fixture = TestFixture::new().await;
+        let (server, client) = zx::Channel::create();
+        fixture.root().clone(server.into()).expect("clone failed");
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+            let fs = RemoteFs::new_fs(
+                locked,
+                &kernel,
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
+                rights,
+            )
+            .expect("new_fs failed");
+            let ns = Namespace::new(fs);
+            current_task.fs().set_umask(FileMode::from_bits(0));
+            let root = ns.root();
+
+            const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
+            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+                .expect("create_node failed");
+            let mut context = LookupContext::new(SymlinkMode::NoFollow);
+            let reg_node = root
+                .lookup_child(locked, &current_task, &mut context, "file".into())
+                .expect("lookup_child failed");
+
+            // sync should delegate to zxio and succeed
+            reg_node
+                .entry
+                .node
+                .ops()
+                .sync(&reg_node.entry.node, &current_task)
+                .expect("sync failed");
+        })
+        .await;
+        fixture.close().await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_msync_propagates_to_fxfs() {
+        use crate::mm::MemoryAccessor;
+        use crate::mm::syscalls::{sys_mmap, sys_msync};
+        use crate::vfs::FdFlags;
+        use starnix_uapi::user_address::UserAddress;
+        use starnix_uapi::{MAP_SHARED, MS_SYNC, PROT_READ, PROT_WRITE};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Counter to track Fxfs transactions
+        let commit_count = Arc::new(AtomicUsize::new(0));
+        let commit_count_clone = commit_count.clone();
+
+        // Open fixture with pre_commit_hook
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(1024 * 1024, 512)),
+            TestFixtureOptions {
+                format: true,
+                as_blob: false,
+                encrypted: true,
+                pre_commit_hook: Some(Box::new(move |_transaction| {
+                    commit_count_clone.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })),
+            },
+        )
+        .await;
+
+        let (server, client) = zx::Channel::create();
+        fixture.root().clone(server.into()).expect("clone channel");
+
+        spawn_kernel_and_run(async move |locked, current_task| {
+            // Setup RemoteFs
+            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+            let fs = RemoteFs::new_fs(
+                locked,
+                current_task.kernel(),
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/test"), ..Default::default() },
+                rights,
+            )
+            .expect("new_fs");
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            // Create and Open a file
+            let node = root
+                .create_node(
+                    locked,
+                    &current_task,
+                    "test_file".into(),
+                    mode!(IFREG, 0o666),
+                    DeviceType::NONE,
+                )
+                .expect("create_node");
+            let file_handle = node
+                .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
+                .expect("open");
+            let fd = current_task
+                .files
+                .add(locked, current_task, file_handle, FdFlags::empty())
+                .expect("add file");
+
+            // Do mmap
+            let len = *PAGE_SIZE as usize * 4;
+            let mmap_addr = sys_mmap(
+                locked,
+                current_task,
+                UserAddress::default(),
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED,
+                fd,
+                0,
+            )
+            .expect("mmap");
+
+            // Modify memory (multiple pages)
+            for i in 0..4 {
+                let data = [0xAAu8; 1];
+                current_task
+                    .write_memory((mmap_addr + (i * *PAGE_SIZE as usize)).unwrap(), &data)
+                    .expect("write memory");
+            }
+
+            // Capture commit count before msync
+            let commits_before_msync = commit_count.load(Ordering::SeqCst);
+
+            // invoke msync()
+            sys_msync(locked, current_task, mmap_addr, len, MS_SYNC).expect("msync");
+
+            // Verify msync results
+            let final_commits = commit_count.load(Ordering::SeqCst);
+            assert!(
+                final_commits > commits_before_msync,
+                "msync should trigger Fxfs transaction. commits: {} -> {}",
+                commits_before_msync,
+                final_commits
+            );
+        })
+        .await;
+
+        fixture.close().await;
     }
 }

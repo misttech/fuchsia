@@ -1744,4 +1744,75 @@ TEST(Madvise, MadvRemoveZeroesMemory) {
   SAFE_SYSCALL(munmap(addr, page_size));
 }
 
+TEST(MMapTest, MsyncFlags) {
+  char* mutable_storage = getenv("MUTABLE_STORAGE");
+  // TODO(https://fxbug.dev/317285180) Fallback to /tmp if "MUTABLE_STORAGE" isn't set. This env var
+  // is required once bare host tests removed.
+  std::string dir = (mutable_storage != nullptr) ? std::string(mutable_storage) : "/tmp";
+  ASSERT_FALSE(dir.empty());
+
+  std::string test_folder = dir + "/msync_flags_XXXXXX";
+  ASSERT_NE(mkdtemp(test_folder.data()), nullptr)
+      << "failed to create test folder: " << std::strerror(errno);
+
+  std::string path = test_folder + "/msync_flags_test";
+
+  auto cleanup = fit::defer([&]() {
+    remove(path.c_str());
+    rmdir(test_folder.c_str());
+  });
+
+  int fd = open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777);
+  ASSERT_GE(fd, 0) << "Failed to open test file: " << strerror(errno);
+
+  size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+  SAFE_SYSCALL(ftruncate(fd, page_size));
+
+  void* addr = mmap(nullptr, page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  ASSERT_NE(addr, MAP_FAILED);
+
+  // Test MS_ASYNC
+  // Should return immediately (handled as no-op or scheduled).
+  *reinterpret_cast<volatile char*>(addr) = 'a';
+  EXPECT_THAT(msync(addr, page_size, MS_ASYNC), SyscallSucceeds());
+
+  // Test MS_SYNC
+  // Should persist data.
+  *reinterpret_cast<volatile char*>(addr) = 'b';
+  EXPECT_THAT(msync(addr, page_size, MS_SYNC), SyscallSucceeds());
+
+  // Verify data on disk
+  char file_content;
+  EXPECT_EQ(pread(fd, &file_content, 1, 0), 1);
+  EXPECT_EQ(file_content, 'b');
+
+  // Test MS_INVALIDATE (combined with MS_SYNC)
+  *reinterpret_cast<volatile char*>(addr) = 'c';
+  EXPECT_THAT(msync(addr, page_size, MS_SYNC | MS_INVALIDATE), SyscallSucceeds());
+  EXPECT_EQ(pread(fd, &file_content, 1, 0), 1);
+  EXPECT_EQ(file_content, 'c');
+
+  // Test MS_SYNC | MS_ASYNC (invalid)
+  EXPECT_THAT(msync(addr, page_size, MS_SYNC | MS_ASYNC), SyscallFailsWithErrno(EINVAL));
+
+  // Test MS_INVALIDATE only (should be like MS_ASYNC)
+  *reinterpret_cast<volatile char*>(addr) = 'd';
+  EXPECT_THAT(msync(addr, page_size, MS_INVALIDATE), SyscallSucceeds());
+  // Data might not be synced
+
+  // Test 0 flags (should be like MS_ASYNC)
+  *reinterpret_cast<volatile char*>(addr) = 'e';
+  EXPECT_THAT(msync(addr, page_size, 0), SyscallSucceeds());
+  // Data might not be synced
+
+  // Final sync to check last write if needed
+  *reinterpret_cast<volatile char*>(addr) = 'f';
+  EXPECT_THAT(msync(addr, page_size, MS_SYNC), SyscallSucceeds());
+  EXPECT_EQ(pread(fd, &file_content, 1, 0), 1);
+  EXPECT_EQ(file_content, 'f');
+
+  SAFE_SYSCALL(munmap(addr, page_size));
+  close(fd);
+}
+
 }  // namespace

@@ -179,6 +179,15 @@ bitflags! {
     }
 }
 
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct MsyncFlags: u32 {
+        const ASYNC = starnix_uapi::MS_ASYNC;
+        const INVALIDATE = starnix_uapi::MS_INVALIDATE;
+        const SYNC = starnix_uapi::MS_SYNC;
+    }
+}
+
 const PROGRAM_BREAK_LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -3492,6 +3501,82 @@ impl MemoryManager {
         let result = state.protect(current_task, addr, length, prot_flags, &mut released_mappings);
         released_mappings.finalize(state);
         result
+    }
+
+    pub fn msync(
+        &self,
+        _locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        addr: UserAddress,
+        length: usize,
+        flags: MsyncFlags,
+    ) -> Result<(), Errno> {
+        // According to POSIX, either MS_SYNC or MS_ASYNC must be specified in flags,
+        // and indeed failure to include one of these flags will cause msync() to fail
+        // on some systems.  However, Linux permits a call to msync() that specifies
+        // neither of these flags, with semantics that are (currently) equivalent to
+        // specifying MS_ASYNC.
+
+        // Both MS_SYNC and MS_ASYNC are set in flags
+        if flags.contains(MsyncFlags::ASYNC) && flags.contains(MsyncFlags::SYNC) {
+            return error!(EINVAL);
+        }
+
+        if !addr.is_aligned(*PAGE_SIZE) {
+            return error!(EINVAL);
+        }
+
+        // We collect the nodes to sync first, release the memory manager lock, and then sync them.
+        // This avoids holding the lock during blocking I/O operations (sync), which prevents
+        // stalling other memory operations and avoids potential deadlocks.
+        // It also allows us to deduplicate nodes, avoiding redundant sync calls for the same file.
+        let mut nodes_to_sync = {
+            let mm_state = self.state.read();
+
+            let length_rounded = round_up_to_system_page_size(length)?;
+            let end_addr = addr.checked_add(length_rounded).ok_or_else(|| errno!(EINVAL))?;
+
+            let mut last_end = addr;
+            let mut nodes = vec![];
+            for (range, mapping) in mm_state.mappings.range(addr..end_addr) {
+                // Check if there is a gap between the last mapped address and the current mapping.
+                // msync requires the entire range to be mapped, so any gap results in ENOMEM.
+                if range.start > last_end {
+                    return error!(ENOMEM);
+                }
+                last_end = range.end;
+
+                if flags.contains(MsyncFlags::INVALIDATE)
+                    && mapping.flags().contains(MappingFlags::LOCKED)
+                {
+                    return error!(EBUSY);
+                }
+
+                if flags.contains(MsyncFlags::SYNC) {
+                    if let MappingNameRef::File(file_mapping) = mapping.name() {
+                        nodes.push(file_mapping.name.entry.node.clone());
+                    }
+                }
+            }
+            if last_end < end_addr {
+                return error!(ENOMEM);
+            }
+            nodes
+        };
+
+        // Deduplicate nodes to avoid redundant sync calls.
+        nodes_to_sync.sort_by_key(|n| Arc::as_ptr(n) as usize);
+        nodes_to_sync.dedup_by(|a, b| Arc::ptr_eq(a, b));
+
+        for node in nodes_to_sync {
+            // Range-based sync is non-trivial for Fxfs to support due to its complicated
+            // reservation system (b/322874588#comment5). Naive range-based sync could exhaust
+            // space reservations if called page-by-page, as transaction costs are based on the
+            // number of dirty pages rather than file ranges. We use whole-file sync for now
+            // to ensure data durability without adding excessive complexity.
+            node.ops().sync(&node, current_task)?;
+        }
+        Ok(())
     }
 
     pub fn madvise(

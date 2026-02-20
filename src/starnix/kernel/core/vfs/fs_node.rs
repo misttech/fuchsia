@@ -795,6 +795,11 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         Ok(info.read())
     }
 
+    /// Syncs cached data to persistent storage.
+    fn sync(&self, _node: &FsNode, _current_task: &CurrentTask) -> Result<(), Errno> {
+        Ok(())
+    }
+
     /// Update node attributes persistently.
     fn update_attributes(
         &self,

@@ -200,7 +200,9 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
     /// Syncs cached state associated with the file descriptor to persistent storage.
     ///
     /// The method blocks until the synchronization is complete.
-    fn sync(&self, file: &FileObject, _current_task: &CurrentTask) -> Result<(), Errno>;
+    fn sync(&self, file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
+        file.node().ops().sync(file.node(), current_task)
+    }
 
     /// Syncs cached data, and only enough metadata to retrieve said data, to persistent storage.
     ///

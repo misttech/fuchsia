@@ -6,7 +6,8 @@ use crate::mm::barrier::{BarrierType, system_barrier};
 use crate::mm::debugger::notify_debugger_of_module_list;
 use crate::mm::{
     DesiredAddress, FutexKey, IOVecPtr, MappingName, MappingOptions, MembarrierType,
-    MemoryAccessorExt, MremapFlags, PAGE_SIZE, PrivateFutexKey, ProtectionFlags, SharedFutexKey,
+    MemoryAccessorExt, MremapFlags, MsyncFlags, PAGE_SIZE, PrivateFutexKey, ProtectionFlags,
+    SharedFutexKey,
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
@@ -32,7 +33,7 @@ use starnix_uapi::{
     FUTEX_TRYLOCK_PI, FUTEX_UNLOCK_PI, FUTEX_WAIT, FUTEX_WAIT_BITSET, FUTEX_WAIT_REQUEUE_PI,
     FUTEX_WAKE, FUTEX_WAKE_BITSET, FUTEX_WAKE_OP, MAP_ANONYMOUS, MAP_DENYWRITE, MAP_FIXED,
     MAP_FIXED_NOREPLACE, MAP_GROWSDOWN, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE,
-    MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK, MS_INVALIDATE, O_CLOEXEC, O_NONBLOCK, PROT_EXEC,
+    MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK, O_CLOEXEC, O_NONBLOCK, PROT_EXEC,
     UFFD_USER_MODE_ONLY, errno, error, robust_list_head, tid_t, uapi,
 };
 use std::ops::Deref as _;
@@ -223,27 +224,14 @@ pub fn sys_munmap(
 }
 
 pub fn sys_msync(
-    _locked: &mut Locked<Unlocked>,
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     addr: UserAddress,
     length: usize,
     flags: u32,
 ) -> Result<(), Errno> {
-    track_stub!(TODO("https://fxbug.dev/322874588"), "msync");
-
-    let mm = current_task.mm()?;
-
-    // Perform some basic validation of the address range given to satisfy gvisor tests that
-    // use msync as a way to probe whether a page is mapped or not.
-    mm.ensure_mapped(addr, length)?;
-
-    let addr_end = (addr + length).map_err(|_| errno!(ENOMEM))?;
-    if flags & MS_INVALIDATE != 0 && mm.state.read().num_locked_bytes(addr..addr_end) > 0 {
-        // gvisor mlock tests rely on returning EBUSY from msync on locked ranges.
-        return error!(EBUSY);
-    }
-
-    Ok(())
+    let flags = MsyncFlags::from_bits_retain(flags);
+    current_task.mm()?.msync(locked, current_task, addr, length, flags)
 }
 
 pub fn sys_madvise(
@@ -1178,11 +1166,23 @@ mod tests {
                 .expect("unmap middle");
             assert_eq!(sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize, 0), Ok(()));
             assert_eq!(
-                sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 3, 0),
+                sys_msync(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE as usize * 3,
+                    starnix_uapi::MS_SYNC
+                ),
                 error!(ENOMEM)
             );
             assert_eq!(
-                sys_msync(locked, &current_task, addr, *PAGE_SIZE as usize * 2, 0),
+                sys_msync(
+                    locked,
+                    &current_task,
+                    addr,
+                    *PAGE_SIZE as usize * 2,
+                    starnix_uapi::MS_SYNC
+                ),
                 error!(ENOMEM)
             );
             assert_eq!(
@@ -1191,7 +1191,7 @@ mod tests {
                     &current_task,
                     (addr + *PAGE_SIZE).unwrap(),
                     *PAGE_SIZE as usize * 2,
-                    0
+                    starnix_uapi::MS_SYNC
                 ),
                 error!(ENOMEM)
             );
