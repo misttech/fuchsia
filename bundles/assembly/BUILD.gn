@@ -4,7 +4,6 @@
 
 import("//build/assembly/assembly_input_bundle.gni")
 import("//build/assembly/assembly_resources_directory.gni")
-import("//build/assembly/developer_overrides.gni")
 import("//build/assembly/kernel_aib.gni")
 import("//build/assembly/platform_artifacts.gni")
 import("//build/bazel/bazel_inputs.gni")
