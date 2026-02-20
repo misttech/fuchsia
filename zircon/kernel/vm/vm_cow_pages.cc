@@ -2572,6 +2572,8 @@ zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pa
 
         page_list_.RemovePages(
             [&](VmPageOrMarker* p, uint64_t off) {
+              // We only added pages, so we should only expect pages on rollback.
+              DEBUG_ASSERT(p->IsPage());
               ++populated_slots_removed;
               page_remover.PushContent(p);
               return ZX_ERR_NEXT;
