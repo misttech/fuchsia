@@ -146,6 +146,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "developer-overrides"
+        }
+      },
+      "optionality": "optional",
+      "long": "--developer-overrides",
+      "short": null,
+      "description": "path to a file specifying developer-level overrides for assembly.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "out"
         }
       },

@@ -301,6 +301,7 @@ template("assembled_system") {
     assembly_generated_packages = "${_namespace}.assembly_generated_packages"
     compare_command_logs = "${_namespace}.compare_command_logs"
     compare_images_manifests = "${_namespace}.compare_images_manifests"
+    developer_overrides_list = "${_namespace}.developer_overrides_list"
 
     # *_platform_aib_labels come from //bundles/assembly/platform_aibs.gni
 
@@ -411,6 +412,7 @@ template("assembled_system") {
     assembly_manifest = "${outdir}/assembled_system.json"
     config_data_manifest = "${gendir}/config_data/package_manifest.json"
     image_command_log = "${gendir}/command_log.json"
+    developer_overrides_list = "${gendir}/developer_overrides_list.json"
 
     # The directory in which all the platform AIBs can be found
     platform_artifacts =
@@ -436,6 +438,11 @@ template("assembled_system") {
   #######
   # Build the images using the Image Assembler.
   #
+
+  developer_overrides_list(labels.developer_overrides_list) {
+    assembly_target = ":$target_name"
+    outputs = [ files.developer_overrides_list ]
+  }
 
   # Create the AIB for a custom kernel zbi, if one was provided.
   if (defined(labels.custom_kernel_aib)) {
@@ -570,35 +577,13 @@ template("assembled_system") {
       assembly_input_archives_barrier = []
     }
 
-    # See if there are any developer overrides enabled for this target, and
-    # if so, pass them to assembly.
-    _overrides_match_found = false
-    foreach(overrides_def, all_product_assembly_overrides) {
-      # This is done by seeing if the target_name matches each of the defined
-      # label patterns that are to have overrides.
-      if (label_matches(":$target_name", [ overrides_def.assembly ])) {
-        assert(_overrides_match_found == false,
-               "Multiple matching overrides targets found for " +
-                   get_label_info(":$target_name", "label_no_toolchain") +
-                   " ${overrides_def.assembly} and ${_overrides_match_found}")
-        _overrides_match_found = overrides_def.assembly
-
-        # The overrides are given by label, which is used to compute the path
-        # to the file created by the developer overrides template.
-        _overrides_file =
-            get_label_info(overrides_def.overrides, "target_out_dir") + "/" +
-            get_label_info(overrides_def.overrides, "name") +
-            "/product_assembly_overrides.json"
-
-        args += [
-          "--developer-overrides",
-          rebase_path(_overrides_file, root_build_dir),
-        ]
-        inputs += [ _overrides_file ]
-        deps += [ overrides_def.overrides ]
-      }
-    }
-    not_needed([ "_overrides_match_found" ])
+    # Pass along any developer overrides enabled for this target.
+    args += [
+      "--developer-overrides",
+      rebase_path(files.developer_overrides_list, root_build_dir),
+    ]
+    deps += [ ":${labels.developer_overrides_list}" ]
+    inputs += [ files.developer_overrides_list ]
   }
 
   hermetic_inputs_for_image_assembly(labels.image_assembly_inputs) {

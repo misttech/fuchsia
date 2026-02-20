@@ -62,6 +62,11 @@ done
 
 main_pb_label="$(fx-command-run jq -r ".main_pb_label // empty" "$FUCHSIA_BUILD_DIR/args.json")"
 
+if [[ -z "$main_pb_label" ]]; then
+  echo "Error: main_pb_label is not set in args.json. Please make sure you're using a product that supports fx build-zbi (such as fuchsia.x64) and use fx set-main-pb to select the product."
+  exit 1
+fi
+
 if [[ -z "$product_config" ]]; then
   echo "Using main pb label: $main_pb_label"
   main_pb_path=${main_pb_label//:/\/}
@@ -76,10 +81,9 @@ fi
 
 echo "Board name: $board_name"
 board_config_label="$(fx-command-run jq -r ".[] | select(.name == \"$board_name\") | .label" "$FUCHSIA_BUILD_DIR/boards.json")"
+
 if [[ -z "$board_config" ]]; then
-  echo "Searching for board_configuration.json..."
   if [[ -n "$board_config_label" ]]; then
-    # Find the board_configuration.json output for that label
     echo "Using board config label: $board_config_label"
     # Change : to / and remove the trailing toolchain parens
     board_config_path=${board_config_label//:/\/}
@@ -110,12 +114,27 @@ fi
 
 # Build the platform artifacts
 echo "Building platform artifacts..."
-fx-command-run build //bundles/assembly ${main_pb_label}_product_config ${board_config_label}
+build_targets=("//bundles/assembly")
+build_targets+=("${board_config_label}")
+build_targets+=("${main_pb_label}_product_config")
+build_targets+=("//build/images:developer_overrides_list")
 
-if [[ -z "$product_config" ]]; then
-  echo "Error: Could not find product_configuration.json. Please make sure you're using a product that supports fx build-zbi."
-  exit 1
+echo "Invoking fx build with targets: ${build_targets[*]}"
+fx-command-run build "${build_targets[@]}"
+echo "fx build finished."
+
+if [[ -f "$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json" ]]; then
+  echo "Reading developer overrides from build_zbi_developer_overrides.json."
+  override_path=$(jq -r ".[0].path // empty" "$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json" 2>/dev/null || echo "")
+  echo "Extracted override path: $override_path"
+  if [[ -n "$override_path" && "$override_path" != "null" ]]; then
+    developer_overrides="${FUCHSIA_BUILD_DIR}/${override_path}"
+    echo "Set developer_overrides to: $developer_overrides"
+  fi
+else
+  echo "No developer overrides found."
 fi
+
 
 # Run the tool
 outdir="$FUCHSIA_BUILD_DIR/obj/build/images/fuchsia/build_zbi"
@@ -135,11 +154,18 @@ if [[ ! -x "$ffx_path" ]]; then
     exit 1
 fi
 
+ffx_args=()
+if [[ -n "$developer_overrides" ]]; then
+  echo "Using Developer Overrides: $developer_overrides"
+  ffx_args+=(--developer-overrides "$developer_overrides")
+fi
+
 "$ffx_path" product-bundle create \
   --product-config "$product_config" \
   --board-config "$board_config" \
   --out "$outdir" \
   --platform "$input_bundles_dir" \
-  --zbi-only
+  --zbi-only \
+  "${ffx_args[@]}"
 
 echo "You can now flash the kernel with fastboot."

@@ -517,3 +517,53 @@ foreach(overrides_def, product_assembly_overrides) {
 
   all_product_assembly_overrides += [ overrides_def ]
 }
+
+template("developer_overrides_list") {
+  _resolved_overrides = []
+  _override_deps = []
+  _overrides_match_found = false
+
+  assert(defined(invoker.assembly_target), "assembly_target must be provided")
+  _assembly_target = invoker.assembly_target
+
+  _assembly_target_dir = get_label_info(_assembly_target, "dir")
+
+  foreach(override, all_product_assembly_overrides) {
+    if (label_matches(_assembly_target, [ override.assembly ]) ||
+        label_matches(_assembly_target_dir, [ override.assembly ])) {
+      assert(_overrides_match_found == false,
+             "Multiple matching overrides targets found for " +
+                 get_label_info(_assembly_target, "label_no_toolchain") +
+                 " ${override.assembly} and ${_overrides_match_found}")
+      _overrides_match_found = override.assembly
+
+      _target = override.overrides
+      _out_dir = get_label_info(_target, "target_out_dir")
+      _name = get_label_info(_target, "name")
+
+      _resolved_overrides += [
+        {
+          path = rebase_path("$_out_dir/$_name/product_assembly_overrides.json",
+                             root_build_dir)
+        },
+      ]
+
+      _override_deps += [ _target ]
+    }
+  }
+
+  not_needed([
+               "_overrides_match_found",
+               "_assembly_target_dir",
+             ])
+
+  generated_file(target_name) {
+    testonly = true
+    outputs = invoker.outputs
+    contents = _resolved_overrides
+    output_conversion = "json"
+    if (_override_deps != []) {
+      deps = _override_deps
+    }
+  }
+}

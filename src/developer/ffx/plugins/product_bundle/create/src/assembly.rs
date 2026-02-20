@@ -66,6 +66,7 @@ impl Assembly {
         context: &EnvironmentContext,
         should_configure_example: bool,
         zbi_only: bool,
+        developer_overrides: Option<Utf8PathBuf>,
         outdir: &Utf8PathBuf,
     ) -> Result<AssembledSystem> {
         let gendir = tempfile::TempDir::new().unwrap();
@@ -81,7 +82,7 @@ impl Assembly {
             custom_kernel_aib: None,
             custom_boot_shim_aib: None,
             suppress_overrides_warning: false,
-            developer_overrides: None,
+            developer_overrides,
             include_example_aib_for_tests: Some(should_configure_example),
             mode: if zbi_only { AssemblyMode::SkipFilesystems } else { Default::default() },
         };

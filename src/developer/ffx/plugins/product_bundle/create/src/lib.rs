@@ -121,6 +121,9 @@ struct SanitizedCreateCommand {
     /// path to the Ed25519 private key in PEM format to sign the ota manifest.
     pub ota_manifest_key: Option<Utf8PathBuf>,
 
+    /// path to a file specifying developer-level overrides for assembly.
+    pub developer_overrides: Option<Utf8PathBuf>,
+
     /// What result we want from running `ffx product create`.
     pub result: CreateResult,
 
@@ -193,6 +196,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             output_version_file,
             tuf_keys,
             ota_manifest_key,
+            developer_overrides,
             auth,
             recovery_product_config,
             recovery_board_config,
@@ -218,6 +222,7 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             auth,
             tuf_keys,
             ota_manifest_key,
+            developer_overrides,
             result,
             zbi_only,
         })
@@ -293,6 +298,7 @@ async fn sanitized_product_bundle_create(
         context,
         should_configure_example,
         cmd.zbi_only,
+        cmd.developer_overrides.clone(),
         &tmp_path.join("system"),
     ))
     .await?;
@@ -339,6 +345,7 @@ async fn sanitized_product_bundle_create(
             context,
             should_configure_example,
             /* zbi_only=*/ false,
+            cmd.developer_overrides.clone(),
             &tmp_path.join("recovery_system"),
         ))
         .await?;
@@ -389,6 +396,7 @@ mod test {
             output_version_file: None,
             tuf_keys: None,
             ota_manifest_key: None,
+            developer_overrides: None,
             stage: false,
             out: None,
             auth: AuthFlowChoice::Default,
@@ -417,6 +425,7 @@ mod test {
             output_version_file: None,
             tuf_keys: None,
             ota_manifest_key: None,
+            developer_overrides: None,
             stage: false,
             out: None,
             auth: AuthFlowChoice::Default,

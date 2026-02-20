@@ -107,6 +107,10 @@ pub struct CreateCommand {
     #[argh(switch)]
     pub stage: bool,
 
+    /// path to a file specifying developer-level overrides for assembly.
+    #[argh(option)]
+    pub developer_overrides: Option<Utf8PathBuf>,
+
     /// the location to write the product bundle to.
     #[argh(option)]
     pub out: Option<Utf8PathBuf>,
