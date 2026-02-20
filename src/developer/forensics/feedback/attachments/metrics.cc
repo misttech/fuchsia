@@ -11,20 +11,20 @@
 namespace forensics::feedback {
 namespace {
 
-static const auto* const kTimedOutMetrics = new std::map<std::string, cobalt::TimedOutData>({
+const auto* const kTimedOutMetrics = new std::map<std::string, cobalt::TimedOutData>({
     {feedback_data::kAttachmentLogKernel, cobalt::TimedOutData::kKernelLog},
     {feedback_data::kAttachmentLogSystem, cobalt::TimedOutData::kSystemLog},
     {feedback_data::kAttachmentInspect, cobalt::TimedOutData::kInspect},
 });
 
-}
+}  // namespace
 
 AttachmentMetrics::AttachmentMetrics(cobalt::Logger* cobalt) : cobalt_(cobalt) {}
 
-void AttachmentMetrics::LogMetrics(const Attachments& annotations) {
+void AttachmentMetrics::LogMetrics(const Attachments& attachments) {
   std::set<cobalt::TimedOutData> to_log;
-  for (const auto& [k, v] : annotations) {
-    if (v.HasError() && v.Error() == Error::kTimeout && kTimedOutMetrics->count(k) != 0) {
+  for (const auto& [k, v] : attachments) {
+    if (v.HasError() && v.Error() == Error::kTimeout && kTimedOutMetrics->contains(k)) {
       to_log.insert(kTimedOutMetrics->at(k));
     }
   }
