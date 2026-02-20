@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <memory>
 
 #include <wlan/drivers/components/priority.h>
 
@@ -260,18 +261,53 @@ zx_status_t brcmf_start_xmit(struct brcmf_pub* drvr,
     return ZX_ERR_UNAVAILABLE;
   }
 
+  // These are pointers so that we can avoid allocating these objects on successful transmission.
+  std::unique_ptr<std::vector<wlan::drivers::components::Frame>> failed_frames;
+  std::unique_ptr<std::vector<wlan::drivers::components::Frame>> successful_frames;
+
   uint32_t bytes_per_port[fuchsia_hardware_network::kMaxPorts] = {0};
   int frames_per_port[fuchsia_hardware_network::kMaxPorts] = {0};
   uint8_t highest_port = 0;
   {
-    for (auto& frame : frames) {
+    for (size_t i = 0; i < frames.size(); ++i) {
+      auto& frame = frames[i];
+      if (!brcmf_get_ifp(drvr, frame.PortId())) [[unlikely]] {
+        // The interface no longer exists, so drop the frame.
+        if (!failed_frames) {
+          failed_frames = std::make_unique<std::vector<wlan::drivers::components::Frame>>();
+          successful_frames = std::make_unique<std::vector<wlan::drivers::components::Frame>>();
+          // This is the first frame to drop. Any previous frames should be sent, move them all to a
+          // new vector so we can create a new span from it. Any following successful frames will be
+          // moved to this vector as well. Since the Frame class is not copyable, we need to move
+          // the frames individually into the new vector.
+          for (size_t successful_idx = 0; successful_idx < i; ++successful_idx) {
+            successful_frames->push_back(std::move(frames[successful_idx]));
+          }
+        }
+        failed_frames->push_back(std::move(frame));
+        continue;
+      }
       frame.SetPriority(
           wlan::drivers::components::Get80211UserPriority(frame.Data(), frame.Size()));
       const uint8_t port = frame.PortId();
       bytes_per_port[port] += frame.Size();
       ++frames_per_port[port];
       highest_port = std::max(highest_port, port);
+      if (successful_frames) [[unlikely]] {
+        // There are failed frames, move this one to the list of successful frames.
+        successful_frames->push_back(std::move(frame));
+      }
     }
+  }
+  if (failed_frames) [[unlikely]] {
+    brcmf_tx_complete(drvr, *failed_frames, ZX_ERR_UNAVAILABLE);
+    BRCMF_WARN_THROTTLE("Dropped %zu frames due to interface removal", failed_frames->size());
+    if (successful_frames->empty()) {
+      return ZX_OK;
+    }
+    // If there were failed frames that means there's also a list of successful frames. Use those
+    // instead to make sure we don't queue the failed frames.
+    frames = *successful_frames;
   }
 
   {
@@ -279,6 +315,10 @@ zx_status_t brcmf_start_xmit(struct brcmf_pub* drvr,
     if (status == ZX_OK) {
       for (uint8_t port = 0; port <= highest_port; ++port) {
         brcmf_if* ifp = brcmf_get_ifp(drvr, port);
+        if (!ifp) {
+          BRCMF_WARN_THROTTLE("Interface not present after queuing frames");
+          continue;
+        }
         ifp->ndev->stats.tx_bytes += static_cast<int>(bytes_per_port[port]);
         ifp->ndev->stats.tx_packets += frames_per_port[port];
       }
