@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::platform::PlatformServices;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_virtualization::{
     GuestManagerProxy, GuestMarker, GuestStatus, HostVsockAcceptorMarker, HostVsockEndpointMarker,
 };
-use futures::{select, try_join, AsyncReadExt, AsyncWriteExt, FutureExt, TryStreamExt};
+use futures::{AsyncReadExt, AsyncWriteExt, FutureExt, TryStreamExt, select, try_join};
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Write;
@@ -149,11 +149,9 @@ impl fmt::Display for Measurements {
     }
 }
 
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum VsockPerfResult {
-    BenchmarkComplete(Measurements),
+    BenchmarkComplete(Box<Measurements>),
     UnsupportedGuest(arguments::GuestType),
     Internal(String),
 }
@@ -196,7 +194,7 @@ pub async fn handle_vsockperf<P: PlatformServices>(
     #[allow(clippy::large_futures)]
     Ok(match run_micro_benchmark(guest_manager).await {
         Err(err) => VsockPerfResult::Internal(format!("{}", err)),
-        Ok(result) => VsockPerfResult::BenchmarkComplete(result),
+        Ok(result) => VsockPerfResult::BenchmarkComplete(Box::new(result)),
     })
 }
 
