@@ -204,6 +204,7 @@ FuchsiaStarnixContainerInfo = provider(
     doc = "Fields needed to generate a starnix container",
     fields = {
         "name": "Name of the starnix container",
+        "base": "Path to package containing base resources to include",
         "hals": "List of HAL package configurations",
         "skip_subpackages": "Whether to skip inlcuding HALs as subpackages",
         "system": "Path to system image",

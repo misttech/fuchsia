@@ -62,8 +62,8 @@ mod tests {
     };
     use crate::platform_settings::{BuildType, FeatureSetLevel};
     use crate::product_settings::{
-        ProductPackageDetails, StarnixContainerConfig, StarnixHalConfig, StarnixImages,
-        StarnixImagesOrPackage,
+        ProductPackageDetails, StarnixBasePackage, StarnixContainerConfig, StarnixHalConfig,
+        StarnixImages, StarnixImagesOrPackage,
     };
     use assembly_constants::FileEntry;
     use assembly_file_relative_path::FileRelativePathBuf;
@@ -189,6 +189,7 @@ mod tests {
               starnix_containers: [
                 {
                   name: "wear_os",
+                  base: "path/to/base",
                   hals: [
                     {
                       manifest: "path/to/hal_a"
@@ -203,7 +204,7 @@ mod tests {
                       images: {
                         system: "path/to/system.img",
                         vendor: "path/to/vendor.img",
-                        ramdisk: "path/to/ramdisk.img",
+                        ramdisk: ["path/to/ramdisk.img"],
                       },
                     },
                   fstab: "",
@@ -253,6 +254,7 @@ mod tests {
             config.product.starnix_containers,
             vec![StarnixContainerConfig {
                 name: "wear_os".to_string(),
+                base: StarnixBasePackage { manifest: "path/to/base".into() },
                 skip_subpackages: true,
                 fstab: Some("".into()),
                 init: vec![],
@@ -263,7 +265,7 @@ mod tests {
                 images_or_package: StarnixImagesOrPackage::Images(StarnixImages {
                     system: "path/to/system.img".into(),
                     vendor: Some("path/to/vendor.img".into()),
-                    ramdisk: Some("path/to/ramdisk.img".into()),
+                    ramdisk: vec![("path/to/ramdisk.img".into()),],
                 })
             }]
         )

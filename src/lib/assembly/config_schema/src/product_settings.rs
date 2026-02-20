@@ -136,6 +136,10 @@ struct ProductPackagesConfigDeserializeHelper {
 pub struct StarnixContainerConfig {
     /// Name of the starnix container
     pub name: String,
+    /// Path to package containing base resources to include.
+    #[walk_paths]
+    #[schemars(schema_with = "path_schema")]
+    pub base: StarnixBasePackage,
     /// Config for HAL packages
     #[walk_paths]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -159,7 +163,26 @@ pub struct StarnixContainerConfig {
     /// or hybrid container generation. If there is something we only need
     /// for container generation, we could consider moving it into StarnixImages.
     #[walk_paths]
+    #[serde(skip_serializing_if = "StarnixImagesOrPackage::is_images")]
     pub images_or_package: StarnixImagesOrPackage,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
+#[serde(default, deny_unknown_fields, transparent)]
+pub struct StarnixBasePackage {
+    /// Path to the base package
+    #[schemars(schema_with = "path_schema")]
+    pub manifest: Utf8PathBuf,
+}
+
+impl WalkPaths for StarnixBasePackage {
+    fn walk_paths_with_dest<F: WalkPathsFn>(
+        &mut self,
+        found: &mut F,
+        dest: Utf8PathBuf,
+    ) -> anyhow::Result<()> {
+        found(&mut self.manifest, dest, FileType::PackageManifest)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, WalkPaths)]
@@ -178,6 +201,13 @@ impl Default for StarnixImagesOrPackage {
     }
 }
 
+impl StarnixImagesOrPackage {
+    /// Returns true if this is the `Images` variant.
+    fn is_images(&self) -> bool {
+        matches!(self, Self::Images(_))
+    }
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, WalkPaths, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct StarnixImages {
@@ -190,11 +220,11 @@ pub struct StarnixImages {
     #[schemars(schema_with = "path_schema")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vendor: Option<Utf8PathBuf>,
-    /// Path to the ramdisk image
+    /// Path to the ramdisk images
     #[walk_paths]
     #[schemars(schema_with = "path_schema")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ramdisk: Option<Utf8PathBuf>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ramdisk: Vec<Utf8PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -944,7 +974,7 @@ mod tests {
         let mut images_or_package = StarnixImagesOrPackage::Images(StarnixImages {
             system: "path/to/system".into(),
             vendor: Some("path/to/vendor".into()),
-            ramdisk: Some("path/to/ramdisk".into()),
+            ramdisk: vec!["path/to/ramdisk".into()],
         });
         let mut paths: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = Vec::new();
         let mut callback = |path: &mut Utf8PathBuf, dest: Utf8PathBuf, file_type: FileType| {
@@ -956,7 +986,7 @@ mod tests {
         let expected_images: Vec<(Utf8PathBuf, Utf8PathBuf, FileType)> = vec![
             ("path/to/system".into(), "dest/Images/system".into(), FileType::Unknown),
             ("path/to/vendor".into(), "dest/Images/vendor".into(), FileType::Unknown),
-            ("path/to/ramdisk".into(), "dest/Images/ramdisk".into(), FileType::Unknown),
+            ("path/to/ramdisk".into(), "dest/Images/ramdisk/0".into(), FileType::Unknown),
         ];
         assert_eq!(paths, expected_images);
 

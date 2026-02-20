@@ -61,19 +61,13 @@
         "starnix_containers": [
             {
                 "name": "starnix_container_for_test",
+                "base": "packages/ams-light-test",
                 "hals": [
                     {
                         "manifest": "packages/ams-light-test"
                     }
                 ],
-                "skip_subpackages": true,
-                "images_or_package": {
-                    "images": {
-                        "system": "product/starnix_containers/0/images_or_package/Images/system/ext4.img",
-                        "vendor": "product/starnix_containers/0/images_or_package/Images/vendor/ext4.img",
-                        "ramdisk": "product/starnix_containers/0/images_or_package/Images/ramdisk/ext4.img"
-                    }
-                }
+                "skip_subpackages": true
             }
         ]
     }

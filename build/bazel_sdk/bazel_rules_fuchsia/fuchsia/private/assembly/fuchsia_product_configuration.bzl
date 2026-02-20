@@ -18,7 +18,7 @@ load(
     "FuchsiaProductInputBundleInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
+load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "collect_package_file_deps", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
 
 # Define build types
 BUILD_TYPES = struct(
@@ -35,12 +35,6 @@ INPUT_DEVICE_TYPE = struct(
     MOUSE = "mouse",
     TOUCHSCREEN = "touchscreen",
 )
-
-def _collect_file_deps(dep):
-    if FuchsiaPackageInfo in dep:
-        return dep[FuchsiaPackageInfo].files
-
-    return dep[FuchsiaAssembledPackageInfo].files
 
 def _collect_debug_symbols(dep):
     if FuchsiaPackageInfo in dep:
@@ -65,7 +59,7 @@ def _fuchsia_product_configuration_impl(ctx):
     bootfs_pkg_details = []
     for dep in ctx.attr.bootfs_packages:
         bootfs_pkg_details.append(create_pkg_detail(dep))
-        input_files += _collect_file_deps(dep)
+        input_files += collect_package_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     if bootfs_pkg_details:
         packages["bootfs"] = bootfs_pkg_details
@@ -73,14 +67,14 @@ def _fuchsia_product_configuration_impl(ctx):
     base_pkg_details = []
     for dep in ctx.attr.base_packages:
         base_pkg_details.append(create_pkg_detail(dep))
-        input_files += _collect_file_deps(dep)
+        input_files += collect_package_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     packages["base"] = base_pkg_details
 
     cache_pkg_details = []
     for dep in ctx.attr.cache_packages:
         cache_pkg_details.append(create_pkg_detail(dep))
-        input_files += _collect_file_deps(dep)
+        input_files += collect_package_file_deps(dep)
         build_id_dirs += _collect_debug_symbols(dep)
     packages["cache"] = cache_pkg_details
     product["packages"] = packages
@@ -94,7 +88,7 @@ def _fuchsia_product_configuration_impl(ctx):
                 "components": get_driver_component_manifests(dep),
             },
         )
-        input_files += _collect_file_deps(dep)
+        input_files += collect_package_file_deps(dep)
     product["base_drivers"] = base_driver_details
 
     starnix_containers = []
@@ -111,6 +105,7 @@ def _fuchsia_product_configuration_impl(ctx):
         starnix_containers.append(
             {
                 "name": container_detail.name,
+                "base": container_detail.base,
                 "fstab": container_detail.fstab,
                 "init": container_detail.init,
                 "hals": container_detail.hals,

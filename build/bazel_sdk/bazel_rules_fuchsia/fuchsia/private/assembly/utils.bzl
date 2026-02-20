@@ -253,3 +253,9 @@ def create_pkg_detail(dep):
         return {"manifest": package_manifest_path, "config_data": config_data}
     else:
         return {"manifest": package_manifest_path}
+
+def collect_package_file_deps(dep):
+    if FuchsiaPackageInfo in dep:
+        return dep[FuchsiaPackageInfo].files
+
+    return dep[FuchsiaAssembledPackageInfo].files

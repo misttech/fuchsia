@@ -273,12 +273,13 @@ _testing_product_config_json = {
 
 fuchsia_starnix_container(
     name = "starnix_container_for_test",
+    base = ":prebuilt_ams_light",
     fstab = None,
     hals = [
         ":prebuilt_ams_light",
     ],
     init = [],
-    ramdisk = "test_data/ext4.img",
+    ramdisk = [],
     skip_subpackages = True,
     system = "test_data/ext4.img",
     vendor = "test_data/ext4.img",

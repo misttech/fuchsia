@@ -10,7 +10,7 @@ load(
     "FuchsiaAssembledPackageInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load(":utils.bzl", "create_pkg_detail")
+load(":utils.bzl", "collect_package_file_deps", "create_pkg_detail")
 
 def _fuchsia_starnix_container_impl(ctx):
     hals_config = []
@@ -20,21 +20,22 @@ def _fuchsia_starnix_container_impl(ctx):
     all_files = [ctx.file.system]
     if ctx.attr.vendor:
         all_files.append(ctx.file.vendor)
-    if ctx.attr.ramdisk:
-        all_files.append(ctx.file.ramdisk)
     if ctx.attr.fstab:
         all_files.append(ctx.file.fstab)
+    all_files += ctx.files.ramdisk
     all_files += ctx.files.init
     all_files += ctx.files.hals
+    all_files += collect_package_file_deps(ctx.attr.base)
     return [
         DefaultInfo(files = depset(all_files)),
         FuchsiaStarnixContainerInfo(
             name = ctx.attr.package_name if ctx.attr.package_name else ctx.label.name,
             hals = hals_config,
+            base = ctx.attr.base[FuchsiaPackageInfo].package_manifest.path,
             skip_subpackages = ctx.attr.skip_subpackages,
             system = ctx.file.system.path,
             vendor = ctx.file.vendor.path if ctx.attr.vendor else None,
-            ramdisk = ctx.file.ramdisk.path if ctx.attr.ramdisk else None,
+            ramdisk = [f.path for f in ctx.files.ramdisk],
             fstab = ctx.file.fstab.path if ctx.attr.fstab else None,
             init = [f.path for f in ctx.files.init],
         ),
@@ -52,6 +53,11 @@ fuchsia_starnix_container = rule(
             allow_files = True,
             providers = [[FuchsiaAssembledPackageInfo], [FuchsiaPackageInfo]],
         ),
+        "base": attr.label(
+            doc = "Path to package containing base resources to include",
+            providers = [FuchsiaPackageInfo],
+            mandatory = True,
+        ),
         "skip_subpackages": attr.bool(
             doc = "Whether to skip including HALs as subpackages",
             default = False,
@@ -65,9 +71,9 @@ fuchsia_starnix_container = rule(
             doc = "Path to vendor image",
             allow_single_file = True,
         ),
-        "ramdisk": attr.label(
-            doc = "Path to ramdisk image",
-            allow_single_file = True,
+        "ramdisk": attr.label_list(
+            doc = "Paths to ramdisk images",
+            allow_files = True,
         ),
         "fstab": attr.label(
             doc = "Path to fstab",
