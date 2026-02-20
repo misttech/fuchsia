@@ -11,7 +11,7 @@ use errors::ffx_error;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
 use ffx_target::connection::Connection;
-use ffx_target::ssh_connector::SshConnector;
+
 use fidl::AsHandleRef;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_device::ControllerMarker;
@@ -38,24 +38,23 @@ pub struct FfxConfigEntry {
     pub(crate) value: String,
 }
 
+
 pub struct EnvContext {
     lib_ctx: Weak<LibContext>,
     target_spec: TargetInfoQuery,
-    device_connection: Mutex<Option<Connection>>,
+    device_connection: Mutex<Option<Arc<Connection>>>,
     pub(crate) context: EnvironmentContext,
 }
 
 async fn new_device_connection(
     ctx: &EnvironmentContext,
     target_spec: &TargetInfoQuery,
-) -> Result<Connection> {
+) -> Result<Arc<Connection>> {
     // We pass use_cache=false because in Fuchsia Controller, we don't want to
     // scripts to use potentially stale cache data, and the caller can make sure
     // to pass an address directly if they don't want to wait for discovery.
     let resolution = ffx_target::resolve_target_address(target_spec, false, ctx).await?;
-    let addr = resolution.addr()?;
-    let connector = SshConnector::new(netext::ScopedSocketAddr::from_socket_addr(addr)?, ctx)?;
-    Ok(Connection::new(connector).await?)
+    resolution.get_connection(ctx).await
 }
 
 impl EnvContext {

@@ -27,7 +27,6 @@ rustc_staticlib("lib") {
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/logging:lib",
-    "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/timeout:lib",
