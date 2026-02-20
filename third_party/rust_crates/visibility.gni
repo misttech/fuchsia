@@ -176,8 +176,6 @@ bincode_visibility = [
   "//src/security/bin/kms:*",
   "//src/security/lib/scrutiny/utils:*",
   "//src/storage/ext4/lib/metadata:*",
-  "//src/storage/fxfs/make-blob-image:*",
-  "//src/storage/fxfs/platform:*",
   "//src/storage/fxfs:*",
   "//src/storage/lib/sparse/rust:*",
 ]
