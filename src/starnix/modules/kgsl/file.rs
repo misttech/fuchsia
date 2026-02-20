@@ -9,9 +9,9 @@ use kgsl_libmagma::{
     Buffer, Connection, Context, Device, QueryOutput, Semaphore, initialize_logging,
 };
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
-use kgsl_range_allocator::Allocator;
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
+use range_alloc::RangeAllocator;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
@@ -46,6 +46,31 @@ macro_rules! kgsl_debug {
 // TODO(b/393160668): this should be PAGE_SIZE of the container
 const BUFFER_ALIGNMENT: u64 = 4096;
 
+/// Helper trait to manage allocations in units of BUFFER_ALIGNMENT.
+trait RangeAllocatorExt {
+    fn create(size: u64) -> Self;
+    fn allocate(&mut self, size: u64) -> Option<u64>;
+    fn free(&mut self, gpuaddr: u64, size: u64);
+}
+
+impl RangeAllocatorExt for RangeAllocator<u64> {
+    fn create(size: u64) -> Self {
+        RangeAllocator::new(0..(size / BUFFER_ALIGNMENT))
+    }
+
+    fn allocate(&mut self, size: u64) -> Option<u64> {
+        self.allocate_range(size.div_ceil(BUFFER_ALIGNMENT))
+            .ok()
+            .map(|r| r.start * BUFFER_ALIGNMENT)
+    }
+
+    fn free(&mut self, gpuaddr: u64, size: u64) {
+        let start_unit = gpuaddr / BUFFER_ALIGNMENT;
+        let units = size.div_ceil(BUFFER_ALIGNMENT);
+        self.free_range(start_unit..(start_unit + units));
+    }
+}
+
 pub struct KgslFile {
     // This member will be read in a future change. A linter attribute is used
     // instead of an underscore prefix so that field init shorthand still works.
@@ -59,7 +84,7 @@ pub struct KgslFile {
     // TODO(b/481419355): transition to id-map container once available
     gpuobjs: Mutex<HashMap<u32, GpuObject>>,
     next_gpuobj_id: AtomicU32,
-    allocator: Mutex<Allocator>,
+    allocator: Mutex<RangeAllocator<u64>>,
     #[expect(dead_code)]
     shadow: GpuObject,
     shadow_properties: uapi::kgsl_shadowprop,
@@ -144,21 +169,15 @@ impl KgslFile {
 
         let connection = device.create_connection().map_err(|_| errno!(ENXIO))?;
 
-        let mut allocator = Allocator::create(0, adreno_kgsl_params.gpu_va64_size);
+        let mut allocator = RangeAllocator::create(adreno_kgsl_params.gpu_va64_size);
 
         // Reserve GPU secure VA space.
-        allocator
-            .allocate(
-                adreno_kgsl_params.gpu_secure_va_size,
-                adreno_kgsl_params.secure_buf_alignment as u64,
-            )
-            .ok_or_else(|| errno!(ENOMEM))?;
+        allocator.allocate(adreno_kgsl_params.gpu_secure_va_size).ok_or_else(|| errno!(ENOMEM))?;
 
         // Shadow buffer must immediately follow the secure VA space.
         let shadow_size = adreno_kgsl_params.device_shadow_size;
         let shadow_buffer = connection.create_buffer(shadow_size).map_err(|_| errno!(ENOMEM))?;
-        let shadow_gpuaddr =
-            allocator.allocate(shadow_size, BUFFER_ALIGNMENT).ok_or_else(|| errno!(ENOMEM))?;
+        let shadow_gpuaddr = allocator.allocate(shadow_size).ok_or_else(|| errno!(ENOMEM))?;
         let shadow = GpuObject {
             buffer: shadow_buffer,
             flags: adreno_kgsl_params.device_shadow_flags.into(),
@@ -351,8 +370,7 @@ impl KgslFile {
         let buffer = self.connection.create_buffer(params.size).map_err(|_| errno!(ENOMEM))?;
         let size = buffer.size();
 
-        let gpuaddr =
-            self.allocator.lock().allocate(size, BUFFER_ALIGNMENT).ok_or_else(|| errno!(ENOMEM))?;
+        let gpuaddr = self.allocator.lock().allocate(size).ok_or_else(|| errno!(ENOMEM))?;
 
         let id = self.next_gpuobj_id.fetch_add(1, Ordering::Relaxed);
         if id == 0 {
@@ -382,10 +400,7 @@ impl KgslFile {
         kgsl_debug!("kgsl_gpuobj_free {:?}", params);
 
         if let Entry::Occupied(entry) = self.gpuobjs.lock().entry(params.id) {
-            self.allocator
-                .lock()
-                .free(entry.get().gpuaddr, entry.get().size)
-                .map_err(|_| errno!(ENXIO))?;
+            self.allocator.lock().free(entry.get().gpuaddr, entry.get().size);
             entry.remove();
             Ok(SUCCESS)
         } else {
