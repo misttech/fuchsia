@@ -179,6 +179,15 @@ impl ToolSuite for FfxSuite {
                     .map_err(|err| Error::from_early_exit(&ffx_cmd.command, err))?;
                 Ok(Some(Box::new(FfxSubCommand { cmd, context, app })))
             }
+            Some(name)
+                if SubCommand::COMMANDS
+                    .iter()
+                    .any(|c| name.len() == 1 && *c.short == name.chars().next().unwrap()) =>
+            {
+                let cmd = FfxBuiltIn::from_args(&Vec::from_iter(ffx_cmd.cmd_iter()), &args)
+                    .map_err(|err| Error::from_early_exit(&ffx_cmd.command, err))?;
+                Ok(Some(Box::new(FfxSubCommand { cmd, context, app })))
+            }
             _ => self.get_external_commands().try_from_args(ffx_cmd).await,
         }
     }
