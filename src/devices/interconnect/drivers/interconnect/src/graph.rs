@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_hardware_interconnect as icc;
 use fuchsia_inspect::ArrayProperty;
 use log::error;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use zx::Status;
+use {fidl_fuchsia_hardware_interconnect as icc, fuchsia_trace as ftrace};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(pub u32);
@@ -34,6 +34,26 @@ struct InterconnectNode {
     path_bandwidth_requests: BTreeMap<PathId, BandwidthRequest>,
     initial_avg_bandwidth_bps: u64,
     initial_peak_bandwidth_bps: u64,
+    current_avg_bandwidth_bps: u64,
+    current_peak_bandwidth_bps: u64,
+    trace_id: ftrace::Id,
+}
+
+#[cfg(test)]
+impl Default for InterconnectNode {
+    fn default() -> Self {
+        Self {
+            name: "".to_string(),
+            id: NodeId(0),
+            incoming_edges: Default::default(),
+            path_bandwidth_requests: Default::default(),
+            initial_avg_bandwidth_bps: 0,
+            initial_peak_bandwidth_bps: 0,
+            current_avg_bandwidth_bps: 0,
+            current_peak_bandwidth_bps: 0,
+            trace_id: ftrace::Id::from(0),
+        }
+    }
 }
 
 impl InterconnectNode {
@@ -55,6 +75,8 @@ impl InterconnectNode {
         });
         inspect.record_uint("initial_average_bandwidth_bps", self.initial_avg_bandwidth_bps);
         inspect.record_uint("initial_peak_bandwidth_bps", self.initial_peak_bandwidth_bps);
+        inspect.record_uint("current_average_bandwidth_bps", self.current_avg_bandwidth_bps);
+        inspect.record_uint("current_peak_bandwidth_bps", self.current_peak_bandwidth_bps);
     }
 }
 
@@ -184,6 +206,9 @@ impl NodeGraph {
                     path_bandwidth_requests: BTreeMap::new(),
                     initial_avg_bandwidth_bps: node.initial_avg_bandwidth_bps,
                     initial_peak_bandwidth_bps: node.initial_peak_bandwidth_bps,
+                    current_avg_bandwidth_bps: 0,
+                    current_peak_bandwidth_bps: 0,
+                    trace_id: ftrace::Id::new(),
                 },
             );
         }
@@ -196,6 +221,20 @@ impl NodeGraph {
             inspect.record_child(id.0.to_string(), |inspect| {
                 node.record_inspect(inspect);
             });
+        }
+    }
+
+    pub fn update_stats(&mut self, nodes: Vec<icc::AggregatedBandwidth>) {
+        for node_bw in nodes {
+            if let Some(node_id) = node_bw.node_id {
+                if let Some(node) = self.nodes.get_mut(&NodeId(node_id)) {
+                    node.current_avg_bandwidth_bps = node_bw.average_bandwidth_bps.unwrap_or(0);
+                    node.current_peak_bandwidth_bps = node_bw.peak_bandwidth_bps.unwrap_or(0);
+                    ftrace::counter!(c"interconnect", &node.name, node.trace_id.into(),
+                        "average_bandwidth_bps" => node.current_avg_bandwidth_bps,
+                        "peak_bandwidth_bps" => node.current_peak_bandwidth_bps);
+                }
+            }
         }
     }
 
@@ -347,7 +386,8 @@ mod tests {
             weight: None,
             ..Default::default()
         }];
-        let graph = NodeGraph::new(nodes, edges).unwrap();
+        let mut graph = NodeGraph::new(nodes, edges).unwrap();
+        graph.nodes.iter_mut().for_each(|(_, node)| node.trace_id = ftrace::Id::from(0));
         assert_eq!(
             graph,
             NodeGraph {
@@ -357,10 +397,7 @@ mod tests {
                         InterconnectNode {
                             name: "zero".to_string(),
                             id: NodeId(0),
-                            incoming_edges: BTreeMap::new(),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                     (
@@ -372,9 +409,7 @@ mod tests {
                                 NodeId(0),
                                 IncomingEdge { weight: 1 }
                             )]),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                 ]),
@@ -654,7 +689,8 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let graph = NodeGraph::new(nodes, edges).unwrap();
+        let mut graph = NodeGraph::new(nodes, edges).unwrap();
+        graph.nodes.iter_mut().for_each(|(_, node)| node.trace_id = ftrace::Id::from(0));
         assert_eq!(
             graph,
             NodeGraph {
@@ -664,10 +700,7 @@ mod tests {
                         InterconnectNode {
                             name: "zero".to_string(),
                             id: NodeId(0),
-                            incoming_edges: BTreeMap::new(),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                     (
@@ -679,9 +712,7 @@ mod tests {
                                 (NodeId(0), IncomingEdge { weight: 1 }),
                                 (NodeId(2), IncomingEdge { weight: 1 }),
                             ]),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                     (
@@ -693,9 +724,7 @@ mod tests {
                                 NodeId(1),
                                 IncomingEdge { weight: 1 }
                             )]),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                     (
@@ -707,9 +736,7 @@ mod tests {
                                 NodeId(1),
                                 IncomingEdge { weight: 1 }
                             )]),
-                            path_bandwidth_requests: BTreeMap::new(),
-                            initial_avg_bandwidth_bps: 0,
-                            initial_peak_bandwidth_bps: 0,
+                            ..Default::default()
                         }
                     ),
                 ]),

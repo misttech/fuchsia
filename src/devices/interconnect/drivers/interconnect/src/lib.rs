@@ -79,12 +79,7 @@ impl Child {
             })?
             .map_err(Status::from_raw)?;
 
-        for node in result {
-            ftrace::instant!(c"interconnect", c"node_bandwidth", ftrace::Scope::Process,
-                "id" => node.node_id.unwrap_or(0),
-                "average_bandwidth_bps" => node.average_bandwidth_bps.unwrap_or(0),
-                "peak_bandwidth_bps" => node.peak_bandwidth_bps.unwrap_or(0));
-        }
+        self.graph.borrow_mut().update_stats(result);
 
         // TODO(b/405206028): On failure, try to set old values?
 
@@ -268,12 +263,7 @@ impl InterconnectDriver {
                     error!("Failed to set bandwidth with {err:?}");
                 }
                 Ok(Ok(result)) => {
-                    for node in result {
-                        ftrace::instant!(c"interconnect", c"node_bandwidth", ftrace::Scope::Process,
-                            "id" => node.node_id.unwrap_or(0),
-                            "average_bandwidth_bps" => node.average_bandwidth_bps.unwrap_or(0),
-                            "peak_bandwidth_bps" => node.peak_bandwidth_bps.unwrap_or(0));
-                    }
+                    graph.borrow_mut().update_stats(result);
                 }
             };
         });
