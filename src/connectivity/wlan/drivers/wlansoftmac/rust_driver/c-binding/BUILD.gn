@@ -19,7 +19,7 @@ rustc_staticlib("wlansoftmac-c") {
     "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
     "//src/connectivity/wlan/lib/mlme/rust:wlan-mlme",
     "//src/connectivity/wlan/lib/trace:wlan-trace",
-    "//src/lib/diagnostics/log/rust",
+    "//src/lib/diagnostics/log/rust:no_startup_handle",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:log",

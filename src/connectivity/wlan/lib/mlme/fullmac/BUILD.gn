@@ -24,7 +24,7 @@ rustc_library("wlan-fullmac-mlme") {
     "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
     "//src/connectivity/wlan/lib/sme:wlan-sme",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/diagnostics/log/rust",
+    "//src/lib/diagnostics/log/rust:no_startup_handle",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",

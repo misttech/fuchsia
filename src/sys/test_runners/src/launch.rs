@@ -6,13 +6,15 @@
 
 use crate::logs::{LoggerError, LoggerStream, create_log_stream, create_std_combined_log_stream};
 use anyhow::Error;
+use cm_types::NamespacePath;
 use fidl_fuchsia_component::IntrospectorMarker;
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_component::directory::AsRefDirectory;
 use namespace::Namespace;
 use runtime::{HandleInfo, HandleType};
 use thiserror::Error;
 use zx::{HandleBased, Process, Rights, Task};
-use {fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
+use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
 /// The basic rights to use when creating or duplicating a UTC clock. Restrict these
 /// on a case-by-case basis only.
@@ -159,6 +161,18 @@ async fn launch_process_impl(
         handle_infos.push(fproc::HandleInfo {
             handle: config_vmo.into_handle(),
             id: HandleInfo::new(HandleType::ComponentConfigVmo, 0).as_raw(),
+        });
+    }
+
+    if let Some(svc_dir) = args.ns.get(&NamespacePath::new("/svc").unwrap()) {
+        let (client, server) = zx::Channel::create();
+        svc_dir
+            .as_ref_directory()
+            .open("fuchsia.logger.LogSink", fio::Flags::PROTOCOL_SERVICE, server.into())
+            .expect("open LogSink for test");
+        handle_infos.push(fproc::HandleInfo {
+            handle: client.into(),
+            id: runtime::HandleInfo::new(runtime::HandleType::LogSink, 0).as_raw(),
         });
     }
 

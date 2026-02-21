@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <errno.h>
+#include <lib/fdio/directory.h>
 #include <lib/fdio/spawn.h>
 #include <lib/fdio/unsafe.h>
 #include <poll.h>
@@ -13,6 +14,7 @@
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
+#include <zircon/types.h>
 
 #include "shell.h"
 #include "memalloc.h"
@@ -34,11 +36,38 @@ static zx_status_t launch(const char* filename, const char* const* argv,
         fdio_unsafe_release(io);
     }
 
+    zx_handle_t log_client, log_server;
+    zx_status_t s = zx_channel_create(0, &log_client, &log_server);
+    if (s != ZX_OK) {
+      return s;
+    }
+    const fdio_spawn_action_t default_actions[1] = {
+        {
+            .action = FDIO_SPAWN_ACTION_ADD_HANDLE,
+            .h =
+                {
+                    .id = PA_HND(PA_LOG_SINK, 0),
+                    .handle = log_client,
+                },
+        },
+    };
+    const fdio_spawn_action_t* actions = default_actions;
+    size_t action_count = sizeof(default_actions) / sizeof(default_actions[0]);
+    s = fdio_service_connect("/svc/fuchsia.logger.LogSink", log_server);
+    if (s != ZX_OK) {
+      // If connect failed immediately (for example, no /svc) just proceed without adding a log
+      // handle.
+      zx_handle_close(log_client);
+      actions = NULL;
+      action_count = 0;
+    }
+
     // TODO(abarth): Including FDIO_SPAWN_DEFAULT_LDSVC doesn't fully make sense.
     // We should find a library loader that's appropriate for this program
     // rather than cloning the library loader used by the shell.
     uint32_t flags = FDIO_SPAWN_CLONE_ALL & ~FDIO_SPAWN_CLONE_ENVIRON;
-    return fdio_spawn_etc(job, flags, filename, argv, envp, 0, NULL, process, err_msg);
+    return fdio_spawn_etc(job, flags, filename, argv, envp, action_count,
+                          actions, process, err_msg);
 }
 
 // Add all function definitions to our nodelist, so we can package them up for a

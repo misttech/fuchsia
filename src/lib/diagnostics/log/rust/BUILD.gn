@@ -64,6 +64,18 @@ rustc_library("rust") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
+# Variant of the standard `"rust"` library that does not include PA_LOG_SINK
+# support. This exists mostly to support driver libraries that don't use
+# this feature are forbidden from linking the symbol zx_take_startup_handle.
+rustc_library("no_startup_handle") {
+  name = "diagnostics_log"
+  edition = "2024"
+  deps = LIB_DEPS
+  sources = LIB_SOURCES
+  features = [ "no_startup_handle" ]
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+}
+
 rustc_test("diagnostics_log_lib_test") {
   edition = "2024"
 

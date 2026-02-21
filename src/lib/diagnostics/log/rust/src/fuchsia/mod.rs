@@ -8,7 +8,6 @@ use fidl_fuchsia_logger::{
     LogSinkEvent, LogSinkMarker, LogSinkOnInitRequest, LogSinkProxy, LogSinkSynchronousProxy,
 };
 use fuchsia_async as fasync;
-use fuchsia_component_client::connect::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
 use std::borrow::Borrow;
@@ -21,6 +20,10 @@ use thiserror::Error;
 use fidl_fuchsia_diagnostics::Interest;
 #[cfg(fuchsia_api_level_at_least = "27")]
 use fidl_fuchsia_diagnostics_types::Interest;
+
+use fuchsia_component_client::connect::connect_to_protocol;
+#[cfg(not(feature = "no_startup_handle"))]
+use fuchsia_runtime::{HandleInfo, HandleType};
 
 mod filter;
 mod sink;
@@ -245,12 +248,27 @@ impl Publisher {
             return Err(PublishError::UnsupportedOption);
         }
 
-        let client = match opts.log_sink_client.take() {
-            Some(log_sink) => log_sink,
-            None => connect_to_protocol()
-                .map_err(|e| e.to_string())
-                .map_err(PublishError::LogSinkConnect)?,
+        let mut get_client = || match opts.log_sink_client.take() {
+            Some(log_sink) => Ok(log_sink),
+            None => {
+                #[cfg(not(feature = "no_startup_handle"))]
+                {
+                    let log_sink = fuchsia_runtime::take_startup_handle(HandleInfo::new(
+                        HandleType::LogSink,
+                        0,
+                    ));
+                    if let Some(log_sink) = log_sink {
+                        let log_sink = fidl::Channel::from(log_sink);
+                        return Ok(ClientEnd::<LogSinkMarker>::from(log_sink));
+                    }
+                }
+                // If startup handle is unavailable fallback to /svc.
+                connect_to_protocol()
+                    .map_err(|e| e.to_string())
+                    .map_err(PublishError::LogSinkConnect)
+            }
         };
+        let client = (get_client)()?;
 
         let proxy = zx::Unowned::<LogSinkSynchronousProxy>::new(client.channel());
         let Ok(LogSinkEvent::OnInit {
@@ -280,12 +298,28 @@ impl Publisher {
             return Err(PublishError::UnsupportedOption);
         }
 
-        let proxy = match opts.log_sink_client.take() {
-            Some(log_sink) => log_sink.into_proxy(),
-            None => connect_to_protocol()
-                .map_err(|e| e.to_string())
-                .map_err(PublishError::LogSinkConnect)?,
+        let mut get_client = || match opts.log_sink_client.take() {
+            Some(log_sink) => Ok(log_sink.into_proxy()),
+            None => {
+                #[cfg(not(feature = "no_startup_handle"))]
+                {
+                    let log_sink = fuchsia_runtime::take_startup_handle(HandleInfo::new(
+                        HandleType::LogSink,
+                        0,
+                    ));
+                    if let Some(log_sink) = log_sink {
+                        let log_sink = fidl::Channel::from(log_sink);
+                        let log_sink = ClientEnd::<LogSinkMarker>::from(log_sink);
+                        return Ok(log_sink.into_proxy());
+                    }
+                }
+                // If startup handle is unavailable fallback to /svc.
+                connect_to_protocol()
+                    .map_err(|e| e.to_string())
+                    .map_err(PublishError::LogSinkConnect)
+            }
         };
+        let proxy = (get_client)()?;
 
         let Some(Ok(LogSinkEvent::OnInit {
             payload: LogSinkOnInitRequest { buffer: Some(iob), interest, .. },
@@ -408,12 +442,27 @@ impl BufferedPublisher {
             return Err(PublishError::UnsupportedOption);
         }
 
-        let client = match opts.log_sink_client {
-            Some(log_sink) => log_sink,
-            None => connect_to_protocol()
-                .map_err(|e| e.to_string())
-                .map_err(PublishError::LogSinkConnect)?,
+        let get_client = || match opts.log_sink_client {
+            Some(log_sink) => Ok(log_sink),
+            None => {
+                #[cfg(not(feature = "no_startup_handle"))]
+                {
+                    let log_sink = fuchsia_runtime::take_startup_handle(HandleInfo::new(
+                        HandleType::LogSink,
+                        0,
+                    ));
+                    if let Some(log_sink) = log_sink {
+                        let log_sink = fidl::Channel::from(log_sink);
+                        return Ok(ClientEnd::<LogSinkMarker>::from(log_sink));
+                    }
+                }
+                // If startup handle is unavailable fallback to /svc.
+                connect_to_protocol()
+                    .map_err(|e| e.to_string())
+                    .map_err(PublishError::LogSinkConnect)
+            }
         };
+        let client = (get_client)()?;
 
         let this = Arc::new(Self {
             sink: BufferedSink::new(SinkConfig {

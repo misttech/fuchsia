@@ -17,6 +17,13 @@
             ],
             from: "self/diagnostics",
         },
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "self/diagnostics",
+
+            // PA_LOG_SINK
+            numbered_handle: 0x3D,
+        },
     ],
     offer: [
         {

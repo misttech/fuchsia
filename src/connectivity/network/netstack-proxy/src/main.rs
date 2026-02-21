@@ -131,6 +131,11 @@ pub async fn main() -> std::process::ExitCode {
         actions.push(fdio::SpawnAction::add_handle(config_vmo_handle_info, config_vmo))
     }
 
+    let log_sink_handle_info = fuchsia_runtime::HandleType::LogSink.into();
+    if let Some(log_sink) = fuchsia_runtime::take_startup_handle(log_sink_handle_info) {
+        actions.push(fdio::SpawnAction::add_handle(log_sink_handle_info, log_sink))
+    }
+
     let netstack_process = fdio::spawn_etc(
         &fuchsia_runtime::job_default(),
         fdio::SpawnOptions::CLONE_ALL - fdio::SpawnOptions::CLONE_NAMESPACE,

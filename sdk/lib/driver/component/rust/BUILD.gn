@@ -29,7 +29,7 @@ rustc_library("rust") {
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/diagnostics/log/rust",
+    "//src/lib/diagnostics/log/rust:no_startup_handle",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fidl/rust_next/fidl_next_bind",
