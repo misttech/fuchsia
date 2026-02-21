@@ -93,18 +93,9 @@ size_t MappedCrashlog::Recover(FILE* tgt) {
 
   // If we failed to recover any crashlog, simply report the size as 0.
   if (log_recovery_result_ != ZX_OK) {
-    // Do not bother to log any recovery errors if the log was "corrupt", and we
-    // either don't know the HW reboot reason, or we know that the reason is a
-    // cold boot.  We don't expect to recover any log during a cold boot, and
-    // systems which do not report a HW reboot reason via the ZBI will always
-    // just tell us "unknown".
     if (ShouldPrintCrashlogStatus()) {
-      if (!((log_recovery_result_ == ZX_ERR_IO_DATA_INTEGRITY) &&
-            ((hw_reason == ZBI_HW_REBOOT_REASON_UNDEFINED) ||
-             (hw_reason == ZBI_HW_REBOOT_REASON_COLD)))) {
-        printf("Crashlog: Failed to recover crashlog.  Result %d, HW Reboot Reason %s\n",
-               log_recovery_result_, str_hw_reason);
-      }
+      printf("Crashlog: Failed to recover crashlog.  Result %d, HW Reboot Reason %s\n",
+             log_recovery_result_, str_hw_reason);
     }
 
     return 0;
