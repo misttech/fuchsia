@@ -1,6 +1,6 @@
 {
   "name": "bisect",
-  "description": "Arguments to run bisection.",
+  "description": "Generate a list of released versions between [--from-success] and [--to-failure] for every artifact contained within the given product bundle (e.g. platform, product, board). Assemble intermediate product bundles using combinations of the artifacts, and facilitate running tests on those PBs to quickly identify which artifact is the source of a bug or behavior change.",
   "examples": [],
   "flags": [
     {
@@ -14,25 +14,13 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "name"
-        }
-      },
-      "optionality": "required",
-      "long": "--name",
-      "short": null,
-      "description": "product bundle name to bisect.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "from-success"
         }
       },
       "optionality": "required",
       "long": "--from-success",
       "short": null,
-      "description": "latest known-good version of the product bundle.",
+      "description": "known-good version of the product bundle. The bisection search window begins here.",
       "hidden": false
     },
     {
@@ -44,7 +32,31 @@
       "optionality": "required",
       "long": "--to-failure",
       "short": null,
-      "description": "earliest known-bad version of the product bundle.",
+      "description": "known-bad version of the product bundle. The bisection search window ends here.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "slot"
+        }
+      },
+      "optionality": "optional",
+      "long": "--slot",
+      "short": null,
+      "description": "slot to bisect over (a or r). Defaults to slot A.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "strategy"
+        }
+      },
+      "optionality": "optional",
+      "long": "--strategy",
+      "short": null,
+      "description": "search strategy to use. Defaults to \"AllDimensions\", which bisects across all pb artifact types (platform, product, board...) simultaneously.",
       "hidden": false
     },
     {
@@ -56,7 +68,7 @@
       "optionality": "optional",
       "long": "--out-dir",
       "short": null,
-      "description": "directory to write assembled images and other artifacts.",
+      "description": "directory to write assembled images and other artifacts. Defaults to ~/<plan_directory>/out",
       "hidden": false
     },
     {
@@ -68,7 +80,7 @@
       "optionality": "optional",
       "long": "--gen-dir",
       "short": null,
-      "description": "directory to write intermediate files.",
+      "description": "directory to write intermediate files. Defaults to ~/<plan_directory>/gen",
       "hidden": false
     },
     {
@@ -82,34 +94,17 @@
       "short": null,
       "description": "authentication method to use.",
       "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
-          "arg_name": "strategy"
-        }
-      },
-      "optionality": "optional",
-      "long": "--strategy",
-      "short": null,
-      "description": "search strategy to use.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
-          "arg_name": "slot"
-        }
-      },
-      "optionality": "optional",
-      "long": "--slot",
-      "short": null,
-      "description": "slot to bisect over (a or r).",
-      "hidden": false
     }
   ],
   "notes": [],
   "commands": [],
-  "positionals": [],
+  "positionals": [
+    {
+      "name": "name",
+      "description": "name of the product bundle being bisected.",
+      "optionality": "required",
+      "hidden": false
+    }
+  ],
   "error_codes": []
 }
