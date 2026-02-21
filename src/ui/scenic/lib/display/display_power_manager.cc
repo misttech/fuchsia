@@ -98,7 +98,17 @@ void DisplayPowerManager::SetPowerMode(PowerMode power_mode,
 
   FX_LOGS(INFO) << "Successfully set display power mode: " << ToString(power_mode);
   inspect_display_power_events_.CreateEntry([power_mode](inspect::Node& n) {
-    n.RecordInt(ToString(power_mode), zx_clock_get_monotonic());
+    const std::string power_mode_str = ToString(power_mode);
+
+    // Fencing the "boot_ns" timestamps around a mono value allows us to note if
+    // suspend interfered. It takes a few tens of ns to look up all these timestamps.
+    n.RecordInt(std::format("{}_before_boot_ns", power_mode_str), zx_clock_get_boot());
+    // TODO(b/475953032): Remove when this is no longer used directly.
+    const zx::time_monotonic now_mono{zx_clock_get_monotonic()};
+    // Keep the old metric value here.
+    n.RecordInt(power_mode_str, now_mono.get());
+    n.RecordInt(std::format("{}_mono_ns", power_mode_str), now_mono.get());
+    n.RecordInt(std::format("{}_after_boot_ns", power_mode_str), zx_clock_get_boot());
   });
   completer(fit::ok());
 }
