@@ -3,6 +3,7 @@ fuchsia.microbenchmarks.starnix_aarch32: Atomic/Cmpxchg/64bit
 fuchsia.microbenchmarks.starnix_aarch32: Atomic/Increment/32bit
 fuchsia.microbenchmarks.starnix_aarch32: Atomic/Increment/64bit
 fuchsia.microbenchmarks.starnix_aarch32: ClockGettimeMonotonic
+fuchsia.microbenchmarks.starnix_aarch32: ClockGettimeRealTime
 fuchsia.microbenchmarks.starnix_aarch32: ExampleNoOpLoop
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Fstat
 fuchsia.microbenchmarks.starnix_aarch32: Filesystem_Fstat_Ext4

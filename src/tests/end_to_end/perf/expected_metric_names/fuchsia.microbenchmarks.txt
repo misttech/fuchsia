@@ -82,6 +82,7 @@ fuchsia.microbenchmarks: Channel/WriteRead/65536bytes/1handles.read
 fuchsia.microbenchmarks: Channel/WriteRead/65536bytes/1handles.write
 fuchsia.microbenchmarks: ClockGetMonotonic
 fuchsia.microbenchmarks: ClockGettimeMonotonic
+fuchsia.microbenchmarks: ClockGettimeRealTime
 fuchsia.microbenchmarks: ContextSwitch/1000.execute
 fuchsia.microbenchmarks: ContextSwitch/1000.setup
 fuchsia.microbenchmarks: Event/Duplicate.close_handle

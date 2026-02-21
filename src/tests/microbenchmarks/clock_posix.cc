@@ -19,8 +19,20 @@ bool ClockGettimeMonotonic() {
   return true;
 }
 
+// Fuchsia's code path for obtaining the real time (a.k.a. UTC time) under
+// Starnix is somewhat nontrivial, so it's worth testing and tracking
+// its performance, as it sees heavy use in filesystem code. Even under
+// Fuchsia proper, we might gain useful insights from this code path.
+bool ClockGettimeRealTime() {
+  timespec ts;
+  ZX_ASSERT(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+  perftest::DoNotOptimize(&ts);
+  return true;
+}
+
 void RegisterTests() {
   perftest::RegisterSimpleTest<ClockGettimeMonotonic>("ClockGettimeMonotonic");
+  perftest::RegisterSimpleTest<ClockGettimeRealTime>("ClockGettimeRealTime");
 }
 PERFTEST_CTOR(RegisterTests)
 
