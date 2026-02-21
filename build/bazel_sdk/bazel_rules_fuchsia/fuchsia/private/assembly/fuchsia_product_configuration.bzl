@@ -366,6 +366,8 @@ def fuchsia_product_configuration(
         base_driver_packages: Base driver packages to include in product.
         ota_configuration: OTA configuration to use with the product.
         starnix_containers: List of Starnix containers.
+        relative_paths: Whether to generate an Assembly product configuration
+            with relative path, so it can be relocated.
         **kwargs: Common bazel rule args passed through to the implementation rule.
     """
 
