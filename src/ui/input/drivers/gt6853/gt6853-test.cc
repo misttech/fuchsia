@@ -83,7 +83,7 @@ class FakeTouchDevice : public fake_i2c::FakeI2c {
 
  protected:
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
-                       size_t* read_buffer_size) override {
+                       size_t* read_buffer_size, size_t expected_read_size) override {
     constexpr uint8_t kTouchData[] = {
         // clang-format off
         0x80, 0x5a, 0x00, 0xb9, 0x03, 0xae, 0x00, 0x00,

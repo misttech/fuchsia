@@ -135,7 +135,7 @@ class FakeI2cHid : public fake_i2c::FakeI2c {
   }
 
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
-                       size_t* read_buffer_size) override {
+                       size_t* read_buffer_size, size_t expected_read_size) override {
     fbl::AutoLock lock(&report_read_lock_);
     // General Read.
     if (write_buffer_size == 0) {

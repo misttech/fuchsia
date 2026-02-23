@@ -23,10 +23,11 @@ namespace fake_i2c {
 //
 // class FakeLightSensor : public FakeI2c {
 //   virtual zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size,
-//                              uint8_t* read_buffer, size_t* read_buffer_size) {
+//                              uint8_t* read_buffer, size_t* read_buffer_size, size_t
+//                              expected_read_size) {
 //      if (CompareWrite(write_buffer, write_buffer_size, kReadLightRegisterCommand,
 //                       sizeof(kReadLightRegisterCommand)) {
-//        SetRead(light_sensor_data_, sizeof(light_sensor_data_), read_buffer,
+//        SetRead(light_sensor_data_, expected_read_size, read_buffer,
 //                sizeof(read_buffer_size);
 //        return ZX_OK;
 //      }
@@ -48,6 +49,7 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
     // Serialize the write information.
     uint8_t write_buffer[fuchsia_hardware_i2c::wire::kMaxTransferSize];
     size_t write_buffer_index = 0;
+    size_t expected_read_size = 0;
     for (const auto& transaction : request->transactions) {
       if (!transaction.has_data_transfer()) {
         completer.ReplyError(ZX_ERR_INVALID_ARGS);
@@ -63,12 +65,17 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
         memcpy(write_buffer + write_buffer_index, write_data.data(), write_data.size());
         write_buffer_index += write_data.size();
       }
+
+      if (transaction.data_transfer().is_read_size()) {
+        expected_read_size += transaction.data_transfer().read_size();
+      }
     }
 
     // Process the serialized ops.
     uint8_t read_buffer[fuchsia_hardware_i2c::wire::kMaxTransferSize];
     size_t read_buffer_size = 0;
-    zx_status_t status = Transact(write_buffer, write_buffer_index, read_buffer, &read_buffer_size);
+    zx_status_t status = Transact(write_buffer, write_buffer_index, read_buffer, &read_buffer_size,
+                                  expected_read_size);
     if (status != ZX_OK) {
       completer.ReplyError(status);
       return;
@@ -111,7 +118,8 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
   // I2cTransact, but with serialized write and read information so it is easier to
   // use.
   virtual zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size,
-                               uint8_t* read_buffer, size_t* read_buffer_size) = 0;
+                               uint8_t* read_buffer, size_t* read_buffer_size,
+                               size_t expected_read_size) = 0;
 
   // Helper functions for specific fakes to use inside of |Transact|.
   bool CompareWrite(const uint8_t* write_buffer, size_t write_buffer_size,

@@ -282,7 +282,7 @@ class FakeI2cDevice : public fake_i2c::FakeI2c {
 
  protected:
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
-                       size_t* read_buffer_size) override {
+                       size_t* read_buffer_size, size_t expected_read_size) override {
     writes_.insert(writes_.end(), write_buffer, write_buffer + write_buffer_size);
     assert(reads_.size() <= fuchsia_hardware_i2c::wire::kMaxTransferSize);
     memcpy(read_buffer, reads_.data(), reads_.size());

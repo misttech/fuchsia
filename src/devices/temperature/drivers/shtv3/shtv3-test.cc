@@ -36,7 +36,7 @@ class FakeShtv3Device : public fake_i2c::FakeI2c {
 
  protected:
   zx_status_t Transact(const uint8_t* write_buffer, size_t write_buffer_size, uint8_t* read_buffer,
-                       size_t* read_buffer_size) override {
+                       size_t* read_buffer_size, size_t expected_read_size) override {
     if (write_buffer_size == 2) {
       const uint16_t command = (write_buffer[0] << 8) | write_buffer[1];
       if (command == 0x805d) {  // Soft reset
