@@ -849,6 +849,73 @@ bool continuous_attribution_tracker_merge_spurious_parent_content() {
   END_TEST;
 }
 
+// Test that the dead transition of a VMO correctly redistributes content between hidden parents and
+// children.
+bool continuous_attribution_tracker_merge_into_child() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  // Construct a copy-on-write hierarchy, and selectively destroy one leaf.
+
+  fbl::RefPtr<VmCowPages> a_cow;
+  fbl::RefPtr<VmObjectPaged> b;
+  fbl::RefPtr<VmObjectPaged> c;
+  fbl::RefPtr<VmCowPages> b_c_hidden_parent;
+  fbl::RefPtr<VmCowPages> a_hidden_parent;
+  {
+    fbl::RefPtr<VmObjectPaged> a;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &a));
+
+    ASSERT_OK(a->CommitRange(0, kPageSize));
+
+    {
+      fbl::RefPtr<VmObject> b_no_paged;
+      ASSERT_OK(a->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                               /*size=*/3 * kPageSize, /*copy_name=*/false, &b_no_paged));
+      ASSERT_NONNULL(b_no_paged);
+      b = DownCastVmObject<VmObjectPaged>(b_no_paged);
+      ASSERT_NONNULL(b);
+    }
+
+    // Ensure that we get an extra level in the hierarchy.
+    ASSERT_OK(b->CommitRange(kPageSize, kPageSize));
+
+    {
+      fbl::RefPtr<VmObject> c_no_paged;
+      ASSERT_OK(b->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                               /*size=*/3 * kPageSize, /*copy_name=*/false, &c_no_paged));
+      ASSERT_NONNULL(c_no_paged);
+      c = DownCastVmObject<VmObjectPaged>(c_no_paged);
+      ASSERT_NONNULL(c);
+    }
+
+    // b and c have the same parent
+    fbl::RefPtr<VmCowPages> b_cow = b->DebugGetCowPages();
+    fbl::RefPtr<VmCowPages> c_cow = c->DebugGetCowPages();
+    EXPECT_EQ(b_cow->DebugGetParent().get(), c_cow->DebugGetParent().get());
+    b_c_hidden_parent = b_cow->DebugGetParent();
+    ASSERT_NONNULL(b_c_hidden_parent);
+
+    // b and c's parent's parent is the same as a's parent
+    a_cow = a->DebugGetCowPages();
+    EXPECT_EQ(b_c_hidden_parent->DebugGetParent().get(), a_cow->DebugGetParent().get());
+    a_hidden_parent = a_cow->DebugGetParent();
+
+    // Watch |b_c_hidden_parent|'s and |a_hidden_parent| populated slots as |a| dies.
+    EXPECT_EQ(1u, b_c_hidden_parent->DebugGetPopulatedSlotsCount());
+    EXPECT_EQ(1u, a_hidden_parent->DebugGetPopulatedSlotsCount());
+  }
+  EXPECT_EQ(2u, b_c_hidden_parent->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(0u, a_hidden_parent->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -872,6 +939,7 @@ VM_UNITTEST(continuous_attribution_tracker_detach_source)
 VM_UNITTEST(continuous_attribution_tracker_remove_loaned_high_priority)
 VM_UNITTEST(continuous_attribution_tracker_add_pages)
 VM_UNITTEST(continuous_attribution_tracker_merge_spurious_parent_content)
+VM_UNITTEST(continuous_attribution_tracker_merge_into_child)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

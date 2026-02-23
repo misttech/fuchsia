@@ -2111,6 +2111,10 @@ bool VmCowPages::MergeContentWithChildLocked() {
   const uint64_t merge_end_offset = child.parent_offset_ + child.parent_limit_;
   VmCompression* compression = Pmm::Node().GetPageCompression();
 
+  uint32_t removed_from_src_page_list = 0;
+  uint32_t added_to_dst_page_list = 0;
+  uint32_t removed_from_dst_page_list = 0;
+
   __UNINITIALIZED BatchPQUpdateBacklink page_backlink_updater(&child);
   bool all_merged = page_list_.MergeRangeOnto(
       [&](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t off) __ALWAYS_INLINE {
@@ -2118,6 +2122,21 @@ bool VmCowPages::MergeContentWithChildLocked() {
         if (dst->IsPageOrRef()) {
           return;
         }
+
+        // Account for the edits we will make to the page list.
+        DEBUG_ASSERT(!src->IsParentContent() && !dst->IsPageOrRef());
+        const bool src_populated = src->IsPageOrRef();
+        const bool dst_populated = dst->IsParentContent();
+        if (src_populated) {
+          // Will empty the slot.
+          ++removed_from_src_page_list;
+        }
+        if (!dst_populated && src_populated) {
+          ++added_to_dst_page_list;
+        } else if (dst_populated && !src_populated) {
+          ++removed_from_dst_page_list;
+        }
+
         // If using parent content markers then any marker we are moving from src can become an
         // empty slot in the destination. We already know that dst does not have any page or ref so
         // clearing dst is guaranteed to not delete content.
@@ -2156,11 +2175,32 @@ bool VmCowPages::MergeContentWithChildLocked() {
 
   page_backlink_updater.Flush();
 
+  if (removed_from_src_page_list > 0) {
+    continuous_attribution_tracker_.Decrement(removed_from_src_page_list);
+  }
+  if (added_to_dst_page_list > 0) {
+    child.continuous_attribution_tracker_.Increment(added_to_dst_page_list);
+  }
+  if (removed_from_dst_page_list > 0) {
+    child.continuous_attribution_tracker_.Decrement(removed_from_dst_page_list);
+  }
+
   // If MergeRangeOnto failed then there is still relevant content in our page_list_ and we cannot
   // proceed with the rest of the merge. Both page lists are in a consistent state, so we can just
   // inform our caller that the hidden node should be retained for the time being.
   if (!all_merged) {
     return false;
+  }
+
+  if constexpr (DEBUG_ASSERT_IMPLEMENTED && EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED) {
+    // Ensure Clear below won't change the populated slots count.
+    page_list_.ForEveryPage([](const VmPageOrMarker* p, uint64_t) {
+      // Clear won't leak content.
+      DEBUG_ASSERT(!p->IsPageOrRef());
+      // This is a hidden VMO. There are no parent content markers.
+      DEBUG_ASSERT(!p->IsParentContent());
+      return ZX_ERR_NEXT;
+    });
   }
 
   // If the merge was successful then clear out any remaining markers etc that might have remained.
