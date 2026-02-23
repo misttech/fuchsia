@@ -10,6 +10,12 @@ group("e2e_tests") {
     "dhcp:e2e_tests",
     "wlan:e2e_tests",
     "wlan_policy:e2e_tests",
+
+    # As tests are migrated out of the antlion directory, add them to this
+    # group to ensure they are still included in the e2e test suite for
+    # release testing.
+    "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
+    "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
   ]
 }
 
