@@ -463,14 +463,22 @@ impl TryFrom<Config> for component_internal::Config {
                 .namespace_capabilities
                 .as_ref()
                 .map(|c| {
-                    cml::translate::translate_capabilities(&CompileOptions::default(), c, false)
+                    cml::translate::translate_capabilities_deprecated(
+                        &CompileOptions::default(),
+                        c,
+                        false,
+                    )
                 })
                 .transpose()?,
             builtin_capabilities: config
                 .builtin_capabilities
                 .as_ref()
                 .map(|c| {
-                    cml::translate::translate_capabilities(&CompileOptions::default(), c, true)
+                    cml::translate::translate_capabilities_deprecated(
+                        &CompileOptions::default(),
+                        c,
+                        true,
+                    )
                 })
                 .transpose()?,
             num_threads: config.num_threads,

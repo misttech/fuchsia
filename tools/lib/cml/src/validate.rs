@@ -1003,9 +1003,15 @@ which is almost certainly a mistake: {}",
                         )?;
                     }
 
+                    let target_availability_is_unknown = offer
+                        .target_availability
+                        .as_ref()
+                        .map_or(false, |a| a.value == TargetAvailability::Unknown);
+
                     // Check that any referenced child actually exists.
                     if self.all_children.contains::<BorrowedName>(to_target.as_ref())
                         || self.all_collections.contains::<BorrowedName>(to_target.as_ref())
+                        || target_availability_is_unknown
                     {
                         // Allowed.
                     } else {
@@ -1106,22 +1112,30 @@ which is almost certainly a mistake: {}",
                         }
                     }
                     // Check that any referenced child actually exists.
-                    let Some(d) = self.all_dictionaries.get::<BorrowedName>(to_target.as_ref())
-                    else {
+                    let target_availability_is_unknown = offer
+                        .target_availability
+                        .as_ref()
+                        .map_or(false, |a| a.value == TargetAvailability::Unknown);
+
+                    // Check that any referenced dictionary actually exists.
+                    if let Some(d) = self.all_dictionaries.get::<BorrowedName>(to_target.as_ref()) {
+                        // If it exists, verify it's not dynamic
+                        if d.path.is_some() {
+                            return Err(Error::validate_context(
+                                format!(
+                                    "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
+                                sets \"path\". Therefore, it is a dynamic dictionary that \
+                                does not allow offers into it."
+                                ),
+                                Some(to_field_origin.clone()),
+                            ));
+                        }
+                    } else if !target_availability_is_unknown {
+                        // If it doesn't exist, ONLY error if availability is NOT unknown
                         return Err(Error::validate_context(
                             format!(
                                 "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
                                 is not a dictionary capability defined by this component"
-                            ),
-                            Some(to_field_origin.clone()),
-                        ));
-                    };
-                    if d.path.is_some() {
-                        return Err(Error::validate_context(
-                            format!(
-                                "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
-                            sets \"path\". Therefore, it is a dynamic dictionary that \
-                            does not allow offers into it."
                             ),
                             Some(to_field_origin.clone()),
                         ));
