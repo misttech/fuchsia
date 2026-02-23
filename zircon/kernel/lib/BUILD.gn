@@ -59,6 +59,7 @@ all_libs = [
   "lockup_detector",
   "mtrace",
   "object_cache",
+  "page-map",
   "page_cache",
   "perfmon",
   "percpu_writer",
