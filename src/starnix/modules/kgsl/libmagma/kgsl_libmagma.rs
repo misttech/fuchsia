@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use magma::{
-    MAGMA_STATUS_OK, magma_buffer_id_t, magma_buffer_t, magma_connection_create_buffer,
-    magma_connection_create_context2, magma_connection_create_semaphore, magma_connection_release,
-    magma_connection_release_buffer, magma_connection_release_context,
-    magma_connection_release_semaphore, magma_connection_t, magma_device_create_connection,
-    magma_device_import, magma_device_query, magma_device_release, magma_device_t, magma_handle_t,
-    magma_initialize_logging, magma_priority_t, magma_query_t, magma_semaphore_id_t,
-    magma_semaphore_reset, magma_semaphore_signal, magma_semaphore_t, magma_status_t,
+    MAGMA_STATUS_OK, magma_buffer_get_handle, magma_buffer_id_t, magma_buffer_t,
+    magma_connection_create_buffer, magma_connection_create_context2,
+    magma_connection_create_semaphore, magma_connection_release, magma_connection_release_buffer,
+    magma_connection_release_context, magma_connection_release_semaphore, magma_connection_t,
+    magma_device_create_connection, magma_device_import, magma_device_query, magma_device_release,
+    magma_device_t, magma_handle_t, magma_initialize_logging, magma_priority_t, magma_query_t,
+    magma_semaphore_id_t, magma_semaphore_reset, magma_semaphore_signal, magma_semaphore_t,
+    magma_status_t,
 };
 use starnix_logging::log_error;
 use std::panic::Location;
@@ -270,6 +271,16 @@ impl Buffer {
 
     pub fn size(&self) -> u64 {
         self.inner.size
+    }
+
+    pub fn get_handle(&self) -> Result<zx::NullableHandle, magma_status_t> {
+        let mut handle: magma_handle_t = 0;
+        // Safety: magma_buffer_get_handle borrows the buffer handle and maybe returns a handle.
+        let result = unsafe { magma_buffer_get_handle(self.inner.magma_buffer, &mut handle) };
+        magma_result(result).kgsl_log_error()?;
+        // Safety: from_raw takes ownership of the handle.
+        let handle = unsafe { zx::NullableHandle::from_raw(handle) };
+        Ok(handle)
     }
 }
 

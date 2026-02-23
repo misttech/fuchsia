@@ -12,7 +12,8 @@ use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
 use range_alloc::RangeAllocator;
-use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::mm::memory::MemoryObject;
+use starnix_core::mm::{MappingName, MemoryAccessorExt};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
@@ -26,8 +27,8 @@ use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error, uapi};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Once};
 
 #[cfg(feature = "starnix-kgsl-debug")]
 #[macro_export]
@@ -85,8 +86,6 @@ pub struct KgslFile {
     gpuobjs: Mutex<HashMap<u32, GpuObject>>,
     next_gpuobj_id: AtomicU32,
     allocator: Mutex<RangeAllocator<u64>>,
-    #[expect(dead_code)]
-    shadow: GpuObject,
     shadow_properties: uapi::kgsl_shadowprop,
     // TODO(b/481419355): transition to id-map container once available
     contexts: Mutex<HashMap<u32, Context>>,
@@ -94,11 +93,9 @@ pub struct KgslFile {
 }
 
 struct GpuObject {
-    #[expect(dead_code)]
     buffer: Buffer,
     flags: u64,
     size: u64,
-    #[expect(dead_code)]
     mmapsize: u64,
     gpuaddr: u64,
 }
@@ -192,16 +189,19 @@ impl KgslFile {
             ..Default::default()
         };
 
+        let shadow_id = 1;
+        let mut gpuobjs = HashMap::new();
+        gpuobjs.insert(shadow_id, shadow);
+
         Ok(Box::new(Self {
             device,
             connection,
             adreno_kgsl_params,
             syncsources: Mutex::new(HashMap::new()),
             next_syncsource_id: AtomicU32::new(1),
-            gpuobjs: Mutex::new(HashMap::new()),
-            next_gpuobj_id: AtomicU32::new(1),
+            gpuobjs: Mutex::new(gpuobjs),
+            next_gpuobj_id: AtomicU32::new(shadow_id + 1),
             allocator: Mutex::new(allocator),
-            shadow,
             shadow_properties,
             contexts: Mutex::new(HashMap::new()),
             next_context_id: AtomicU32::new(1),
@@ -553,5 +553,40 @@ impl FileOps for KgslFile {
                 error!(ENOTSUP)
             }
         }
+    }
+
+    fn mmap(
+        &self,
+        _locked: &mut Locked<starnix_sync::FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        addr: starnix_core::mm::DesiredAddress,
+        memory_offset: u64, // Callers encode the buffer ID using this field.
+        length: usize,
+        prot_flags: starnix_core::mm::ProtectionFlags,
+        mapping_options: starnix_core::mm::MappingOptions,
+        _filename: starnix_core::vfs::NamespaceNode,
+    ) -> Result<UserAddress, Errno> {
+        kgsl_debug!("mmap {:?} {:?} {:?} {:?}", addr, memory_offset, length, prot_flags);
+        let id = (memory_offset / BUFFER_ALIGNMENT) as u32;
+        let gpuobjs = self.gpuobjs.lock();
+        let gpuobj = gpuobjs.get(&id).ok_or_else(|| errno!(EINVAL))?;
+        if length as u64 > gpuobj.mmapsize {
+            return error!(EINVAL);
+        }
+        let handle = gpuobj.buffer.get_handle().map_err(|_| errno!(ENXIO))?;
+        let vmo = zx::Vmo::from(handle);
+        let memory = Arc::new(MemoryObject::from(vmo).with_zx_name(b"starnix:kgsl"));
+        // The memory manager persists the memory object until the client exits or calls munmap.
+        current_task.mm()?.map_memory(
+            addr,
+            memory,
+            0,
+            length,
+            prot_flags,
+            file.max_access_for_memory_mapping(),
+            mapping_options,
+            MappingName::None,
+        )
     }
 }

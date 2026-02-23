@@ -134,19 +134,21 @@ pub mod maur {
     }
 
     create_multi_arch_types!(
-        kgsl_devinfo,
+        // keep-sorted start
         kgsl_device_getproperty,
-        kgsl_ucode_version,
-        kgsl_qdss_stm_prop,
-        kgsl_qtimer_prop,
-        kgsl_syncsource_create,
-        kgsl_syncsource_destroy,
+        kgsl_devinfo,
+        kgsl_drawctxt_create,
+        kgsl_drawctxt_destroy,
         kgsl_gpuobj_alloc,
         kgsl_gpuobj_free,
         kgsl_gpuobj_info,
+        kgsl_qdss_stm_prop,
+        kgsl_qtimer_prop,
         kgsl_shadowprop,
-        kgsl_drawctxt_create,
-        kgsl_drawctxt_destroy,
+        kgsl_syncsource_create,
+        kgsl_syncsource_destroy,
+        kgsl_ucode_version,
+        // keep-sorted end
     );
 }
 
