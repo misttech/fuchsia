@@ -246,8 +246,11 @@ static bool vmpl_free_pages_last_page_test() {
 
   list_node_t list;
   list_initialize(&list);
-  pl.RemoveAllContent(
-      [&list](VmPageOrMarker&& p) { list_add_tail(&list, &p.ReleasePage()->queue_node); });
+  pl.RemoveAllContent([&list](VmPageOrMarker&& p) {
+    if (p.IsPage()) {
+      list_add_tail(&list, &p.ReleasePage()->queue_node);
+    }
+  });
   EXPECT_TRUE(pl.IsEmpty(), "not empty\n");
 
   EXPECT_EQ(list_length(&list), 1u, "too many pages");
@@ -273,8 +276,11 @@ static bool vmpl_near_last_offset_free() {
 
       list_node_t list;
       list_initialize(&list);
-      pl.RemoveAllContent(
-          [&list](VmPageOrMarker&& p) { list_add_tail(&list, &p.ReleasePage()->queue_node); });
+      pl.RemoveAllContent([&list](VmPageOrMarker&& p) {
+        if (p.IsPage()) {
+          list_add_tail(&list, &p.ReleasePage()->queue_node);
+        }
+      });
 
       EXPECT_EQ(list_length(&list), 1u, "too many pages");
       EXPECT_EQ(list_remove_head_type(&list, vm_page_t, queue_node), page, "wrong page");
@@ -661,7 +667,9 @@ static bool vmpl_for_every_page_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
 
   UnlinkAndFreePages(test_pages);
@@ -700,7 +708,9 @@ static bool vmpl_skip_last_gap_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
 
   test_page->queue_node = {};
@@ -757,7 +767,9 @@ static bool vmpl_contiguous_run_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(6u, list_length(&free_list));
 
@@ -818,7 +830,9 @@ static bool vmpl_contiguous_run_compare_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(5u, list_length(&free_list));
 
@@ -917,7 +931,9 @@ static bool vmpl_contiguous_traversal_end_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(3u, list_length(&free_list));
 
@@ -1016,7 +1032,9 @@ static bool vmpl_contiguous_traversal_error_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(3u, list_length(&free_list));
 
@@ -1535,7 +1553,9 @@ static bool vmpl_interval_add_page_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(1u, list_length(&free_list));
 
@@ -1608,7 +1628,9 @@ static bool vmpl_interval_add_page_slots_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(1u, list_length(&free_list));
 
@@ -1728,7 +1750,9 @@ static bool vmpl_interval_add_page_start_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(2u, list_length(&free_list));
 
@@ -1848,7 +1872,9 @@ static bool vmpl_interval_add_page_end_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(2u, list_length(&free_list));
 
@@ -1930,7 +1956,9 @@ static bool vmpl_interval_replace_slot_test() {
   list_node_t free_list;
   list_initialize(&free_list);
   list.RemoveAllContent([&free_list](VmPageOrMarker&& p) {
-    list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    if (p.IsPage()) {
+      list_add_tail(&free_list, &p.ReleasePage()->queue_node);
+    }
   });
   EXPECT_EQ(1u, list_length(&free_list));
 

@@ -1033,15 +1033,13 @@ class VmPageList final {
   // Removes any item at |offset| from the list and returns it, or VmPageOrMarker::Empty() if none.
   VmPageOrMarker RemoveContent(uint64_t offset);
 
-  // Release every item in the page list and calls free_content_fn on any content, giving it
-  // ownership. Any markers are cleared.
+  // Release and call free_content_fn on every item in the page list. Gives free_content_fn
+  // ownership of the content. After calling this method, all slots in the page list are empty.
   template <typename T>
   void RemoveAllContent(T free_content_fn) {
     // per page get a reference to the page pointer inside the page list node
     auto per_page_func = [&free_content_fn](VmPageOrMarker* p, uint64_t offset) {
-      if (p->IsPageOrRef()) {
-        free_content_fn(ktl::move(*p));
-      }
+      free_content_fn(ktl::move(*p));
       *p = VmPageOrMarker::Empty();
       return ZX_ERR_NEXT;
     };
