@@ -48,6 +48,8 @@ group("per_test_timeout_allowlist") {
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11a_test",
     "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_compliance_11bg_test",
     "//src/testing/end_to_end/antlion/tests/wlan/functional:beacon_loss_test",
+    "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_test",
+    "//src/testing/end_to_end/honeydew/honeydew/transports/fastboot/tests/functional_tests:fastboot_using_serial_test",
     "//src/virtualization/tests:termina_container_tests_pkg_test_termina_container_tests_cmp",
 
     # TODO(https://issues.fuchsia.dev/318529127): Shard syscall tests so that

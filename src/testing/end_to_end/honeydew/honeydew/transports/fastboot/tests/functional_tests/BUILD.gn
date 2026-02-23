@@ -22,6 +22,10 @@ if (is_host) {
       nelson_env,
       sherlock_env,
     ]
+
+    # TODO(https://fxbug.dev/486840780): Delays caused by hardware errors in fastboot
+    # can cause this test to run for much longer than expected.
+    timeout_secs = 900
   }
 
   python_mobly_test("fastboot_using_serial_test") {
@@ -36,6 +40,10 @@ if (is_host) {
       nelson_env,
       sherlock_env,
     ]
+
+    # TODO(https://fxbug.dev/486840780): Delays caused by hardware errors in fastboot
+    # can cause this test to run for much longer than expected.
+    timeout_secs = 900
   }
 }
 
