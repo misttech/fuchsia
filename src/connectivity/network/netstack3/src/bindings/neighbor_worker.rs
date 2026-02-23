@@ -31,7 +31,9 @@ use netstack3_core::device::{
     DeviceId, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId, WeakDeviceId,
 };
 use netstack3_core::error::NotFoundError;
-use netstack3_core::neighbor::{NeighborRemovalError, StaticNeighborInsertionError};
+use netstack3_core::neighbor::{
+    NeighborRemovalError, StaticNeighborInsertionError, TriggerNeighborProbeError,
+};
 use netstack3_core::routes::Entry;
 use netstack3_core::{IpExt, neighbor};
 
@@ -573,6 +575,26 @@ where
 }
 
 #[netstack3_core::context_ip_bounds(A::Version, BindingsCtx)]
+fn probe_entry<A: IpAddress>(
+    ctx: &mut Ctx,
+    interface: u64,
+    neighbor: A,
+) -> Result<(), ControllerError>
+where
+    A::Version: IpExt,
+{
+    let device_id = get_ethernet_id(ctx, interface)?;
+    ctx.api()
+        .neighbor::<A::Version, EthernetLinkDevice>()
+        .probe_entry(&device_id, neighbor)
+        .map_err(|e| match e {
+            TriggerNeighborProbeError::IpAddressInvalid => ControllerError::InvalidIpAddress,
+            TriggerNeighborProbeError::NotFound(_) => ControllerError::NeighborNotFound,
+            TriggerNeighborProbeError::LinkAddressUnknown => ControllerError::LinkAddressUnknown,
+        })
+}
+
+#[netstack3_core::context_ip_bounds(A::Version, BindingsCtx)]
 fn remove_entry<A: IpAddress>(
     ctx: &mut Ctx,
     interface: u64,
@@ -609,6 +631,13 @@ pub(super) async fn serve_controller(
                     let result = match neighbor.into_ext() {
                         IpAddr::V4(v4) => add_static_entry(&mut ctx, interface, v4, mac),
                         IpAddr::V6(v6) => add_static_entry(&mut ctx, interface, v6, mac),
+                    };
+                    responder.send(result)
+                }
+                ControllerRequest::ProbeEntry { interface, neighbor, responder } => {
+                    let result = match neighbor.into_ext() {
+                        IpAddr::V4(v4) => probe_entry(&mut ctx, interface, v4),
+                        IpAddr::V6(v6) => probe_entry(&mut ctx, interface, v6),
                     };
                     responder.send(result)
                 }

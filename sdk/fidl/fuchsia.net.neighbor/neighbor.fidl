@@ -132,6 +132,9 @@ type ControllerError = flexible enum {
     INVALID_IP_ADDRESS = 4;
     /// The provided MAC address is not a unicast MAC address.
     MAC_ADDRESS_NOT_UNICAST = 5;
+    /// A probe cannot be manually triggered against the specified neighbor
+    /// because its link address is not known.
+    LINK_ADDRESS_UNKNOWN = 6;
 };
 
 /// Modify the neighbor table.
@@ -149,6 +152,19 @@ closed protocol Controller {
         interface fuchsia.net.InterfaceId;
         neighbor fuchsia.net.IpAddress;
         mac fuchsia.net.MacAddress;
+    }) -> () error ControllerError;
+
+    /// Probe the reachability of an entry in the neighbor table.
+    ///
+    /// If the entry is static it will be converted into a dynamic entry and may
+    /// eventually be discarded if no longer in active use.
+    ///
+    /// + request `interface` identifier for the interface used for
+    ///     communicating with the neighbor.
+    /// + request `neighbor` IP address of the neighbor.
+    strict ProbeEntry(struct {
+        interface fuchsia.net.InterfaceId;
+        neighbor fuchsia.net.IpAddress;
     }) -> () error ControllerError;
 
     /// Delete a dynamic or static entry.

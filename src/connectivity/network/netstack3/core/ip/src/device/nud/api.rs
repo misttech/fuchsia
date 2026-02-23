@@ -16,7 +16,7 @@ use netstack3_base::{
 use thiserror::Error;
 
 use crate::internal::device::nud::{
-    Delay, DynamicNeighborState, Entry, Event, Incomplete, LinkResolutionContext,
+    Delay, DynamicNeighborState, EnterProbeError, Entry, Event, Incomplete, LinkResolutionContext,
     LinkResolutionNotifier, LinkResolutionResult, NeighborState, NudBindingsContext, NudContext,
     NudHandler, NudState, Probe, Reachable, Stale, Unreachable,
 };
@@ -37,6 +37,22 @@ pub enum StaticNeighborInsertionError {
     /// - not the limited broadcast address of `255.255.255.255`.
     #[error("IP address is invalid")]
     IpAddressInvalid,
+}
+
+/// Error when a probe cannot be triggered on a neighbor.
+#[derive(Debug, PartialEq, Eq, Error)]
+pub enum TriggerNeighborProbeError {
+    /// The IP address is invalid as the address of a neighbor.
+    #[error("IP address is invalid")]
+    IpAddressInvalid,
+
+    /// Entry cannot be found.
+    #[error(transparent)]
+    NotFound(#[from] NotFoundError),
+
+    /// The link address of the neighbor is unknown.
+    #[error("link address is unknown")]
+    LinkAddressUnknown,
 }
 
 /// Error when a neighbor table entry cannot be removed.
@@ -234,6 +250,52 @@ where
                 }
             },
         );
+        Ok(())
+    }
+
+    /// Immediately triggers a unicast probe to be sent to `neighbor`.
+    ///
+    /// For IPv6, this probe is an NDP Neighbor Solicitation, while for IPv4
+    /// it's an ARP Request.
+    ///
+    /// Returns an error if the probe was not sent, unless the neighbor was
+    /// already in the Probe state, in which case it succeeds without sending
+    /// another probe.
+    pub fn probe_entry(
+        &mut self,
+        device_id: &<C::CoreContext as DeviceIdContext<D>>::DeviceId,
+        neighbor: I::Addr,
+    ) -> Result<(), TriggerNeighborProbeError> {
+        let (core_ctx, bindings_ctx) = self.contexts();
+        let neighbor =
+            validate_neighbor_addr(neighbor).ok_or(TriggerNeighborProbeError::IpAddressInvalid)?;
+
+        let probe_to_send = core_ctx.with_nud_state_mut(device_id, |nud_state, config_ctx| {
+            let mut neighbor_state = match nud_state.neighbors.entry(neighbor) {
+                Entry::Occupied(neighbor_state) => neighbor_state,
+                Entry::Vacant(_) => return Err(TriggerNeighborProbeError::NotFound(NotFoundError)),
+            };
+            neighbor_state
+                .get_mut()
+                .enter_probe(
+                    config_ctx,
+                    bindings_ctx,
+                    &mut nud_state.timer_heap,
+                    neighbor,
+                    device_id,
+                )
+                .map_err(|e| match e {
+                    EnterProbeError::LinkAddressUnknown => {
+                        TriggerNeighborProbeError::LinkAddressUnknown
+                    }
+                })
+        })?;
+        match probe_to_send {
+            link_addr @ Some(_) => {
+                core_ctx.send_neighbor_solicitation(bindings_ctx, &device_id, neighbor, link_addr)
+            }
+            None => {}
+        }
         Ok(())
     }
 

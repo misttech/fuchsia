@@ -344,6 +344,9 @@ pub(crate) enum RequestError {
     /// Interface not supported.
     #[error("interface not supported")]
     InterfaceUnsupported,
+    /// Neighbor link address unknown.
+    #[error("link address unknown")]
+    LinkAddressUnknown,
 }
 
 impl From<RequestError> for Errno {
@@ -363,6 +366,7 @@ impl From<RequestError> for Errno {
             RequestError::InvalidIpAddress => Errno::EINVAL,
             RequestError::InvalidMacAddress => Errno::EINVAL,
             RequestError::InterfaceUnsupported => Errno::ENOTSUP,
+            RequestError::LinkAddressUnknown => Errno::EINVAL,
         }
     }
 }
@@ -376,6 +380,7 @@ impl From<fnet_neighbor::ControllerError> for RequestError {
             ControllerError::InvalidIpAddress => RequestError::InvalidIpAddress,
             ControllerError::MacAddressNotUnicast => RequestError::InvalidMacAddress,
             ControllerError::NeighborNotFound => RequestError::NeighborNotFound,
+            ControllerError::LinkAddressUnknown => RequestError::LinkAddressUnknown,
             ControllerError::__SourceBreaking { unknown_ordinal: e } => {
                 panic!("encountered unknown controller error: {e:?}")
             }

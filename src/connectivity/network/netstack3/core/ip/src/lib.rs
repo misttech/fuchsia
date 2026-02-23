@@ -157,7 +157,7 @@ pub mod marker {
 /// Neighbor Unreachability Detection.
 pub mod nud {
     pub use crate::internal::device::nud::api::{
-        NeighborApi, NeighborRemovalError, StaticNeighborInsertionError,
+        NeighborApi, NeighborRemovalError, StaticNeighborInsertionError, TriggerNeighborProbeError,
     };
     pub use crate::internal::device::nud::{
         ConfirmationFlags, DEFAULT_RETRANS_TIMER, Delay, DelegateNudContext, DynamicNeighborState,

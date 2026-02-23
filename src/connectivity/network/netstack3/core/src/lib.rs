@@ -187,6 +187,7 @@ pub mod neighbor {
         Event, EventDynamicState, EventKind, EventState, LinkResolutionContext,
         LinkResolutionNotifier, LinkResolutionResult, MAX_ENTRIES, NeighborRemovalError,
         NudUserConfig, NudUserConfigUpdate, StaticNeighborInsertionError,
+        TriggerNeighborProbeError,
     };
 }
 

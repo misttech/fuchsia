@@ -343,6 +343,11 @@ func (n *neighborImpl) AddEntry(_ fidl.Context, interfaceID uint64, neighborIP n
 	return neighbor.ControllerAddEntryResultWithResponse(neighbor.ControllerAddEntryResponse{}), nil
 }
 
+func (n *neighborImpl) ProbeEntry(_ fidl.Context, interfaceID uint64, neighborIP net.IpAddress) (neighbor.ControllerProbeEntryResult, error) {
+	_ = syslog.WarnTf(neighbor.ControllerName, "ignoring unsupported method ProbeEntry(interface=%d, neighbor=%+v)", interfaceID, neighborIP)
+	return neighbor.ControllerProbeEntryResultWithResponse(neighbor.ControllerProbeEntryResponse{}), nil
+}
+
 func (n *neighborImpl) RemoveEntry(_ fidl.Context, interfaceID uint64, neighborIP net.IpAddress) (neighbor.ControllerRemoveEntryResult, error) {
 	address, network := fidlconv.ToTCPIPAddressAndProtocolNumber(neighborIP)
 	if !isValidNeighborAddr(fidlconv.ToStdAddr(neighborIP)) {

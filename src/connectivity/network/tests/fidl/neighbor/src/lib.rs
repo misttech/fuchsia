@@ -20,7 +20,7 @@ use netstack_testing_common::Result;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::nud::FrameMetadata;
 use netstack_testing_common::realms::{
-    Netstack, NetstackVersion, TestRealmExt as _, TestSandboxExt as _,
+    Netstack, Netstack3, NetstackVersion, TestRealmExt as _, TestSandboxExt as _,
 };
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
@@ -509,12 +509,31 @@ fn incomplete_then_reachable(
     ]
 }
 
+/// Helper function to observe the next neighbor solicitation on a [`FrameMetadata`] stream.
+///
+/// This function returns the IP of the first neighbor solicitation it sees.
+async fn next_solicitation(
+    stream: &mut (impl futures::Stream<Item = Result<FrameMetadata>> + std::marker::Unpin),
+) -> fidl_fuchsia_net::IpAddress {
+    loop {
+        match stream
+            .try_next()
+            .await
+            .expect("failed to read from metadata stream")
+            .expect("metadata stream ended unexpectedly")
+        {
+            FrameMetadata::NeighborSolicitation(ip) => return ip,
+            _ => (),
+        }
+    }
+}
+
 /// Helper function to observe the next solicitation resolution on a
 /// [`FrameMetadata`] stream.
 ///
-/// This function collects all the router solicitations it sees until it receives
-/// a UDP packet. It then asserts that the UDP packet's destination IP matches
-/// the given `dst_ip`.
+/// This function collects all the neighbor solicitations it sees until it
+/// receives a UDP packet. It then asserts that the UDP packet's destination IP
+/// matches the given `dst_ip`.
 async fn next_solicitation_resolution(
     stream: &mut (impl futures::Stream<Item = Result<FrameMetadata>> + std::marker::Unpin),
     dst_ip: fidl_fuchsia_net::IpAddress,
@@ -1263,4 +1282,139 @@ async fn neighbor_with_many_addresses_disconnects<N: Netstack>(name: &str) {
         .collect::<HashSet<_>>()
         .await;
     assert_eq!(del_addrs, all_addrs);
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn neigh_probe_dynamic_entry<I: Ip>(name: &str) {
+    let sandbox = TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    // Attach a fake endpoint that will capture all the ARP and NDP neighbor
+    // solicitations.
+    let fake_ep = network.create_fake_endpoint().expect("failed to create fake endpoint");
+    let mut solicit_stream = netstack_testing_common::nud::create_metadata_stream(&fake_ep);
+
+    let (alice, bob) = create_neighbor_realms::<Netstack3>(&sandbox, &network, name).await;
+    // Apply the NUD flake workaround, since we expect all neighbor resolution
+    // to succeed in this test case.
+    alice.ep.apply_nud_flake_workaround().await.expect("nud flake workaround");
+    bob.ep.apply_nud_flake_workaround().await.expect("nud flake workaround");
+
+    let alice_controller = alice
+        .realm
+        .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
+        .expect("failed to connect to Controller");
+
+    let mut iter = get_entry_iterator(
+        &alice.realm,
+        fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
+    );
+    assert_entries(&mut iter, [ItemMatch::Idle]).await;
+
+    let (alice_ip, bob_ip) = match I::VERSION {
+        IpVersion::V4 => (ALICE_IP, BOB_IP),
+        IpVersion::V6 => (alice.ipv6, bob.ipv6),
+    };
+
+    // Exchange some datagrams to add a STALE entry for alice.
+    exchange_dgram(&alice, alice_ip, &bob, bob_ip).await;
+    assert_entries(&mut iter, incomplete_then_reachable(alice.ep.id(), bob_ip, BOB_MAC)).await;
+
+    // Consume the probe and UDP datagram from the stream.
+    assert_eq!(
+        next_solicitation_resolution(&mut solicit_stream, bob_ip).await,
+        HashSet::from_iter(std::iter::once(bob_ip))
+    );
+
+    // Trigger probe via FIDL.
+    alice_controller
+        .probe_entry(alice.ep.id(), &bob_ip)
+        .await
+        .expect("probe_entry FIDL error")
+        .expect("probe_entry failed");
+
+    // Neighbor should transition to PROBE.
+    assert_entries(
+        &mut iter,
+        [ItemMatch::Changed(EntryMatch {
+            interface: alice.ep.id(),
+            neighbor: bob_ip,
+            state: fidl_fuchsia_net_neighbor::EntryState::Probe,
+            mac: Some(BOB_MAC),
+        })],
+    )
+    .await;
+
+    // A unicast probe should have been sent.
+    assert_eq!(next_solicitation(&mut solicit_stream).await, bob_ip);
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn neigh_probe_static_entry<I: Ip>(name: &str) {
+    let sandbox = TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    // Attach a fake endpoint that will capture all the ARP and NDP neighbor
+    // solicitations.
+    let fake_ep = network.create_fake_endpoint().expect("failed to create fake endpoint");
+    let mut solicit_stream = netstack_testing_common::nud::create_metadata_stream(&fake_ep);
+
+    let (alice, bob) = create_neighbor_realms::<Netstack3>(&sandbox, &network, name).await;
+
+    let alice_controller = alice
+        .realm
+        .connect_to_protocol::<fidl_fuchsia_net_neighbor::ControllerMarker>()
+        .expect("failed to connect to Controller");
+
+    let mut iter = get_entry_iterator(
+        &alice.realm,
+        fidl_fuchsia_net_neighbor::EntryIteratorOptions::default(),
+    );
+    assert_entries(&mut iter, [ItemMatch::Idle]).await;
+
+    let bob_ip = match I::VERSION {
+        IpVersion::V4 => BOB_IP,
+        IpVersion::V6 => bob.ipv6,
+    };
+
+    // Add a STATIC entry for alice.
+    alice_controller
+        .add_entry(alice.ep.id(), &bob_ip, &BOB_MAC)
+        .await
+        .expect("add_entry FIDL error")
+        .expect("add_entry failed");
+    assert_entries(
+        &mut iter,
+        [ItemMatch::Added(EntryMatch {
+            interface: alice.ep.id(),
+            neighbor: bob_ip,
+            state: fidl_fuchsia_net_neighbor::EntryState::Static,
+            mac: Some(BOB_MAC),
+        })],
+    )
+    .await;
+
+    // Trigger probe via FIDL.
+    alice_controller
+        .probe_entry(alice.ep.id(), &bob_ip)
+        .await
+        .expect("probe_entry FIDL error")
+        .expect("probe_entry failed");
+
+    // Neighbor should transition to PROBE.
+    assert_entries(
+        &mut iter,
+        [ItemMatch::Changed(EntryMatch {
+            interface: alice.ep.id(),
+            neighbor: bob_ip,
+            state: fidl_fuchsia_net_neighbor::EntryState::Probe,
+            mac: Some(BOB_MAC),
+        })],
+    )
+    .await;
+
+    // A unicast probe should have been sent.
+    assert_eq!(next_solicitation(&mut solicit_stream).await, bob_ip);
 }

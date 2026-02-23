@@ -34,6 +34,7 @@ use packet_formats::ip::IpPacket as _;
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Header as _, Ipv4Packet};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::utils::NonZeroDuration;
+use thiserror::Error;
 use zerocopy::SplitByteSlice;
 
 pub(crate) mod api;
@@ -884,6 +885,12 @@ impl<D: LinkDevice> Unreachable<D> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Error)]
+pub(crate) enum EnterProbeError {
+    #[error("link address is unknown")]
+    LinkAddressUnknown,
+}
+
 impl<D: LinkDevice, BT: NudBindingsTypes<D>> NeighborState<D, BT> {
     fn to_event_state(&self) -> EventState<D::Address> {
         match self {
@@ -892,6 +899,82 @@ impl<D: LinkDevice, BT: NudBindingsTypes<D>> NeighborState<D, BT> {
             }
             NeighborState::Static(addr) => EventState::Static(*addr),
         }
+    }
+
+    /// Transitions this neighbor to the Probe state. If a state change
+    /// resulted, returns the link address that should be probed by the caller
+    /// once the neighbor table lock is released.
+    ///
+    /// NB: if `neighbor` is a static entry, this will cause it to become and
+    /// remain a dynamic entry.
+    ///
+    /// Returns an error if this neighbor is in the Incomplete state because the
+    /// link address must be known in order to trigger a unicast probe.
+    pub(crate) fn enter_probe<I, DeviceId, CC>(
+        &mut self,
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BT,
+        timers: &mut TimerHeap<I, BT>,
+        neighbor: SpecifiedAddr<I::Addr>,
+        device_id: &DeviceId,
+    ) -> Result<Option<D::Address>, EnterProbeError>
+    where
+        I: Ip,
+        DeviceId: StrongDeviceIdentifier,
+        BT: NudBindingsContext<I, D, DeviceId>,
+        CC: NudConfigContext<I>,
+    {
+        let link_addr = match self {
+            NeighborState::Dynamic(dynamic_state) => {
+                let link_addr = match dynamic_state {
+                    DynamicNeighborState::Reachable(Reachable { link_address, .. }) => {
+                        *link_address
+                    }
+                    DynamicNeighborState::Stale(Stale { link_address }) => *link_address,
+                    DynamicNeighborState::Delay(Delay { link_address }) => *link_address,
+                    DynamicNeighborState::Unreachable(Unreachable { link_address, .. }) => {
+                        *link_address
+                    }
+                    // The neighbor cannot be probed because its link address is
+                    // unknown.
+                    DynamicNeighborState::Incomplete(_) => {
+                        return Err(EnterProbeError::LinkAddressUnknown);
+                    }
+                    // The neighbor probe is already in progress; do not send
+                    // another probe.
+                    DynamicNeighborState::Probe(_) => return Ok(None),
+                };
+
+                // Cancel any existing timers in preparation for scheduling the
+                // retransmit timer.
+                dynamic_state.cancel_timer(bindings_ctx, timers, neighbor);
+                link_addr
+            }
+            NeighborState::Static(link_address) => *link_address,
+        };
+
+        // Schedule retransmit.
+        let retransmit_timeout = core_ctx.retransmit_timeout();
+        timers.schedule_neighbor(
+            bindings_ctx,
+            retransmit_timeout,
+            neighbor,
+            NudEvent::RetransmitUnicastProbe,
+        );
+
+        // Transition state.
+        *self = NeighborState::Dynamic(DynamicNeighborState::Probe(Probe {
+            link_address: link_addr,
+            transmit_counter: NonZeroU16::new(core_ctx.max_unicast_solicit().get() - 1),
+        }));
+        let event_state = self.to_event_state();
+        bindings_ctx.on_event(Event::changed(
+            &device_id,
+            event_state,
+            neighbor,
+            bindings_ctx.now(),
+        ));
+        Ok(Some(link_addr))
     }
 }
 
@@ -1597,7 +1680,7 @@ enum NudTimerType {
 
 /// A wrapper for [`LocalTimerHeap`] that we can attach NUD helpers to.
 #[derive(Debug)]
-struct TimerHeap<I: Ip, BT: TimerBindingsTypes + InstantBindingsTypes> {
+pub(crate) struct TimerHeap<I: Ip, BT: TimerBindingsTypes + InstantBindingsTypes> {
     gc: BT::Timer,
     neighbor: LocalTimerHeap<SpecifiedAddr<I::Addr>, NudEvent, BT>,
 }
@@ -5249,6 +5332,128 @@ mod tests {
                 last_confirmed_at: now,
             }),
             Some(ExpectedEvent::Changed),
+        );
+    }
+
+    #[ip_test(I)]
+    #[test_case(InitialState::Stale; "stale")]
+    #[test_case(InitialState::Reachable; "reachable")]
+    #[test_case(InitialState::Delay; "delay")]
+    #[test_case(InitialState::Unreachable; "unreachable")]
+    fn enter_probe_from_dynamic_state<I: TestIpExt>(initial: InitialState) {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        let _ = init_neighbor_in_state(&mut core_ctx, &mut bindings_ctx, initial);
+
+        let neighbor = core_ctx.nud.state.neighbors.get_mut(&I::LOOKUP_ADDR1).unwrap();
+        let result = neighbor.enter_probe(
+            &mut core_ctx.inner.state,
+            &mut bindings_ctx,
+            &mut core_ctx.nud.state.timer_heap,
+            I::LOOKUP_ADDR1,
+            &FakeLinkDeviceId,
+        );
+
+        let max_unicast_probes = core_ctx.inner.max_unicast_solicit().get();
+        assert_matches!(result, Ok(Some(LINK_ADDR1)));
+        assert_neighbor_state(
+            &core_ctx,
+            &mut bindings_ctx,
+            DynamicNeighborState::Probe(Probe {
+                link_address: LINK_ADDR1,
+                transmit_counter: Some(NonZeroU16::new(max_unicast_probes - 1).unwrap()),
+            }),
+            Some(ExpectedEvent::Changed),
+        );
+    }
+
+    #[ip_test(I)]
+    fn enter_probe_from_static_state<I: TestIpExt>() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        init_static_neighbor(&mut core_ctx, &mut bindings_ctx, LINK_ADDR1, ExpectedEvent::Added);
+
+        let neighbor = core_ctx.nud.state.neighbors.get_mut(&I::LOOKUP_ADDR1).unwrap();
+        let result = neighbor.enter_probe(
+            &mut core_ctx.inner.state,
+            &mut bindings_ctx,
+            &mut core_ctx.nud.state.timer_heap,
+            I::LOOKUP_ADDR1,
+            &FakeLinkDeviceId,
+        );
+
+        let max_unicast_probes = core_ctx.inner.max_unicast_solicit().get();
+        assert_matches!(result, Ok(Some(LINK_ADDR1)));
+        assert_neighbor_state(
+            &core_ctx,
+            &mut bindings_ctx,
+            DynamicNeighborState::Probe(Probe {
+                link_address: LINK_ADDR1,
+                transmit_counter: Some(NonZeroU16::new(max_unicast_probes - 1).unwrap()),
+            }),
+            Some(ExpectedEvent::Changed),
+        );
+    }
+
+    #[ip_test(I)]
+    fn enter_probe_from_probe_state<I: TestIpExt>() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        init_probe_neighbor(&mut core_ctx, &mut bindings_ctx, LINK_ADDR1, false);
+
+        let neighbor = core_ctx.nud.state.neighbors.get_mut(&I::LOOKUP_ADDR1).unwrap();
+        let result = neighbor.enter_probe(
+            &mut core_ctx.inner.state,
+            &mut bindings_ctx,
+            &mut core_ctx.nud.state.timer_heap,
+            I::LOOKUP_ADDR1,
+            &FakeLinkDeviceId,
+        );
+
+        let max_unicast_probes = core_ctx.inner.max_unicast_solicit().get();
+        assert_matches!(result, Ok(None)); // No new probe should be transmitted.
+        assert_neighbor_state(
+            &core_ctx,
+            &mut bindings_ctx,
+            DynamicNeighborState::Probe(Probe {
+                link_address: LINK_ADDR1,
+                transmit_counter: Some(NonZeroU16::new(max_unicast_probes - 1).unwrap()),
+            }),
+            None, // No event should be generated.
+        );
+    }
+
+    #[ip_test(I)]
+    fn enter_probe_from_incomplete_state<I: TestIpExt>() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        let pending_frames = init_incomplete_neighbor(&mut core_ctx, &mut bindings_ctx, false);
+
+        let neighbor = core_ctx.nud.state.neighbors.get_mut(&I::LOOKUP_ADDR1).unwrap();
+        let result = neighbor.enter_probe(
+            &mut core_ctx.inner.state,
+            &mut bindings_ctx,
+            &mut core_ctx.nud.state.timer_heap,
+            I::LOOKUP_ADDR1,
+            &FakeLinkDeviceId,
+        );
+
+        let max_multicast_solicit = core_ctx.inner.max_multicast_solicit().get();
+        assert_matches!(result, Err(EnterProbeError::LinkAddressUnknown));
+        assert_neighbor_state(
+            &core_ctx,
+            &mut bindings_ctx,
+            DynamicNeighborState::Incomplete(Incomplete {
+                transmit_counter: NonZeroU16::new(max_multicast_solicit - 1),
+                pending_frames: pending_frames
+                    .iter()
+                    .cloned()
+                    .map(|b| (b, FakeTxMetadata::default()))
+                    .collect(),
+                notifiers: Vec::new(),
+                _marker: PhantomData,
+            }),
+            None, // No event should be generated.
         );
     }
 }
