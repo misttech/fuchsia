@@ -28,6 +28,13 @@ use log::{debug, info, warn};
 ///                                  V
 ///                  Reported to upper level, displayed
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum TimeEstimatorError {
+    InvalidRange,
+    MissingCurrent,
+    NonPositiveCurrent,
+}
+
 struct InitialScaler;
 
 impl InitialScaler {
@@ -53,10 +60,51 @@ struct ChargeTimeEstimator {
 }
 
 impl ChargeTimeEstimator {
+    // TODO(https://fxbug.dev/442619993): Read all tables from a device tree or a configuration.
+
     // (duration, threshold) stores number of seconds to gain 1% charge, at level <= corresponding
     // threshold. For 0-78%, the duration = 32 seconds. For 79-86, it's 56 seconds.
-    // TODO(https://fxbug.dev/442619993): Read this table from a device tree or a configuration.
     const PERCENT_CHARGE_DURATION: [(i32, u32); 4] = [(32, 78), (56, 86), (84, 96), (92, 100)];
+
+    // Device tree charging current limits translate to this array with 25,000 uA resolution.
+    // Temperatures (0C, 10C, 20C, 42C, 46C) map to rows.
+    // SOC (0, 84, 90) map to columns.
+    const CHG_CC_LIMITS_UA: [[i32; 3]; 4] = [
+        [200_000, 100_000, 100_000],
+        [275_000, 100_000, 100_000],
+        [500_000, 500_000, 200_000],
+        [400_000, 400_000, 200_000],
+    ];
+
+    // Used to determine the column index for CHG_CC_LIMITS_UA.
+    const TTF_TIER_THRESHOLDS: [f32; 3] = [0.0, 84.0, 90.0];
+
+    // Used to determine the row index for CHG_CC_LIMITS_UA.
+    // Note: the array is take from an external configuration and the last element is unused.
+    const TTF_CHARGE_TEMP_LIMITS: [i32; 5] = [0, 10_000, 20_000, 42_000, 46_000];
+
+    fn get_reference_current_ua(level_percent: f32, temperature_mc: Option<i32>) -> i32 {
+        // Default to 25C room temp
+        let temp_mc = temperature_mc.unwrap_or(25_000);
+
+        // Find the appropriate temperature row index.
+        // Skip the first element containing the absolute minimum (0) when checking upper bounds.
+        let row_idx = Self::TTF_CHARGE_TEMP_LIMITS
+            .iter()
+            .skip(1)
+            .position(|&limit| temp_mc < limit)
+            .unwrap_or_else(|| Self::CHG_CC_LIMITS_UA.len() - 1);
+
+        // Find the appropriate SOC column index.
+        // Skip the first element containing the minimum threshold (0.0) when checking bounds.
+        let col_idx = Self::TTF_TIER_THRESHOLDS
+            .iter()
+            .skip(1)
+            .position(|&threshold| level_percent < threshold)
+            .unwrap_or_else(|| Self::CHG_CC_LIMITS_UA[0].len() - 1);
+
+        Self::CHG_CC_LIMITS_UA[row_idx][col_idx]
+    }
 
     fn new() -> ChargeTimeEstimator {
         let mut table = [0i32; LOOKUP_TABLE_SIZE];
@@ -76,21 +124,97 @@ impl ChargeTimeEstimator {
         ChargeTimeEstimator { baseline_duration_lookup: table }
     }
 
-    fn time_to_full(&self, current_level: f32) -> zx::BootDuration {
-        let total_time_s: i32 =
-            (current_level.ceil() as u32..=100).map(|level| self.get_level_duration(level)).sum();
+    /// Calculates the time to full for the range [from_soc, to_soc].
+    fn time_to_full(
+        &self,
+        from_soc: f32,
+        to_soc: f32,
+        actual_current_ua: Option<i32>,
+        ref_current_ua: i32,
+    ) -> Result<zx::BootDuration, TimeEstimatorError> {
+        if to_soc > 100.0 || to_soc < from_soc {
+            return Err(TimeEstimatorError::InvalidRange);
+        }
+        if to_soc == from_soc {
+            return Ok(zx::Duration::from_seconds(0));
+        }
 
-        // Convert to nanoseconds
-        zx::Duration::from_seconds(total_time_s as i64)
+        let ratio = self.ttf_current_ratio(actual_current_ua, ref_current_ua)?;
+
+        // If both from_soc and to_soc fall within the same integer percentage (e.g. 99.2 to 99.8)
+        if from_soc.floor() == to_soc.floor() {
+            let elap = self.ttf_elap_estimate_step(from_soc.floor() as u32, ratio);
+            let estimate_s = elap * (to_soc - from_soc);
+            return Ok(zx::Duration::from_seconds(estimate_s as i64));
+        }
+
+        let mut estimate_s = 0.0_f32;
+
+        // FIRST: fraction part of from_soc if any
+        let from_soc_int = from_soc.floor() as u32;
+        let from_soc_frac = from_soc.fract();
+        let mut i = from_soc_int;
+        if from_soc_frac > 0.0 {
+            let elap = self.ttf_elap_estimate_step(i, ratio);
+            estimate_s += elap * (1.0 - from_soc_frac);
+            i += 1;
+        }
+
+        // accumulate ttf_elap_estimate_step starting from i until end
+        let last_int = to_soc.floor() as u32;
+        while i < last_int {
+            let elap = self.ttf_elap_estimate_step(i, ratio);
+            estimate_s += elap;
+            i += 1;
+        }
+
+        // LAST: fraction of to_soc if any
+        let to_soc_frac = to_soc.fract();
+        if to_soc_frac > 0.0 {
+            let elap = self.ttf_elap_estimate_step(last_int, ratio);
+            estimate_s += elap * to_soc_frac;
+        }
+
+        Ok(zx::Duration::from_seconds(estimate_s as i64))
     }
 
-    // Predict the time in seconds needed to charge to next level (1% above)
+    // Predict the time in seconds needed to charge by 1% according to the lookup table.
     fn get_level_duration(&self, level: u32) -> i32 {
         let level = level as usize;
         if level >= LOOKUP_TABLE_SIZE {
             return 0;
         }
         self.baseline_duration_lookup[level]
+    }
+
+    /// Calculates the power ratio used to scale time-to-full estimations.
+    ///
+    /// # Errors
+    /// Returns `MissingCurrent` if `actual_current_ua` is `None`.
+    /// Returns `NonPositiveCurrent` if `actual_current_ua <= 0`.
+    fn ttf_current_ratio(
+        &self,
+        actual_current_ua: Option<i32>,
+        ref_current_ua: i32,
+    ) -> Result<f32, TimeEstimatorError> {
+        let actual_current = actual_current_ua.ok_or(TimeEstimatorError::MissingCurrent)?;
+
+        if actual_current <= 0 {
+            return Err(TimeEstimatorError::NonPositiveCurrent);
+        }
+
+        // Scale the reference ideally but clamp the ratio at 1.0.
+        if actual_current < ref_current_ua {
+            Ok(ref_current_ua as f32 / actual_current as f32)
+        } else {
+            Ok(1.0)
+        }
+    }
+
+    /// Calculates the elapsed time to charge a single 1% SOC step.
+    fn ttf_elap_estimate_step(&self, level: u32, ratio: f32) -> f32 {
+        let base_elap = self.get_level_duration(level) as f32;
+        base_elap * ratio
     }
 }
 
@@ -394,12 +518,24 @@ impl Polisher {
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         };
+
+        let ref_current = ChargeTimeEstimator::get_reference_current_ua(level, info.temperature_mc);
+
+        let actual_current = info.average_charging_current_ua.or(info.present_charging_current_ua);
         if info.charge_status != Some(fpower::ChargeStatus::Charging) {
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         }
 
-        let time_to_full_estimate = self.estimator.time_to_full(level).into_nanos();
+        let time_to_full_estimate =
+            match self.estimator.time_to_full(level, 100.0, actual_current, ref_current) {
+                Ok(duration) => duration.into_nanos(),
+                Err(e) => {
+                    warn!("Failed to estimate time to full: {:?}", e);
+                    info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+                    return;
+                }
+            };
         info.time_remaining = Some(fpower::TimeRemaining::FullCharge(time_to_full_estimate));
     }
 
@@ -720,6 +856,27 @@ mod tests {
         assert_eq!(estimator.get_level_duration(101), 0, "Level 101 should return 0.");
     }
 
+    #[fuchsia::test]
+    fn test_get_reference_current_ua() {
+        // Temperature below 10C (row 0), SOC < 84 (col 0)
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, Some(5_000)), 200_000);
+
+        // Temperature 10-20C (row 1), SOC < 84 (col 0)
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, Some(15_000)), 275_000);
+
+        // Temperature 20-42C (row 2), SOC 84-90 (col 1)
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(85.0, Some(25_000)), 500_000);
+
+        // Temperature 42-46C (row 3, SOC 84-90 (col 1))
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(89.0, Some(45_000)), 400_000);
+
+        // Temperature > 46C (row 3, saturating fallback)
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(95.0, Some(50_000)), 200_000);
+
+        // Default temperature (25_000)
+        assert_eq!(ChargeTimeEstimator::get_reference_current_ua(50.0, None), 500_000);
+    }
+
     const NANOS_PER_SEC: i64 = 1_000_000_000;
 
     #[fuchsia::test]
@@ -734,24 +891,66 @@ mod tests {
         // Total seconds from 78 to 100: 448 + 840 + 368 = 1656
 
         // --- CASE 1: Full (100.0) ---
-        assert_eq!(estimator.time_to_full(100.0).into_seconds(), 0);
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    100.0,
+                    100.0,
+                    // If None, it directly resolves to 0 on loop check before hitting pwr_ratio
+                    None,
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            0
+        );
 
         // --- CASE 2: Near Full (99.0) ---
         // Sums: 99, 100 (2 levels) -> Call(99)=92s, Call(100)=0s. Total: 92s.
         let expected_99 = 92;
-        assert_eq!(estimator.time_to_full(99.0).into_seconds(), expected_99);
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.0,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            expected_99
+        );
 
         // --- CASE 3: Level 91.0 (Starts sum at 91) ---
         // Levels 91-96 (6 * 84s) + 97-99 (3 * 92s) + 100 (0s) = 504 + 276 = 780 seconds
         let expected_91 = 780;
-        assert_eq!(estimator.time_to_full(91.0).into_seconds(), expected_91);
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    91.0,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            expected_91
+        );
 
         // --- CASE 4: Level 85.0 (Starts sum at 85)
         // Levels 85-86 (2 * 56s) + Levels 87-100 (10*84 + 3*92 + 0)
         // Sums: (2 * 56) + 840 + 276 = 112 + 1116 = 1228 seconds
         let expected_85 = 1228;
         assert_eq!(
-            estimator.time_to_full(85.0).into_seconds(),
+            estimator
+                .time_to_full(
+                    85.0,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
             expected_85,
             "At 85%, time remaining should be 1228 seconds."
         );
@@ -761,7 +960,15 @@ mod tests {
         // Sums: (29 * 32) + 1564 = 928 + 1564 = 2492 seconds
         let expected_50 = 2492;
         assert_eq!(
-            estimator.time_to_full(50.0).into_seconds(),
+            estimator
+                .time_to_full(
+                    50.0,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
             expected_50,
             "At 50%, time remaining should be 2492 seconds."
         );
@@ -770,9 +977,159 @@ mod tests {
         // Total seconds: (4184 - 92) = 4092 seconds.
         let expected_0 = 4092;
         assert_eq!(
-            estimator.time_to_full(0.0).into_seconds(),
+            estimator
+                .time_to_full(
+                    0.0,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
             expected_0,
             "At 0%, time remaining should be 4092 seconds."
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_charge_time_estimator_fractional() {
+        let estimator = ChargeTimeEstimator::new();
+
+        // 99.5% should be half of 99s level duration (92 / 2 = 46s)
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.5,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            46
+        );
+
+        // 98.2% = 0.8 * 92s (for 98 -> 99) + 92s (for 99 -> 100)
+        // 0.8 * 92 = 73.6 (rounded to 73 in integer math: 92 * 80 / 100 = 73)
+        // Test fractional calculation: 98.2% to 100.0%
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    98.2,
+                    100.0,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            165
+        );
+
+        // Test intra-level fractional calculation: 99.2% to 99.8%
+        // elapsed for level 99 is 92. Since diff is 0.6, it should be 92 * 0.6 = 55.2 -> 55
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.2,
+                    99.8,
+                    Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            55
+        );
+
+        // Test out of bounds SOC/last ratio
+        assert_eq!(
+            estimator.time_to_full(
+                100.0,
+                90.0, // Error: last < soc
+                Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None)),
+                ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+            ),
+            Err(TimeEstimatorError::InvalidRange)
+        );
+
+        // Test missing actual_current (None) yields MissingCurrent properly
+        assert_eq!(
+            estimator.time_to_full(
+                50.0,
+                100.0,
+                None, // Missing actual battery current
+                ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+            ),
+            Err(TimeEstimatorError::MissingCurrent)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_charge_time_estimator_ratio() {
+        let estimator = ChargeTimeEstimator::new();
+        let ref_current = ChargeTimeEstimator::get_reference_current_ua(100.0, None);
+
+        // Base case with ref current: should match None
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.0,
+                    100.0,
+                    Some(ref_current),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            92
+        );
+
+        // Half current -> double time: 92 * (100 / 0.5) / 100 = 184
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.0,
+                    100.0,
+                    Some(ref_current / 2),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            184
+        );
+
+        // Negative current -> returns Err instead of falling back to base case
+        assert_eq!(
+            estimator.time_to_full(
+                99.0,
+                100.0,
+                Some(-100),
+                ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+            ),
+            Err(TimeEstimatorError::NonPositiveCurrent)
+        );
+
+        // Zero current -> returns Err instead of falling back to base case
+        assert_eq!(
+            estimator.time_to_full(
+                99.0,
+                100.0,
+                Some(0),
+                ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+            ),
+            Err(TimeEstimatorError::NonPositiveCurrent)
+        );
+
+        // Very high current -> capped at ref current (ratio 100)
+        assert_eq!(
+            estimator
+                .time_to_full(
+                    99.0,
+                    100.0,
+                    Some(ref_current * 2),
+                    ChargeTimeEstimator::get_reference_current_ua(100.0, None)
+                )
+                .unwrap()
+                .into_seconds(),
+            92
         );
     }
 
@@ -788,9 +1145,17 @@ mod tests {
         polisher.calculate_time_to_full(&mut info);
         assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)),);
 
+        // Test glitched negative current
+        info = new_info(50.0, fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua = Some(-1);
+        polisher.calculate_time_to_full(&mut info);
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)));
+
         // Test 50%
         let expected_50 = 2492 * NANOS_PER_SEC;
         info = new_info(50.0, fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua =
+            Some(ChargeTimeEstimator::get_reference_current_ua(50.0, None));
         polisher.calculate_time_to_full(&mut info);
         assert_eq!(
             info.time_remaining,
@@ -800,11 +1165,46 @@ mod tests {
 
         // Test 100%
         info = new_info(100.0, fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua =
+            Some(ChargeTimeEstimator::get_reference_current_ua(100.0, None));
         polisher.calculate_time_to_full(&mut info);
         assert_eq!(
             info.time_remaining,
             Some(fpower::TimeRemaining::FullCharge(0)),
             "At 100%, time remaining should be 0 seconds."
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_calculate_time_to_full_with_current_limits() {
+        let polisher = Polisher::new();
+
+        // Level 50%, temperature 25C (25000 mc)
+        // From get_reference_current_ua:
+        // temp_mc = 25000 -> row_idx = 2 (20-42C)
+        // level = 50.0 -> col_idx = 0 (< 84%)
+        // CHG_CC_LIMITS_UA[2][0] = 500_000 uA
+        let ref_current_ua = 500_000;
+
+        // Actual current is half of ref current (ratio = 50)
+        let actual_current_ua = ref_current_ua / 2;
+
+        let mut info = new_info(50.0, fpower::ChargeStatus::Charging);
+        info.temperature_mc = Some(25_000);
+        info.average_charging_current_ua = Some(actual_current_ua);
+
+        polisher.calculate_time_to_full(&mut info);
+
+        // Base time for 50% -> 100% is 2492 seconds
+        // Ratio = 100 / 0.5 = 200 (since actual is half ref)
+        // Time = 2492 * 200 / 100 = 4984 seconds
+        let expected_seconds = 4984;
+        let expected_nanos = expected_seconds * NANOS_PER_SEC;
+
+        assert_eq!(
+            info.time_remaining,
+            Some(fpower::TimeRemaining::FullCharge(expected_nanos)),
+            "At 50% with half the reference current, time remaining should be double the base time."
         );
     }
 
@@ -1014,6 +1414,8 @@ mod tests {
 
         info.level_percent = Some(83.0);
         info.charge_status = Some(fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua =
+            Some(ChargeTimeEstimator::get_reference_current_ua(83.0, None));
         info = polisher.polish_info(info);
         assert_eq!(info.level_status, Some(fpower::LevelStatus::Ok));
         // Expected nanoseconds (1432 seconds * 1,000,000,000 nanos/sec)
