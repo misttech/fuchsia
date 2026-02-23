@@ -943,7 +943,7 @@ where
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
     }
 
     let Some(mut local_ip) = IpDeviceAddr::new(packet.src_addr()) else {
@@ -1004,7 +1004,7 @@ where
                     packet_metadata.acknowledge_drop();
                     return Ok(());
                 }
-                filter::Verdict::Proceed(()) => {}
+                filter::Verdict::Proceed(filter::Accept) => {}
             }
         }
         InternalForwarding::NotUsed => {}

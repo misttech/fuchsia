@@ -2619,7 +2619,7 @@ fn dispatch_receive_ipv4_packet<
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
     }
     let marks = packet_metadata.marks;
     packet_metadata.acknowledge_drop();
@@ -2759,7 +2759,7 @@ fn dispatch_receive_ipv6_packet<
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
     }
 
     // These invariants are validated by the caller of this function, but it's
@@ -3126,7 +3126,7 @@ where
             );
             return ForwardingAction::SilentlyDrop;
         }
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
     }
 
     packet.set_ttl(ttl - 1);
@@ -3170,7 +3170,7 @@ where
             packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
     }
 
     // If the packet is leaving through the loopback device, attempt to extract a
@@ -3616,7 +3616,7 @@ pub fn receive_ipv4_packet<
     );
     let mut filter = core_ctx.filter_handler();
     match filter.ingress_hook(bindings_ctx, &mut packet, device, &mut packet_metadata) {
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
         filter::Verdict::Stop(filter::IngressStopReason::Drop) => {
             packet_metadata.acknowledge_drop();
             return;
@@ -3747,7 +3747,7 @@ pub fn receive_ipv4_packet<
                             packet_metadata.acknowledge_drop();
                             return;
                         }
-                        filter::Verdict::Proceed(()) => {}
+                        filter::Verdict::Proceed(filter::Accept) => {}
                     }
                 }
                 InternalForwarding::NotUsed => {}
@@ -4021,7 +4021,7 @@ pub fn receive_ipv6_packet<
     let mut filter = core_ctx.filter_handler();
 
     match filter.ingress_hook(bindings_ctx, &mut packet, device, &mut packet_metadata) {
-        filter::Verdict::Proceed(()) => {}
+        filter::Verdict::Proceed(filter::Accept) => {}
         filter::Verdict::Stop(filter::IngressStopReason::Drop) => {
             packet_metadata.acknowledge_drop();
             return;
@@ -4169,7 +4169,7 @@ pub fn receive_ipv6_packet<
                                     packet_metadata.acknowledge_drop();
                                     return;
                                 }
-                                filter::Verdict::Proceed(()) => {}
+                                filter::Verdict::Proceed(filter::Accept) => {}
                             }
                         }
                         InternalForwarding::NotUsed => {}

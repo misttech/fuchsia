@@ -32,7 +32,7 @@ use crate::state::{
 /// - `P` is returned with `Proceed` and carries context for further processing
 ///   (e.g. NAT results).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Verdict<S, P = ()> {
+pub enum Verdict<S, P = Accept> {
     /// The packet should continue traversing the stack.
     Proceed(P),
     /// The packet processing should be stopped. The argument specifies
@@ -40,7 +40,11 @@ pub enum Verdict<S, P = ()> {
     Stop(S),
 }
 
-impl<S> Verdict<S, ()> {
+/// A value returned by a filter to indicate that the packet should be accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Accept;
+
+impl<S, P> Verdict<S, P> {
     fn is_stop(&self) -> bool {
         matches!(self, Verdict::Stop(_))
     }
@@ -79,7 +83,7 @@ pub type IngressVerdict<I> = Verdict<IngressStopReason<I>>;
 impl<I: IpExt> From<RoutineResult<I>> for IngressVerdict<I> {
     fn from(verdict: RoutineResult<I>) -> Self {
         match verdict {
-            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(()),
+            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(Accept),
             RoutineResult::Drop => Verdict::Stop(IngressStopReason::Drop),
             RoutineResult::TransparentLocalDelivery { addr, port } => {
                 Verdict::Stop(IngressStopReason::TransparentLocalDelivery { addr, port })
@@ -102,7 +106,7 @@ pub type LocalEgressVerdict = Verdict<DropOrReject>;
 impl<I: IpExt> From<RoutineResult<I>> for Verdict<DropPacket> {
     fn from(result: RoutineResult<I>) -> Self {
         match result {
-            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(()),
+            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(Accept),
             RoutineResult::Drop => Verdict::Stop(DropPacket),
             result @ RoutineResult::TransparentLocalDelivery { .. } => {
                 unreachable!(
@@ -124,7 +128,7 @@ impl<I: IpExt> From<RoutineResult<I>> for Verdict<DropPacket> {
 impl<I: IpExt> From<RoutineResult<I>> for Verdict<DropOrReject> {
     fn from(result: RoutineResult<I>) -> Self {
         match result {
-            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(()),
+            RoutineResult::Accept | RoutineResult::Return => Verdict::Proceed(Accept),
             RoutineResult::Drop => Verdict::Stop(DropOrReject::Drop),
             RoutineResult::TransparentLocalDelivery { .. } => {
                 unreachable!(
@@ -324,11 +328,11 @@ where
     for routine in routines {
         let verdict: Verdict<SR> = check_routine(&routine, packet, interfaces, metadata).into();
         match verdict {
-            Verdict::Proceed(()) => (),
+            Verdict::Proceed(Accept) => (),
             Verdict::Stop(stop_reason) => return Verdict::Stop(stop_reason),
         }
     }
-    Verdict::Proceed(())
+    Verdict::Proceed(Accept)
 }
 
 /// An implementation of packet filtering logic, providing entry points at
@@ -488,7 +492,7 @@ where
                     Interfaces { ingress: Some(interface), egress: None },
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(IngressStopReason::Drop),
-                    Verdict::Proceed(()) => (),
+                    Verdict::Proceed(Accept) => (),
                 }
 
                 let res = metadata.replace_connection_and_direction(conn, direction);
@@ -555,7 +559,7 @@ where
                     Interfaces { ingress: Some(interface), egress: None },
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropOrReject::Drop),
-                    Verdict::Proceed(()) => (),
+                    Verdict::Proceed(Accept) => (),
                 }
 
                 match state.conntrack.finalize_connection(bindings_ctx, conn) {
@@ -645,7 +649,7 @@ where
                     Interfaces { ingress: None, egress: Some(interface) },
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropOrReject::Drop),
-                    Verdict::Proceed(()) => (),
+                    Verdict::Proceed(Accept) => (),
                 }
 
                 let res = metadata.replace_connection_and_direction(conn, direction);
@@ -712,7 +716,7 @@ where
                     Interfaces { ingress: None, egress: Some(interface) },
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropPacket),
-                    Verdict::Proceed(()) => (),
+                    Verdict::Proceed(Accept) => (),
                 }
 
                 match state.conntrack.finalize_connection(bindings_ctx, conn) {
@@ -818,7 +822,7 @@ pub mod testutil {
             P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         }
 
         fn local_ingress_hook<P, M>(
@@ -832,7 +836,7 @@ pub mod testutil {
             P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         }
 
         fn forwarding_hook<P, M>(
@@ -846,7 +850,7 @@ pub mod testutil {
             P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         }
 
         fn local_egress_hook<P, M>(
@@ -860,7 +864,7 @@ pub mod testutil {
             P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         }
 
         fn egress_hook<P, M>(
@@ -874,7 +878,7 @@ pub mod testutil {
             P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
-            (Verdict::Proceed(()), ProofOfEgressCheck::forge_proof_for_test())
+            (Verdict::Proceed(Accept), ProofOfEgressCheck::forge_proof_for_test())
         }
     }
 
@@ -1022,7 +1026,7 @@ mod tests {
                 Interfaces { ingress: None, egress: None },
                 &mut FakePacketMetadata::default(),
             ),
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         );
     }
 
@@ -1048,7 +1052,7 @@ mod tests {
                 Interfaces { ingress: None, egress: None },
                 &mut FakePacketMetadata::default(),
             ),
-            Verdict::Proceed(())
+            Verdict::Proceed(Accept)
         );
     }
 
@@ -1414,10 +1418,10 @@ mod tests {
     }
 
     #[ip_test(I)]
-    #[test_case(22 => Verdict::Proceed(()); "port 22 allowed for SSH")]
-    #[test_case(80 => Verdict::Proceed(()); "port 80 allowed for HTTP")]
-    #[test_case(1024 => Verdict::Proceed(()); "ephemeral port 1024 allowed")]
-    #[test_case(65535 => Verdict::Proceed(()); "ephemeral port 65535 allowed")]
+    #[test_case(22 => Verdict::Proceed(Accept); "port 22 allowed for SSH")]
+    #[test_case(80 => Verdict::Proceed(Accept); "port 80 allowed for HTTP")]
+    #[test_case(1024 => Verdict::Proceed(Accept); "ephemeral port 1024 allowed")]
+    #[test_case(65535 => Verdict::Proceed(Accept); "ephemeral port 65535 allowed")]
     #[test_case(1023 => Verdict::Stop(DropOrReject::Drop); "privileged port 1023 blocked")]
     #[test_case(53 => Verdict::Stop(DropOrReject::Drop); "privileged port 53 blocked")]
     fn block_privileged_ports_except_ssh_http<I: TestIpExt>(port: u16) -> Verdict<DropOrReject> {
@@ -1498,7 +1502,7 @@ mod tests {
 
     #[ip_test(I)]
     #[test_case(
-        FakeMatcherDeviceId::ethernet_interface() => Verdict::Proceed(());
+        FakeMatcherDeviceId::ethernet_interface() => Verdict::Proceed(Accept);
         "allow incoming traffic on ethernet interface"
     )]
     #[test_case(
@@ -1553,7 +1557,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         // The stashed reference should point to the connection that is in the table.
         let (stashed, _dir) =
@@ -1578,7 +1582,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         // As a result, rather than there being a new connection in the packet metadata,
         // it should contain the same connection that is still in the table.
@@ -1609,7 +1613,7 @@ mod tests {
                 &FakeMatcherDeviceId::ethernet_interface(),
                 &mut FakePacketMetadata::default(),
             );
-            assert_eq!(verdict, Verdict::Proceed(()));
+            assert_eq!(verdict, Verdict::Proceed(Accept));
 
             let (verdict, _proof) = FilterImpl(&mut ctx).egress_hook(
                 &mut bindings_ctx,
@@ -1617,7 +1621,7 @@ mod tests {
                 &FakeMatcherDeviceId::ethernet_interface(),
                 &mut FakePacketMetadata::default(),
             );
-            assert_eq!(verdict, Verdict::Proceed(()));
+            assert_eq!(verdict, Verdict::Proceed(Accept));
 
             let (verdict, _proof) = FilterImpl(&mut ctx).egress_hook(
                 &mut bindings_ctx,
@@ -1625,7 +1629,7 @@ mod tests {
                 &FakeMatcherDeviceId::ethernet_interface(),
                 &mut FakePacketMetadata::default(),
             );
-            assert_eq!(verdict, Verdict::Proceed(()));
+            assert_eq!(verdict, Verdict::Proceed(Accept));
         }
 
         // Finalizing the connection should fail when the conntrack table is at maximum
@@ -1681,7 +1685,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut FakePacketMetadata::default(),
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
         assert_eq!(packet.src_ip, I::SRC_IP);
 
         // Now simulate a locally-generated packet that conflicts with this flow; it is
@@ -1698,7 +1702,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut FakePacketMetadata::default(),
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
         assert_ne!(packet.body.src_port, src_port);
     }
 
@@ -1717,7 +1721,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut first_metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         let mut second_packet = FakeIpPacket::<I, FakeUdpPacket>::arbitrary_value();
         let mut second_metadata = PacketMetadata::default();
@@ -1727,7 +1731,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut second_metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         // Finalize the first connection; it should get inserted in the table.
         let (verdict, _proof) = FilterImpl(&mut core_ctx).egress_hook(
@@ -1736,7 +1740,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut first_metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         // The second packet conflicts with the connection that's in the table, but it's
         // identical to the first one, so it should adopt the finalized connection.
@@ -1747,7 +1751,7 @@ mod tests {
             &mut second_metadata,
         );
         assert_eq!(second_packet.body.src_port, first_packet.body.src_port);
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
 
         let (first_conn, _dir) = first_metadata.take_connection_and_direction().unwrap();
         let (second_conn, _dir) = second_metadata.take_connection_and_direction().unwrap();
@@ -1801,7 +1805,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
         assert_eq!(packet.dst_ip, *I::LOOPBACK_ADDRESS);
 
         // ...SNAT is also successfully configured for the packet, because the packet's
@@ -1812,7 +1816,7 @@ mod tests {
             &FakeMatcherDeviceId::ethernet_interface(),
             &mut metadata,
         );
-        assert_eq!(verdict, Verdict::Proceed(()));
+        assert_eq!(verdict, Verdict::Proceed(Accept));
         assert_eq!(packet.src_ip, I::SRC_IP_2);
     }
 
@@ -1895,7 +1899,7 @@ mod tests {
                 Interfaces { ingress: None, egress: None },
                 &mut metadata,
             ),
-            IngressVerdict::Proceed(()),
+            IngressVerdict::Proceed(Accept),
         );
         assert_eq!(metadata.marks, Marks::new([(MarkDomain::Mark1, 1)]));
 
@@ -1909,7 +1913,7 @@ mod tests {
                 Interfaces::<FakeMatcherDeviceId> { ingress: None, egress: None },
                 &mut metadata,
             ),
-            IngressVerdict::Proceed(())
+            IngressVerdict::Proceed(Accept)
         );
         assert_eq!(metadata.marks, Marks::new([(MarkDomain::Mark1, 1), (MarkDomain::Mark2, 1)]));
 
@@ -1923,7 +1927,7 @@ mod tests {
                 Interfaces::<FakeMatcherDeviceId> { ingress: None, egress: None },
                 &mut metadata,
             ),
-            IngressVerdict::Proceed(())
+            IngressVerdict::Proceed(Accept)
         );
         assert_eq!(metadata.marks, Marks::new([(MarkDomain::Mark1, 2), (MarkDomain::Mark2, 1)]));
     }
