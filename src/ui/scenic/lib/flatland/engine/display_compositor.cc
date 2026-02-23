@@ -255,7 +255,7 @@ DisplayCompositor::~DisplayCompositor() {
   //
   // TODO(https://fxbug.dev/447261550): this is really bad.  Luckily it doesn't impact production.
   {
-    const fidl::OneWayStatus result = display_coordinator_.raw().sync()->DiscardConfig();
+    const fidl::OneWayStatus result = display_coordinator_.raw()->DiscardConfig();
     if (!result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
     }

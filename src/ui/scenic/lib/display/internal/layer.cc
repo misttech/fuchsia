@@ -193,7 +193,7 @@ size_t Layer::SendColorLayerDiffsToCoordinator(
   CP_VERBOSE_LOG << "Layer::SendColorLayerDiffsToCoordinator()... setting color config";
 
   const auto& draft_equiv = std::get<ColorLayerEquivalence>(draft_equiv_.config);
-  const fidl::OneWayStatus status = shared_coordinator.sync()->SetLayerColorConfig(
+  const fidl::OneWayStatus status = shared_coordinator->SetLayerColorConfig(
       layer_id.ToFidl(), draft_equiv.color, draft_equiv.display_destination.ToWireRectU());
   FX_DCHECK(status.ok()) << "Failed to call FIDL SetLayerImage2 method: " << status.status_string();
   return 1;  // one FIDL call sent
