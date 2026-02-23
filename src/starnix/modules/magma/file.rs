@@ -5,8 +5,8 @@
 #![allow(non_upper_case_globals)]
 
 use crate::ffi::{
-    create_connection, device_import, device_release, execute_command, execute_inline_commands,
-    export_buffer, flush, get_buffer_handle, import_semaphore2, query, read_notification_channel,
+    create_connection, device_import, execute_command, execute_inline_commands, export_buffer,
+    flush, get_buffer_handle, import_semaphore2, query, read_notification_channel,
     release_connection,
 };
 use crate::image_file::{ImageFile, ImageInfo};
@@ -114,12 +114,15 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_CONTEXT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_SEMAPHORE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_UNMAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_QUERY,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_POLL,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_EXPORT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_RESET,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_SEMAPHORE_SIGNAL,
     virtio_magma_device_create_connection_ctrl, virtio_magma_device_create_connection_resp_t,
+    virtio_magma_device_import_ctrl_t, virtio_magma_device_import_resp_t,
     virtio_magma_device_query_ctrl_t, virtio_magma_device_query_resp_t,
     virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
     virtio_magma_poll_ctrl_t, virtio_magma_poll_resp_t, virtio_magma_semaphore_export_ctrl_t,
@@ -151,6 +154,7 @@ use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{errno, error};
 use std::collections::HashMap;
 use std::sync::{Arc, Once};
+use zerocopy::IntoBytes;
 use zx::HandleBased;
 
 #[derive(Clone)]
@@ -245,7 +249,7 @@ impl ConnectionInfo {
     }
 }
 
-pub type DeviceMap = HashMap<magma_device_t, Arc<MagmaDevice>>;
+pub type DeviceMap = HashMap<u64, Arc<MagmaDevice>>;
 
 pub struct MagmaFile {
     supported_vendors: Vec<u16>,
@@ -373,8 +377,8 @@ impl MagmaFile {
         self.buffers.lock().insert(buffer_id, arc_buffer);
     }
 
-    fn get_device(&self, device: magma_device_t) -> Result<Arc<MagmaDevice>, Errno> {
-        Ok(self.devices.lock().get(&device).ok_or_else(|| errno!(EINVAL))?.clone())
+    fn get_device(&self, device_id: u64) -> Result<Arc<MagmaDevice>, Errno> {
+        Ok(self.devices.lock().get(&device_id).ok_or_else(|| errno!(EINVAL))?.clone())
     }
 
     fn get_connection(
@@ -485,9 +489,31 @@ impl FileOps for MagmaFile {
 
         match command_type {
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_DEVICE_IMPORT => {
-                let (control, mut response) = read_control_and_response(current_task, &command)?;
-                let device = device_import(&self.supported_vendors, control, &mut response)?;
-                (*self.devices.lock()).insert(device.handle, Arc::new(device));
+                let (control, mut response): (
+                    virtio_magma_device_import_ctrl_t,
+                    virtio_magma_device_import_resp_t,
+                ) = read_control_and_response(current_task, &command)?;
+
+                let device = device_import(&self.supported_vendors, control)?;
+
+                {
+                    let mut device_id = 0u64;
+                    let mut retry_count = 0u64;
+                    let mut device_map = self.devices.lock();
+
+                    while device_id == 0 || device_map.contains_key(&device_id) {
+                        zx::cprng_draw(device_id.as_mut_bytes());
+                        retry_count += 1;
+                        if retry_count % 10 == 0 {
+                            log_warn!("Too many retries generating device id: {}", retry_count);
+                        }
+                    }
+
+                    device_map.insert(device_id, Arc::new(device));
+                    response.device_out = device_id;
+                }
+
+                response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT as u32;
 
                 current_task.write_object(UserRef::new(response_address), &response)
             }
@@ -518,7 +544,10 @@ impl FileOps for MagmaFile {
                     virtio_magma_device_release_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
 
-                device_release(control, &mut response, &mut self.devices.lock());
+                let device_id = control.device;
+                // Dropping the MagmaDevice will call magma_device_release via FFI.
+                self.devices.lock().remove(&device_id);
+                response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE as u32;
 
                 current_task.write_object(UserRef::new(response_address), &response)
             }

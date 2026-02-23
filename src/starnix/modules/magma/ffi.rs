@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::file::{
-    BufferInfo, ConnectionInfo, ConnectionMap, DeviceMap, MagmaBuffer, MagmaConnection,
-    MagmaDevice, MagmaSemaphore,
+    BufferInfo, ConnectionInfo, ConnectionMap, MagmaBuffer, MagmaConnection, MagmaDevice,
+    MagmaSemaphore,
 };
 use crate::image_file::{ImageFile, ImageInfo};
 use bstr::BString;
@@ -29,12 +29,8 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_READ_NOTIFICATION_CHANNEL,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE,
     virtio_magma_device_create_connection_resp_t, virtio_magma_device_import_ctrl_t,
-    virtio_magma_device_import_resp_t, virtio_magma_device_query_resp_t,
-    virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
-    virtmagma_command_descriptor,
+    virtio_magma_device_query_resp_t, virtmagma_command_descriptor,
 };
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
@@ -176,7 +172,6 @@ fn attempt_open_path(
 pub fn device_import(
     supported_vendors: &Vec<u16>,
     _control: virtio_magma_device_import_ctrl_t,
-    response: &mut virtio_magma_device_import_resp_t,
 ) -> Result<MagmaDevice, Errno> {
     let entries = std::fs::read_dir("/svc/fuchsia.gpu.magma.Service")
         .map_err(|_| errno!(EINVAL))?
@@ -189,11 +184,6 @@ pub fn device_import(
     if magma_devices.next().is_some() {
         track_stub!(TODO("https://fxbug.dev/297445280"), "expose multiple magma devices");
     }
-
-    response.result_return = MAGMA_STATUS_OK as u64;
-
-    response.device_out = magma_device.handle;
-    response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT as u32;
 
     Ok(magma_device)
 }
@@ -242,22 +232,6 @@ pub fn get_magma_params(supported_vendor_list: &Vec<u16>) -> BString {
         );
     }
     return b"androidboot.vendor.apex.com.fuchsia.vulkan=com.fuchsia.vulkan.default".into();
-}
-
-/// Releases a magma device.
-///
-/// # Parameters
-///  - `control`: The control message that contains the device to release.
-///  - `response`: The response message that will be updated to write back to user space.
-pub fn device_release(
-    control: virtio_magma_device_release_ctrl_t,
-    response: &mut virtio_magma_device_release_resp_t,
-    devices: &mut DeviceMap,
-) {
-    let device = control.device as magma_device_t;
-    // Dropping the device will call magma_device_release.
-    devices.remove(&device);
-    response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE as u32;
 }
 
 /// `WireDescriptor` matches the struct used by libmagma_virt to encode some fields of the magma
