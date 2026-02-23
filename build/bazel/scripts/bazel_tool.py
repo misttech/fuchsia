@@ -318,6 +318,23 @@ up-to-date artifacts in the Ninja build directory.
         return 0
 
 
+class ListBazelHostTestsCommand(ScriptCommandBase):
+    """Generate tests.json file listing all Bazel host tests."""
+
+    @staticmethod
+    def run(args: argparse.Namespace) -> int:
+        import json
+
+        import bazel_tests_utils
+        import build_utils
+
+        bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
+        tests_json = bazel_tests_utils.generate_tests_json(bazel_paths)
+
+        print(json.dumps(tests_json, indent=2))
+        return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -352,6 +369,7 @@ def main() -> int:
     commands.add_command(TargetDumpCommand())
     commands.add_command(ActionsCommand())
     commands.add_command(SetGnTargetsCommand())
+    commands.add_command(ListBazelHostTestsCommand())
 
     args = parser.parse_args()
 

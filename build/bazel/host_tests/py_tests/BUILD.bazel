@@ -4,10 +4,26 @@
 
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
+load("//build/bazel/host_tests:host_test.bzl", "host_test")
 
 test_suite(
     name = "py_tests",
     visibility = ["//visibility:public"],
+)
+
+host_test(
+    name = "simple_test_host",
+    binary = ":simple_test",
+)
+
+host_test(
+    name = "test_with_py_library_host",
+    binary = ":test_with_py_library",
+)
+
+host_test(
+    name = "test_with_py_binary_host",
+    binary = ":test_with_py_binary",
 )
 
 py_test(

@@ -65,17 +65,6 @@ if (is_host) {
     inputs = [ "runfiles_utils.py" ]
   }
 
-  python_build_time_tests("export_host_tests_test") {
-    tests = [ "export_host_tests_test.py" ]
-    inputs = [
-      "//build/api/script_commands.py",
-      "build_utils.py",
-      "export_host_tests.py",
-      "runfiles_utils.py",
-      "workspace_utils.py",
-    ]
-  }
-
   python_build_time_tests("bazel_rust_analyzer_utils_test") {
     tests = [ "bazel_rust_analyzer_utils_test.py" ]
     inputs = [
@@ -99,6 +88,14 @@ if (is_host) {
       "remote_services_utils.py",
     ]
   }
+
+  python_build_time_tests("bazel_tests_utils_test") {
+    tests = [ "bazel_tests_utils_test.py" ]
+    inputs = [
+      "bazel_tests_utils.py",
+      "build_utils.py",
+    ]
+  }
 }
 
 group("tests") {
@@ -107,8 +104,8 @@ group("tests") {
     ":bazel_action_utils_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
+    ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
-    ":export_host_tests_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",
     ":remote_services_utils_test($host_toolchain)",
     ":runfiles_utils_test($host_toolchain)",

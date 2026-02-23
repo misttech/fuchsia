@@ -2,9 +2,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/host_tests:host_test.bzl", "host_test")
+
 test_suite(
     name = "cc_tests",
     visibility = ["//visibility:public"],
+)
+
+host_test(
+    name = "static_test_host",
+    binary = ":static_test",
+)
+
+host_test(
+    name = "dynamic_test_host",
+    binary = ":dynamic_test",
 )
 
 # A simple statically linked test executable that does not use a runfiles library.
