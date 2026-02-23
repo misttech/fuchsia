@@ -49,6 +49,7 @@ pub struct RemoteBundle {
 }
 
 impl RemoteBundle {
+    /// Returns a new RemoteBundle filesystem whose path is looked up in the incoming namespace.
     pub fn new_fs(
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
