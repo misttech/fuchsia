@@ -472,10 +472,5 @@ fn type_has_resources(library: &Library, ty: &Type) -> bool {
         fidl_ir::TypeKind::Primitive { .. } => false,
         fidl_ir::TypeKind::Identifier { identifier, .. } => has_resources(library, identifier),
         fidl_ir::TypeKind::Internal { .. } => false,
-        // VDSO types
-        #[cfg(feature = "vdso")]
-        fidl_ir::TypeKind::ExperimentalPointer { .. } | fidl_ir::TypeKind::StringArray { .. } => {
-            panic!("unsupported type: '{:?}'", ty.kind)
-        }
     }
 }
