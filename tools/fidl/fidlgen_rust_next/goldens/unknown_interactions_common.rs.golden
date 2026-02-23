@@ -657,7 +657,15 @@ pub mod natural {
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -688,6 +696,8 @@ pub mod natural {
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -2085,7 +2095,15 @@ pub mod natural {
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -2116,6 +2134,8 @@ pub mod natural {
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -4755,7 +4775,15 @@ pub mod natural {
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -4786,6 +4814,8 @@ pub mod natural {
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -6139,7 +6169,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -6170,6 +6208,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -8182,7 +8222,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -8213,6 +8261,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -8973,7 +9023,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -9004,6 +9062,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -9757,7 +9817,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -9788,6 +9856,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -11169,7 +11239,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolStrictTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -11198,6 +11276,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -11948,7 +12028,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolFlexibleTwoWayResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -11977,6 +12065,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -12720,7 +12810,15 @@ where
             >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::UnknownInteractionsProtocolFlexibleTwoWayErrResponse {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -12749,6 +12847,8 @@ where
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }

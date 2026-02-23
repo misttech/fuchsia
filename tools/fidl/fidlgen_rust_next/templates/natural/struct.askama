@@ -39,25 +39,27 @@ where
         out_: &mut ::core::mem::MaybeUninit<crate::wire::{{ name }}{{ static_ }}>,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        {% if is_empty %}
-            *out_ = ::core::mem::MaybeUninit::zeroed();
-        {% else %}
-            ::fidl_next::munge! {
-                let crate::wire::{{ name }} {
-                    {% for member in strct.members -%}
-                        {{ member.name.snake() }},
-                    {% endfor %}
-                } = out_;
-            }
+        ::fidl_next::munge! {
+            let crate::wire::{{ name }} {
+                {% if is_empty %}
+                    _empty,
+                {% endif -%}
+                {% for member in strct.members -%}
+                    {{ member.name.snake() }},
+                {% endfor %}
+            } = out_;
+        }
 
-            {% for member in strct.members %}
-                {% let member_name = member.name.snake() %}
-                ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
-                {# SAFETY: the field was just initialied and written to by the encode call above. #}
-                let mut _field = unsafe { ::fidl_next::Slot::new_unchecked({{ member_name }}.as_mut_ptr()) };
-                {{ self.validate(member.ty, "_field") }}
-            {% endfor %}
+        {% if is_empty %}
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
         {% endif %}
+        {% for member in strct.members %}
+            {% let member_name = member.name.snake() %}
+            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
+            {# SAFETY: the field was just initialied and written to by the encode call above. #}
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked({{ member_name }}.as_mut_ptr()) };
+            {{ self.validate(member.ty, "_field") }}
+        {% endfor %}
         Ok(())
     }
 }
@@ -88,6 +90,9 @@ where
             } = out_;
         }
 
+        {% if is_empty %}
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
+        {% endif %}
         {% for member in strct.members %}
             {% let member_name = member.name.snake() %}
             ::fidl_next::Encode::encode(&self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;

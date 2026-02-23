@@ -19,7 +19,15 @@ pub mod natural {
             out_: &mut ::core::mem::MaybeUninit<crate::wire::Empty>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            *out_ = ::core::mem::MaybeUninit::zeroed();
+            ::fidl_next::munge! {
+                let crate::wire::Empty {
+
+                        _empty,
+
+                } = out_;
+            }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
@@ -44,6 +52,8 @@ pub mod natural {
 
                 } = out_;
             }
+
+            let _ = _empty.write(::fidl_next::wire::EmptyStruct::Zero);
 
             Ok(())
         }
