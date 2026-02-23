@@ -18,17 +18,6 @@
 
 namespace ramdisk_v2 {
 
-// Returns an observer that simply destroy's the dispatcher.  Once registered
-// successfully, the caller must call `release` on the unique_ptr since the
-// callback takes ownership of the observer.
-static std::unique_ptr<fdf_dispatcher_shutdown_observer_t> NewObserver() {
-  return std::make_unique<fdf_dispatcher_shutdown_observer_t>(fdf_dispatcher_shutdown_observer_t{
-      .handler = [](fdf_dispatcher_t* dispatcher, fdf_dispatcher_shutdown_observer_t* observer) {
-        fdf_dispatcher_destroy(dispatcher);
-        delete observer;
-      }});
-}
-
 zx::result<std::unique_ptr<Ramdisk>> Ramdisk::Create(
     RamdiskController* controller, async_dispatcher_t* dispatcher,
     fidl::ClientEnd<fuchsia_driver_framework::Node> node, zx::vmo vmo,
@@ -144,43 +133,6 @@ void Ramdisk::AddChild(AddChildRequestView request, AddChildCompleter::Sync& com
     return;
   }
   completer.ReplySuccess();
-}
-
-void Ramdisk::StartThread(block_server::Thread thread) {
-  constexpr std::string_view dispatcher_name = "Block Server";
-  fdf_dispatcher_t* dispatcher;
-  auto shutdown_observer = NewObserver();
-  zx_status_t status = fdf_dispatcher_create(
-      FDF_DISPATCHER_OPTION_SYNCHRONIZED | FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS,
-      dispatcher_name.data(), dispatcher_name.size(), nullptr, 0, shutdown_observer.get(),
-      &dispatcher);
-
-  if (status == ZX_OK) {
-    shutdown_observer.release();
-    async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher),
-                    [thread = std::move(thread), dispatcher]() mutable {
-                      thread.Run();
-                      fdf_dispatcher_shutdown_async(dispatcher);
-                    });
-  }
-}
-
-void Ramdisk::OnNewSession(block_server::Session session) {
-  constexpr std::string_view dispatcher_name = "Block Server Session";
-  fdf_dispatcher_t* dispatcher;
-  auto shutdown_observer = NewObserver();
-  zx_status_t status = fdf_dispatcher_create(
-      FDF_DISPATCHER_OPTION_SYNCHRONIZED | FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS,
-      dispatcher_name.data(), dispatcher_name.size(), nullptr, 0, shutdown_observer.get(),
-      &dispatcher);
-  if (status == ZX_OK) {
-    shutdown_observer.release();
-    async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher),
-                    [session = std::move(session), dispatcher]() mutable {
-                      session.Run();
-                      fdf_dispatcher_shutdown_async(dispatcher);
-                    });
-  }
 }
 
 void Ramdisk::OnRequests(cpp20::span<block_server::Request> requests) TA_NO_THREAD_SAFETY_ANALYSIS {

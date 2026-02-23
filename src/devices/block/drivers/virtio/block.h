@@ -50,7 +50,7 @@ struct block_txn_t {
 
 class Ring;
 class BlockDriver;
-class BlockDevice : public virtio::Device, public block_server::Interface {
+class BlockDevice : public virtio::Device, public block_server::DriverInterface {
  public:
   BlockDevice(zx::bti bti, std::unique_ptr<Backend> backend, fdf::Logger& logger);
 
@@ -71,13 +71,9 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
   void BlockImplQuery(block_info_t* info, size_t* bopsz);
   void BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb, void* cookie);
 
-  // block_server::Interface
-  void StartThread(block_server::Thread) override;
-  void OnNewSession(block_server::Session) override;
-  void OnRequests(std::span<block_server::Request>) override;
-  void Log(std::string_view msg) const override {
-    FDF_LOGL(INFO, logger(), "%.*s", static_cast<int>(msg.size()), msg.data());
-  }
+  // block_server::DriverInterface
+  void OnRequests(std::span<block_server::Request>) final;
+  fdf::Logger& logger() const final { return logger_; }
 
   void ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block>);
 
@@ -178,8 +174,6 @@ class BlockDevice : public virtio::Device, public block_server::Interface {
   // Frees the chain at `index`, returning the pointer of the head descriptor, which should only be
   // used for freeing related resources (e.g. completing a transaction pointing to the descriptor).
   struct vring_desc* FreeDescChainLocked(uint16_t index) __TA_REQUIRES(ring_lock_);
-
-  fdf::Logger& logger() const { return logger_; }
 
   // The main virtio ring.
   Ring vring_{this};

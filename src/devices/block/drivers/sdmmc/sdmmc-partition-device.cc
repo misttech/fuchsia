@@ -221,33 +221,6 @@ void PartitionDevice::StopBlockServer() {
   }
 }
 
-void PartitionDevice::StartThread(block_server::Thread thread) {
-  if (auto server_dispatcher = fdf::SynchronizedDispatcher::Create(
-          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "SDMMC Block Server",
-          [&](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); });
-      server_dispatcher.is_ok()) {
-    async::PostTask(server_dispatcher->async_dispatcher(),
-                    [thread = std::move(thread)]() mutable { thread.Run(); });
-
-    // The dispatcher is destroyed in the shutdown handler.
-    server_dispatcher->release();
-  }
-}
-
-void PartitionDevice::OnNewSession(block_server::Session session) {
-  if (auto server_dispatcher = fdf::SynchronizedDispatcher::Create(
-          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server Session",
-          [&](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); },
-          "fuchsia.devices.block.drivers.sdmmc.worker");
-      server_dispatcher.is_ok()) {
-    async::PostTask(server_dispatcher->async_dispatcher(),
-                    [session = std::move(session)]() mutable { session.Run(); });
-
-    // The dispatcher is destroyed in the shutdown handler.
-    server_dispatcher->release();
-  }
-}
-
 void PartitionDevice::OnRequests(cpp20::span<block_server::Request> requests) {
   sdmmc_parent_->OnRequests(*this, requests);
 }

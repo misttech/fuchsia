@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/driver/testing/cpp/driver_runtime.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -969,6 +971,70 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
   EXPECT_EQ(response.status, ZX_ERR_IO);
   EXPECT_EQ(response.group, 1234);
   EXPECT_EQ(response.reqid, 999u);
+}
+
+class TestDriverInterface : public DriverInterface {
+ public:
+  ShutdownHandler OnDispatcherShutdown() const override {
+    return [shutdown_count = dispatcher_shutdown_count_](fdf_dispatcher_t* dispatcher) {
+      ++(*shutdown_count);
+      fdf_dispatcher_destroy(dispatcher);
+    };
+  }
+
+  void OnRequests(std::span<Request> requests) final {}
+
+  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count() const {
+    return dispatcher_shutdown_count_;
+  }
+
+ private:
+  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count_ =
+      std::make_shared<std::atomic<size_t>>(0);
+};
+
+// Ensure that `DriverInterface::OnDispatcherShutdown` is called for every dispatcher that is
+// created by the block server. Each dispatcher drivers create must be explicitly shutdown before
+// they are asynchronously destroyed.
+TEST(BlockServer, DriverInterfaceDispatcherCleanup) {
+  fdf_testing::DriverRuntime runtime;
+  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count;
+
+  {
+    TestDriverInterface test_interface;
+    dispatcher_shutdown_count = test_interface.dispatcher_shutdown_count();
+    block_server::BlockServer server(
+        PartitionInfo{
+            .device_flags = 0,
+            .start_block = 0,
+            .block_count = kBlocks,
+            .block_size = kBlockSize,
+            .type_guid = {1, 2, 3, 4},
+            .instance_guid = {5, 6, 7, 8},
+            .name = "partition",
+            .flags = 0,
+            .max_transfer_size = 0,
+        },
+        &test_interface);
+
+    auto [block_client, server_end] = fidl::Endpoints<fblock::Block>::Create();
+    server.Serve(std::move(server_end));
+
+    // Start 4 different sessions.
+    std::array<fidl::ClientEnd<fuchsia_storage_block::Session>, 4> sessions;
+    for (auto& session : sessions) {
+      auto [session_client, server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+      ASSERT_TRUE(fidl::WireCall(block_client)->OpenSession(std::move(server)).ok());
+      session = std::move(session_client);
+    }
+
+    // Close all sessions. We should see all 4 of their dispatchers eventually get shutdown.
+    sessions = {};
+    runtime.RunUntil([&] { return dispatcher_shutdown_count->load() == 4; });
+  }
+
+  // Now that the server has been destroyed, we should see its dispatcher also get shutdown.
+  runtime.RunUntil([&] { return dispatcher_shutdown_count->load() == 5; });
 }
 
 }  // namespace

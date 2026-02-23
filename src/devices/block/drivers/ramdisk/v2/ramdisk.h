@@ -24,7 +24,7 @@
 namespace ramdisk_v2 {
 
 class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
-                public block_server::Interface,
+                public block_server::DriverInterface,
                 public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   static zx::result<std::unique_ptr<Ramdisk>> Create(
@@ -58,9 +58,9 @@ class Ramdisk : public fidl::WireServer<fuchsia_hardware_ramdisk::Ramdisk>,
         outgoing_(std::move(outgoing)),
         block_server_(partition_info, this) {}
 
-  void StartThread(block_server::Thread thread) override;
-  void OnNewSession(block_server::Session) override;
+  // block_server::DriverInterface
   void OnRequests(cpp20::span<block_server::Request>) override;
+  fdf::Logger& logger() const override { return controller_->logger(); }
 
   // Reads or writes `block_count` blocks (it ignores the count in `request`) at
   // `request_block_offset` blocks relative to the request.

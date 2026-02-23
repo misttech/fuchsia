@@ -168,32 +168,6 @@ void BlockDevice::BlockImplQueue(block_op_t* bop, block_impl_queue_callback comp
   SignalWorker(txn);
 }
 
-void BlockDevice::StartThread(block_server::Thread thread) {
-  if (auto server_dispatcher = fdf::SynchronizedDispatcher::Create(
-          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Virtio Block Server",
-          [&](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); });
-      server_dispatcher.is_ok()) {
-    async::PostTask(server_dispatcher->async_dispatcher(),
-                    [thread = std::move(thread)]() mutable { thread.Run(); });
-
-    // The dispatcher is destroyed in the shutdown handler.
-    server_dispatcher->release();
-  }
-}
-
-void BlockDevice::OnNewSession(block_server::Session session) {
-  if (auto server_dispatcher = fdf::SynchronizedDispatcher::Create(
-          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server Session",
-          [&](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); });
-      server_dispatcher.is_ok()) {
-    async::PostTask(server_dispatcher->async_dispatcher(),
-                    [session = std::move(session)]() mutable { session.Run(); });
-
-    // The dispatcher is destroyed in the shutdown handler.
-    server_dispatcher->release();
-  }
-}
-
 void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
   for (auto& request : requests) {
     if (zx_status_t status = block_server::CheckIoRange(request, config_.capacity);

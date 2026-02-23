@@ -4,6 +4,8 @@
 
 #include "src/storage/lib/block_server/block_server.h"
 
+#include <lib/async/cpp/task.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/assert.h>
 
 #include "src/storage/lib/block_server/block_server_c.h"
@@ -122,6 +124,82 @@ zx_status_t CheckIoRange(const Request& request, uint64_t total_block_count) {
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;
+}
+
+namespace {
+
+// Shuts down `dispatcher` and schedules it for asynchronous destruction. The shutdown handler
+// registered with the dispatcher is responsible for destroying the dispatcher instance.
+void ShutdownDestroyAsync(fdf::SynchronizedDispatcher dispatcher) {
+  // Shutdown the dispatcher, after which the shutdown handler will be invoked asynchronously.
+  dispatcher.ShutdownAsync();
+  // Release the underlying dispatcher instance; the shutdown handler is responsible for destroying
+  // the dispatcher instance.
+  dispatcher.release();
+}
+
+}  // namespace
+
+void DriverInterface::StartThread(Thread thread) {
+  // Create a new dispatcher to run `thread` on.
+  zx::result dispatcher =
+      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                          "Block Server", OnDispatcherShutdown());
+  if (dispatcher.is_error()) {
+    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher for block server thread: %s",
+             dispatcher.status_string());
+    return;
+  }
+
+  async_dispatcher_t* const async_dispatcher = dispatcher->async_dispatcher();
+  const zx_status_t status = async::PostTask(
+      async_dispatcher,
+      [active_thread = std::move(thread), dispatcher = *std::move(dispatcher)]() mutable {
+        {
+          // *NOTE*: Separate scope ensures `thread` is destroyed before we shutdown `dispatcher`.
+          Thread thread = std::move(active_thread);
+          thread.Run();
+        }
+        ShutdownDestroyAsync(std::move(dispatcher));
+      });
+
+  // Make sure we destroy the dispatcher if we fail to post the task.
+  if (status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to post task to run block server thread: %s",
+             zx_status_get_string(status));
+    ShutdownDestroyAsync(*std::move(dispatcher));
+  }
+}
+
+void DriverInterface::OnNewSession(Session session) {
+  // Create a new dispatcher to run `session` on.
+  zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server", OnDispatcherShutdown(),
+      SessionSchedulerRole());
+  if (dispatcher.is_error()) {
+    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher for block server session: %s",
+             dispatcher.status_string());
+    return;
+  }
+
+  async_dispatcher_t* const async_dispatcher = dispatcher->async_dispatcher();
+  const zx_status_t status = async::PostTask(
+      async_dispatcher,
+      [active_session = std::move(session), dispatcher = *std::move(dispatcher)]() mutable {
+        {
+          // *NOTE*: Separate scope ensures `session` is destroyed before we shutdown `dispatcher`.
+          Session session = std::move(active_session);
+          session.Run();
+        }
+        ShutdownDestroyAsync(std::move(dispatcher));
+      });
+
+  // Make sure we destroy the dispatcher if we fail to post the task.
+  if (status != ZX_OK) {
+    FDF_LOGL(ERROR, logger(), "Failed to post task to run block server session: %s",
+             zx_status_get_string(status));
+    ShutdownDestroyAsync(*std::move(dispatcher));
+  }
 }
 
 }  // namespace block_server

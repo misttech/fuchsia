@@ -6,8 +6,11 @@
 #define SRC_STORAGE_LIB_BLOCK_SERVER_BLOCK_SERVER_H_
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
 
+#include <atomic>
 #include <memory>
 #include <span>
 
@@ -65,6 +68,7 @@ class Thread {
   const void* arg_;
 };
 
+// The interface which all block servers must implement.
 class Interface {
  public:
   virtual ~Interface() {}
@@ -84,6 +88,43 @@ class Interface {
 
   // Called for log messages.
   virtual void Log(std::string_view msg) const {}
+};
+
+// Helper class for drivers to use when implementing the block server interface. Simplifies
+// integration with the Fuchsia driver framework for logging and async dispatchers.
+// TODO(https://fxbug.dev/42085539): Each session runs in a blocking manner on a dedicated
+// dispatcher, however the driver framework uses a fixed-size thread pool for running these tasks.
+// Once this limit is hit (currently 10), new sessions will be blocked from running until existing
+// ones are closed.
+class DriverInterface : public Interface {
+ public:
+  DriverInterface() = default;
+
+  // The logger to use for log messages. By default uses the global logger instance.
+  virtual fdf::Logger& logger() const {
+    ZX_ASSERT(fdf::Logger::HasGlobalInstance());
+    return *fdf::Logger::GlobalInstance();
+  }
+
+  // The scheduler role name to use for session worker threads.
+  virtual std::string_view SessionSchedulerRole() const { return {}; }
+
+ protected:
+  using ShutdownHandler = fdf::Dispatcher::ShutdownHandler;
+
+  // Callback registered when creating dispatchers. The callback will run asynchronously after the
+  // dispatcher has been shutdown and is required to destroy the dispatcher instance with
+  // `fdf_dispatcher_destroy`.
+  virtual ShutdownHandler OnDispatcherShutdown() const {
+    return [](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); };
+  }
+
+ private:
+  void StartThread(Thread thread) final;
+  void OnNewSession(Session session) final;
+  void Log(std::string_view msg) const final {
+    FDF_LOGL(INFO, logger(), "%.*s", static_cast<int>(msg.size()), msg.data());
+  }
 };
 
 class BlockServer {

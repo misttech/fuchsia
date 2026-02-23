@@ -25,7 +25,7 @@ class SdmmcBlockDevice;
 
 class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
                         public ddk::BlockPartitionProtocol<PartitionDevice>,
-                        public block_server::Interface,
+                        public block_server::DriverInterface,
                         public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   PartitionDevice(SdmmcBlockDevice* sdmmc_parent, const block_info_t& block_info,
@@ -51,19 +51,16 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
     return block_impl_protocol_ops_;
   }
 
-  fdf::Logger& logger() const;
-
   void SendReply(block_server::RequestId, zx::result<>);
 
   void StopBlockServer();
 
-  // block_server::Interface
-  void StartThread(block_server::Thread) override;
-  void OnNewSession(block_server::Session) override;
-  void OnRequests(cpp20::span<block_server::Request>) override;
-  void Log(std::string_view msg) const override {
-    FDF_LOGL(INFO, logger(), "%.*s", static_cast<int>(msg.size()), msg.data());
+  // block_server::DriverInterface
+  std::string_view SessionSchedulerRole() const final {
+    return "fuchsia.devices.block.drivers.sdmmc.worker";
   }
+  void OnRequests(cpp20::span<block_server::Request>) final;
+  fdf::Logger& logger() const final;
 
  private:
   SdmmcBlockDevice* const sdmmc_parent_;
