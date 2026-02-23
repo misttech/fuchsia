@@ -32,6 +32,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <vulkan/vulkan.hpp>
 
+namespace flatland {
 namespace {
 
 using allocation::BufferCollectionUsage;
@@ -51,7 +52,7 @@ const std::vector<vk::Format>& GetSupportedImageFormatsForBufferCollectionUsage(
     BufferCollectionUsage usage) {
   switch (usage) {
     case BufferCollectionUsage::kClientImage:
-      return flatland::SupportedClientImageFormats();
+      return SupportedClientImageFormats();
       break;
     case BufferCollectionUsage::kRenderTarget:
       return kSupportedRenderTargetImageFormats;
@@ -136,23 +137,23 @@ std::array<glm::ivec2, 4> FlipUVs(const std::array<glm::ivec2, 4>& uvs, const Im
   return flipped_uvs;
 }
 
-std::vector<escher::Rectangle2D> GetNormalizedUvRects(
-    const std::vector<flatland::ImageRect>& rectangles,
-    const std::vector<flatland::ImageMetadata>& images) {
-  FX_DCHECK(rectangles.size() == images.size());
+std::vector<escher::Rectangle2D> GetNormalizedUvRects(const std::vector<EngineLayer>& layers,
+                                                      const std::vector<EngineLayerImage>& images) {
+  FX_DCHECK(layers.size() == images.size());
 
   std::vector<escher::Rectangle2D> normalized_rects;
 
-  for (unsigned int i = 0; i < rectangles.size(); i++) {
-    const auto& rect = rectangles[i];
-    const auto& image = images[i];
-    const auto& orientation = rectangles[i].orientation;
+  for (unsigned int i = 0; i < layers.size(); i++) {
+    const EngineLayer& layer = layers[i];
+    const EngineLayerImage& image = images[i];
+    const ImageRect& rect = layer.rect;
+    const fuchsia::ui::composition::Orientation orientation = rect.orientation;
     const float w = static_cast<float>(image.width);
     const float h = static_cast<float>(image.height);
     FX_DCHECK(w >= 0.f && h >= 0.f);
 
     // First, reorder the UVs based on whether the image was flipped.
-    const auto texel_uvs = FlipUVs(rectangles[i].texel_uvs, image.flip);
+    const auto texel_uvs = FlipUVs(rect.texel_uvs, layer.flip);
 
     // Reorder based on rotation and normalize the texel UVs. Normalization is based on the width
     // and height of the image that is sampled from. Reordering is based on orientation. The texel
@@ -302,8 +303,6 @@ bool IsValidImage(const allocation::ImageMetadata& metadata) {
 }
 
 }  // anonymous namespace
-
-namespace flatland {
 
 VkRenderer::VkRenderer(escher::EscherWeakPtr escher)
     : escher_(std::move(escher)),
@@ -791,20 +790,20 @@ escher::TexturePtr VkRenderer::ExtractTexture(const allocation::ImageMetadata& m
   return fxl::MakeRefCounted<escher::Texture>(escher_->resource_recycler(), sampler, image);
 }
 
-void VkRenderer::Render(const ImageMetadata& render_target,
-                        const std::vector<ImageRect>& rectangles,
-                        const std::vector<ImageMetadata>& images, const RenderArgs& render_args) {
+void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<EngineLayer>& layers,
+                        const std::vector<EngineLayerImage>& images,
+                        const RenderArgs& render_args) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "VkRenderer::Render");
 
-  FX_DCHECK(rectangles.size() == images.size())
-      << "# rects: " << rectangles.size() << " and #images: " << images.size();
+  FX_DCHECK(layers.size() == images.size())
+      << "# layers: " << layers.size() << " and #images: " << images.size();
 
   // Copy over the texture and render target data to local containers that do not need
   // to be accessed via a lock. We're just doing a shallow copy via the copy assignment
   // operator since the texture and render target data is just referenced through pointers.
   // We manually unlock the lock after copying over the data.
-  TRACE_DURATION_BEGIN("gfx", "VkRenderer::Render[copy_maps]");
+  TRACE_DURATION_BEGIN("gfx", "LockAndCopyDataStructs");
   lock_.lock();
   const auto local_texture_map = texture_map_;
   const auto local_render_target_map = render_target_map_;
@@ -817,7 +816,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
   pending_textures_.clear();
   pending_render_targets_.clear();
   lock_.unlock();
-  TRACE_DURATION_END("gfx", "VkRenderer::Render[copy_maps]");
+  TRACE_DURATION_END("gfx", "LockAndCopyDataStructs");
 
   // If the |render_target| is protected, we should switch to a protected escher::Frame. Otherwise,
   // we should ensure that there is no protected content in |images|.
@@ -859,8 +858,10 @@ void VkRenderer::Render(const ImageMetadata& render_target,
   std::vector<escher::RectangleCompositor::ColorData> color_data;
   textures.reserve(images.size());
   color_data.reserve(images.size());
-  for (const auto& image : images) {
-    auto texture_ptr = local_texture_map.at(image.identifier);
+  for (size_t i = 0; i < images.size(); ++i) {
+    const EngineLayerImage& image = images[i];
+    const EngineLayer& layer = layers[i];
+    const escher::TexturePtr& texture_ptr = local_texture_map.at(image.image_id);
 
     // When we are not in protected mode, replace any protected content with black solid color.
     if (!render_in_protected_mode && texture_ptr->image()->use_protected_memory()) {
@@ -870,13 +871,11 @@ void VkRenderer::Render(const ImageMetadata& render_target,
       continue;
     }
 
-    // Pass the texture into the above vector to keep it alive outside of this loop.
-    textures.emplace_back(texture_ptr);
+    textures.push_back(texture_ptr);
 
-    const glm::vec4 multiply(image.multiply_color[0], image.multiply_color[1],
-                             image.multiply_color[2], image.multiply_color[3]);
+    const glm::vec4 multiply(layer.color[0], layer.color[1], layer.color[2], layer.color[3]);
     escher::RectangleCompositor::Opacity opacity;
-    switch (image.blend_mode.enum_value()) {
+    switch (layer.blend_mode.enum_value()) {
       case BlendMode::Enum::kReplace:
         opacity = escher::RectangleCompositor::Opacity::Opaque;
         break;
@@ -903,7 +902,7 @@ void VkRenderer::Render(const ImageMetadata& render_target,
                                                 render_image_layout, VK_QUEUE_FAMILY_FOREIGN_EXT,
                                                 escher_->device()->vk_main_queue_family());
 
-  const auto normalized_rects = GetNormalizedUvRects(rectangles, images);
+  const auto normalized_rects = GetNormalizedUvRects(layers, images);
 
   // Now the compositor can finally draw.
   compositor_.DrawBatch(command_buffer, normalized_rects, textures, color_data, output_image,
@@ -1041,14 +1040,13 @@ bool VkRenderer::SupportsRenderInProtected() const {
   return escher_->allow_protected_memory();
 }
 
-bool VkRenderer::RequiresRenderInProtected(
-    const std::vector<allocation::ImageMetadata>& images) const {
+bool VkRenderer::RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   std::scoped_lock lock(lock_);
 
   for (const auto& image : images) {
-    FX_DCHECK(texture_map_.find(image.identifier) != texture_map_.end());
-    if (texture_map_.at(image.identifier)->image()->use_protected_memory()) {
+    FX_DCHECK(texture_map_.contains(image.image_id));
+    if (texture_map_.at(image.image_id)->image()->use_protected_memory()) {
       return true;
     }
   }

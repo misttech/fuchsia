@@ -211,10 +211,6 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Generates a new FrameEventData struct to be used with a render target on a display.
   FrameEventData NewFrameEventData() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  // The second value is the "image tiling type".
-  std::pair<types::Extent2, uint32_t> CreateImageMetadata(
-      const allocation::ImageMetadata& metadata) const FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
   // Moves a token out of |display_buffer_collection_ptrs_| and returns it.
   fuchsia::sysmem2::BufferCollectionSyncPtr TakeDisplayBufferCollectionPtr(
       allocation::GlobalBufferCollectionId collection_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
@@ -243,11 +239,12 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Takes a solid color rectangle and directly composites it to a hardware layer on the display.
   void ApplyLayerColor(const display::LayerId& layer_id, const ImageRect& rectangle,
-                       const allocation::ImageMetadata& image) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+                       const std::array<float, 4>& color, const types::BlendMode& blend_mode)
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  // Takes an image and directly composites it to a hardware layer on the display.
-  void ApplyLayerImage(const display::LayerId& layer_id, const ImageRect& rectangle,
-                       const allocation::ImageMetadata& image, const display::EventId& wait_id)
+  // Takes an EngineLayerImage and directly composites it to a hardware layer on the display.
+  void ApplyLayerImage(const display::LayerId& layer_id, const EngineLayer& layer,
+                       const EngineLayerImage& image, const display::EventId& wait_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Applies the config to the display coordinator and record the corresponding ConfigStamp, so that
@@ -302,16 +299,17 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   std::unordered_map<allocation::GlobalBufferCollectionId, bool> buffer_collection_supports_display_
       FXL_GUARDED_BY(lock_);
 
-  // Keeps track of images imported to display.
-  std::unordered_set<allocation::GlobalImageId> display_imported_images_ FXL_GUARDED_BY(lock_);
+  // Maps an image ID to its tiling type.
+  std::unordered_map<allocation::GlobalImageId, uint32_t> image_tiling_type_map_
+      FXL_GUARDED_BY(lock_);
 
-  // Maps a buffer collection ID to a collection pixel format struct.
-  // TODO(https://fxbug.dev/42150686): Delete after we don't need the pixel format anymore.
+  // Maps a buffer collection ID to a collection tiling type.
+  // TODO(https://fxbug.dev/42150686): Delete after we don't need the tiling type anymore.
   // TODO(https://fxbug.dev/406066267): We never clear values added to this map.  Until we can
   // delete this, we might want to add them to a separate map scoped to individual images, rather
   // than to the buffer collection.
-  std::unordered_map<allocation::GlobalBufferCollectionId, fuchsia::images2::PixelFormatModifier>
-      buffer_collection_pixel_format_modifier_ FXL_GUARDED_BY(lock_);
+  std::unordered_map<allocation::GlobalBufferCollectionId, uint32_t>
+      buffer_collection_tiling_type_map_ FXL_GUARDED_BY(lock_);
 
   /// The below members are either thread-safe or only manipulated from the main thread and
   /// therefore don't need locks.

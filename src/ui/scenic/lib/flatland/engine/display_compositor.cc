@@ -397,20 +397,6 @@ fuchsia::sysmem2::BufferCollectionSyncPtr DisplayCompositor::TakeDisplayBufferCo
   return token;
 }
 
-std::pair<types::Extent2, uint32_t> DisplayCompositor::CreateImageMetadata(
-    const allocation::ImageMetadata& metadata) const {
-  // TODO(https://fxbug.dev/42150686): Pixel format should be ignored when using sysmem. We do not
-  // want to have to deal with this default image format. Work was in progress to address this, but
-  // is currently stalled: see fxr/716543.
-  FX_DCHECK(buffer_collection_pixel_format_modifier_.contains(metadata.collection_id));
-  const auto pixel_format_modifier =
-      buffer_collection_pixel_format_modifier_.at(metadata.collection_id);
-
-  return {types::Extent2({.width = static_cast<int32_t>(metadata.width),
-                          .height = static_cast<int32_t>(metadata.height)}),
-          BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier)};
-}
-
 bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
                                           const BufferCollectionUsage usage) {
   // Called from main thread or Flatland threads.
@@ -450,7 +436,8 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
         DetermineDisplaySupportFor(TakeDisplayBufferCollectionPtr(collection_id));
     buffer_collection_supports_display_[collection_id] = pixel_format_modifier.has_value();
     if (pixel_format_modifier.has_value()) {
-      buffer_collection_pixel_format_modifier_[collection_id] = pixel_format_modifier.value();
+      buffer_collection_tiling_type_map_[collection_id] =
+          BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier.value());
     }
   }
 
@@ -459,13 +446,20 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
     return true;
   }
 
-  const auto [image_extent, image_tiling_type] = CreateImageMetadata(metadata);
+  // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored when
+  // using sysmem. We do not want to have to deal with this default image format. Work was in
+  // progress to address this, but is currently stalled: see fxr/716543.
+  FX_DCHECK(buffer_collection_tiling_type_map_.contains(collection_id));
+  const uint32_t image_tiling_type = buffer_collection_tiling_type_map_.at(collection_id);
+
+  const auto image_extent = types::Extent2({.width = static_cast<int32_t>(metadata.width),
+                                            .height = static_cast<int32_t>(metadata.height)});
 
   zx::result<> result =
       display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
                                        metadata.vmo_index, metadata.identifier);
   if (result.is_ok()) {
-    display_imported_images_.insert(metadata.identifier);
+    image_tiling_type_map_[metadata.identifier] = image_tiling_type;
     return true;
   }
   return false;
@@ -480,7 +474,7 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
 
   std::scoped_lock lock(lock_);
 
-  if (display_imported_images_.erase(image_id) == 1) {
+  if (image_tiling_type_map_.erase(image_id) == 1) {
     FX_DCHECK(display_coordinator_.is_valid());
     display_coordinator_.ReleaseImage(display::ImageId(image_id));
   }
@@ -498,7 +492,7 @@ void DisplayCompositor::SetDisplayLayers(const display::DisplayId display_id,
 
 bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetRenderDataOnDisplay", "display_id",
-                 data.display_id.value(), "rectangle_count", data.rectangles.size());
+                 data.display_id.value(), "rectangle_count", data.layers.size());
 
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   // Every rectangle should have an associated image.
@@ -523,10 +517,10 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   SetDisplayLayers(data.display_id, std::span{layers.data(), num_images});
 
   for (uint32_t i = 0; i < num_images; i++) {
-    const allocation::GlobalImageId image_id = data.images[i].identifier;
+    const allocation::GlobalImageId image_id = data.images[i].image_id;
     if (image_id != allocation::kInvalidImageId) {
-      if (display_imported_images_.contains(data.images[i].identifier)) {
-        ApplyLayerImage(layers[i], data.rectangles[i], data.images[i],
+      if (image_tiling_type_map_.contains(image_id)) {
+        ApplyLayerImage(layers[i], data.layers[i], data.images[i],
                         /*wait_id*/ display::kInvalidEventId);
       } else {
         TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display",
@@ -536,7 +530,8 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
         return false;
       }
     } else {
-      ApplyLayerColor(layers[i], data.rectangles[i], data.images[i]);
+      ApplyLayerColor(layers[i], data.layers[i].rect, data.layers[i].color,
+                      data.layers[i].blend_mode);
     }
   }
 
@@ -545,17 +540,18 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
 
 void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
                                         const ImageRect& rectangle,
-                                        const allocation::ImageMetadata& image) {
+                                        const std::array<float, 4>& color,
+                                        const types::BlendMode& blend_mode) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
   // We have to convert the image_metadata's multiply color, which is an array of normalized
   // floating point values, to an unnormalized array of uint8_ts in the range 0-255.
   const fidl::Array<uint8_t, 8> color_bytes = {
-      static_cast<uint8_t>(255 * image.multiply_color[0]),
-      static_cast<uint8_t>(255 * image.multiply_color[1]),
-      static_cast<uint8_t>(255 * image.multiply_color[2]),
-      static_cast<uint8_t>(255 * image.multiply_color[3]),
+      static_cast<uint8_t>(255 * color[0]),
+      static_cast<uint8_t>(255 * color[1]),
+      static_cast<uint8_t>(255 * color[2]),
+      static_cast<uint8_t>(255 * color[3]),
       0,
       0,
       0,
@@ -599,35 +595,34 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
 #endif
 }
 
-void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
-                                        const ImageRect& rectangle,
-                                        const allocation::ImageMetadata& image,
+void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id, const EngineLayer& layer,
+                                        const EngineLayerImage& image,
                                         const display::EventId& wait_id) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyLayerImage");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
-  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle);
+  const auto [src, dst] = DisplaySrcDstFrames::New(layer.rect);
   FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
   FX_DCHECK(dst.width() && dst.height()) << "Destination frame cannot be empty.";
 
   // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
   const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
-      const_cast<fuchsia::ui::composition::Orientation&>(rectangle.orientation));
+      const_cast<fuchsia::ui::composition::Orientation&>(layer.rect.orientation));
 
-  const fuchsia_hardware_display_types::AlphaMode alpha_mode =
-      image.blend_mode.ToDisplayAlphaMode();
-
-  const auto [image_extent, image_tiling_type] = CreateImageMetadata(image);
+  FX_DCHECK(image_tiling_type_map_.contains(image.image_id));
+  const auto image_tiling_type = image_tiling_type_map_.at(image.image_id);
+  const types::Extent2 image_extent(
+      {.width = static_cast<int32_t>(image.width), .height = static_cast<int32_t>(image.height)});
   display_coordinator_.SetLayerPrimaryConfig(layer_id, image_extent, image_tiling_type);
 
   display_coordinator_.SetLayerPrimaryPosition(
-      layer_id, display::RotateFlip::From(orientation, image.flip), src, dst);
+      layer_id, display::RotateFlip::From(orientation, layer.flip), src, dst);
 
-  display_coordinator_.SetLayerPrimaryAlpha(layer_id, image.blend_mode, image.multiply_color[3]);
+  display_coordinator_.SetLayerPrimaryAlpha(layer_id, layer.blend_mode, layer.color[3]);
 
   // Set the imported image on the layer.
-  display_coordinator_.SetLayerImage(layer_id, display::ImageId(image.identifier), wait_id);
+  display_coordinator_.SetLayerImage(layer_id, display::ImageId(image.image_id), wait_id);
 }
 
 zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trace_flow_id) {
@@ -714,13 +709,13 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
 
     // Apply the debugging color to the images.
     // Unfortunately we copy the list here due to constness.
-    auto images = render_data.images;
+    auto layers = render_data.layers;
     if (config_.tint_gpu_fallback_images) {
-      for (auto& image : images) {
-        image.multiply_color[0] *= kGpuRenderingDebugColor[0];
-        image.multiply_color[1] *= kGpuRenderingDebugColor[1];
-        image.multiply_color[2] *= kGpuRenderingDebugColor[2];
-        image.multiply_color[3] *= kGpuRenderingDebugColor[3];
+      for (auto& layer : layers) {
+        layer.color[0] *= kGpuRenderingDebugColor[0];
+        layer.color[1] *= kGpuRenderingDebugColor[1];
+        layer.color[2] *= kGpuRenderingDebugColor[2];
+        layer.color[3] *= kGpuRenderingDebugColor[3];
       }
     }
 
@@ -739,11 +734,11 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     if (is_final_display) {
       render_fences.push_back(std::move(render_finished_fence));
       render_args.release_fences = render_fences;
-      renderer_->Render(render_target, render_data.rectangles, images, render_args);
+      renderer_->Render(render_target, layers, render_data.images, render_args);
       // Retrieve fence.
       render_finished_fence = std::move(render_fences.back());
     } else {
-      renderer_->Render(render_target, render_data.rectangles, images, render_args);
+      renderer_->Render(render_target, layers, render_data.images, render_args);
     }
 
     // Retrieve fence.
@@ -751,8 +746,19 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
 
     /* const*/ display::LayerId layer = display_engine_data.layers[0];
     SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer, 1});
-    ApplyLayerImage(layer, {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
-                    render_target, event_data.wait_id);
+
+    EngineLayer engine_layer = {
+        .rect = {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
+        .color = render_target.multiply_color,
+    };
+
+    EngineLayerImage layer_image = {
+        .image_id = render_target.identifier,
+        .width = render_target.width,
+        .height = render_target.height,
+    };
+
+    ApplyLayerImage(layer, engine_layer, layer_image, event_data.wait_id);
 
     applied_display_mode =
         applied_display_mode || MaybeSetPendingDisplayMode(render_data.display_id);
@@ -810,7 +816,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
   if (should_try_direct_to_display) {
     if (TryDirectToDisplay(render_data_list, frame_number, trace_flow_id)) {
       for (const auto& data : render_data_list) {
-        const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
+        const int32_t num_render_data = static_cast<int32_t>(data.layers.size());
         const uint64_t display_id = data.display_id.value();
         TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(num_render_data));
         TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(0));
@@ -830,7 +836,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
   if (PerformGpuComposition(frame_number, trace_flow_id, presentation_time, render_data_list,
                             std::move(release_fences), std::move(callback))) {
     for (const auto& data : render_data_list) {
-      const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
+      const int32_t num_render_data = static_cast<int32_t>(data.layers.size());
       const uint64_t display_id = data.display_id.value();
       TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(0));
       TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(num_render_data));
@@ -841,7 +847,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
 
   // Clear counters to indicate that rendering didn't happen.
   for (const auto& data : render_data_list) {
-    const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
+    const int32_t num_render_data = static_cast<int32_t>(data.layers.size());
     const uint64_t display_id = data.display_id.value();
     TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(0));
     TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(0));
@@ -1215,8 +1221,9 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   {
     std::scoped_lock lock(lock_);
     buffer_collection_supports_display_[collection_id] = true;
-    buffer_collection_pixel_format_modifier_[collection_id] =
-        collection_info.settings().image_format_constraints().pixel_format_modifier();
+    buffer_collection_tiling_type_map_[collection_id] =
+        BufferCollectionPixelFormatToImageTilingType(
+            collection_info.settings().image_format_constraints().pixel_format_modifier());
     if (out_collection_info) {
       *out_collection_info = std::move(collection_info);
     }

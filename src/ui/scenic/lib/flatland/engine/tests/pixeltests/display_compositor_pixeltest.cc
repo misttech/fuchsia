@@ -1461,11 +1461,21 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
     uint32_t height = display->height_in_px();
 
     render_data.display_id = display->display_id();
-    render_data.rectangles.emplace_back(glm::vec2(0), glm::vec2(width, height));
-    render_data.rectangles.emplace_back(glm::vec2(width, 0), glm::vec2(width, height));
+    render_data.layers.push_back(EngineLayer{.rect = {glm::vec2(0), glm::vec2(width, height)}});
+    render_data.layers.push_back(
+        EngineLayer{.rect = {glm::vec2(width, 0), glm::vec2(width, height)}});
 
-    render_data.images.push_back(image_metadatas[0]);
-    render_data.images.push_back(image_metadatas[1]);
+    render_data.images.push_back(EngineLayerImage{
+        .image_id = image_metadatas[0].identifier,
+        .width = image_metadatas[0].width,
+        .height = image_metadatas[0].height,
+    });
+
+    render_data.images.push_back(EngineLayerImage{
+        .image_id = image_metadatas[1].identifier,
+        .width = image_metadatas[1].width,
+        .height = image_metadatas[1].height,
+    });
   }
   display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {},
                                   [](const scheduling::Timestamps&) {});
@@ -1625,13 +1635,23 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
     // Have the two rectangles overlap each other slightly with 25 rows in common across the
     // displays.
     render_data.display_id = display->display_id();
-    render_data.rectangles.push_back(
-        {glm::vec2(0, 0), glm::vec2(width + kNumOverlappingColumns, height)});
-    render_data.rectangles.push_back({glm::vec2(width - kNumOverlappingColumns, 0),
-                                      glm::vec2(width + kNumOverlappingColumns, height)});
-
-    render_data.images.push_back(image_metadatas[0]);
-    render_data.images.push_back(image_metadatas[1]);
+    render_data.layers.push_back(
+        EngineLayer{.rect = {glm::vec2(0, 0), glm::vec2(width + kNumOverlappingColumns, height)}});
+    render_data.layers.push_back(EngineLayer{
+        .rect = {glm::vec2(width - kNumOverlappingColumns, 0),
+                 glm::vec2(width + kNumOverlappingColumns, height)},
+        .blend_mode = blend_mode_param,
+    });
+    render_data.images.push_back(EngineLayerImage{
+        .image_id = image_metadatas[0].identifier,
+        .width = image_metadatas[0].width,
+        .height = image_metadatas[0].height,
+    });
+    render_data.images.push_back(EngineLayerImage{
+        .image_id = image_metadatas[1].identifier,
+        .width = image_metadatas[1].width,
+        .height = image_metadatas[1].height,
+    });
   }
   display_compositor->RenderFrame(1, zx::time(1), {std::move(render_data)}, {},
                                   [](const scheduling::Timestamps&) {});

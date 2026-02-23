@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fuchsia/images/cpp/fidl.h>
 
-#include <iterator>
 #include <set>
 #include <unordered_map>
 
@@ -56,8 +55,9 @@ class VkRenderer final : public Renderer {
 
   // |Renderer|.
   // Only called from the main thread.
-  void Render(const ImageMetadata& render_target, const std::vector<ImageRect>& rectangles,
-              const std::vector<ImageMetadata>& images, const RenderArgs& render_args) override;
+  void Render(const allocation::ImageMetadata& render_target,
+              const std::vector<EngineLayer>& layers, const std::vector<EngineLayerImage>& images,
+              const RenderArgs& render_args) override;
 
   // |Renderer|.
   // Only called from the main thread.
@@ -76,8 +76,7 @@ class VkRenderer final : public Renderer {
 
   // |Renderer|.
   // Only called from the main thread.
-  bool RequiresRenderInProtected(
-      const std::vector<allocation::ImageMetadata>& images) const override;
+  bool RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const override;
 
   // Wait for all gpu operations to complete.
   // Only called from the main thread.

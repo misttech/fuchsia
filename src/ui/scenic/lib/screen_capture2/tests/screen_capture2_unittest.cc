@@ -81,8 +81,8 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
 
       EXPECT_CALL(*mock_renderer_.get(), Render(_, _, _, _))
           .WillRepeatedly([](const allocation::ImageMetadata& render_target,
-                             const std::vector<ImageRect>& rectangles,
-                             const std::vector<allocation::ImageMetadata>& images,
+                             const std::vector<flatland::EngineLayer>& layers,
+                             const std::vector<flatland::EngineLayerImage>& images,
                              const flatland::Renderer::RenderArgs render_args) {
             // Fire all of the release fences.
             for (auto& fence : render_args.release_fences) {

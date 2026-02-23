@@ -190,8 +190,8 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
   void SetDisplaySupported(allocation::GlobalBufferCollectionId id, bool is_supported) {
     std::scoped_lock lock(display_compositor_->lock_);
     display_compositor_->buffer_collection_supports_display_[id] = is_supported;
-    display_compositor_->buffer_collection_pixel_format_modifier_[id] =
-        fuchsia::images2::PixelFormatModifier::LINEAR;
+    display_compositor_->buffer_collection_tiling_type_map_[id] =
+        fuchsia_hardware_display_types::kImageTilingTypeLinear;
   }
 
   void ForceRendererOnlyMode(bool force_renderer_only) {
@@ -910,9 +910,9 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   static constexpr display::WireConfigStamp kConfigStamp1(1);
   static constexpr display::WireConfigStamp kConfigStamp2(2);
   EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(2).WillRepeatedly(Return());
-  display_compositor_->RenderFrame(1, zx::time_monotonic(1), {}, {},
+  display_compositor_->RenderFrame(1, zx::time_monotonic(1), std::vector<RenderData>(), {},
                                    [](const scheduling::Timestamps&) {});
-  display_compositor_->RenderFrame(2, zx::time_monotonic(2), {}, {},
+  display_compositor_->RenderFrame(2, zx::time_monotonic(2), std::vector<RenderData>(), {},
                                    [](const scheduling::Timestamps&) {});
 
   EXPECT_EQ(2u, GetPendingApplyConfigs().size());

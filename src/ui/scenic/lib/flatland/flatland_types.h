@@ -8,10 +8,12 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/math/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <zircon/types.h>
 
 #include <array>
 #include <optional>
 
+#include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
 #include "src/ui/scenic/lib/types/id_type.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
@@ -122,6 +124,30 @@ class HitRegion {
 
   fuchsia::ui::composition::HitTestInteraction interaction_ =
       fuchsia::ui::composition::HitTestInteraction::DEFAULT;
+};
+
+// Struct representing a layer to be rendered by the engine.
+struct EngineLayer {
+  ImageRect rect;
+  std::array<float, 4> color = {1.f, 1.f, 1.f, 1.f};
+  types::BlendMode blend_mode = types::BlendMode::kReplace();
+  // TODO(https://fxbug.dev/475842762): we should use types::RotateFlip here, but the problem is
+  // that the rotation would be redundant with the rotation in `rect.orientation`.  Ultimately
+  // ImageRect should be absorbed into EngineLayer, but that would be too disruptive in the current
+  // CL.
+  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
+};
+
+// Reference to a sysmem image.  When associated with an EngineLayerImage, contains the data
+// required to display the image.
+struct EngineLayerImage {
+  allocation::GlobalImageId image_id = allocation::kInvalidImageId;
+  uint32_t width = 0;
+  uint32_t height = 0;
+
+  bool operator==(const EngineLayerImage& other) const {
+    return image_id == other.image_id && width == other.width && height == other.height;
+  }
 };
 
 }  // namespace flatland

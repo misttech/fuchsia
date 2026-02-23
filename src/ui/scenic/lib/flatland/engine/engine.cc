@@ -167,12 +167,29 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     first_frame_with_image_is_rendered_ = true;
   }
 
-  auto frame_result = flatland_compositor_->RenderFrame(
-      frame_number, presentation_time,
-      {{.rectangles = std::move(scene_state.image_rectangles),
-        .images = std::move(scene_state.images),
-        .display_id = hw_display->display_id()}},
-      flatland_presenter_->TakeReleaseFences(), std::move(callback));
+  std::vector<EngineLayer> layers;
+  std::vector<EngineLayerImage> images;
+  layers.reserve(scene_state.image_rectangles.size());
+  images.reserve(scene_state.images.size());
+
+  for (size_t i = 0; i < scene_state.images.size(); ++i) {
+    layers.push_back(EngineLayer{.rect = scene_state.image_rectangles[i],
+                                 .color = scene_state.images[i].multiply_color,
+                                 .blend_mode = scene_state.images[i].blend_mode,
+                                 .flip = scene_state.images[i].flip});
+    images.push_back(EngineLayerImage{
+        .image_id = scene_state.images[i].identifier,
+        .width = scene_state.images[i].width,
+        .height = scene_state.images[i].height,
+    });
+  }
+
+  auto frame_result = flatland_compositor_->RenderFrame(frame_number, presentation_time,
+                                                        {{.layers = std::move(layers),
+                                                          .images = std::move(images),
+                                                          .display_id = hw_display->display_id()}},
+                                                        flatland_presenter_->TakeReleaseFences(),
+                                                        std::move(callback));
   RecordFrameResult(frame_result);
 }
 

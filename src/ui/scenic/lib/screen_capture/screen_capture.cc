@@ -175,7 +175,29 @@ void ScreenCapture::GetNextFrame(
 
   // Render content into user-provided buffer, which will signal the user-provided event.
   std::span release_fences(&args.event().value(), 1);
-  renderer_->Render(metadata, rotated_rects, image_metadatas, {.release_fences = release_fences});
+
+  std::vector<flatland::EngineLayer> layers;
+  layers.reserve(rotated_rects.size());
+  for (size_t i = 0; i < rotated_rects.size(); ++i) {
+    flatland::EngineLayer layer;
+    layer.rect = rotated_rects[i];
+    layer.blend_mode = image_metadatas[i].blend_mode;
+    layer.color = image_metadatas[i].multiply_color;
+    layer.flip = image_metadatas[i].flip;
+    layers.push_back(layer);
+  }
+
+  std::vector<flatland::EngineLayerImage> images;
+  images.reserve(image_metadatas.size());
+  for (const auto& image : image_metadatas) {
+    images.push_back({
+        .image_id = image.identifier,
+        .width = image.width,
+        .height = image.height,
+    });
+  }
+
+  renderer_->Render(metadata, layers, images, {.release_fences = release_fences});
 
   FrameInfo frame_info;
   frame_info.buffer_id(buffer_id);

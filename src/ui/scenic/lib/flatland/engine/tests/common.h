@@ -82,6 +82,8 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
           topology_data.topology_vector, topology_data.parent_indices, global_matrices,
           snapshot.map);
 
+      // TODO(https://fxbug.dev/475838502): this should return EngineLayerImage instead of
+      // ImageMetadata.
       auto [image_indices, images] = ComputeGlobalImageData(
           topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
@@ -96,9 +98,24 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
                             display_data.first.dimensions.y);
       FX_DCHECK(image_rectangles.size() == images.size());
 
-      image_list_per_display.push_back({
-          .rectangles = image_rectangles,
-          .images = images,
+      std::vector<EngineLayerImage> layer_images;
+      layer_images.reserve(images.size());
+      for (auto& im : images) {
+        layer_images.push_back({.image_id = im.identifier, .width = im.width, .height = im.height});
+      }
+
+      std::vector<EngineLayer> engine_layers;
+      engine_layers.reserve(image_rectangles.size());
+      for (size_t i = 0; i < image_rectangles.size(); ++i) {
+        engine_layers.push_back({.rect = image_rectangles[i],
+                                 .color = images[i].multiply_color,
+                                 .blend_mode = images[i].blend_mode,
+                                 .flip = images[i].flip});
+      }
+
+      image_list_per_display.push_back(RenderData{
+          .layers = std::move(engine_layers),
+          .images = std::move(layer_images),
           .display_id = display_id,
       });
     }

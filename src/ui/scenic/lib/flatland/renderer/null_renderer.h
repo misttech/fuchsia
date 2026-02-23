@@ -46,8 +46,7 @@ class NullRenderer final : public Renderer {
 
   // |Renderer|.
   void Render(const allocation::ImageMetadata& render_target,
-              const std::vector<ImageRect>& rectangles,
-              const std::vector<allocation::ImageMetadata>& images,
+              const std::vector<EngineLayer>& layers, const std::vector<EngineLayerImage>& images,
               const RenderArgs& render_args) override;
 
   // |Renderer|.
@@ -63,8 +62,7 @@ class NullRenderer final : public Renderer {
   bool SupportsRenderInProtected() const override;
 
   // |Renderer|.
-  bool RequiresRenderInProtected(
-      const std::vector<allocation::ImageMetadata>& images) const override;
+  bool RequiresRenderInProtected(const std::vector<EngineLayerImage>& images) const override;
 
  private:
   std::unordered_map<allocation::GlobalBufferCollectionId, BufferCollectionInfo>&

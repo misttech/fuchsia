@@ -10,11 +10,9 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 
-#include "src/ui/scenic/lib/allocation/image_metadata.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
-#include "src/ui/scenic/lib/types/rotate_flip.h"
 
 namespace flatland {
 
@@ -27,18 +25,6 @@ struct DisplayInfo {
 
   // The pixel formats available on this particular display.
   std::vector<fuchsia_images2::PixelFormat> formats;
-};
-
-// The data that gets forwarded either to the display or the software renderer. The lengths
-// of |rectangles| and |images| must be the same, and each rectangle/image pair for a given
-// index represents a single renderable object.
-struct RenderData {
-  std::vector<ImageRect> rectangles;
-  std::vector<allocation::ImageMetadata> images;
-  // TODO(https://fxbug.dev/42149711): should we remove this, and pass to RenderFrame() as a
-  // std::map of RenderData keyed by display_id?  That would have the benefit of guaranteeing by
-  // construction that each display_id could only appear once.
-  display::DisplayId display_id;
 };
 
 // Struct to combine the source and destination rectangles used to set a layer's
@@ -57,6 +43,18 @@ struct DisplaySrcDstFrames {
   // the proper display controller readable format. The input rectangle contains both the
   // source and destination information.
   static DisplaySrcDstFrames New(ImageRect rectangle);
+};
+
+// The data that gets forwarded either to the display or the software renderer. The lengths
+// of |layers| and |images| must be the same, and each layer/image pair for a given
+// index represents a single renderable object.
+struct RenderData {
+  std::vector<EngineLayer> layers;
+  std::vector<EngineLayerImage> images;
+  // TODO(https://fxbug.dev/42149711): should we remove this, and pass to RenderFrame() as a
+  // std::map of RenderData keyed by display_id?  That would have the benefit of guaranteeing by
+  // construction that each display_id could only appear once.
+  display::DisplayId display_id;
 };
 
 }  // namespace flatland
