@@ -70,23 +70,35 @@ const MAIN_TIMER_ID: usize = 6;
 /// This is what we consider a "long" delay in alarm operations.
 const LONG_DELAY_NANOS: i64 = 2000 * MSEC_IN_NANOS;
 
-/// A macro that waits on a future, but if the future takes longer than
-/// 30 seconds to complete, logs a warning message.
+const TIMEOUT_SECONDS: i64 = 40;
+
+/// Waits on a future, but if the future takes longer than `TIMEOUT_SECONDS`, we log a warning and
+/// a stack trace. A stack trace is requested at most once once for each call.
 macro_rules! log_long_op {
     ($fut:expr) => {{
         use futures::FutureExt;
         let fut = $fut;
         futures::pin_mut!(fut);
+        let mut logged = false;
         loop {
-            let timeout = fasync::Timer::new(std::time::Duration::from_secs(30));
+            let timeout = fasync::Timer::new(zx::MonotonicDuration::from_seconds(TIMEOUT_SECONDS));
             futures::select! {
                 res = fut.as_mut().fuse() => {
+                    if logged {
+                        log::warn!("unexpected blocking is now resolved: long-running async operation at {}:{}.",
+                            file!(), line!());
+                    }
                     break res;
                 }
                 _ = timeout.fuse() => {
-                    warn!("unexpected blocking: long-running async operation at {}:{}", file!(), line!());
-                    #[cfg(all(target_os = "fuchsia", not(doc)))]
-                    ::debug::backtrace_request_all_threads();
+                    // Check logs for a `kBadState` status reported from the hrtimer driver.
+                    log::warn!("unexpected blocking: long-running async op at {}:{}. Report to `componentId:1408151`",
+                        file!(), line!());
+                    if !logged {
+                        #[cfg(all(target_os = "fuchsia", not(doc)))]
+                        ::debug::backtrace_request_all_threads();
+                    }
+                    logged = true;
                 }
             }
         }
