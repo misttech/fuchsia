@@ -424,81 +424,40 @@ impl PagerBacked for FxBlob {
 pub struct CompressionInfo {
     chunk_size: u64,
     // The chunked compression format stores 0 as the first offset but it's not stored here. Not
-    // storing the 0 avoids the allocation for all blobs smaller than 128KiB (the read-ahead size).
+    // storing the 0 avoids the allocation for blobs smaller than the chunk size.
     small_offsets: Box<[u32]>,
     large_offsets: Box<[u64]>,
 }
 
 impl CompressionInfo {
     pub fn new(chunk_size: u64, offsets: &[u64]) -> Result<Self, Error> {
-        // All of the read-ahead sizes must be a multiple of the base read-ahead size.
-        let min_read_size = read_ahead_size_for_chunk_size(chunk_size, BASE_READ_AHEAD_SIZE);
-
-        // There should always be at least 1 offset even if there is only 1 chunk.
-        ensure!(!offsets.is_empty(), FxfsError::IntegrityError);
-
-        // The chunked compression format stipulates that the first offset is always zero but this
-        // value comes from disk so shouldn't be trusted.
-        ensure!(*offsets.first().unwrap() == 0, FxfsError::IntegrityError);
-
-        let chunks_per_read = (min_read_size / chunk_size) as usize;
-        if offsets.len() <= chunks_per_read {
-            // Simple case where the blob is smaller than the read size so only the 0 offset is
-            // relevant. The 0 isn't stored so no allocation is necessary.
+        if chunk_size == 0 {
+            return Err(FxfsError::IntegrityError.into());
+        } else if offsets.is_empty() || *offsets.first().unwrap() != 0 {
+            // There should always be at least 1 offset and the first offset must always be 0.
+            Err(FxfsError::IntegrityError.into())
+        } else if !offsets.windows(2).all(|window| window[0] < window[1]) {
+            // The offsets must be in ascending order.
+            Err(FxfsError::IntegrityError.into())
+        } else if offsets.len() == 1 {
+            // Simple case where the blob is smaller than the chunk size so only the 0 offset is
+            // present. The 0 isn't stored so no allocation is necessary.
             Ok(Self { chunk_size, small_offsets: Box::default(), large_offsets: Box::default() })
-        } else {
-            let partition_point = if *offsets.last().unwrap() <= u32::MAX as u64 {
-                // The last element is checked first since most blobs will be smaller than 4GiB.
-                offsets.len()
-            } else {
-                offsets.partition_point(|&x| x <= u32::MAX as u64)
-            };
-
-            // The partition point is the index of the first compression offset that's > u32::MAX or
-            // the length of `offsets` if there are no compression offsets > u32::MAX. This index
-            // might correspond to a compression offset that is in the middle of a read operation.
-            // In that case, the index is advanced to the start of the next read operation which
-            // might be beyond the end of `offsets`.
-            //
-            // Example with chunks_per_read = 3 and 8 offsets:
-            // 0  1  2  3  4  5  6  7
-            // |-----|  |-----|  |---|
-            // read 1   read 2   read 3
-            //
-            // If the partition point is 3 then it will stay at 3.
-            // If the partition point is 4 then it will be advanced to 6.
-            // If the partition point is 7 then it will be advanced to 9.
-            //
-            // This is simulating doing the partition on just the list of the first compression
-            // offset of each read without materializing the list.
-            let read_aligned_partition_point = partition_point.next_multiple_of(chunks_per_read);
-            // Subtract 1 because the 0 offset isn't stored.
-            let mut small_offsets =
-                Vec::with_capacity(read_aligned_partition_point / chunks_per_read - 1);
-            small_offsets.extend(
-                offsets[0..partition_point]
-                    .iter()
-                    .step_by(chunks_per_read)
-                    .skip(1)
-                    .map(|x| *x as u32),
-            );
-
-            let large_offsets = if read_aligned_partition_point >= offsets.len() {
-                Box::default()
-            } else {
-                let mut large_offsets = Vec::with_capacity(
-                    (offsets.len() - read_aligned_partition_point).div_ceil(chunks_per_read),
-                );
-                large_offsets.extend(
-                    offsets[read_aligned_partition_point..].iter().step_by(chunks_per_read),
-                );
-                large_offsets.into_boxed_slice()
-            };
-
+        } else if *offsets.last().unwrap() <= u32::MAX as u64 {
+            // Check the last index first since most compressed blobs are going to be smaller
+            // than 4GiB making all offsets small.
             Ok(Self {
                 chunk_size,
-                small_offsets: small_offsets.into_boxed_slice(),
-                large_offsets: large_offsets,
+                small_offsets: offsets[1..].iter().map(|x| *x as u32).collect(),
+                large_offsets: Box::default(),
+            })
+        } else {
+            // The partition point is the index of the first compressed offset that's > u32::MAX.
+            let partition_point = offsets.partition_point(|&x| x <= u32::MAX as u64);
+            Ok(Self {
+                chunk_size,
+                small_offsets: offsets[1..partition_point].iter().map(|x| *x as u32).collect(),
+                large_offsets: offsets[partition_point..].into(),
             })
         }
     }
@@ -507,12 +466,11 @@ impl CompressionInfo {
         &self,
         range: &Range<u64>,
     ) -> Result<(u64, Option<NonZero<u64>>), Error> {
-        let min_read_size = read_ahead_size_for_chunk_size(self.chunk_size, BASE_READ_AHEAD_SIZE);
-        ensure!(range.start.is_multiple_of(min_read_size), FxfsError::Inconsistent);
+        ensure!(range.start.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
 
         // The "0" compression offset isn't stored so all of the compression offsets are shifted
         // left by 1. This makes `start_index - 1` the start of the range.
-        let start_index = (range.start / min_read_size) as usize;
+        let start_index = (range.start / self.chunk_size) as usize;
         let start_offset = if start_index == 0 {
             0
         } else if start_index - 1 < self.small_offsets.len() {
@@ -523,13 +481,13 @@ impl CompressionInfo {
             return Err(FxfsError::OutOfRange.into());
         };
 
-        // The end of the range may not be aligned to `min_read_size` for the last chunk.
-        let end_index = range.end.div_ceil(min_read_size) as usize - 1;
+        // The end of the range may not be aligned to the chunk size for the last chunk.
+        let end_index = range.end.div_ceil(self.chunk_size) as usize - 1;
         let end_offset = if end_index < self.small_offsets.len() {
-            ensure!(range.end.is_multiple_of(min_read_size), FxfsError::Inconsistent);
+            ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
             Some(NonZero::new(self.small_offsets[end_index] as u64).unwrap())
         } else if end_index - self.small_offsets.len() < self.large_offsets.len() {
-            ensure!(range.end.is_multiple_of(min_read_size), FxfsError::Inconsistent);
+            ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
             Some(NonZero::new(self.large_offsets[end_index - self.small_offsets.len()]).unwrap())
         } else {
             None
@@ -685,84 +643,101 @@ mod tests {
         fixture.close().await;
     }
 
+    const COMPRESSED_BLOB_CHUNK_SIZE: u64 = 32 * 1024;
+    const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
+
     #[fuchsia::test]
     fn test_compression_info_offsets_must_start_with_zero() {
-        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[]).is_err());
-        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[1]).is_err());
-        assert!(CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[0]).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[]).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[1]).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0]).is_ok());
+    }
+
+    #[fuchsia::test]
+    fn test_compression_info_offsets_must_be_sorted() {
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 2]).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 2, 1]).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 1]).is_err());
     }
 
     #[fuchsia::test]
     fn test_compression_info_splitting_offsets() {
-        const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
-
         // Single chunk blob doesn't store any offsets.
-        let compression_info = CompressionInfo::new(BASE_READ_AHEAD_SIZE, &[0]).unwrap();
+        let compression_info = CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0]).unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert!(compression_info.large_offsets.is_empty());
 
-        // The blob has 4 chunks and there's 4 chunks per read and the 0 offset isn't stored so no
-        // offsets are stored.
-        let compression_info =
-            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30]).unwrap();
-        assert!(compression_info.small_offsets.is_empty());
+        // Single small offset.
+        let compression_info = CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10]).unwrap();
+        assert_eq!(&*compression_info.small_offsets, &[10]);
         assert!(compression_info.large_offsets.is_empty());
 
-        // The blob has 5 chunks and there's 4 chunks per read. Only the offset of the 5th chunk is
-        // stored.
+        // Multiple small offsets.
         let compression_info =
-            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30, 40]).unwrap();
-        assert_eq!(compression_info.small_offsets.as_ref(), &[40]);
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10, 20, 30]).unwrap();
+        assert_eq!(&*compression_info.small_offsets, &[10, 20, 30]);
         assert!(compression_info.large_offsets.is_empty());
 
-        // The blob has 5 chunks and there's 4 chunks per read. The 5th chunks offset is large so
-        // it's stored as a large offset.
+        // One less than the largest small offset.
         let compression_info =
-            CompressionInfo::new(BASE_READ_AHEAD_SIZE / 4, &[0, 10, 20, 30, MAX_SMALL_OFFSET + 1])
-                .unwrap();
-        assert!(compression_info.small_offsets.is_empty());
-        assert_eq!(compression_info.large_offsets.as_ref(), &[MAX_SMALL_OFFSET + 1]);
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET - 1]).unwrap();
+        assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1]);
+        assert!(compression_info.large_offsets.is_empty());
 
-        // The blob has 6 chunks and there's 4 chunks per read. The 6th chunk is large but isn't
-        // relevant.
+        // The largest small offset.
+        let compression_info =
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET]).unwrap();
+        assert_eq!(&*compression_info.small_offsets, &[u32::MAX]);
+        assert!(compression_info.large_offsets.is_empty());
+
+        // The smallest large offset.
+        let compression_info =
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 1]).unwrap();
+        assert!(compression_info.small_offsets.is_empty());
+        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
+
+        // Multiple offsets around boundary between small and large offsets.
         let compression_info = CompressionInfo::new(
-            BASE_READ_AHEAD_SIZE / 4,
-            &[0, 10, 20, 30, 40, MAX_SMALL_OFFSET + 1],
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            &[0, MAX_SMALL_OFFSET - 1, MAX_SMALL_OFFSET, MAX_SMALL_OFFSET + 1],
         )
         .unwrap();
-        assert_eq!(compression_info.small_offsets.as_ref(), &[40]);
-        assert!(compression_info.large_offsets.is_empty());
+        assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1, u32::MAX]);
+        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
 
+        // Single large offset.
+        let compression_info =
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 10]).unwrap();
+        assert!(compression_info.small_offsets.is_empty());
+        assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 10]);
+
+        // Multiple large offsets.
         let compression_info = CompressionInfo::new(
-            BASE_READ_AHEAD_SIZE,
-            &[
-                0,
-                10,
-                20,
-                30,
-                MAX_SMALL_OFFSET + 10,
-                MAX_SMALL_OFFSET + 20,
-                MAX_SMALL_OFFSET + 30,
-                MAX_SMALL_OFFSET + 40,
-            ],
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            &[0, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
         )
         .unwrap();
-        assert_eq!(compression_info.small_offsets.as_ref(), &[10, 20, 30]);
+        assert!(compression_info.small_offsets.is_empty());
         assert_eq!(
-            compression_info.large_offsets.as_ref(),
-            &[
-                MAX_SMALL_OFFSET + 10,
-                MAX_SMALL_OFFSET + 20,
-                MAX_SMALL_OFFSET + 30,
-                MAX_SMALL_OFFSET + 40,
-            ]
+            &*compression_info.large_offsets,
+            &[MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20]
+        );
+
+        // Small and large offsets.
+        let compression_info = CompressionInfo::new(
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            &[0, 10, 20, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
+        )
+        .unwrap();
+        assert_eq!(&*compression_info.small_offsets, &[10, 20]);
+        assert_eq!(
+            &*compression_info.large_offsets,
+            &[MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20]
         );
     }
 
     #[fuchsia::test]
     fn test_compression_info_compressed_range_for_uncompressed_range() {
-        const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
-
         fn check_compression_ranges(
             offsets: &[u64],
             expected_ranges: &[(u64, Option<u64>)],
@@ -780,36 +755,29 @@ mod tests {
                 assert_eq!(result, (range.0, range.1.map(|end| NonZero::new(end).unwrap())));
             }
         }
-
-        check_compression_ranges(
-            &[0, 10, 20, 30],
-            &[(0, None)],
-            BASE_READ_AHEAD_SIZE / 4,
-            BASE_READ_AHEAD_SIZE,
-        );
         check_compression_ranges(
             &[0, 10, 20, 30],
             &[(0, Some(10)), (10, Some(20)), (20, Some(30)), (30, None)],
-            BASE_READ_AHEAD_SIZE,
-            BASE_READ_AHEAD_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE,
         );
         check_compression_ranges(
             &[0, 10, 20, 30],
             &[(0, Some(20)), (20, None)],
-            BASE_READ_AHEAD_SIZE,
-            BASE_READ_AHEAD_SIZE * 2,
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE * 2,
         );
         check_compression_ranges(
-            &[0, 10, 20, 30, 40],
-            &[(0, Some(40)), (40, None)],
-            BASE_READ_AHEAD_SIZE / 4,
-            BASE_READ_AHEAD_SIZE,
+            &[0, 10, 20, 30],
+            &[(0, None)],
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE * 4,
         );
         check_compression_ranges(
             &[0, 10, 20, 30, MAX_SMALL_OFFSET + 10],
             &[(0, Some(MAX_SMALL_OFFSET + 10)), (MAX_SMALL_OFFSET + 10, None)],
-            BASE_READ_AHEAD_SIZE / 4,
-            BASE_READ_AHEAD_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE * 4,
         );
         check_compression_ranges(
             &[
@@ -824,22 +792,20 @@ mod tests {
                 MAX_SMALL_OFFSET + 50,
             ],
             &[
-                (0, Some(MAX_SMALL_OFFSET + 10)),
-                (MAX_SMALL_OFFSET + 10, Some(MAX_SMALL_OFFSET + 50)),
-                (MAX_SMALL_OFFSET + 50, None),
+                (0, Some(20)),
+                (20, Some(MAX_SMALL_OFFSET + 10)),
+                (MAX_SMALL_OFFSET + 10, Some(MAX_SMALL_OFFSET + 30)),
+                (MAX_SMALL_OFFSET + 30, Some(MAX_SMALL_OFFSET + 50)),
             ],
-            BASE_READ_AHEAD_SIZE / 4,
-            BASE_READ_AHEAD_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE * 2,
         );
     }
 
     #[fuchsia::test]
     fn test_compression_info_compressed_range_for_uncompressed_range_errors() {
-        const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
-        const CHUNK_SIZE: u64 = BASE_READ_AHEAD_SIZE;
-
         let compression_info = CompressionInfo::new(
-            CHUNK_SIZE,
+            COMPRESSED_BLOB_CHUNK_SIZE,
             &[
                 0,
                 10,
@@ -857,7 +823,7 @@ mod tests {
         // The start of reads must be chunk aligned.
         assert!(
             compression_info
-                .compressed_range_for_uncompressed_range(&(1..BASE_READ_AHEAD_SIZE),)
+                .compressed_range_for_uncompressed_range(&(1..COMPRESSED_BLOB_CHUNK_SIZE),)
                 .is_err()
         );
 
@@ -865,7 +831,7 @@ mod tests {
         assert!(
             compression_info
                 .compressed_range_for_uncompressed_range(
-                    &(BASE_READ_AHEAD_SIZE * 9..BASE_READ_AHEAD_SIZE * 12),
+                    &(COMPRESSED_BLOB_CHUNK_SIZE * 9..COMPRESSED_BLOB_CHUNK_SIZE * 12),
                 )
                 .is_err()
         );
@@ -873,25 +839,25 @@ mod tests {
         // Reading a different amount than the read-ahead size isn't allowed for middle offsets.
         assert!(
             compression_info
-                .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE + 1),)
+                .compressed_range_for_uncompressed_range(&(0..COMPRESSED_BLOB_CHUNK_SIZE + 1),)
                 .is_err()
         );
         assert!(
             compression_info
-                .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE - 1),)
+                .compressed_range_for_uncompressed_range(&(0..COMPRESSED_BLOB_CHUNK_SIZE - 1),)
                 .is_err()
         );
         assert!(
             compression_info
                 .compressed_range_for_uncompressed_range(
-                    &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 + 1),
+                    &(COMPRESSED_BLOB_CHUNK_SIZE..COMPRESSED_BLOB_CHUNK_SIZE * 2 + 1),
                 )
                 .is_err()
         );
         assert!(
             compression_info
                 .compressed_range_for_uncompressed_range(
-                    &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 - 1),
+                    &(COMPRESSED_BLOB_CHUNK_SIZE..COMPRESSED_BLOB_CHUNK_SIZE * 2 - 1),
                 )
                 .is_err()
         );
@@ -900,7 +866,7 @@ mod tests {
         assert!(
             compression_info
                 .compressed_range_for_uncompressed_range(
-                    &(BASE_READ_AHEAD_SIZE * 8..BASE_READ_AHEAD_SIZE * 8 + 4096),
+                    &(COMPRESSED_BLOB_CHUNK_SIZE * 8..COMPRESSED_BLOB_CHUNK_SIZE * 8 + 4096),
                 )
                 .is_ok()
         );
