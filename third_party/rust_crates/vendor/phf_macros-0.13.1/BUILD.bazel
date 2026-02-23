@@ -75,6 +75,6 @@ rust_proc_macro(
         "//third_party/rust_crates/vendor/phf_shared-0.13.1:phf_shared",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.42:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.114:syn",
+        "//third_party/rust_crates/vendor/syn-2.0.117:syn",
     ],
 )
