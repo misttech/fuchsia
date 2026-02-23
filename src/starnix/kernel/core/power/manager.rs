@@ -664,11 +664,13 @@ impl SuspendResumeManager {
             suspend_stats.last_resume_reason = Some(last_resume_reason);
         });
 
+        // LINT.IfChange(suspend_failed_tefmo)
         log_warn!(
             "Suspend failed due to {:?}. Here are the active wakeup sources: {:?}",
             failure_reason,
             wakeup_sources,
         );
+        // LINT.ThenChange(//tools/testing/tefmocheck/nearby_string_check.go:suspend_failed_tefmo)
         state.add_suspend_event(SuspendEvent::Fail {
             time: wake_time,
             wakeup_sources: Some(wakeup_sources),

@@ -188,16 +188,14 @@ func (c *NearbyStringCheck) FailureReason() string {
 }
 
 func NearbyStringsChecks() []FailureModeCheck {
-	// An example check here might look like:
-	//
-	// []FailureModeCheck{
-	// 	&NearbyStringCheck{
-	// 		// Neither log is concerning on its own, but appearing near each other indicates that
-	// 		// a USB error was closely followed by a device reset, which is unexpected in tests.
-	// 		String1:		"ZX_ERR_IO_REFUSED: Resetting usb!",
-	// 		String2:		"Format: Log Type - Time(microsec) - Message - Optional Info",
-	//		MaxDistanceLines:	20,
-	// 	},
-	// }
-	return nil
+	return []FailureModeCheck{
+		// For https://fxbug.dev/486231198
+		// LINT.IfChange(suspend_failed_tefmo)
+		&NearbyStringCheck{
+			String1:          "Suspend failed due to \"external wake source: nanohub-datachannel\".",
+			String2:          "Format: Log Type - Time(microsec) - Message - Optional Info",
+			MaxDistanceLines: 10,
+		},
+		// LINT.ThenChange(//src/starnix/kernel/core/power/manager.rs:suspend_failed_tefmo)
+	}
 }
