@@ -445,6 +445,11 @@ zx_status_t brcmf_btcoex_set_mode(struct brcmf_cfg80211_vif* vif, enum brcmf_btc
   struct brcmf_btcoex_info* btci = cfg->btcoex;
   struct brcmf_if* ifp = brcmf_get_ifp(cfg->pub, 0);
 
+  if (btci == nullptr) {
+    BRCMF_ERR("Cannot set btcoex mode to %d, btcoex info is null", mode);
+    return ZX_ERR_BAD_STATE;
+  }
+
   switch (mode) {
     case BRCMF_BTCOEX_DISABLED:
       BRCMF_DBG(BTCOEX, "DHCP session starts");
