@@ -128,7 +128,7 @@ impl Device for FakeDevice {
         assert_eq!(offset % self.allocator.block_size(), 0);
         let inner = self.inner.lock();
         let size = buffer.len();
-        assert!(
+        ensure!(
             offset + size <= inner.data.len(),
             "offset: {} len: {} data.len: {}",
             offset,
@@ -159,7 +159,7 @@ impl Device for FakeDevice {
         assert_eq!(offset % self.allocator.block_size(), 0);
 
         let size = buffer.len();
-        assert!(
+        ensure!(
             offset + size <= inner.data.len(),
             "offset: {} len: {} data.len: {}",
             offset,

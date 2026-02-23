@@ -64,7 +64,7 @@ pub struct F2fsReader {
     superblock: SuperBlock,     // 1kb, points at checkpoints
     checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
     cp_start_block: u32,        // Start block of the active checkpoint
-    nat: Option<Nat>,
+    nat: Nat,
 
     // A simple key store.
     keys: HashMap<[u8; 16], [u8; 64]>,
@@ -106,18 +106,18 @@ impl F2fsReader {
                 superblock,
                 checkpoint,
                 cp_start_block,
-                nat: None,
+                nat: Nat::new(0, vec![], HashMap::new()),
                 keys: HashMap::with_capacity(16),
                 cache: BlockCache::new(1024, BLOCK_SIZE),
             };
 
             match this.read_nat_journal().await {
                 Ok(nat_journal) => {
-                    this.nat = Some(Nat::new(
+                    this.nat = Nat::new(
                         this.superblock.nat_blkaddr,
                         this.checkpoint.nat_bitmap.clone(),
                         nat_journal,
-                    ));
+                    );
                     return Ok(this);
                 }
                 Err(e) => {
@@ -193,7 +193,7 @@ impl F2fsReader {
     }
 
     fn nat(&self) -> &Nat {
-        self.nat.as_ref().unwrap()
+        &self.nat
     }
     /// Returns the absolute block address of the summary block (default or compact).
     /// handles CP_ORPHAN_PRESENT_FLAG for compact summaries.
@@ -236,11 +236,21 @@ impl F2fsReader {
             let summary = SummaryBlock::read_from_bytes(block.as_slice())
                 .map_err(|_| anyhow!("Failed to parse SummaryBlock"))?;
             ensure!(summary.footer.entry_type == 0u8, "sum_type != 0 in summary footer");
-            let actual_checksum = f2fs_crc32(F2FS_MAGIC, &block.as_slice()[..BLOCK_SIZE - 4]);
-            let expected_checksum = summary.footer.check_sum;
-            ensure!(actual_checksum == expected_checksum, "Summary block has invalid checksum");
+            #[cfg(not(fuzz))]
+            {
+                let actual_checksum = f2fs_crc32(F2FS_MAGIC, &block.as_slice()[..BLOCK_SIZE - 4]);
+                let expected_checksum = summary.footer.check_sum;
+                ensure!(actual_checksum == expected_checksum, "Summary block has invalid checksum");
+            }
+            let n_nats = summary.n_nats;
+            ensure!(
+                (n_nats as usize) <= summary.nat_journal.entries.len(),
+                "n_nats {} larger than block size {}",
+                n_nats,
+                summary.nat_journal.entries.len()
+            );
             let mut out = HashMap::new();
-            for i in 0..summary.n_nats as usize {
+            for i in 0..n_nats as usize {
                 out.insert(
                     summary.nat_journal.entries[i].ino,
                     summary.nat_journal.entries[i].entry,

@@ -12,12 +12,16 @@ mod reader;
 mod superblock;
 mod xattr;
 
-// Explicitly re-export things we want to expose.
+pub use checkpoint::CheckpointHeader;
 pub use dir::{DirEntry, FileType};
 pub use fsverity::FsVerityDescriptor;
 pub use inode::{AdviseFlags, Flags, InlineFlags, Inode, Mode};
 pub use reader::{F2fsReader, NEW_ADDR, NULL_ADDR};
-pub use superblock::{BLOCK_SIZE, SuperBlock};
+pub use superblock::{
+    BLOCK_SIZE, F2FS_MAGIC, FEATURE_CASEFOLD, FEATURE_ENCRYPT, FEATURE_EXTRA_ATTR,
+    FEATURE_PROJECT_QUOTA, FEATURE_QUOTA_INO, FEATURE_SB_CHKSUM, FEATURE_VERITY, SUPERBLOCK_OFFSET,
+    SUPPORTED_FEATURES, SuperBlock, f2fs_crc32,
+};
 pub use xattr::{Index as XattrIndex, XattrEntry};
 
 #[cfg(test)]

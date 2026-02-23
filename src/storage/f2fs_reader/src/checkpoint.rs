@@ -64,12 +64,17 @@ impl CheckpointPack {
         let header =
             CheckpointHeader::read_from_bytes(&segment[..std::mem::size_of::<CheckpointHeader>()])
                 .map_err(|_| anyhow!("Invalid checkpoint header"))?;
-        let mut checksum: u32 = 0;
         let len = header.checksum_offset as usize;
         ensure!(len <= segment.len() - std::mem::size_of::<u32>(), "Bad checkpoint offset");
-        checksum.as_mut_bytes().copy_from_slice(&segment[len..len + std::mem::size_of::<u32>()]);
-        let crc32 = f2fs_crc32(F2FS_MAGIC, &segment[..len]);
-        ensure!(crc32 == checksum, "Bad Checkpoint checksum ({crc32:08x} != {checksum:08x})");
+        #[cfg(not(fuzz))]
+        {
+            let mut checksum: u32 = 0;
+            checksum
+                .as_mut_bytes()
+                .copy_from_slice(&segment[len..len + std::mem::size_of::<u32>()]);
+            let crc32 = f2fs_crc32(F2FS_MAGIC, &segment[..len]);
+            ensure!(crc32 == checksum, "Bad Checkpoint checksum ({crc32:08x} != {checksum:08x})");
+        }
         let sit_bitmap_start = std::mem::size_of::<CheckpointHeader>();
         let nat_bitmap_start = sit_bitmap_start + header.sit_ver_bitmap_bytesize as usize;
         let nat_bitmap_end = nat_bitmap_start + header.nat_ver_bitmap_bytesize as usize;

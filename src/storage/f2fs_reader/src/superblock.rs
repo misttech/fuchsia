@@ -86,7 +86,7 @@ pub const FEATURE_VERITY: u32 = 0x00000400;
 pub const FEATURE_SB_CHKSUM: u32 = 0x00000800;
 pub const FEATURE_CASEFOLD: u32 = 0x00001000;
 
-const SUPPORTED_FEATURES: u32 = FEATURE_ENCRYPT
+pub const SUPPORTED_FEATURES: u32 = FEATURE_ENCRYPT
     | FEATURE_EXTRA_ATTR
     | FEATURE_PROJECT_QUOTA
     | FEATURE_QUOTA_INO
@@ -131,6 +131,7 @@ impl SuperBlock {
             );
         }
 
+        #[cfg(not(fuzz))]
         if superblock.feature & FEATURE_SB_CHKSUM != 0 {
             let offset = superblock.checksum_offset as usize;
             let actual_checksum = f2fs_crc32(F2FS_MAGIC, &superblock.as_bytes()[..offset]);
