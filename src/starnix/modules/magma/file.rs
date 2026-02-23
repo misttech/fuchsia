@@ -229,7 +229,7 @@ impl Drop for MagmaSemaphore {
 }
 
 /// A `BufferMap` stores all the magma buffers for a given connection.
-type BufferMap = HashMap<magma_buffer_t, BufferInfo>;
+type BufferMap = HashMap<magma_buffer_id_t, BufferInfo>;
 
 /// A `ConnectionMap` stores the `ConnectionInfo`s associated with each magma connection.
 pub type ConnectionMap = HashMap<magma_connection_t, ConnectionInfo>;
@@ -251,7 +251,7 @@ pub struct MagmaFile {
     supported_vendors: Vec<u16>,
     devices: Arc<Mutex<DeviceMap>>,
     connections: Arc<Mutex<ConnectionMap>>,
-    buffers: Arc<Mutex<HashMap<magma_buffer_t, Arc<MagmaBuffer>>>>,
+    buffers: Arc<Mutex<HashMap<magma_buffer_id_t, Arc<MagmaBuffer>>>>,
     semaphores: Arc<Mutex<HashMap<magma_semaphore_t, Arc<MagmaSemaphore>>>>,
     semaphore_id_generator: AtomicU64Counter,
 }
@@ -354,11 +354,14 @@ impl MagmaFile {
     }
 
     /// Adds a `BufferInfo` for the given `magma_buffer_t`, associated with the specified
-    /// connection.
+    /// connection.  Note, the hashmaps key type is magma_device_t and the values we use for this
+    /// type are actually the magma buffer ids, because we don't want to expose object-pointers
+    /// to userspace.
     fn add_buffer_info(
         &self,
         connection: Arc<MagmaConnection>,
         buffer: magma_buffer_t,
+        buffer_id: magma_buffer_id_t,
         buffer_info: BufferInfo,
     ) {
         let connection_handle = connection.handle;
@@ -366,8 +369,8 @@ impl MagmaFile {
         self.connections
             .lock()
             .get_mut(&connection_handle)
-            .map(|info| info.buffer_map.insert(buffer, buffer_info));
-        self.buffers.lock().insert(buffer, arc_buffer);
+            .map(|connection_info| connection_info.buffer_map.insert(buffer_id, buffer_info));
+        self.buffers.lock().insert(buffer_id, arc_buffer);
     }
 
     fn get_device(&self, device: magma_device_t) -> Result<Arc<MagmaDevice>, Errno> {
@@ -626,13 +629,13 @@ impl FileOps for MagmaFile {
                 };
 
                 // Store the information for the newly imported buffer.
-                self.add_buffer_info(connection, buffer_out, buffer);
+                self.add_buffer_info(connection, buffer_out, id_out, buffer);
                 // Import is expected to close the file that was imported.
                 let _ = current_task.files.close(buffer_fd);
 
-                response.buffer_out = buffer_out;
-                response.size_out = size_out;
+                response.buffer_out = id_out;
                 response.id_out = id_out;
+                response.size_out = size_out;
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_BUFFER as u32;
                 current_task.write_object(UserRef::new(response_address), &response)
@@ -746,9 +749,9 @@ impl FileOps for MagmaFile {
                     }
                 };
                 response.size_out = size_out;
-                response.buffer_out = buffer_out;
+                response.buffer_out = id_out;
                 response.id_out = id_out;
-                self.add_buffer_info(connection, buffer_out, BufferInfo::Default);
+                self.add_buffer_info(connection, buffer_out, id_out, BufferInfo::Default);
 
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_BUFFER as u32;
