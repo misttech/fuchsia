@@ -13,14 +13,13 @@ use syn::{
 
 // How should code be executed?
 #[derive(Clone)]
-#[allow(clippy::large_enum_variant)]
 enum Executor {
     // Directly by calling it
-    None { thread_role: Option<Expr> },
+    None { thread_role: Option<Box<Expr>> },
     // fasync::run_singlethreaded
-    Singlethreaded { thread_role: Option<Expr> },
+    Singlethreaded { thread_role: Option<Box<Expr>> },
     // fasync::run
-    Multithreaded { threads: Expr, thread_role: Option<Expr> },
+    Multithreaded { threads: Box<Expr>, thread_role: Option<Box<Expr>> },
 }
 
 impl Executor {
@@ -240,9 +239,14 @@ impl Transformer {
         let err = |message| Err(Error::new(sig.ident.span(), message));
 
         let executor = match (args.threads, args.thread_role, is_async) {
-            (None, thread_role, false) => Executor::None { thread_role },
-            (None, thread_role, true) => Executor::Singlethreaded { thread_role },
-            (Some(threads), thread_role, true) => Executor::Multithreaded { threads, thread_role },
+            (None, thread_role, false) => Executor::None { thread_role: thread_role.map(Box::new) },
+            (None, thread_role, true) => {
+                Executor::Singlethreaded { thread_role: thread_role.map(Box::new) }
+            }
+            (Some(threads), thread_role, true) => Executor::Multithreaded {
+                threads: Box::new(threads),
+                thread_role: thread_role.map(Box::new),
+            },
             (_, _, false) => {
                 return err("must be async to use >1 thread");
             }

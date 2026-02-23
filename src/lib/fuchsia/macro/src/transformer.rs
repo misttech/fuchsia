@@ -22,20 +22,19 @@ enum FunctionType {
 
 // How should code be executed?
 #[derive(Clone)]
-#[allow(clippy::large_enum_variant)]
 enum Executor {
     // Directly by calling it
-    None { thread_role: Option<Expr> },
+    None { thread_role: Option<Box<Expr>> },
     // fasync::run_singlethreaded
-    Singlethreaded { thread_role: Option<Expr>, instrumentation: bool },
+    Singlethreaded { thread_role: Option<Box<Expr>>, instrumentation: bool },
     // fasync::run
-    Multithreaded { threads: Expr, thread_role: Option<Expr>, instrumentation: bool },
+    Multithreaded { threads: Box<Expr>, thread_role: Option<Box<Expr>>, instrumentation: bool },
     // #[test]
     Test,
     // fasync::run_singlethreaded(test)
     SinglethreadedTest,
     // fasync::run(test)
-    MultithreadedTest { threads: Expr },
+    MultithreadedTest { threads: Box<Expr> },
     // fasync::run_until_stalled
     UntilStalledTest,
 }
@@ -323,15 +322,18 @@ impl Transformer {
                     return err("allow_stalls only applies to tests");
                 }
                 (None, _, thread_role, false, FunctionType::Component) => {
-                    Executor::None { thread_role }
+                    Executor::None { thread_role: thread_role.map(Box::new) }
                 }
                 (None, None, thread_role, true, FunctionType::Component) => {
-                    Executor::Singlethreaded { thread_role, instrumentation: args.instrumentation }
+                    Executor::Singlethreaded {
+                        thread_role: thread_role.map(Box::new),
+                        instrumentation: args.instrumentation,
+                    }
                 }
                 (Some(threads), None, thread_role, true, FunctionType::Component) => {
                     Executor::Multithreaded {
-                        threads,
-                        thread_role,
+                        threads: Box::new(threads),
+                        thread_role: thread_role.map(Box::new),
                         instrumentation: args.instrumentation,
                     }
                 }
@@ -343,7 +345,7 @@ impl Transformer {
                     Executor::SinglethreadedTest
                 }
                 (Some(threads), Some(true) | None, _, true, FunctionType::Test) => {
-                    Executor::MultithreadedTest { threads }
+                    Executor::MultithreadedTest { threads: Box::new(threads) }
                 }
                 (None, Some(false), _, true, FunctionType::Test) => Executor::UntilStalledTest,
                 (_, Some(false), _, _, FunctionType::Test) => {
