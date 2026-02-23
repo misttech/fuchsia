@@ -33,8 +33,6 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 
-    flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
-
     flatland_allocator_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Allocator>();
 
     root_flatland_ = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
@@ -42,16 +40,15 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
       FX_LOGS(INFO) << "Lost connection to Scenic: " << zx_status_get_string(status);
     });
 
-    // Attach |root_flatland_| as the only Flatland under |flatland_display_|.
+    // Attach |root_flatland_| as the only Flatland under the environment's FlatlandDisplay.
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
-    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_token));
     fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
     root_flatland_->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(), {},
                                 parent_viewport_watcher.NewRequest());
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
-    // this callback ensures that all |flatland_display_| calls are processed.
+    // this callback ensures that all the FlatlandDisplay calls are processed.
     std::optional<fuchsia::ui::composition::LayoutInfo> info;
     parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
     RunLoopUntil([&info] { return info.has_value(); });
@@ -112,9 +109,6 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
   fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;
   FlatlandPtr root_flatland_;
   fuchsia::ui::composition::ScreenshotSyncPtr screenshotter_;
-
- private:
-  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
 };
 
 TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {

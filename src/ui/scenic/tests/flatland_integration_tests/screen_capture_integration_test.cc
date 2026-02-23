@@ -48,15 +48,13 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 
-    flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
     flatland_allocator_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Allocator>();
     root_session_ = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
 
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
     {
       auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-      flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
+      SetFlatlandDisplayContent(std::move(parent_token));
 
       auto identity = scenic::NewViewIdentityOnCreation();
       root_view_ref_ = fidl::Clone(identity.view_ref);
@@ -76,7 +74,7 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
     RunLoopUntil([this] { return display_width_ != 0 && display_height_ != 0; });
 
     // Set up the root graph.
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher2;
+    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
     ViewportProperties properties;
     properties.set_logical_size({display_width_, display_height_});
@@ -84,7 +82,7 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
     const ContentId kRootContent{.value = 1};
     root_session_->CreateTransform(kRootTransform);
     root_session_->CreateViewport(kRootContent, std::move(parent_token), std::move(properties),
-                                  child_view_watcher2.NewRequest());
+                                  child_view_watcher.NewRequest());
     root_session_->SetRootTransform(kRootTransform);
     root_session_->SetContent(kRootTransform, kRootContent);
     BlockingPresent(this, root_session_);
@@ -137,7 +135,6 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
 
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
   fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;
-  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
   fuchsia::ui::composition::FlatlandPtr root_session_;
   fuchsia::ui::composition::FlatlandPtr child_session_;
   fuchsia::ui::composition::ScreenCaptureSyncPtr screen_capture_;
@@ -148,10 +145,12 @@ class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
   uint32_t num_pixels_ = 0;
 };
 
+// TODO(b/481065079): Test flakes may arise from a potential race condition where
+// ScreenCapture.CaptureScreen is called while Flatland artifacts from previous tests could still
+// be present in FlatlandDisplay's scene graph if FlatlandDisplay.SetContent lags. This is very
+// rare because the result from ScreenCapture.Configure must wait for sysmem negotiations which
+// can be pretty slow.
 TEST_F(ScreenCaptureIntegrationTest, EmptyScreenshot) {
-  // Detach |flatland_display_| from the scene graph.
-  flatland_display_.Unbind();
-
   const uint32_t render_target_width = display_width_;
   const uint32_t render_target_height = display_height_;
 

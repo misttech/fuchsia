@@ -35,46 +35,37 @@ bool ScenicCtfTest::UseDisplayComposition() const {
   return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->UseDisplayComposition();
 }
 
-void ScenicCtfHlcppTest::SetUp() {
-  {
-    context_ = sys::ComponentContext::Create();
-    ASSERT_EQ(context_->svc()->Connect(realm_factory_.NewRequest()), ZX_OK);
-
-    fuchsia::ui::test::context::ScenicRealmFactoryCreateRealmRequest req;
-    fuchsia::ui::test::context::ScenicRealmFactory_CreateRealm_Result res;
-
-    req.set_realm_server(realm_proxy_.NewRequest());
-    req.set_display_rotation(GetDisplayRotation());
-    req.set_renderer(renderer_type_);
-    req.set_display_composition(UseDisplayComposition());
-    if (GetDisplayDimensions().height != 0 && GetDisplayDimensions().width != 0) {
-      req.set_display_dimensions(GetDisplayDimensions());
-    }
-    if (GetDisplayRefreshRateMillihertz() != 0) {
-      req.set_display_refresh_rate_millihertz(GetDisplayRefreshRateMillihertz());
-    }
-    if (GetDisplayMaxLayerCount() != 0) {
-      req.set_display_max_layer_count(GetDisplayMaxLayerCount());
-    }
-
-    ASSERT_EQ(realm_factory_->CreateRealm(std::move(req), &res), ZX_OK);
-  }
+void ScenicCtfHlcppTest::SetFlatlandDisplayContent(
+    fuchsia::ui::views::ViewportCreationToken token) {
+  fuchsia_ui_views::ViewportCreationToken token_cpp;
+  token_cpp.value() = std::move(token.value);
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayContent(
+      std::move(token_cpp));
 }
 
 const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDirectory() const {
-  return context_->svc();
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->LocalServiceDirectory();
 }
 
-uint64_t ScenicCtfHlcppTest::GetDisplayRotation() const { return 0; }
+uint64_t ScenicCtfHlcppTest::GetDisplayRotation() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRotation();
+}
 
 fuchsia::math::SizeU ScenicCtfHlcppTest::GetDisplayDimensions() const {
-  return {.width = 0, .height = 0};
+  auto dimensions = ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayDimensions();
+  return {.width = dimensions.width(), .height = dimensions.height()};
 }
 
-uint32_t ScenicCtfHlcppTest::GetDisplayRefreshRateMillihertz() const { return 0; }
+uint32_t ScenicCtfHlcppTest::GetDisplayRefreshRateMillihertz() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRefreshRateMillihertz();
+}
 
-uint32_t ScenicCtfHlcppTest::GetDisplayMaxLayerCount() const { return 0; }
+uint32_t ScenicCtfHlcppTest::GetDisplayMaxLayerCount() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayMaxLayerCount();
+}
 
-bool ScenicCtfHlcppTest::UseDisplayComposition() const { return true; }
+bool ScenicCtfHlcppTest::UseDisplayComposition() const {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->UseDisplayComposition();
+}
 
 }  // namespace integration_tests

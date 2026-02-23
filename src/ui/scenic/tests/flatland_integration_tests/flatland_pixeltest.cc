@@ -55,12 +55,6 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
 
     LocalServiceDirectory()->Connect(sysmem_allocator_.NewRequest());
 
-    flatland_display_ = ConnectAsyncIntoRealm<fuc::FlatlandDisplay>();
-    flatland_display_.set_error_handler([](zx_status_t status) {
-      FX_LOGS(ERROR) << "Lost connection to Scenic: " << zx_status_get_string(status);
-      FAIL();
-    });
-
     flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
 
     // Create a root view.
@@ -70,10 +64,9 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
       FAIL();
     });
 
-    // Attach |root_flatland_| as the only Flatland under |flatland_display_|.
+    // Attach |root_flatland_| as the only Flatland under the environment's FlatlandDisplay.
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
-    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_token));
     fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
     root_flatland_->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(), {},
                                 parent_viewport_watcher.NewRequest());
@@ -83,7 +76,7 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
     root_flatland_->SetRootTransform(kRootTransform);
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
-    // this callback ensures that all |flatland_display_| calls are processed.
+    // this callback ensures that all FlatlandDisplay calls are processed.
     std::optional<fuchsia::ui::composition::LayoutInfo> info;
     parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
     RunLoopUntil([&info] { return info.has_value(); });
@@ -95,7 +88,6 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
 
   void TearDown() override {
     root_flatland_.Unbind();
-    flatland_display_.Unbind();
 
     zxtest::Test::TearDown();
   }
@@ -225,7 +217,6 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
 
  private:
   uint64_t resource_id_ = kRootTransform.value + 1;
-  fuc::FlatlandDisplayPtr flatland_display_;
 };
 
 class ParameterizedPixelFormatTest

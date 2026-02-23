@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <fuchsia/ui/pointerinjector/cpp/fidl.h>
-#include <fuchsia/ui/test/context/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/view_creation_tokens.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
@@ -79,10 +77,6 @@ std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const 
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
 // All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
- public:
-  FlatlandTouchIntegrationTest()
-      : ScenicCtfHlcppTest(fuchsia::ui::test::context::RendererType::NULL_) {}
-
  protected:
   static constexpr uint32_t kDeviceId = 1111;
   static constexpr uint32_t kPointerId = 2222;
@@ -97,7 +91,6 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
   void SetUp() override {
     ScenicCtfHlcppTest::SetUp();
 
-    flatland_display_ = ConnectSyncIntoRealm<fuchsia::ui::composition::FlatlandDisplay>();
     pointerinjector_registry_ = ConnectSyncIntoRealm<fuchsia::ui::pointerinjector::Registry>();
 
     // Set up root view.
@@ -109,9 +102,8 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
     root_session_->CreateTransform(kRootTransform);
     root_session_->SetRootTransform(kRootTransform);
 
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    flatland_display_->SetContent(std::move(parent_token), child_view_watcher.NewRequest());
+    SetFlatlandDisplayContent(std::move(parent_token));
 
     fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
     auto identity = scenic::NewViewIdentityOnCreation();
@@ -121,7 +113,7 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
     BlockingPresent(this, root_session_);
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
-    // this callback ensures that all |flatland_display_| calls are processed.
+    // this callback ensures that all FlatlandDisplay calls are processed.
     std::optional<fuchsia::ui::composition::LayoutInfo> info;
     parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
     RunLoopUntil([&info] { return info.has_value(); });
@@ -307,7 +299,6 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
   fuchsia::ui::views::ViewRef root_view_ref_;
 
  private:
-  fuchsia::ui::composition::FlatlandDisplaySyncPtr flatland_display_;
   fuchsia::ui::pointerinjector::RegistrySyncPtr pointerinjector_registry_;
   fuchsia::ui::pointerinjector::DevicePtr injector_;
 

@@ -51,7 +51,7 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
     root_flatland_ = std::make_unique<FlatlandClientWithEventHandler>(
         ConnectIntoRealm<fuc::Flatland>(), dispatcher());
 
-    // Attach |root_flatland_| as the only Flatland under |flatland_display_|.
+    // Attach |root_flatland_| as the only Flatland under the environment's FlatlandDisplay.
     auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
     auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
         fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
@@ -69,7 +69,7 @@ class NullRendererIntegrationTest : public ScenicCtfTest {
         std::move(parent_viewport_watcher_client_end), dispatcher());
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
-    // this callback ensures that all |flatland_display_| calls are processed.
+    // this callback ensures that all FlatlandDisplay calls are processed.
     std::optional<fuchsia_ui_composition::LayoutInfo> info;
     parent_viewport_watcher->GetLayout().Then(
         [&info](fidl::Result<fuchsia_ui_composition::ParentViewportWatcher::GetLayout>& result) {
