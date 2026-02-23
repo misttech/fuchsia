@@ -263,16 +263,16 @@ mod tests {
     use crate::wire;
 
     #[test]
-    fn encode_flexible_result() {
+    fn encode_flexible() {
         assert_eq!(
-            Vec::encode(crate::Flexible::<()>::Ok(())).unwrap(),
+            Vec::encode(crate::Flexible::Ok(0x12345678)).unwrap(),
             chunks![
-                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ],
         );
         assert_eq!(
-            Vec::encode(crate::Flexible::<()>::FrameworkErr(crate::FrameworkError::UnknownMethod))
+            Vec::encode(crate::Flexible::<i32>::FrameworkErr(crate::FrameworkError::UnknownMethod))
                 .unwrap(),
             chunks![
                 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
@@ -282,17 +282,19 @@ mod tests {
     }
 
     #[test]
-    fn decode_flexible_result() {
+    fn decode_flexible() {
         assert_eq!(
             chunks![
-                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<wire::Flexible<'_, ()>>()
+            .decode::<wire::Flexible<'_, wire::Int32>>()
             .unwrap()
-            .as_ref(),
-            crate::Flexible::Ok(&()),
+            .as_ref()
+            .unwrap()
+            .0,
+            0x12345678,
         );
         assert_eq!(
             chunks![
@@ -300,10 +302,11 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<wire::Flexible<'_, ()>>()
+            .decode::<wire::Flexible<'_, wire::Int32>>()
             .unwrap()
-            .as_ref(),
-            crate::Flexible::<&()>::FrameworkErr(crate::FrameworkError::UnknownMethod),
+            .as_ref()
+            .unwrap_framework_err(),
+            crate::FrameworkError::UnknownMethod,
         );
     }
 }

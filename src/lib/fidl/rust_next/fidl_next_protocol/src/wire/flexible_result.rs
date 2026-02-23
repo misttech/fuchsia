@@ -322,21 +322,21 @@ mod tests {
     #[test]
     fn encode_flexible_result() {
         assert_eq!(
-            Vec::encode(crate::FlexibleResult::<(), i32>::Ok(())).unwrap(),
+            Vec::encode(crate::FlexibleResult::<i32, i32>::Ok(0x12345678)).unwrap(),
             chunks![
-                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ],
         );
         assert_eq!(
-            Vec::encode(crate::FlexibleResult::<(), i32>::Err(0x12345678)).unwrap(),
+            Vec::encode(crate::FlexibleResult::<i32, i32>::Err(0x12345678)).unwrap(),
             chunks![
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ],
         );
         assert_eq!(
-            Vec::encode(crate::FlexibleResult::<(), i32>::FrameworkErr(
+            Vec::encode(crate::FlexibleResult::<i32, i32>::FrameworkErr(
                 crate::FrameworkError::UnknownMethod
             ))
             .unwrap(),
@@ -351,14 +351,16 @@ mod tests {
     fn decode_flexible_result() {
         assert_eq!(
             chunks![
-                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
+            .decode::<wire::FlexibleResult<'_, wire::Int32, wire::Int32>>()
             .unwrap()
-            .as_ref(),
-            crate::FlexibleResult::<_, &wire::Int32>::Ok(&()),
+            .as_ref()
+            .unwrap()
+            .0,
+            0x12345678,
         );
         assert_eq!(
             chunks![
@@ -366,10 +368,12 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
+            .decode::<wire::FlexibleResult<'_, wire::Int32, wire::Int32>>()
             .unwrap()
-            .as_ref(),
-            crate::FlexibleResult::<&(), _>::Err(&wire::Int32(0x12345678)),
+            .as_ref()
+            .unwrap_err()
+            .0,
+            0x12345678,
         );
         assert_eq!(
             chunks![
@@ -377,12 +381,11 @@ mod tests {
                 0x01, 0x00,
             ]
             .as_mut_slice()
-            .decode::<wire::FlexibleResult<'_, (), wire::Int32>>()
+            .decode::<wire::FlexibleResult<'_, wire::Int32, wire::Int32>>()
             .unwrap()
-            .as_ref(),
-            crate::FlexibleResult::<&(), &wire::Int32>::FrameworkErr(
-                crate::FrameworkError::UnknownMethod
-            ),
+            .as_ref()
+            .unwrap_framework_err(),
+            crate::FrameworkError::UnknownMethod,
         );
     }
 }

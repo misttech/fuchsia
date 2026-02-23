@@ -234,3 +234,56 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{DecoderExt as _, EncoderExt as _, chunks, wire};
+
+    #[test]
+    fn encode_result() {
+        assert_eq!(
+            Vec::encode(Result::<i32, i32>::Ok(0x12345678)).unwrap(),
+            chunks![
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
+                0x01, 0x00,
+            ],
+        );
+        assert_eq!(
+            Vec::encode(Result::<i32, i32>::Err(0x12345678)).unwrap(),
+            chunks![
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
+                0x01, 0x00,
+            ],
+        );
+    }
+
+    #[test]
+    fn decode_result() {
+        assert_eq!(
+            chunks![
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
+                0x01, 0x00,
+            ]
+            .as_mut_slice()
+            .decode::<wire::Result<'_, wire::Int32, wire::Int32>>()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .0,
+            0x12345678,
+        );
+        assert_eq!(
+            chunks![
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00,
+                0x01, 0x00,
+            ]
+            .as_mut_slice()
+            .decode::<wire::Result<'_, wire::Int32, wire::Int32>>()
+            .unwrap()
+            .as_ref()
+            .unwrap_err()
+            .0,
+            0x12345678,
+        );
+    }
+}
