@@ -208,6 +208,8 @@ class MonitorTargetInfo:
 class MachineFormat(enum.StrEnum):
     """Supported machine formats"""
 
+    # Note: use this only for ffx commands that do not support --machine flag.
+    DISABLE = "lacewing-disable-machine-flag"
     RAW = "raw"
     JSON = "json"
     JSON_PRETTY = "json-pretty"
