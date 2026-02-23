@@ -30,6 +30,11 @@ rustc_library("lib") {
     "//third_party/rust_crates:pin-project",
   ]
 
+  if (current_build_target_api_level == "PLATFORM" ||
+      current_build_target_api_level == "HEAD") {
+    deps += [ "//third_party/rust_crates:thiserror" ]
+  }
+
   test_deps = [
     "//src/lib/diagnostics/hierarchy/rust",
     "//src/lib/diagnostics/reader/rust",

@@ -307,13 +307,13 @@ impl ComponentState {
         if let Some(inspect_controller) = inspect_controller {
             match inspect_controller.escrow_frozen(inspect_runtime::EscrowOptions::default()).await
             {
-                Some(escrow_token) => {
+                Ok(escrow_token) => {
                     let handle = escrow_token.token.into_handle();
                     let data = store.import(handle).await?;
                     dict.insert(FROZEN_INSPECT_VMO_KEY, data).await?;
                 }
-                None => {
-                    error!("Failed to escrow frozen Inspect VMO");
+                Err(e) => {
+                    error!("Failed to escrow frozen Inspect VMO: {e:?}");
                 }
             }
         }

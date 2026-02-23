@@ -310,6 +310,17 @@ impl EscrowOptions {
     }
 }
 
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+#[derive(Debug, thiserror::Error)]
+pub enum EscrowError {
+    #[error("Failed to spawn the fuchsia.inspect.Tree server: {0}")]
+    SpawnTreeServer(#[from] anyhow::Error),
+    #[error("Failed to get a frozen vmo, aborting escrow: {0}")]
+    GetFrozenVmo(#[from] fuchsia_inspect::Error),
+    #[error("Failed to escrow inspect data: {0}")]
+    Escrow(#[from] fidl::Error),
+}
+
 impl PublishedInspectController {
     fn new(inspector: Inspector, scope: fasync::Scope, tree_koid: zx::Koid) -> Self {
         Self { inspector, scope: scope.join(), tree_koid }
@@ -319,21 +330,22 @@ impl PublishedInspectController {
     /// handle in the server.
     /// This will not capture lazy nodes or properties.
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
-    pub async fn escrow_frozen(self, opts: EscrowOptions) -> Option<EscrowToken> {
+    pub async fn escrow_frozen(self, opts: EscrowOptions) -> Result<EscrowToken, EscrowError> {
         let inspect_sink = match opts.inspect_sink {
             Some(proxy) => proxy,
             None => match connect_to_protocol::<finspect::InspectSinkMarker>() {
                 Ok(inspect_sink) => inspect_sink,
                 Err(err) => {
-                    error!(err:%; "failed to spawn the fuchsia.inspect.Tree server");
-                    return None;
+                    return Err(EscrowError::SpawnTreeServer(err));
                 }
             },
         };
         let (ep0, ep1) = zx::EventPair::create();
-        let Some(vmo) = self.inspector.frozen_vmo_copy() else {
-            error!("failed to get a frozen vmo, aborting escrow");
-            return None;
+        let vmo = match self.inspector.frozen_vmo_copy() {
+            Ok(vmo) => vmo,
+            Err(err) => {
+                return Err(EscrowError::GetFrozenVmo(err));
+            }
         };
         if let Err(err) = inspect_sink.escrow(finspect::InspectSinkEscrowRequest {
             vmo: Some(vmo),
@@ -342,11 +354,10 @@ impl PublishedInspectController {
             tree: Some(self.tree_koid.raw_koid()),
             ..Default::default()
         }) {
-            error!(err:%; "failed to escrow inspect data");
-            return None;
+            return Err(EscrowError::Escrow(err));
         }
         self.scope.await;
-        Some(EscrowToken { token: ep1 })
+        Ok(EscrowToken { token: ep1 })
     }
 
     /// Cancels the running published controller.

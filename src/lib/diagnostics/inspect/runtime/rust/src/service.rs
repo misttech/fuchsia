@@ -36,11 +36,14 @@ pub fn handle_request_stream(
                         TreeServerSendPreference::DeepCopy => inspector.copy_vmo(),
                         TreeServerSendPreference::Live => inspector.duplicate_vmo(),
                         TreeServerSendPreference::Frozen { ref on_failure } => {
-                            inspector.frozen_vmo_copy().or_else(|| match **on_failure {
-                                TreeServerSendPreference::DeepCopy => inspector.copy_vmo(),
-                                TreeServerSendPreference::Live => inspector.duplicate_vmo(),
-                                _ => None,
-                            })
+                            match inspector.frozen_vmo_copy() {
+                                Ok(vmo) => Some(vmo),
+                                Err(_) => match **on_failure {
+                                    TreeServerSendPreference::DeepCopy => inspector.copy_vmo(),
+                                    TreeServerSendPreference::Live => inspector.duplicate_vmo(),
+                                    _ => None,
+                                },
+                            }
                         }
                     };
 

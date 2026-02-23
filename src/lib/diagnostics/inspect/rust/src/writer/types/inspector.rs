@@ -82,8 +82,13 @@ impl Inspector {
     /// the new VMO is page-by-page copy-on-write, at least the first page of the
     /// VMO will immediately do a true copy. The practical implications of this
     /// depend on implementation details like how large a VMO is versus page size.
-    pub fn frozen_vmo_copy(&self) -> Option<zx::Vmo> {
-        self.state()?.try_lock().ok().and_then(|mut state| state.frozen_vmo_copy().ok()).flatten()
+    pub fn frozen_vmo_copy(&self) -> Result<zx::Vmo, Error> {
+        if let Some(state) = self.state() {
+            let mut guard = state.try_lock()?;
+            guard.frozen_vmo_copy()
+        } else {
+            Err(Error::MissingState)
+        }
     }
 
     /// Returns a VMO holding a copy of the data in this inspector.
@@ -371,6 +376,7 @@ mod tests {
 #[cfg(all(test, target_os = "fuchsia"))]
 mod fuchsia_tests {
     use super::*;
+    use assert_matches::assert_matches;
 
     #[fuchsia::test]
     fn inspector_duplicate_vmo() {
@@ -413,9 +419,18 @@ mod fuchsia_tests {
     }
 
     #[fuchsia::test]
+    fn no_op_vmo_fails_to_freeze() {
+        let inspect_vmo = zx::Vmo::create(4096).unwrap();
+        let inspector = Inspector::new(InspectorConfig::default().no_op().vmo(inspect_vmo));
+
+        assert_matches!(inspector.state(), None);
+        assert_matches!(inspector.frozen_vmo_copy(), Err(Error::MissingState));
+    }
+
+    #[fuchsia::test]
     fn transactions_block_freezing() {
         let inspector = Inspector::default();
-        inspector.atomic_update(|_| assert!(inspector.frozen_vmo_copy().is_none()));
+        inspector.atomic_update(|_| assert!(inspector.frozen_vmo_copy().is_err()));
     }
 
     #[fuchsia::test]

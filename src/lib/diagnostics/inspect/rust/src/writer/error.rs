@@ -16,7 +16,18 @@ pub enum Error {
 
     #[error("Failed to get vmo size")]
     #[cfg(target_os = "fuchsia")]
-    VmoSize(#[source] zx::Status),
+    GetVmoSize(#[source] zx::Status),
+
+    #[error("Failed to get frozen vmo; transaction_count={0}")]
+    #[cfg(target_os = "fuchsia")]
+    ConcurrentTransaction(usize),
+
+    #[error("Failed to create child vmo")]
+    #[cfg(target_os = "fuchsia")]
+    CreateChildVmo(#[source] zx::Status),
+
+    #[error("Expected Inspector state, but found None")]
+    MissingState,
 
     #[error("Failed to free {value_type} index={index}")]
     Free {
