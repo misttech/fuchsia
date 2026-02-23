@@ -280,7 +280,7 @@ impl SysFs {
                     dir.subdir("mcu", dir_mode, |dir| {
                         dir.entry(
                             "board_type",
-                            BytesFile::new_node(b"starnix\n".to_vec()),
+                            BytesFile::new_node(b"starnix".to_vec()),
                             mode!(IFREG, 0o444),
                         );
                     });

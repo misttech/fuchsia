@@ -234,7 +234,7 @@ int test_sysfs() {
   if (!check_sysfs_file("/sys/class/display/display_comms/display_select", "0\n")) {
     return 1;
   }
-  if (!check_sysfs_file("/sys/firmware/devicetree/base/mcu/board_type", "starnix\n")) {
+  if (!check_sysfs_file("/sys/firmware/devicetree/base/mcu/board_type", "starnix")) {
     return 1;
   }
 
