@@ -284,7 +284,7 @@ impl PartialEq for VmoSummary {
             && self.populated_total == other.populated_total
     }
 }
-const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 14] = [
+const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 15] = [
     ("ld\\.so\\.1-internal-heap|(^stack: msg of.*)", "[process-bootstrap]"),
     ("^blob-[0-9a-f]+$", "[blobs]"),
     ("^inactive-blob-[0-9a-f]+$", "[inactive blobs]"),
@@ -299,6 +299,7 @@ const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 14] = [
     ("^ext4!.*$", "[ext4]"),
     ("^dalvik-.*$", "[dalvik]"),
     ("^bootfs(:.*)?$", "[bootfs]"),
+    ("^restricted_state_vmo:[0-9]*$", "[restricted_state_vmo]"),
 ];
 
 /// Returns the name of a VMO category when the name match on of the rules.
@@ -388,5 +389,9 @@ mod tests {
         );
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("ext4!foobar"), "[ext4]");
         pretty_assertions::assert_eq!(vmo_name_to_digest_name("dalvik-data1234"), "[dalvik]");
+        pretty_assertions::assert_eq!(
+            vmo_name_to_digest_name("restricted_state_vmo:119723"),
+            "[restricted_state_vmo]"
+        );
     }
 }

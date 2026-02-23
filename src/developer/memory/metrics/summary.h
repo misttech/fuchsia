@@ -95,6 +95,7 @@ class Summary {
       {.regex = "scudo:.*", .name = "[scudo]"},
       {.regex = ".*\\.so.*", .name = "[bootfs-libraries]"},
       {.regex = "bootfs(:.*)?", .name = "[bootfs]"},
+      {.regex = "restricted_state_vmo:[0-9]*", .name = "[restricted_state_vmo]"},
   };
 
   void SortProcessSummaries();
