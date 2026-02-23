@@ -311,7 +311,8 @@ impl RemoteFs {
     pub(super) fn new(
         root: zx::Channel,
         root_rights: fio::Flags,
-    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, u64, Option<[u8; 16]>), Errno> {
+    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<[u8; 16]>), Errno>
+    {
         let (client_end, server_end) = zx::Channel::create();
         let root_proxy = fio::DirectorySynchronousProxy::new(root);
         root_proxy
@@ -357,7 +358,7 @@ impl RemoteFs {
         Ok((
             RemoteFs { use_remote_ids, root_proxy, root_rights },
             remote_node,
-            attrs.id,
+            attrs,
             attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
         ))
     }
@@ -372,7 +373,7 @@ impl RemoteFs {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let (remotefs, root_node, node_id, wrapping_key_id) = RemoteFs::new(root, rights)?;
+        let (remotefs, root_node, attrs, wrapping_key_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
             options.flags |= MountFlags::RDONLY;
@@ -386,11 +387,12 @@ impl RemoteFs {
             options,
         )?;
 
-        let info =
+        let mut info =
             FsNodeInfo { wrapping_key_id, ..FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root()) };
+        update_info_from_attrs(&mut info, &attrs);
 
         if use_remote_ids {
-            fs.create_root_with_info(node_id, root_node, info);
+            fs.create_root_with_info(attrs.id, root_node, info);
         } else {
             let root_ino = fs.allocate_ino();
             fs.create_root_with_info(root_ino, root_node, info);

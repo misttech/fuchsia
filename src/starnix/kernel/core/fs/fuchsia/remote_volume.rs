@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::fuchsia::RemoteFs;
+use crate::fs::fuchsia::{RemoteFs, update_info_from_attrs};
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
-    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeHandle, FsStr,
+    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeHandle,
+    FsNodeInfo, FsStr,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
@@ -16,8 +17,9 @@ use fidl_fuchsia_io as fio;
 use starnix_crypt::CryptService;
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
+use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, from_status_like_fdio, statfs};
+use starnix_uapi::{errno, from_status_like_fdio, mode, statfs};
 use std::sync::Arc;
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
@@ -340,7 +342,7 @@ pub fn new_remote_vol(
 
     let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
 
-    let (remotefs, root_node, node_id, _) = RemoteFs::new(root.into_channel(), rights)?;
+    let (remotefs, root_node, root_attrs, _) = RemoteFs::new(root.into_channel(), rights)?;
 
     let use_remote_ids = remotefs.use_remote_ids();
     let remotevol = RemoteVolume { remotefs, exposed_dir_proxy, crypt_service };
@@ -351,11 +353,16 @@ pub fn new_remote_vol(
         remotevol,
         options,
     )?;
+
+    let mut info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
+    update_info_from_attrs(&mut info, &root_attrs);
+
     if use_remote_ids {
-        fs.create_root(node_id, root_node);
+        fs.create_root_with_info(root_attrs.id, root_node, info);
     } else {
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, root_node);
+        fs.create_root_with_info(root_ino, root_node, info);
     }
+
     Ok(fs)
 }
