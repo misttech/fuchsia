@@ -514,6 +514,25 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			// LINT.ThenChange(/src/devices/block/drivers/sdmmc/sdmmc-root-device.cc:failed_to_probe_irremovable_device)
 			Type: serialLogType,
 		},
+		// For https://fxbug.dev/486245491
+		// LINT.IfChange(no_response_tefmo)
+		&stringInLogCheck{
+			String:             "No response to AfterResume  from SuspendBlocker 'schg-wake'",
+			Type:               serialLogType,
+			SkipAllPassedTests: true,
+		},
+		// For other suspend blocker timeouts.
+		&stringInLogCheck{
+			String:             "No response to AfterResume",
+			Type:               serialLogType,
+			SkipAllPassedTests: true,
+		},
+		&stringInLogCheck{
+			String:             "No response to BeforeSuspend",
+			Type:               serialLogType,
+			SkipAllPassedTests: true,
+		},
+		// LINT.ThenChange(//src/power/system-activity-governor/src/system_activity_governor.rs:no_response_tefmo)
 		// No particular bug, a generic capture for crashes in system_server.
 		&stringInLogCheck{
 			String:             "<== BACKTRACE REQUEST: process system_server",

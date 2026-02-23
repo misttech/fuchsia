@@ -1111,6 +1111,7 @@ impl SystemActivityGovernor {
 
         let dead_blocker_ids = Rc::new(RefCell::new(Vec::new()));
 
+        // LINT.IfChange(no_response_tefmo)
         let method_name = if is_suspending { "BeforeSuspend" } else { "AfterResume " };
         log::info!("Running {method_name} for {} SuspendBlockers", suspend_blockers.len());
 
@@ -1140,6 +1141,7 @@ impl SystemActivityGovernor {
                         log::warn!(
                             "No response to {method_name} from SuspendBlocker '{name2}' ({i}) after {seconds} seconds!"
                         );
+                        // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_response_tefmo)
                     }
                 });
 
