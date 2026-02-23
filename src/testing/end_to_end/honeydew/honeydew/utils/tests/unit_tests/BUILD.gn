@@ -13,6 +13,16 @@ python_host_test("inspect_test") {
   extra_args = [ "-v" ]
 }
 
+python_host_test("power_test") {
+  main_source = "power_test.py"
+  libraries = [
+    "//third_party/mobly",
+    "//src/testing/end_to_end/honeydew",
+  ]
+  main_callable = "unittest.main"
+  extra_args = [ "-v" ]
+}
+
 python_host_test("screenshot_test") {
   main_source = "screenshot_test.py"
   libraries = [
@@ -36,6 +46,7 @@ group("tests") {
   public_deps = [
     ":control_flows_test",
     ":inspect_test",
+    ":power_test",
     ":screenshot_test",
   ]
 }

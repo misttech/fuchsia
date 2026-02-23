@@ -605,6 +605,7 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
                 None,  # DMC doesn't use the outlet number
             )
 
+    # TODO(https://fxbug.dev/486154863): This probably doesn't belong here.
     def _lookup_usb_power_hub(
         self, fx_device: fuchsia_device.FuchsiaDevice
     ) -> tuple[usb_power_hub.UsbPowerHub, int | None]:
@@ -612,7 +613,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         device config.
 
         If a usb power hub is not found in the device config, it defaults to
-        using one that is compatible with Fuchsia Infra.
+        using one that is compatible with Fuchsia Infra. If the test isn't
+        running in Fuchsia Infra, it will raise an exception.
 
         Args:
             fx_device: FuchsiaDevice object

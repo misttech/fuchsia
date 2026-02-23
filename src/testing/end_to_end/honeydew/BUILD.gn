@@ -156,6 +156,7 @@ python_library("honeydew_no_testonly") {
     "utils/host_shell.py",
     "utils/http_utils.py",
     "utils/inspect.py",
+    "utils/power.py",
     "utils/properties.py",
     "utils/screenshot.py",
   ]

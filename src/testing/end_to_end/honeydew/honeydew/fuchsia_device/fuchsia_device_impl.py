@@ -72,6 +72,9 @@ from honeydew.affordances.virtual_audio import (
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
+from honeydew.auxiliary_devices.usb_power_hub import (
+    usb_power_hub as usb_power_hub_interface,
+)
 from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
 from honeydew.transports.fastboot import (
     fastboot as fastboot_transport_interface,
@@ -209,9 +212,14 @@ class FuchsiaDeviceImpl(
         self._on_device_ip_change_fns: list[
             Callable[[custom_types.IpPort], None]
         ] = []
+        self._on_device_suspend_fns: list[Callable[[], None]] = []
+        self._on_device_resume_fns: list[Callable[[], None]] = []
 
         self._config: dict[str, Any] | None = config
         self._created_context = False
+
+        self._usb_power_hub: usb_power_hub_interface.UsbPowerHub | None = None
+        self._usb_power_hub_port: int | None = None
 
         self.health_check()
 
@@ -886,6 +894,87 @@ class FuchsiaDeviceImpl(
             message=f"Successfully power cycled {self.device_name}...",
             level=custom_types.LEVEL.INFO,
         )
+
+    def register_on_device_suspend_fn(
+        self,
+        fn: Callable[[], None],
+    ) -> None:
+        """Register a function to be called when device is suspended.
+
+        Args:
+            fn: Function to be called when device is suspended.
+        """
+        self._on_device_suspend_fns.append(fn)
+
+    def register_on_device_resume_fn(
+        self,
+        fn: Callable[[], None],
+    ) -> None:
+        """Register a function to be called when device is resumed.
+
+        Args:
+            fn: Function to be called when device is resumed.
+        """
+        self._on_device_resume_fns.append(fn)
+
+    def set_usb_power_hub(
+        self,
+        usb_power_hub: usb_power_hub_interface.UsbPowerHub,
+        port: int | None = None,
+    ) -> None:
+        """Set USB power hub for device.
+
+        Args:
+            usb_power_hub: Implementation of UsbPowerHub interface.
+            port (int | None): If required by USB power hub hardware, port on
+                USB power hub hardware where this fuchsia device is connected.
+        """
+        self._usb_power_hub = usb_power_hub
+        self._usb_power_hub_port = port
+
+    def suspend(self) -> None:
+        """Suspend the device by disconnecting USB power.
+
+        Requires USB power hub to be set using set_usb_power_hub. This will
+        run all registered on_device_suspend_fns before disconnecting USB
+        power. Note that this does not guarantee the device actually
+        suspends, just that it will have the opportunity to.
+
+        Raises:
+            NotSupportedError: If USB power hub not set.
+        """
+        if self._usb_power_hub is None:
+            raise errors.NotSupportedError(
+                "USB power hub not set. Use set_usb_power_hub to set it."
+            )
+
+        for fn in self._on_device_suspend_fns:
+            fn()
+
+        _LOGGER.info("Disconnecting USB from %s...", self.device_name)
+        self._usb_power_hub.power_off(self._usb_power_hub_port)
+        self.wait_for_offline()
+
+    def resume(self) -> None:
+        """Resume the device by reconnecting USB power.
+
+        Requires USB power hub to be set using set_usb_power_hub. This will
+        run all registered on_device_resume_fns after reconnecting USB power.
+
+        Raises:
+            NotSupportedError: If USB power hub not set.
+        """
+        if self._usb_power_hub is None:
+            raise errors.NotSupportedError(
+                "USB power hub not set. Use set_usb_power_hub to set it."
+            )
+
+        _LOGGER.info("Connecting USB to %s...", self.device_name)
+        self._usb_power_hub.power_on(self._usb_power_hub_port)
+        self.wait_for_online()
+
+        for fn in self._on_device_resume_fns:
+            fn()
 
     def reboot(self) -> None:
         """Soft reboot the device.

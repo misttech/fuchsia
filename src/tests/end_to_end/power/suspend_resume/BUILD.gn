@@ -1,4 +1,4 @@
-# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,9 +12,9 @@ assert(is_host, "the Python driver of the e2e test can only be run on the host")
 # Test suite library. This isn't a complete test, it's a "mix-in" that provides
 # a set of test cases without setup and teardown. To make an actual test, you
 # need to create a separate `python_mobly_test` that extends
-# `RebootReasonTestSuite`.
+# `SuspendResumeTestSuite`.
 python_library("suite") {
-  library_name = "reboot_reason_suite"
+  library_name = "suspend_resume_suite"
   sources = [
     "__init__.py",
     "suite.py",
@@ -26,13 +26,9 @@ python_library("suite") {
   ]
 }
 
-python_mobly_test("reboot_reason_test") {
+python_mobly_test("suspend_resume_test") {
   main_source = "test.py"
   libraries = [ ":suite" ]
 
   environments = [ nelson_env ]
-
-  # TODO(https://fxbug.dev/467043348): Remove this. This is just a mitigation
-  # to prevent syslogs from being lost after the target reboots.
-  isolated = true
 }
