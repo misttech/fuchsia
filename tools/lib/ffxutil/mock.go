@@ -152,6 +152,10 @@ func (f *MockFFXInstance) WriteRunResult(testList build.TestList, outDir string)
 	return runResult, nil
 }
 
+func (f *MockFFXInstance) PackageResolve(_ context.Context, packageURL string) error {
+	return f.run("resolve", packageURL)
+}
+
 func (f *MockFFXInstance) Snapshot(_ context.Context, _, _ string) error {
 	return f.run("snapshot")
 }
@@ -162,7 +166,7 @@ func (f *MockFFXInstance) Stop() error {
 
 func (f *MockFFXInstance) ContainsCmd(cmd string, args ...string) bool {
 	for _, c := range f.CmdsCalled {
-		parts := strings.Split(c, ":")
+		parts := strings.SplitN(c, ":", 2)
 		if parts[0] == cmd {
 			for _, arg := range args {
 				if !strings.Contains(parts[1], arg) {

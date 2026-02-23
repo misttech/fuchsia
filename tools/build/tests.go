@@ -61,6 +61,12 @@ type Test struct {
 	// target tests.
 	PackageManifestDepsFile string `json:"package_manifest_deps,omitempty"`
 
+	// PackageResolutionTimeoutSecs is the duration expected to resolve the
+	// test package. Any tests that depend on large blobs should use this to set
+	// a larger timeout than the defaultPackageResolutionTimeout defined in
+	// //tools/testing/testrunner/tester.go.
+	PackageResolutionTimeoutSecs int `json:"package_resolution_timeout_secs,omitempty"`
+
 	// Path is the path to the test on the target OS.
 	Path string `json:"path"`
 

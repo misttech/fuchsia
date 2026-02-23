@@ -160,6 +160,9 @@ if (allowed_device_types == []) {
 #     know the blobs required by the test. If not set correctly, this can result
 #     in test resolution errors.
 #
+#   package_resolution_timeout_secs (optional)
+#     [int] The timeout in seconds needed to resolve the test package.
+#
 #   component_label (optional)
 #     [string] In case of test component, this describes the Gn label (with
 #     toolchain) of the fuchsia component.
@@ -569,6 +572,7 @@ template("test_spec") {
                                "new_path",
                                "package_url",
                                "package_label",
+                               "package_resolution_timeout_secs",
                                "component_label",
                                "package_manifests",
                                "timeout_secs",

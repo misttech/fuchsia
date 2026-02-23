@@ -883,6 +883,14 @@ func (f *FFXInstance) USBDriver(ctx context.Context, serialNum, logDir string) e
 	return f.invoker([]string{"usb-driver", "--log-dir", logDir, "--serial", serialNum}).setStrict().setMachineFormat(MachineNone).setTimeout(0).run(ctx)
 }
 
+// PackageResolve resolves the package on the target.
+func (f *FFXInstance) PackageResolve(ctx context.Context, packageURL string) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	return f.invoker([]string{"target", "package", "resolve", packageURL}).setTarget(f.target).setStrict().setTimeout(0).run(ctx)
+}
+
 // TestRun runs a test suite.
 func (f *FFXInstance) TestRun(
 	ctx context.Context,

@@ -75,6 +75,9 @@ const (
 
 	// The max number of times to try reconnecting to the target.
 	maxReconnectAttempts = 3
+
+	// The default timeout for package resolution.
+	defaultPackageResolutionTimeout = 2 * time.Minute
 )
 
 // Tester describes the interface for all different types of testers.
@@ -622,6 +625,7 @@ func (s *serialSocket) runDiagnostics(ctx context.Context) error {
 
 // for testability
 type FFXInstance interface {
+	PackageResolve(ctx context.Context, packageURL string) error
 	Run(ctx context.Context, args ...string) error
 	RunWithTarget(ctx context.Context, args ...string) error
 	TestEarlyBootProfile(ctx context.Context, outDir string) error
@@ -795,6 +799,22 @@ func (t *FFXTester) Reconnect(ctx context.Context) error {
 
 // testWithFile runs `ffx test` with -test-file and returns the test result.
 func (t *FFXTester) testWithFile(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) error {
+	packageResolutionTimeout := defaultPackageResolutionTimeout
+	if test.PackageResolutionTimeoutSecs > 0 {
+		packageResolutionTimeout = time.Duration(test.PackageResolutionTimeoutSecs) * time.Second
+	}
+	packageResolutionCtx, cancel := context.WithTimeout(ctx, packageResolutionTimeout)
+	defer cancel()
+	if err := t.ffx.PackageResolve(packageResolutionCtx, strings.Split(test.PackageURL, "#")[0]); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// If we time out resolving the package, just log the error and continue to run the test.
+			// Any blobs that haven't been resolved yet should be resolved as part of the test run.
+			logger.Warningf(ctx, "failed to resolve package in %v: %s", packageResolutionTimeout, err)
+		} else {
+			t.testRuns[test.PackageURL] = ffxTestRun{}
+			return fmt.Errorf("failed to resolve package: %w", err)
+		}
+	}
 	testDef := []build.TestListEntry{{
 		Name:   test.PackageURL,
 		Labels: []string{test.Label},

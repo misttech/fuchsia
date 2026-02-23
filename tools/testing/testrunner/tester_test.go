@@ -468,6 +468,9 @@ func TestFFXTester(t *testing.T) {
 			outDir := t.TempDir()
 			testResult, err := tester.Test(ctx, test, io.Discard, io.Discard, outDir)
 			testResult, err = tester.ProcessResult(ctx, test, outDir, testResult, err)
+			if !ffx.ContainsCmd("resolve", strings.Split(test.PackageURL, "#")[0]) {
+				t.Errorf("failed to call `ffx target package resolve`, called: %s", ffx.CmdsCalled)
+			}
 			if c.connErr && !isConnectionError(err) {
 				t.Errorf("tester.Test got err: %s, want conn err", err)
 			} else if !c.connErr && err != nil {
