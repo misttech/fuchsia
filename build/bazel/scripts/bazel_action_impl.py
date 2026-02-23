@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import shlex
+import shutil
 import sys
 import typing as T
 from functools import partial
@@ -31,6 +32,14 @@ from bazel_action_file_copy_utils import (
     write_file_if_changed,
 )
 
+_BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
+sys.path.insert(0, _BUILD_API_DIR)
+from debug_symbols import (
+    DebugSymbolEntryType,
+    DebugSymbolExporter,
+    DebugSymbolsManifestParser,
+)
+
 # LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports)
 
 
@@ -41,6 +50,9 @@ _DEBUG = False
 
 # Set this to True to debug the bazel query cache.
 _DEBUG_BAZEL_QUERIES = _DEBUG
+
+# Set this to True to debug the export of debug symbols.
+_DEBUG_SYMBOL_EXPORT = _DEBUG
 
 
 def debug(msg: str) -> None:
@@ -57,9 +69,6 @@ _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX = b"DEBUG_SYMBOLS_MANIFEST_PATH="
 
 # Directory where to find Starlark input files.
 _STARLARK_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "starlark")
-
-# Directory where to find templated files.
-_TEMPLATE_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "templates")
 
 
 class BazelActionError(Exception):
@@ -96,12 +105,15 @@ class BazelExtraOutputs(object):
 
         command_profile: A command profile tgz file
 
+        debug_symbols_manifest: A manifest of debug symbols
+
         explain_file: A file which explains why Bazel re-ran each action
     """
 
     build_event_json_file: Path | None = None
     command_file: Path | None = None
     command_profile: Path | None = None
+    debug_symbols_manifest: Path | None = None
     explain_file: Path | None = None
 
 
@@ -113,8 +125,6 @@ class BazelActionResult(object):
 
         configured_args:  A list of args usable for bazel queries in the same configuration.
 
-        debug_symbol_manifest_paths:  A list of paths to debug symbol manifests
-
         output_files:  A list of the output paths that were actually copied to (updated)
           by this action.
 
@@ -124,7 +134,6 @@ class BazelActionResult(object):
     """
 
     configured_args: list[str]
-    debug_symbol_manifest_paths: list[str]
     output_files: list[Path]
     source_files: dict[str, list[str]]
 
@@ -375,9 +384,21 @@ class BazelActionRunner(object):
         output_copier = _BazelOutputCopier(self.paths)
         all_output_files = output_copier.copy(outputs, time_profile)
 
+        # Perform the merging of debug symbols data, and optionally copy
+        # and write the output to a manifest.
+        need_to_copy_debug_symbols = any(
+            entry.copy_debug_symbols
+            for entry in outputs.packages + outputs.directories
+        )
+        self._handle_debug_symbols(
+            debug_symbol_manifest_paths,
+            need_to_copy_debug_symbols,
+            extra_outputs.debug_symbols_manifest,
+            time_profile,
+        )
+
         return BazelActionResult(
             configured_args=configured_args,
-            debug_symbol_manifest_paths=debug_symbol_manifest_paths,
             output_files=all_output_files,
             source_files=input_files,
         )
@@ -700,6 +721,45 @@ class BazelActionRunner(object):
             raise BazelActionError()
 
         return debug_symbol_manifest_paths
+
+    def _handle_debug_symbols(
+        self,
+        bazel_manifest_paths: list[str],
+        perform_copy: bool,
+        manifest_path: Path | None,
+        time_profile: build_utils.TimeProfile,
+    ) -> None:
+        """Perform any post-build operations that need to happen with the debug symbols.
+
+        If they need to be copied, then do so.
+
+        If they need to be written to an output file, then do so.
+        """
+
+        if perform_copy or manifest_path:
+            debug_symbols_manifest = merge_debug_symbol_manifests(
+                bazel_manifest_paths,
+                bazel_execroot=self.paths.execroot,
+                build_dir=self.paths.ninja_build_dir,
+                manifest_output_path=manifest_path,
+                time_profile=time_profile,
+            )
+
+            if perform_copy:
+                time_profile.start(
+                    "copy_debug_symbols",
+                    "Copy debug symbols to Ninja build directory.",
+                )
+                copy_debug_symbols_to_build_dir(
+                    self.paths.ninja_build_dir, debug_symbols_manifest
+                )
+
+            if manifest_path:
+                # Write the debug symbols manifest. This is referenced by {BUILD_DIR}/debug_symbols.json
+                # which will be used by artifactory to upload the symbols to cloud storage on infra
+                # builds.
+                with open(manifest_path, "wt") as f:
+                    json.dump(debug_symbols_manifest, f, indent=2)
 
 
 def calculate_platform_config_args(
@@ -1195,3 +1255,113 @@ def filename_from_target_label(
         return temp + "." + extension
     else:
         return temp
+
+
+def merge_debug_symbol_manifests(
+    debug_symbol_manifest_paths: list[str],
+    bazel_execroot: Path,
+    build_dir: Path,
+    manifest_output_path: Path | None,
+    time_profile: build_utils.TimeProfile,
+) -> list[DebugSymbolEntryType]:
+    """Generate final debug symbol manifest.
+
+    Args:
+        debug_symbol_manifest_paths: The list of debug symbol manifest paths
+            generated by the debug symbol aspect, which were extracted from
+            the Bazel stderr's DEBUG lines.
+        bazel_execroot: Path to Bazel execroot.
+        build_dir: Path to Ninja build direvtory.
+        manifest_output_path: Path where the manifest will be written.
+            only used in error messages, this function does not write
+            the file itself.
+        time_profile: A TimeProfile instance.
+    Returns:
+        a list of dictionaries describing debug symbols according to the
+        GN //:debug_symbols schema.
+    """
+    time_profile.start(
+        "merge_debug_symbol_manifests",
+        "Merge target-specific manifests into final version.",
+    )
+
+    output_manifest = []
+    recorded_entries: set[str] = set()
+
+    for manifest_path in debug_symbol_manifest_paths:
+        input_manifest_path = os.path.join(bazel_execroot, manifest_path)
+        with open(input_manifest_path, "rt") as f:
+            input_manifest = json.load(f)
+
+        for input_entry in input_manifest:
+            src_debug = input_entry["debug"]
+            if src_debug in recorded_entries:
+                continue  # Ignore duplicates.
+
+            recorded_entries.add(src_debug)
+
+            # Adjust paths
+            entry = input_entry.copy()
+            for key in ("debug", "stripped", "breakpad", "elf_build_id"):
+                src_path = entry.get(key, "")
+                if src_path:
+                    # Convert execroot-relative paths to a build-dir relative ones, using
+                    # os.path.realpath() to resolve symlinks properly.
+                    entry[key] = os.path.relpath(
+                        os.path.realpath(
+                            os.path.join(bazel_execroot, src_path)
+                        ),
+                        build_dir,
+                    )
+            output_manifest.append(entry)
+
+    time_profile.start(
+        "compute_elf_build_ids",
+        "Extra GNU build-id values from ELF binaries.",
+    )
+    parser = DebugSymbolsManifestParser()
+    parser.enable_build_id_resolution()
+    parser.parse_manifest_json(output_manifest, manifest_output_path)
+
+    if _DEBUG_SYMBOL_EXPORT:
+        print("DEBUG SYMBOLS:\n%s" % output_manifest)
+
+    time_profile.stop()
+    return parser.entries
+
+
+def copy_debug_symbols_to_build_dir(
+    build_dir: Path, debug_symbols_manifest: list[DebugSymbolEntryType]
+) -> None:
+    """Copy debug symbols from the Bazel execroot to {NINJA_BUILD_DIR}/.build-id
+
+    Useful when performing local debugging and symbolization. This does not affect
+    infra builds which use artifactory instead to upload the symbols to cloud
+    storage.
+
+    Args:
+        build_dir: Path to Ninja build directory.
+        debug_symbols_manifest: A list of DebugSymbolEntryType values, similar
+            to what is returned by merge_debug_symbol_manifests().
+    """
+    exporter = DebugSymbolExporter(
+        build_dir,
+        log=lambda m: (
+            print(f"DEBUG: {m}", file=sys.stderr)
+            if _DEBUG_SYMBOL_EXPORT
+            else None
+        ),
+    )
+    exporter.parse_debug_symbols(debug_symbols_manifest)
+    debug_copies = exporter.get_debug_symbols_to_build_id_copies(
+        os.path.join(build_dir, ".build-id")
+    )
+
+    def copy_build_id_file(src_path: str, dst_path: str) -> None:
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        shutil.copyfile(src_path, dst_path)
+
+    thread_pool_helpers.starmap_threaded(
+        copy_build_id_file,
+        debug_copies,
+    )

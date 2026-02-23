@@ -207,8 +207,13 @@ class DebugSymbolsManifestParser(object):
         # value, for example Go host binaries. So this could be an empty string.
         return build_id
 
-    def _parse_entry(self, entry: T.Any, manifest_path: Path) -> None:
-        """Parse a given debug manifest entry, and update state accordingly."""
+    def _parse_entry(self, entry: T.Any, manifest_path: Path | None) -> None:
+        """Parse a given debug manifest entry, and update state accordingly.
+
+        Args:
+            entry:  The entry to parse
+            manifest_path:  The path to use in error messages
+        """
         debug = entry.get("debug")
         if debug:
             if self._resolve_build_id and "elf_build_id" not in entry:
@@ -257,13 +262,17 @@ class DebugSymbolsManifestParser(object):
         self._visited_stack = self._visited_stack[:-1]
 
     def parse_manifest_json(
-        self, manifest_json: T.Any, manifest_path: Path
+        self, manifest_json: T.Any, manifest_path: Path | None
     ) -> None:
         """Parse a given debug_symbols manifest JSON value.
 
         Args:
             manifest_json: The input manifest as a JSON value
             (i.e. a list of dictionaries).
+
+            manifest_path: The path of the manifest whose content is
+            being parsed (only used for error messages).
+
         Raises:
             ValueError if the manifest, or one of its includes is
             malformed, or if there is a cycle in the include chain.
