@@ -13,6 +13,7 @@ group("tests") {
     "ext4:tests",
     "fastrpc:tests",
     "input:tests",
+    "kgsl:tests",
     "layeredfs:tests",
     "loop:tests",
     "nanohub:tests",
