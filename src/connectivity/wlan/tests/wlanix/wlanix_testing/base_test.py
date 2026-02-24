@@ -357,16 +357,5 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         ):
             self.fuchsia_device.take_bug_report()
 
-        # Rebooting on failure can avoid unintentionally propagating
-        # a single test failure to tests that follow.
-        if (
-            hasattr(self.fuchsia_device, "hard_reboot_on_fail")
-            and self.fuchsia_device.hard_reboot_on_fail
-            and self.pdu_devices
-        ):
-            self.fuchsia_device.reboot(
-                reboot_type="hard", testbed_pdus=self.pdu_devices
-            )
-
         # Maintain the invariant that every test starts with no access points.
         self.access_point().stop_all_aps()
