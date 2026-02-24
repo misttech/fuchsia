@@ -97,14 +97,6 @@ TEST_F(VmoTest, Basic) {
   EXPECT_TRUE((flags & uint64_t{fuchsia_io::wire::Flags::kPermWriteBytes}) != 0);
   ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED, zxio_flags_set(io, flags));
 
-  uint32_t deprecated_flags = 0u;
-  ASSERT_STATUS(ZX_OK, zxio_deprecated_flags_get(io, &deprecated_flags));
-  EXPECT_TRUE(
-      (deprecated_flags & static_cast<uint32_t>(fuchsia_io::wire::OpenFlags::kRightReadable)) != 0);
-  EXPECT_TRUE(
-      (deprecated_flags & static_cast<uint32_t>(fuchsia_io::wire::OpenFlags::kRightWritable)) != 0);
-  ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED, zxio_deprecated_flags_set(io, deprecated_flags));
-
   ASSERT_OK(zxio_write(io, buffer, sizeof(buffer), 0, &actual));
   EXPECT_EQ(actual, sizeof(buffer));
   ASSERT_OK(zxio_write_at(io, 0u, buffer, sizeof(buffer), 0, &actual));

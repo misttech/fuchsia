@@ -39,8 +39,6 @@ const DEFAULT_ZXIO_OPS: zxio_sys::zxio_ops = zxio_sys::zxio_ops {
     writev_at: Some(zxio_sys::zxio_default_writev_at),
     seek: Some(zxio_sys::zxio_default_seek),
     truncate: Some(zxio_sys::zxio_default_truncate),
-    flags_get_deprecated: Some(zxio_sys::zxio_default_flags_get_deprecated),
-    flags_set_deprecated: Some(zxio_sys::zxio_default_flags_set_deprecated),
     flags_get: Some(zxio_sys::zxio_default_flags_get),
     flags_set: Some(zxio_sys::zxio_default_flags_set),
     vmo_get: Some(zxio_sys::zxio_default_vmo_get),

@@ -44,13 +44,6 @@ TEST(VmoTest, FlagsGetReadWrite) {
   EXPECT_TRUE(flags & fuchsia_io::wire ::Flags::kPermWriteBytes);
   EXPECT_FALSE(flags & fuchsia_io::wire::Flags::kPermExecute);
 
-  uint32_t deprecated_raw_flags{};
-  ASSERT_STATUS(ZX_OK, zxio_deprecated_flags_get(io, &deprecated_raw_flags));
-  fuchsia_io::wire::OpenFlags deprecated_flags{deprecated_raw_flags};
-  EXPECT_TRUE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightReadable);
-  EXPECT_TRUE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightWritable);
-  EXPECT_FALSE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightExecutable);
-
   zxio_destroy(io);
 }
 
@@ -78,13 +71,6 @@ TEST(VmoTest, FlagsGetReadOnly) {
   EXPECT_TRUE(flags & fuchsia_io::wire ::Flags::kPermReadBytes);
   EXPECT_FALSE(flags & fuchsia_io::wire ::Flags::kPermWriteBytes);
   EXPECT_FALSE(flags & fuchsia_io::wire::Flags::kPermExecute);
-
-  uint32_t deprecated_raw_flags{};
-  ASSERT_STATUS(ZX_OK, zxio_deprecated_flags_get(io, &deprecated_raw_flags));
-  fuchsia_io::wire::OpenFlags deprecated_flags{deprecated_raw_flags};
-  EXPECT_TRUE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightReadable);
-  EXPECT_FALSE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightWritable);
-  EXPECT_FALSE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightExecutable);
 
   zxio_destroy(io);
 }
@@ -120,13 +106,6 @@ TEST(VmoTest, FlagsGetReadExec) {
   EXPECT_TRUE(flags & fuchsia_io::wire ::Flags::kPermReadBytes);
   EXPECT_FALSE(flags & fuchsia_io::wire ::Flags::kPermWriteBytes);
   EXPECT_TRUE(flags & fuchsia_io::wire::Flags::kPermExecute);
-
-  uint32_t deprecated_raw_flags{};
-  ASSERT_STATUS(ZX_OK, zxio_deprecated_flags_get(exec_io, &deprecated_raw_flags));
-  fuchsia_io::wire::OpenFlags deprecated_flags{deprecated_raw_flags};
-  EXPECT_TRUE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightReadable);
-  EXPECT_FALSE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightWritable);
-  EXPECT_TRUE(deprecated_flags & fuchsia_io::wire::OpenFlags::kRightExecutable);
 
   zxio_destroy(exec_io);
 }

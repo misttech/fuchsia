@@ -38,10 +38,6 @@ TEST(NullTest, Default) {
   ASSERT_STATUS(zxio_flags_get(&io, &flags), ZX_OK);
   ASSERT_EQ(0, flags);
   ASSERT_STATUS(zxio_flags_set(&io, flags), ZX_ERR_NOT_SUPPORTED);
-  uint32_t deprecated_flags = 42u;
-  ASSERT_STATUS(zxio_deprecated_flags_get(&io, &deprecated_flags), ZX_OK);
-  ASSERT_EQ(0, deprecated_flags);
-  ASSERT_STATUS(zxio_deprecated_flags_set(&io, deprecated_flags), ZX_ERR_NOT_SUPPORTED);
   zx_handle_t vmo = ZX_HANDLE_INVALID;
   ASSERT_STATUS(zxio_vmo_get_copy(&io, &vmo), ZX_ERR_NOT_SUPPORTED);
   ASSERT_STATUS(zxio_vmo_get_clone(&io, &vmo), ZX_ERR_NOT_SUPPORTED);
@@ -104,10 +100,6 @@ TEST(NullTest, Null) {
   ASSERT_STATUS(zxio_flags_get(&io, &flags), 0);
   ASSERT_EQ(0, flags);
   ASSERT_STATUS(zxio_flags_set(&io, flags), ZX_ERR_NOT_SUPPORTED);
-  uint32_t deprecated_flags = 42u;
-  ASSERT_STATUS(zxio_deprecated_flags_get(&io, &deprecated_flags), 0);
-  ASSERT_EQ(0, deprecated_flags);
-  ASSERT_STATUS(zxio_deprecated_flags_set(&io, deprecated_flags), ZX_ERR_NOT_SUPPORTED);
   zx_handle_t vmo = ZX_HANDLE_INVALID;
   ASSERT_STATUS(zxio_vmo_get_copy(&io, &vmo), ZX_ERR_NOT_SUPPORTED);
   ASSERT_STATUS(zxio_vmo_get_clone(&io, &vmo), ZX_ERR_NOT_SUPPORTED);

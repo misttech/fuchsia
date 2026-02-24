@@ -85,30 +85,3 @@ TEST(Transferable, FlagsSet) {
       fuchsia_io::wire::Flags::kPermReadBytes | fuchsia_io::wire::Flags::kPermWriteBytes;
   ASSERT_OK(zxio_flags_set(io, uint64_t{flags}));
 }
-
-TEST(Transferable, DeprecatedFlagsGetDefault) {
-  auto [device_client, device_server] = fidl::Endpoints<fuchsia_hardware_pty::Device>::Create();
-
-  zxio_storage_t storage;
-  ASSERT_OK(zxio_create_with_type(&storage, ZXIO_OBJECT_TYPE_TRANSFERABLE,
-                                  device_client.TakeChannel().release(), &storage));
-  zxio_t* io = &storage.io;
-  // By default, transferable supports IO (Read + Write).
-  uint32_t raw_flags{};
-  ASSERT_OK(zxio_deprecated_flags_get(io, &raw_flags));
-  fuchsia_io::wire::OpenFlags flags{raw_flags};
-  EXPECT_TRUE(flags & fuchsia_io::wire::OpenFlags::kRightReadable);
-  EXPECT_TRUE(flags & fuchsia_io::wire::OpenFlags::kRightWritable);
-}
-
-TEST(Transferable, DeprecatedFlagsSet) {
-  auto [device_client, device_server] = fidl::Endpoints<fuchsia_hardware_pty::Device>::Create();
-
-  zxio_storage_t storage;
-  ASSERT_OK(zxio_create_with_type(&storage, ZXIO_OBJECT_TYPE_TRANSFERABLE,
-                                  device_client.TakeChannel().release(), &storage));
-  zxio_t* io = &storage.io;
-  fuchsia_io::wire::OpenFlags flags =
-      fuchsia_io::wire::OpenFlags::kRightReadable | fuchsia_io::wire::OpenFlags::kRightWritable;
-  ASSERT_OK(zxio_deprecated_flags_set(io, static_cast<uint32_t>(flags)));
-}

@@ -695,12 +695,6 @@ unsafe extern "C" {
     pub fn zxio_truncate(io: *mut zxio_t, length: u64) -> zx_status_t;
 }
 unsafe extern "C" {
-    pub fn zxio_deprecated_flags_get(io: *mut zxio_t, out_flags: *mut u32) -> zx_status_t;
-}
-unsafe extern "C" {
-    pub fn zxio_deprecated_flags_set(io: *mut zxio_t, flags: u32) -> zx_status_t;
-}
-unsafe extern "C" {
     pub fn zxio_flags_get(io: *mut zxio_t, out_flags: *mut u64) -> zx_status_t;
 }
 unsafe extern "C" {
@@ -1053,11 +1047,6 @@ pub struct zxio_ops {
     >,
     pub truncate:
         ::std::option::Option<unsafe extern "C" fn(io: *mut zxio_t, length: u64) -> zx_status_t>,
-    pub flags_get_deprecated: ::std::option::Option<
-        unsafe extern "C" fn(io: *mut zxio_t, out_flags: *mut u32) -> zx_status_t,
-    >,
-    pub flags_set_deprecated:
-        ::std::option::Option<unsafe extern "C" fn(io: *mut zxio_t, flags: u32) -> zx_status_t>,
     pub flags_get: ::std::option::Option<
         unsafe extern "C" fn(io: *mut zxio_t, out_flags: *mut u64) -> zx_status_t,
     >,
@@ -1338,7 +1327,7 @@ pub struct zxio_ops {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 472usize];
+    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 456usize];
     ["Alignment of zxio_ops"][::std::mem::align_of::<zxio_ops>() - 8usize];
     ["Offset of field: zxio_ops::destroy"][::std::mem::offset_of!(zxio_ops, destroy) - 0usize];
     ["Offset of field: zxio_ops::close"][::std::mem::offset_of!(zxio_ops, close) - 8usize];
@@ -1358,77 +1347,73 @@ const _: () = {
         [::std::mem::offset_of!(zxio_ops, writev_at) - 104usize];
     ["Offset of field: zxio_ops::seek"][::std::mem::offset_of!(zxio_ops, seek) - 112usize];
     ["Offset of field: zxio_ops::truncate"][::std::mem::offset_of!(zxio_ops, truncate) - 120usize];
-    ["Offset of field: zxio_ops::flags_get_deprecated"]
-        [::std::mem::offset_of!(zxio_ops, flags_get_deprecated) - 128usize];
-    ["Offset of field: zxio_ops::flags_set_deprecated"]
-        [::std::mem::offset_of!(zxio_ops, flags_set_deprecated) - 136usize];
     ["Offset of field: zxio_ops::flags_get"]
-        [::std::mem::offset_of!(zxio_ops, flags_get) - 144usize];
+        [::std::mem::offset_of!(zxio_ops, flags_get) - 128usize];
     ["Offset of field: zxio_ops::flags_set"]
-        [::std::mem::offset_of!(zxio_ops, flags_set) - 152usize];
-    ["Offset of field: zxio_ops::vmo_get"][::std::mem::offset_of!(zxio_ops, vmo_get) - 160usize];
+        [::std::mem::offset_of!(zxio_ops, flags_set) - 136usize];
+    ["Offset of field: zxio_ops::vmo_get"][::std::mem::offset_of!(zxio_ops, vmo_get) - 144usize];
     ["Offset of field: zxio_ops::on_mapped"]
-        [::std::mem::offset_of!(zxio_ops, on_mapped) - 168usize];
+        [::std::mem::offset_of!(zxio_ops, on_mapped) - 152usize];
     ["Offset of field: zxio_ops::get_read_buffer_available"]
-        [::std::mem::offset_of!(zxio_ops, get_read_buffer_available) - 176usize];
-    ["Offset of field: zxio_ops::shutdown"][::std::mem::offset_of!(zxio_ops, shutdown) - 184usize];
-    ["Offset of field: zxio_ops::unlink"][::std::mem::offset_of!(zxio_ops, unlink) - 192usize];
+        [::std::mem::offset_of!(zxio_ops, get_read_buffer_available) - 160usize];
+    ["Offset of field: zxio_ops::shutdown"][::std::mem::offset_of!(zxio_ops, shutdown) - 168usize];
+    ["Offset of field: zxio_ops::unlink"][::std::mem::offset_of!(zxio_ops, unlink) - 176usize];
     ["Offset of field: zxio_ops::token_get"]
-        [::std::mem::offset_of!(zxio_ops, token_get) - 200usize];
-    ["Offset of field: zxio_ops::rename"][::std::mem::offset_of!(zxio_ops, rename) - 208usize];
-    ["Offset of field: zxio_ops::link"][::std::mem::offset_of!(zxio_ops, link) - 216usize];
+        [::std::mem::offset_of!(zxio_ops, token_get) - 184usize];
+    ["Offset of field: zxio_ops::rename"][::std::mem::offset_of!(zxio_ops, rename) - 192usize];
+    ["Offset of field: zxio_ops::link"][::std::mem::offset_of!(zxio_ops, link) - 200usize];
     ["Offset of field: zxio_ops::link_into"]
-        [::std::mem::offset_of!(zxio_ops, link_into) - 224usize];
+        [::std::mem::offset_of!(zxio_ops, link_into) - 208usize];
     ["Offset of field: zxio_ops::dirent_iterator_init"]
-        [::std::mem::offset_of!(zxio_ops, dirent_iterator_init) - 232usize];
+        [::std::mem::offset_of!(zxio_ops, dirent_iterator_init) - 216usize];
     ["Offset of field: zxio_ops::dirent_iterator_next"]
-        [::std::mem::offset_of!(zxio_ops, dirent_iterator_next) - 240usize];
+        [::std::mem::offset_of!(zxio_ops, dirent_iterator_next) - 224usize];
     ["Offset of field: zxio_ops::dirent_iterator_rewind"]
-        [::std::mem::offset_of!(zxio_ops, dirent_iterator_rewind) - 248usize];
+        [::std::mem::offset_of!(zxio_ops, dirent_iterator_rewind) - 232usize];
     ["Offset of field: zxio_ops::dirent_iterator_destroy"]
-        [::std::mem::offset_of!(zxio_ops, dirent_iterator_destroy) - 256usize];
-    ["Offset of field: zxio_ops::isatty"][::std::mem::offset_of!(zxio_ops, isatty) - 264usize];
+        [::std::mem::offset_of!(zxio_ops, dirent_iterator_destroy) - 240usize];
+    ["Offset of field: zxio_ops::isatty"][::std::mem::offset_of!(zxio_ops, isatty) - 248usize];
     ["Offset of field: zxio_ops::get_window_size"]
-        [::std::mem::offset_of!(zxio_ops, get_window_size) - 272usize];
+        [::std::mem::offset_of!(zxio_ops, get_window_size) - 256usize];
     ["Offset of field: zxio_ops::set_window_size"]
-        [::std::mem::offset_of!(zxio_ops, set_window_size) - 280usize];
+        [::std::mem::offset_of!(zxio_ops, set_window_size) - 264usize];
     ["Offset of field: zxio_ops::advisory_lock"]
-        [::std::mem::offset_of!(zxio_ops, advisory_lock) - 288usize];
+        [::std::mem::offset_of!(zxio_ops, advisory_lock) - 272usize];
     ["Offset of field: zxio_ops::watch_directory"]
-        [::std::mem::offset_of!(zxio_ops, watch_directory) - 296usize];
-    ["Offset of field: zxio_ops::bind"][::std::mem::offset_of!(zxio_ops, bind) - 304usize];
-    ["Offset of field: zxio_ops::connect"][::std::mem::offset_of!(zxio_ops, connect) - 312usize];
-    ["Offset of field: zxio_ops::listen"][::std::mem::offset_of!(zxio_ops, listen) - 320usize];
-    ["Offset of field: zxio_ops::accept"][::std::mem::offset_of!(zxio_ops, accept) - 328usize];
+        [::std::mem::offset_of!(zxio_ops, watch_directory) - 280usize];
+    ["Offset of field: zxio_ops::bind"][::std::mem::offset_of!(zxio_ops, bind) - 288usize];
+    ["Offset of field: zxio_ops::connect"][::std::mem::offset_of!(zxio_ops, connect) - 296usize];
+    ["Offset of field: zxio_ops::listen"][::std::mem::offset_of!(zxio_ops, listen) - 304usize];
+    ["Offset of field: zxio_ops::accept"][::std::mem::offset_of!(zxio_ops, accept) - 312usize];
     ["Offset of field: zxio_ops::getsockname"]
-        [::std::mem::offset_of!(zxio_ops, getsockname) - 336usize];
+        [::std::mem::offset_of!(zxio_ops, getsockname) - 320usize];
     ["Offset of field: zxio_ops::getpeername"]
-        [::std::mem::offset_of!(zxio_ops, getpeername) - 344usize];
+        [::std::mem::offset_of!(zxio_ops, getpeername) - 328usize];
     ["Offset of field: zxio_ops::getsockopt"]
-        [::std::mem::offset_of!(zxio_ops, getsockopt) - 352usize];
+        [::std::mem::offset_of!(zxio_ops, getsockopt) - 336usize];
     ["Offset of field: zxio_ops::setsockopt"]
-        [::std::mem::offset_of!(zxio_ops, setsockopt) - 360usize];
-    ["Offset of field: zxio_ops::recvmsg"][::std::mem::offset_of!(zxio_ops, recvmsg) - 368usize];
-    ["Offset of field: zxio_ops::sendmsg"][::std::mem::offset_of!(zxio_ops, sendmsg) - 376usize];
-    ["Offset of field: zxio_ops::ioctl"][::std::mem::offset_of!(zxio_ops, ioctl) - 384usize];
+        [::std::mem::offset_of!(zxio_ops, setsockopt) - 344usize];
+    ["Offset of field: zxio_ops::recvmsg"][::std::mem::offset_of!(zxio_ops, recvmsg) - 352usize];
+    ["Offset of field: zxio_ops::sendmsg"][::std::mem::offset_of!(zxio_ops, sendmsg) - 360usize];
+    ["Offset of field: zxio_ops::ioctl"][::std::mem::offset_of!(zxio_ops, ioctl) - 368usize];
     ["Offset of field: zxio_ops::read_link"]
-        [::std::mem::offset_of!(zxio_ops, read_link) - 392usize];
+        [::std::mem::offset_of!(zxio_ops, read_link) - 376usize];
     ["Offset of field: zxio_ops::create_symlink"]
-        [::std::mem::offset_of!(zxio_ops, create_symlink) - 400usize];
+        [::std::mem::offset_of!(zxio_ops, create_symlink) - 384usize];
     ["Offset of field: zxio_ops::xattr_list"]
-        [::std::mem::offset_of!(zxio_ops, xattr_list) - 408usize];
+        [::std::mem::offset_of!(zxio_ops, xattr_list) - 392usize];
     ["Offset of field: zxio_ops::xattr_get"]
-        [::std::mem::offset_of!(zxio_ops, xattr_get) - 416usize];
+        [::std::mem::offset_of!(zxio_ops, xattr_get) - 400usize];
     ["Offset of field: zxio_ops::xattr_set"]
-        [::std::mem::offset_of!(zxio_ops, xattr_set) - 424usize];
+        [::std::mem::offset_of!(zxio_ops, xattr_set) - 408usize];
     ["Offset of field: zxio_ops::xattr_remove"]
-        [::std::mem::offset_of!(zxio_ops, xattr_remove) - 432usize];
-    ["Offset of field: zxio_ops::open"][::std::mem::offset_of!(zxio_ops, open) - 440usize];
-    ["Offset of field: zxio_ops::allocate"][::std::mem::offset_of!(zxio_ops, allocate) - 448usize];
+        [::std::mem::offset_of!(zxio_ops, xattr_remove) - 416usize];
+    ["Offset of field: zxio_ops::open"][::std::mem::offset_of!(zxio_ops, open) - 424usize];
+    ["Offset of field: zxio_ops::allocate"][::std::mem::offset_of!(zxio_ops, allocate) - 432usize];
     ["Offset of field: zxio_ops::enable_verity"]
-        [::std::mem::offset_of!(zxio_ops, enable_verity) - 456usize];
+        [::std::mem::offset_of!(zxio_ops, enable_verity) - 440usize];
     ["Offset of field: zxio_ops::set_token_resolver"]
-        [::std::mem::offset_of!(zxio_ops, set_token_resolver) - 464usize];
+        [::std::mem::offset_of!(zxio_ops, set_token_resolver) - 448usize];
 };
 pub type zxio_ops_t = zxio_ops;
 unsafe extern "C" {
@@ -1530,12 +1515,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn zxio_default_truncate(io: *mut zxio_t, length: u64) -> zx_status_t;
-}
-unsafe extern "C" {
-    pub fn zxio_default_flags_get_deprecated(io: *mut zxio_t, out_flags: *mut u32) -> zx_status_t;
-}
-unsafe extern "C" {
-    pub fn zxio_default_flags_set_deprecated(io: *mut zxio_t, flags: u32) -> zx_status_t;
 }
 unsafe extern "C" {
     pub fn zxio_default_flags_get(io: *mut zxio_t, out_flags: *mut u64) -> zx_status_t;

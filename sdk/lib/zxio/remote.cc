@@ -325,10 +325,6 @@ class Remote : public HasIo {
 
   zx_status_t AdvisoryLock(advisory_lock_req* req);
 
-  zx_status_t FlagsGetDeprecated(uint32_t* out_flags);
-
-  zx_status_t FlagsSetDeprecated(uint32_t flags);
-
   zx_status_t FlagsGet(uint64_t* out_flags);
 
   zx_status_t FlagsSet(uint64_t flags);
@@ -365,8 +361,6 @@ class Remote : public HasIo {
     // operations by providing a method in their public interface with the same name/type.
     ops.attr_get = Adaptor<T>::template From<&T::AttrGet>;
     ops.attr_set = Adaptor<T>::template From<&T::AttrSet>;
-    ops.flags_get_deprecated = Adaptor<T>::template From<&T::FlagsGetDeprecated>;
-    ops.flags_set_deprecated = Adaptor<T>::template From<&T::FlagsSetDeprecated>;
     ops.flags_get = Adaptor<T>::template From<&T::FlagsGet>;
     ops.flags_set = Adaptor<T>::template From<&T::FlagsSet>;
     ops.sync = Adaptor<T>::template From<&T::Sync>;
@@ -649,31 +643,6 @@ zx_status_t Remote<Protocol>::AdvisoryLock(advisory_lock_req* req) {
     return response.error_value();
   }
   return ZX_OK;
-}
-
-template <typename Protocol>
-zx_status_t Remote<Protocol>::FlagsGetDeprecated(uint32_t* out_flags) {
-  const fidl::WireResult result = client()->DeprecatedGetFlags();
-  if (!result.ok()) {
-    return result.status();
-  }
-  const auto& response = result.value();
-  if (const zx_status_t status = response.s; status != ZX_OK) {
-    return status;
-  }
-  *out_flags = static_cast<uint32_t>(response.flags);
-  return ZX_OK;
-}
-
-template <typename Protocol>
-zx_status_t Remote<Protocol>::FlagsSetDeprecated(uint32_t flags) {
-  const fidl::WireResult result =
-      client()->DeprecatedSetFlags(static_cast<fio::wire::OpenFlags>(flags));
-  if (!result.ok()) {
-    return result.status();
-  }
-  const auto& response = result.value();
-  return response.s;
 }
 
 template <typename Protocol>

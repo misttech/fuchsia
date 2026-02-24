@@ -15,8 +15,6 @@ Symbols:
   - { Name: zxio_create_with_info, Type: Func }
   - { Name: zxio_create_with_on_representation, Type: Func }
   - { Name: zxio_default_maybe_faultable_copy, Type: Func }
-  - { Name: zxio_deprecated_flags_get, Type: Func }
-  - { Name: zxio_deprecated_flags_set, Type: Func }
   - { Name: zxio_destroy, Type: Func }
   - { Name: zxio_dirent_iterator_destroy, Type: Func }
   - { Name: zxio_dirent_iterator_init, Type: Func }
