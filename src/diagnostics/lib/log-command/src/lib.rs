@@ -298,6 +298,10 @@ pub struct LogCommand {
     #[argh(switch)]
     pub show_full_moniker: bool,
 
+    /// hide the moniker field from output (does not exclude any log messages)
+    #[argh(switch)]
+    pub hide_moniker: bool,
+
     /// how to display log timestamps.
     /// Options are "utc", "local", or "boot" (i.e. nanos since target boot).
     /// Default is boot.
@@ -374,6 +378,7 @@ impl Default for LogCommand {
             sub_command: None,
             set_severity: vec![],
             show_full_moniker: false,
+            hide_moniker: false,
             pid: None,
             tid: None,
             #[cfg(target_os = "fuchsia")]

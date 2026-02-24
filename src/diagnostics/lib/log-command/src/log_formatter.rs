@@ -402,6 +402,7 @@ where
                             },
                         },
                         show_file: !cmd.hide_file,
+                        show_moniker: !cmd.hide_moniker,
                         show_full_moniker: cmd.show_full_moniker,
                     })
                 },

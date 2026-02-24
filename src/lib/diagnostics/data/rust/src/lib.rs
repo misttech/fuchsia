@@ -1046,6 +1046,9 @@ impl Data<Logs> {
 /// Display options for unstructured logs.
 #[derive(Clone, Copy, Debug)]
 pub struct LogTextDisplayOptions {
+    /// Whether or not to display the moniker.
+    pub show_moniker: bool,
+
     /// Whether or not to display the full moniker.
     pub show_full_moniker: bool,
 
@@ -1068,6 +1071,7 @@ pub struct LogTextDisplayOptions {
 impl Default for LogTextDisplayOptions {
     fn default() -> Self {
         Self {
+            show_moniker: true,
             show_full_moniker: true,
             show_metadata: true,
             show_tags: true,
@@ -1257,7 +1261,9 @@ impl fmt::Display for LogTextPresenter<'_> {
         } else {
             self.component_name()
         };
-        write!(f, "[{moniker}]")?;
+        if self.options.show_moniker {
+            write!(f, "[{moniker}]")?;
+        }
 
         if self.options.show_tags {
             match &self.metadata.tags {
