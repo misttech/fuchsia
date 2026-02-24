@@ -18,7 +18,7 @@ pub async fn explore_cmd(
     stdout: socket_to_stdio::Stdout<'_>,
 ) -> Result<()> {
     let moniker = get_cml_moniker_from_query(&query, &realm_query).await?;
-    println!("Moniker: {}", moniker);
+    println!("Moniker: {}\r", moniker);
 
     let tool_urls = if overridden_tools_urls.len() != 0 {
         overridden_tools_urls
@@ -31,7 +31,7 @@ pub async fn explore_cmd(
                 println!("Error loading tool urls from component manifest: {e:?}");
                 vec![]
             });
-        println!("Using tool URLs from component manifest: {urls:?}");
+        println!("Using tool URLs from component manifest: {urls:?}\r");
         urls
     };
 
