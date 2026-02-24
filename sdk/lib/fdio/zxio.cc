@@ -177,14 +177,6 @@ zx_status_t zxio::set_flags(fio::wire::Flags flags) {
   return zxio_flags_set(&zxio_storage().io, static_cast<uint64_t>(flags));
 }
 
-zx_status_t zxio::get_flags_deprecated(fio::wire::OpenFlags* out_flags) {
-  return zxio_deprecated_flags_get(&zxio_storage().io, reinterpret_cast<uint32_t*>(out_flags));
-}
-
-zx_status_t zxio::set_flags_deprecated(fio::wire::OpenFlags flags) {
-  return zxio_deprecated_flags_set(&zxio_storage().io, static_cast<uint32_t>(flags));
-}
-
 zx_status_t zxio::recvmsg(struct msghdr* msg, int flags, size_t* out_actual, int16_t* out_code) {
   *out_code = 0;
   return zxio_recvmsg_inner(&zxio_storage().io, msg, flags, out_actual);

@@ -584,8 +584,12 @@ zx_status_t Remote<Protocol>::AttrGet(zxio_node_attributes_t* inout_attr) {
   if (inout_attr->has.object_type) {
     ZXIO_NODE_ATTR_SET(*inout_attr, object_type, ProtocolToObjectType<Protocol>());
   }
-  // Construct query from has in inout_attr
+  // Construct query from has in inout_attr->has.
   const fio::NodeAttributesQuery query = BuildAttributeQuery(inout_attr->has);
+  if (!query) {
+    // If we don't have any remaining attributes to query, skip a round trip call to the server.
+    return ZX_OK;
+  }
   const fidl::WireResult result = client()->GetAttributes(query);
   if (!result.ok()) {
     return result.status();

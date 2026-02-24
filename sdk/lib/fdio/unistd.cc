@@ -160,6 +160,7 @@ static_assert(approximate_posix_mode(ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_OPERATIO
 }  // namespace
 
 // Translates deprecated `fuchsia.io/OpenFlags` to an equivalent set of `fuchsia.io/Flags`.
+// TODO(https://fxbug.dev/324080864): Remove this when we no longer support DeprecatedOpen.
 fio::Flags TranslateDeprecatedFlags(fio::OpenFlags deprecated_flags) {
   fio::Flags flags = fio::Flags::kPermGetAttributes;
 
@@ -255,16 +256,34 @@ constexpr fio::OpenFlags PosixToDeprecatedOpenFlags(int32_t flags) {
   return result;
 }
 
-// Map fuchsia.io OpenFlags to equivalent POSIX O_* flags.
-int32_t OpenFlagsToPosix(fio::OpenFlags flags) {
-  int32_t result = static_cast<int32_t>(static_cast<uint32_t>(flags & kZxioFsMask));
-  if ((flags & (fio::OpenFlags::kRightReadable | fio::OpenFlags::kRightWritable)) ==
-      (fio::OpenFlags::kRightReadable | fio::OpenFlags::kRightWritable)) {
+// Map fuchsia.io Flags to equivalent POSIX status flags for GetFlags.
+int32_t StatusFlagsToPosix(fio::Flags flags) {
+  int32_t result = 0;
+  if ((flags & (fio::Flags::kPermReadBytes | fio::Flags::kPermWriteBytes)) ==
+      (fio::Flags::kPermReadBytes | fio::Flags::kPermWriteBytes)) {
     result |= O_RDWR;
-  } else if (flags & fio::OpenFlags::kRightWritable) {
+  } else if (flags & fio::Flags::kPermWriteBytes) {
     result |= O_WRONLY;
+  } else if (flags & fio::Flags::kProtocolNode) {
+    result |= O_PATH;
   } else {
     result |= O_RDONLY;
+  }
+
+  if (flags & fio::Flags::kFlagMaybeCreate) {
+    result |= O_CREAT;
+  }
+  if (flags & fio::Flags::kFlagMustCreate) {
+    result |= O_EXCL;
+  }
+  if (flags & fio::Flags::kFileTruncate) {
+    result |= O_TRUNC;
+  }
+  if (flags & fio::Flags::kProtocolDirectory) {
+    result |= O_DIRECTORY;
+  }
+  if (flags & fio::Flags::kFileAppend) {
+    result |= O_APPEND;
   }
   return result;
 }
@@ -1019,14 +1038,12 @@ int fcntl(int fd, int cmd, ...) {
       if (io == nullptr) {
         return ERRNO(EBADF);
       }
-      fio::OpenFlags flags;
-      // TODO(https://fxbug.dev/376509077): Transition to get_flags when GetFlags2 is
-      // supported by all out-of-tree servers.
-      zx_status_t status = io->get_flags_deprecated(&flags);
+      fio::Flags flags;
+      zx_status_t status = io->get_flags(&flags);
       if (status != ZX_OK) {
         return ERROR(status);
       }
-      int32_t fdio_flags = fdio_internal::OpenFlagsToPosix(flags);
+      int32_t fdio_flags = fdio_internal::StatusFlagsToPosix(flags);
       if (io->ioflag() & IOFLAG_NONBLOCK) {
         fdio_flags |= O_NONBLOCK;
       }
@@ -1039,23 +1056,35 @@ int fcntl(int fd, int cmd, ...) {
       }
       GET_INT_ARG(fdio_flags);
 
-      const fio::OpenFlags flags =
-          fdio_internal::PosixToDeprecatedOpenFlags(fdio_flags & ~O_NONBLOCK);
-      // TODO(https://fxbug.dev/376509077): Transition to set_flags when SetFlags2 is
-      // supported by all out-of-tree servers.
-      zx_status_t status = io->set_flags_deprecated(flags);
+      // POSIX states that we should ignore access and creation flags.
+      const int32_t flags_to_set = fdio_flags & ~(O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY);
 
-      // Some remotes don't support setting flags; we
-      // can adjust their local flags anyway if NONBLOCK
-      // is the only bit being toggled.
-      if (status == ZX_ERR_NOT_SUPPORTED && ((fdio_flags | O_NONBLOCK) == O_NONBLOCK)) {
+      // Try to set flags on the remote. The only flag that F_SETFL can change which fuchsia.io
+      // supports is O_APPEND. We don't have any equivalents for O_ASYNC, O_DIRECT, or O_NOATIME,
+      // and fdio handles O_NONBLOCK locally.
+      zx_status_t status =
+          io->set_flags(flags_to_set & O_APPEND ? fio::Flags::kFileAppend : fio::Flags());
+
+      // If this is a node reference connection (O_PATH), POSIX expects us to return EBADF here.
+      // Remotes may return NOT_SUPPORTED for this operation if they don't implement SetFlags, so we
+      // need to adjust the error if that's the case.
+      if (status == ZX_ERR_NOT_SUPPORTED) {
+        zxio_node_attributes_t attr = {.has = {.object_type = true}};
+        if (io->get_attr(&attr) == ZX_OK && attr.object_type == ZXIO_OBJECT_TYPE_NODE) {
+          return ERRNO(EBADF);
+        }
+      }
+
+      // Some remotes don't support setting flags; we can adjust their local flags anyway if
+      // O_NONBLOCK is the only bit being toggled.
+      if (status == ZX_ERR_NOT_SUPPORTED && ((flags_to_set | O_NONBLOCK) == O_NONBLOCK)) {
         status = ZX_OK;
       }
 
       if (status != ZX_OK) {
         return ERROR(status);
       }
-      if (fdio_flags & O_NONBLOCK) {
+      if (flags_to_set & O_NONBLOCK) {
         io->ioflag() |= IOFLAG_NONBLOCK;
       } else {
         io->ioflag() &= ~IOFLAG_NONBLOCK;
