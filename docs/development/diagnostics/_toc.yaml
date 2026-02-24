@@ -53,7 +53,7 @@ toc:
   section:
   - title: "Detect snapshot filing"
     path: /docs/development/diagnostics/analytics/detect.md
-  - title: "Diagnostics Persistence Service"
+  - title: "Diagnostics Persistence: Saving Inspect across reboot"
     path: /docs/development/diagnostics/analytics/persistence.md
   - title: "Sampler - Diagnostics Data Forwarder"
     path: /docs/development/diagnostics/analytics/sampler.md

@@ -1,99 +1,126 @@
-# Diagnostics Persistence Service
+# Diagnostics Persistence: Saving Inspect across reboot
 
-The Fuchsia Diagnostics Persistence Service persists Diagnostics data across
-device reboots.
+Diagnostics Persistence is a service that stores specific Inspect data on device
+across one or more reboots. If you need to track failure states, historical
+metrics, or other telemetry that must survive a restart, configure this service
+to save your data automatically.
 
-## How it works {#how-it-works}
+## Quickstart guide
 
-When the service is triggered, Persistence reads sets of diagnostic data and
-stores the data to disk. Persistence publishes the stored data in its own
-Inspect hierarchy at the next boot.
+To configure Persistence to save your component's Inspect data, follow these
+steps:
 
-Persistence is configured by entries in config files. Each entry specifies a
-service name, a tag within that service, and a set of selectors. The service
-name configures a FIDL service.
+- [Identify your Inspect data](#identify-your-inspect-data)
+- [Create a configuration file](#create-a-configuration-file)
+- [Estimate `max_bytes`](#estimate-max_bytes)
+- [Update the build](#update-the-build)
 
-Requests to persist data are delivered to Persistence by FIDL, requesting that
-that tag's selectors should be persisted. There's no periodic sampling. Each
-message contains a single tag.
+### 1. Identify your Inspect data {#identify-your-inspect-data}
 
-Each tag is limited in two ways - the size is capped, and the persistence rate
-is throttled.
+Select the specific data you need to save. You will need the exact `INSPECT:`
+selector for your component's data
+(e.g., `INSPECT:core/pkg-resolver:root/resolver_service/active_package_resolves:*`).
 
-A request arriving too quickly will be deferred until the backoff has expired.
-Multiple requests arriving during the backoff period will be combined into one.
+### 2. Create a configuration file {#create-a-configuration-file}
 
-Requests whose selectors fetch too much data will instead store an error
-string, which will overwrite any previously stored data for that request.
+Create a new `.persist` file in either `//src/diagnostics/config/persistence`
+or `//vendor/*/diagnostics/config/persistence`.
 
-## How to use Persistence {#how-to-use}
+The file uses JSON5. Define the parameters for the data you wish to persist:
 
-To persist your data and have it published, follow these steps:
-
-### Define your data {#define-data}
-
-Decide what data you want to persist. If it's not already being written to
-Inspect, add code to publish it. Be aware that the data may be fetched by
-Persistence some time after the request is sent, especially if the time
-backoff is activated.
-
-### Allowlist your data {#allowlist-data}
-
-Persistence reads from `fuchsia.diagnostics.ArchiveAccessor.feedback`, so you'll
-need to have your Inspect data allowlisted in a config file for that pipeline.
-
-## Configure Persistence {#configure}
-
-Put files into //src/diagnostics/config/persistence or
-//vendor/*/diagnostics/config/persistence.
-Files must be named *.persist. Add files to persistence_files in the BUILD.gn.
-
-.persist files are in JSON5 format. Each file contains an array of objects.
-Each object has the following schema:
-
-```
-{
-        tag: 'any-name-you-like', // lowercase and hyphens only
-        service_name: 'service-name', // lowercase and hyphens only
-        max_bytes: 1000, // limit on size of JSON-format data persisted
-        min_seconds_between_fetch: 60, // limit on frequency
-        selectors: [
-            'INSPECT:core/component:root/path:leaf_name',
-            'INSPECT:core/component:root/*:another_leaf',
-        ],
-},
+```json5
+[
+  {
+    tag: "cache-fallbacks", // Unique name
+    service_name: "pkg-resolver", // Grouping for tags
+    max_bytes: 500, // Max size of the persisted data
+    min_seconds_between_fetch: 3600, // How frequently to sample the data
+    selectors: [
+      "INSPECT:core/pkg-resolver:root/resolver_service:cache_fallbacks_due_to_not_found",
+      "INSPECT:core/pkg-resolver:root/resolver_service/active_package_resolves:*",
+    ],
+  },
+]
 ```
 
-All fields are required. Data can be fetched from any component, but fetching
-can only be requested by components that have the service routed to them.
+### 3. Estimate `max_bytes` {#estimate-max_bytes}
 
-Tag names must be unique per-service. Config file names are arbitrary but
-can't be duplicated between config directories.
+The size of the persisted data is enforced at runtime. If your selectors fetch
+more data than `max_bytes`, all of the saved data for this tag will be
+permanently dropped and replaced with a single error string instead.
 
-Note: These selectors must start with INSPECT, like Triage and Detect but
-unlike allowlist selectors.
+To estimate the correct `max_bytes` limit:
 
-## Get Privacy approval {#privacy-approval}
+1.  Run your component on a device and populate the Inspect data you wish to
+    persist. For more information on populating Inspect data, see
+    [Codelab: Using Inspect](/docs/development/diagnostics/inspect/codelab.md).
+2.  Run `ffx inspect show` locally with your exact selectors, and pipe the
+    output through `jq` to strip away un-persisted data. Finally, count the bytes
+    using `wc -c`. For example:
 
-Privacy needs to review Persistence configuration. To get a review,
+```bash
+ffx --machine json inspect show \
+    'core/pkg-resolver:root/resolver_service:cache_fallbacks_due_to_not_found' \
+    'core/pkg-resolver:root/resolver_service/active_package_resolves:*' \
+    | jq -c '.[] | pick(.moniker, .payload.root)' \
+    | wc -c
+```
 
-*   Get the CL +2'd
-*   Add claytonmccray@, crjohns@, and bbosak@ to the CL.
-*   One of us will +1 the CL and add Privacy reviewers.
-*   Someone in Privacy will +2 the CL (or raise a concern).
-*   When the CL is +2'd by Privacy (which may take about a week) it will show
-    OWNERS approval and you can submit it.
+3.  Add a generous buffer (e.g., 20-50%) to this total to account for string
+    length variations, future field additions, and JSON formatting overhead.
 
-Note: Data which has been approved for the Inspect allow-list may still not
-be OK to persist to subsequent boots. For example, numbers such as
-runtime-generated hashes could be used to link multiple boot records if
-they were persisted.
+### 4. Update the build {#update-the-build}
 
-# Use the published data {#use-published-data}
+Add your new configuration file to the build by adding it to the `diagnostics-persistence`
+package configuration in `//bundles/assembly/BUILD.gn`.
 
-On the next boot, the stored data will be published to Inspect as soon as the
-software update check completes.
+Find the `package_name = "diagnostics-persistence"` block and add your `.persist` file
+to the `files` list:
 
-For a selector of `INSPECT:core/test_component:root/path:number` with a service
-of `my-service` and a tag of `my-tag`, the data will be found under
-`core/diagnostics-persistence:root/persist/my-service/my-tag/core\test_component/root/path:number`.
+```gn {:.devsite-disable-click-to-copy}
+      package_name = "diagnostics-persistence"
+      files = [
+        {
+          source = "//src/diagnostics/config/persistence/netstack.persist"
+          destination = "netstack.persist"
+        },
++       {
++         source = "//src/sys/pkg/bin/pkg-resolver/pkg-resolver.persist"
++         destination = "pkg-resolver.persist"
++       },
+      ]
+```
+
+## Reading persisted data
+
+On the next boot (after the software update check completes), the saved data is
+re-published into Inspect.
+
+The data is hosted by the `diagnostics-persistence` component. The original path
+is prefixed with your configured `service_name` and `tag`.
+
+```bash
+$ ffx inspect show core/diagnostics/persistence
+core/diagnostics/persistence:
+  root:
+    persist:
+      pkg-resolver:
+        cache-fallbacks:
+          core/pkg-resolver:
+            resolver_service:
+              cache_fallbacks_due_to_not_found: 2
+```
+
+## Configuration reference
+
+The `.persist` JSON5 file format expects an array of objects, where each object
+defines a Persistence Tag. Each tag accepts the following fields:
+
+| Field                           | Type                      | Description                                                                                                                                                     |
+| ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`tag`**                       | string                    | The unique identifier for this data collection within the `service_name`. Must be lowercase and hyphens only (e.g., `"my-feature-stats"`).                      |
+| **`service_name`**              | string                    | A grouping identifier for related tags. Must be lowercase and hyphens only (e.g., `"my-service"`).                                                              |
+| **`selectors`**                 | []string                  | A list of exact `INSPECT:` selectors to harvest and save.                                                                                                       |
+| **`max_bytes`**                 | integer                   | The maximum allowed size of the fetched Inspect payload in bytes. If the sampled data exceeds this limit, the saved data will be replaced with an error string. |
+| **`min_seconds_between_fetch`** | integer                   | How frequently Archivist should sample these selectors.                                                                                                         |
+| **`persist_across_boot`**       | boolean (default `false`) | If `true`, saved data is not cleared on the next boot and will continue to accumulate historical boot data.                                                     |
