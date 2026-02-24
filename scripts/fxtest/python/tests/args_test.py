@@ -201,6 +201,16 @@ class TestArgs(unittest.TestCase):
         flags = args.parse_args(["--parallel=1"], config_file.default_flags)
         self.assertEqual(flags.parallel, 1)
 
+    def test_quiet_override(self) -> None:
+        """
+        You can override -q in a config file with --no-quiet on the command line
+        """
+        config_file = config.ConfigFile("path", args.parse_args(["-q"]))
+        flags = args.parse_args([], config_file.default_flags)
+        self.assertEqual(flags.quiet, True)
+        flags = args.parse_args(["--no-quiet"], config_file.default_flags)
+        self.assertEqual(flags.quiet, False)
+
     def test_selections_after_test_filter(self) -> None:
         """Passing more selections after a --test-filter works"""
         flags = args.parse_args(["foo", "--test-filter", "some*", "bar"])

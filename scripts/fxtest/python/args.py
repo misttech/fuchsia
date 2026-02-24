@@ -703,7 +703,7 @@ def parse_args(
     output.add_argument(
         "-q",
         "--quiet",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Silence INFO and INSTRUCTION messages from the tool",
     )
