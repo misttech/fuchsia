@@ -5,7 +5,7 @@
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_remove_args::SessionRemoveCommand;
-use ffx_writer::RawWriter;
+use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_element::ManagerProxy;
 use target_holders::moniker;
@@ -23,7 +23,7 @@ fho::embedded_plugin!(RemoveTool);
 #[async_trait(?Send)]
 impl FfxMain for RemoveTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
-    type Writer = RawWriter;
+    type Writer = SimpleWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         remove_impl(self.manager_proxy, self.cmd, &mut writer).await?;
         Ok(())

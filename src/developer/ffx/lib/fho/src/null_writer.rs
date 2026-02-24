@@ -36,10 +36,6 @@ impl Display for NullItem {
 impl ToolIO for NullWriter {
     type OutputItem = NullItem;
 
-    fn is_machine_supported() -> bool {
-        unimplemented!()
-    }
-
     fn is_machine(&self) -> bool {
         unimplemented!()
     }

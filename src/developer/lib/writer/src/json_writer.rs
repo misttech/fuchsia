@@ -51,6 +51,14 @@ impl<T> JsonWriter<T> {
     pub fn stderr(&mut self) -> &mut dyn Write {
         self.simple_writer.stderr()
     }
+
+    // Always returns Some(Json|JsonPretty) or None
+    fn get_machine_format(&self) -> Option<Format> {
+        match self.format {
+            None | Some(Format::Raw) => None,
+            j => j,
+        }
+    }
 }
 
 impl<T> JsonWriter<T>
@@ -61,7 +69,7 @@ where
     ///
     /// This is a no-op if `is_machine` returns false.
     pub fn machine_many<I: IntoIterator<Item = T>>(&mut self, output: I) -> Result<()> {
-        if self.format.is_some() {
+        if self.is_machine() {
             for output in output {
                 self.machine(&output)?;
             }
@@ -73,7 +81,7 @@ where
     ///
     /// This is a no-op if `is_machine` returns false.
     pub fn machine(&mut self, output: &T) -> Result<()> {
-        if let Some(format) = self.format {
+        if let Some(format) = self.get_machine_format() {
             format_output(format, &mut self.simple_writer, output)
         } else {
             Ok(())
@@ -83,9 +91,10 @@ where
     /// If this object is outputting machine output, print the item's machine
     /// representation to stdout. Otherwise, print the display item given.
     pub fn machine_or<D: Display>(&mut self, value: &T, or: D) -> Result<()> {
-        match self.format {
-            Some(format) => format_output(format, &mut self.simple_writer, value)?,
-            None => writeln!(self, "{or}")?,
+        if let Some(format) = self.get_machine_format() {
+            format_output(format, &mut self.simple_writer, value)?
+        } else {
+            writeln!(self, "{or}")?
         }
         Ok(())
     }
@@ -93,9 +102,10 @@ where
     /// If this object is outputting machine output, print the item's machine
     /// representation to stdout. Otherwise, `write!` the display item given.
     pub fn machine_or_write<D: Display>(&mut self, value: &T, or: D) -> Result<()> {
-        match self.format {
-            Some(format) => format_output(format, &mut self.simple_writer, value)?,
-            None => write!(self, "{or}")?,
+        if let Some(format) = self.get_machine_format() {
+            format_output(format, &mut self.simple_writer, value)?
+        } else {
+            write!(self, "{or}")?
         }
         Ok(())
     }
@@ -120,7 +130,7 @@ where
     }
 
     pub fn formatted<J: Serialize>(&mut self, output: &J) -> Result<()> {
-        if let Some(format) = self.format {
+        if let Some(format) = self.get_machine_format() {
             format_output(format, &mut self.simple_writer, output)
         } else {
             Ok(())
@@ -141,6 +151,7 @@ where
         Format::JsonPretty => {
             serde_json::to_writer_pretty(&mut out, output)?;
         }
+        Format::Raw => {}
     }
     Ok(())
 }
@@ -151,12 +162,15 @@ where
 {
     type OutputItem = T;
 
-    fn is_machine_supported() -> bool {
+    fn supports_structured_output() -> bool {
         true
     }
 
     fn is_machine(&self) -> bool {
-        self.format.is_some()
+        match self.format {
+            Some(Format::Json) | Some(Format::JsonPretty) => true,
+            _ => false,
+        }
     }
 
     fn stderr(&mut self) -> &mut dyn Write {
@@ -167,11 +181,7 @@ where
     where
         T: Display,
     {
-        if self.is_machine() {
-            self.machine(value)
-        } else {
-            self.line(value)
-        }
+        if self.is_machine() { self.machine(value) } else { self.line(value) }
     }
 }
 
@@ -180,19 +190,11 @@ where
     T: Serialize,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.format.is_some() {
-            Ok(buf.len())
-        } else {
-            self.simple_writer.write(buf)
-        }
+        if self.is_machine() { Ok(buf.len()) } else { self.simple_writer.write(buf) }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        if self.format.is_some() {
-            Ok(())
-        } else {
-            self.simple_writer.flush()
-        }
+        if self.is_machine() { Ok(()) } else { self.simple_writer.flush() }
     }
 }
 #[cfg(test)]

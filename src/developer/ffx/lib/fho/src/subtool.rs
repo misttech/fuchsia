@@ -31,7 +31,7 @@ use writer::ToolIO;
 pub trait FfxTool: FfxMain {
     type Command: FromArgs + SubCommand + ArgsInfo;
 
-    fn supports_machine_output(&self) -> bool;
+    fn supports_structured_output(&self) -> bool;
     fn has_schema(&self) -> bool;
     fn requires_target() -> bool;
 
@@ -218,7 +218,6 @@ impl<T: FfxTool> FhoTool<T> {
     ) -> Result<Box<Self>> {
         check_strict_constraints(&ffx.global, T::requires_target())?;
 
-        let is_machine_output = ffx.global.machine.is_some();
         let env = FhoEnvironment::new(context, &ffx);
         ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &tool);
         let redacted_args = ffx.redact_subcmd(&tool);
@@ -227,11 +226,6 @@ impl<T: FfxTool> FhoTool<T> {
             true => Some(ffx.unredacted_args_for_analytics()),
         };
         let main = T::from_env(env.clone(), tool).await?;
-        if !main.supports_machine_output() && is_machine_output {
-            return Err(Error::User(anyhow::anyhow!(
-                "The machine flag is not supported for this subcommand"
-            )));
-        }
 
         let found = FhoTool { env, redacted_args, enhanced_args, main };
         Ok(Box::new(found))

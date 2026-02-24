@@ -51,10 +51,10 @@ macro_rules! embedded_plugin {
             env.wrap_main_result(res)
         }
 
-        /// Returns whether or not this plugin supports the `--machine` flag.
-        pub fn ffx_plugin_is_machine_supported() -> bool {
+        /// Returns whether or not this plugin supports structured machine output.
+        pub fn ffx_plugin_supports_structured_output() -> bool {
             use $crate::macro_deps::writer::ToolIO;
-            <<$tool as $crate::FfxMain>::Writer as ToolIO>::is_machine_supported()
+            <<$tool as $crate::FfxMain>::Writer as ToolIO>::supports_structured_output()
         }
 
         /// Returns whether or not this plugin has a defined output schema.
@@ -128,10 +128,6 @@ pub(crate) mod tests {
     impl ToolIO for TestWriter {
         type OutputItem = String;
 
-        fn is_machine_supported() -> bool {
-            false
-        }
-
         fn is_machine(&self) -> bool {
             false
         }
@@ -188,8 +184,8 @@ pub(crate) mod tests {
         );
 
         assert!(
-            !ffx_plugin_is_machine_supported(),
-            "Test plugin should not support machine output"
+            !ffx_plugin_supports_structured_output(),
+            "Test plugin should not support structured machine output"
         );
 
         assert!(!ffx_plugin_has_schema(), "Test plugin should not support machine output schema");

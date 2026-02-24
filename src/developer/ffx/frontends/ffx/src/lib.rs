@@ -5,7 +5,7 @@
 use anyhow::Result;
 use ffx_lib_args::FfxBuiltIn;
 use fho::FhoEnvironment;
-pub fn ffx_plugin_is_machine_supported() -> bool {
+pub fn ffx_plugin_supports_structured_output() -> bool {
     unreachable!("This is a side effect needed for the jinja template")
 }
 

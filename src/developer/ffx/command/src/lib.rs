@@ -113,7 +113,7 @@ impl From<MachineFormat> for Option<writer::Format> {
         match value {
             MachineFormat::Json => Some(Format::Json),
             MachineFormat::JsonPretty => Some(Format::JsonPretty),
-            MachineFormat::Raw => None,
+            MachineFormat::Raw => Some(Format::Raw),
         }
     }
 }
@@ -123,6 +123,7 @@ impl From<writer::Format> for MachineFormat {
         match value {
             Format::Json => MachineFormat::Json,
             Format::JsonPretty => MachineFormat::JsonPretty,
+            Format::Raw => MachineFormat::Raw,
         }
     }
 }

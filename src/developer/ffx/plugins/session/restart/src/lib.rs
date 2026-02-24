@@ -5,7 +5,7 @@
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_restart_args::SessionRestartCommand;
-use ffx_writer::RawWriter;
+use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_session::RestarterProxy;
 use target_holders::moniker;
@@ -22,7 +22,7 @@ fho::embedded_plugin!(RestartTool);
 #[async_trait(?Send)]
 impl FfxMain for RestartTool {
     // TODO(b/472310565) Support actual "json" output, not just "raw"
-    type Writer = RawWriter;
+    type Writer = SimpleWriter;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         restart_impl(self.restarter_proxy, self.cmd, &mut writer).await?;
         Ok(())

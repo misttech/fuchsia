@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use ffx_daemon_disconnect_args::DisconnectCommand;
-use ffx_writer::RawWriter;
+use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx as ffx;
 use target_holders::TargetProxyHolder;
@@ -20,7 +20,7 @@ fho::embedded_plugin!(DisconnectTool);
 
 #[async_trait(?Send)]
 impl FfxMain for DisconnectTool {
-    type Writer = RawWriter;
+    type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         disconnect_impl(&self.target_proxy, self.cmd).await
     }

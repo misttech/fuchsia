@@ -20,10 +20,13 @@ pub trait ToolIO: Write + Sized {
     /// implementation)
     type OutputItem;
 
-    /// Whether this can theoretically support machine output given the right configuration.
-    fn is_machine_supported() -> bool;
+    /// Whether this supports structured machine output (like JSON).
+    fn supports_structured_output() -> bool {
+        false
+    }
 
     /// Is a schema of the output type available.
+
     fn has_schema() -> bool {
         false
     }

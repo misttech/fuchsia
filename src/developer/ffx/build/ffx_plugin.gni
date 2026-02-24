@@ -220,7 +220,6 @@ template("ffx_plugin") {
 
       args_target_additional_deps += [ ":" + sub_cmd ]
       suite_target_additional_deps += [ ":" + sub_cmd ]
-      suite_target_additional_deps += [ "//src/developer/ffx/lib/writer:lib" ]
     }
 
     args_target_name = _crate_name + "_args"

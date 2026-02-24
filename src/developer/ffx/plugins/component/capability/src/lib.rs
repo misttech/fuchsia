@@ -7,7 +7,7 @@ use component_debug::cli::capability_cmd;
 use errors::ffx_error;
 use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_capability_args::ComponentCapabilityCommand;
-use ffx_writer::RawWriter;
+use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use target_holders::RemoteControlProxyHolder;
 
@@ -23,7 +23,7 @@ fho::embedded_plugin!(CapabilityTool);
 #[async_trait(?Send)]
 impl FfxMain for CapabilityTool {
     // TODO(b/471819893) Support actual JSON output, not just "raw"
-    type Writer = RawWriter;
+    type Writer = SimpleWriter;
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
         // All errors from component_debug library are user-visible.

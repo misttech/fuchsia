@@ -20,7 +20,7 @@ const CIRCUIT_REFRESH_RATE: std::time::Duration = std::time::Duration::from_mill
 
 #[async_trait(?Send)]
 impl FfxMain for DaemonStartTool {
-    type Writer = ffx_writer::RawWriter;
+    type Writer = ffx_writer::SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         if self.cmd.background {
@@ -108,7 +108,7 @@ mod test {
         let fho_env = create_fake_injector_with_result(&config_env.context, true).await;
         let tool = DaemonStartTool { cmd, fho_env };
         let test_buffers = ffx_writer::TestBuffers::default();
-        let writer = ffx_writer::RawWriter::new_test(&test_buffers);
+        let writer = ffx_writer::SimpleWriter::new_test(&test_buffers);
         tool.main(writer).await.unwrap();
     }
 
@@ -119,7 +119,7 @@ mod test {
         let fho_env = create_fake_injector_with_result(&config_env.context, false).await;
         let tool = DaemonStartTool { cmd, fho_env };
         let test_buffers = ffx_writer::TestBuffers::default();
-        let writer = ffx_writer::RawWriter::new_test(&test_buffers);
+        let writer = ffx_writer::SimpleWriter::new_test(&test_buffers);
         tool.main(writer).await.unwrap_err();
     }
 }

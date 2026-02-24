@@ -9,7 +9,7 @@ use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
 use ffx_target_ssh_args::SshCommand;
-use ffx_writer::RawWriter;
+use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -29,7 +29,7 @@ fho::embedded_plugin!(SshTool);
 #[async_trait(?Send)]
 impl FfxMain for SshTool {
     // This command doesn't actually produce any normal output itself.
-    type Writer = RawWriter;
+    type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let addr = get_addr(&self.context, (*self.ssh_addr).into())?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)

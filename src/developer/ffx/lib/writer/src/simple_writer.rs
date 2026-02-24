@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Result, ToolIO};
+use crate::{Format, Result, ToolIO};
 use async_trait::async_trait;
 use fho::{FhoEnvironment, TryFromEnv};
 use std::io::Write;
 use writer::{TestBuffers, Writer};
 
-/// An object that can be used to produce output, with no support for outputting
-/// structured machine-interpretable output.
+/// An object that can be used to produce output, with support for the raw machine
+/// format.
 pub struct SimpleWriter(Writer);
 
 impl From<writer::Writer> for SimpleWriter {
@@ -44,10 +44,6 @@ impl SimpleWriter {
 impl ToolIO for SimpleWriter {
     type OutputItem = String;
 
-    fn is_machine_supported() -> bool {
-        false
-    }
-
     fn is_machine(&self) -> bool {
         false
     }
@@ -73,8 +69,15 @@ impl Write for SimpleWriter {
 
 #[async_trait(?Send)]
 impl TryFromEnv for SimpleWriter {
-    async fn try_from_env(_env: &FhoEnvironment) -> fho::Result<Self> {
-        Ok(SimpleWriter::new())
+    async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
+        let machine_format: Option<writer::Format> =
+            env.ffx_command().global.machine.and_then(|mf| mf.into());
+        match machine_format {
+            Some(Format::Raw) | None => Ok(SimpleWriter::new()),
+            Some(_) => {
+                Err(fho::Error::User(anyhow::anyhow!("invalid machine format: only raw supported")))
+            }
+        }
     }
 }
 
@@ -97,6 +100,12 @@ mod test {
         writer.item(&"hello".to_owned()).unwrap();
 
         assert_eq!(test_buffers.into_stdout_str(), "hello\n");
+    }
+
+    #[test]
+    fn test_supports_structured_output() {
+        assert!(!SimpleWriter::supports_structured_output());
+        assert!(!SimpleWriter::has_schema());
     }
 
     #[test]
@@ -148,5 +157,25 @@ mod test {
         let (stdout, stderr) = test_buffers.into_strings();
         assert_eq!(stdout, "");
         assert_eq!(stderr, "hello\n");
+    }
+
+    #[fuchsia::test]
+    async fn test_try_from_env() {
+        let config_env = ffx_config::test_init().unwrap();
+
+        // No machine flag
+        let ffx = fho::FfxCommandLine::new(None, &["ffx", "test"]).unwrap();
+        let env = fho::FhoEnvironment::new(&config_env.context, &ffx);
+        assert!(SimpleWriter::try_from_env(&env).await.is_ok());
+
+        // --machine raw
+        let ffx = fho::FfxCommandLine::new(None, &["ffx", "--machine", "raw", "test"]).unwrap();
+        let env = fho::FhoEnvironment::new(&config_env.context, &ffx);
+        assert!(SimpleWriter::try_from_env(&env).await.is_ok());
+
+        // --machine json (should fail)
+        let ffx = fho::FfxCommandLine::new(None, &["ffx", "--machine", "json", "test"]).unwrap();
+        let env = fho::FhoEnvironment::new(&config_env.context, &ffx);
+        assert!(SimpleWriter::try_from_env(&env).await.is_err());
     }
 }

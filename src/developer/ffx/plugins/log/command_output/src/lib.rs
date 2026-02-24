@@ -121,7 +121,7 @@ impl TryFromEnv for CommandOutputMachineWriter {
 impl ToolIO for CommandOutputMachineWriter {
     type OutputItem = LogEntry;
 
-    fn is_machine_supported() -> bool {
+    fn supports_structured_output() -> bool {
         true
     }
 

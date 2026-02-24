@@ -14,7 +14,6 @@ rustc_library("lib") {
   sources = [
     "src/lib.rs",
     "src/machine_writer.rs",
-    "src/raw_writer.rs",
     "src/simple_writer.rs",
     "src/verified_machine_writer.rs",
   ]
@@ -27,6 +26,11 @@ rustc_library("lib") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:valico",
+  ]
+
+  test_deps = [
+    "//src/developer/ffx/config:lib",
+    "//src/lib/fuchsia",
   ]
 }
 

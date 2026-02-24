@@ -14,7 +14,7 @@ use std::cell::RefCell;
 // Subtool<F: FfxTool>, which implements this trait.
 #[async_trait::async_trait(?Send)]
 pub trait SubtoolBox {
-    fn supports_machine_output(&self) -> bool;
+    fn supports_structured_output(&self) -> bool;
     fn has_schema(&self) -> bool;
     async fn try_print_schema(&self, env: &FhoEnvironment) -> Result<()>;
     async fn run(&self, env: FhoEnvironment) -> Result<()>;
@@ -36,8 +36,8 @@ impl<T: FfxTool> Subtool<T> {
 
 #[async_trait::async_trait(?Send)]
 impl<T: FfxTool> SubtoolBox for Subtool<T> {
-    fn supports_machine_output(&self) -> bool {
-        self.tool.borrow().as_ref().expect("subtool is gone?").supports_machine_output()
+    fn supports_structured_output(&self) -> bool {
+        self.tool.borrow().as_ref().expect("subtool is gone?").supports_structured_output()
     }
     fn has_schema(&self) -> bool {
         self.tool.borrow().as_ref().expect("subtool is gone?").has_schema()
@@ -122,8 +122,8 @@ impl<S: SubtoolSuite> FfxTool for FfxSubtoolSuite<S> {
         Ok(Self { subtool, env, _marker: std::marker::PhantomData })
     }
 
-    fn supports_machine_output(&self) -> bool {
-        self.subtool.supports_machine_output()
+    fn supports_structured_output(&self) -> bool {
+        self.subtool.supports_structured_output()
     }
     fn has_schema(&self) -> bool {
         self.subtool.has_schema()

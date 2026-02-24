@@ -118,7 +118,7 @@ where
 {
     type OutputItem = T;
 
-    fn is_machine_supported() -> bool {
+    fn supports_structured_output() -> bool {
         true
     }
 
@@ -163,7 +163,12 @@ where
 #[async_trait(?Send)]
 impl<T: serde::Serialize + schemars::JsonSchema> TryFromEnv for VerifiedMachineWriter<T> {
     async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
-        Ok(VerifiedMachineWriter::new(env.ffx_command().global.machine.and_then(|mf| mf.into())))
+        let format = env.ffx_command().global.machine.and_then(|mf| mf.into());
+        let format = match format {
+            Some(Format::Raw) => None,
+            f => f,
+        };
+        Ok(VerifiedMachineWriter::new(format))
     }
 }
 

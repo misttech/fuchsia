@@ -65,6 +65,7 @@ mod test {
     use ffx_config::test_env;
     use ffx_target_default_args::*;
     use ffx_writer::TestBuffers;
+    use fho::{FfxCommandLine, FhoEnvironment, TryFromEnv};
     use tempfile::tempdir;
 
     #[fuchsia::test]
@@ -199,5 +200,33 @@ mod test {
         assert_eq!(stdout, "stateless-device-addr-target\n");
         assert_eq!(stderr, "");
         Ok(())
+    }
+
+    // The next two tests are not about "ffx target default" specifically, but are as good
+    // a place as any to ensure that a real tool that uses SimpleWriter correctly
+    // handles "--machine"
+
+    #[fuchsia::test]
+    async fn test_target_default_with_machine_raw() {
+        let config_env = ffx_config::test_init().unwrap();
+        let ffx =
+            FfxCommandLine::new(None, &["ffx", "--machine", "raw", "target", "default", "get"])
+                .unwrap();
+        let env = FhoEnvironment::new(&config_env.context, &ffx);
+
+        let result = SimpleWriter::try_from_env(&env).await;
+        assert!(result.is_ok(), "SimpleWriter should support --machine raw");
+    }
+
+    #[fuchsia::test]
+    async fn test_target_default_with_machine_json_fails() {
+        let config_env = ffx_config::test_init().unwrap();
+        let ffx =
+            FfxCommandLine::new(None, &["ffx", "--machine", "json", "target", "default", "get"])
+                .unwrap();
+        let env = FhoEnvironment::new(&config_env.context, &ffx);
+
+        let result = SimpleWriter::try_from_env(&env).await;
+        assert!(result.is_err(), "SimpleWriter should NOT support --machine json");
     }
 }

@@ -94,12 +94,12 @@ where
 {
     type OutputItem = T;
 
-    fn is_machine_supported() -> bool {
+    fn supports_structured_output() -> bool {
         true
     }
 
     fn is_machine(&self) -> bool {
-        self.0.format().is_some()
+        self.0.is_machine()
     }
 
     fn item(&mut self, value: &T) -> Result<()>
@@ -139,7 +139,12 @@ where
 #[async_trait(?Send)]
 impl<T: serde::Serialize> TryFromEnv for MachineWriter<T> {
     async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
-        Ok(MachineWriter::new(env.ffx_command().global.machine.and_then(|mf| mf.into())))
+        let format = env.ffx_command().global.machine.and_then(|mf| mf.into());
+        let format = match format {
+            Some(Format::Raw) => None,
+            f => f,
+        };
+        Ok(MachineWriter::new(format))
     }
 }
 
@@ -248,6 +253,20 @@ mod test {
     }
 
     #[test]
+    fn test_machine_writer_with_raw() {
+        let test_buffers = TestBuffers::default();
+        let mut writer: MachineWriter<&str> =
+            MachineWriter::new_test(Some(Format::Raw), &test_buffers);
+
+        assert!(!writer.is_machine());
+
+        writer.item(&"hello").unwrap();
+        writer.machine_or(&"again", "but what if").unwrap();
+
+        assert_eq!(test_buffers.into_stdout_str(), "hello\nbut what if\n");
+    }
+
+    #[test]
     fn line_writer_for_machine_is_ok() {
         let test_buffers = TestBuffers::default();
         let mut writer: MachineWriter<&str> =
@@ -291,6 +310,12 @@ mod test {
         let (stdout, stderr) = test_buffers.into_strings();
         assert_eq!(stdout, "");
         assert_eq!(stderr, "hello\n");
+    }
+
+    #[test]
+    fn test_supports_structured_output() {
+        assert!(MachineWriter::<()>::supports_structured_output());
+        assert!(!MachineWriter::<()>::has_schema());
     }
 
     #[test]

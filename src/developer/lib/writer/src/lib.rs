@@ -7,7 +7,7 @@ mod test_buffer;
 mod tool_io;
 mod writer;
 
-pub use json_writer::{format_output, JsonWriter};
+pub use json_writer::{JsonWriter, format_output};
 pub use test_buffer::{TestBuffer, TestBuffers};
 pub use tool_io::ToolIO;
 pub use writer::Writer;
@@ -17,6 +17,7 @@ pub use writer::Writer;
 pub enum Format {
     Json,
     JsonPretty,
+    Raw,
 }
 
 impl std::str::FromStr for Format {
@@ -26,6 +27,7 @@ impl std::str::FromStr for Format {
         match s.to_lowercase().as_ref() {
             "json-pretty" => Ok(Format::JsonPretty),
             "json" | "j" => Ok(Format::Json),
+            "raw" => Ok(Format::Raw),
             other => Err(Error::InvalidFormat(other.into())),
         }
     }
@@ -50,8 +52,8 @@ pub type Result<O, E = Error> = std::result::Result<O, E>;
 
 impl From<Error> for ffx_command_error::Error {
     fn from(error: Error) -> Self {
-        use ffx_command_error::Error::*;
         use Error::*;
+        use ffx_command_error::Error::*;
         match error {
             error @ (Io(_) | Json(_) | Utf8(_) | SchemaFailure(_)) => Unexpected(error.into()),
             error @ InvalidFormat(_) => User(error.into()),

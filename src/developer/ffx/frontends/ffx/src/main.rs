@@ -196,11 +196,7 @@ impl ToolSuite for FfxSuite {
 #[async_trait::async_trait(?Send)]
 impl ToolRunner for FfxSubCommand {
     async fn run(self: Box<Self>, metrics: MetricsSession) -> Result<ExitStatus> {
-        if self.app.global.machine.is_some()
-            && !ffx_lib_suite::ffx_plugin_is_machine_supported(&self.cmd)
-        {
-            Err(ffx_error!("The machine flag is not supported for this subcommand").into())
-        } else if self.app.global.schema && !ffx_lib_suite::ffx_plugin_has_schema(&self.cmd) {
+        if self.app.global.schema && !ffx_lib_suite::ffx_plugin_has_schema(&self.cmd) {
             Err(ffx_error!("Schema is not defined for this subcommand").into())
         } else if self.app.global.schema && !self.app.global.machine.is_some() {
             Err(ffx_error!("The schema flag requires the machine flag").into())

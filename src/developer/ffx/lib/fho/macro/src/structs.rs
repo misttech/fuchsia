@@ -297,8 +297,8 @@ impl ToTokens for NamedFieldStruct<'_> {
                     })
                 }
 
-                fn supports_machine_output(&self) -> bool {
-                    <<Self as fho::FfxMain>::Writer as fho::macro_deps::writer::ToolIO>::is_machine_supported()
+                fn supports_structured_output(&self) -> bool {
+                    <<Self as fho::FfxMain>::Writer as fho::macro_deps::writer::ToolIO>::supports_structured_output()
                 }
                 fn has_schema(&self) -> bool {
                     <<Self as fho::FfxMain>::Writer as fho::macro_deps::writer::ToolIO>::has_schema()
