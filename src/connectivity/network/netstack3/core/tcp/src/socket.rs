@@ -69,7 +69,9 @@ use netstack3_ip::socket::{
     DeviceIpSocketHandler, IpSock, IpSockCreateAndSendError, IpSockCreationError, IpSocketArgs,
     IpSocketHandler,
 };
-use netstack3_ip::{self as ip, BaseTransportIpContext, SocketMetadata, TransportIpContext};
+use netstack3_ip::{
+    self as ip, BaseTransportIpContext, IpLayerIpExt, SocketMetadata, TransportIpContext,
+};
 use netstack3_trace::{TraceResourceId, trace_duration};
 use packet_formats::ip::IpProto;
 use smallvec::{SmallVec, smallvec};
@@ -112,7 +114,7 @@ impl<I> DualStackIpExt for I where
 
 /// A dual stack IP extension trait for TCP.
 pub trait DualStackBaseIpExt:
-    netstack3_base::socket::DualStackIpExt + SocketIpExt + netstack3_base::IpExt + FilterIpExt
+    netstack3_base::socket::DualStackIpExt + SocketIpExt + IpLayerIpExt
 {
     /// For `Ipv4`, this is [`EitherStack<TcpSocketId<Ipv4, _, _>, TcpSocketId<Ipv6, _, _>>`],
     /// and for `Ipv6` it is just `TcpSocketId<Ipv6>`.

@@ -71,22 +71,9 @@ pub(super) enum Ipv6ExtensionHeaderParsingError {
     // an ICMP response if true. `header_len` is the size of extension headers before
     // encountering an error (number of bytes from successfully parsed
     // extension headers).
-    ErroneousHeaderField {
-        pointer: u32,
-        must_send_icmp: bool,
-        header_len: usize,
-    },
-    UnrecognizedNextHeader {
-        pointer: u32,
-        must_send_icmp: bool,
-        header_len: usize,
-    },
-    UnrecognizedOption {
-        pointer: u32,
-        must_send_icmp: bool,
-        header_len: usize,
-        action: ExtensionHeaderOptionAction,
-    },
+    ErroneousHeaderField { pointer: u32, must_send_icmp: bool },
+    UnrecognizedNextHeader { pointer: u32, must_send_icmp: bool },
+    UnrecognizedOption { pointer: u32, must_send_icmp: bool, action: ExtensionHeaderOptionAction },
     BufferExhausted,
     MalformedData,
 }
@@ -176,7 +163,6 @@ impl Ipv6ExtensionHeaderImpl {
             return Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
                 pointer: context.bytes_parsed as u32,
                 must_send_icmp: false,
-                header_len: context.bytes_parsed,
             });
         }
 
@@ -219,11 +205,7 @@ impl Ipv6ExtensionHeaderImpl {
             // a normal IPv6 packet (not a jumbogram), the maximum size of the payload is
             // `core::u16::MAX` (as the normal payload length field is only 16 bits), which
             // is significantly less than the maximum possible size of a jumbogram.
-            ext_hdr_opt_err_to_ext_hdr_err(
-                u32::try_from(context.bytes_parsed + 2).unwrap(),
-                context.bytes_parsed,
-                e,
-            )
+            ext_hdr_opt_err_to_ext_hdr_err(u32::try_from(context.bytes_parsed + 2).unwrap(), e)
         })?;
         let options = HopByHopOptionsData::new(options);
 
@@ -283,7 +265,6 @@ impl Ipv6ExtensionHeaderImpl {
             Err(Ipv6ExtensionHeaderParsingError::ErroneousHeaderField {
                 pointer: (context.bytes_parsed as u32) + 2,
                 must_send_icmp: true,
-                header_len: context.bytes_parsed,
             })
         }
     }
@@ -348,11 +329,7 @@ impl Ipv6ExtensionHeaderImpl {
             // a normal IPv6 packet (not a jumbogram), the maximum size of the payload is
             // `core::u16::MAX` (as the normal payload length field is only 16 bits), which
             // is significantly less than the maximum possible size of a jumbogram.
-            ext_hdr_opt_err_to_ext_hdr_err(
-                u32::try_from(context.bytes_parsed + 2).unwrap(),
-                context.bytes_parsed,
-                e,
-            )
+            ext_hdr_opt_err_to_ext_hdr_err(u32::try_from(context.bytes_parsed + 2).unwrap(), e)
         })?;
         let options = DestinationOptionsData::new(options);
 
@@ -401,10 +378,8 @@ impl RecordsImpl for Ipv6ExtensionHeaderImpl {
                 //   within the original packet.
                 Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
                     // TODO(https://fxbug.dev/42158223): When overhauling packet
-                    // validation, return the right values for `pointer` and
-                    // `header_len`.
+                    // validation, return the right value for `pointer`.
                     pointer: u32::MAX,
-                    header_len: 0,
                     // This is false because of the "should" in the quoted RFC
                     // text.
                     must_send_icmp: false,
@@ -1123,13 +1098,9 @@ pub(super) fn is_valid_next_header_upper_layer(next_header: u8) -> bool {
 /// `Ipv6ExtensionHeaderParsingError`.
 ///
 /// `offset` is the offset of the start of the options containing the error, `err`,
-/// from the end of the fixed header in an IPv6 packet. `header_len` is the
-/// length of the IPv6 header (including extension headers) that we know about up
-/// to the point of the error, `err`. Note, any data in a packet after the first
-/// `header_len` bytes is not parsed, so its context is unknown.
+/// from the end of the fixed header in an IPv6 packet.
 fn ext_hdr_opt_err_to_ext_hdr_err(
     offset: u32,
-    header_len: usize,
     err: ExtensionHeaderOptionParsingError,
 ) -> Ipv6ExtensionHeaderParsingError {
     match err {
@@ -1141,14 +1112,12 @@ fn ext_hdr_opt_err_to_ext_hdr_err(
                 // is severe enough, we do not want to flood the network. So we
                 // should investigate the criteria for this field to become true.
                 must_send_icmp: false,
-                header_len,
             }
         }
         ExtensionHeaderOptionParsingError::UnrecognizedOption { pointer, action } => {
             Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
                 pointer: offset + pointer,
                 must_send_icmp: true,
-                header_len,
                 action,
             }
         }
@@ -1511,15 +1480,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 0);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -1540,13 +1505,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacket);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -1568,13 +1531,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacketSendIcmp);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -1597,13 +1558,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -1624,12 +1583,8 @@ mod tests {
                 .expect_err(
                     "Should fail to parse the header because one of the option is malformed",
                 );
-        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField {
-            pointer, header_len, ..
-        } = error
-        {
+        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField { pointer, .. } = error {
             assert_eq!(pointer, 3);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
         }
@@ -1677,15 +1632,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the routing type was set to 0");
-        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 2);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with ErroneousHeaderField: {:?}", error);
         }
@@ -1707,15 +1658,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 0);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -1737,16 +1684,12 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully with an unrecognized routing type");
-        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::ErroneousHeaderField { pointer, must_send_icmp } =
+            error
         {
             // Should point to the location of the routing type.
             assert_eq!(pointer, 2);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with ErroneousHeaderField: {:?}", error);
         }
@@ -1809,15 +1752,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 0);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -1880,15 +1819,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 0);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -1909,13 +1844,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacket);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -1937,13 +1870,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacketSendIcmp);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -1966,13 +1897,11 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 8);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 0);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacketSendIcmpNoMulticast);
         } else {
             panic!("Should have matched with UnrecognizedOption: {:?}", error);
@@ -2079,15 +2008,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when the next header was invalid");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 8);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 8);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -2125,15 +2050,11 @@ mod tests {
         let error =
             Records::<&[u8], Ipv6ExtensionHeaderImpl>::parse_with_context(&buffer[..], context)
                 .expect_err("Parsed successfully when a hop by hop extension header was not the fist extension header");
-        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len,
-        } = error
+        if let Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } =
+            error
         {
             assert_eq!(pointer, 0);
             assert!(!must_send_icmp);
-            assert_eq!(header_len, 0);
         } else {
             panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
         }
@@ -2165,16 +2086,14 @@ mod tests {
         if let Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
             pointer,
             must_send_icmp,
-            header_len,
             action,
         } = error
         {
             assert_eq!(pointer, 16);
             assert!(must_send_icmp);
-            assert_eq!(header_len, 8);
             assert_eq!(action, ExtensionHeaderOptionAction::DiscardPacketSendIcmp);
         } else {
-            panic!("Should have matched with UnrecognizedNextHeader: {:?}", error);
+            panic!("Should have matched with UnrecognizedOption: {:?}", error);
         }
     }
 

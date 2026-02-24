@@ -92,11 +92,7 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
     // never encounter this scenario so we don't care if we have incorrect behaviour.
 
     match err {
-        Ipv6ExtensionHeaderParsingError::ErroneousHeaderField {
-            pointer,
-            must_send_icmp,
-            header_len: _,
-        } => {
+        Ipv6ExtensionHeaderParsingError::ErroneousHeaderField { pointer, must_send_icmp } => {
             let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
                 // Pointer calculation overflowed so set action to discard the packet and
                 // 0 for the pointer (which won't be used anyways since the packet will be
@@ -118,11 +114,7 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                 action,
             }
         }
-        Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
-            pointer,
-            must_send_icmp,
-            header_len: _,
-        } => {
+        Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader { pointer, must_send_icmp } => {
             let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
                 None => (0, IpParseErrorAction::DiscardPacket),
                 Some(p) => (p, IpParseErrorAction::DiscardPacketSendIcmpNoMulticast),
@@ -138,12 +130,7 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                 action,
             }
         }
-        Ipv6ExtensionHeaderParsingError::UnrecognizedOption {
-            pointer,
-            must_send_icmp,
-            header_len: _,
-            action,
-        } => {
+        Ipv6ExtensionHeaderParsingError::UnrecognizedOption { pointer, must_send_icmp, action } => {
             let (pointer, action) = match pointer.checked_add(IPV6_FIXED_HDR_LEN as u32) {
                 None => (0, IpParseErrorAction::DiscardPacket),
                 Some(p) => {

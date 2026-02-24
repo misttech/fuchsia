@@ -28,7 +28,7 @@ use netstack3_hashmap::hash_map;
 use netstack3_ip::socket::{IpSockCreationError, IpSocketArgs, MmsError};
 use netstack3_ip::{
     IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo, ReceiveIpPacketMeta,
-    TransportIpContext, TransportReceiveError,
+    TransportIpContext,
 };
 use netstack3_trace::trace_duration;
 use packet::{
@@ -137,7 +137,7 @@ where
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), (B, TransportReceiveError)> {
+    ) -> Result<(), (B, I::IcmpError)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
         let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
         if let Some(delivery) = transparent_override {

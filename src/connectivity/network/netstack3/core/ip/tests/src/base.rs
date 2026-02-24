@@ -315,11 +315,11 @@ fn test_ipv6_icmp_parameter_problem_must() {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
         // Routing Extension Header
-        IpProto::Udp.into(),         // Next Header
-        4,                                  // Hdr Ext Len (In 8-octet units, not including first 8 octets)
-        255,                                // Routing Type (Invalid)
-        1,                                  // Segments Left
-        0, 0, 0, 0,                         // Reserved
+        IpProto::Udp.into(),  // Next Header
+        4,                    // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+        255,                  // Routing Type (Invalid)
+        1,                    // Segments Left
+        0, 0, 0, 0,           // Reserved
         // Addresses for Routing Header w/ Type 0
         0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
         16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
@@ -347,6 +347,48 @@ fn test_ipv6_icmp_parameter_problem_must() {
         42,
         &frame[..],
     );
+}
+
+// Verify that no ICMP packets are sent in response to an ICMP error packet.
+#[test]
+fn test_ipv6_no_icmp_error_response() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    #[rustfmt::skip]
+    let bytes: &mut [u8] = &mut [
+        // FixedHeader (will be replaced later)
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+
+        // Routing Extension Header
+        Ipv6Proto::Icmpv6.into(),  // Next Header
+        4,                         // Hdr Ext Len (In 8-octet units, not including first 8 octets)
+        255,                       // Routing Type (Invalid)
+        1,                         // Segments Left
+        0, 0, 0, 0,                // Reserved
+        // Addresses for Routing Header w/ Type 0
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+
+        // ICMPv6: Address unreachable.
+        1, 3, 0, 0, 0,
+    ][..];
+    bytes[..4].copy_from_slice(&[0x60, 0x20, 0x00, 0x77][..]);
+    let payload_len = u16::try_from(bytes.len() - 40).unwrap();
+    bytes[4..6].copy_from_slice(&payload_len.to_be_bytes());
+    bytes[6] = Ipv6ExtHdrType::Routing.into();
+    bytes[7] = 64;
+    bytes[8..24].copy_from_slice(TEST_ADDRS_V6.remote_ip.bytes());
+    bytes[24..40].copy_from_slice(TEST_ADDRS_V6.local_ip.bytes());
+    let buf = Buf::new(bytes, ..);
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(FrameDestination::Individual { local: true }),
+        buf,
+    );
+    let frames = ctx.bindings_ctx.take_ethernet_frames();
+    assert_eq!(frames.len(), 0);
 }
 
 #[test]

@@ -297,9 +297,15 @@ impl<I: IcmpIpExt> GenericOverIp<I> for Icmpv6MessageType {
 }
 
 impl IcmpMessageType for Icmpv6MessageType {
-    fn is_err(self) -> bool {
-        use Icmpv6MessageType::*;
-        [DestUnreachable, PacketTooBig, TimeExceeded, ParameterProblem].contains(&self)
+    fn is_error_or_redirect(self) -> bool {
+        match self {
+            Icmpv6MessageType::DestUnreachable
+            | Icmpv6MessageType::PacketTooBig
+            | Icmpv6MessageType::TimeExceeded
+            | Icmpv6MessageType::ParameterProblem
+            | Icmpv6MessageType::Redirect => true,
+            _ => false,
+        }
     }
 }
 

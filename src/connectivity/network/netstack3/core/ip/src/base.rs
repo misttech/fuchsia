@@ -19,7 +19,7 @@ use explicit::ResultExt as _;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use log::{debug, trace};
 use net_types::ip::{
-    GenericOverIp, Ip, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
+    GenericOverIp, Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
 };
 use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
@@ -46,12 +46,13 @@ use netstack3_filter::{
 use netstack3_hashmap::HashMap;
 use packet::{
     Buf, BufferMut, GrowBuffer, LayoutBufferAlloc, PacketBuilder as _, PacketConstraints,
-    ParseBuffer, ParseBufferMut, ParseMetadata, SerializeError, Serializer as _,
+    ParsablePacket as _, ParseBuffer, ParseBufferMut, ParseMetadata, SerializeError,
+    Serializer as _,
 };
 use packet_formats::error::IpParseError;
 use packet_formats::ip::{DscpAndEcn, IpPacket as _, IpPacketBuilder as _};
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Packet};
-use packet_formats::ipv6::Ipv6Packet;
+use packet_formats::ipv6::{Ipv6Packet, Ipv6PacketRaw};
 use thiserror::Error;
 use zerocopy::SplitByteSlice;
 
@@ -70,8 +71,8 @@ use crate::internal::gmp::igmp::IgmpCounters;
 use crate::internal::gmp::mld::MldCounters;
 use crate::internal::icmp::counters::IcmpCountersIpExt;
 use crate::internal::icmp::{
-    IcmpBindingsTypes, IcmpErrorHandler, IcmpHandlerIpExt, Icmpv4Error, Icmpv4ErrorKind,
-    Icmpv4State, Icmpv4StateBuilder, Icmpv6ErrorKind, Icmpv6State, Icmpv6StateBuilder,
+    IcmpBindingsTypes, IcmpError, IcmpErrorHandler, IcmpHandlerIpExt, Icmpv4Error, Icmpv4State,
+    Icmpv4StateBuilder, Icmpv6Error, Icmpv6State, Icmpv6StateBuilder,
 };
 use crate::internal::ipv6::Ipv6PacketAction;
 use crate::internal::local_delivery::{
@@ -129,33 +130,6 @@ pub const DEFAULT_HOP_LIMITS: HopLimits =
 // Safe because 0 is less than the number of IPv6 address bits.
 pub const IPV6_DEFAULT_SUBNET: Subnet<Ipv6Addr> =
     unsafe { Subnet::new_unchecked(Ipv6::UNSPECIFIED_ADDRESS, 0) };
-
-/// An error encountered when receiving a transport-layer packet.
-#[derive(Debug)]
-#[allow(missing_docs)]
-pub enum TransportReceiveError {
-    ProtocolUnsupported,
-    PortUnreachable,
-}
-
-impl TransportReceiveError {
-    fn into_icmpv4_error(self, header_len: usize) -> Icmpv4Error {
-        let kind = match self {
-            TransportReceiveError::ProtocolUnsupported => Icmpv4ErrorKind::ProtocolUnreachable,
-            TransportReceiveError::PortUnreachable => Icmpv4ErrorKind::PortUnreachable,
-        };
-        Icmpv4Error { kind, header_len }
-    }
-
-    fn into_icmpv6_error(self, header_len: usize) -> Icmpv6ErrorKind {
-        match self {
-            TransportReceiveError::ProtocolUnsupported => {
-                Icmpv6ErrorKind::ProtocolUnreachable { header_len }
-            }
-            TransportReceiveError::PortUnreachable => Icmpv6ErrorKind::PortUnreachable,
-        }
-    }
-}
 
 /// Sidecar metadata passed along with the packet.
 ///
@@ -417,7 +391,11 @@ impl From<SendFrameErrorReason> for IpSendFrameErrorReason {
 ///
 /// An implementation for `()` is provided which indicates that a particular
 /// transport layer protocol is unsupported.
-pub trait IpTransportContext<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Sized> {
+pub trait IpTransportContext<I, BC, CC>
+where
+    I: IpLayerIpExt,
+    CC: DeviceIdContext<AnyDevice> + ?Sized,
+{
     /// Type used to identify sockets for early demux.
     type EarlyDemuxSocket;
 
@@ -476,49 +454,7 @@ pub trait IpTransportContext<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Siz
         buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), (B, TransportReceiveError)>;
-}
-
-impl<I: IpExt, BC, CC: DeviceIdContext<AnyDevice> + ?Sized> IpTransportContext<I, BC, CC> for () {
-    type EarlyDemuxSocket = Never;
-
-    fn early_demux<B: ParseBuffer>(
-        _core_ctx: &mut CC,
-        _device: &CC::DeviceId,
-        _src_ip: I::Addr,
-        _dst_ip: I::Addr,
-        _buffer: B,
-    ) -> Option<Self::EarlyDemuxSocket> {
-        None
-    }
-
-    fn receive_icmp_error(
-        _core_ctx: &mut CC,
-        _bindings_ctx: &mut BC,
-        _device: &CC::DeviceId,
-        _original_src_ip: Option<SpecifiedAddr<I::Addr>>,
-        _original_dst_ip: SpecifiedAddr<I::Addr>,
-        _original_body: &[u8],
-        err: I::ErrorCode,
-    ) {
-        trace!(
-            "IpTransportContext::receive_icmp_error: Received ICMP error message ({:?}) for unsupported IP protocol",
-            err
-        );
-    }
-
-    fn receive_ip_packet<B: BufferMut, H: IpHeaderInfo<I>>(
-        _core_ctx: &mut CC,
-        _bindings_ctx: &mut BC,
-        _device: &CC::DeviceId,
-        _src_ip: I::RecvSrcAddr,
-        _dst_ip: SpecifiedAddr<I::Addr>,
-        buffer: B,
-        _info: &LocalDeliveryPacketInfo<I, H>,
-        _early_demux_socket: Option<Never>,
-    ) -> Result<(), (B, TransportReceiveError)> {
-        Err((buffer, TransportReceiveError::ProtocolUnsupported))
-    }
+    ) -> Result<(), (B, I::IcmpError)>;
 }
 
 /// The base execution context provided by the IP layer to transport layer
@@ -1824,6 +1760,8 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
     ) -> Option<Self::EarlyDemuxSocket>;
 
     /// Dispatches a received incoming IP packet to the appropriate protocol.
+    /// In case of a failure returns the kind of the ICMP error that should be
+    /// sent back to the source.
     fn dispatch_receive_ip_packet<B: BufferMut, H: IpHeaderInfo<I>>(
         &mut self,
         bindings_ctx: &mut BC,
@@ -1834,7 +1772,7 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
         body: B,
         info: &LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), TransportReceiveError>;
+    ) -> Result<(), I::IcmpError>;
 }
 
 /// A marker trait for all the contexts required for IP ingress.
@@ -2454,25 +2392,64 @@ pub(crate) struct IcmpErrorSender<'a, I: IcmpHandlerIpExt, D> {
     meta: ParseMetadata,
     /// The marks used to send the ICMP error.
     marks: Marks,
+    /// The protocol of the original packet.
+    proto: I::Proto,
 }
 
 impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
+    fn new<CC, B>(
+        core_ctx: &mut CC,
+        err: I::IcmpError,
+        packet: &I::Packet<B>,
+        frame_dst: Option<FrameDestination>,
+        device: &'a D,
+        marks: Marks,
+    ) -> Option<Self>
+    where
+        I: IpCountersIpExt,
+        CC: ResourceCounterContext<D, IpCounters<I>>,
+        B: SplitByteSlice,
+    {
+        let Some(src_ip) = I::SourceAddress::new(packet.src_ip()) else {
+            core_ctx.increment_both(device, |c| &c.unspecified_source);
+            return None;
+        };
+        let Some(dst_ip) = SpecifiedAddr::new(packet.dst_ip()) else {
+            return None;
+        };
+
+        // In IPv4, don't respond to non-initial fragments.
+        let is_ipv4_fragment = I::map_ip_in(
+            packet,
+            |p| {
+                packet_formats::ipv4::Ipv4Header::fragment_type(p)
+                    == Ipv4FragmentType::NonInitialFragment
+            },
+            |_| false,
+        );
+        if is_ipv4_fragment {
+            return None;
+        }
+
+        let meta = packet.parse_metadata();
+        let proto = packet.proto();
+        Some(Self { err, src_ip, dst_ip, frame_dst, device, meta, marks, proto })
+    }
+
     /// Generate an send an appropriate ICMP error in response to this error.
     ///
     /// The provided `body` must be the original buffer from which the IP
     /// packet responsible for this error was parsed. It is expected to be in a
     /// state that allows undoing the IP packet parse (e.g. unmodified after the
     /// IP packet was parsed).
-    fn respond_with_icmp_error<B, BC, CC>(
-        self,
-        core_ctx: &mut CC,
-        bindings_ctx: &mut BC,
-        mut body: B,
-    ) where
+    fn send<B, BC, CC>(self, core_ctx: &mut CC, bindings_ctx: &mut BC, mut body: B)
+    where
         B: BufferMut,
         CC: IcmpErrorHandler<I, BC, DeviceId = D>,
     {
-        let IcmpErrorSender { err, src_ip, dst_ip, frame_dst, device, meta, marks } = self;
+        let IcmpErrorSender { err, src_ip, dst_ip, frame_dst, device, meta, marks, proto } = self;
+        let header_len = meta.header_len();
+
         // Undo the parsing of the IP Packet, moving the buffer's cursor so that
         // it points at the start of the IP header. This way, the sent ICMP
         // error will contain the entire original IP packet.
@@ -2486,6 +2463,8 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
             dst_ip,
             body,
             err,
+            header_len,
+            proto,
             &marks,
         );
     }
@@ -2666,20 +2645,10 @@ fn dispatch_receive_ipv4_packet<
             &receive_info,
             early_demux_socket,
         )
-        .or_else(|err| {
-            if let Ipv4SourceAddr::Specified(src_ip) = src_ip {
-                let (_, _, _, meta) = packet.into_metadata();
-                Err(IcmpErrorSender {
-                    err: err.into_icmpv4_error(meta.header_len()),
-                    src_ip,
-                    dst_ip,
-                    frame_dst,
-                    device,
-                    meta,
-                    marks,
-                })
-            } else {
-                Ok(())
+        .or_else(|icmp_error| {
+            match IcmpErrorSender::new(core_ctx, icmp_error, &packet, frame_dst, device, marks) {
+                Some(icmp_sender) => Err(icmp_sender),
+                None => Ok(()),
             }
         })
 }
@@ -2805,20 +2774,11 @@ fn dispatch_receive_ipv6_packet<
             &receive_info,
             early_demux_socket,
         )
-        .or_else(|err| {
-            if let Ipv6SourceAddr::Unicast(src_ip) = src_ip {
-                let (_, _, _, meta) = packet.into_metadata();
-                Err(IcmpErrorSender {
-                    err: err.into_icmpv6_error(meta.header_len()),
-                    src_ip: *src_ip,
-                    dst_ip,
-                    frame_dst,
-                    device,
-                    meta,
-                    marks: receive_info.marks,
-                })
-            } else {
-                Ok(())
+        .or_else(|icmp_error| {
+            let marks = receive_info.marks;
+            match IcmpErrorSender::new(core_ctx, icmp_error, &packet, frame_dst, device, marks) {
+                Some(icmp_sender) => Err(icmp_sender),
+                None => Ok(()),
             }
         });
     packet_metadata.acknowledge_drop();
@@ -2896,8 +2856,7 @@ where
                         core_ctx.increment_both(outbound_device, |c| &c.mtu_exceeded);
                         let mtu = core_ctx.get_mtu(inbound_device);
                         // NB: Ipv6 sends a PacketTooBig error. Ipv4 sends nothing.
-                        let Some(err) = I::new_mtu_exceeded(proto, parse_meta.header_len(), mtu)
-                        else {
+                        let Some(err) = I::IcmpError::mtu_exceeded(mtu) else {
                             return;
                         };
                         // NB: Only send an ICMP error if the sender's src
@@ -2922,6 +2881,8 @@ where
                             dst_ip,
                             serializer.into_buffer(),
                             err,
+                            parse_meta.header_len(),
+                            proto,
                             &marks,
                         );
                     }
@@ -2973,7 +2934,7 @@ where
                 forwarder.forward_with_buffer(core_ctx, bindings_ctx, buffer)
             }
             ForwardingAction::DropWithIcmpError(icmp_sender) => {
-                icmp_sender.respond_with_icmp_error(core_ctx, bindings_ctx, buffer)
+                icmp_sender.send(core_ctx, bindings_ctx, buffer)
             }
         }
     }
@@ -3028,28 +2989,21 @@ where
 
         core_ctx.increment_both(inbound_device, |c| &c.ttl_expired);
 
-        // Only send an ICMP error if the src_ip is specified.
-        let Some(src_ip) = I::received_source_as_icmp_source(src_ip) else {
-            core_ctx.increment_both(inbound_device, |c| &c.unspecified_source);
-            packet_meta.acknowledge_drop();
-            return ForwardingAction::SilentlyDrop;
-        };
+        let marks = packet_meta.marks;
+        packet_meta.acknowledge_drop();
 
         // Construct and send the appropriate ICMP error for the IP version.
-        let version_specific_meta = packet.version_specific_meta();
-        let (_, _, proto, parse_meta): (I::Addr, I::Addr, _, _) = packet.into_metadata();
-        let err = I::new_ttl_expired(proto, parse_meta.header_len(), version_specific_meta);
-        let action = ForwardingAction::DropWithIcmpError(IcmpErrorSender {
-            err,
-            src_ip,
-            dst_ip,
+        match IcmpErrorSender::new(
+            core_ctx,
+            I::IcmpError::ttl_expired(),
+            &packet,
             frame_dst,
-            device: inbound_device,
-            meta: parse_meta,
-            marks: packet_meta.marks,
-        });
-        packet_meta.acknowledge_drop();
-        return action;
+            inbound_device,
+            marks,
+        ) {
+            Some(icmp_sender) => return ForwardingAction::DropWithIcmpError(icmp_sender),
+            None => return ForwardingAction::SilentlyDrop,
+        }
     }
 
     trace!("determine_ip_packet_forwarding_action: adequate TTL");
@@ -3425,12 +3379,12 @@ macro_rules! try_parse_ip_packet {
             let n_p_len = $buffer.prefix_len();
             let n_s_len = $buffer.suffix_len();
 
-            if p_len > n_p_len {
-                $buffer.grow_front(p_len - n_p_len);
+            if n_p_len > p_len {
+                $buffer.grow_front(n_p_len - p_len);
             }
 
-            if s_len > n_s_len {
-                $buffer.grow_back(s_len - n_s_len);
+            if n_s_len > s_len {
+                $buffer.grow_back(n_s_len - s_len);
             }
 
             Err(err)
@@ -3494,70 +3448,18 @@ pub fn receive_ipv4_packet<
 
     let packet: Ipv4Packet<_> = match try_parse_ip_packet!(buffer) {
         Ok(packet) => packet,
-        // Conditionally send an ICMP response if we encountered a parameter
-        // problem error when parsing an IPv4 packet. Note, we do not always
-        // send back an ICMP response as it can be used as an attack vector for
-        // DDoS attacks. We only send back an ICMP response if the RFC requires
-        // that we MUST send one, as noted by `must_send_icmp` and `action`.
-        // TODO(https://fxbug.dev/42157630): test this code path once
-        // `Ipv4Packet::parse` can return an `IpParseError::ParameterProblem`
-        // error.
-        Err(IpParseError::ParameterProblem {
-            src_ip,
-            dst_ip,
-            code,
-            pointer,
-            must_send_icmp,
-            header_len,
-            action,
-        }) if must_send_icmp && action.should_send_icmp(&dst_ip) => {
-            core_ctx.increment_both(device, |c| &c.parameter_problem);
-            // `should_send_icmp_to_multicast` should never return `true` for IPv4.
-            assert!(!action.should_send_icmp_to_multicast());
-            let dst_ip = match SpecifiedAddr::new(dst_ip) {
-                Some(ip) => ip,
-                None => {
-                    core_ctx.increment_both(device, |c| &c.unspecified_destination);
-                    debug!(
-                        "receive_ipv4_packet: Received packet with unspecified destination IP address; dropping"
-                    );
-                    return;
-                }
-            };
-            let src_ip = match Ipv4SourceAddr::new(src_ip) {
-                None => {
-                    core_ctx.increment_both(device, |c| &c.invalid_source);
-                    return;
-                }
-                Some(Ipv4SourceAddr::Unspecified) => {
-                    core_ctx.increment_both(device, |c| &c.unspecified_source);
-                    return;
-                }
-                Some(Ipv4SourceAddr::Specified(src_ip)) => src_ip,
-            };
-            IcmpErrorHandler::<Ipv4, _>::send_icmp_error_message(
-                core_ctx,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                buffer,
-                Icmpv4Error {
-                    kind: Icmpv4ErrorKind::ParameterProblem {
-                        code,
-                        pointer,
-                        // When the call to `action.should_send_icmp` returns true, it always means that
-                        // the IPv4 packet that failed parsing is an initial fragment.
-                        fragment_type: Ipv4FragmentType::InitialFragment,
-                    },
-                    header_len,
-                },
-                &device_ip_layer_metadata.marks,
-            );
+        Err(IpParseError::ParameterProblem { .. }) => {
+            // TODO(https://fxbug.dev/42157630): Currently IPv4 packet parser
+            // does not generate ParameterProblem error. When it does, we
+            // should send an ICMP error message.
+            debug_assert!(false);
+            core_ctx.increment_both(device, |c| &c.unparsable_packet);
             return;
         }
-        _ => return, // TODO(joshlf): Do something with ICMP here?
+        Err(IpParseError::Parse { .. }) => {
+            core_ctx.increment_both(device, |c| &c.unparsable_packet);
+            return;
+        }
     };
 
     // We verify these properties later by actually creating the corresponding
@@ -3655,7 +3557,7 @@ pub fn receive_ipv4_packet<
                 packet_metadata,
                 receive_meta,
             )
-            .unwrap_or_else(|err| err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer));
+            .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
             return;
         }
     }
@@ -3723,7 +3625,7 @@ pub fn receive_ipv4_packet<
                     packet_metadata.take().unwrap_or_default(),
                     receive_meta,
                 )
-                .unwrap_or_else(|err| err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer));
+                .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
             }
         }
         ReceivePacketAction::Deliver { address_status, internal_forwarding } => {
@@ -3766,7 +3668,7 @@ pub fn receive_ipv4_packet<
                 packet_metadata,
                 receive_meta,
             )
-            .unwrap_or_else(|err| err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer));
+            .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
         }
         ReceivePacketAction::Forward {
             original_dst,
@@ -3787,35 +3689,22 @@ pub fn receive_ipv4_packet<
             .perform_action_with_buffer(core_ctx, bindings_ctx, buffer);
         }
         ReceivePacketAction::SendNoRouteToDest { dst: dst_ip } => {
-            use packet_formats::ipv4::Ipv4Header as _;
             core_ctx.increment_both(device, |c| &c.no_route_to_host);
             debug!("received IPv4 packet with no known route to destination {}", dst_ip);
-            let fragment_type = packet.fragment_type();
-            let (_, _, proto, meta): (Ipv4Addr, Ipv4Addr, _, _) =
-                drop_packet_and_undo_parse!(packet, buffer);
+
             let marks = packet_metadata.marks;
             packet_metadata.acknowledge_drop();
-            let src_ip = match src_ip {
-                Ipv4SourceAddr::Unspecified => {
-                    core_ctx.increment_both(device, |c| &c.unspecified_source);
-                    return;
-                }
-                Ipv4SourceAddr::Specified(src_ip) => src_ip,
-            };
-            IcmpErrorHandler::<Ipv4, _>::send_icmp_error_message(
+
+            if let Some(sender) = IcmpErrorSender::new(
                 core_ctx,
-                bindings_ctx,
-                device,
+                Icmpv4Error::NetUnreachable,
+                &packet,
                 frame_dst,
-                src_ip,
-                dst_ip,
-                buffer,
-                Icmpv4Error {
-                    kind: Icmpv4ErrorKind::NetUnreachable { proto, fragment_type },
-                    header_len: meta.header_len(),
-                },
-                &marks,
-            );
+                device,
+                marks,
+            ) {
+                sender.send(core_ctx, bindings_ctx, buffer);
+            }
         }
         ReceivePacketAction::Drop { reason } => {
             let src_ip = packet.src_ip();
@@ -3828,6 +3717,106 @@ pub fn receive_ipv4_packet<
             );
         }
     }
+}
+
+fn handle_ipv6_parse_error<BC, B, CC>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device: &CC::DeviceId,
+    frame_dst: Option<FrameDestination>,
+    device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
+    mut buffer: B,
+    error: IpParseError<Ipv6>,
+) where
+    BC: IpLayerBindingsContext<Ipv6, CC::DeviceId>,
+    B: BufferMut,
+    CC: IpLayerIngressContext<Ipv6, BC>,
+{
+    // Conditionally send an ICMP response if we encountered a parameter
+    // problem error when parsing an IPv6 packet. Note, we do not always
+    // send back an ICMP response as it can be used as an attack vector for
+    // DDoS attacks. We only send back an ICMP response if the RFC requires
+    // that we MUST send one, as noted by `must_send_icmp` and `action`.
+    let IpParseError::ParameterProblem {
+        src_ip,
+        dst_ip,
+        code,
+        pointer,
+        must_send_icmp,
+        header_len: (),
+        action,
+    } = error
+    else {
+        core_ctx.increment_both(device, |c| &c.unparsable_packet);
+        debug!("receive_ipv6_packet: Failed to parse IPv6 packet: {:?}", error);
+        return;
+    };
+    if !must_send_icmp || !action.should_send_icmp(&dst_ip) {
+        return;
+    }
+    core_ctx.increment_both(device, |c| &c.parameter_problem);
+    let dst_ip = match SpecifiedAddr::new(dst_ip) {
+        Some(ip) => ip,
+        None => {
+            core_ctx.increment_both(device, |c| &c.unspecified_destination);
+            debug!("receive_ipv6_packet: Dropping packet with unspecified destination IP");
+            return;
+        }
+    };
+
+    let src_ip = match Ipv6SourceAddr::new(src_ip) {
+        None => {
+            core_ctx.increment_both(device, |c| &c.invalid_source);
+            return;
+        }
+        Some(Ipv6SourceAddr::Unspecified) => {
+            core_ctx.increment_both(device, |c| &c.unspecified_source);
+            return;
+        }
+        Some(Ipv6SourceAddr::Unicast(src_ip)) => src_ip,
+    };
+
+    // Try raw parser to find main packet protocol and body offset. If this
+    // fails as well then we can't send an ICMP error message.
+    let raw_packet: Ipv6PacketRaw<_> = match try_parse_ip_packet!(buffer) {
+        Ok(packet) => packet,
+        Err(error) => {
+            core_ctx.increment_both(device, |c| &c.unparsable_packet);
+            debug!("receive_ipv6_packet: Failed to parse IPv6 packet: {:?}", error);
+            return;
+        }
+    };
+    let proto = match raw_packet.proto() {
+        Ok(proto) => proto,
+        Err(error) => {
+            core_ctx.increment_both(device, |c| &c.unparsable_packet);
+            debug!("receive_ipv6_packet: Failed to get protocol from IPv6 packet: {:?}", error);
+            return;
+        }
+    };
+    let parse_metadata = raw_packet.parse_metadata();
+    let header_len = parse_metadata.header_len();
+    buffer.undo_parse(parse_metadata);
+
+    let err = Icmpv6Error::ParameterProblem {
+        code,
+        pointer,
+        allow_dst_multicast: action.should_send_icmp_to_multicast(),
+    };
+
+    IcmpErrorHandler::<Ipv6, _>::send_icmp_error_message(
+        core_ctx,
+        bindings_ctx,
+        device,
+        frame_dst,
+        *src_ip,
+        dst_ip,
+        buffer,
+        err,
+        header_len,
+        proto,
+        &device_ip_layer_metadata.marks,
+    );
 }
 
 /// Receive an IPv6 packet from a device.
@@ -3859,60 +3848,18 @@ pub fn receive_ipv6_packet<
 
     let packet: Ipv6Packet<_> = match try_parse_ip_packet!(buffer) {
         Ok(packet) => packet,
-        // Conditionally send an ICMP response if we encountered a parameter
-        // problem error when parsing an IPv4 packet. Note, we do not always
-        // send back an ICMP response as it can be used as an attack vector for
-        // DDoS attacks. We only send back an ICMP response if the RFC requires
-        // that we MUST send one, as noted by `must_send_icmp` and `action`.
-        Err(IpParseError::ParameterProblem {
-            src_ip,
-            dst_ip,
-            code,
-            pointer,
-            must_send_icmp,
-            header_len: _,
-            action,
-        }) if must_send_icmp && action.should_send_icmp(&dst_ip) => {
-            core_ctx.increment_both(device, |c| &c.parameter_problem);
-            let dst_ip = match SpecifiedAddr::new(dst_ip) {
-                Some(ip) => ip,
-                None => {
-                    core_ctx.increment_both(device, |c| &c.unspecified_destination);
-                    debug!(
-                        "receive_ipv6_packet: Received packet with unspecified destination IP address; dropping"
-                    );
-                    return;
-                }
-            };
-            let src_ip = match Ipv6SourceAddr::new(src_ip) {
-                None => {
-                    core_ctx.increment_both(device, |c| &c.invalid_source);
-                    return;
-                }
-                Some(Ipv6SourceAddr::Unspecified) => {
-                    core_ctx.increment_both(device, |c| &c.unspecified_source);
-                    return;
-                }
-                Some(Ipv6SourceAddr::Unicast(src_ip)) => src_ip,
-            };
-            IcmpErrorHandler::<Ipv6, _>::send_icmp_error_message(
+        Err(error) => {
+            handle_ipv6_parse_error(
                 core_ctx,
                 bindings_ctx,
                 device,
                 frame_dst,
-                *src_ip,
-                dst_ip,
+                device_ip_layer_metadata,
                 buffer,
-                Icmpv6ErrorKind::ParameterProblem {
-                    code,
-                    pointer,
-                    allow_dst_multicast: action.should_send_icmp_to_multicast(),
-                },
-                &device_ip_layer_metadata.marks,
+                error,
             );
             return;
         }
-        _ => return, // TODO(joshlf): Do something with ICMP here?
     };
 
     trace!("receive_ipv6_packet: parsed packet: {:?}", packet);
@@ -4057,7 +4004,7 @@ pub fn receive_ipv6_packet<
                 packet_metadata,
                 receive_meta,
             )
-            .unwrap_or_else(|err| err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer));
+            .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
             return;
         }
     }
@@ -4123,7 +4070,7 @@ pub fn receive_ipv6_packet<
                     packet_metadata.take().unwrap_or_default(),
                     receive_meta,
                 )
-                .unwrap_or_else(|err| err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer));
+                .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
             }
         }
         ReceivePacketAction::Deliver { address_status: _, internal_forwarding } => {
@@ -4176,11 +4123,6 @@ pub fn receive_ipv6_packet<
                     }
 
                     let meta = ReceiveIpPacketMeta { broadcast: None, transparent_override: None };
-
-                    // TODO(joshlf):
-                    // - Do something with ICMP if we don't have a handler for
-                    //   that protocol?
-                    // - Check for already-expired TTL?
                     dispatch_receive_ipv6_packet(
                         core_ctx,
                         bindings_ctx,
@@ -4190,9 +4132,7 @@ pub fn receive_ipv6_packet<
                         packet_metadata,
                         meta,
                     )
-                    .unwrap_or_else(|err| {
-                        err.respond_with_icmp_error(core_ctx, bindings_ctx, buffer)
-                    });
+                    .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
                 }
                 Ipv6PacketAction::ProcessFragment => {
                     debug!("receive_ipv6_packet: found fragment header after reassembly; dropping");
@@ -4241,7 +4181,9 @@ pub fn receive_ipv6_packet<
                 *src_ip,
                 dst_ip,
                 buffer,
-                Icmpv6ErrorKind::NetUnreachable { proto, header_len: meta.header_len() },
+                Icmpv6Error::NetUnreachable,
+                meta.header_len(),
+                proto,
                 &marks,
             );
         }

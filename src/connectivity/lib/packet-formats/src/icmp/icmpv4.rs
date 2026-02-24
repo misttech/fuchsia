@@ -200,9 +200,14 @@ impl<I: IcmpIpExt> GenericOverIp<I> for Icmpv4MessageType {
 }
 
 impl IcmpMessageType for Icmpv4MessageType {
-    fn is_err(self) -> bool {
-        use Icmpv4MessageType::*;
-        [DestUnreachable, Redirect, TimeExceeded, ParameterProblem].contains(&self)
+    fn is_error_or_redirect(self) -> bool {
+        match self {
+            Icmpv4MessageType::DestUnreachable
+            | Icmpv4MessageType::Redirect
+            | Icmpv4MessageType::TimeExceeded
+            | Icmpv4MessageType::ParameterProblem => true,
+            _ => false,
+        }
     }
 }
 

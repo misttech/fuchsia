@@ -231,14 +231,6 @@ impl Ipv4Header for HeaderPrefix {
     }
 }
 
-/// Packet metadata which is present only in the IPv4 protocol's packet format.
-pub struct Ipv4OnlyMeta {
-    /// The packet's ID field.
-    pub id: u16,
-    /// The packet's fragment type.
-    pub fragment_type: Ipv4FragmentType,
-}
-
 /// An IPv4 packet.
 ///
 /// An `Ipv4Packet` shares its underlying memory with the byte slice it was

@@ -1474,6 +1474,7 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                             DroppedTentativeDst: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -1521,6 +1522,7 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                             DroppedLoopedBackDadProbe: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -1690,6 +1692,7 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                             DroppedTentativeDst: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -1737,6 +1740,7 @@ async fn inspect_devices_ipv6_disabled(name: &str) {
                             DroppedLoopedBackDadProbe: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -1969,6 +1973,7 @@ async fn inspect_devices(name: &str) {
                             DroppedTentativeDst: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -2016,6 +2021,7 @@ async fn inspect_devices(name: &str) {
                             DroppedLoopedBackDadProbe: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -2205,6 +2211,7 @@ async fn inspect_devices(name: &str) {
                             DroppedTentativeDst: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -2252,6 +2259,7 @@ async fn inspect_devices(name: &str) {
                             DroppedLoopedBackDadProbe: 0u64,
                             MulticastNoInterest: 0u64,
                             InvalidCachedConntrackEntry: 0u64,
+                            UnparsablePacket: 0u64,
                         },
                         Forwarding: {
                             Forwarded: 0u64,
@@ -2649,6 +2657,7 @@ async fn inspect_counters(name: &str) {
                     DroppedTentativeDst: 0u64,
                     MulticastNoInterest: 0u64,
                     InvalidCachedConntrackEntry: 0u64,
+                    UnparsablePacket: 0u64,
                 },
                 "Forwarding": {
                     Forwarded: 0u64,
@@ -2696,6 +2705,7 @@ async fn inspect_counters(name: &str) {
                     DroppedLoopedBackDadProbe: 0u64,
                     MulticastNoInterest: 0u64,
                     InvalidCachedConntrackEntry: 0u64,
+                    UnparsablePacket: 0u64,
                 },
                 "Forwarding": {
                     Forwarded: 0u64,

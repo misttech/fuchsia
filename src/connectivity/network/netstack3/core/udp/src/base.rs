@@ -53,13 +53,14 @@ use netstack3_datagram::{
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_hashmap::hash_map::DefaultHasher;
+use netstack3_ip::icmp::IcmpError;
 use netstack3_ip::socket::{
     IpSockCreateAndSendError, IpSockCreationError, IpSockSendError, SocketHopLimits,
 };
 use netstack3_ip::{
     HopLimits, IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo,
     MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransparentLocalDelivery,
-    TransportIpContext, TransportReceiveError,
+    TransportIpContext,
 };
 use netstack3_trace::trace_duration;
 use packet::{BufferMut, FragmentedByteSlice, Nested, PacketBuilder, ParsablePacket, ParseBuffer};
@@ -1452,7 +1453,7 @@ fn receive_ip_packet<
     mut buffer: B,
     info: &LocalDeliveryPacketInfo<I, H>,
     early_demux_socket: Option<DualStackUdpSocketId<I, CC::WeakDeviceId, BC>>,
-) -> Result<(), (B, TransportReceiveError)> {
+) -> Result<(), (B, I::IcmpError)> {
     let LocalDeliveryPacketInfo { meta, header_info, marks: _ } = info;
     let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
 
@@ -1569,7 +1570,7 @@ fn receive_ip_packet<
         CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx)
             .rx_unknown_dest_port
             .increment();
-        Err((buffer, TransportReceiveError::PortUnreachable))
+        Err((buffer, I::IcmpError::port_unreachable()))
     } else {
         Ok(())
     }
@@ -1802,7 +1803,7 @@ impl<
         buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), (B, TransportReceiveError)> {
+    ) -> Result<(), (B, I::IcmpError)> {
         receive_ip_packet::<I, _, _, _, _>(
             core_ctx,
             bindings_ctx,
@@ -2942,6 +2943,7 @@ pub(crate) mod testutils {
     use alloc::borrow::ToOwned;
     use alloc::vec;
     use core::ops::{Deref, DerefMut};
+    use netstack3_ip::IpLayerIpExt;
 
     use net_types::ip::{IpAddr, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
     use netstack3_base::testutil::{
@@ -3379,7 +3381,7 @@ pub(crate) mod testutils {
     }
 
     /// Ip packet delivery for the [`FakeUdpCoreCtx`].
-    impl<I: IpExt + IpDeviceStateIpExt + TestIpExt, D: FakeStrongDeviceId>
+    impl<I: IpLayerIpExt + TestIpExt, D: FakeStrongDeviceId>
         IpTransportContext<I, FakeUdpBindingsCtx<D>, FakeUdpCoreCtx<D>> for UdpIpTransportContext
     {
         type EarlyDemuxSocket = DualStackUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>;
@@ -3415,7 +3417,7 @@ pub(crate) mod testutils {
             buffer: B,
             info: &LocalDeliveryPacketInfo<I, H>,
             early_demux_socket: Option<Self::EarlyDemuxSocket>,
-        ) -> Result<(), (B, TransportReceiveError)> {
+        ) -> Result<(), (B, I::IcmpError)> {
             receive_ip_packet::<I, _, _, _, _>(
                 core_ctx,
                 bindings_ctx,
@@ -3574,7 +3576,7 @@ mod tests {
     use netstack3_hashmap::{HashMap, HashSet};
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeDualStackIpSocketCtx};
     use netstack3_ip::testutil::{DualStackSendIpPacketMeta, FakeIpHeaderInfo};
-    use netstack3_ip::{IpPacketDestination, ResolveRouteError, SendIpPacketMeta};
+    use netstack3_ip::{IpLayerIpExt, IpPacketDestination, ResolveRouteError, SendIpPacketMeta};
     use packet::{Buf, Serializer};
     use test_case::test_case;
 
@@ -3596,20 +3598,19 @@ mod tests {
     use EarlyDemuxMode::{Disabled as NoEarlyDemux, Enabled as WithEarlyDemux};
 
     /// Helper function to inject an UDP packet with the provided parameters.
-    fn receive_udp_packet<
-        I: TestIpExt,
-        D: FakeStrongDeviceId,
-        CC: DeviceIdContext<AnyDevice, DeviceId = D>,
-    >(
+    fn receive_udp_packet<I, D, CC>(
         core_ctx: &mut CC,
         bindings_ctx: &mut FakeUdpBindingsCtx<D>,
         device: D,
         meta: UdpPacketMeta<I>,
         body: &[u8],
         early_demux_mode: EarlyDemuxMode,
-    ) -> Result<(), TransportReceiveError>
+    ) -> Result<(), I::IcmpError>
     where
         UdpIpTransportContext: IpTransportContext<I, FakeUdpBindingsCtx<D>, CC>,
+        I: IpLayerIpExt + TestIpExt,
+        D: FakeStrongDeviceId,
+        CC: DeviceIdContext<AnyDevice, DeviceId = D>,
     {
         let UdpPacketMeta { src_ip, src_port, dst_ip, dst_port, dscp_and_ecn } = meta;
         let builder = UdpPacketBuilder::new(src_ip, dst_ip, src_port, dst_port);
@@ -3930,7 +3931,7 @@ mod tests {
             dscp_and_ecn: DscpAndEcn::default(),
         };
         let body = [1, 2, 3, 4, 5];
-        assert_matches!(
+        assert_eq!(
             receive_udp_packet(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -3939,7 +3940,7 @@ mod tests {
                 &body[..],
                 WithEarlyDemux,
             ),
-            Err(TransportReceiveError::PortUnreachable)
+            Err(I::IcmpError::port_unreachable())
         );
         assert_eq!(&bindings_ctx.state.socket_data::<I>(), &HashMap::new());
     }
@@ -4534,7 +4535,7 @@ mod tests {
         );
         api.shutdown(&socket, which).expect("is connected");
         let (core_ctx, bindings_ctx) = api.contexts();
-        assert_matches!(
+        assert_eq!(
             receive_udp_packet(
                 core_ctx,
                 bindings_ctx,
@@ -4543,7 +4544,7 @@ mod tests {
                 &packet[..],
                 early_demux_mode
             ),
-            Err(TransportReceiveError::PortUnreachable)
+            Err(I::IcmpError::port_unreachable())
         );
         assert_eq!(
             bindings_ctx.state.socket_data(),
@@ -4553,7 +4554,7 @@ mod tests {
         // Calling shutdown for the send direction doesn't change anything.
         api.shutdown(&socket, ShutdownType::Send).expect("is connected");
         let (core_ctx, bindings_ctx) = api.contexts();
-        assert_matches!(
+        assert_eq!(
             receive_udp_packet(
                 core_ctx,
                 bindings_ctx,
@@ -4562,7 +4563,7 @@ mod tests {
                 &packet[..],
                 early_demux_mode
             ),
-            Err(TransportReceiveError::PortUnreachable)
+            Err(I::IcmpError::port_unreachable())
         );
         assert_eq!(
             bindings_ctx.state.socket_data(),
@@ -5163,7 +5164,7 @@ mod tests {
         bindings_ctx: &mut UdpMultipleDevicesBindingsCtx,
         device: MultipleDevicesId,
         early_demux_mode: EarlyDemuxMode,
-    ) -> Result<(), TransportReceiveError> {
+    ) -> Result<(), I::IcmpError> {
         let meta = UdpPacketMeta::<I> {
             src_ip: I::get_other_remote_ip_address(1).get(),
             src_port: Some(REMOTE_PORT),
@@ -5193,9 +5194,9 @@ mod tests {
 
         // Since it is bound, it does not receive a packet from another device.
         let (core_ctx, bindings_ctx) = api.contexts();
-        assert_matches!(
+        assert_eq!(
             receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B, early_demux_mode),
-            Err(TransportReceiveError::PortUnreachable)
+            Err(I::IcmpError::port_unreachable())
         );
         let received = &bindings_ctx.state.socket_data::<I>();
         assert_eq!(received, &HashMap::new());

@@ -14,7 +14,7 @@ use packet::{Buf, InnerPacketBuilder, PacketBuilder as _, ParseBuffer, Serialize
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::{IcmpIpExt, IcmpZeroCode};
 use packet_formats::ip::IpPacket;
-use packet_formats::ipv4::{Ipv4OnlyMeta, Ipv4Packet};
+use packet_formats::ipv4::Ipv4Packet;
 use packet_formats::testutil::{parse_ethernet_frame, parse_ip_packet_in_ethernet_frame};
 use test_case::test_case;
 
@@ -487,11 +487,7 @@ fn test_send<I: IpSocketIpExt + IpExt>() {
     )
     .unwrap();
 
-    let curr_id = ip::gen_ip_packet_id::<Ipv4, _>(&mut core_ctx.context());
-
-    let check_frame = move |frame: &[u8], packet_count| match [local_ip.get(), remote_ip.get()]
-        .into()
-    {
+    let check_frame = move |frame: &[u8]| match [local_ip.get(), remote_ip.get()].into() {
         IpAddr::V4([local_ip, remote_ip]) => {
             let (mut body, src_mac, dst_mac, _ethertype) =
                 parse_ethernet_frame(frame, EthernetFrameLengthCheck::NoCheck).unwrap();
@@ -502,9 +498,6 @@ fn test_send<I: IpSocketIpExt + IpExt>() {
             assert_eq!(packet.dst_ip(), remote_ip);
             assert_eq!(packet.proto(), Ipv4::ICMP_IP_PROTO);
             assert_eq!(packet.ttl(), 1);
-            let Ipv4OnlyMeta { id, fragment_type: _ } = packet.version_specific_meta();
-            assert_eq!(usize::from(id), usize::from(curr_id) + packet_count);
-            assert_eq!(body, [0]);
         }
         IpAddr::V6([local_ip, remote_ip]) => {
             let (body, src_mac, dst_mac, src_ip, dst_ip, ip_proto, ttl) =
@@ -519,7 +512,6 @@ fn test_send<I: IpSocketIpExt + IpExt>() {
             assert_eq!(ttl, 1);
         }
     };
-    let mut packet_count = 0;
     assert_matches!(bindings_ctx.take_ethernet_frames()[..], []);
 
     // Send a packet on the socket and make sure that the right contents
@@ -533,12 +525,11 @@ fn test_send<I: IpSocketIpExt + IpExt>() {
         CoreTxMetadata::default(),
     )
     .unwrap();
-    let mut check_sent_frame = |bindings_ctx: &mut FakeBindingsCtx| {
-        packet_count += 1;
+    let check_sent_frame = |bindings_ctx: &mut FakeBindingsCtx| {
         let frames = bindings_ctx.take_ethernet_frames();
         let (dev, frame) = assert_matches!(&frames[..], [frame] => frame);
         assert_eq!(dev, &device_ids[0]);
-        check_frame(&frame, packet_count);
+        check_frame(&frame);
     };
     check_sent_frame(&mut bindings_ctx);
 

@@ -43,7 +43,6 @@ use netstack3_ip::socket::SocketHopLimits;
 use netstack3_ip::{
     IpHeaderInfo, IpLayerIpExt, IpTransportContext, LocalDeliveryPacketInfo,
     MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransportIpContext,
-    TransportReceiveError,
 };
 use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer};
 use packet_formats::icmp::{IcmpEchoReply, IcmpEchoRequest, IcmpPacketBuilder, IcmpPacketRaw};
@@ -1154,7 +1153,7 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
         mut buffer: B,
         info: &LocalDeliveryPacketInfo<I, H>,
         _early_demux_socket: Option<Never>,
-    ) -> Result<(), (B, TransportReceiveError)> {
+    ) -> Result<(), (B, I::IcmpError)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks: _ } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
         if let Some(delivery) = transparent_override.as_ref() {

@@ -446,7 +446,7 @@ pub trait IcmpMessageType: TryFrom<u8> + Into<u8> + Copy + Debug {
     /// Quench, Time Exceeded, and Parameter Problem message types. For ICMPv6,
     /// this is true for the Destination Unreachable, Packet Too Big, Time
     /// Exceeded, and Parameter Problem message types.
-    fn is_err(self) -> bool;
+    fn is_error_or_redirect(self) -> bool;
 }
 
 #[derive(Copy, Clone, Debug, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]

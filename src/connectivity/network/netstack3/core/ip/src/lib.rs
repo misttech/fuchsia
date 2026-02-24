@@ -131,10 +131,11 @@ pub mod icmp {
         Icmpv6ParameterProblemCounters, Icmpv6TimeExceededCounters,
     };
     pub use crate::internal::icmp::{
-        EchoTransportContextMarker, IcmpBindingsContext, IcmpBindingsTypes, IcmpIpTransportContext,
-        IcmpState, IcmpStateContext, Icmpv4StateBuilder, InnerIcmpContext, InnerIcmpv4Context,
-        NdpCounters, NdpMessage, NdpRxCounters, NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
-        send_icmpv4_host_unreachable, send_icmpv6_address_unreachable, send_ndp_packet,
+        EchoTransportContextMarker, IcmpBindingsContext, IcmpBindingsTypes, IcmpError,
+        IcmpIpTransportContext, IcmpState, IcmpStateContext, Icmpv4Error, Icmpv4StateBuilder,
+        Icmpv6Error, InnerIcmpContext, InnerIcmpv4Context, NdpCounters, NdpMessage, NdpRxCounters,
+        NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT, send_icmpv4_host_unreachable,
+        send_icmpv6_address_unreachable, send_ndp_packet,
     };
 
     /// ICMP test utilities.
@@ -246,8 +247,8 @@ pub use internal::base::{
     Ipv4PresentAddressStatus, Ipv4State, Ipv4StateBuilder, Ipv6PresentAddressStatus, Ipv6State,
     Ipv6StateBuilder, MarksBindingsContext, MulticastMembershipHandler, NdpBindingsContext,
     ReceivePacketAction, ResolveRouteError, RouterAdvertisementEvent, RoutingTableCookie,
-    RoutingTableId, SendIpPacketMeta, SocketMetadata, TransportIpContext, TransportReceiveError,
-    gen_ip_packet_id, receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
+    RoutingTableId, SendIpPacketMeta, SocketMetadata, TransportIpContext, gen_ip_packet_id,
+    receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
     receive_ipv6_packet_action, resolve_output_route_to_destination,
 };
 pub use internal::counters::{IpCounters, Ipv6RxCounters};

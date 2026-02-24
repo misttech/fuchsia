@@ -135,15 +135,8 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DerefMut
 }
 
 /// Marker trait for datagram IP extensions.
-pub trait IpExt:
-    netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt + IpLayerIpExt
-{
-}
-impl<
-    I: netstack3_base::IpExt + DualStackIpExt + netstack3_base::IcmpIpExt + FilterIpExt + IpLayerIpExt,
-> IpExt for I
-{
-}
+pub trait IpExt: netstack3_ip::IpLayerIpExt + DualStackIpExt {}
+impl<I: netstack3_ip::IpLayerIpExt + DualStackIpExt> IpExt for I {}
 
 /// A datagram socket's state.
 #[derive(Derivative, GenericOverIp)]

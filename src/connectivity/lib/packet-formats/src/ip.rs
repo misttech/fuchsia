@@ -22,9 +22,7 @@ use zerocopy::{
 use crate::error::{IpParseError, IpParseResult};
 use crate::ethernet::EthernetIpExt;
 use crate::icmp::IcmpIpExt;
-use crate::ipv4::{
-    IPV4_MIN_HDR_LEN, Ipv4Header, Ipv4OnlyMeta, Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketRaw,
-};
+use crate::ipv4::{IPV4_MIN_HDR_LEN, Ipv4Header, Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketRaw};
 use crate::ipv6::{IPV6_FIXED_HDR_LEN, Ipv6Header, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketRaw};
 use crate::private::Sealed;
 
@@ -189,10 +187,6 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
     /// A builder for this packet type.
     type Builder: IpPacketBuilder<I>;
 
-    /// Metadata which is only present in the packet format of a specific version
-    /// of the IP protocol.
-    type VersionSpecificMeta;
-
     /// The source IP address.
     fn src_ip(&self) -> I::Addr;
 
@@ -218,9 +212,6 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
 
     /// Get the body.
     fn body(&self) -> &[u8];
-
-    /// Gets packet metadata relevant only for this version of the IP protocol.
-    fn version_specific_meta(&self) -> Self::VersionSpecificMeta;
 
     /// Consume the packet and return some metadata.
     ///
@@ -255,7 +246,6 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
 
 impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
     type Builder = Ipv4PacketBuilder;
-    type VersionSpecificMeta = Ipv4OnlyMeta;
 
     fn src_ip(&self) -> Ipv4Addr {
         Ipv4Header::src_ip(self)
@@ -280,10 +270,6 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
     }
     fn body(&self) -> &[u8] {
         Ipv4Packet::body(self)
-    }
-
-    fn version_specific_meta(&self) -> Ipv4OnlyMeta {
-        Ipv4OnlyMeta { id: Ipv4Header::id(self), fragment_type: Ipv4Header::fragment_type(self) }
     }
 
     fn as_ip_addr_ref(&self) -> IpAddr<&'_ Self, &'_ Ipv6Packet<B>> {
@@ -312,7 +298,6 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
 
 impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
     type Builder = Ipv6PacketBuilder;
-    type VersionSpecificMeta = ();
 
     fn src_ip(&self) -> Ipv6Addr {
         Ipv6Header::src_ip(self)
@@ -339,9 +324,6 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
         Ipv6Packet::body(self)
     }
 
-    fn version_specific_meta(&self) -> () {
-        ()
-    }
     fn as_ip_addr_ref(&self) -> IpAddr<&'_ Ipv4Packet<B>, &'_ Self> {
         IpAddr::V6(self)
     }

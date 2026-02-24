@@ -418,6 +418,9 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         original_dst_ip: SocketIpAddr<Ipv4Addr>,
         (header_len, fragment_type): (usize, Ipv4FragmentType),
     ) {
+        if fragment_type != Ipv4FragmentType::InitialFragment {
+            return;
+        }
         icmp::send_icmpv4_host_unreachable(
             self,
             bindings_ctx,
@@ -431,7 +434,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
             original_dst_ip,
             frame,
             header_len,
-            fragment_type,
             // TODO(https://fxbug.dev/400977853): The pending frame this ICMP message is
             // responding to can either be generated from ourselves or being forwarded.
             // In the former case, the marks are irrelevant because this message will end

@@ -571,6 +571,8 @@ mod testutil {
             _dst_ip: SpecifiedAddr<I::Addr>,
             _original_packet: B,
             _error: I::IcmpError,
+            _header_len: usize,
+            _proto: I::Proto,
             _marks: &Marks,
         ) {
             unimplemented!()

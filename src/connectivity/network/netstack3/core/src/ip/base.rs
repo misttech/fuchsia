@@ -25,8 +25,8 @@ use netstack3_icmp_echo::{
 use netstack3_ip::device::{self, IpDeviceBindingsContext, IpDeviceIpExt};
 use netstack3_ip::gmp::{IgmpCounters, MldCounters};
 use netstack3_ip::icmp::{
-    self, IcmpIpTransportContext, IcmpRxCounters, IcmpState, IcmpTxCounters, InnerIcmpContext,
-    InnerIcmpv4Context, NdpCounters,
+    self, IcmpIpTransportContext, IcmpRxCounters, IcmpState, IcmpTxCounters, Icmpv4Error,
+    Icmpv6Error, InnerIcmpContext, InnerIcmpv4Context, NdpCounters,
 };
 use netstack3_ip::multicast_forwarding::MulticastForwardingState;
 use netstack3_ip::raw::RawIpSocketMap;
@@ -36,7 +36,7 @@ use netstack3_ip::{
     IpRouteTablesContext, IpStateContext, IpStateInner, IpTransportContext,
     IpTransportDispatchContext, LocalDeliveryPacketInfo, MulticastMembershipHandler, PmtuCache,
     PmtuContext, ResolveRouteError, ResolvedRoute, RoutingTable, RoutingTableId, RulesTable,
-    SocketMetadata, TransportReceiveError,
+    SocketMetadata,
 };
 use netstack3_sync::rc::Primary;
 use netstack3_tcp::{DualStackTcpSocketId, TcpBindingsTypes, TcpIpTransportContext};
@@ -509,7 +509,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         body: B,
         info: &LocalDeliveryPacketInfo<Ipv4, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), TransportReceiveError> {
+    ) -> Result<(), Icmpv4Error> {
         match proto {
             Ipv4Proto::Icmp => {
                 <IcmpIpTransportContext as IpTransportContext<Ipv4, _, _>>::receive_ip_packet(
@@ -555,7 +555,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 .map_err(|(_body, err)| err)
             }
             Ipv4Proto::Proto(IpProto::Reserved) | Ipv4Proto::Other(_) => {
-                Err(TransportReceiveError::ProtocolUnsupported)
+                Err(Icmpv4Error::ProtocolUnreachable)
             }
         }
     }
@@ -615,7 +615,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         body: B,
         info: &LocalDeliveryPacketInfo<Ipv6, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
-    ) -> Result<(), TransportReceiveError> {
+    ) -> Result<(), Icmpv6Error> {
         match proto {
             Ipv6Proto::Icmpv6 => {
                 <IcmpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
@@ -661,7 +661,8 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
                 .map_err(|(_body, err)| err)
             }
             Ipv6Proto::Proto(IpProto::Reserved) | Ipv6Proto::Other(_) => {
-                Err(TransportReceiveError::ProtocolUnsupported)
+                // IPv6 packet parser rejects with unrecognized next header.
+                unreachable!()
             }
         }
     }
@@ -723,17 +724,12 @@ impl<
                     err,
                 )
             }
-            // TODO(joshlf): Once all IP protocol numbers are covered,
-            // remove this default case.
-            _ => <() as IpTransportContext<Ipv4, _, _>>::receive_icmp_error(
-                self,
-                bindings_ctx,
-                device,
-                original_src_ip,
-                original_dst_ip,
-                original_body,
-                err,
-            ),
+            Ipv4Proto::Igmp | Ipv4Proto::Other(_) | Ipv4Proto::Proto(IpProto::Reserved) => {
+                trace!(
+                    "Received ICMP error message ({:?}) for unsupported IP protocol: {:?}",
+                    err, original_proto
+                );
+            }
         }
     }
 
@@ -801,17 +797,12 @@ impl<
                     err,
                 )
             }
-            // TODO(joshlf): Once all IP protocol numbers are covered,
-            // remove this default case.
-            _ => <() as IpTransportContext<Ipv6, _, _>>::receive_icmp_error(
-                self,
-                bindings_ctx,
-                device,
-                original_src_ip,
-                original_dst_ip,
-                original_body,
-                err,
-            ),
+            Ipv6Proto::NoNextHeader | Ipv6Proto::Other(_) | Ipv6Proto::Proto(IpProto::Reserved) => {
+                trace!(
+                    "Received ICMPv6 error message ({:?}) for unsupported IP protocol: {:?}",
+                    err, original_next_header
+                );
+            }
         }
     }
 

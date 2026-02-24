@@ -109,6 +109,9 @@ pub struct IpCounters<I: IpCountersIpExt, C: CounterRepr = Counter> {
     pub fragmentation: FragmentationCounters<C>,
     /// Number of packets filtered out by the socket egress filter.
     pub socket_egress_filter_dropped: C,
+    /// Number of packets that could not be parsed and had to be dropped
+    /// without sending an ICMP response.
+    pub unparsable_packet: C,
 }
 
 impl<I: IpCountersIpExt> Inspectable for IpCounters<I> {
@@ -142,6 +145,7 @@ impl<I: IpCountersIpExt> Inspectable for IpCounters<I> {
             invalid_cached_conntrack_entry,
             fragmentation,
             socket_egress_filter_dropped,
+            unparsable_packet,
         } = self;
         inspector.record_child("PacketTx", |inspector| {
             inspector.record_counter("Sent", send_ip_packet);
@@ -162,6 +166,7 @@ impl<I: IpCountersIpExt> Inspectable for IpCounters<I> {
             inspector.record_counter("DeliveredUnicast", deliver_unicast);
             inspector.record_counter("DeliveredMulticast", deliver_multicast);
             inspector.record_counter("InvalidCachedConntrackEntry", invalid_cached_conntrack_entry);
+            inspector.record_counter("UnparsablePacket", unparsable_packet);
             inspector.delegate_inspectable(version_rx);
         });
         inspector.record_child("Forwarding", |inspector| {
