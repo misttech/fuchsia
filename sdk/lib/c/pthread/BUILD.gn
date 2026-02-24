@@ -60,6 +60,8 @@ llvm_libc_source_set("attr") {
     ":attr.header",
     "../threads:thread",
   ]
+
+  deps = [ "../threads:thread-storage" ]
 }
 
 llvm_libc_source_set("name") {

@@ -58,6 +58,8 @@ struct MaybeStack<T, Enabled> : MaybeStackBase<true> {
   constexpr MaybeStack() = default;
   constexpr MaybeStack(const MaybeStack&) = default;
 
+  constexpr explicit MaybeStack(T x) : value{x} {}
+
   constexpr MaybeStack& operator=(const MaybeStack&) = default;
   constexpr MaybeStack& operator=(T new_value) {
     value = new_value;

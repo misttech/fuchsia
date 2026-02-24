@@ -190,6 +190,7 @@ libc_source_set("ld-on-tls-segments") {
   sources = [ "ld-on-tls-segments.cc" ]
   deps = [
     "../threads:thread",
+    "../threads:thread-storage",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
   libc_deps = [ ":ld-abi" ]

@@ -48,6 +48,16 @@ class PageRoundedSize {
     return other;
   }
 
+  constexpr PageRoundedSize& operator-=(PageRoundedSize other) {
+    rounded_size_ -= other.rounded_size_;
+    return *this;
+  }
+
+  constexpr PageRoundedSize operator-(PageRoundedSize other) const {
+    other.rounded_size_ = rounded_size_ - other.rounded_size_;
+    return other;
+  }
+
   constexpr PageRoundedSize& operator*=(size_t other) {
     rounded_size_ *= other;
     return *this;
@@ -59,18 +69,12 @@ class PageRoundedSize {
     return result;
   }
 
-  constexpr PageRoundedSize& operator/=(size_t other) {
-    rounded_size_ /= other;
+  PageRoundedSize& operator/=(size_t other) {
+    *this = *this / other;
     return *this;
   }
 
-  constexpr PageRoundedSize operator/(size_t other) const {
-    PageRoundedSize result;
-    result.rounded_size_ = rounded_size_ / other;
-    return result;
-  }
-
-  constexpr bool operator==(const PageRoundedSize&) const = default;
+  PageRoundedSize operator/(size_t other) const { return PageRoundedSize{rounded_size_ / other}; }
 
   constexpr auto operator<=>(const PageRoundedSize&) const = default;
 
@@ -114,14 +118,6 @@ class GuardedPageBlock {
   constexpr GuardedPageBlock() = default;
   GuardedPageBlock(const GuardedPageBlock&) = delete;
 
-  // This transfers ownership that's been stored using in legacy C code by
-  // using TakeIovec() to move an earlier GuardedPageBlock object.
-  GuardedPageBlock(iovec iov, zx::unowned_vmar vmar)
-      : start_{reinterpret_cast<uintptr_t>(iov.iov_base)}, vmar_{std::move(vmar)} {
-    size_.rounded_size_ = iov.iov_len;  // The size was already page-rounded.
-    assert(PageRoundedSize{iov.iov_len} == size_);
-  }
-
   GuardedPageBlock(GuardedPageBlock&& other) noexcept
       : start_{std::exchange(other.start_, 0)},
         size_{std::exchange(other.size_, {})},
@@ -160,15 +156,6 @@ class GuardedPageBlock {
   size_t size_bytes() const { return size_.get(); }
 
   const zx::vmar& vmar() const { return *vmar_; }
-
-  // This transfers ownership to the returned iovec.  This is only used for the
-  // legacy glue with C code that uses iovec to store regions to be unmapped.
-  // The object is left fully moved-from; callers must use vmar() first.
-  iovec TakeIovec() && {
-    vmar_ = {};
-    return {.iov_base = reinterpret_cast<void*>(std::exchange(start_, 0)),
-            .iov_len = std::exchange(size_, {}).get()};
-  }
 
  private:
   void Unmap();

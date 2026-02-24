@@ -57,8 +57,8 @@ zx::result<> ThreadDetach(Thread& thread) {
 
   // Move the ThreadStorage out of the Thread itself; it's inside that storage.
   // Then immediately let the storage object die, freeing the thread block.
-  [[maybe_unused]] auto storage = ThreadStorage::FromThread(thread, true);
-  assert(storage.vmar());
+  auto storage = ThreadStorage::FromThread(thread, true);
+  storage.AssertLive();
 
   return zx::ok();
 }

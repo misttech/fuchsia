@@ -13,6 +13,7 @@
 #include <mutex>
 
 #include "../threads/thread-list.h"
+#include "../threads/thread-storage.h"
 #include "asan_impl.h"
 #include "src/stdlib/exit.h"
 #include "threads_impl.h"
@@ -45,8 +46,8 @@ void ForwardSvc(zx::channel deferred) {
 void SanitizerStartup(const zx_startup_arguments_t& args) {
   StartupSanitizerModuleLoaded();
 
-  const iovec& stack = __pthread_self()->safe_stack;
-  __sanitizer_startup_hook(args.argc, args.argv, args.envp, stack.iov_base, stack.iov_len);
+  const std::span stack = ThreadStorage::ThreadMachineStack(*__pthread_self());
+  __sanitizer_startup_hook(args.argc, args.argv, args.envp, stack.data(), stack.size_bytes());
 }
 
 void BeforeCtors(zx::channel deferred, zx_startup_arguments_t args) {

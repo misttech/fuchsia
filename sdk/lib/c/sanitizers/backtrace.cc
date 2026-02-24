@@ -6,6 +6,7 @@
 
 #include <lib/arch/backtrace.h>
 
+#include "../threads/thread-storage.h"
 #include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -13,15 +14,15 @@ namespace LIBC_NAMESPACE_DECL {
 size_t BacktraceByFramePointer(std::span<uintptr_t> pcs) {
   struct IsOnStack {
     bool operator()(const arch::CallFrame* fp) const {
-      const iovec& stack = __pthread_self()->safe_stack;
-      if (stack.iov_len < sizeof(*fp)) [[unlikely]] {
+      std::span stack = ThreadStorage::ThreadMachineStack(*__pthread_self());
+      if (stack.size_bytes() < sizeof(*fp)) [[unlikely]] {
         // This should be impossible, but assume nothing in a critical
         // error-reporting path since this might be used after clobberation.
         return false;
       }
-      const uintptr_t base = reinterpret_cast<uintptr_t>(stack.iov_base);
+      const uintptr_t base = reinterpret_cast<uintptr_t>(stack.data());
       const uintptr_t frame = reinterpret_cast<uintptr_t>(fp);
-      return frame >= base && frame - base <= stack.iov_len - sizeof(*fp);
+      return frame >= base && frame - base <= stack.size_bytes() - sizeof(*fp);
     }
   };
   using FpBacktrace = arch::FramePointerBacktrace<IsOnStack>;
@@ -32,12 +33,11 @@ size_t BacktraceByFramePointer(std::span<uintptr_t> pcs) {
 #if __has_feature(shadow_call_stack)
 
 size_t BacktraceByShadowCallStack(std::span<uintptr_t> pcs) {
-  const iovec& shadow_call_stack_block = __pthread_self()->shadow_call_stack;
   return arch::StoreBacktrace(
       arch::ShadowCallStackBacktrace{
-          {static_cast<const uintptr_t*>(shadow_call_stack_block.iov_base),
-           shadow_call_stack_block.iov_len / sizeof(uintptr_t)},
-          arch::GetShadowCallStackPointer()},
+          ThreadStorage::ThreadShadowCallstack(*__pthread_self()),
+          arch::GetShadowCallStackPointer(),
+      },
       pcs, __builtin_return_address(0));
 }
 

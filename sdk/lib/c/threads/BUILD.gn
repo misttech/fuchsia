@@ -22,13 +22,12 @@ llvm_libc_source_set("threads") {
     ":thread-create",
     ":thread-exit",
     ":thread-join",
+    ":thread-storage",
   ]
 
   # Used by thrd_create*.
   non_test_deps = [ "../zircon:zx-name.printf" ]
   testonly_deps = [ "../zircon:zx-name.printf.testonly" ]
-
-  test_deps = [ ":thread-storage-tests" ]
 }
 
 # This doesn't need to be libc_source_set() because it's just a header.
@@ -72,13 +71,11 @@ libc_source_set("thread-storage") {
 # everywhere that the ThreadStorage destructor and such are needed.
 libc_source_set("thread-storage-allocate") {
   sources = [ "thread-storage-allocate.cc" ]
-  deps = [
-    ":thread-storage",
-    "//zircon/third_party/ulib/musl:musl_internal",
-  ]
+  libc_deps = [ ":thread-storage" ]
+  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
 }
 
-libc_test("thread-storage-tests") {
+libc_test("thread-storage.unittests") {
   sources = [ "thread-storage-tests.cc" ]
   include_dirs = [ "//sdk/lib/ld/test/modules" ]
   deps = [

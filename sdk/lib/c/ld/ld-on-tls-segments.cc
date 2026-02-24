@@ -4,6 +4,7 @@
 
 #include <lib/ld/tls.h>
 
+#include "../threads/thread-storage.h"
 #include "../threads/thread.h"
 #include "ld-abi.h"
 #include "threads_impl.h"
@@ -12,11 +13,7 @@ namespace LIBC_NAMESPACE_DECL {
 
 void OnTlsSegments(Thread& thread, sanitizer_memory_snapshot_callback_t* callback,
                    void* callback_arg) {
-  const size_t page_size = _zx_system_get_page_size();
-  const std::span thread_block{
-      static_cast<std::byte*>(thread.tcb_region.iov_base) + page_size,
-      thread.tcb_region.iov_len - (page_size * 2),
-  };
+  const std::span thread_block = ThreadStorage::ThreadThreadBlock(thread);
   std::byte* const tp = static_cast<std::byte*>(pthread_to_tp(&thread));
   const size_t tp_offset = tp - thread_block.data();
   auto tls_segments = ld::TlsInitialExecSegments(_ld_abi, thread_block, tp_offset);

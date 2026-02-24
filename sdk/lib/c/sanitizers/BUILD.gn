@@ -24,7 +24,9 @@ if (zircon_toolchain != false) {
       ":backtrace",
       ":debugdata",
       ":memory-snapshot",
+      "../threads:thread-storage",
     ]
+
     deps = [
       "//zircon/system/ulib/zircon-internal",
       "//zircon/system/ulib/zx",
@@ -37,7 +39,7 @@ if (zircon_toolchain != false) {
     # "sancov" tag so this code can detect it.
     if (toolchain_variant.tags + [ "sancov" ] - [ "sancov" ] !=
         toolchain_variant.tags) {
-      deps += [ ":sancov-stubs" ]
+      libc_deps += [ ":sancov-stubs" ]
     }
   }
 
@@ -68,6 +70,7 @@ libc_source_set("memory-snapshot") {
     "../ld:writable-segments",
     "../threads:thread",
     "../threads:thread-list",
+    "../threads:thread-storage",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
@@ -76,6 +79,7 @@ libc_source_set("memory-snapshot") {
 libc_source_set("backtrace") {
   sources = [ "backtrace.cc" ]
   public = [ "backtrace.h" ]
+  libc_deps = [ "../threads:thread-storage" ]
   deps = [
     "//zircon/kernel/lib/arch",
     "//zircon/third_party/ulib/musl:musl_internal",

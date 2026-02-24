@@ -126,25 +126,22 @@ struct pthread {
   struct pthread* next;
   struct pthread** prevp;
 
-  // The _unowned_ process handle that is used to create new threads in
-  // ThreadCreate.
-  zx_handle_t process_handle;
-
+  // These `storage_*` fields all "belong" to the ThreadStorage class.
+  // Only it accesses them.
+  size_t storage_stack_size, storage_guard_size, storage_thread_block_size;
+  uintptr_t storage_thread_block_address, storage_machine_stack_address;
+#if HAVE_UNSAFE_STACK
+  uintptr_t storage_unsafe_stack_address;
+#endif
+#if HAVE_SHADOW_CALL_STACK
+  uintptr_t storage_shadow_call_stack_address;
+#endif
   // The _unowned_ VMAR handle used to unmap the stack and TCB regions.
   zx_handle_t storage_vmar;
 
-  // The *_region fields describe whole memory regions reserved,
-  // including guard pages (for deallocation).  safe_stack and
-  // unsafe_stack describe just the actual stack block between the
-  // guards.
-  struct iovec tcb_region;
-  struct iovec safe_stack, safe_stack_region;
-#if HAVE_UNSAFE_STACK
-  struct iovec unsafe_stack, unsafe_stack_region;
-#endif
-#if HAVE_SHADOW_CALL_STACK
-  struct iovec shadow_call_stack, shadow_call_stack_region;
-#endif
+  // The _unowned_ process handle that is used to create new threads in
+  // ThreadCreate.
+  zx_handle_t process_handle;
 
   struct tls_dtor* tls_dtors;
   void* tsd[PTHREAD_KEYS_MAX];

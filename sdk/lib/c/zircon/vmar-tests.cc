@@ -167,12 +167,15 @@ TEST(LibcVmarTests, GuardedPageBlock) {
       ASSERT_OK(
           AllocationVmar()->unmap(reinterpret_cast<uintptr_t>(mapped.data()), mapped.size_bytes()));
     });
-    iovec iov = std::move(block).TakeIovec();
+
+    zx::unowned vmar{block.vmar()};
+    EXPECT_EQ(vmar, AllocationVmar());
+    uintptr_t address = block.release();
     EXPECT_EQ(block.size_bytes(), 0u);
+    EXPECT_FALSE(block.vmar());
     block.reset();  // Does nothing, mapped pointer still valid.
 
-    EXPECT_EQ(iov.iov_len, mapped.size_bytes());
-    EXPECT_EQ(iov.iov_base, mapped.data());
+    EXPECT_EQ(reinterpret_cast<std::byte*>(address), mapped.data());
 
     for (size_t i = 0; i < mapped.size(); ++i) {
       EXPECT_EQ(Launder(&mapped[i]), std::byte{}, "mapped[%zu]", i);

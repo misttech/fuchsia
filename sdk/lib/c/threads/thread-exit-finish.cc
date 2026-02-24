@@ -48,11 +48,14 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
   // contain valid pointers.
   std::atomic_signal_fence(std::memory_order_seq_cst);
 
-  // Now actually free the stacks.  But first, collect the copy of the
-  // (unowned) root VMAR handle that was saved there.  This avoids a symbolic
-  // dependency on the global stash of "the" root VMAR handle.
-  zx::unowned_vmar unmap_vmar = old_storage->vmar().borrow();
+  // Now actually free the stacks.
   old_storage.reset();
+
+  // The same VMAR handle used to map the thread block will be used to unmap
+  // it.  It's owned by the user (or is just the zx::vmar::root_self() handle)
+  // and must have been kept alive at least for the lifetime of this thread.
+  // If the handle is no longer valid, we'll crash instead of a detached exit.
+  zx::unowned_vmar unmap_vmar{self.storage_vmar};
 
   // Enter EXITING state, and see what sort of cleanup should happen based on
   // the old state.  This deallocates the TCB region too for the detached case.
@@ -66,9 +69,10 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
     case Thread::Lifecycle::DETACHED: {
       AllThreads().erase(self);
       zx::thread handle = self.TakeHandle(Thread::Lifecycle::EXITING);
-      const auto base = reinterpret_cast<uintptr_t>(self.tcb_region.iov_base);
-      const size_t size = self.tcb_region.iov_len;
-      _zx_vmar_unmap_handle_close_thread_exit(unmap_vmar->get(), base, size, handle.release());
+      // The address and size stored for the thread block include the full VMAR
+      // around it; the unmap implicitly destroys that VMAR.
+      _zx_vmar_unmap_handle_close_thread_exit(unmap_vmar->get(), self.storage_thread_block_address,
+                                              self.storage_thread_block_size, handle.release());
       CRASH_WITH_UNIQUE_BACKTRACE();
       break;
     }
@@ -137,24 +141,24 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
 // This can use some part of the thread block that won't overlap with the
 // actual Thread object that stays valid until a join is complete.
 uintptr_t FinalExitSp(Thread& self) {
-  // The thread block includes one-page guards before and after its usable pages.
-  const size_t page_size = zx_system_get_page_size();
-  uintptr_t tcb_base = reinterpret_cast<uintptr_t>(self.tcb_region.iov_base) + page_size;
-  uintptr_t tcb_size = self.tcb_region.iov_len - (page_size * 2);
+  const std::span thread_block = ThreadStorage::ThreadThreadBlock(self);
 
   if constexpr (elfldltl::TlsTraits<>::kTlsNegative) {
     // The thread descriptor is at the end of the region, so the space
     // before it (formerly TLS) is available as the temporary stack.
-    uintptr_t sp = reinterpret_cast<uintptr_t>(&self) & -kStackAlignment;
-    assert(sp > tcb_base);
-    assert(sp - tcb_base >= kMinimumStack);
+    const uintptr_t sp = reinterpret_cast<uintptr_t>(&self) & -kStackAlignment;
+    [[maybe_unused]] const uintptr_t thread_block_base =
+        reinterpret_cast<uintptr_t>(thread_block.data());
+    assert(sp > thread_block_base);
+    assert(sp - thread_block_base >= kMinimumStack);
     return sp;
   } else {
     // The thread descriptor is at the start of the region, so the rest of
     // the space up to the guard page is available as the temporary stack.
-    uintptr_t sp = tcb_base + tcb_size;
+    const uintptr_t sp = reinterpret_cast<uintptr_t>(  //
+        thread_block.data() + thread_block.size());
     assert(sp % kStackAlignment == 0);
-    assert(tcb_size >= sizeof(Thread) + kMinimumStack);
+    assert(thread_block.size_bytes() >= sizeof(Thread) + kMinimumStack);
     return sp;
   }
 }

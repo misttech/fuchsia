@@ -102,9 +102,8 @@ void AsmTrampoline(uintptr_t arg1, uintptr_t arg2);
 }
 
 uint64_t* ThreadStackLimit(Thread& thread) {
-  auto* base = reinterpret_cast<std::byte*>(thread.safe_stack.iov_base);
-  std::byte* limit = base + thread.safe_stack.iov_len;
-  return reinterpret_cast<uint64_t*>(limit);
+  const std::span stack = ThreadStorage::ThreadMachineStack(thread);
+  return stack.data() + stack.size();
 }
 
 class StartTrampoline {
@@ -139,8 +138,8 @@ class StartTrampoline {
     return thread_handle()->get();
 #else
     // On other machines, the initial shadow call stack pointer goes there.
-    const uintptr_t shadow_call_stack_sp =
-        reinterpret_cast<uintptr_t>(thread_.shadow_call_stack.iov_base);
+
+    uintptr_t shadow_call_stack_sp = thread_.storage_shadow_call_stack_address;
     // The first shadow call stack slot is left as zero so that a backtrace
     // can simply read downwards from the current shadow-call-stack pointer
     // and stop at the zero slot, without needing to know the base address to

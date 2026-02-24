@@ -30,21 +30,43 @@ concept BlockType = requires(T& t, ThreadStorage& storage, PageRoundedSize tls_s
   { t.Map(std::as_const(storage), tls_size, vmar->borrow(), vmo).is_ok() } -> std::same_as<bool>;
 
   // Commits the block to the successfully-allocated ThreadStorage object.
-  { t.Commit(storage) };
+  { storage.CommitBlock(t) };
 };
 
 template <BlockType T>
 using BlockTypeCheck = T;
 
-template <auto Member>
+template <auto Vmar, auto Address>
 class Block;
 
-template <auto Member>
-using BlockFor = BlockTypeCheck<Block<Member>>;
+template <auto Vmar, auto Address>
+using BlockFor = BlockTypeCheck<Block<Vmar, Address>>;
+
+template <typename T>
+concept ForThreadBlock = !SomeStack<T> && !NoStack<T>;
+
+template <auto Vmar, auto Address>
+class BlockBase {
+ public:
+  void Commit(auto& vmars, auto& addresses) {
+    vmars.*Vmar = block_.vmar().borrow();
+    addresses.*Address = block_.release();
+  }
+
+ protected:
+  template <typename T = std::byte>
+  auto Allocate(zx::unowned_vmar vmar, AllocationVmo& vmo, PageRoundedSize size,
+                PageRoundedSize guard_below, PageRoundedSize guard_above) {
+    return block_.Allocate<T>(vmar->borrow(), vmo, size, guard_below, guard_above);
+  }
+
+ private:
+  GuardedPageBlock block_;
+};
 
 // This handles each of the stack blocks.
-template <SomeStack T, T ThreadStorage::* Member>
-class Block<Member> {
+template <class VS, class AS, SomeStack V, SomeStack A, V VS::* Vmar, A AS::* Address>
+class Block<Vmar, Address> : public BlockBase<Vmar, Address> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return storage.stack_size();
@@ -53,25 +75,19 @@ class Block<Member> {
   auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, zx::unowned_vmar vmar,
            AllocationVmo& vmo) {
     PageRoundedSize guard_below, guard_above;
-    if constexpr (kStackGrowsUp<T>) {
+    if constexpr (kStackGrowsUp<A>) {
       guard_above = storage.guard_size();
     } else {
       guard_below = storage.guard_size();
     }
-
-    return block_.Allocate<uint64_t>(vmar->borrow(), vmo, storage.stack_size(), guard_below,
-                                     guard_above);
+    return this->template Allocate<uint64_t>(  //
+        vmar->borrow(), vmo, storage.stack_size(), guard_below, guard_above);
   }
-
-  void Commit(ThreadStorage& storage) { storage.*Member = block_.release(); }
-
- private:
-  GuardedPageBlock block_;
 };
 
 // This handles shadow_call_stack_ or unsafe_stack_ when it's a no-op.
-template <NoStack T, T ThreadStorage::* Member>
-class Block<Member> {
+template <class VS, class AS, NoStack V, NoStack A, V VS::* Vmar, A AS::* Address>
+class Block<Vmar, Address> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return {};
@@ -82,14 +98,14 @@ class Block<Member> {
     return zx::ok(std::span<uint64_t>{});
   }
 
-  void Commit(ThreadStorage& storage) {}
+  void Commit(auto& vmars, auto& addresses) {}
 };
 
 // This handles thread_block_, which includes both the TCB and the
 // (runtime-dynamic) static TLS segments.  It always gets one-page guards both
 // above and below, regardless of the configured guard size for the stacks.
-template <GuardedPageBlock ThreadStorage::* Member>
-class Block<Member> {
+template <class VS, class AS, ForThreadBlock V, ForThreadBlock A, V VS::* Vmar, A AS::* Address>
+class Block<Vmar, Address> : public BlockBase<Vmar, Address> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return tls_size;
@@ -98,13 +114,8 @@ class Block<Member> {
   auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, zx::unowned_vmar vmar,
            AllocationVmo& vmo) {
     const PageRoundedSize page_size = PageRoundedSize::Page();
-    return block_.Allocate(vmar->borrow(), vmo, tls_size, page_size, page_size);
+    return this->Allocate(vmar->borrow(), vmo, tls_size, page_size, page_size);
   }
-
-  void Commit(ThreadStorage& storage) { storage.*Member = std::move(block_); }
-
- private:
-  GuardedPageBlock block_;
 };
 
 // This is the result of computations for allocating the thread block.  The
@@ -297,6 +308,13 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
 zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
                                             std::string_view vmo_name, PageRoundedSize stack,
                                             PageRoundedSize guard) {
+  using ThreadBlock = Block<&decltype(vmar_)::thread_block, &decltype(address_)::thread_block>;
+  using MachineStackBlock =
+      Block<&decltype(vmar_)::machine_stack, &decltype(address_)::machine_stack>;
+  using UnsafeStackBlock = Block<&decltype(vmar_)::unsafe_stack, &decltype(address_)::unsafe_stack>;
+  using ShadowCallStackBlock =
+      Block<&decltype(vmar_)::shadow_call_stack, &decltype(address_)::shadow_call_stack>;
+
   assert(*allocate_from);
   assert(stack);
   assert(!vmo_name.empty());
@@ -307,12 +325,12 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
 
   stack_size_ = stack;
   guard_size_ = guard;
+  thread_block_size_ = thread_block_size + (PageRoundedSize::Page() * 2);
 
   std::span<std::byte> thread_block;
 
   // The VMO space and mapping is handled the same for each block.
-  auto allocate_blocks = [&](Block<&ThreadStorage::thread_block_> tcb,
-                             BlockType auto... stacks) -> zx::result<> {
+  auto allocate_blocks = [&](ThreadBlock tcb, BlockType auto... stacks) -> zx::result<> {
     // Allocate a single VMO for all the blocks.
     const PageRoundedSize vmo_size =
         tcb.VmoSize(*this, thread_block_size) + (stacks.VmoSize(*this, thread_block_size) + ...);
@@ -326,7 +344,7 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
       if (result.is_error()) [[unlikely]] {
         return result.take_error();
       }
-      if constexpr (std::is_same_v<B, Block<&ThreadStorage::thread_block_>>) {
+      if constexpr (std::is_same_v<B, ThreadBlock>) {
         thread_block = result.value();
       }
       return fit::ok();
@@ -351,8 +369,8 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
 
     // Now that everything is mapped in, the ownership can move into this
     // ThreadStorage object.  Everything will be cleaned up on destruction.
-    tcb.Commit(*this);
-    (stacks.Commit(*this), ...);
+    CommitBlock(tcb);
+    (CommitBlock(stacks), ...);
 
     // Set the VMO's name to ease debugging.  The (only) VMO handle is dropped
     // after on return, so there won't be any way to change the name later.
@@ -360,11 +378,8 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
   };
 
   // Allocate all the blocks together in a single VMO and map each separately.
-  if (zx::result<> result = allocate_blocks(        //
-          Block<&ThreadStorage::thread_block_>{},   //
-          Block<&ThreadStorage::machine_stack_>{},  //
-          Block<&ThreadStorage::unsafe_stack_>{},   //
-          Block<&ThreadStorage::shadow_call_stack_>{});
+  if (zx::result<> result = allocate_blocks(  //
+          ThreadBlock{}, MachineStackBlock{}, UnsafeStackBlock{}, ShadowCallStackBlock{});
       result.is_error()) [[unlikely]] {
     return result.take_error();
   }

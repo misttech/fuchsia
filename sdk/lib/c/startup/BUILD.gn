@@ -319,10 +319,13 @@ libc_source_set("start-main") {
   public_deps = [ ":headers" ]
 
   sources = [ "start-main.cc" ]
-  deps = [
+  libc_deps = [
     ":startup-trampoline",
     "../stdlib:exit",
     "../threads:thread-list",
+    "../threads:thread-storage",
+  ]
+  deps = [
     "//sdk/lib/ld:fuchsia-debugdata",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]

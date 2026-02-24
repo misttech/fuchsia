@@ -6,109 +6,137 @@
 
 #include <zircon/assert.h>
 
-#include <array>
+#include <cinttypes>
 #include <utility>
 
 #include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
+namespace {
+
+void Unmap(zx::unowned_vmar& vmar, uintptr_t& base, PageRoundedSize size) {
+  if (base != 0) {
+    zx::result result = zx::make_result(vmar->unmap(base, size.get()));
+    ZX_ASSERT_MSG(result.is_ok(), "zx_vmar_unmap(%#" PRIx32 ", %#" PRIxPTR ", %#zx: %s",
+                  vmar->get(), base, size.get(), result.status_string());
+    vmar = {};
+    base = 0;
+  }
+}
+
+}  // namespace
 
 void ThreadStorage::FreeStacks() {
-  auto unmap = [this, block_size = stack_size_ + guard_size_](uintptr_t base) {
-    if (base != 0) {
-      assert(thread_block_.vmar());
-      zx::result result = zx::make_result(thread_block_.vmar().unmap(base, block_size.get()));
-      ZX_ASSERT_MSG(result.is_ok(), "zx_vmar_unmap: %s", result.status_string());
-    }
+  auto unmap = [size = stack_size_ + guard_size_](zx::unowned_vmar& vmar, uintptr_t& base) {
+    Unmap(vmar, base, size);
   };
-  OnStack(machine_stack_, unmap);
-  OnStack(unsafe_stack_, unmap);
-  OnStack(shadow_call_stack_, unmap);
+  OnStacks(unmap, vmar_, address_);
+}
+
+ThreadStorage::~ThreadStorage() {
+  FreeStacks();
+
+  // The thread block is destroyed last.  The address and size stored cover the
+  // whole VMAR that contains the guard regions; the unmap implicitly destroys
+  // that VMAR.  **NOTE:** The Thread object itself resides inside the thread
+  // block, so the block must not be reclaimed until the ThreadStorage has been
+  // moved out of the Thread!  FreeStacks() can be called first to free up most
+  // of the storage while the Thread object needs to stay alive (until join or
+  // detached final-exit).
+  Unmap(vmar_.thread_block, address_.thread_block, thread_block_size_);
 }
 
 // Translate from the legacy C struct representation for ownership.
 ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) {
-  using Sizes = std::array<size_t, 2>;  // Stack size, guard size.
-  constexpr auto infer_sizes = [](iovec stack, iovec region, bool grows_up = false) -> Sizes {
-    assert(PageRoundedSize{stack.iov_len}.get() == stack.iov_len);
-    assert(PageRoundedSize{region.iov_len}.get() == region.iov_len);
-    assert(stack.iov_len <= region.iov_len);
-    assert(stack.iov_base >= region.iov_base);
-    if (stack.iov_base == region.iov_base) {
-      assert(grows_up || stack.iov_len == region.iov_len);
-    } else {
-      assert(!grows_up);
-      assert(reinterpret_cast<uintptr_t>(stack.iov_base) -
-                 reinterpret_cast<uintptr_t>(region.iov_base) ==
-             region.iov_len - stack.iov_len);
-    }
-    return {stack.iov_len, region.iov_len - stack.iov_len};
+  constexpr auto take_vmar = [](zx_handle_t& storage_vmar) {
+    zx::unowned_vmar vmar{std::exchange(storage_vmar, ZX_HANDLE_INVALID)};
+    assert(*vmar);
+    return vmar;
   };
 
-  constexpr auto take_stack = [](iovec& stack, iovec& region) -> uintptr_t {
-    stack = {};
-    return reinterpret_cast<uintptr_t>(std::exchange(region, {}).iov_base);
+  constexpr auto take_size = [](size_t& storage_size) {
+    PageRoundedSize size;
+    size.rounded_size_ = storage_size;
+    assert(PageRoundedSize{storage_size} == size);
+    storage_size = 0;
+    return size;
   };
 
-  Sizes stack_sizes = infer_sizes(thread.safe_stack, thread.safe_stack_region);
-#if HAVE_UNSAFE_STACK
-  assert(infer_sizes(thread.unsafe_stack, thread.unsafe_stack_region) == stack_sizes);
-#endif
-#if HAVE_SHADOW_CALL_STACK
-  assert(infer_sizes(thread.shadow_call_stack, thread.shadow_call_stack_region, true) ==
-         stack_sizes);
-#endif
-
-  const zx::unowned_vmar vmar{thread.storage_vmar};
-  assert(*vmar);
   ThreadStorage result;
-  result.thread_block_ = GuardedPageBlock{
-      take_thread_block ? std::exchange(thread.tcb_region, {}) : iovec{},
-      vmar->borrow(),
-  };
-  std::tie(result.stack_size_.rounded_size_, result.guard_size_.rounded_size_) = stack_sizes;
-  result.machine_stack_ = take_stack(thread.safe_stack, thread.safe_stack_region);
+  result.stack_size_ = take_size(thread.storage_stack_size);
+  result.guard_size_ = take_size(thread.storage_guard_size);
+
+  result.vmar_.machine_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.address_.machine_stack = std::exchange(thread.storage_machine_stack_address, 0);
+
 #if HAVE_UNSAFE_STACK
-  result.unsafe_stack_ = take_stack(thread.unsafe_stack, thread.unsafe_stack_region);
+  result.vmar_.unsafe_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.address_.unsafe_stack = std::exchange(thread.storage_unsafe_stack_address, 0);
 #endif
+
 #if HAVE_SHADOW_CALL_STACK
-  result.shadow_call_stack_ = take_stack(thread.shadow_call_stack, thread.shadow_call_stack_region);
+  result.vmar_.shadow_call_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.address_.shadow_call_stack = std::exchange(thread.storage_shadow_call_stack_address, 0);
 #endif
+
+  if (take_thread_block) {
+    result.thread_block_size_ = take_size(thread.storage_thread_block_size);
+    result.vmar_.thread_block = take_vmar(thread.storage_vmar);
+    result.address_.thread_block = std::exchange(thread.storage_thread_block_address, 0);
+  }
 
   return result;
 }
 
 void ThreadStorage::ToThread(Thread& thread) && {
-  auto take_stack = [this](iovec& stack, iovec& region, SomeStack auto& from,
-                           bool grows_up = false) {
-    uintptr_t& base = from.value;
-    assert(!stack.iov_base);
-    assert(stack.iov_len == 0);
-    assert(!region.iov_base);
-    assert(region.iov_len == 0);
-    region = {
-        .iov_base = reinterpret_cast<void*>(base),
-        .iov_len = (stack_size_ + guard_size_).get(),
-    };
-    stack = {
-        .iov_base = reinterpret_cast<void*>(base + (grows_up ? 0 : guard_size_.get())),
-        .iov_len = stack_size_.get(),
-    };
-    base = 0;
-  };
+  thread.storage_thread_block_size = std::exchange(thread_block_size_, {}).get();
+  thread.storage_thread_block_address = std::exchange(address_.thread_block, {});
+  thread.storage_vmar = std::exchange(vmar_.thread_block, {})->get();
 
-  // Copy the (unowned) VMAR handle from thread_block_ before it's moved-from.
-  thread.storage_vmar = vmar().get();
+  thread.storage_stack_size = std::exchange(stack_size_, {}).get();
+  thread.storage_guard_size = std::exchange(guard_size_, {}).get();
+  thread.storage_machine_stack_address = std::exchange(address_.machine_stack, {}).value;
+  assert(std::exchange(vmar_.machine_stack, {}).value->get() == thread.storage_vmar);
 
-  thread.tcb_region = std::move(thread_block_).TakeIovec();
-
-  take_stack(thread.safe_stack, thread.safe_stack_region, machine_stack_);
 #if HAVE_UNSAFE_STACK
-  take_stack(thread.unsafe_stack, thread.unsafe_stack_region, unsafe_stack_);
+  thread.storage_unsafe_stack_address = std::exchange(address_.unsafe_stack, {}).value;
+  assert(std::exchange(vmar_.unsafe_stack, {}).value->get() == thread.storage_vmar);
 #endif
+
 #if HAVE_SHADOW_CALL_STACK
-  take_stack(thread.shadow_call_stack, thread.shadow_call_stack_region, shadow_call_stack_, true);
+  thread.storage_shadow_call_stack_address = std::exchange(address_.shadow_call_stack, {}).value;
+  assert(std::exchange(vmar_.shadow_call_stack, {}).value->get() == thread.storage_vmar);
 #endif
+}
+
+std::span<uint64_t> ThreadStorage::ThreadMachineStack(const Thread& thread) {
+  return GrowsDownSpan(MachineStack<uintptr_t>{thread.storage_machine_stack_address},
+                       thread.storage_stack_size, thread.storage_guard_size);
+}
+
+std::span<uint64_t> ThreadStorage::ThreadUnsafeStack(const Thread& thread) {
+#if HAVE_UNSAFE_STACK
+  return GrowsDownSpan(IfSafeStack<uintptr_t>{thread.storage_unsafe_stack_address},
+                       thread.storage_stack_size, thread.storage_guard_size);
+#endif
+  return {};
+}
+
+std::span<uint64_t> ThreadStorage::ThreadShadowCallstack(const Thread& thread) {
+#if HAVE_SHADOW_CALL_STACK
+  return GrowsUpSpan(IfShadowCallStack<uintptr_t>{thread.storage_shadow_call_stack_address},
+                     thread.storage_stack_size);
+#endif
+  return {};
+}
+
+std::span<std::byte> ThreadStorage::ThreadThreadBlock(const Thread& thread) {
+  const PageRoundedSize page_size = PageRoundedSize::Page();
+  return {
+      reinterpret_cast<std::byte*>(  //
+          thread.storage_thread_block_address + page_size.get()),
+      thread.storage_thread_block_size - (page_size * 2).get(),
+  };
 }
 
 }  // namespace LIBC_NAMESPACE_DECL

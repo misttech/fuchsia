@@ -18,6 +18,7 @@
 #include "../dlfcn/dlfcn-abi.h"
 #include "../ld/writable-segments.h"
 #include "../threads/thread-list.h"
+#include "../threads/thread-storage.h"
 #include "../threads/thread.h"
 #include "threads_impl.h"
 
@@ -400,10 +401,8 @@ class MemorySnapshot {
                  sanitizer_memory_snapshot_callback_t* stacks_callback,
                  sanitizer_memory_snapshot_callback_t* tls_callback) {
     if (stacks_callback) {
-      ReportStack(tcb->safe_stack, thread_sp, stacks_callback);
-#if HAVE_UNSAFE_STACK
-      ReportStack(tcb->unsafe_stack, tcb->abi.unsafe_sp, stacks_callback);
-#endif
+      ReportStack(ThreadStorage::ThreadMachineStack(*tcb), thread_sp, stacks_callback);
+      ReportStack(ThreadStorage::ThreadUnsafeStack(*tcb), tcb->abi.unsafe_sp, stacks_callback);
       // The shadow call stack never contains pointers to mutable data,
       // so there is no reason to report its contents.
     }
@@ -461,22 +460,22 @@ class MemorySnapshot {
     }
   }
 
-  void ReportStack(const iovec& stack, uintptr_t sp,
+  void ReportStack(std::span<uint64_t> stack, uintptr_t sp,
                    sanitizer_memory_snapshot_callback_t* callback) {
-    if (!stack.iov_base || stack.iov_len == 0) {
+    if (stack.empty()) {
       return;
     }
-    uintptr_t base = reinterpret_cast<uintptr_t>(stack.iov_base);
-    uintptr_t limit = base + stack.iov_len;
+    uintptr_t base = reinterpret_cast<uintptr_t>(stack.data());
+    uintptr_t limit = reinterpret_cast<uintptr_t>(stack.data() + stack.size());
     // If the current SP is not woefully misaligned and falls within the
     // expected bounds, so just report the currently active range.  Otherwise
     // assume the thread is off on some other special stack and the whole
     // thread stack might actually be in use when it gets back to it.
     if (sp % sizeof(uintptr_t) == 0 && sp >= base && sp <= limit) {
       // Stacks grow downwards.
-      base = sp;
+      stack = stack.subspan((sp - base) / sizeof(stack[0]));
     }
-    callback(reinterpret_cast<void*>(base), limit - base, callback_arg_);
+    callback(stack.data(), stack.size_bytes(), callback_arg_);
   }
 
   void ReportTls(pthread* tcb, sanitizer_memory_snapshot_callback_t* callback) {

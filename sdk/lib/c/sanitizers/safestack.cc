@@ -4,30 +4,36 @@
 
 #include <zircon/compiler.h>
 
-#include <cstdint>
-
+#include "../threads/thread-storage.h"
 #include "threads_impl.h"
 
 // The compiler supports __builtin_* names that just call these.
+// There are no public declarations for them.
+extern "C" {
+void* __get_unsafe_stack_start();  // NOLINT(bugprone-reserved-identifier)
+void* __get_unsafe_stack_top();    // NOLINT(bugprone-reserved-identifier)
+void* __get_unsafe_stack_ptr();    // NOLINT(bugprone-reserved-identifier)
+}  // extern "C"
 
-extern "C" __EXPORT void* __get_unsafe_stack_start(void) {
-#if HAVE_UNSAFE_STACK
-  return __pthread_self()->unsafe_stack.iov_base;
-#endif
+namespace LIBC_NAMESPACE_DECL {
+
+extern "C" __EXPORT void* __get_unsafe_stack_start() {
+  return ThreadStorage::ThreadUnsafeStack(*__pthread_self()).data();
+}
+
+extern "C" __EXPORT void* __get_unsafe_stack_top() {
+  std::span stack = ThreadStorage::ThreadUnsafeStack(*__pthread_self());
+  if (stack.empty()) {
+    return nullptr;
+  }
+  return stack.data() + stack.size();
+}
+
+extern "C" __EXPORT void* __get_unsafe_stack_ptr() {
+  if constexpr (kSafeStackAbi) {
+    return reinterpret_cast<void*>(__pthread_self()->abi.unsafe_sp);
+  }
   return nullptr;
 }
 
-extern "C" __EXPORT void* __get_unsafe_stack_top(void) {
-#if HAVE_UNSAFE_STACK
-  const struct iovec* stack = &__pthread_self()->unsafe_stack;
-  return reinterpret_cast<std::byte*>(stack->iov_base) + stack->iov_len;
-#endif
-  return nullptr;
-}
-
-extern "C" __EXPORT void* __get_unsafe_stack_ptr(void) {
-#if HAVE_UNSAFE_STACK
-  return reinterpret_cast<void*>(__pthread_self()->abi.unsafe_sp);
-#endif
-  return nullptr;
-}
+}  // namespace LIBC_NAMESPACE_DECL

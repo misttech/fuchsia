@@ -76,8 +76,6 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
       return allocate.take_error();
     }
 
-    assert(storage.vmar().get() == allocation_vmar->get());
-
     // Take ownership of the Thread here, moving storage ownership into it.
     thread.reset(*allocate);
     std::move(storage).ToThread(*thread);
@@ -114,9 +112,9 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   thread->process_handle = self.process_handle;
 
   // The user callback supplies the void* given to the next user callback.
+  const std::span stack = ThreadStorage::ThreadMachineStack(*thread);
   thread->sanitizer_hook = SanitizerBeforeThreadCreateHook::Or<void*>{}(
-      ToC11Thread(*thread), attrs.detached, attrs.name.c_str(), thread->safe_stack.iov_base,
-      thread->safe_stack.iov_len);
+      ToC11Thread(*thread), attrs.detached, attrs.name.c_str(), stack.data(), stack.size_bytes());
 
   return zx::ok(std::move(thread));
 }

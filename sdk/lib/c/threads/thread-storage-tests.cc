@@ -159,11 +159,20 @@ void CheckThread(Thread* thread) {
 // down; guarded above if it grows up.
 template <bool GrowsUp = false>
 void CheckStack(std::string_view stack_name, PageRoundedSize stack_size, PageRoundedSize guard_size,
-                uint64_t* sp) {
+                uint64_t* sp, std::span<uint64_t> stack_span) {
   ASSERT_NE(sp, nullptr) << stack_name;
+
+  EXPECT_EQ(stack_span.size_bytes(), stack_size.get()) << stack_name;
+  if constexpr (GrowsUp) {
+    EXPECT_EQ(sp, stack_span.data()) << stack_name;
+  } else {
+    EXPECT_EQ(sp, stack_span.data() + stack_span.size()) << stack_name;
+  }
 
   const size_t stack_words = stack_size.get() / sizeof(uint64_t);
   std::span<uint64_t> stack{sp - (GrowsUp ? 0 : stack_words), stack_words};
+  EXPECT_EQ(stack.data(), stack_span.data());
+  EXPECT_EQ(stack.size(), stack_span.size());
 
   // If zero-initialized and mutable at both ends, probably in the middle too.
   // It could get slow to check every word or even every page.
@@ -198,18 +207,22 @@ void CheckStorage(PageRoundedSize stack_size, PageRoundedSize guard_size,
   if constexpr (kSafeStackAbi) {
     // The abi.unsafe_sp slot should already be filled in.
     CheckStack("unsafe stack", stack_size, guard_size,
-               reinterpret_cast<uint64_t*>(thread->abi.unsafe_sp));
+               reinterpret_cast<uint64_t*>(thread->abi.unsafe_sp), storage.unsafe_stack());
   } else {
     EXPECT_EQ(storage.unsafe_sp(), nullptr);
+    EXPECT_TRUE(storage.unsafe_stack().empty());
     EXPECT_EQ(thread->abi.unsafe_sp, 0u);
   }
 
-  CheckStack("machine stack", stack_size, guard_size, storage.machine_sp());
+  CheckStack("machine stack", stack_size, guard_size, storage.machine_sp(),
+             storage.machine_stack());
 
   if constexpr (kShadowCallStackAbi) {
-    CheckStack<true>("shadow call stack", stack_size, guard_size, storage.shadow_call_sp());
+    CheckStack<true>("shadow call stack", stack_size, guard_size, storage.shadow_call_sp(),
+                     storage.shadow_call_stack());
   } else {
     EXPECT_EQ(storage.shadow_call_sp(), nullptr);
+    EXPECT_TRUE(storage.shadow_call_stack().empty());
   }
 }
 
@@ -274,6 +287,10 @@ TEST_F(LibcThreadTests, ThreadStorage) {
   EXPECT_EQ(storage.machine_sp(), nullptr);
   EXPECT_EQ(storage.unsafe_sp(), nullptr);
   EXPECT_EQ(storage.shadow_call_sp(), nullptr);
+
+  EXPECT_TRUE(storage.machine_stack().empty());
+  EXPECT_TRUE(storage.unsafe_stack().empty());
+  EXPECT_TRUE(storage.shadow_call_stack().empty());
 
   // Allocate the most basic layout: one-page stacks, one-page guards.
   auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
