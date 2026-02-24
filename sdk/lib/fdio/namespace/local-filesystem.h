@@ -55,13 +55,14 @@ struct fdio_namespace : public fbl::RefCounted<fdio_namespace> {
   zx_status_t Readdir(const LocalVnode& vn, DirentIteratorState* state,
                       zxio_dirent_t* inout_entry) const;
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   // Open a remote object within the namespace using deprecated fuchsia.io/Directory.Open1.
   //
   // Returns an error if |path| does not exist.
   // Returns an error if |path| references a non-remote object.
-  // TODO(https://fxbug.dev/324111518): Remove this after all callers are migrated to |OpenRemote|.
   zx_status_t OpenRemoteDeprecated(std::string_view path, fuchsia_io::wire::OpenFlags flags,
                                    fidl::ServerEnd<fuchsia_io::Node> server_end) const;
+#endif
 
   // Open |path| relative to |vn| with specified |flags|. |path| may represent either a local node,
   // or a remote object.

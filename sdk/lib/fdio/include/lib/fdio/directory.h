@@ -83,6 +83,7 @@ zx_status_t fdio_open3_fd(const char* path, uint64_t flags, int* out_fd) ZX_AVAI
 zx_status_t fdio_open3_fd_at(int dir_fd, const char* path, uint64_t flags, int* out_fd)
     ZX_AVAILABLE_SINCE(16);
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 //                      Deprecated fuchsia.io/Directory.Open1 Functionality
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -140,6 +141,8 @@ zx_status_t fdio_open_fd(const char* path, uint32_t flags, int* out_fd)
 // See `fdio_open_at` for details.
 zx_status_t fdio_open_fd_at(int dir_fd, const char* path, uint32_t flags, int* out_fd)
     ZX_REMOVED_SINCE(1, 27, 28, "Use fdio_open3_fd_at instead.");
+
+#endif
 
 __END_CDECLS
 

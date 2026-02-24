@@ -288,14 +288,6 @@ unsafe extern "C" {
     pub fn fdio_ns_export_root(out: *mut *mut fdio_flat_namespace_t) -> zx_status_t;
 }
 unsafe extern "C" {
-    pub fn fdio_ns_open(
-        ns: *mut fdio_ns_t,
-        path: *const ::std::os::raw::c_char,
-        flags: u32,
-        request: zx_handle_t,
-    ) -> zx_status_t;
-}
-unsafe extern "C" {
     pub fn fdio_ns_open3(
         ns: *mut fdio_ns_t,
         path: *const ::std::os::raw::c_char,
