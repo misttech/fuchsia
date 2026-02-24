@@ -31,6 +31,7 @@
             protocol: [
                 "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
+                "fuchsia.diagnostics.system.SerialLogControl",
                 "fuchsia.hardware.pty.Device",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.pkg.PackageResolver-boot",

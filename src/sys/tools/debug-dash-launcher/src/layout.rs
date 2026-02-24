@@ -104,12 +104,20 @@ pub fn serve_process_launcher_and_resolver_svc_dir() -> Result<fio::DirectoryPro
     let mut fs = ServiceFs::new();
     fs.add_proxy_service::<fproc::LauncherMarker, ()>();
     fs.add_proxy_service::<fproc::ResolverMarker, ()>();
+    fs.add_proxy_service::<fdiagnostics::ArchiveAccessorMarker, ()>();
     fs.add_proxy_service::<fdiagnostics_host::ArchiveAccessorMarker, ()>();
     fs.add_proxy_service::<fdiagnostics::LogSettingsMarker, ()>();
     fs.add_proxy_service::<fsys::RealmQueryMarker, ()>();
     fs.add_service_at("fuchsia.sys2.RealmQuery.root", |chan: fidl::Channel| {
         let _ =
             fuchsia_component::client::connect_channel_to_protocol::<fsys::RealmQueryMarker>(chan);
+        Some(())
+    });
+    fs.add_service_at("fuchsia.diagnostics.system.SerialLogControl", |chan: fidl::Channel| {
+        let _ = fuchsia_component::client::connect_channel_to_protocol_at_path(
+            chan,
+            "/svc/fuchsia.diagnostics.system.SerialLogControl",
+        );
         Some(())
     });
     fs.serve_connection(server_end).map_err(|_| LauncherError::ProcessResolver)?;
@@ -173,10 +181,12 @@ async fn inject_process_launcher_and_resolver(svc_dir: fio::DirectoryProxy) -> f
 
     // Add diagnostics and realm query protocols for the log command.
     let protocols = [
+        fdiagnostics::ArchiveAccessorMarker::PROTOCOL_NAME,
         fdiagnostics_host::ArchiveAccessorMarker::PROTOCOL_NAME,
         fdiagnostics::LogSettingsMarker::PROTOCOL_NAME,
         fsys::RealmQueryMarker::PROTOCOL_NAME,
         "fuchsia.sys2.RealmQuery.root",
+        "fuchsia.diagnostics.system.SerialLogControl",
     ];
 
     for protocol in protocols {

@@ -176,7 +176,7 @@ impl Trampolines {
 // Technically the directories do not have to be named after the packages because clients "should"
 // be using the tool binaries indirectly via $PATH.
 fn escape_url_for_shell_path(url: &url::Url) -> String {
-    url.as_str().replace('/', "|").replace(':', "^")
+    url.as_str().trim_end_matches('/').replace('/', "|").replace(':', "^")
 }
 
 // For each package, create the trampoline specifications for each of its binaries.
@@ -197,6 +197,9 @@ async fn create_trampolines(
                     res.split('/').next_back().ok_or(LauncherError::BadUrl)?.to_string();
                 if rename_log && binary_name == "log" {
                     binary_name = "__log_real".to_string();
+                }
+                if rename_log && binary_name == "inspect" {
+                    binary_name = "__inspect_real".to_string();
                 }
                 let set = BTreeSet::from([Trampoline { contents, binary_name }]);
                 trampolines.insert(pkg_dir.url.clone(), set)?;
@@ -223,6 +226,9 @@ async fn create_trampolines(
                         if rename_log && binary_name == "log" {
                             binary_name = "__log_real".to_string();
                         }
+                        if rename_log && binary_name == "inspect" {
+                            binary_name = "__inspect_real".to_string();
+                        }
                         pkg_trampolines.insert(Trampoline { contents, binary_name });
                     }
                 }
@@ -231,11 +237,12 @@ async fn create_trampolines(
         }
     }
 
-    if let Some(moniker) = moniker {
+    if let Some(moniker) = &moniker {
         let builtin_url = url::Url::parse("fuchsia-builtin://dash-launcher").unwrap();
         let pkg_shell_name = escape_url_for_shell_path(&builtin_url);
         let log_script_path = format!("{BASE_TOOLS_PATH}/{pkg_shell_name}/log");
         let ss_script_path = format!("{BASE_TOOLS_PATH}/{pkg_shell_name}/set-severity");
+        let inspect_script_path = format!("{BASE_TOOLS_PATH}/{pkg_shell_name}/inspect");
 
         let log_contents = format!(
             "#!/.dash/internal/bin/sh {log_script_path}\n\
@@ -273,7 +280,17 @@ async fn create_trampolines(
         let ss_script =
             Trampoline { contents: ss_contents, binary_name: "set-severity".to_string() };
 
-        trampolines.insert(builtin_url, BTreeSet::from([log_script, ss_script]))?;
+        let inspect_contents = format!(
+            "#!/.dash/internal/bin/sh {inspect_script_path}\n\
+            [ \"$1\" = \"{inspect_script_path}\" ] && shift\n\
+            [ \"$1\" = \"inspect\" ] && shift\n\
+            /.dash/internal/bin/inspect show \"{moniker}\" \"$@\"\n\
+            exit $?\n",
+        );
+        let inspect_script =
+            Trampoline { contents: inspect_contents, binary_name: "inspect".to_string() };
+
+        trampolines.insert(builtin_url, BTreeSet::from([log_script, ss_script, inspect_script]))?;
     }
 
     Ok(trampolines)

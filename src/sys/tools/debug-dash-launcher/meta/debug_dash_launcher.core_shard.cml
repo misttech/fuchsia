@@ -40,6 +40,7 @@
             protocol: [
                 "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
+                "fuchsia.diagnostics.system.SerialLogControl",
                 "fuchsia.kernel.VmexResource",
             ],
             from: "parent",

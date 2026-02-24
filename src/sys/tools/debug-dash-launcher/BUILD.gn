@@ -90,6 +90,7 @@ fuchsia_unittest_package("debug-dash-launcher-unittests") {
 fuchsia_package("debug-dash-launcher") {
   deps = [
     ":component",
+    "//src/diagnostics/iquery:inspect_bin",
     "//src/diagnostics/log_listener:bin",
     "//third_party/sbase:bins",
     "//zircon/third_party/uapp/dash",

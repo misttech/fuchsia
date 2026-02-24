@@ -186,6 +186,7 @@
                 "fuchsia.device.NameProvider",
                 "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
+                "fuchsia.diagnostics.system.SerialLogControl",
                 "fuchsia.driver.crash.CrashIntrospect",
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.registrar.DriverRegistrar",
