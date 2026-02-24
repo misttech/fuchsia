@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.bluetooth.affordances;
 
+using fuchsia.bluetooth as bt;
 using fuchsia.bluetooth.sys as sys;
 
 // TODO(b/415341030): Evaluate consolidating fuchsia.bluetooth.*.test protocols here.
@@ -21,6 +22,14 @@ open protocol PeerController {
     flexible GetKnownPeers() -> (struct {
         peers vector<sys.Peer>:MAX;
     }) error Error;
+
+    /// Forget a peer and all its bonding information.
+    ///
+    /// + request `id` ID of the peer to forget.
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible ForgetPeer(struct {
+        id bt.PeerId;
+    }) -> () error Error;
 };
 
 @discoverable

@@ -93,6 +93,18 @@ impl FfxMain for PeerTool {
                     }
                 }
             }
+            // ffx bluetooth peer forget
+            PeerSubCommand::Forget(ref cmd) => {
+                let Some(peer_id) = to_identifier(&peers, &cmd.id_or_addr) else {
+                    return Err(fho::Error::User(anyhow::anyhow!(
+                        "Unable to forget: Unknown address {}",
+                        cmd.id_or_addr
+                    )));
+                };
+
+                self.forget_peer(peer_id).await?;
+                writer.line(format!("Successfully forgot peer {peer_id}"))?;
+            }
         }
         Ok(())
     }
@@ -113,6 +125,20 @@ impl PeerTool {
             .iter()
             .map(|peer| Peer::try_from(peer.clone()).expect("Failed to convert between Peer types"))
             .collect())
+    }
+
+    async fn forget_peer(&self, id: PeerId) -> Result<()> {
+        let fidl_peer_id: FidlPeerId = id.into();
+        Ok(self
+            .peer_controller
+            .forget_peer(&fidl_peer_id)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                ))
+            })?)
     }
 }
 

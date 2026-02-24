@@ -15,7 +15,6 @@ use ffx_core::ffx_command;
     example = "ffx bluetooth peer"
 )]
 pub struct PeerCommand {
-    /// list, show, connect, or disconnect
     #[argh(subcommand)]
     pub subcommand: PeerSubCommand,
 }
@@ -27,6 +26,7 @@ pub enum PeerSubCommand {
     Show(ShowCommand),
     Connect(ConnectCommand),
     Disconnect(DisconnectCommand),
+    Forget(ForgetCommand),
 }
 
 /// ffx bluetooth peer list
@@ -84,6 +84,20 @@ pub struct ConnectCommand {
     example = "ffx bluetooth peer disconnect <id|addr>"
 )]
 pub struct DisconnectCommand {
+    /// specify peer by id or address
+    #[argh(positional)]
+    pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
+}
+
+/// ffx bluetooth peer forget
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "forget",
+    description = "Delete and disconnect a peer.",
+    example = "ffx bluetooth peer forget <id|addr>"
+)]
+pub struct ForgetCommand {
     /// specify peer by id or address
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,

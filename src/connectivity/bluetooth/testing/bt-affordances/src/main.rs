@@ -41,6 +41,19 @@ async fn handle_peer_request(
                             }
                         }
                     }
+                    PeerControllerRequest::ForgetPeer { id, responder } => {
+                        match worker.forget_peer(id).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("Forget encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
                     PeerControllerRequest::_UnknownMethod { ordinal, .. } => {
                         error!(
                             "PeerControllerRequest: unknown method received with ordinal {ordinal}"

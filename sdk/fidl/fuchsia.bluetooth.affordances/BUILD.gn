@@ -9,7 +9,10 @@ fidl("fuchsia.bluetooth.affordances") {
 
   sdk_area = "Bluetooth"
 
-  public_deps = [ "//sdk/fidl/fuchsia.bluetooth.sys" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.bluetooth",
+    "//sdk/fidl/fuchsia.bluetooth.sys",
+  ]
 
   sources = [ "affordances.fidl" ]
 }
