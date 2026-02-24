@@ -16,6 +16,7 @@ from pathlib import Path
 
 import cartfs
 import logger
+import util
 import workspace
 
 
@@ -144,6 +145,11 @@ def main() -> int:
         colors=args.color,
         enable_status_updates=args.enable_status_updates,
     )
+
+    if not util.check_gcert_status():
+        logger.log_error("You do not have a valid gcert certificate.")
+        logger.log_error("Please run 'gcert' and try again.")
+        return 1
 
     repo_root = None
     if args.repo_root:

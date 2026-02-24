@@ -10,6 +10,7 @@ group("tests") {
     ":logger_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":setup_cog_workspace_test($host_toolchain)",
+    ":util_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
   ]
 }
@@ -21,6 +22,7 @@ if (is_host) {
     "mock_fs.py",
     "setup_cog_workspace.py",
     "snapshotter.py",
+    "util.py",
     "workspace.py",
   ]
 
@@ -29,6 +31,7 @@ if (is_host) {
     "setup_cog_workspace",
     "workspace",
     "logger",
+    "util",
   ]
 
   foreach(test_name, test_names) {

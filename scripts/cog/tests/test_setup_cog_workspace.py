@@ -13,6 +13,26 @@ import setup_cog_workspace
 class TestSetupCogWorkspace(unittest.TestCase):
     """Tests for setup_cog_workspace."""
 
+    def test_main_no_gcert(self) -> None:
+        """Test that main returns 1 when gcert check fails."""
+        with patch.object(
+            setup_cog_workspace,
+            "_parse_args",
+            return_value=MagicMock(
+                repo_root=None,
+                verbose=0,
+                disable_snapshot=False,
+                use_local_mock_cartfs=False,
+                enable_status_updates=False,
+                color=True,
+            ),
+        ), patch("util.check_gcert_status", return_value=False), patch(
+            "setup_cog_workspace.logger.log_error"
+        ) as mock_log_error:
+            result = setup_cog_workspace.main()
+            self.assertEqual(result, 1)
+            self.assertEqual(mock_log_error.call_count, 2)
+
     def test_main_invalid_repo_root(self) -> None:
         """Test that main returns 1 when repo_root is invalid."""
         with patch.object(
@@ -24,8 +44,11 @@ class TestSetupCogWorkspace(unittest.TestCase):
                 disable_snapshot=False,
                 use_local_mock_cartfs=False,
                 enable_status_updates=False,
+                color=True,
             ),
-        ), patch("pathlib.Path.is_dir", return_value=False), patch(
+        ), patch("util.check_gcert_status", return_value=True), patch(
+            "pathlib.Path.is_dir", return_value=False
+        ), patch(
             "setup_cog_workspace.logger.log_error"
         ) as mock_log_error:
             result = setup_cog_workspace.main()
