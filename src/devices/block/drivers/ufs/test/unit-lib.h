@@ -297,7 +297,7 @@ class Environment : public fdf_testing::Environment {
 
     // Serve (fake) pci_server_
     auto result = to_driver_vfs.AddService<fuchsia_hardware_pci::Service>(
-        pci_server_.GetInstanceHandler(), "pci");
+        pci_server_.GetInstanceHandler(), "pdev");
     EXPECT_EQ(ZX_OK, result.status_value());
 
     // Serve (fake) cpu_element_manager.

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pci",
+        "node": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -10,6 +10,13 @@
                     "fuchsia.BIND_PCI_CLASS": "fuchsia.pci.BIND_PCI_CLASS.MASS_STORAGE",
                     "fuchsia.BIND_PCI_INTERFACE": "1",
                     "fuchsia.BIND_PCI_SUBCLASS": "fuchsia.pci.massstorage.BIND_PCI_SUBCLASS.UFS"
+                }
+            },
+            {
+                "name": "Match devicetree",
+                "expected": "match",
+                "device": {
+                    "fuchsia.devicetree.FIRST_COMPATIBLE": "\"google,ufshc\""
                 }
             }
         ]
@@ -22,6 +29,19 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_PROTOCOL": "fuchsia.acpi.BIND_PROTOCOL.DEVICE"
+                }
+            }
+        ]
+    },
+    {
+        "node": "gpio",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.RESET"
                 }
             }
         ]

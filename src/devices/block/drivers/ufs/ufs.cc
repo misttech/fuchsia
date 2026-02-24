@@ -1133,7 +1133,7 @@ zx_status_t Ufs::DisableHostController() {
 }
 
 zx::result<> Ufs::ConnectToPciService() {
-  auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+  auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pdev");
   if (!pci_client_end.is_ok()) {
     FDF_LOG(ERROR, "Failed to connect to PCI device service: %s", pci_client_end.status_string());
     return pci_client_end.take_error();
