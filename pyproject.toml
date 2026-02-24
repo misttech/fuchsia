@@ -34,6 +34,9 @@ skip_glob = ["**/.venvs/*", "**/third_party/*", "**/*.pyz", "out/*"]
 strict = true
 pretty = true
 
+# Add the end_to_end stubs directory to the mypy path
+mypy_path = ["src/testing/end_to_end/stubs"]
+
 # We need to ignore missing imports since some of our source code dependencies
 # reside in the 'third_party' directory, which may not always be in python path.
 ignore_missing_imports = true

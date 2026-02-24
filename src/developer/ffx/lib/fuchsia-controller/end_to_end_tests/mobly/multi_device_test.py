@@ -137,8 +137,8 @@ class MultiDeviceTest(AsyncAdapter, base_test.BaseTestClass):
             logging.debug(f"Received peer update: {peer}")
             if (
                 peer.address is not None
-                and peer.address.bytes == receiver_address.bytes
-                and peer.address.type == receiver_address.type
+                and peer.address.bytes_ == receiver_address.bytes_
+                and peer.address.type_ == receiver_address.type_
             ):
                 break
 
