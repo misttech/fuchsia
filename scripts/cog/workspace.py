@@ -762,37 +762,48 @@ class Workspace:
         cmd: list[str],
         cwd: Path,
         capture_output: bool = False,
+        exit_on_error: bool = True,
     ) -> str:
         """Runs a command."""
         logger.log_info(f"Running command: '{' '.join(cmd)}' in {cwd}")
-
-        if logger.get_log_level() <= logging.DEBUG:
-            stdout, stderr = None, None
-        else:
-            stdout, stderr = subprocess.DEVNULL, subprocess.DEVNULL
 
         # Set FUCHSIA_DIR environment variable to the cartfs fuchsia directory.
         # This is needed for the hooks to work correctly.
         env = os.environ.copy()
         env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
 
-        if capture_output:
-            return subprocess.run(
-                cmd,
-                cwd=cwd,
-                check=True,
-                capture_output=True,
-                env=env,
-            ).stdout.decode("utf-8")
-        else:
-            subprocess.run(
-                cmd,
-                cwd=cwd,
-                check=True,
-                stdout=stdout,
-                stderr=stderr,
-                env=env,
-            )
+        try:
+            if capture_output:
+                return subprocess.run(
+                    cmd,
+                    cwd=cwd,
+                    check=True,
+                    capture_output=True,
+                    env=env,
+                ).stdout.decode("utf-8")
+            else:
+                # If we are not debugging, we want to capture the output so we can print it on error.
+                # If we are debugging, stdout/stderr are None, so output goes to stdout/stderr.
+                run_capture_output = logger.get_log_level() > logging.DEBUG
+
+                subprocess.run(
+                    cmd,
+                    cwd=cwd,
+                    check=True,
+                    capture_output=run_capture_output,
+                    env=env,
+                )
+                return ""
+        except subprocess.CalledProcessError as e:
+            if logger.get_log_level() <= logging.DEBUG:
+                logger.log_exception(e)
+            logger.log_error(f"Error running command: {' '.join(cmd)}")
+            if e.stdout:
+                logger.log_error(f"stdout: {e.stdout.decode('utf-8')}")
+            if e.stderr:
+                logger.log_error(f"stderr: {e.stderr.decode('utf-8')}")
+            if exit_on_error:
+                sys.exit(e.returncode)
             return ""
 
     def _patch_file(self, filepath: str, content: str) -> None:
