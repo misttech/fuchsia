@@ -58,18 +58,8 @@ impl FfxMain for PeerTool {
                     )));
                 };
 
-                match connect(&self.access_proxy, peer_id).await {
-                    Ok(_) => {
-                        writer.line(format!("Successfully connected to peer {peer_id}"))?;
-                    }
-                    Err(e) => {
-                        return Err(fho::Error::User(anyhow::anyhow!(
-                            "Failed to connect to peer {}: {}",
-                            peer_id,
-                            e
-                        )));
-                    }
-                }
+                connect(&self.access_proxy, peer_id).await?;
+                writer.line(format!("Successfully connected to peer {peer_id}"))?;
             }
             // ffx bluetooth peer disconnect
             PeerSubCommand::Disconnect(ref cmd) => {
@@ -80,18 +70,8 @@ impl FfxMain for PeerTool {
                     )));
                 };
 
-                match disconnect(&self.access_proxy, peer_id).await {
-                    Ok(_) => {
-                        writer.line(format!("Successfully disconnected from peer {peer_id}"))?;
-                    }
-                    Err(e) => {
-                        return Err(fho::Error::User(anyhow::anyhow!(
-                            "Failed to disconnect from peer {}: {}",
-                            peer_id,
-                            e
-                        )));
-                    }
-                }
+                disconnect(&self.access_proxy, peer_id).await?;
+                writer.line(format!("Successfully disconnected from peer {peer_id}"))?;
             }
             // ffx bluetooth peer forget
             PeerSubCommand::Forget(ref cmd) => {
