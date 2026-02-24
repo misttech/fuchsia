@@ -1,5 +1,4 @@
 awdavies@google.com
-olivernewman@google.com
 
 per-file             add-update-source,lib/updates.sh,ota,serve = file: /src/sys/pkg/OWNERS
 per-file             serve-remote,update,update-if-in-base = file: /src/sys/pkg/OWNERS
