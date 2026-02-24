@@ -42,6 +42,9 @@ group("tests") {
     ":screenshot_unittests",
     ":view_tree_unittests",
     "tests",
+
+    # not a test, but we want to ensure it gets built
+    "bin:dso",
   ]
 }
 
@@ -305,7 +308,7 @@ fuchsia_unittest_package("view_tree_unittests") {
 
 fuchsia_component_manifest("scenic_manifest") {
   component_name = "scenic"
-  manifest = "bin/meta/scenic.cml"
+  manifest = "bin/meta/scenic.bin.cml"
 }
 
 fuchsia_component("component_v2") {

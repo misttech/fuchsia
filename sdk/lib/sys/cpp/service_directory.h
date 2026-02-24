@@ -167,6 +167,10 @@ class ServiceDirectory final {
   // ```
   zx_status_t CloneChannel(fidl::InterfaceRequest<fuchsia::io::Directory>) const;
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  zx::unowned_channel unowned_channel() const { return directory_.unowned_channel(); }
+#endif
+
  private:
   // The directory to which connection requests are routed.
   //

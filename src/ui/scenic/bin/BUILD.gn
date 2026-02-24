@@ -2,21 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-executable("bin") {
-  output_name = "scenic"
+import("//src/lib/dso/fuchsia_dso.gni")
 
+_scenic_bin = {
   sources = [
     "app.cc",
     "app.h",
-    "main.cc",
   ]
 
   deps = [
     ":base_deps",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_hlcpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fit-promise",
     "//sdk/lib/inspect/component/cpp",
@@ -49,10 +46,31 @@ executable("bin") {
   ldflags = [ "-Wl,-z,stack-size=0x100000" ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
+  configs_to_add = [ "//build/config:Wno-conversion" ]
 
   # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
   assert_no_deps = [ "//src/graphics/display/lib/api-types/*" ]
+}
+
+executable("bin") {
+  forward_variables_from(_scenic_bin, "*")
+  configs += configs_to_add
+  output_name = "scenic"
+
+  sources += [ "main.cc" ]
+  deps += [
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+  ]
+}
+
+fuchsia_cc_dso("dso") {
+  forward_variables_from(_scenic_bin, "*")
+  configs += configs_to_add
+  output_name = "scenic"
+  async = true
+
+  sources += [ "dso_main.cc" ]
 }
 
 source_set("base_deps") {

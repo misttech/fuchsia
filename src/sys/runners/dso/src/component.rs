@@ -241,15 +241,11 @@ impl Component {
                     let mut envp: Vec<_> = envp_alloc.iter().map(|s| s.as_ptr()).collect();
                     envp.push(ptr::null_mut());
 
-                    // TODO(https://fxbug.dev/403545512): Deallocate handles once the program
-                    // terminates
-                    let handle = handle.leak();
-                    let handle_info = handle_info.leak();
                     // SAFETY: Inputs are not freed until the dispatcher is shutdown.
                     let code = unsafe {
                         hooks.dso_start_async(
-                            handle,
-                            handle_info,
+                            &mut handle,
+                            &mut handle_info,
                             &mut names,
                             &mut argv,
                             &mut envp,
@@ -261,8 +257,8 @@ impl Component {
                         _ = exit_code_tx.send(code);
                     } else {
                         drop(exit_code_tx);
-                        // Don't deallocate argv and envp so the program can continue using them
-                        // TODO(https://fxbug.dev/403545512): Deallocate them once the program
+                        // Don't deallocate argv, envp, etc. so the program can continue using them
+                        // TODO(https://fxbug.dev/485919515): Deallocate them once the program
                         // terminates
                         for name in names_alloc {
                             _ = CString::into_raw(name);
@@ -273,6 +269,11 @@ impl Component {
                         for env in envp_alloc {
                             _ = CString::into_raw(env);
                         }
+                        _ = handle.leak();
+                        _ = handle_info.leak();
+                        _ = names.leak();
+                        _ = argv.leak();
+                        _ = envp.leak();
                     }
                 }).unwrap();
 

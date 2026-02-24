@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "syslog/client.shard.cml" ],
+    include: [
+        "syslog/client.shard.cml",
+
+        // TODO(https://fxbug.dev/487299474): Fix scenic/libvulkan to not require this in dso_runner
+        "vulkan/client.shard.cml",
+    ],
     program: {
         runner: "elf",
         binary: "bin/dso_runner",
@@ -16,6 +21,9 @@
     ],
     use: [
         { protocol: "fuchsia.scheduler.RoleManager" },
+
+        // TODO(https://fxbug.dev/487299474): Fix scenic/libvulkan to not require this in dso_runner
+        { service: "fuchsia.vulkan.loader.TrustedService" },
     ],
     expose: [
         {

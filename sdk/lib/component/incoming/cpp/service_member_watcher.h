@@ -141,7 +141,9 @@ class SyncServiceMemberWatcher final : public ServiceMemberWatcher<ServiceMember
  public:
   using Protocol = typename ServiceMember::ProtocolType;
   explicit SyncServiceMemberWatcher(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root)
-      : svc_dir_(svc_root), sync_dir_watcher_(svc_dir_, ServiceMember::ServiceName) {}
+      : ServiceMemberWatcher<ServiceMember>(svc_root),
+        svc_dir_(svc_root),
+        sync_dir_watcher_(svc_dir_, ServiceMember::ServiceName) {}
   SyncServiceMemberWatcher()
       : default_svc_dir_(OpenServiceRoot().value()),
         svc_dir_(default_svc_dir_.borrow()),

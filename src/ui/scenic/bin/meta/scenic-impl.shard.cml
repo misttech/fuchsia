@@ -1,6 +1,9 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+// This shard defines all of scenic's component manifest except for the `program`, which
+// has been forked so we can define both elf and dso variants of scenic.
 {
     include: [
         "inspect/client.shard.cml",
@@ -8,10 +11,6 @@
         "trace/client.shard.cml",
         "vulkan/client.shard.cml",
     ],
-    program: {
-        runner: "elf",
-        binary: "bin/scenic",
-    },
     children: [
         {
             name: "image-compression",
@@ -48,11 +47,6 @@
     ],
     use: [
         { service: "fuchsia.vulkan.loader.TrustedService" },
-        {
-            directory: "config-data",
-            rights: [ "r*" ],
-            path: "/config/data",
-        },
         {
             storage: "tmp",
             path: "/tmp",

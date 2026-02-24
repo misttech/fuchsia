@@ -5,6 +5,7 @@
 #include "src/ui/lib/escher/vk/vulkan_instance.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <string.h>
 
 #include <set>
 

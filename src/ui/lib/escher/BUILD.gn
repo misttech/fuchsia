@@ -431,6 +431,7 @@ template("escher_library") {
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",
         "//sdk/lib/fit",
+        "//sdk/lib/sys/cpp",
         "//sdk/lib/syslog/cpp",
         "//sdk/lib/vfs/cpp",
         "//zircon/system/public",
