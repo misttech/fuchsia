@@ -30,7 +30,10 @@ python_mobly_test("reboot_reason_test") {
   main_source = "test.py"
   libraries = [ ":suite" ]
 
-  environments = [ nelson_env ]
+  environments = [
+    nelson_env,
+    sorrel_env,
+  ]
 
   # TODO(https://fxbug.dev/467043348): Remove this. This is just a mitigation
   # to prevent syslogs from being lost after the target reboots.
