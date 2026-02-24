@@ -11,8 +11,9 @@ use log::warn;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::service::endpoint;
 use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fproc, fuchsia_async as fasync,
+    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_diagnostics as fdiagnostics,
+    fidl_fuchsia_diagnostics_host as fdiagnostics_host, fidl_fuchsia_io as fio,
+    fidl_fuchsia_process as fproc, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync,
 };
 
 pub fn package_layout(
@@ -103,6 +104,14 @@ pub fn serve_process_launcher_and_resolver_svc_dir() -> Result<fio::DirectoryPro
     let mut fs = ServiceFs::new();
     fs.add_proxy_service::<fproc::LauncherMarker, ()>();
     fs.add_proxy_service::<fproc::ResolverMarker, ()>();
+    fs.add_proxy_service::<fdiagnostics_host::ArchiveAccessorMarker, ()>();
+    fs.add_proxy_service::<fdiagnostics::LogSettingsMarker, ()>();
+    fs.add_proxy_service::<fsys::RealmQueryMarker, ()>();
+    fs.add_service_at("fuchsia.sys2.RealmQuery.root", |chan: fidl::Channel| {
+        let _ =
+            fuchsia_component::client::connect_channel_to_protocol::<fsys::RealmQueryMarker>(chan);
+        Some(())
+    });
     fs.serve_connection(server_end).map_err(|_| LauncherError::ProcessResolver)?;
 
     fasync::Task::spawn(async move {
@@ -160,6 +169,34 @@ async fn inject_process_launcher_and_resolver(svc_dir: fio::DirectoryProxy) -> f
         }),
     ) {
         warn!(err:?; "Could not inject fuchsia.process.Resolver into filesystem layout. Ignoring.");
+    }
+
+    // Add diagnostics and realm query protocols for the log command.
+    let protocols = [
+        fdiagnostics_host::ArchiveAccessorMarker::PROTOCOL_NAME,
+        fdiagnostics::LogSettingsMarker::PROTOCOL_NAME,
+        fsys::RealmQueryMarker::PROTOCOL_NAME,
+        "fuchsia.sys2.RealmQuery.root",
+    ];
+
+    for protocol in protocols {
+        let target_path = if protocol == "fuchsia.sys2.RealmQuery.root" {
+            format!("/svc/{}", fsys::RealmQueryMarker::PROTOCOL_NAME)
+        } else {
+            format!("/svc/{}", protocol)
+        };
+        if let Err(err) = vfs.add_entry(
+            protocol,
+            endpoint(move |_, channel| {
+                fuchsia_component::client::connect_channel_to_protocol_at_path(
+                    channel.into_zx_channel(),
+                    &target_path,
+                )
+                .unwrap();
+            }),
+        ) {
+            warn!(protocol, err:?; "Could not inject protocol into filesystem layout. Ignoring.");
+        }
     }
 
     vfs::directory::serve_read_only(vfs)

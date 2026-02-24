@@ -184,6 +184,7 @@
         {
             protocol: [
                 "fuchsia.device.NameProvider",
+                "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.driver.crash.CrashIntrospect",
                 "fuchsia.driver.development.Manager",

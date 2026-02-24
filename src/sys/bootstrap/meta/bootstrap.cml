@@ -181,6 +181,10 @@
             from: "#archivist",
         },
         {
+            protocol: [ "fuchsia.diagnostics.host.ArchiveAccessor" ],
+            from: "#archivist/diagnostics-accessors",
+        },
+        {
             protocol: [
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.system.SerialLogControl",

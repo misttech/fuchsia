@@ -74,7 +74,7 @@ async fn explore_over_handles(
     // moniker is `./core/foo`, process name is `sh-core-foo`.
     let process_name = format!("sh{}", moniker[1..].replace('/', "-"));
 
-    super::explore_over_handles(
+    super::explore_over_handles(super::ExploreArgs {
         stdin,
         stdout,
         stderr,
@@ -82,8 +82,11 @@ async fn explore_over_handles(
         command,
         name_infos,
         process_name,
-        &mut crate::package_resolver::PackageResolver::new(fdash::FuchsiaPkgResolver::Full),
-    )
+        package_resolver: &mut crate::package_resolver::PackageResolver::new(
+            fdash::FuchsiaPkgResolver::Full,
+        ),
+        moniker: Some(moniker),
+    })
     .await
 }
 

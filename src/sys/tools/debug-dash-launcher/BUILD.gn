@@ -26,6 +26,8 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust",
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_rust",
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
@@ -88,6 +90,7 @@ fuchsia_unittest_package("debug-dash-launcher-unittests") {
 fuchsia_package("debug-dash-launcher") {
   deps = [
     ":component",
+    "//src/diagnostics/log_listener:bin",
     "//third_party/sbase:bins",
     "//zircon/third_party/uapp/dash",
   ]

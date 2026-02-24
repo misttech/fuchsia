@@ -37,7 +37,11 @@
             to: "#debug-dash-launcher",
         },
         {
-            protocol: [ "fuchsia.kernel.VmexResource" ],
+            protocol: [
+                "fuchsia.diagnostics.host.ArchiveAccessor",
+                "fuchsia.diagnostics.LogSettings",
+                "fuchsia.kernel.VmexResource",
+            ],
             from: "parent",
             to: "#debug-dash-launcher",
         },

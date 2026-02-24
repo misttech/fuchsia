@@ -67,7 +67,7 @@ pub async fn explore_over_handles(
             .unwrap_or_else(|| url.replace('/', "-"));
     let process_name = format!("sh-{process_name}");
 
-    super::explore_over_handles(
+    super::explore_over_handles(super::ExploreArgs {
         stdin,
         stdout,
         stderr,
@@ -75,7 +75,8 @@ pub async fn explore_over_handles(
         command,
         name_infos,
         process_name,
-        &mut crate::package_resolver::PackageResolver::new(fuchsia_pkg_resolver),
-    )
+        package_resolver: &mut package_resolver,
+        moniker: None,
+    })
     .await
 }

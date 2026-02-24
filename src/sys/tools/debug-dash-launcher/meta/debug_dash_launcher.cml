@@ -29,6 +29,8 @@
         },
         {
             protocol: [
+                "fuchsia.diagnostics.host.ArchiveAccessor",
+                "fuchsia.diagnostics.LogSettings",
                 "fuchsia.hardware.pty.Device",
                 "fuchsia.kernel.VmexResource",
                 "fuchsia.pkg.PackageResolver-boot",

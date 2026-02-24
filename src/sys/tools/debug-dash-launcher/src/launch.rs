@@ -20,25 +20,51 @@ const DASH_ARGS_FOR_INTERACTIVE: [&[u8]; 2] = ["-i".as_bytes(), "-s".as_bytes()]
 // given, else it errors with `Can't open <cmd>`. -c: execute command
 const DASH_ARGS_FOR_COMMAND: [&[u8]; 2] = ["-v".as_bytes(), "-c".as_bytes()];
 
-async fn explore_over_handles(
-    stdin: zx::NullableHandle,
-    stdout: zx::NullableHandle,
-    stderr: zx::NullableHandle,
-    tool_urls: Vec<String>,
-    command: Option<String>,
-    mut name_infos: Vec<fproc::NameInfo>,
-    process_name: String,
-    package_resolver: &mut crate::package_resolver::PackageResolver,
-) -> Result<zx::Process, LauncherError> {
+pub struct ExploreArgs<'a> {
+    pub stdin: zx::NullableHandle,
+    pub stdout: zx::NullableHandle,
+    pub stderr: zx::NullableHandle,
+    pub tool_urls: Vec<String>,
+    pub command: Option<String>,
+    pub name_infos: Vec<fproc::NameInfo>,
+    pub process_name: String,
+    pub package_resolver: &'a mut crate::package_resolver::PackageResolver,
+    pub moniker: Option<String>,
+}
+
+async fn explore_over_handles(args: ExploreArgs<'_>) -> Result<zx::Process, LauncherError> {
+    let ExploreArgs {
+        stdin,
+        stdout,
+        stderr,
+        tool_urls,
+        command,
+        mut name_infos,
+        process_name,
+        package_resolver,
+        moniker,
+    } = args;
     // recreate a PTY device so we can log to it if there's an error
     let pty_proxy =
         fidl::endpoints::ClientEnd::<fidl_fuchsia_hardware_pty::DeviceMarker>::new(stdout.into())
             .into_proxy();
 
-    let (tools_pkg_dir, tools_path) =
-        trampoline::create_trampolines_from_packages(package_resolver, tool_urls, &pty_proxy)
-            .await?;
+    let (tools_pkg_dir, tools_path) = trampoline::create_trampolines_from_packages(
+        package_resolver,
+        tool_urls,
+        &pty_proxy,
+        moniker,
+    )
+    .await?;
     layout::add_tools_to_name_infos(tools_pkg_dir, &mut name_infos);
+
+    let internal_pkg_dir =
+        fuchsia_fs::directory::open_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE)
+            .map_err(|_| LauncherError::Internal)?;
+    name_infos.push(fproc::NameInfo {
+        path: "/.dash/internal".to_string(),
+        directory: internal_pkg_dir.into_channel().unwrap().into_zx_channel().into(),
+    });
 
     // The dash-launcher can be asked to launch multiple dash processes, each of which can make
     // their own process hierarchies. This will look better topologically if we make a child job for

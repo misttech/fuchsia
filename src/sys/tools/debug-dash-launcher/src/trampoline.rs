@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
+use log::warn;
 use fidl_fuchsia_dash::LauncherError;
 use fidl_fuchsia_hardware_pty::DeviceProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -181,14 +182,22 @@ fn escape_url_for_shell_path(url: &url::Url) -> String {
 // For each package, create the trampoline specifications for each of its binaries.
 // For the user's information, a directory entry will be created even if there are no
 // binaries found.
-async fn create_trampolines(pkg_dirs: &Vec<PkgDir>) -> Result<Trampolines, LauncherError> {
+async fn create_trampolines(
+    pkg_dirs: &Vec<PkgDir>,
+    moniker: Option<String>,
+) -> Result<Trampolines, LauncherError> {
     let mut trampolines = Trampolines::new();
+    let rename_log = moniker.is_some();
+
     for pkg_dir in pkg_dirs {
         match &pkg_dir.resource {
             Some(res) => {
                 let contents = format!("#!resolve {}#{}\n", &pkg_dir.url, res);
-                let binary_name =
+                let mut binary_name =
                     res.split('/').next_back().ok_or(LauncherError::BadUrl)?.to_string();
+                if rename_log && binary_name == "log" {
+                    binary_name = "__log_real".to_string();
+                }
                 let set = BTreeSet::from([Trampoline { contents, binary_name }]);
                 trampolines.insert(pkg_dir.url.clone(), set)?;
             }
@@ -210,7 +219,10 @@ async fn create_trampolines(pkg_dirs: &Vec<PkgDir>) -> Result<Trampolines, Launc
                 for entry in entries {
                     if entry.kind == fio::DirentType::File {
                         let contents = format!("#!resolve {}#bin/{}\n", &pkg_dir.url, entry.name);
-                        let binary_name = entry.name;
+                        let mut binary_name = entry.name;
+                        if rename_log && binary_name == "log" {
+                            binary_name = "__log_real".to_string();
+                        }
                         pkg_trampolines.insert(Trampoline { contents, binary_name });
                     }
                 }
@@ -218,6 +230,52 @@ async fn create_trampolines(pkg_dirs: &Vec<PkgDir>) -> Result<Trampolines, Launc
             }
         }
     }
+
+    if let Some(moniker) = moniker {
+        let builtin_url = url::Url::parse("fuchsia-builtin://dash-launcher").unwrap();
+        let pkg_shell_name = escape_url_for_shell_path(&builtin_url);
+        let log_script_path = format!("{BASE_TOOLS_PATH}/{pkg_shell_name}/log");
+        let ss_script_path = format!("{BASE_TOOLS_PATH}/{pkg_shell_name}/set-severity");
+
+        let log_contents = format!(
+            "#!/.dash/internal/bin/sh {log_script_path}\n\
+            [ \"$1\" = \"{log_script_path}\" ] && shift\n\
+            [ \"$1\" = \"log\" ] && shift\n\
+            if [ \"$1\" = \"set-severity\" ]; then\n\
+                shift\n\
+                /.dash/internal/bin/sh \"{ss_script_path}\" \"set-severity\" \"$@\"\n\
+                exit $?\n\
+            fi\n\
+            /.dash/internal/bin/log_listener --hide-moniker --component \"{moniker}\" \"$@\"\n\
+            exit $?\n",
+        );
+        let log_script = Trampoline { contents: log_contents, binary_name: "log".to_string() };
+
+        let ss_contents = format!(
+            "#!/.dash/internal/bin/sh {ss_script_path}\n\
+            [ \"$1\" = \"{ss_script_path}\" ] && shift\n\
+            [ \"$1\" = \"set-severity\" ] && shift\n\
+            args=\"\"\n\
+            selectors=\"\"\n\
+            for arg in \"$@\"; do\n\
+                case \"$arg\" in\n\
+                    -* ) args=\"$args $arg\" ;;\n\
+                    * ) \n\
+                        case \"$arg\" in\n\
+                            *#* ) selectors=\"$selectors $arg\" ;;\n\
+                            * ) selectors=\"$selectors {moniker}#$arg\" ;;\n\
+                        esac ;;\n\
+                esac\n\
+            done\n\
+            /.dash/internal/bin/log_listener set-severity $args $selectors\n\
+            exit $?\n",
+        );
+        let ss_script =
+            Trampoline { contents: ss_contents, binary_name: "set-severity".to_string() };
+
+        trampolines.insert(builtin_url, BTreeSet::from([log_script, ss_script]))?;
+    }
+
     Ok(trampolines)
 }
 
@@ -262,7 +320,13 @@ async fn make_trampoline_vfs(
     if trampolines.is_empty() {
         return Ok((None, None));
     }
-    let resource = create_vmex_resource().await?;
+    let resource = match create_vmex_resource().await {
+        Ok(r) => r,
+        Err(err) => {
+            warn!(err:?; "Could not acquire VmexResource. Trampolines will not be available.");
+            return Ok((None, None));
+        }
+    };
     let (tools_dir, path) = trampolines.make_tools_dir(resource)?;
     // Serve directory with execute rights.
     let dir = vfs::directory::serve(tools_dir, fio::PERM_READABLE | fio::PERM_EXECUTABLE);
@@ -275,11 +339,8 @@ pub async fn create_trampolines_from_packages(
     package_resolver: &mut crate::package_resolver::PackageResolver,
     pkg_urls: Vec<String>,
     pty_proxy: &DeviceProxy,
+    moniker: Option<String>,
 ) -> Result<(Option<fio::DirectoryProxy>, Option<String>), LauncherError> {
-    if pkg_urls.is_empty() {
-        return Ok((None, None));
-    }
-
     let (pkg_dirs, errs) = get_pkg_dirs(package_resolver, pkg_urls).await;
     if !errs.is_empty() {
         let mut summary = "Failed to load at least one tool package: ".to_string();
@@ -293,7 +354,7 @@ pub async fn create_trampolines_from_packages(
             Ok(0u64)
         });
     }
-    let trampolines = create_trampolines(&pkg_dirs).await?;
+    let trampolines = create_trampolines(&pkg_dirs, moniker).await?;
     make_trampoline_vfs(trampolines).await
 }
 
@@ -443,7 +504,7 @@ mod tests {
         }
 
         let pkg_dirs = create_test_directory_proxies().await;
-        let pkg_trampolines = create_trampolines(&pkg_dirs).await.unwrap();
+        let pkg_trampolines = create_trampolines(&pkg_dirs, None).await.unwrap();
         assert_eq!(pkg_trampolines.len(), 3); // Includes one for "blueorigin_pkg", which had no binaries.
         let (url, list) = pkg_trampolines.get_nth_package(0).unwrap();
         assert_eq!(list.len(), 2);
@@ -503,7 +564,7 @@ mod tests {
             make_pkg("fuchsia-pkg://earth.org/spacex_pkg", "SpaceX", &root).await,
         ];
 
-        let pkg_trampolines = create_trampolines(&pkg_dirs).await.unwrap();
+        let pkg_trampolines = create_trampolines(&pkg_dirs, None).await.unwrap();
         // Below, the trampolines are both named `collision`. However, they are in different
         // packages, so do not conflict.
         let (url, list) = pkg_trampolines.get_nth_package(0).unwrap();
@@ -529,7 +590,7 @@ mod tests {
         let pkg_trampolines =  create_trampolines(&vec![
             make_pkg("fuchsia-pkg://earth.org/spacex_pkg", "SpaceX", &root).await,
             make_pkg("fuchsia-pkg://earth.org/spacex_pkg?hash=0000000000000000000000000000000000000000000000000000000000000000", "SpaceX", &root).await,
-        ]).await.unwrap();
+        ], None).await.unwrap();
         let (url, list) = pkg_trampolines.get_nth_package(0).unwrap();
         assert_eq!(url.as_str(), "fuchsia-pkg://earth.org/spacex_pkg");
         assert_eq!(list.len(), 1);
@@ -572,10 +633,13 @@ mod tests {
         };
         // The package names, being the same, are merged. The binaries are different, so do not
         // conflict.
-        let pkg_trampolines = create_trampolines(&vec![
-            make_pkg("fuchsia-pkg://earth.org/upgoer_pkg", "UpGoer", &root).await,
-            make_pkg("fuchsia-pkg://earth.org/upgoer_pkg", "UpGoer", &root1).await,
-        ])
+        let pkg_trampolines = create_trampolines(
+            &vec![
+                make_pkg("fuchsia-pkg://earth.org/upgoer_pkg", "UpGoer", &root).await,
+                make_pkg("fuchsia-pkg://earth.org/upgoer_pkg", "UpGoer", &root1).await,
+            ],
+            None,
+        )
         .await
         .unwrap();
         let (url, list) = pkg_trampolines.get_nth_package(0).unwrap();
