@@ -19,10 +19,10 @@ use {
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 use log::{error, info, warn};
 
-use crate::{exit_with_fidl_error, FilterConfig, InterfaceId, InterfaceType};
+use crate::{FilterConfig, InterfaceId, InterfaceType, exit_with_fidl_error};
 
 /// An error observed on the `fuchsia.net.filter` API.
 #[derive(Debug)]
@@ -33,10 +33,9 @@ pub(crate) enum FilterError {
 
 // A container to dispatch filtering functions depending on the
 // filtering API present.
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087529)
 pub(crate) enum FilterControl {
     Deprecated(fnet_filter_deprecated::FilterProxy),
-    Current(FilterState),
+    Current(Box<FilterState>),
 }
 
 impl FilterControl {
@@ -55,7 +54,7 @@ impl FilterControl {
 
         if let Some(proxy) = current_proxy {
             let controller_id = fnet_filter_ext::ControllerId(String::from("netcfg"));
-            let filter = FilterControl::Current(FilterState {
+            let filter = FilterControl::Current(Box::new(FilterState {
                 controller: fnet_filter_ext::Controller::new(&proxy, &controller_id)
                     .await
                     .context("could not create controller from filter proxy")?,
@@ -66,7 +65,7 @@ impl FilterControl {
                     routine_id: masquerade_routine(),
                     next_rule_index: 0,
                 },
-            });
+            }));
             return Ok(filter);
         }
 
@@ -773,8 +772,8 @@ pub(crate) async fn remove_masquerade_rule_current(
 mod tests {
     use test_case::test_case;
 
-    use crate::interface::DeviceInfoRef;
     use crate::DeviceClass;
+    use crate::interface::DeviceInfoRef;
 
     use super::*;
 
