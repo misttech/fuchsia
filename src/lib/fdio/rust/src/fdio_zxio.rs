@@ -81,6 +81,7 @@ const DEFAULT_ZXIO_OPS: zxio_sys::zxio_ops = zxio_sys::zxio_ops {
     open: Some(zxio_sys::zxio_default_open),
     allocate: Some(zxio_sys::zxio_default_allocate),
     enable_verity: Some(zxio_sys::zxio_default_enable_verity),
+    set_token_resolver: Some(zxio_sys::zxio_default_set_token_resolver),
 };
 
 /// Bind `ops` to a specific file descriptor.

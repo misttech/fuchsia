@@ -81,11 +81,11 @@ pub type zxio_fsverity_descriptor_t = zxio_fsverity_descriptor;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct zxio_private {
-    pub reserved: [u64; 29usize],
+    pub reserved: [u64; 30usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of zxio_private"][::std::mem::size_of::<zxio_private>() - 232usize];
+    ["Size of zxio_private"][::std::mem::size_of::<zxio_private>() - 240usize];
     ["Alignment of zxio_private"][::std::mem::align_of::<zxio_private>() - 8usize];
     ["Offset of field: zxio_private::reserved"]
         [::std::mem::offset_of!(zxio_private, reserved) - 0usize];
@@ -99,7 +99,7 @@ pub struct zxio_storage {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of zxio_storage"][::std::mem::size_of::<zxio_storage>() - 264usize];
+    ["Size of zxio_storage"][::std::mem::size_of::<zxio_storage>() - 272usize];
     ["Alignment of zxio_storage"][::std::mem::align_of::<zxio_storage>() - 8usize];
     ["Offset of field: zxio_storage::io"][::std::mem::offset_of!(zxio_storage, io) - 0usize];
     ["Offset of field: zxio_storage::reserved"]
@@ -503,6 +503,10 @@ impl Default for zxio_open_options {
     }
 }
 pub type zxio_open_options_t = zxio_open_options;
+pub type zxio_token_type_t = u32;
+pub type zxio_token_resolver_t = ::std::option::Option<
+    unsafe extern "C" fn(io: *mut zxio_t, type_: zxio_token_type_t) -> zx_handle_t,
+>;
 pub type va_list = __builtin_va_list;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
@@ -1328,10 +1332,13 @@ pub struct zxio_ops {
             descriptor: *const zxio_fsverity_descriptor_t,
         ) -> zx_status_t,
     >,
+    pub set_token_resolver: ::std::option::Option<
+        unsafe extern "C" fn(io: *mut zxio_t, resolver: zxio_token_resolver_t) -> zx_status_t,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 464usize];
+    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 472usize];
     ["Alignment of zxio_ops"][::std::mem::align_of::<zxio_ops>() - 8usize];
     ["Offset of field: zxio_ops::destroy"][::std::mem::offset_of!(zxio_ops, destroy) - 0usize];
     ["Offset of field: zxio_ops::close"][::std::mem::offset_of!(zxio_ops, close) - 8usize];
@@ -1420,6 +1427,8 @@ const _: () = {
     ["Offset of field: zxio_ops::allocate"][::std::mem::offset_of!(zxio_ops, allocate) - 448usize];
     ["Offset of field: zxio_ops::enable_verity"]
         [::std::mem::offset_of!(zxio_ops, enable_verity) - 456usize];
+    ["Offset of field: zxio_ops::set_token_resolver"]
+        [::std::mem::offset_of!(zxio_ops, set_token_resolver) - 464usize];
 };
 pub type zxio_ops_t = zxio_ops;
 unsafe extern "C" {
@@ -1543,7 +1552,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn zxio_default_on_mapped(io: *mut zxio_t, ptr: *mut ::std::os::raw::c_void)
-        -> zx_status_t;
+    -> zx_status_t;
 }
 unsafe extern "C" {
     pub fn zxio_default_get_read_buffer_available(
@@ -1823,6 +1832,12 @@ unsafe extern "C" {
         flags: zxio_open_flags_t,
         options: *const zxio_open_options_t,
         storage: *mut zxio_storage_t,
+    ) -> zx_status_t;
+}
+unsafe extern "C" {
+    pub fn zxio_default_set_token_resolver(
+        io: *mut zxio_t,
+        resolver: zxio_token_resolver_t,
     ) -> zx_status_t;
 }
 unsafe extern "C" {

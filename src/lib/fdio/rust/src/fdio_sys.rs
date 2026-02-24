@@ -45,7 +45,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn fdio_fd_transfer(fd: ::std::os::raw::c_int, out_handle: *mut zx_handle_t)
-        -> zx_status_t;
+    -> zx_status_t;
 }
 unsafe extern "C" {
     pub fn fdio_fd_transfer_or_clone(
@@ -54,7 +54,7 @@ unsafe extern "C" {
     ) -> zx_status_t;
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct fdio {
     _unused: [u8; 0],
 }
@@ -69,7 +69,7 @@ unsafe extern "C" {
     pub fn fdio_null_create() -> *mut fdio_t;
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct zxio_tag {
     _unused: [u8; 0],
 }
@@ -91,7 +91,7 @@ unsafe extern "C" {
     pub fn fdio_unbind_from_fd(fd: ::std::os::raw::c_int, io_out: *mut *mut fdio_t) -> zx_status_t;
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct zxio_storage {
     _unused: [u8; 0],
 }
@@ -192,13 +192,13 @@ unsafe extern "C" {
     ) -> zx_status_t;
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct fdio_namespace {
     _unused: [u8; 0],
 }
 pub type fdio_ns_t = fdio_namespace;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct zxio_ops {
     _unused: [u8; 0],
 }
