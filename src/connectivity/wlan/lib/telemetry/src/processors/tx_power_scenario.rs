@@ -22,6 +22,7 @@ fn fidl_scenario_to_cobalt_dimension(
         TxPowerScenario::BodyCellOff => {
             metrics::ConnectivityWlanMetricDimensionScenario::BodyCellOff
         }
+        TxPowerScenario::BodyCellOn => metrics::ConnectivityWlanMetricDimensionScenario::BodyCellOn,
         TxPowerScenario::BodyBtActive => {
             metrics::ConnectivityWlanMetricDimensionScenario::BodyBtActive
         }
@@ -77,6 +78,7 @@ mod tests {
     use crate::testing::setup_test;
     use futures::task::Poll;
     use std::pin::pin;
+    use test_case::test_case;
 
     #[fuchsia::test]
     fn test_handle_reset_event() {
@@ -118,5 +120,41 @@ mod tests {
             metrics[0].event_codes,
             vec![metrics::ConnectivityWlanMetricDimensionScenario::Default.as_event_code()]
         );
+    }
+
+    #[test_case(
+        TxPowerScenario::Default,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::Default)
+    )]
+    #[test_case(
+        TxPowerScenario::VoiceCall,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::VoiceCall)
+    )]
+    #[test_case(
+        TxPowerScenario::HeadCellOff,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::HeadCellOff)
+    )]
+    #[test_case(
+        TxPowerScenario::HeadCellOn,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::HeadCellOn)
+    )]
+    #[test_case(
+        TxPowerScenario::BodyCellOff,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::BodyCellOff)
+    )]
+    #[test_case(
+        TxPowerScenario::BodyCellOn,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::BodyCellOn)
+    )]
+    #[test_case(
+        TxPowerScenario::BodyBtActive,
+        Some(metrics::ConnectivityWlanMetricDimensionScenario::BodyBtActive)
+    )]
+    #[test_case(TxPowerScenario::unknown(), None)]
+    fn test_fidl_scenario_to_cobalt_dimension_conversion(
+        scenario: TxPowerScenario,
+        expected: Option<metrics::ConnectivityWlanMetricDimensionScenario>,
+    ) {
+        assert_eq!(fidl_scenario_to_cobalt_dimension(scenario), expected);
     }
 }
