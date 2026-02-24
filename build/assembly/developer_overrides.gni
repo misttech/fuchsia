@@ -519,7 +519,7 @@ foreach(overrides_def, product_assembly_overrides) {
 }
 
 template("developer_overrides_list") {
-  _resolved_overrides = []
+  _override_source = false
   _override_deps = []
   _overrides_match_found = false
 
@@ -541,12 +541,7 @@ template("developer_overrides_list") {
       _out_dir = get_label_info(_target, "target_out_dir")
       _name = get_label_info(_target, "name")
 
-      _resolved_overrides += [
-        {
-          path = rebase_path("$_out_dir/$_name/product_assembly_overrides.json",
-                             root_build_dir)
-        },
-      ]
+      _override_source = "$_out_dir/$_name/product_assembly_overrides.json"
 
       _override_deps += [ _target ]
     }
@@ -557,13 +552,24 @@ template("developer_overrides_list") {
                "_assembly_target_dir",
              ])
 
-  generated_file(target_name) {
-    testonly = true
-    outputs = invoker.outputs
-    contents = _resolved_overrides
-    output_conversion = "json"
-    if (_override_deps != []) {
-      deps = _override_deps
+  if (_override_source != false) {
+    copy(target_name) {
+      testonly = true
+      sources = [ _override_source ]
+      outputs = invoker.outputs
+      if (_override_deps != []) {
+        deps = _override_deps
+      }
+    }
+  } else {
+    _outputs = invoker.outputs
+    generated_file(target_name) {
+      testonly = true
+      outputs = [ _outputs[0] + ".empty" ]
+      contents = {
+      }
+      output_conversion = "json"
+      not_needed([ "_override_deps" ])
     }
   }
 }

@@ -112,6 +112,11 @@ if [[ -n "$board_config" ]]; then
   echo "Using Board Config: $board_config"
 fi
 
+developer_overrides="$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json"
+if [[ -f "$developer_overrides" ]]; then
+  rm "$developer_overrides"
+fi
+
 # Build the platform artifacts
 echo "Building platform artifacts..."
 build_targets=("//bundles/assembly")
@@ -122,19 +127,6 @@ build_targets+=("//build/images:developer_overrides_list")
 echo "Invoking fx build with targets: ${build_targets[*]}"
 fx-command-run build "${build_targets[@]}"
 echo "fx build finished."
-
-if [[ -f "$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json" ]]; then
-  echo "Reading developer overrides from build_zbi_developer_overrides.json."
-  override_path=$(jq -r ".[0].path // empty" "$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json" 2>/dev/null || echo "")
-  echo "Extracted override path: $override_path"
-  if [[ -n "$override_path" && "$override_path" != "null" ]]; then
-    developer_overrides="${FUCHSIA_BUILD_DIR}/${override_path}"
-    echo "Set developer_overrides to: $developer_overrides"
-  fi
-else
-  echo "No developer overrides found."
-fi
-
 
 # Run the tool
 outdir="$FUCHSIA_BUILD_DIR/obj/build/images/fuchsia/build_zbi"
@@ -155,7 +147,7 @@ if [[ ! -x "$ffx_path" ]]; then
 fi
 
 ffx_args=()
-if [[ -n "$developer_overrides" ]]; then
+if [[ -n "$developer_overrides" && -f "$developer_overrides" ]]; then
   echo "Using Developer Overrides: $developer_overrides"
   ffx_args+=(--developer-overrides "$developer_overrides")
 fi

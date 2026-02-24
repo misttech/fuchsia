@@ -578,12 +578,16 @@ template("assembled_system") {
     }
 
     # Pass along any developer overrides enabled for this target.
-    args += [
-      "--developer-overrides",
-      rebase_path(files.developer_overrides_list, root_build_dir),
-    ]
+    _overrides = get_target_outputs(":${labels.developer_overrides_list}")
+    _overrides_split = string_split(_overrides[0], ".")
+    if (_overrides_split[len(_overrides_split) - 1] != "empty") {
+      args += [
+        "--developer-overrides",
+        rebase_path(_overrides[0], root_build_dir),
+      ]
+      inputs += _overrides
+    }
     deps += [ ":${labels.developer_overrides_list}" ]
-    inputs += [ files.developer_overrides_list ]
   }
 
   hermetic_inputs_for_image_assembly(labels.image_assembly_inputs) {
