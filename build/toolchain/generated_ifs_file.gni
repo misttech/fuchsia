@@ -45,12 +45,15 @@ template("generated_ifs_file") {
     outputs = [ "$target_gen_dir/$target_name.ifs" ]
     output_conversion = "list lines"
 
+    # The whitespace doesn't have to be exact in this format, but the
+    # whitespace here is chosen to exactly match what llvm-ifs produces
+    # so that automated comparisons work.
     contents = [
       "--- !ifs-v1",
-      "IfsVersion:  3.0",
+      "IfsVersion:      3.0",
     ]
     if (defined(invoker.soname)) {
-      contents += [ "SoName:      ${invoker.soname}" ]
+      contents += [ "SoName:          ${invoker.soname}" ]
     }
 
     contents += [ "Symbols:" ]
