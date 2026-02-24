@@ -73,73 +73,76 @@
             "-serial",
             "unix:{{runtime.instance_directory}}/serial,server,nowait,logfile={{host.log}}.serial",
         {{/if}}
-        "-machine",
+
+        {{! CPU/machine details go here }}
+
         {{#if (eq device.cpu.architecture "arm64")}}
-            {{#if (eq host.architecture "arm64")}}
-                "virt-9.2,gic-version=3,highmem-ecam=off",
+            "-machine",
+            {{#if (eq host.acceleration "none")}}
+                "virt-9.2,virtualization=true,gic-version=3,highmem-ecam=off",
+                "-cpu", "max",
             {{else}}
-                "virt-9.2,virtualization=true,gic-version=3,highmem-ecam=off", "-cpu", "max",
+                "virt-9.2,gic-version=3,highmem-ecam=off",
+                "-cpu", "host",
+
+                {{#if (eq host.os "linux")}}
+                    "-enable-kvm",
+                {{/if}}
+                {{#if (eq host.os "macos")}}
+                    "-enable-hvf,highmem=off",
+                {{/if}}
             {{/if}}
         {{/if}}
+
         {{#if (eq device.cpu.architecture "x64")}}
+            "-machine",
             {{#if (eq runtime.engine_type "qemu")}}
                 "q35,smbios-entry-point-type=32",
             {{else}}
                 "q35",
             {{/if}}
-            "-device",
+
+            "-cpu",
+            {{#if (eq host.acceleration "none")}}
+                "Haswell,+smap,-check,-fsgsbase",
+            {{else}}
+                {{#if (eq host.os "linux")}}
+                    "host,migratable=no,+invtsc",
+                    "-enable-kvm",
+                {{/if}}
+                {{#if (eq host.os "macos")}}
+                    "Haswell",
+                    "-enable-hvf",
+                {{/if}}
+            {{/if}}
+
+             "-device",
             "isa-debug-exit,iobase=0xf4,iosize=0x04",
             {{! Override the SeaBIOS serial port to keep it from outputting
                 a terminal reset on start. }}
             "-fw_cfg",
             "name=etc/sercon-port,string=0",
         {{/if}}
+
         {{#if (eq device.cpu.architecture "riscv64")}}
-            "virt",
+            "-machine", "virt",
+            "-cpu", "rv64,svpbmt=true,v=true,vext_spec=v1.0",
         {{/if}}
+
+        {{! The QEMU system defaults to TCG for acceleration by default, but when Fuchsia is
+            run with the multi-threaded version it runs into clock-skew issues and crashes.
+            This tag makes it explicit that we always want the single-thread version, even if
+            it may be slower. }}
         {{#if (eq host.acceleration "none")}}
-            {{! The QEMU system defaults to TCG for acceleration by default, but when Fuchsia is
-                run with the multi-threaded version it runs into clock-skew issues and crashes.
-                This tag makes it explicit that we always want the single-thread version, even if
-                it may be slower. }}
             {{#if (eq device.cpu.architecture "riscv64")}}
-            "-accel",
-            "tcg,thread=multi",
+                "-accel",
+                "tcg,thread=multi",
             {{else}}
-            "-accel",
-            "tcg,thread=single",
-            {{/if}}
-            "-cpu",
-            {{#if (eq device.cpu.architecture "arm64")}}
-                "cortex-a53",
-            {{/if}}
-            {{#if (eq device.cpu.architecture "x64")}}
-                "Haswell,+smap,-check,-fsgsbase",
-            {{/if}}
-            {{#if (eq device.cpu.architecture "riscv64")}}
-                "rv64,svpbmt=true,v=true,vext_spec=v1.0",
-            {{/if}}
-        {{else}} {{! acceleration == "hyper" }}
-            {{#if (eq host.os "linux")}}
-                "-enable-kvm",
-                "-cpu",
-                {{#if (eq host.architecture "arm64")}}
-                    "host",
-                {{else}}
-                    "host,migratable=no,+invtsc",
-                {{/if}}
-            {{else}}
-                {{#if (eq host.os "macos")}}
-                    {{#if (eq host.architecture "arm64")}}
-                        "-enable-hvf,highmem=off",
-                    {{else}}
-                        "-enable-hvf",
-                    {{/if}}
-                    "-cpu",
-                    "Haswell",
-                {{/if}}
+                "-accel",
+                "tcg,thread=single",
             {{/if}}
         {{/if}}
+
         {{#if (eq device.pointing_device "mouse")}}
             "-device",
             "virtio-mouse-pci",
@@ -164,6 +167,7 @@
                 {{/if}}
             {{/if}}
         {{/if}}
+
         {{! Networking goes here }}
         {{#if (eq host.networking "none")}}
            "-nic",
