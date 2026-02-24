@@ -21,13 +21,15 @@ using TlsLayout = elfldltl::TlsLayout<>;
 // specialization for some &ThreadStorage::member_.  Each class below meets
 // this same API contract.
 template <typename T>
-concept BlockType = requires(T& t, ThreadStorage& storage, PageRoundedSize tls_size,
-                             zx::unowned_vmar vmar, AllocationVmo& vmo) {
+concept BlockType = requires(T& t, ThreadStorage& storage,  //
+                             PageRoundedSize tls_size, AllocationVmo& vmo) {
   // Returns the size needed in the AllocationVmo.
   { std::as_const(t).VmoSize(std::as_const(storage), tls_size) } -> std::same_as<PageRoundedSize>;
 
   // Maps the block into the VMAR from the AllocationVmo.
-  { t.Map(std::as_const(storage), tls_size, vmar->borrow(), vmo).is_ok() } -> std::same_as<bool>;
+  {
+    t.Map(std::as_const(storage), tls_size, thrd_zx_create_handles_t{}, vmo).is_ok()
+  } -> std::same_as<bool>;
 
   // Commits the block to the successfully-allocated ThreadStorage object.
   { storage.CommitBlock(t) };
@@ -36,16 +38,16 @@ concept BlockType = requires(T& t, ThreadStorage& storage, PageRoundedSize tls_s
 template <BlockType T>
 using BlockTypeCheck = T;
 
-template <auto Vmar, auto Address>
+template <auto Vmar, auto Address, auto CreateHandle>
 class Block;
 
-template <auto Vmar, auto Address>
-using BlockFor = BlockTypeCheck<Block<Vmar, Address>>;
+template <auto Vmar, auto Address, auto CreateHandle>
+using BlockFor = BlockTypeCheck<Block<Vmar, Address, CreateHandle>>;
 
 template <typename T>
 concept ForThreadBlock = !SomeStack<T> && !NoStack<T>;
 
-template <auto Vmar, auto Address>
+template <auto Vmar, auto Address, auto CreateHandle>
 class BlockBase {
  public:
   void Commit(auto& vmars, auto& addresses) {
@@ -55,8 +57,9 @@ class BlockBase {
 
  protected:
   template <typename T = std::byte>
-  auto Allocate(zx::unowned_vmar vmar, AllocationVmo& vmo, PageRoundedSize size,
+  auto Allocate(thrd_zx_create_handles_t handles, AllocationVmo& vmo, PageRoundedSize size,
                 PageRoundedSize guard_below, PageRoundedSize guard_above) {
+    zx::unowned_vmar vmar{handles.*CreateHandle};
     return block_.Allocate<T>(vmar->borrow(), vmo, size, guard_below, guard_above);
   }
 
@@ -65,14 +68,15 @@ class BlockBase {
 };
 
 // This handles each of the stack blocks.
-template <class VS, class AS, SomeStack V, SomeStack A, V VS::* Vmar, A AS::* Address>
-class Block<Vmar, Address> : public BlockBase<Vmar, Address> {
+template <auto CreateHandle, class VS, class AS, SomeStack V, SomeStack A, V VS::* Vmar,
+          A AS::* Address>
+class Block<Vmar, Address, CreateHandle> : public BlockBase<Vmar, Address, CreateHandle> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return storage.stack_size();
   }
 
-  auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, zx::unowned_vmar vmar,
+  auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, thrd_zx_create_handles_t handles,
            AllocationVmo& vmo) {
     PageRoundedSize guard_below, guard_above;
     if constexpr (kStackGrowsUp<A>) {
@@ -81,20 +85,21 @@ class Block<Vmar, Address> : public BlockBase<Vmar, Address> {
       guard_below = storage.guard_size();
     }
     return this->template Allocate<uint64_t>(  //
-        vmar->borrow(), vmo, storage.stack_size(), guard_below, guard_above);
+        handles, vmo, storage.stack_size(), guard_below, guard_above);
   }
 };
 
 // This handles shadow_call_stack_ or unsafe_stack_ when it's a no-op.
-template <class VS, class AS, NoStack V, NoStack A, V VS::* Vmar, A AS::* Address>
-class Block<Vmar, Address> {
+template <auto CreateHandle, class VS, class AS, NoStack V, NoStack A, V VS::* Vmar,
+          A AS::* Address>
+class Block<Vmar, Address, CreateHandle> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return {};
   }
 
   zx::result<std::span<uint64_t>> Map(const ThreadStorage& storage, PageRoundedSize tls_size,
-                                      zx::unowned_vmar vmar, AllocationVmo& vmo) {
+                                      thrd_zx_create_handles_t handles, AllocationVmo& vmo) {
     return zx::ok(std::span<uint64_t>{});
   }
 
@@ -104,17 +109,18 @@ class Block<Vmar, Address> {
 // This handles thread_block_, which includes both the TCB and the
 // (runtime-dynamic) static TLS segments.  It always gets one-page guards both
 // above and below, regardless of the configured guard size for the stacks.
-template <class VS, class AS, ForThreadBlock V, ForThreadBlock A, V VS::* Vmar, A AS::* Address>
-class Block<Vmar, Address> : public BlockBase<Vmar, Address> {
+template <auto CreateHandle, class VS, class AS, ForThreadBlock V, ForThreadBlock A, V VS::* Vmar,
+          A AS::* Address>
+class Block<Vmar, Address, CreateHandle> : public BlockBase<Vmar, Address, CreateHandle> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {
     return tls_size;
   }
 
-  auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, zx::unowned_vmar vmar,
+  auto Map(const ThreadStorage& storage, PageRoundedSize tls_size, thrd_zx_create_handles_t handles,
            AllocationVmo& vmo) {
     const PageRoundedSize page_size = PageRoundedSize::Page();
-    return this->Allocate(vmar->borrow(), vmo, tls_size, page_size, page_size);
+    return this->Allocate(handles, vmo, tls_size, page_size, page_size);
   }
 };
 
@@ -305,17 +311,25 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
 
 }  // namespace
 
-zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
+zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_from,
                                             std::string_view vmo_name, PageRoundedSize stack,
                                             PageRoundedSize guard) {
-  using ThreadBlock = Block<&decltype(vmar_)::thread_block, &decltype(address_)::thread_block>;
-  using MachineStackBlock =
-      Block<&decltype(vmar_)::machine_stack, &decltype(address_)::machine_stack>;
-  using UnsafeStackBlock = Block<&decltype(vmar_)::unsafe_stack, &decltype(address_)::unsafe_stack>;
-  using ShadowCallStackBlock =
-      Block<&decltype(vmar_)::shadow_call_stack, &decltype(address_)::shadow_call_stack>;
+  using ThreadBlock = Block<  //
+      &decltype(vmar_)::thread_block, &decltype(address_)::thread_block,
+      &thrd_zx_create_handles_t::thread_block_vmar>;
+  using MachineStackBlock = Block<  //
+      &decltype(vmar_)::machine_stack, &decltype(address_)::machine_stack,
+      &thrd_zx_create_handles_t::machine_stack_vmar>;
+  using UnsafeStackBlock = Block<  //
+      &decltype(vmar_)::unsafe_stack, &decltype(address_)::unsafe_stack,
+      &thrd_zx_create_handles_t::security_stack_vmar>;
+  using ShadowCallStackBlock = Block<  //
+      &decltype(vmar_)::shadow_call_stack, &decltype(address_)::shadow_call_stack,
+      &thrd_zx_create_handles_t::security_stack_vmar>;
 
-  assert(*allocate_from);
+  assert(allocate_from.machine_stack_vmar != ZX_HANDLE_INVALID);
+  assert(allocate_from.security_stack_vmar != ZX_HANDLE_INVALID);
+  assert(allocate_from.thread_block_vmar != ZX_HANDLE_INVALID);
   assert(stack);
   assert(!vmo_name.empty());
 
@@ -340,7 +354,7 @@ zx::result<Thread*> ThreadStorage::Allocate(zx::unowned_vmar allocate_from,
     }
 
     auto map_one_block = [&]<BlockType B>(B& block) -> zx::result<> {
-      zx::result result = block.Map(*this, thread_block_size, allocate_from->borrow(), *vmo);
+      zx::result result = block.Map(*this, thread_block_size, allocate_from, *vmo);
       if (result.is_error()) [[unlikely]] {
         return result.take_error();
       }

@@ -15,6 +15,7 @@
 #include <threads.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
+#include <zircon/threads.h>
 #include <zircon/tls.h>
 #include <zircon/types.h>
 
@@ -126,6 +127,9 @@ struct pthread {
   struct pthread* next;
   struct pthread** prevp;
 
+  // The _unowned_ process and VMAR handles for creating new threads.
+  thrd_zx_create_handles_t create_handles;
+
   // These `storage_*` fields all "belong" to the ThreadStorage class.
   // Only it accesses them.
   size_t storage_stack_size, storage_guard_size, storage_thread_block_size;
@@ -136,12 +140,11 @@ struct pthread {
 #if HAVE_SHADOW_CALL_STACK
   uintptr_t storage_shadow_call_stack_address;
 #endif
-  // The _unowned_ VMAR handle used to unmap the stack and TCB regions.
-  zx_handle_t storage_vmar;
-
-  // The _unowned_ process handle that is used to create new threads in
-  // ThreadCreate.
-  zx_handle_t process_handle;
+  // The _unowned_ handles copied from the creator's create_handles.  These
+  // VMAR handles are used to unmap their respective storage blocks.  (The
+  // process handle stored here is not used, but the struct is convenient and
+  // the same space would be lost to alignment padding anyway.)
+  thrd_zx_create_handles_t storage_handles;
 
   struct tls_dtor* tls_dtors;
   void* tsd[PTHREAD_KEYS_MAX];

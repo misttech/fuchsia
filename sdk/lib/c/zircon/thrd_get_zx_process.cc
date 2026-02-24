@@ -6,4 +6,4 @@
 
 #include "threads_impl.h"
 
-__EXPORT zx_handle_t thrd_get_zx_process() { return __pthread_self()->process_handle; }
+__EXPORT zx_handle_t thrd_get_zx_process() { return __pthread_self()->create_handles.process; }

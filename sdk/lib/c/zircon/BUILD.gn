@@ -9,7 +9,9 @@ libc_source_set("zircon") {
     "getentropy.c",
     "internal.c",
     "take_startup_handle.c",
+    "thrd_get_zx_create_handles.cc",
     "thrd_get_zx_process.cc",
+    "thrd_set_zx_create_handles.cc",
     "thrd_set_zx_process.cc",
     "utc.cc",
   ]

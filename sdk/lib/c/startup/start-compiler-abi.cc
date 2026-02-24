@@ -77,8 +77,13 @@ StartupTrampoline StartCompilerAbi(zx_handle_t bootstrap, const void* vdso_base)
   const PageRoundedSize stack_size = InitialStackSize();
   ZX_DEBUG_ASSERT(stack_size);
   ThreadStorage storage;
-  zx::result<Thread*> new_thread = storage.Allocate(  //
-      allocation_vmar.borrow(), thread_name, stack_size, default_guard_size);
+  zx::result<Thread*> new_thread = storage.Allocate(
+      {
+          .machine_stack_vmar = allocation_vmar.get(),
+          .security_stack_vmar = allocation_vmar.get(),
+          .thread_block_vmar = allocation_vmar.get(),
+      },
+      thread_name, stack_size, default_guard_size);
   if (new_thread.is_error()) [[unlikely]] {
     ZX_PANIC(
         "cannot allocate initial thread stacks (%#zx bytes + %#zx guard)"

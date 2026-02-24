@@ -50,7 +50,6 @@ ThreadStorage::~ThreadStorage() {
 ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) {
   constexpr auto take_vmar = [](zx_handle_t& storage_vmar) {
     zx::unowned_vmar vmar{std::exchange(storage_vmar, ZX_HANDLE_INVALID)};
-    assert(*vmar);
     return vmar;
   };
 
@@ -66,22 +65,22 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) 
   result.stack_size_ = take_size(thread.storage_stack_size);
   result.guard_size_ = take_size(thread.storage_guard_size);
 
-  result.vmar_.machine_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.vmar_.machine_stack = take_vmar(thread.storage_handles.machine_stack_vmar);
   result.address_.machine_stack = std::exchange(thread.storage_machine_stack_address, 0);
 
 #if HAVE_UNSAFE_STACK
-  result.vmar_.unsafe_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.vmar_.unsafe_stack = take_vmar(thread.storage_handles.security_stack_vmar);
   result.address_.unsafe_stack = std::exchange(thread.storage_unsafe_stack_address, 0);
 #endif
 
 #if HAVE_SHADOW_CALL_STACK
-  result.vmar_.shadow_call_stack = zx::unowned_vmar{thread.storage_vmar};
+  result.vmar_.shadow_call_stack = take_vmar(thread.storage_handles.security_stack_vmar);
   result.address_.shadow_call_stack = std::exchange(thread.storage_shadow_call_stack_address, 0);
 #endif
 
   if (take_thread_block) {
     result.thread_block_size_ = take_size(thread.storage_thread_block_size);
-    result.vmar_.thread_block = take_vmar(thread.storage_vmar);
+    result.vmar_.thread_block = take_vmar(thread.storage_handles.thread_block_vmar);
     result.address_.thread_block = std::exchange(thread.storage_thread_block_address, 0);
   }
 
@@ -91,21 +90,22 @@ ThreadStorage ThreadStorage::FromThread(Thread& thread, bool take_thread_block) 
 void ThreadStorage::ToThread(Thread& thread) && {
   thread.storage_thread_block_size = std::exchange(thread_block_size_, {}).get();
   thread.storage_thread_block_address = std::exchange(address_.thread_block, {});
-  thread.storage_vmar = std::exchange(vmar_.thread_block, {})->get();
+  thread.storage_handles.thread_block_vmar = std::exchange(vmar_.thread_block, {})->get();
 
   thread.storage_stack_size = std::exchange(stack_size_, {}).get();
   thread.storage_guard_size = std::exchange(guard_size_, {}).get();
   thread.storage_machine_stack_address = std::exchange(address_.machine_stack, {}).value;
-  assert(std::exchange(vmar_.machine_stack, {}).value->get() == thread.storage_vmar);
+  thread.storage_handles.machine_stack_vmar = std::exchange(vmar_.machine_stack, {}).value->get();
 
 #if HAVE_UNSAFE_STACK
   thread.storage_unsafe_stack_address = std::exchange(address_.unsafe_stack, {}).value;
-  assert(std::exchange(vmar_.unsafe_stack, {}).value->get() == thread.storage_vmar);
+  thread.storage_handles.security_stack_vmar = std::exchange(vmar_.unsafe_stack, {}).value->get();
 #endif
 
 #if HAVE_SHADOW_CALL_STACK
   thread.storage_shadow_call_stack_address = std::exchange(address_.shadow_call_stack, {}).value;
-  assert(std::exchange(vmar_.shadow_call_stack, {}).value->get() == thread.storage_vmar);
+  thread.storage_handles.security_stack_vmar =
+      std::exchange(vmar_.shadow_call_stack, {}).value->get();
 #endif
 }
 

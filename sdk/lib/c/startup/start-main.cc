@@ -129,13 +129,19 @@ void SetStartHandles(zx::process process_self, zx::vmar allocation_vmar, zx::thr
   // Initialize the rest of the struct pthread now, since it's simple.
   self->locale = &libc.global_locale;
 
-  // This is what's used to unmap memory regions without referring to a global.
-  self->storage_vmar = __zircon_vmar_root_self;
+  // These handles are used to create new threads.  They can be changed by
+  // thrd_set_zx_create_handles() or thrd_set_zx_process(), and are inherited
+  // in new threads as they are created.
+  self->create_handles = {
+      .process = __zircon_process_self,
+      .machine_stack_vmar = __zircon_vmar_root_self,
+      .security_stack_vmar = __zircon_vmar_root_self,
+      .thread_block_vmar = __zircon_vmar_root_self,
+  };
 
-  // This is what's used to create new threads.  Each new thread inherits it
-  // from the creating thread and then its slot might be reset later by
-  // thrd_set_zx_process to affect the new threads it creates afterwards.
-  self->process_handle = __zircon_process_self;
+  // The same VMAR handles are kept separately for unmapping this initial
+  // thread's ThreadStorage blocks.  These don't change.
+  self->storage_handles = self->create_handles;
 }
 
 // This is called on the proper final machine stack.  The MainFunction type

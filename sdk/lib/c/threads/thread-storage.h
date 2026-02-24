@@ -7,6 +7,7 @@
 
 #include <lib/elfldltl/tls-layout.h>
 #include <lib/zx/result.h>
+#include <zircon/threads.h>
 
 #include <cassert>
 #include <concepts>
@@ -85,9 +86,8 @@ class ThreadStorage {
   //    does not require a bespoke ABI contract for a DTV.
   //
   // The name string will become the ZX_PROP_NAME used for the VMO, and must
-  // not be empty.  The VMAR handle is saved and used for destruction, so it
-  // must remain valid for the lifetime of the object (it's just the long-lived
-  // primary allocation / root VMAR handle, except in tests).
+  // not be empty.  The VMAR handles are saved and used for destruction, so
+  // they must remain valid for the lifetime of the object.
   //
   // The returned Thread* points somewhere inside the thread area block owned
   // by this ThreadStorage object, which also contains the static TLS area
@@ -97,7 +97,7 @@ class ThreadStorage {
   // consider the Fuchsia Compiler ABI <zircon/tls.h> fixed slots, as well as
   // the $tp->self pointer on x86, to be part of the TCB--at one end of it or
   // the other--though nothing else about the TCB is part of any public ABI.)
-  zx::result<Thread*> Allocate(zx::unowned_vmar allocate_from, std::string_view vmo_name,
+  zx::result<Thread*> Allocate(thrd_zx_create_handles_t allocate_from, std::string_view vmo_name,
                                PageRoundedSize stack, PageRoundedSize guard);
 
   // This frees just the blocks for all the stacks, leaving the thread block

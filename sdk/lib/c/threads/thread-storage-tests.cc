@@ -32,6 +32,39 @@ using TlsTraits = elfldltl::TlsTraits<>;
 
 using InitializeTlsFn = void(std::span<std::byte> thread_block, size_t tp_offset);
 
+class TemporaryVmarForTest {
+ public:
+  TemporaryVmarForTest() = default;
+  TemporaryVmarForTest(TemporaryVmarForTest&&) = default;
+  TemporaryVmarForTest& operator=(TemporaryVmarForTest&&) = default;
+
+  explicit operator bool() const { return vmar_.is_valid(); }
+
+  void Init(PageRoundedSize size) {
+    ASSERT_FALSE(vmar_);
+    uintptr_t base;
+    EXPECT_OK(zx::vmar::root_self()->allocate(  //
+        kTestVmarOptions, 0, size.get(), &vmar_, &base));
+    size_ = size;
+  }
+
+  const zx::vmar& vmar() const { return vmar_; }
+
+  PageRoundedSize size() const { return size_; }
+
+  ~TemporaryVmarForTest() {
+    if (vmar_) {
+      EXPECT_OK(vmar_.destroy());
+    }
+  }
+
+ private:
+  static constexpr zx_vm_option_t kTestVmarOptions = ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE;
+
+  zx::vmar vmar_;
+  PageRoundedSize size_;
+};
+
 class LibcThreadTests : public ::zxtest::Test {
  public:
   // Place everything inside a constrained VMAR that's always destroyed at the
@@ -50,30 +83,26 @@ class LibcThreadTests : public ::zxtest::Test {
 
   // Get the test VMAR, setting it up if need be.
   zx::unowned_vmar TestVmar(PageRoundedSize size = kTestVmarSize) {
-    if (size != test_vmar_size_) {
+    if (size != test_vmar_.size()) {
       if (test_vmar_) {
-        EXPECT_OK(test_vmar_.destroy());
-        test_vmar_.reset();
+        test_vmar_ = {};
       }
-      uintptr_t test_vmar_base;
-      EXPECT_OK(zx::vmar::root_self()->allocate(  //
-          kTestVmarOptions, 0, size.get(), &test_vmar_, &test_vmar_base));
-      test_vmar_size_ = size;
+      test_vmar_.Init(size);
     }
-    return test_vmar_.borrow();
+    return test_vmar_.vmar().borrow();
   }
 
-  void TearDown() override {
-    if (test_vmar_) {
-      ASSERT_OK(test_vmar_.destroy());
-    }
+  thrd_zx_create_handles_t CreateHandles(PageRoundedSize size = kTestVmarSize) {
+    zx::unowned_vmar vmar = TestVmar(size);
+    return {
+        .machine_stack_vmar = vmar->get(),
+        .security_stack_vmar = vmar->get(),
+        .thread_block_vmar = vmar->get(),
+    };
   }
 
  private:
-  static constexpr zx_vm_option_t kTestVmarOptions = ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE;
-
-  zx::vmar test_vmar_;
-  PageRoundedSize test_vmar_size_;
+  TemporaryVmarForTest test_vmar_;
 };
 
 constexpr std::string_view kVmoName = "thread-storage-test";
@@ -81,7 +110,7 @@ constexpr std::string_view kVmoName = "thread-storage-test";
 const PageRoundedSize kOnePage{1};
 const PageRoundedSize kManyPages = kOnePage * 256;
 
-constexpr size_t kStackCount = 2 + (kShadowCallStackAbi ? 1 : 0);
+constexpr size_t kStackCount = 1 + (kSafeStackAbi ? 1 : 0) + (kShadowCallStackAbi ? 1 : 0);
 
 // This prevents the compiler from thinking it knows what the returned pointer
 // is, so it must really do a load to read *ptr if that value is used; and must
@@ -293,7 +322,7 @@ TEST_F(LibcThreadTests, ThreadStorage) {
   EXPECT_TRUE(storage.shadow_call_stack().empty());
 
   // Allocate the most basic layout: one-page stacks, one-page guards.
-  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 
   CheckVmoName(TestVmar(), kVmoName, reinterpret_cast<uintptr_t>(*result));
@@ -306,7 +335,7 @@ TEST_F(LibcThreadTests, ThreadStorageTooBig) {
 
   // Use a stack size so big that they can't all be mapped in.
   const PageRoundedSize stack{kTestVmarSize / 2};
-  auto result = storage.Allocate(TestVmar(), kVmoName, stack, kOnePage);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, stack, kOnePage);
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error_value(), ZX_ERR_NO_RESOURCES);
 }
@@ -314,7 +343,7 @@ TEST_F(LibcThreadTests, ThreadStorageTooBig) {
 TEST_F(LibcThreadTests, ThreadStorageBigStack) {
   ThreadStorage storage;
 
-  auto result = storage.Allocate(TestVmar(), kVmoName, kManyPages, kOnePage);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, kManyPages, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kManyPages, kOnePage, storage, *result);
 }
@@ -322,7 +351,7 @@ TEST_F(LibcThreadTests, ThreadStorageBigStack) {
 TEST_F(LibcThreadTests, ThreadStorageBigGuard) {
   ThreadStorage storage;
 
-  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kManyPages);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kManyPages);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kManyPages, storage, *result);
 }
@@ -337,7 +366,7 @@ TEST_F(LibcThreadTests, ThreadStorageNoGuard) {
   // page with no guards.  The thread block always gets two one-page guards, so
   // the minimal one is three pages.
   const PageRoundedSize vmar_size = (kOnePage * kStackCount) + (kOnePage * 3);
-  auto result = storage.Allocate(TestVmar(vmar_size), kVmoName, kOnePage, kNoGuard);
+  auto result = storage.Allocate(CreateHandles(vmar_size), kVmoName, kOnePage, kNoGuard);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 }
 
@@ -371,7 +400,7 @@ TEST_F(LibcThreadTests, ThreadStorageTls) {
   };
 
   ThreadStorage storage;
-  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kOnePage, storage, *result);
 
@@ -407,7 +436,7 @@ TEST_F(LibcThreadTests, ThreadStorageTlsAlignment) {
   };
 
   ThreadStorage storage;
-  auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
+  auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   CheckStorage(kOnePage, kOnePage, storage, *result);
 }
@@ -437,7 +466,7 @@ TEST_F(LibcThreadTests, ThreadStorageTlsReal) {
     ASSERT_GE(gTlsLayout.size_bytes(), std::abs(kIeOffset) + sizeof(uint32_t));
 
     ThreadStorage storage;
-    auto result = storage.Allocate(TestVmar(), kVmoName, kOnePage, kOnePage);
+    auto result = storage.Allocate(CreateHandles(), kVmoName, kOnePage, kOnePage);
     ASSERT_TRUE(result.is_ok()) << result.status_string();
     CheckStorage(kOnePage, kOnePage, storage, *result);
 
@@ -452,6 +481,65 @@ TEST_F(LibcThreadTests, ThreadStorageTlsReal) {
   // sure the test's own expectations really make sense.
   ASSERT_NO_FATAL_FAILURE(check_tls());
   std::jthread from_other_thread(check_tls);
+}
+
+decltype(auto) operator<<(auto& os, std::span<zx_info_maps_t> info) {
+  os << "{";
+  for (const auto& entry : info) {
+    os << "{\"" << entry.name << "\", " << std::hex << std::showbase << entry.base << ", "
+       << entry.size << ", type=" << entry.type << "}\n";
+  }
+  return os << "}";
+}
+
+// Each VMAR should contain a child VMAR that in turn contains just one mapping
+// that is exactly the block.
+void CheckVmar(std::string_view which, zx::unowned_vmar vmar, std::span<const std::byte> block) {
+  std::array<zx_info_maps_t, 8> info;
+  size_t actual, avail;
+  ASSERT_OK(vmar->get_info(ZX_INFO_VMAR_MAPS, info.data(), sizeof(info), &actual, &avail)) << which;
+  ASSERT_EQ(avail, actual) << which;
+
+  std::stringstream s;
+  s << std::span{info}.subspan(0, actual);
+  ASSERT_EQ(actual, 3u) << which << ": " << s.str();
+
+  EXPECT_EQ(info[0].type, ZX_INFO_MAPS_TYPE_VMAR) << which << ": " << s.str();
+  EXPECT_EQ(info[1].type, ZX_INFO_MAPS_TYPE_VMAR) << which << ": " << s.str();
+  EXPECT_EQ(info[2].type, ZX_INFO_MAPS_TYPE_MAPPING) << which << ": " << s.str();
+
+  const uintptr_t block_base = reinterpret_cast<uintptr_t>(block.data());
+  EXPECT_EQ(info[2].base, block_base) << which;
+  EXPECT_EQ(info[2].size, block.size_bytes()) << which;
+}
+
+TEST_F(LibcThreadTests, ThreadStorageCreateHandles) {
+  TemporaryVmarForTest machine_stack, security_stack, thread_block;
+  ASSERT_NO_FATAL_FAILURE(machine_stack.Init(kManyPages));
+  ASSERT_NO_FATAL_FAILURE(security_stack.Init(kManyPages));
+  ASSERT_NO_FATAL_FAILURE(thread_block.Init(kManyPages));
+
+  const thrd_zx_create_handles_t handles = {
+      .machine_stack_vmar = machine_stack.vmar().get(),
+      .security_stack_vmar = security_stack.vmar().get(),
+      .thread_block_vmar = thread_block.vmar().get(),
+  };
+
+  ThreadStorage storage;
+  auto result = storage.Allocate(handles, kVmoName, kOnePage, kOnePage);
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  CheckStorage(kOnePage, kOnePage, storage, *result);
+
+  CheckVmar("thread block", thread_block.vmar().borrow(), storage.thread_block());
+  CheckVmar("machine stack", machine_stack.vmar().borrow(), std::as_bytes(storage.machine_stack()));
+  if constexpr (kShadowCallStackAbi) {
+    CheckVmar("shadow call stack", security_stack.vmar().borrow(),
+              std::as_bytes(storage.shadow_call_stack()));
+  }
+  if constexpr (kSafeStackAbi) {
+    CheckVmar("unsafe stack", security_stack.vmar().borrow(),
+              std::as_bytes(storage.unsafe_stack()));
+  }
 }
 
 }  // namespace

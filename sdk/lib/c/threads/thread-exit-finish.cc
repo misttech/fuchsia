@@ -55,7 +55,7 @@ constexpr uintptr_t kStackAlignment = elfldltl::AbiTraits<>::kStackAlignment<>;
   // it.  It's owned by the user (or is just the zx::vmar::root_self() handle)
   // and must have been kept alive at least for the lifetime of this thread.
   // If the handle is no longer valid, we'll crash instead of a detached exit.
-  zx::unowned_vmar unmap_vmar{self.storage_vmar};
+  zx::unowned_vmar unmap_vmar{self.storage_handles.thread_block_vmar};
 
   // Enter EXITING state, and see what sort of cleanup should happen based on
   // the old state.  This deallocates the TCB region too for the detached case.

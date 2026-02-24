@@ -57,6 +57,8 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   std::string_view thread_name = attrs.name.str();
   std::string_view vmo_name = thread_name;
 
+  Thread& self = *__pthread_self();
+
   // First allocate the storage for the Thread, its stacks, etc.
   CreatedThread thread;
   {
@@ -69,9 +71,7 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
     // its list to be updated for new TLS sizes.
     std::lock_guard static_tls_lock{kLockForThreadCreate};
     ThreadStorage storage;
-    zx::unowned_vmar allocation_vmar = AllocationVmar();
-    zx::result allocate =
-        storage.Allocate(allocation_vmar->borrow(), vmo_name, attrs.stack, attrs.guard);
+    zx::result allocate = storage.Allocate(self.create_handles, vmo_name, attrs.stack, attrs.guard);
     if (allocate.is_error()) {
       return allocate.take_error();
     }
@@ -79,7 +79,6 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
     // Take ownership of the Thread here, moving storage ownership into it.
     thread.reset(*allocate);
     std::move(storage).ToThread(*thread);
-    assert(thread->storage_vmar == allocation_vmar->get());
 
     // With that ownership goes ownership of its place on the all-threads list.
     AllThreads().push_front(*thread);
@@ -88,8 +87,7 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   // Hereafter, when this CreatedThread object dies, that will remove it from
   // the all-threads list and reclaim all the storage.  But there is still no
   // kernel thread yet, so it's time to create that now.
-  Thread& self = *__pthread_self();
-  zx::unowned_process process{self.process_handle};
+  zx::unowned_process process{self.create_handles.process};
   zx::thread thread_handle;
   zx_status_t status = zx::thread::create(
       *process, thread_name.data(), static_cast<uint32_t>(thread_name.size()), 0, &thread_handle);
@@ -108,8 +106,8 @@ zx::result<CreatedThread> ThreadCreate(ThreadAttributes attrs) {
   thread->abi.stack_guard = self.abi.stack_guard;
 
   // This is inherited from the creating thread, but might be changed with
-  // thrd_set_zx_process.
-  thread->process_handle = self.process_handle;
+  // thrd_set_zx_create_handles() or thrd_set_zx_process().
+  thread->create_handles = self.create_handles;
 
   // The user callback supplies the void* given to the next user callback.
   const std::span stack = ThreadStorage::ThreadMachineStack(*thread);
