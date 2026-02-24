@@ -30,7 +30,7 @@ class ApfTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
         super().setup_test()
 
         device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
-            self.fuchsia_device.honeydew_fd.fuchsia_controller.connect_device_proxy(
+            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
                     "fuchsia.wlan.device.service.DeviceMonitor",

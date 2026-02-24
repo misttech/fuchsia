@@ -8,35 +8,26 @@ wlandevicemonitor is not running.
 
 import logging
 
+from fuchsia_base_test import fuchsia_base_test
+
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_device_service as fidl_wlan_device_service
-from antlion.controllers import fuchsia_device
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from honeydew.typing.custom_types import FidlEndpoint
-from mobly import base_test, test_runner
-from mobly.asserts import abort_class_if
+from mobly import test_runner
 
 
-class WlanCanaryTest(AsyncAdapter, base_test.BaseTestClass):
+class WlanCanaryTest(AsyncAdapter, fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
-        fuchsia_devices = self.register_controller(fuchsia_device)
-
-        abort_class_if(
-            len(fuchsia_devices) != 1, "Requires exactly one Fuchsia device"
-        )
-        self.fuchsia_device = fuchsia_devices[0]
-        abort_class_if(
-            not hasattr(self.fuchsia_device, "honeydew_fd")
-            or self.fuchsia_device.honeydew_fd is None,
-            "Requires a Honeydew-enabled FuchsiaDevice",
-        )
-
-        self.wlan_device_monitor_proxy = fidl_wlan_device_service.DeviceMonitorClient(
-            self.fuchsia_device.honeydew_fd.fuchsia_controller.connect_device_proxy(
-                FidlEndpoint(
-                    "core/wlandevicemonitor",
-                    "fuchsia.wlan.device.service.DeviceMonitor",
+        super().setup_class()
+        self.wlan_device_monitor_proxy = (
+            fidl_wlan_device_service.DeviceMonitorClient(
+                self.fuchsia_devices[0].fuchsia_controller.connect_device_proxy(
+                    FidlEndpoint(
+                        "core/wlandevicemonitor",
+                        "fuchsia.wlan.device.service.DeviceMonitor",
+                    )
                 )
             )
         )

@@ -11,16 +11,16 @@ from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 from antlion import controllers
-from antlion.controllers import fuchsia_device
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.packet_capture import PacketCapture
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.wifi import wifi_test_utils as wutils
+from fuchsia_base_test import fuchsia_base_test
 from fuchsia_controller_py import Channel
 from honeydew.typing.custom_types import FidlEndpoint
-from mobly import base_test, signals
-from mobly.asserts import abort_class_if, assert_equal, fail
+from mobly import signals
+from mobly.asserts import assert_equal, fail
 from mobly.records import TestResultRecord
 
 NL80211_ATTR_WIPHY = 1
@@ -101,27 +101,19 @@ def verify_new_interface_response(
     )
 
 
-class WlanixBaseTestClass(base_test.BaseTestClass):
+class WlanixBaseTestClass(fuchsia_base_test.FuchsiaBaseTest):
     wlanix_proxy: fidl_wlanix.WlanixClient
 
     def setup_class(self) -> None:
-        fuchsia_devices: list[
-            fuchsia_device.FuchsiaDevice
-        ] | None = self.register_controller(fuchsia_device)
-
-        if fuchsia_devices is None or len(fuchsia_devices) != 1:
+        super().setup_class()
+        if len(self.fuchsia_devices) != 1:
             raise signals.TestAbortClass(
                 "Requires exactly one Fuchsia device",
             )
-        self.fuchsia_device = fuchsia_devices[0]
-        abort_class_if(
-            not hasattr(self.fuchsia_device, "honeydew_fd")
-            or self.fuchsia_device.honeydew_fd is None,
-            "Requires a Honeydew-enabled FuchsiaDevice",
-        )
+        self.fuchsia_device = self.fuchsia_devices[0]
 
         self.wlanix_proxy = fidl_wlanix.WlanixClient(
-            self.fuchsia_device.honeydew_fd.fuchsia_controller.connect_device_proxy(
+            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint("core/wlanix", "fuchsia.wlan.wlanix.Wlanix")
             )
         )
@@ -178,6 +170,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
                 0,
                 "Every test should end with no ifaces.",
             )
+        super().teardown_test()
 
 
 class IfaceBaseTestClass(WifiChipBaseTestClass):
@@ -255,6 +248,7 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
             )
 
         asyncio.run(destroy_iface())
+        super().teardown_class()
 
 
 class ConnectionBaseTestClass(IfaceBaseTestClass):
@@ -329,12 +323,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         asyncio.run(self.supplicant_sta_iface_proxy.disconnect())
         super().teardown_test()
 
-    def teardown_class(self) -> None:
-        # Save a snapshot after the entire test suite completes. This will be the only snapshot
-        # if all tests succeeded.
-        self.fuchsia_device.take_bug_report()
-        super().teardown_class()
-
     def on_fail(self, record: TestResultRecord) -> None:
         """A function that is executed upon a test failure.
 
@@ -349,13 +337,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
                 self.packet_logger, self.packet_log_pid, test_status=False
             )
             self.packet_log_pid = {}
-
-        # Save a snapshot for debugging
-        if (
-            hasattr(self.fuchsia_device, "take_bug_report_on_fail")
-            and self.fuchsia_device.take_bug_report_on_fail
-        ):
-            self.fuchsia_device.take_bug_report()
 
         # Maintain the invariant that every test starts with no access points.
         self.access_point().stop_all_aps()
