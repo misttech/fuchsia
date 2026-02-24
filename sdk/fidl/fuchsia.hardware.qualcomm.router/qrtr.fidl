@@ -14,6 +14,10 @@ using zx;
 
 alias PortId = uint32;
 alias NodeId = uint32;
+/// Network Cluster Id, used for QRTR frame forwarding among transports.
+alias NetId = uint32;
+
+const NET_ID_DEFAULT_VALUE NetId = 0;
 
 /// Signal asserted on event handle when the [`QrtrClientConnection.Read`] method
 /// can return data.
@@ -172,6 +176,12 @@ protocol QrtrTransportConnector {
     ///
     /// Child drivers should only establish one connection to the QRTR driver.
     flexible EstablishConnection(resource struct {
+        options @generated_name("TransportConnectionOptions") table {
+            /// Network Cluster ID
+            ///
+            /// Optional. Interpreted as `NET_ID_DEFAULT_VALUE` if absent.
+            1: net_id NetId;
+        };
         proxy client_end:QrtrTransportChannel;
     }) -> () error Error;
 };
