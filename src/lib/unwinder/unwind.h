@@ -6,11 +6,13 @@
 #define SRC_LIB_UNWINDER_UNWIND_H_
 
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
 #include "sdk/lib/fit/include/lib/fit/function.h"
 #include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/frame.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/module.h"
@@ -28,7 +30,7 @@ class Unwinder {
   // Initialize the unwinder from a vector of modules.
   //
   // Each module can supply its own data accessor and address mode.
-  explicit Unwinder(const std::vector<Module>& modules);
+  explicit Unwinder(std::span<const Module> modules);
 
   // Unwind from a stack and a set of registers up to given |max_depth|.
   //
@@ -42,12 +44,13 @@ class Unwinder {
   // If |current.fatal_error| is false, |next.regs| and |next.trust| will be populated.
   void Step(Memory* stack, Frame& current, Frame& next);
 
+  ElfModuleCache module_cache_;
   CfiUnwinder cfi_unwinder_;
 };
 
 class AsyncUnwinder {
  public:
-  explicit AsyncUnwinder(const std::vector<Module>& modules);
+  explicit AsyncUnwinder(std::span<const Module> modules);
 
   void Unwind(AsyncMemory::Delegate* delegate, const Registers& registers, size_t max_depth,
               fit::callback<void(std::vector<Frame>)> cb);
@@ -65,6 +68,7 @@ class AsyncUnwinder {
   size_t max_depth_;
   std::vector<Frame> result_;
   std::unique_ptr<AsyncMemory> stack_;
+  ElfModuleCache module_cache_;
   CfiUnwinder cfi_unwinder_;
 
   std::vector<std::unique_ptr<UnwinderBase>> unwinders_;

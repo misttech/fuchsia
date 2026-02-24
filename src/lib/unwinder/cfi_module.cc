@@ -6,13 +6,13 @@
 
 #include <elf.h>
 
-#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
-#include <cstdio>
 #include <limits>
 #include <map>
 #include <string>
+
+#include <safemath/checked_math.h>
 
 #include "src/lib/unwinder/cfi_parser.h"
 #include "src/lib/unwinder/elf_utils.h"
@@ -110,19 +110,6 @@ const constexpr uint64_t kDwarf64CieId = std::numeric_limits<uint64_t>::max();
   }
 }
 
-Elf64_Phdr UpcastPhdr(const Elf32_Phdr& phdr32) {
-  Elf64_Phdr phdr;
-  phdr.p_type = phdr32.p_type;
-  phdr.p_offset = phdr32.p_offset;
-  phdr.p_vaddr = phdr32.p_vaddr;
-  phdr.p_paddr = phdr32.p_paddr;
-  phdr.p_filesz = phdr32.p_filesz;
-  phdr.p_memsz = phdr32.p_memsz;
-  phdr.p_flags = phdr32.p_flags;
-  phdr.p_align = phdr32.p_align;
-  return phdr;
-}
-
 }  // namespace
 
 // Load the .eh_frame and/or .debug_frame.
@@ -143,52 +130,29 @@ Error CfiModule::Load() {
     return Error("no elf memory");
   }
 
+  // ElfModule already handles the ELF header and program headers.
+  // We just need them here to find the unwind sections.
   Elf64_Ehdr ehdr;
-
-  // Probe the ELF identification header from the larger ELF header to distinguish between 32 and 64
-  // bit modules. We'll translate any 32 bit headers into their 64 bit ELF type counterparts so the
-  // below code can not worry about the difference.
-  switch (address_size_) {
-    case Module::AddressSize::k32Bit: {
-      Elf32_Ehdr ehdr32;
-      if (auto err = elf_->Read(elf_ptr_, ehdr32); err.has_err()) {
-        return err;
-      }
-
-      memcpy(ehdr.e_ident, ehdr32.e_ident, EI_NIDENT);
-      ehdr.e_type = ehdr32.e_type;
-      ehdr.e_machine = ehdr32.e_machine;
-      ehdr.e_version = ehdr32.e_version;
-      ehdr.e_entry = ehdr32.e_entry;
-      ehdr.e_phoff = ehdr32.e_phoff;
-      ehdr.e_shoff = ehdr32.e_shoff;
-      ehdr.e_flags = ehdr32.e_flags;
-      ehdr.e_ehsize = ehdr32.e_ehsize;
-      ehdr.e_phentsize = ehdr32.e_phentsize;
-      ehdr.e_phnum = ehdr32.e_phnum;
-      ehdr.e_shentsize = ehdr32.e_shentsize;
-      ehdr.e_shnum = ehdr32.e_shnum;
-      ehdr.e_shstrndx = ehdr32.e_shstrndx;
-      break;
-    }
-    case Module::AddressSize::k64Bit: {
-      // 64 Bit modules can just read the 64 bit ELF header directly.
-      if (auto err = elf_->Read(elf_ptr_, ehdr); err.has_err()) {
-        return err;
-      }
-      break;
-    }
-    default:
-      return Error("Unknown ELF class.");
-  }
-
-  // Header magic should be correct.
-  if (strncmp(reinterpret_cast<const char*>(ehdr.e_ident), ELFMAG, SELFMAG) != 0) {
-    return Error("not an ELF image");
-  }
-
-  if (auto err = LoadPhdrs(ehdr); err.has_err()) {
+  if (auto err = elf_->Read(loaded_elf_module_.load_address(), ehdr); err.has_err()) {
     return err;
+  }
+
+  eh_frame_hdr_ptr_ = 0;
+  for (const auto& phdr : loaded_elf_module_.phdrs()) {
+    if (phdr.p_type == PT_GNU_EH_FRAME) {
+      if (loaded_elf_module_.mode() == Module::AddressMode::kProcess) {
+        if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr.p_vaddr)
+                 .AssignIfValid(&eh_frame_hdr_ptr_)) {
+          return Error("Calculated eh_frame_hdr start overflows");
+        }
+      } else {
+        if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr.p_offset)
+                 .AssignIfValid(&eh_frame_hdr_ptr_)) {
+          return Error("Calculated eh_frame_hdr start overflows");
+        }
+      }
+      break;
+    }
   }
 
   auto eh_frame_err = LoadEhFrame(ehdr);
@@ -203,10 +167,6 @@ Error CfiModule::Load() {
 }
 
 Error CfiModule::LoadEhFrame(const Elf64_Ehdr& ehdr) {
-  if (auto err = LoadEhFrameHdr(ehdr); err.has_err()) {
-    return err;
-  }
-
   // ==============================================================================================
   // Load from the .eh_frame_hdr section.
   // This section may not always be present - it's purely an optimization when we get to use it.
@@ -256,56 +216,6 @@ Error CfiModule::LoadEhFrame(const Elf64_Ehdr& ehdr) {
   return Success();
 }
 
-Error CfiModule::LoadPhdrs(const Elf64_Ehdr& ehdr) {
-  const bool is_64bit = ehdr.e_ident[EI_CLASS] == ELFCLASS64;
-
-  phdrs_.resize(ehdr.e_phnum);
-  if (is_64bit) {
-    if (auto err = elf_->ReadBytes(elf_ptr_ + ehdr.e_phoff, ehdr.e_phnum * ehdr.e_phentsize,
-                                   phdrs_.data());
-        err.has_err()) {
-      return err;
-    }
-  } else {
-    std::vector<Elf32_Phdr> phdr32_buf(ehdr.e_phnum);
-    if (auto err = elf_->ReadBytes(elf_ptr_ + ehdr.e_phoff, ehdr.e_phnum * ehdr.e_phentsize,
-                                   phdr32_buf.data());
-        err.has_err()) {
-      return err;
-    }
-
-    for (size_t i = 0; i < ehdr.e_phnum; i++) {
-      phdrs_[i] = UpcastPhdr(phdr32_buf[i]);
-    }
-  }
-
-  return Success();
-}
-
-Error CfiModule::LoadEhFrameHdr(const Elf64_Ehdr& ehdr) {
-  pc_begin_ = std::numeric_limits<uint64_t>::max();
-  pc_end_ = std::numeric_limits<uint64_t>::min();
-
-  for (const auto& phdr : phdrs_) {
-    if (phdr.p_type == PT_GNU_EH_FRAME) {
-      if (address_mode_ == Module::AddressMode::kProcess) {
-        eh_frame_hdr_ptr_ = elf_ptr_ + phdr.p_vaddr;
-      } else {
-        eh_frame_hdr_ptr_ = elf_ptr_ + phdr.p_offset;
-      }
-    } else if (phdr.p_type == PT_LOAD) {
-      // Note that we cannot limit the inspection of PT_LOAD segments to those that are marked
-      // executable because this does not necessarily match the actual mapping of executable
-      // VMOs. If we want to narrow the range of PCs further we should consult the |zx_info_maps_t|
-      // for this process.
-      pc_begin_ = std::min(pc_begin_, elf_ptr_ + phdr.p_vaddr);
-      pc_end_ = std::max(pc_end_, elf_ptr_ + phdr.p_vaddr + phdr.p_memsz);
-    }
-  }
-
-  return Success();
-}
-
 Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
   // ==============================================================================================
   // Load from the .debug_frame section, if present.
@@ -314,7 +224,7 @@ Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
   debug_frame_end_ = 0;
 
   // Section headers and .debug_frame section are not loaded.
-  if (address_mode_ == Module::AddressMode::kProcess) {
+  if (loaded_elf_module_.mode() == Module::AddressMode::kProcess) {
     return Error("debug_frame section not present when AddressMode == kProcess");
   }
 
@@ -324,16 +234,16 @@ Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
   }
 
   Elf64_Shdr shdr;
-  if (auto err = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(elf_, elf_ptr_, ".debug_frame",
-                                                                     ehdr, shdr);
+  if (auto err = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(
+          elf_, loaded_elf_module_.load_address(), ".debug_frame", ehdr, shdr);
       err.has_err()) {
     return err;
   }
 
-  debug_frame_ptr_ = elf_ptr_ + shdr.sh_offset;
+  debug_frame_ptr_ = loaded_elf_module_.load_address() + shdr.sh_offset;
   debug_frame_end_ = debug_frame_ptr_ + shdr.sh_size;
 
-  return Error("no debug_frame section found");
+  return Success();
 }
 
 fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current, Registers& next) {
@@ -383,7 +293,7 @@ Error CfiModule::PrepareToStep(const Registers& current, DwarfCie& cie) {
     }
   }
 
-  cfi_parser_ = std::make_unique<CfiParser>(current.arch(), address_size_,
+  cfi_parser_ = std::make_unique<CfiParser>(current.arch(), loaded_elf_module_.size(),
                                             cie.code_alignment_factor, cie.data_alignment_factor);
 
   // Parse instructions in CIE first.
@@ -532,7 +442,8 @@ Error CfiModule::BuildDebugFrameMap() {
     } else {  // is FDE
       // We only need pc_begin, so don't go through |DecodeFde|.
       uint64_t pc_begin;
-      if (auto err = elf_->ReadEncoded(p, pc_begin, fde_address_encoding, elf_ptr_);
+      if (auto err = elf_->ReadEncoded(p, pc_begin, fde_address_encoding,
+                                       loaded_elf_module_.load_address());
           err.has_err()) {
         return err;
       }
@@ -704,8 +615,8 @@ Error CfiModule::DecodeFde(UnwindTableSectionType section_type, uint64_t fde_ptr
     return err;
   }
 
-  if (auto err =
-          elf_->ReadEncodedAndAdvance(fde_ptr, fde.pc_begin, cie.fde_address_encoding, elf_ptr_);
+  if (auto err = elf_->ReadEncodedAndAdvance(fde_ptr, fde.pc_begin, cie.fde_address_encoding,
+                                             loaded_elf_module_.load_address());
       err.has_err()) {
     return err;
   }

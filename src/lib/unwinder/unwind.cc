@@ -145,7 +145,8 @@ std::string Frame::Describe() const {
   return res;
 }
 
-Unwinder::Unwinder(const std::vector<Module>& modules) : cfi_unwinder_(modules) {}
+Unwinder::Unwinder(std::span<const Module> modules)
+    : module_cache_(modules), cfi_unwinder_(module_cache_) {}
 
 std::vector<Frame> Unwinder::Unwind(Memory* stack, const Registers& registers, size_t max_depth) {
   UnavailableMemory unavailable_memory;
@@ -256,7 +257,8 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   }
 }
 
-AsyncUnwinder::AsyncUnwinder(const std::vector<Module>& modules) : cfi_unwinder_(modules) {
+AsyncUnwinder::AsyncUnwinder(std::span<const Module> modules)
+    : module_cache_(modules), cfi_unwinder_(module_cache_) {
   // The order here is important! This will be the order that the unwinders are attempted and should
   // not be changed without careful thought.
   //
@@ -380,6 +382,7 @@ std::vector<Frame> Unwind(Memory* memory, const std::vector<uint64_t>& modules,
   for (const auto& addr : modules) {
     converted.emplace_back(addr, memory, Module::AddressMode::kProcess);
   }
+
   return Unwinder(converted).Unwind(memory, registers, max_depth);
 }
 

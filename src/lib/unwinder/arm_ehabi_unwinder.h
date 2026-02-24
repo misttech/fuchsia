@@ -29,9 +29,9 @@ class ArmEhAbiUnwinder : public UnwinderBase {
   Frame::Trust trust() const override { return Frame::Trust::kArmEhAbi; }
 
  private:
-  Error Step(Memory* stack, Module* elf_module, const Registers& current, Registers& next);
+  Error Step(Memory* stack, const Module* elf_module, const Registers& current, Registers& next);
 
-  void AsyncStep(AsyncMemory* stack, Module* elf_module, const Registers& current,
+  void AsyncStep(AsyncMemory* stack, const Module* elf_module, const Registers& current,
                  fit::callback<void(Error, Registers)> cb);
 
   // Looksup the EhAbiModule
@@ -39,7 +39,7 @@ class ArmEhAbiUnwinder : public UnwinderBase {
     ArmEhAbiModule* ehabi_module = nullptr;
     bool should_synchronize_stack = false;
   };
-  fit::result<Error, EhAbiModuleResult> GetEhAbiModuleFromModuleInfo(Module* elf_module);
+  fit::result<Error, EhAbiModuleResult> GetEhAbiModuleFromModuleInfo(const Module* elf_module);
 
   // Lazily loaded.
   std::map<uint32_t, std::unique_ptr<ArmEhAbiModule>> module_map_;

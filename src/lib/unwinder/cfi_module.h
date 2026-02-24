@@ -12,8 +12,8 @@
 
 #include "src/lib/unwinder/cfi_parser.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/memory.h"
-#include "src/lib/unwinder/module.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
@@ -40,9 +40,11 @@ enum UnwindTableSectionType {
 // a cached Memory implementation.
 class CfiModule {
  public:
-  // Caller must ensure elf to outlive us.
-  CfiModule(Memory* elf, uint64_t elf_ptr, const Module& module)
-      : elf_(elf), elf_ptr_(elf_ptr), address_mode_(module.mode), address_size_(module.size) {}
+  // Caller must ensure elf to outlive us. We explicitly take in a memory object so that callers may
+  // pass in either binary memory data or debuginfo symbols data to use to find the unwinding
+  // metadata.
+  CfiModule(Memory* elf, const LoadedElfModule& loaded_elf_module)
+      : elf_(elf), loaded_elf_module_(loaded_elf_module) {}
 
   // Load the CFI from the ELF file.
   [[nodiscard]] Error Load();
@@ -57,7 +59,7 @@ class CfiModule {
                  fit::callback<void(Error, Registers)> cb);
 
   // Check whether a given PC is in the valid range.
-  bool IsValidPC(uint64_t pc) const { return pc >= pc_begin_ && pc < pc_end_; }
+  bool IsValidPC(uint64_t pc) const { return loaded_elf_module_.IsValidPC(pc); }
 
   // Memory accessor.
   Memory* memory() const { return elf_; }
@@ -97,15 +99,6 @@ class CfiModule {
   [[nodiscard]] Error SearchDebugFrame(uint64_t pc, DwarfCie& cie, DwarfFde& fde);
   [[nodiscard]] Error BuildDebugFrameMap();
 
-  // Reads and caches the program headers corresponding with this ELF header, doing necessary
-  // upcasting for 32 bit binaries if needed.
-  Error LoadPhdrs(const Elf64_Ehdr& ehdr);
-
-  // Finds the eh_frame_hdr segment in |phdrs_| and loads the address and metadata of the binary
-  // search table, as well as marking the beginning and end of the executable regions over all
-  // program headers.
-  Error LoadEhFrameHdr(const Elf64_Ehdr& ehdr);
-
   // Both of these functions read the ELF file header locally to avoid needing to include elf.h here
   // which causes compilation issues on macos.
   [[nodiscard]] Error LoadEhFrame(const Elf64_Ehdr& ehdr);
@@ -120,13 +113,7 @@ class CfiModule {
 
   // Inputs. Use const to prevent accidental modification.
   Memory* const elf_;
-  const uint64_t elf_ptr_;
-  const Module::AddressMode address_mode_;
-  const Module::AddressSize address_size_;
-
-  // Marks the executable section so that we don't need to find the FDE to know a PC is wrong.
-  uint64_t pc_begin_ = 0;  // inclusive
-  uint64_t pc_end_ = 0;    // exclusive
+  const LoadedElfModule& loaded_elf_module_;
 
   // Marks the beginning of the eh_frame section within some segment of the loaded program. Requires
   // section info to not be stripped from the binary.
@@ -142,8 +129,6 @@ class CfiModule {
   // .debug_frame info.
   uint64_t debug_frame_ptr_ = 0;
   uint64_t debug_frame_end_ = 0;
-
-  std::vector<Elf64_Phdr> phdrs_;
 
   std::unique_ptr<CfiParser> cfi_parser_;
 

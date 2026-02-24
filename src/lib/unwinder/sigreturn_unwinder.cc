@@ -151,7 +151,7 @@ Error SigReturnUnwinder::ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Re
 
 Error SigReturnUnwinder::ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, Registers::Arch arch,
                                              uint64_t pc) {
-  Module* elf_module;
+  const Module* elf_module;
   if (auto err = cfi_unwinder->GetModuleForPc(pc, &elf_module); err.has_err()) {
     return err;
   }

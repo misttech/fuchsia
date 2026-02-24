@@ -9,10 +9,11 @@
 #include <limits>
 #include <memory>
 #include <utility>
-#include <vector>
 
 #include "src/lib/unwinder/cfi_module.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
@@ -64,8 +65,8 @@ Error Validate32BitRegisters(const Registers& regs) {
 //   * x31 (aarch64 SP) is restored to r13 (arm32 SP).
 //
 // See Registers::To32Bit for more details.
-fit::result<Error, Registers> TryConvertRegistersTo32Bit(uint64_t pc, const Registers& current,
-                                                         const Module* next_module) {
+// Returns an error if the |next| registers do not have PC and LR populated with 32 bit values.
+fit::result<Error, Registers> TryConvertRegistersTo32Bit(uint64_t pc, const Registers& current) {
   if (current.arch() != Registers::Arch::kArm64) {
     return fit::error(Error("Current registers are not kArm64."));
   }
@@ -100,17 +101,6 @@ fit::result<Error, Registers> TryConvertRegistersTo32Bit(uint64_t pc, const Regi
 }
 
 }  // namespace
-
-bool CfiModuleInfo::IsValidPC(uint64_t pc) const {
-  return ((binary && binary->IsValidPC(pc)) || (debug_info && debug_info->IsValidPC(pc)));
-}
-
-CfiUnwinder::CfiUnwinder(const std::vector<Module>& modules) : UnwinderBase(this) {
-  for (const auto& module : modules) {
-    module_map_.emplace(module.load_address,
-                        CfiModuleInfo{.module = module, .binary = nullptr, .debug_info = nullptr});
-  }
-}
 
 Error CfiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   if (auto result = Step(stack, current.regs, next.regs, current.pc_is_return_address);
@@ -257,20 +247,20 @@ fit::result<Error, Registers> CfiUnwinder::ConvertTo32BitIfNeeded(uint64_t pc,
   // bit. Checking that PC < UINT32_MAX is just a heuristic and doesn't actually indicate
   // anything about address size for the module.
   if (current.arch() != Registers::Arch::kArm32 && pc < std::numeric_limits<uint32_t>::max()) {
-    Module* next_module = nullptr;
-    if (auto err = GetModuleForPc(pc, &next_module); err.has_err()) {
-      return fit::error(err);
+    auto next_module_res = elf_module_cache_.GetLoadedElfModuleForPc(pc);
+    if (next_module_res.is_error()) {
+      return next_module_res.take_error();
     };
 
-    if (next_module->size == Module::AddressSize::k32Bit) {
+    const LoadedElfModule& next_module = next_module_res->get();
+    if (next_module.size() == Module::AddressSize::k32Bit) {
       // In the error case, the message is probably only useful for developing and debugging the
       // unwinder itself and will happen frequently enough that we shouldn't log it, but for
       // debugging purposes can be displayed if needed. The validation step in the success case is a
       // fatal error since we have strict expectations of what registers are restored by Starnix,
       // which is currently the only way we should ever transition to code in a 32 bit address
       // space.
-      if (auto maybe_32bit = TryConvertRegistersTo32Bit(pc, current, next_module);
-          maybe_32bit.is_ok()) {
+      if (auto maybe_32bit = TryConvertRegistersTo32Bit(pc, current); maybe_32bit.is_ok()) {
         // Both PC and LR in |current| appear to be 32 bit addresses, now validate that the
         // converted 32 bit registers actually have everything that we expect to get from Starnix's
         // CFI: PC, LR, and SP should all be populated and have 32 bit addresses, if this fails at
@@ -279,75 +269,71 @@ fit::result<Error, Registers> CfiUnwinder::ConvertTo32BitIfNeeded(uint64_t pc,
           return fit::error(err);
         }
 
-        return maybe_32bit.take_value();
+        return maybe_32bit;
       } else {
         return fit::error(Error("failed to convert registers to 32 bit: %s\n",
                                 maybe_32bit.error_value().msg().c_str()));
       }
     } else {
-      return fit::error(Error("next module at 0x%lx is not 32 bit!\n", next_module->load_address));
+      return fit::error(Error("next module at 0x%lx is not 32 bit!\n", next_module.load_address()));
     }
   }
 
   return fit::error(Error("Invalid input: current.arch = %d, pc = 0x%lx\n", current.arch(), pc));
 }
 
+// TODO(https://fxbug.dev/483025095): Delete this function.
 bool CfiUnwinder::IsValidPC(uint64_t pc) {
   CfiModuleInfo* cfi;
   return GetCfiModuleInfoForPc(pc, &cfi).ok();
 }
 
+// TODO(https://fxbug.dev/483025095): Delete this function.
 Error CfiUnwinder::GetCfiModuleInfoForPc(uint64_t pc, CfiModuleInfo** out) {
-  auto module_it = module_map_.upper_bound(pc);
-  if (module_it == module_map_.begin()) {
-    return Error("%#" PRIx64 " is not covered by any module", pc);
+  auto loaded_elf_module_res = elf_module_cache_.GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module_res.is_error()) {
+    return loaded_elf_module_res.error_value();
   }
-  module_it--;
-  uint64_t module_address = module_it->first;
-  auto& module_info = module_it->second;
 
-  if (!module_info.binary && module_info.module.binary_memory) {
-    module_info.binary = std::make_unique<CfiModule>(module_info.module.binary_memory,
-                                                     module_address, module_info.module);
+  const LoadedElfModule& loaded_elf_module = loaded_elf_module_res->get();
+  // Gets or inserts the CfiModuleInfo we need for this |loaded_elf_module|.
+  auto& cfi_info =
+      module_map_.try_emplace(loaded_elf_module.load_address(), loaded_elf_module.module())
+          .first->second;
+
+  if (!cfi_info.binary && loaded_elf_module.binary_memory()) {
+    cfi_info.binary =
+        std::make_unique<CfiModule>(loaded_elf_module.binary_memory(), loaded_elf_module);
     // Loading the main binary file should always contain either an eh_frame section or a
     // debug_frame section.
-    if (auto err = module_info.binary->Load(); err.has_err()) {
+    if (auto err = cfi_info.binary->Load(); err.has_err()) {
       return err;
     }
   }
 
-  if (!module_info.debug_info && module_info.module.debug_info_memory) {
-    module_info.debug_info = std::make_unique<CfiModule>(module_info.module.debug_info_memory,
-                                                         module_address, module_info.module);
+  if (!cfi_info.debug_info && loaded_elf_module.debug_info_memory()) {
+    cfi_info.debug_info =
+        std::make_unique<CfiModule>(loaded_elf_module.debug_info_memory(), loaded_elf_module);
     // A split debug info file may contain neither eh_frame nor debug_frame sections, it is not an
     // error if this fails to load.
-    if (auto err = module_info.debug_info->Load(); err.has_err()) {
+    if (auto err = cfi_info.debug_info->Load(); err.has_err()) {
       // Reset the pointer to null to indicate that it should not be used for look ups later.
-      module_info.debug_info.reset();
+      cfi_info.debug_info.reset();
     }
   }
 
-  if (!module_info.IsValidPC(pc)) {
-    return Error("%#" PRIx64 " is not a valid PC in module %#" PRIx64, pc, module_address);
-  }
-
-  *out = &module_info;
+  *out = &cfi_info;
   return Success();
 }
 
-Error CfiUnwinder::GetModuleForPc(uint64_t pc, Module** out) {
-  auto module_it = module_map_.upper_bound(pc);
-  if (module_it == module_map_.begin()) {
-    return Error("%#" PRIx64 " is not covered by any module", pc);
+// TODO(https://fxbug.dev/483025095): Delete this function.
+Error CfiUnwinder::GetModuleForPc(uint64_t pc, const Module** out) {
+  auto loaded_elf_module = elf_module_cache_.GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
-  module_it--;
-  auto& module_info = module_it->second;
 
-  // The actual low-level module object is owned by the CfiModuleInfo instance we have found, it's
-  // always valid at this point. It's up to callers to determine whether the binary or debug_info
-  // memory they want is valid before using them. The load address, mode, and address size will
-  // always be safe to read even if the ELF is invalid.
-  *out = &module_info.module;
+  *out = &loaded_elf_module->get().module();
   return Success();
 }
 

@@ -38,7 +38,7 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
     regs.SetPC(pc);
   }
 
-  Module* elf_module;
+  const Module* elf_module;
   if (auto err = cfi_unwinder_->GetModuleForPc(pc, &elf_module); err.has_err()) {
     return err;
   }
@@ -56,7 +56,7 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   }
 }
 
-Error ArmEhAbiUnwinder::Step(Memory* stack, Module* elf_module, const Registers& current,
+Error ArmEhAbiUnwinder::Step(Memory* stack, const Module* elf_module, const Registers& current,
                              Registers& next) {
   ArmEhAbiModule* ehabi_module;
   if (auto result = GetEhAbiModuleFromModuleInfo(elf_module); result.is_ok()) {
@@ -88,7 +88,7 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
     regs.SetPC(pc);
   }
 
-  Module* elf_module = nullptr;
+  const Module* elf_module = nullptr;
   if (auto err = cfi_unwinder_->GetModuleForPc(pc, &elf_module); err.has_err()) {
     return cb(err, Registers(current.regs.arch()));
   }
@@ -101,7 +101,8 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
   AsyncStep(stack, elf_module, regs, std::move(cb));
 }
 
-void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, Module* elf_module, const Registers& current,
+void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Module* elf_module,
+                                 const Registers& current,
                                  fit::callback<void(Error, Registers)> cb) {
   auto result = GetEhAbiModuleFromModuleInfo(elf_module);
   if (result.is_error()) {
@@ -126,7 +127,7 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, Module* elf_module, const R
 }
 
 fit::result<Error, ArmEhAbiUnwinder::EhAbiModuleResult>
-ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(Module* elf_module) {
+ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(const Module* elf_module) {
   // The CFI Unwinder keeps a record of all the modules, so it can properly find the right module
   // for this PC. Since we don't have to keep track of anything other than the 32 bit modules here
   // we can just index on the load address of the already found module.

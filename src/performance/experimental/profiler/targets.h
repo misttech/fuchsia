@@ -20,6 +20,7 @@
 #include <vector>
 
 #include <src/lib/unwinder/cfi_unwinder.h>
+#include <src/lib/unwinder/elf_module_cache.h>
 #include <src/lib/unwinder/fp_unwinder.h>
 #include <src/lib/unwinder/fuchsia.h>
 #include <src/lib/unwinder/unwind.h>
@@ -40,7 +41,8 @@ struct UnwinderData {
   explicit UnwinderData(const zx::unowned_process& process)
       : memory(process->get()),
         cached_memory(&memory),
-        cfi_unwinder(this->modules),
+        elf_module_cache_(this->modules),
+        cfi_unwinder(elf_module_cache_),
         fp_unwinder(&this->cfi_unwinder) {}
 
   UnwinderData(const UnwinderData&) = delete;
@@ -52,7 +54,10 @@ struct UnwinderData {
   profiler::CachedModuleMemory cached_memory;
   std::vector<unwinder::Module> modules;
 
+  // Must keep the cache of loaded modules available for the duration of unwinding.
+  unwinder::ElfModuleCache elf_module_cache_;
   // As each process has its own memory, we have an unwinder per process
+  // TODO(https://fxbug.dev/483025095): Delete this.
   unwinder::CfiUnwinder cfi_unwinder;
   // mutable, because stepping the unwinder causes state to change
   mutable unwinder::FramePointerUnwinder fp_unwinder;

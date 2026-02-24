@@ -8,36 +8,34 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <vector>
 
 #include "sdk/lib/fit/include/lib/fit/function.h"
 #include "src/lib/unwinder/cfi_module.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/memory.h"
-#include "src/lib/unwinder/module.h"
 #include "src/lib/unwinder/registers.h"
 #include "src/lib/unwinder/unwinder_base.h"
 
 namespace unwinder {
 
-// Contains the information relevant for the given Module. The CfiModules are lazily loaded when
-// this module is needed.
+// Contains the CFI modules for a given ElfModule. The CfiModules are lazily loaded.
 struct CfiModuleInfo {
-  bool IsValidPC(uint64_t pc) const;
-
+  explicit CfiModuleInfo(Module elf_module) : module(elf_module) {}
   Module module;
   // The loaded binary file corresponding to this module.. This is the (possibly stripped) binary
   // file. It may contain an .eh_frame section, and optionally a .debug_frame section (in the case
   // it is unstripped).
-  std::unique_ptr<CfiModule> binary;
+  std::unique_ptr<CfiModule> binary = nullptr;
   // The loaded debug info file, if present. This is an optional addition to the binary file
   // above. When non-null, this file will be inspected for a .debug_frame section before the
   // binary file. This is only loaded and used if the |debug_info_memory| is non-null in |module|.
-  std::unique_ptr<CfiModule> debug_info;
+  std::unique_ptr<CfiModule> debug_info = nullptr;
 };
 
 class CfiUnwinder : public UnwinderBase {
  public:
-  explicit CfiUnwinder(const std::vector<Module>& modules);
+  explicit CfiUnwinder(const ElfModuleCache& elf_module_cache)
+      : UnwinderBase(this), elf_module_cache_(elf_module_cache) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
@@ -58,7 +56,7 @@ class CfiUnwinder : public UnwinderBase {
   // .debug_frame. This may be used by fallback unwinders to probe memory when debug info is
   // unavailable or incomplete. Errors are only returned if the given |pc| is not within any known
   // modules. Callers must ensure that the binary or debug_info memory is valid before using them.
-  Error GetModuleForPc(uint64_t pc, Module** out);
+  Error GetModuleForPc(uint64_t pc, const Module** out);
 
  private:
   // If the returned value is fit::ok, then the contained boolean indicates whether the next frame
@@ -70,6 +68,8 @@ class CfiUnwinder : public UnwinderBase {
                  fit::callback<void(Error, Registers)> cb);
 
   fit::result<Error, Registers> ConvertTo32BitIfNeeded(uint64_t pc, const Registers& current);
+
+  const ElfModuleCache& elf_module_cache_;
 
   // Mapping from module load addresses to a pair of (module description, lazily-initialized CFI
   // modules for the binary and optional debugging info).

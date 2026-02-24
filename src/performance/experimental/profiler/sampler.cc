@@ -266,7 +266,8 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
       targets_.ForEachProcess([this](std::span<const zx_koid_t>, const ProcessTarget& target) {
         for (const auto& [_, thread] : target.threads) {
           TRACE_DURATION("cpu_profiler", "Sampler::CollectSamples/ForEachProcess");
-          unwinder::CfiUnwinder cfi_unwinder{target.unwinder_data->modules};
+          // TODO(https://fxbug.dev/483025095): Delete this.
+          unwinder::CfiUnwinder cfi_unwinder{target.unwinder_data->elf_module_cache_};
           unwinder::FramePointerUnwinder fp_unwinder{&cfi_unwinder};
           auto [time_sampling, pcs] =
               SampleThread(target.handle.borrow(), thread.handle.borrow(), fp_unwinder);
