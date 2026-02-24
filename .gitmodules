@@ -728,3 +728,8 @@
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/libufdt
 	name = third_party/android.googlesource.com/platform/system/libufdt
 	ignore = all
+[submodule "third_party/pylibs/pyserial/src"]
+	path = third_party/pylibs/pyserial/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/pyserial/pyserial
+	name = third_party/pylibs/pyserial
+	ignore = all
