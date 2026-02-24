@@ -209,9 +209,13 @@ void Controller::OnDisplayVsync(display::DisplayId display_id, zx::time_monotoni
   }
 }
 
-void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
+void Controller::ProcessDisplayVsync(display::DisplayId display_id,
+                                     zx::time_monotonic timestamp_mono,
                                      display::DriverConfigStamp driver_config_stamp) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
+
+  // TODO(b/475953032): Provide actual timestamp matching `timestamp` above.
+  zx::time_boot timestamp_approximate_boot = zx::clock::get_boot();
 
   // TODO(https://fxbug.dev/402445178): This trace event is load bearing for fps trace processor.
   // Remove it after changing the dependency.
@@ -223,7 +227,7 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_mon
                 TA_UINT32(vsync_edge_flag = !vsync_edge_flag));
   TRACE_DURATION("gfx", "Display::Controller::OnDisplayVsync", "display_id", display_id.value());
 
-  vsync_monitor_.OnVsync(timestamp, driver_config_stamp);
+  vsync_monitor_.OnVsync(timestamp_mono, timestamp_approximate_boot, driver_config_stamp);
 
   auto displays_it = displays_.find(display_id);
   if (!displays_it.IsValid()) {
@@ -331,10 +335,10 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id, zx::time_mon
 
   switch (config_stamp_source.value()) {
     case ClientPriority::kPrimary:
-      primary_client_->OnDisplayVsync(display_id, timestamp.get(), driver_config_stamp);
+      primary_client_->OnDisplayVsync(display_id, timestamp_mono.get(), driver_config_stamp);
       break;
     case ClientPriority::kVirtcon:
-      virtcon_client_->OnDisplayVsync(display_id, timestamp.get(), driver_config_stamp);
+      virtcon_client_->OnDisplayVsync(display_id, timestamp_mono.get(), driver_config_stamp);
       break;
   }
 }

@@ -28,7 +28,15 @@ constexpr zx::duration kVsyncMonitorInterval = kVsyncStallThreshold / 2;
 VsyncMonitor::VsyncMonitor(inspect::Node inspect_root, async_dispatcher_t* dispatcher)
     : inspect_root_(std::move(inspect_root)),
       last_vsync_ns_property_(inspect_root_.CreateUint("last_vsync_timestamp_ns", 0)),
+      last_vsync_timestamp_mono_ns_property_(
+          inspect_root_.CreateUint("last_vsync_timestamp_mono_ns", 0)),
+      last_vsync_timestamp_approximate_boot_ns_property_(
+          inspect_root_.CreateUint("last_vsync_timestamp_approximate_boot_ns", 0)),
       last_vsync_interval_ns_property_(inspect_root_.CreateUint("last_vsync_interval_ns", 0)),
+      last_vsync_interval_mono_ns_property_(
+          inspect_root_.CreateUint("last_vsync_interval_mono_ns", 0)),
+      last_vsync_interval_boot_ns_property_(
+          inspect_root_.CreateUint("last_vsync_interval_boot_ns", 0)),
       last_vsync_config_stamp_property_(inspect_root_.CreateUint(
           "last_vsync_config_stamp", display::kInvalidDriverConfigStamp.value())),
       vsync_stalls_detected_(inspect_root_.CreateUint("vsync_stalls", 0)),
@@ -56,7 +64,7 @@ void VsyncMonitor::UpdateStatistics() {
   }
 
   zx::time_monotonic now = zx::clock::get_monotonic();
-  zx::duration since_last_vsync = now - last_vsync_timestamp_.load();
+  zx::duration since_last_vsync = now - last_vsync_timestamp_mono_.load();
 
   if (since_last_vsync > kVsyncStallThreshold) {
     vsync_stalled_ = true;
@@ -69,16 +77,25 @@ void VsyncMonitor::UpdateStatistics() {
   }
 }
 
-void VsyncMonitor::OnVsync(zx::time_monotonic vsync_timestamp,
+void VsyncMonitor::OnVsync(zx::time_monotonic vsync_timestamp_mono,
+                           zx::time_boot vsync_timestamp_approximate_boot,
                            display::DriverConfigStamp vsync_config_stamp) {
-  last_vsync_ns_property_.Set(vsync_timestamp.get());
+  last_vsync_ns_property_.Set(vsync_timestamp_mono.get());
+  last_vsync_timestamp_mono_ns_property_.Set(vsync_timestamp_mono.get());
+  last_vsync_timestamp_approximate_boot_ns_property_.Set(vsync_timestamp_approximate_boot.get());
 
-  zx::duration vsync_interval =
-      vsync_timestamp - last_vsync_timestamp_.load(std::memory_order_relaxed);
-  last_vsync_interval_ns_property_.Set(vsync_interval.to_nsecs());
+  zx::duration vsync_interval_duration_mono =
+      vsync_timestamp_mono - last_vsync_timestamp_mono_.load(std::memory_order_relaxed);
+  last_vsync_interval_ns_property_.Set(vsync_interval_duration_mono.to_nsecs());
+  last_vsync_interval_mono_ns_property_.Set(vsync_interval_duration_mono.to_nsecs());
   last_vsync_config_stamp_property_.Set(vsync_config_stamp.value());
 
-  last_vsync_timestamp_.store(vsync_timestamp);
+  zx::duration vsync_interval_duration_boot =
+      vsync_timestamp_approximate_boot - last_vsync_timestamp_boot_.load(std::memory_order_relaxed);
+  last_vsync_interval_boot_ns_property_.Set(vsync_interval_duration_boot.to_nsecs());
+
+  last_vsync_timestamp_mono_.store(vsync_timestamp_mono);
+  last_vsync_timestamp_boot_.store(vsync_timestamp_approximate_boot);
   vsync_stalled_ = false;
 }
 

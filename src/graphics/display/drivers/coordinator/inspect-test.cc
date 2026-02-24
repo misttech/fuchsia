@@ -84,15 +84,43 @@ TEST_F(InspectTest, VsyncMonitorHierarchy) {
   ASSERT_NE(vsync_monitor, nullptr);
   const inspect::NodeValue& vsync_monitor_node = vsync_monitor->node();
 
-  const inspect::UintPropertyValue* last_vsync_timestamp_ns =
-      vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_timestamp_ns");
-  ASSERT_NE(last_vsync_timestamp_ns, nullptr);
-  const inspect::UintPropertyValue* last_vsync_interval_ns =
-      vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_interval_ns");
-  ASSERT_NE(last_vsync_interval_ns, nullptr);
-  const inspect::UintPropertyValue* last_vsync_config_stamp =
-      vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_config_stamp");
-  ASSERT_NE(last_vsync_config_stamp, nullptr);
+  // Each in its own scope, so we don't assert on a wrong property by accident.
+  {
+    const inspect::UintPropertyValue* last_vsync_timestamp_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_timestamp_ns");
+    ASSERT_NE(last_vsync_timestamp_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_mono_timestamp_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_timestamp_mono_ns");
+    ASSERT_NE(last_vsync_mono_timestamp_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_timestamp_approximate_boot_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>(
+            "last_vsync_timestamp_approximate_boot_ns");
+    ASSERT_NE(last_vsync_timestamp_approximate_boot_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_interval_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_interval_ns");
+    ASSERT_NE(last_vsync_interval_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_interval_mono_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_interval_mono_ns");
+    ASSERT_NE(last_vsync_interval_mono_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_interval_boot_ns =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_interval_boot_ns");
+    ASSERT_NE(last_vsync_interval_boot_ns, nullptr);
+  }
+  {
+    const inspect::UintPropertyValue* last_vsync_config_stamp =
+        vsync_monitor_node.get_property<inspect::UintPropertyValue>("last_vsync_config_stamp");
+    ASSERT_NE(last_vsync_config_stamp, nullptr);
+  }
 
   const inspect::UintPropertyValue* vsync_stalls =
       vsync_monitor_node.get_property<inspect::UintPropertyValue>("vsync_stalls");

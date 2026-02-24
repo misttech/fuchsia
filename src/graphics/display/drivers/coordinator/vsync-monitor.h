@@ -36,7 +36,9 @@ class VsyncMonitor {
   void Deinitialize();
 
   // Called when a display engine driver sends a Vsync event.
-  void OnVsync(zx::time_monotonic vsync_timestamp, display::DriverConfigStamp vsync_config_stamp);
+  void OnVsync(zx::time_monotonic vsync_timestamp_mono,
+               zx::time_boot vsync_timestamp_boot_aproximate,
+               display::DriverConfigStamp vsync_config_stamp);
 
  private:
   // Periodically reads `last_vsync_timestamp_` and increments
@@ -44,11 +46,19 @@ class VsyncMonitor {
   // period.
   void UpdateStatistics();
 
-  std::atomic<zx::time_monotonic> last_vsync_timestamp_{};
+  std::atomic<zx::time_monotonic> last_vsync_timestamp_mono_;
+  std::atomic<zx::time_boot> last_vsync_timestamp_boot_;
 
   inspect::Node inspect_root_;
+  // TODO(b/475953032): Remove once it is no longer used.
   inspect::UintProperty last_vsync_ns_property_;
+  inspect::UintProperty last_vsync_timestamp_mono_ns_property_;
+  // TODO(b/475953032): The exact boot timestamp is not plumbed in yet.
+  inspect::UintProperty last_vsync_timestamp_approximate_boot_ns_property_;
+  // TODO(b/475953032): Remove once it is no longer used.
   inspect::UintProperty last_vsync_interval_ns_property_;
+  inspect::UintProperty last_vsync_interval_mono_ns_property_;
+  inspect::UintProperty last_vsync_interval_boot_ns_property_;
   inspect::UintProperty last_vsync_config_stamp_property_;
 
   // Fields that track how often vsync was detected to have been stalled.
