@@ -280,7 +280,13 @@ impl Inode {
 
             if header.inline_flags.contains(InlineFlags::Data) {
                 // Inline data skips the first address slot then repurposes the remainder as data.
-                ensure!(header.size as usize + 4 < rest.len(), "Invalid or corrupt inode.");
+                ensure!(
+                    (header.size as usize)
+                        .checked_add(4)
+                        .map(|end| end <= rest.len())
+                        .unwrap_or(false),
+                    "Invalid or corrupt inode."
+                );
                 inline_data = Some(rest[4..4 + header.size as usize].to_vec().into_boxed_slice());
             } else if header.inline_flags.contains(InlineFlags::Dentry) {
                 // Repurposes i_addr to store a set of directory entry records.

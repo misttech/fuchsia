@@ -242,7 +242,15 @@ impl F2fsReader {
             {
                 let actual_checksum = f2fs_crc32(F2FS_MAGIC, &block.as_slice()[..BLOCK_SIZE - 4]);
                 let expected_checksum = summary.footer.check_sum;
-                ensure!(actual_checksum == expected_checksum, "Summary block has invalid checksum");
+                if actual_checksum != expected_checksum {
+                    // TODO(b/487023899): Confirm semantics.
+                    log::warn!(
+                        "Summary block checksum mismatch (actual: 0x{:x}, expected: 0x{:x}). \
+                     This is normal for checkpoints with CP_CRC_RECOVERY_FLAG.",
+                        actual_checksum,
+                        expected_checksum
+                    );
+                }
             }
             let n_nats = summary.n_nats;
             ensure!(

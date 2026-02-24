@@ -134,6 +134,7 @@ impl SuperBlock {
         #[cfg(not(fuzz))]
         if superblock.feature & FEATURE_SB_CHKSUM != 0 {
             let offset = superblock.checksum_offset as usize;
+            ensure!(offset <= std::mem::size_of::<SuperBlock>(), "Invalid checksum_offset");
             let actual_checksum = f2fs_crc32(F2FS_MAGIC, &superblock.as_bytes()[..offset]);
             ensure!(superblock.crc == actual_checksum, "Bad superblock checksum");
         }

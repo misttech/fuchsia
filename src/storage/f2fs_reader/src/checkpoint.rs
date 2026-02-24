@@ -83,10 +83,14 @@ impl CheckpointPack {
         ensure!(nat_bitmap_end <= SEGMENT_SIZE, "Invalid nat_bitmap range");
         let nat_bitmap = segment[nat_bitmap_start..nat_bitmap_end].to_vec();
 
+        ensure!(
+            header.cp_pack_total_block_count > 0,
+            "Invalid cp_pack_total_block_count (must be > 0)"
+        );
         let backup_header_offset =
             (header.cp_pack_total_block_count as usize - 1) * BLOCK_SIZE as usize;
         ensure!(
-            backup_header_offset + std::mem::size_of::<CheckpointHeader>() < SEGMENT_SIZE,
+            backup_header_offset + std::mem::size_of::<CheckpointHeader>() <= SEGMENT_SIZE,
             "Invalid cp_pack_total_block_count"
         );
         let backup_header = CheckpointHeader::read_from_bytes(
