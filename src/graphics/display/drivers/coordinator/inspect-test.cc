@@ -68,6 +68,14 @@ TEST_F(InspectTest, ApplyConfigHierarchy) {
   const inspect::UintPropertyValue* last_valid_apply_config_stamp =
       display_node.get_property<inspect::UintPropertyValue>("last_valid_apply_config_stamp");
   ASSERT_NE(last_valid_apply_config_stamp, nullptr);
+  ASSERT_NE(nullptr, display_node.get_property<inspect::UintPropertyValue>(
+                         "last_valid_apply_config_timestamp_mono_ns"));
+  ASSERT_NE(nullptr, display_node.get_property<inspect::UintPropertyValue>(
+                         "last_valid_apply_config_timestamp_boot_ns"));
+  ASSERT_NE(nullptr, display_node.get_property<inspect::UintPropertyValue>(
+                         "last_valid_apply_config_duration_mono_ns"));
+  ASSERT_NE(nullptr, display_node.get_property<inspect::UintPropertyValue>(
+                         "last_valid_apply_config_duration_boot_ns"));
 }
 
 TEST_F(InspectTest, VsyncMonitorHierarchy) {

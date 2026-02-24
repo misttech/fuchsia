@@ -227,9 +227,20 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
   std::unique_ptr<EngineDriverClient> engine_driver_client_;
 
-  zx_instant_mono_t last_valid_apply_config_timestamp_{};
+  zx::time_monotonic last_valid_apply_config_timestamp_mono_;
+  zx::time_boot last_valid_apply_config_timestamp_boot_;
+
+  // TODO(b/475953032): Remove this property once it is no longer used.
   inspect::UintProperty last_valid_apply_config_timestamp_ns_property_;
+  // Similar metric as above, except more explicit naming of the timeline used.
+  inspect::UintProperty last_valid_apply_config_timestamp_mono_ns_property_;
+  inspect::UintProperty last_valid_apply_config_timestamp_boot_ns_property_;
+
   inspect::UintProperty last_valid_apply_config_interval_ns_property_;
+  // Similar metric as above, except more explicit naming of the timeline used.
+  inspect::UintProperty last_valid_apply_config_duration_mono_ns_property_;
+  inspect::UintProperty last_valid_apply_config_duration_boot_ns_property_;
+
   inspect::UintProperty last_valid_apply_config_config_stamp_property_;
 
   display::DriverConfigStamp last_issued_driver_config_stamp_ = display::kInvalidDriverConfigStamp;

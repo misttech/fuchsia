@@ -343,10 +343,22 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
                              display::ConfigStamp client_config_stamp, ClientId client_id) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  zx_instant_mono_t timestamp = zx_clock_get_monotonic();
-  last_valid_apply_config_timestamp_ns_property_.Set(timestamp);
-  last_valid_apply_config_interval_ns_property_.Set(timestamp - last_valid_apply_config_timestamp_);
-  last_valid_apply_config_timestamp_ = timestamp;
+  zx::time_monotonic timestamp_mono = zx::clock::get_monotonic();
+  zx::time_boot timestamp_boot = zx::clock::get_boot();
+
+  last_valid_apply_config_timestamp_ns_property_.Set(timestamp_mono.get());
+  last_valid_apply_config_timestamp_mono_ns_property_.Set(timestamp_mono.get());
+  last_valid_apply_config_timestamp_boot_ns_property_.Set(timestamp_boot.get());
+
+  const zx::duration interval_mono = timestamp_mono - last_valid_apply_config_timestamp_mono_;
+  last_valid_apply_config_interval_ns_property_.Set(interval_mono.get());
+  last_valid_apply_config_duration_mono_ns_property_.Set(interval_mono.get());
+
+  const zx::duration interval_boot = timestamp_boot - last_valid_apply_config_timestamp_boot_;
+  last_valid_apply_config_duration_boot_ns_property_.Set(interval_boot.get());
+
+  last_valid_apply_config_timestamp_mono_ = timestamp_mono;
+  last_valid_apply_config_timestamp_boot_ = timestamp_boot;
 
   last_valid_apply_config_config_stamp_property_.Set(client_config_stamp.value());
 
@@ -802,10 +814,22 @@ Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(engine_driver_client_ != nullptr);
 
+  // TODO(b/475953032): Remove this metric once the "mono_ns" flavor is used.
+  // Here and below, too.
   last_valid_apply_config_timestamp_ns_property_ =
       root_.CreateUint("last_valid_apply_config_timestamp_ns", 0);
+  last_valid_apply_config_timestamp_mono_ns_property_ =
+      root_.CreateUint("last_valid_apply_config_timestamp_mono_ns", 0);
+  last_valid_apply_config_timestamp_boot_ns_property_ =
+      root_.CreateUint("last_valid_apply_config_timestamp_boot_ns", 0);
+
   last_valid_apply_config_interval_ns_property_ =
       root_.CreateUint("last_valid_apply_config_interval_ns", 0);
+  last_valid_apply_config_duration_mono_ns_property_ =
+      root_.CreateUint("last_valid_apply_config_duration_mono_ns", 0);
+  last_valid_apply_config_duration_boot_ns_property_ =
+      root_.CreateUint("last_valid_apply_config_duration_boot_ns", 0);
+
   last_valid_apply_config_config_stamp_property_ =
       root_.CreateUint("last_valid_apply_config_stamp", display::kInvalidConfigStamp.value());
 }
