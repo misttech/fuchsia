@@ -274,6 +274,25 @@ class FfxImplTests(unittest.TestCase):
                 config_data=_INPUT_ARGS["ffx_config_data"],
             )
 
+    def test_ffx_init_shared_data_default(self) -> None:
+        """Verify shared_data defaults to logs_dir in __init__."""
+        self.assertEqual(self.ffx_obj_wo_ip._shared_data, _LOGS_DIR)
+
+    def test_ffx_init_shared_data_custom(self) -> None:
+        """Verify shared_data is set to custom value in __init__."""
+        shared_data = "/tmp/custom_shared_data"
+        with mock.patch.object(
+            ffx_impl.FfxImpl,
+            "check_connection",
+            autospec=True,
+        ):
+            ffx_obj = ffx_impl.FfxImpl(
+                target_name=_INPUT_ARGS["target_name"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                shared_data=shared_data,
+            )
+        self.assertEqual(ffx_obj._shared_data, shared_data)
+
     @mock.patch.object(
         ffx_impl.FfxImpl, "wait_for_rcs_connection", autospec=True
     )
@@ -437,6 +456,8 @@ class FfxImplTests(unittest.TestCase):
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
+                "-c",
+                f"shared_data={_LOGS_DIR}",
             ]
             + ffx_impl._FFX_CMDS["TARGET_SHOW"],
             capture_output=True,
@@ -483,6 +504,8 @@ class FfxImplTests(unittest.TestCase):
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
+                "-c",
+                f"shared_data={_LOGS_DIR}",
             ]
             + ffx_impl._FFX_CMDS["TARGET_WAIT"],
             capture_output=True,
@@ -632,6 +655,8 @@ class FfxImplTests(unittest.TestCase):
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
+                "-c",
+                f"shared_data={_LOGS_DIR}",
             ]
             + ["a", "b", "c"],
             stdout="abc",
@@ -669,6 +694,32 @@ class FfxImplTests(unittest.TestCase):
         """Test case for ffx_impl.wait_for_rcs_connection()"""
         self.ffx_obj_with_ip_and_monitor.wait_for_rcs_connection()
         get_target_status.assert_called()
+
+    @mock.patch.object(
+        host_shell, "run", return_value='"/tmp/pid"', autospec=True
+    )
+    def test_check_running_monitor_includes_shared_data(
+        self, mock_host_run: mock.Mock
+    ) -> None:
+        """Verify _check_running_monitor includes shared_data in its command."""
+        self.ffx_obj_wo_ip._check_running_monitor()
+        mock_host_run.assert_called()
+        cmd = mock_host_run.call_args[1]["cmd"]
+        self.assertIn("-c", cmd)
+        self.assertIn(f"shared_data={_LOGS_DIR}", cmd)
+
+    @mock.patch.object(
+        host_shell, "run", return_value='{"targets": []}', autospec=True
+    )
+    def test_get_target_status_includes_shared_data(
+        self, mock_host_run: mock.Mock
+    ) -> None:
+        """Verify _get_target_status includes shared_data in its command."""
+        self.ffx_obj_with_ip_and_monitor._get_target_status()
+        mock_host_run.assert_called()
+        cmd = mock_host_run.call_args[1]["cmd"]
+        self.assertIn("-c", cmd)
+        self.assertIn(f"shared_data={_LOGS_DIR}", cmd)
 
     @mock.patch.object(ffx_impl.FfxImpl, "run", return_value="", autospec=True)
     def test_wait_for_rcs_disconnection(self, mock_ffx_run: mock.Mock) -> None:
@@ -718,6 +769,8 @@ class FfxImplTests(unittest.TestCase):
                 "proxy.timeout_secs=30",
                 "-c",
                 "ssh.keepalive_timeout=60",
+                "-c",
+                "shared_data=/tmp/logs",
                 "target",
                 "status",
             ],

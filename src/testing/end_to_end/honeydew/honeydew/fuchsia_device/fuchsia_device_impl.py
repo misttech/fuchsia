@@ -338,7 +338,7 @@ class FuchsiaDeviceImpl(
             FfxCommandError: Failed to instantiate.
         """
         use_monitor_state = False
-        shared_data = ""
+        shared_data = None
         if self._config is not None:
             # Read monitor state
             config_use_monitor_state = common.read_from_dict(

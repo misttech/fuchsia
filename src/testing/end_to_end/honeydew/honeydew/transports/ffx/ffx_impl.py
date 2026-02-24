@@ -119,6 +119,11 @@ class FfxImpl(ffx_interface.FFX):
         else:
             self._target = self._target_name
 
+        if shared_data is None:
+            # Use the logs_dir, which is guaranteed to exist. It is okay
+            # for shared_data to be unpopulated, so this is a reasonable
+            # default.
+            shared_data = self.config.logs_dir
         self._shared_data = shared_data
         self._use_monitor = use_monitor_state
         if use_monitor_state and not self._check_running_monitor():
@@ -154,10 +159,7 @@ class FfxImpl(ffx_interface.FFX):
         Returns:
             True if a monitor is running.
         """
-        cmd: list[str] = []
-        if self._shared_data:
-            cmd.extend(["-c", f"shared_data={self._shared_data}"])
-        cmd.extend(_FFX_CMDS["MONITOR_CONFIG_GET"])
+        cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
         # "ffx config get" does not support JSON
         output: str = self.run(cmd=cmd, machine=MachineFormat.RAW).strip('"')
         _LOGGER.info(
@@ -618,10 +620,7 @@ class FfxImpl(ffx_interface.FFX):
                 "_get_target_status can only be called when ffx monitor is in"
                 " use."
             )
-        cmd = []
-        if self._shared_data:
-            cmd.extend(["-c", f"shared_data={self._shared_data}"])
-        cmd.extend(_FFX_CMDS["MONITOR_STATUS"])
+        cmd = _FFX_CMDS["MONITOR_STATUS"]
         statuses = self.run(
             cmd=cmd,
             include_target=False,
@@ -687,6 +686,9 @@ class FfxImpl(ffx_interface.FFX):
 
         # Inject configuration via command line arguments
         ffx_args.extend(self.config.get_config_args())
+
+        # "-c shared_data=<dir>" will be required, once ffx-strict is being used.
+        ffx_args.extend(["-c", f"shared_data={self._shared_data}"])
 
         return [self.config.binary_path] + ffx_args + cmd
 

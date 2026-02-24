@@ -405,6 +405,47 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             ffx_transport.FFX,
         )
 
+    def test_ffx_transport_with_shared_data(self) -> None:
+        """Test case to make sure fuchsia_device supports ffx transport with shared_data."""
+        shared_data = "/tmp/shared_data"
+        config = {
+            "transports": {
+                "ffx": {
+                    "shared_data": shared_data,
+                }
+            }
+        }
+        with (
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "check_connection",
+                autospec=True,
+            ) as mock_ffx_check_connection,
+            mock.patch.object(
+                fuchsia_controller_impl.FuchsiaControllerImpl,
+                "check_connection",
+                autospec=True,
+            ),
+            mock.patch.object(
+                fuchsia_controller_impl.FuchsiaControllerImpl,
+                "create_context",
+                autospec=True,
+            ),
+        ):
+            fd_obj = fuchsia_device_impl.FuchsiaDeviceImpl(
+                device_info=custom_types.DeviceInfo(
+                    name=_INPUT_ARGS["device_name"],
+                    ip_port=_INPUT_ARGS["device_ip"],
+                    serial_socket=_INPUT_ARGS["device_serial_socket"],
+                ),
+                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
+                config=config,
+            )
+            ffx_obj = fd_obj.ffx
+            self.assertIsInstance(ffx_obj, ffx_transport.FFX)
+            self.assertEqual(ffx_obj._shared_data, shared_data)
+            mock_ffx_check_connection.assert_called()
+
     def test_sl4f_impl(self) -> None:
         """Test case to make sure fuchsia_device does not support sl4f
         transport."""
