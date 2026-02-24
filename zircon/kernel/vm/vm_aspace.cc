@@ -742,7 +742,7 @@ VmAspace::AslrConfig VmAspace::CreateAslrConfig(Type type) {
   config.enabled = type == Type::User && !BootOptions::Get()->aslr_disabled;
   if (config.enabled) {
     config.entropy_bits = ktl::min(BootOptions::Get()->aslr_entropy_bits, kMaxAslrEntropy);
-    config.compact_entropy_bits = 8;
+    config.compact_entropy_bits = 0;
   }
 
   crypto::global_prng::GetInstance()->Draw(config.seed, sizeof(config.seed));
