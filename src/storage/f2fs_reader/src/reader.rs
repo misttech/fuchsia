@@ -174,11 +174,13 @@ impl F2fsReader {
         let first_cp = &checkpoints[0].0;
 
         // Make sure the metadata fits on the device
-        let metadata_segment_count = superblock.segment_count_sit
-            + superblock.segment_count_nat
-            + first_cp.header.rsvd_segment_count
-            + superblock.segment_count_ssa
-            + superblock.segment_count_ckpt;
+        let metadata_segment_count = superblock
+            .segment_count_sit
+            .checked_add(superblock.segment_count_nat)
+            .and_then(|v| v.checked_add(first_cp.header.rsvd_segment_count))
+            .and_then(|v| v.checked_add(superblock.segment_count_ssa))
+            .and_then(|v| v.checked_add(superblock.segment_count_ckpt))
+            .ok_or_else(|| anyhow::anyhow!("Segment counts overflow"))?;
         ensure!(
             metadata_segment_count <= superblock.segment_count
                 && metadata_segment_count >= MIN_METADATA_SEGMENT_COUNT,
