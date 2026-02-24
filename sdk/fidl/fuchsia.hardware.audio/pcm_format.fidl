@@ -77,6 +77,7 @@ type PcmSupportedFormats = table {
     1: channel_sets vector<ChannelSet>:MAX_COUNT_CHANNEL_SETS;
 
     /// Vector of possible `SampleFormat`s supported.
+    /// Values in this vector must be unique.
     ///
     /// Required.
     2: sample_formats vector<SampleFormat>:MAX_COUNT_SUPPORTED_SAMPLE_FORMATS;

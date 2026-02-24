@@ -37,6 +37,7 @@ type SupportedEncodings = table {
     /// Each entry in this vector must describe a unique channel count. For example, this
     /// vector cannot contain two different `ChannelSet` entries that both apply to a
     /// 2-channel configuration.
+    /// Values must be listed in ascending order of channel count.
     ///
     /// Required.
     1: decoded_channel_sets vector<ChannelSet>:MAX_COUNT_ENCODED_CHANNEL_SETS;
