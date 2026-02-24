@@ -378,7 +378,7 @@ specifying different a different `check-<component>`.
 
 {% dynamic if user.is_googler %}
 
-## [\Googlers only\] Building Fuchsia with custom Clang on bots
+## \[Googlers only\] Building Fuchsia with custom Clang on bots
 
 Fuchsia's infrastructure has support for using a non-default version of Clang
 to build. Only Clang instances that have been uploaded to CIPD or Isolate are
