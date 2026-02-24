@@ -1,0 +1,10 @@
+Name: PyMonsoon
+URL: https://github.com/msoon/PyMonsoon
+Version: N/A
+License: MIT
+License File: src/LICENSE
+Upstream Git: https://github.com/msoon/PyMonsoon
+Description: Python API for Monsoon Power Monitor.
+Local Modifications:
+  - See b/428985958.
+  - Remove binaries; only keeping source files.
