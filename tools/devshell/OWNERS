@@ -12,6 +12,8 @@ per-file             args,build,clean,clean-build,gen,get-build-artifacts   = fi
 per-file             get-build-dir,get-flash-source,get-src-dir,list-boards = file: /build/OWNERS
 per-file             list-build-artifacts,list-products,ninjatrace2json     = file: /build/OWNERS
 per-file             build-logs,rbe,resultstore,set-build-dir,use           = file: /build/OWNERS
+per-file             tests/subcommands/fx_bazel_test = file: /build/OWNERS
+per-file             tests/subcommands/fx_build_test = file: /build/OWNERS
 
 per-file             format-code = olivernewman@google.com
 
