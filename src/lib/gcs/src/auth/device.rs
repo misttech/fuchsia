@@ -6,7 +6,7 @@
 //! page on a separate machine and enter a short code.
 
 use crate::auth::info::{AUTH_SCOPE, CLIENT_ID, CLIENT_SECRET};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hyper::{Body, Method, Request};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -63,10 +63,10 @@ struct DeviceCodeError {
     error: String,
 
     /// More error details.
-    error_description: String,
+    error_description: Option<String>,
 
     /// More info here.
-    error_uri: String,
+    error_uri: Option<String>,
 }
 
 /// Request for a DeviceRefreshTokenResponse (or DeviceRefreshTokenError).
