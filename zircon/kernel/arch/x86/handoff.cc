@@ -18,16 +18,12 @@ __NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff
   load_startup_gdt();
 
   // Before setting %gs.base to &bp_percpu, copy over the unsafe stack pointer
-  // and stack guard set by physboot. The structure is otherwise statically
-  // initialized.
+  // and stack guard set by physboot.
   //
   // What physboot handed off was a temporary region of memory covering the
-  // subset of `x86_percpu` dealing in the thread ABI. So fake_percpu` is
-  // indeed fake, but accessing its `stack_guard` and `unsafe_sp` members is
-  // kosher.
-  struct x86_percpu* fake_percpu = x86_get_percpu();
-  bp_percpu.stack_guard = fake_percpu->stack_guard;
-  bp_percpu.kernel_unsafe_sp = fake_percpu->kernel_unsafe_sp;
+  // subset of `x86_percpu` dealing in the thread ABI.
+  bp_percpu.stack_guard = READ_PERCPU_FIELD(stack_guard);
+  bp_percpu.kernel_unsafe_sp = READ_PERCPU_FIELD(kernel_unsafe_sp);
   write_msr(X86_MSR_IA32_GS_BASE, reinterpret_cast<uintptr_t>(&bp_percpu));
 
   // Set up the idt
