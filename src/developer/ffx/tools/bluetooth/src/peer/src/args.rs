@@ -5,7 +5,6 @@
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
-// ffx bluetooth peer
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
@@ -29,7 +28,6 @@ pub enum PeerSubCommand {
     Forget(ForgetCommand),
 }
 
-/// ffx bluetooth peer list
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
@@ -47,7 +45,6 @@ pub struct ListCommand {
     pub details: bool,
 }
 
-/// ffx bluetooth peer show
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
@@ -56,12 +53,10 @@ pub struct ListCommand {
     example = "ffx bluetooth peer show <id|addr>"
 )]
 pub struct ShowCommand {
-    /// specify peer by id or address
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
 }
 
-/// ffx bluetooth peer connect
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
@@ -70,12 +65,10 @@ pub struct ShowCommand {
     example = "ffx bluetooth peer connect <id|addr>"
 )]
 pub struct ConnectCommand {
-    /// specify peer by id or address
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
 }
 
-/// ffx bluetooth peer disconnect
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
@@ -84,12 +77,10 @@ pub struct ConnectCommand {
     example = "ffx bluetooth peer disconnect <id|addr>"
 )]
 pub struct DisconnectCommand {
-    /// specify peer by id or address
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
 }
 
-/// ffx bluetooth peer forget
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
 #[argh(
     subcommand,
@@ -98,7 +89,6 @@ pub struct DisconnectCommand {
     example = "ffx bluetooth peer forget <id|addr>"
 )]
 pub struct ForgetCommand {
-    /// specify peer by id or address
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
 }
