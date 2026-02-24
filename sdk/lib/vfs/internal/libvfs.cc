@@ -173,12 +173,14 @@ typedef struct vfs_internal_node {
   }
 } vfs_internal_node_t;
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 __EXPORT zx_status_t vfs_internal_node_serve(vfs_internal_node_t* vnode,
                                              async_dispatcher_t* dispatcher, zx_handle_t channel,
                                              uint32_t flags) {
   zx::channel chan(channel);
   return ZX_ERR_NOT_SUPPORTED;
 }
+#endif
 
 __EXPORT zx_status_t vfs_internal_node_serve3(vfs_internal_node_t* vnode,
                                               async_dispatcher_t* dispatcher, zx_handle_t channel,

@@ -1,5 +1,5 @@
 {
-  "pkg/vfs_cpp/include/lib/vfs/cpp/composed_service_dir.h": "6d8424776e83a6a30c3d5f715d6fd0c0",
+  "pkg/vfs_cpp/include/lib/vfs/cpp/composed_service_dir.h": "9d6e423c7889470e12ebad3efc8b2572",
   "pkg/vfs_cpp/include/lib/vfs/cpp/lazy_dir.h": "51c75ba04c519d037fa6de868b60aaa4",
   "pkg/vfs_cpp/include/lib/vfs/cpp/node.h": "a41bdbd2035a5c31fa712f632947515d",
   "pkg/vfs_cpp/include/lib/vfs/cpp/pseudo_dir.h": "c82be321f553e054ac225317f713195a",
