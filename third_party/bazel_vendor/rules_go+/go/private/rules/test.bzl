@@ -21,7 +21,6 @@ load(
     "GO_TOOLCHAIN",
     "GO_TOOLCHAIN_LABEL",
     "SUPPORTS_PATH_MAPPING_REQUIREMENT",
-    "as_list",
     "asm_exts",
     "cgo_exts",
     "go_exts",
@@ -29,6 +28,9 @@ load(
 )
 load(
     "//go/private:context.bzl",
+    "CGO_ATTRS",
+    "CGO_FRAGMENTS",
+    "CGO_TOOLCHAINS",
     "go_context",
     "new_go_info",
 )
@@ -49,6 +51,7 @@ load(
 load(
     "//go/private/rules:transition.bzl",
     "go_transition",
+    "non_go_transition",
 )
 
 def _go_test_impl(ctx):
@@ -62,14 +65,13 @@ def _go_test_impl(ctx):
         include_deprecated_properties = False,
         importpath = ctx.attr.importpath,
         embed = ctx.attr.embed,
-        # It's a list because it is transitioned.
-        go_context_data = ctx.attr._go_context_data[0],
+        go_context_data = ctx.attr._go_context_data,
         goos = ctx.attr.goos,
         goarch = ctx.attr.goarch,
     )
 
     validation_outputs = []
-    nogo_fix_outputs = []
+    nogo_diagnosticss = []
 
     # Compile the library to test with internal white box tests
     internal_go_info = new_go_info(
@@ -80,8 +82,8 @@ def _go_test_impl(ctx):
     internal_archive = go.archive(go, internal_go_info)
     if internal_archive.data._validation_output:
         validation_outputs.append(internal_archive.data._validation_output)
-    if internal_archive.data._nogo_fix_output:
-        nogo_fix_outputs.append(internal_archive.data._nogo_fix_output)
+    if internal_archive.data._nogo_diagnostics:
+        nogo_diagnosticss.append(internal_archive.data._nogo_diagnostics)
     go_srcs = [src for src in internal_go_info.srcs if src.extension == "go"]
 
     # Compile the library with the external black box tests
@@ -102,8 +104,8 @@ def _go_test_impl(ctx):
     external_archive = go.archive(go, external_go_info, is_external_pkg = True)
     if external_archive.data._validation_output:
         validation_outputs.append(external_archive.data._validation_output)
-    if external_archive.data._nogo_fix_output:
-        nogo_fix_outputs.append(external_archive.data._nogo_fix_output)
+    if external_archive.data._nogo_diagnostics:
+        nogo_diagnosticss.append(external_archive.data._nogo_diagnostics)
 
     # now generate the main function
     repo_relative_rundir = ctx.attr.rundir or ctx.label.package or "."
@@ -117,13 +119,12 @@ def _go_test_impl(ctx):
         run_dir = repo_relative_rundir
 
     main_go = go.declare_file(go, path = "testmain.go")
-    arguments = go.builder_args(go, "gentestmain", use_path_mapping = True)
+    arguments = go.builder_args(go, "gentestmain")
     arguments.add("-output", main_go)
     if go.coverage_enabled:
-        if go.mode.race:
-            arguments.add("-cover_mode", "atomic")
-        else:
-            arguments.add("-cover_mode", "set")
+        # Always use atomic mode as the "runtime/coverage" APIs require it
+        # and test behavior should follow non-test behavior.
+        arguments.add("-cover_mode", "atomic")
         arguments.add("-cover_format", go.mode.cover_format)
     arguments.add(
         # the l is the alias for the package under test, the l_test must be the
@@ -192,9 +193,15 @@ def _go_test_impl(ctx):
         info_file = ctx.info_file,
     )
 
-    env = {}
+    env = {
+        # The test binary uses this to decide
+        # whether it was invoked by Bazel or directly.
+        # If invoked directly, it will not change its working directory
+        # to run_dir configured above.
+        "GO_TEST_RUN_FROM_BAZEL": "1",
+    }
     for k, v in ctx.attr.env.items():
-        env[k] = ctx.expand_location(v, ctx.attr.data)
+        env[k] = ctx.expand_location(v, ctx.attr.data) if "$" in v else v
 
     run_environment_info = RunEnvironmentInfo(env, ctx.attr.env_inherit)
 
@@ -211,8 +218,11 @@ def _go_test_impl(ctx):
             executable = executable,
         ),
         OutputGroupInfo(
-            compilation_outputs = [internal_archive.data.file],
-            nogo_fix = nogo_fix_outputs,
+            compilation_outputs = [
+                internal_archive.data.file,
+                external_archive.data.file,
+            ],
+            nogo_fix = nogo_diagnosticss,
             _validation = validation_outputs,
         ),
         coverage_common.instrumented_files_info(
@@ -225,10 +235,12 @@ def _go_test_impl(ctx):
     ]
 
 _go_test_kwargs = {
+    "cfg": go_transition,
     "implementation": _go_test_impl,
     "attrs": {
         "data": attr.label_list(
             allow_files = True,
+            cfg = non_go_transition,
             doc = """List of files needed by this rule at run-time. This may include data files
             needed or other programs that may be executed. The [bazel] package may be
             used to locate run files; they may appear in different places depending on the
@@ -238,6 +250,7 @@ _go_test_kwargs = {
         ),
         "srcs": attr.label_list(
             allow_files = go_exts + asm_exts + cgo_exts + syso_exts,
+            cfg = non_go_transition,
             doc = """The list of Go source files that are compiled to create the package.
             Only `.go`, `.s`, and `.syso` files are permitted, unless the `cgo`
             attribute is set, in which case,
@@ -251,7 +264,6 @@ _go_test_kwargs = {
             doc = """List of Go libraries this test imports directly.
             These may be go_library rules or compatible rules with the [GoInfo] provider.
             """,
-            cfg = go_transition,
         ),
         "embed": attr.label_list(
             providers = [GoInfo],
@@ -263,10 +275,10 @@ _go_test_kwargs = {
             and the embedding library may not also have `cgo = True`. See [Embedding]
             for more information.
             """,
-            cfg = go_transition,
         ),
         "embedsrcs": attr.label_list(
             allow_files = True,
+            cfg = non_go_transition,
             doc = """The list of files that may be embedded into the compiled package using
             `//go:embed` directives. All files must be in the same logical directory
             or a subdirectory as source files. All source files containing `//go:embed`
@@ -331,9 +343,9 @@ _go_test_kwargs = {
             values = ["auto"] + LINKMODES,
             doc = """Determines how the binary should be built and linked. This accepts some of
             the same values as `go build -buildmode` and works the same way.
-            <br><br>
+
             <ul>
-            <li>`auto` (default): Controlled by `//go/config:linkmode`, which defaults to `normal`.</li>
+            <li>`auto` (default): Controlled by `//go/config:linkmode`, which defaults to `pie` on supported platforms and `normal` elsewhere.</li>
             <li>`normal`: Builds a normal executable with position-dependent code.</li>
             <li>`pie`: Builds a position-independent executable.</li>
             <li>`plugin`: Builds a shared library that can be loaded as a Go plugin. Only supported on platforms that support plugins.</li>
@@ -353,6 +365,7 @@ _go_test_kwargs = {
             """,
         ),
         "cdeps": attr.label_list(
+            cfg = non_go_transition,
             doc = """The list of other libraries that the c code depends on.
             This can be anything that would be allowed in [cc_library deps]
             Only valid if `cgo` = `True`.
@@ -447,11 +460,10 @@ _go_test_kwargs = {
             See [Cross compilation] for more information.
             """,
         ),
-        "_go_context_data": attr.label(default = "//:go_context_data", cfg = go_transition),
+        "_go_context_data": attr.label(default = "//:go_context_data"),
         "_testmain_additional_deps": attr.label_list(
             providers = [GoInfo],
             default = ["//go/tools/bzltestutil"],
-            cfg = go_transition,
         ),
         # Required for Bazel to collect coverage of instrumented C/C++ binaries
         # executed by go_test.
@@ -472,33 +484,41 @@ _go_test_kwargs = {
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
-    },
+    } | CGO_ATTRS,
     "executable": True,
     "test": True,
-    "toolchains": [GO_TOOLCHAIN],
-    "doc": """This builds a set of tests that can be run with `bazel test`.<br><br>
+    "fragments": CGO_FRAGMENTS,
+    "toolchains": [GO_TOOLCHAIN] + CGO_TOOLCHAINS,
+    "doc": """This builds a set of tests that can be run with `bazel test`.
+
     To run all tests in the workspace, and print output on failure (the
-    equivalent of `go test ./...`), run<br>
+    equivalent of `go test ./...`), run
+
     ```
     bazel test --test_output=errors //...
-    ```<br><br>
-    To run a Go benchmark test, run<br>
+    ```
+
+    To run a Go benchmark test, run
+
     ```
     bazel run //path/to:test -- -test.bench=.
-    ```<br><br>
+    ```
+
     You can run specific tests by passing the `--test_filter=pattern
     <test_filter_>` argument to Bazel. You can pass arguments to tests by passing
     `--test_arg=arg <test_arg_>` arguments to Bazel, and you can set environment
     variables in the test environment by passing
     `--test_env=VAR=value <test_env_>`. You can terminate test execution after the first
     failure by passing the `--test_runner_fail_fast <test_runner_fail_fast_>` argument
-    to Bazel. This is equivalent to passing `--test_arg=-failfast <test_arg_>`.<br><br>
+    to Bazel. This is equivalent to passing `--test_arg=-failfast <test_arg_>`.
+
     To write structured testlog information to Bazel's `XML_OUTPUT_FILE`, tests
     ran with `bazel test` execute using a wrapper. This functionality can be
     disabled by setting `GO_TEST_WRAP=0` in the test environment. Additionally,
     the testbinary can be invoked with `-test.v` by setting
     `GO_TEST_WRAP_TESTV=1` in the test environment; this will result in the
-    `XML_OUTPUT_FILE` containing more granular data.<br><br>
+    `XML_OUTPUT_FILE` containing more granular data.
+
     ***Note:*** To interoperate cleanly with old targets generated by [Gazelle], `name`
     should be `go_default_test` for internal tests and
     `go_default_xtest` for external tests. Gazelle now generates
@@ -694,19 +714,19 @@ def _recompile_external_deps(go, external_go_info, internal_archive, library_lab
             testfilter = None,
             is_main = False,
             mode = go.mode,
-            srcs = as_list(arc_data.srcs),
+            srcs = list(arc_data.srcs),
             cover = arc_data._cover,
-            embedsrcs = as_list(arc_data._embedsrcs),
+            embedsrcs = list(arc_data._embedsrcs),
             x_defs = dict(arc_data._x_defs),
             deps = deps,
-            gc_goopts = as_list(arc_data._gc_goopts),
+            gc_goopts = list(arc_data._gc_goopts),
             runfiles = arc_data.runfiles,
             cgo = arc_data._cgo,
-            cdeps = as_list(arc_data._cdeps),
-            cppopts = as_list(arc_data._cppopts),
-            copts = as_list(arc_data._copts),
-            cxxopts = as_list(arc_data._cxxopts),
-            clinkopts = as_list(arc_data._clinkopts),
+            cdeps = list(arc_data._cdeps),
+            cppopts = list(arc_data._cppopts),
+            copts = list(arc_data._copts),
+            cxxopts = list(arc_data._cxxopts),
+            clinkopts = list(arc_data._clinkopts),
         )
 
         # If this archive needs to be recompiled, use go.archive.
@@ -726,6 +746,7 @@ def _recompile_external_deps(go, external_go_info, internal_archive, library_lab
                 cgo_exports = depset(transitive = [a.cgo_exports for a in deps]),
                 runfiles = go_info.runfiles,
                 mode = go.mode,
+                _headers = internal_archive._headers,
             )
         label_to_archive[label] = archive
 

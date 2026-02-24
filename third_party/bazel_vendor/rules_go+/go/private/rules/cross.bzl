@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(
     "//go/private:providers.bzl",
     "GoArchive",
@@ -116,6 +117,19 @@ _go_cross_kwargs = {
             build flag to the value provided for `sdk_version` here.
             """,
         ),
+        "compilation_mode": attr.string(
+            doc = """The compilation_mode to use for compiling the `target`.
+            Must be one of `dbg`, `fastbuild`, or `opt`. If unspecified, use the
+            same compilation mode as the original `go_binary` rule.
+            """,
+            values = [
+                "",
+                "dbg",
+                "fastbuild",
+                "opt",
+            ],
+            default = "",
+        ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
@@ -123,11 +137,10 @@ _go_cross_kwargs = {
     "cfg": go_cross_transition,
     "doc": """This wraps an executable built by `go_binary` to cross compile it
     for a different platform, and/or compile it using a different version
-    of the golang SDK.<br><br>
+    of the golang SDK.
+
     **Providers:**
-    <ul>
-      <li>[GoArchive]</li>
-    </ul>
+    - [GoArchive]
     """,
 }
 

@@ -81,17 +81,7 @@ def _go_download_sdk_impl(ctx):
             ctx.report_progress("Finding latest Go version")
         else:
             ctx.report_progress("Finding Go SHA-256 sums")
-        ctx.download(
-            url = [
-                "https://go.dev/dl/?mode=json&include=all",
-                "https://golang.google.cn/dl/?mode=json&include=all",
-            ],
-            output = "versions.json",
-        )
-
-        data = ctx.read("versions.json")
-        ctx.delete("versions.json")
-        sdks_by_version = _parse_versions_json(data)
+        sdks_by_version = fetch_sdks_by_version(ctx)
 
         if not version:
             highest_version = None
@@ -131,7 +121,11 @@ def _go_download_sdk_impl(ctx):
             "version": version,
             "strip_prefix": ctx.attr.strip_prefix,
         }
-    return None
+
+    if hasattr(ctx, "repo_metadata"):
+        return ctx.repo_metadata(reproducible = True)
+    else:
+        return None
 
 go_download_sdk_rule = repository_rule(
     implementation = _go_download_sdk_impl,
@@ -221,8 +215,8 @@ def go_toolchains_single_definition(ctx, *, prefix, goos, goarch, sdk_repo, sdk_
     chunks.append("""declare_bazel_toolchains(
     prefix = "{prefix}",
     go_toolchain_repo = "@{sdk_repo}",
-    host_goarch = "{goarch}",
-    host_goos = "{goos}",
+    exec_goarch = "{goarch}",
+    exec_goos = "{goos}",
     major = {identifier_prefix}MAJOR_VERSION,
     minor = {identifier_prefix}MINOR_VERSION,
     patch = {identifier_prefix}PATCH_VERSION,
@@ -381,6 +375,12 @@ def _go_wrap_sdk_impl(ctx):
     _sdk_build_file(ctx, platform, version, ctx.attr.experiments)
     _local_sdk(ctx, goroot)
 
+# string_keyed_label_dict was added in 8.0.0
+_maybe_string_keyed_label_dict = getattr(
+    attr,
+    "string_keyed_label_dict",
+    attr.string_dict,
+)
 go_wrap_sdk_rule = repository_rule(
     implementation = _go_wrap_sdk_impl,
     attrs = {
@@ -388,7 +388,7 @@ go_wrap_sdk_rule = repository_rule(
             mandatory = False,
             doc = "A file in the SDK root direcotry. Used to determine GOROOT.",
         ),
-        "root_files": attr.string_dict(
+        "root_files": _maybe_string_keyed_label_dict(
             mandatory = False,
             doc = "A set of mappings from the host platform to a file in the SDK's root directory",
         ),
@@ -442,14 +442,6 @@ def _local_sdk(ctx, path):
 def _sdk_build_file(ctx, platform, version, experiments):
     ctx.file("ROOT")
     goos, _, goarch = platform.partition("_")
-
-    pv = parse_version(version)
-    if pv != None and pv[1] >= 20:
-        # Turn off coverageredesign GOEXPERIMENT on 1.20+
-        # until rules_go is updated to work with the
-        # coverage redesign.
-        if not "nocoverageredesign" in experiments and not "coverageredesign" in experiments:
-            experiments = experiments + ["nocoverageredesign"]
 
     ctx.template(
         "BUILD.bazel",
@@ -581,6 +573,31 @@ def _parse_versions_json(data):
         }
         for sdk in sdks
     }
+
+def fetch_sdks_by_version(ctx, allow_fail = False):
+    result = ctx.download(
+        url = [
+            "https://go.dev/dl/?mode=json&include=all",
+            "https://golang.google.cn/dl/?mode=json&include=all",
+        ],
+        output = "versions.json",
+        allow_fail = allow_fail,
+    )
+    if not result.success:
+        return None
+    data = ctx.read("versions.json")
+
+    # If the download is redirected through a proxy such as Artifactory, it may
+    # drop the query parameters and return an HTML page instead. In that case,
+    # just return an empty map if allow_fail is set. It is unfortunately not
+    # possible to attempt parsing as JSON and catch the error.
+    if (not data or data[0] != "[") and allow_fail:
+        return None
+
+    # module_ctx doesn't have delete, but its files are temporary anyway.
+    if hasattr(ctx, "delete"):
+        ctx.delete("versions.json")
+    return _parse_versions_json(data)
 
 def parse_version(version):
     """Parses a version string like "1.15.5" and returns a tuple of numbers or None"""

@@ -41,6 +41,9 @@ _cc = struct(
     # Whether cc_{binary,test} can be extended.
     # https://github.com/bazelbuild/bazel/commit/b746d663da71f937390809f0e8368112cafafb56
     rules_support_extension = ge("8.0.1"),
+    # Whether cc_toolchain has the generate_modmap attribute.
+    # https://github.com/bazelbuild/bazel/commit/8028655414a189b6897b1b51e3e43b5711e0af98
+    cc_toolchain_has_generate_modmap = gt("9.0.0-pre.20250716.1"),
 )
 
 _docs = struct(
@@ -76,6 +79,10 @@ _external_deps = struct(
     # https://github.com/bazelbuild/bazel/commit/c796aba6ee36970956ea32b46a2f121bb4d1818a
     # https://github.com/bazelbuild/bazel/commit/e730201e6bf8d6c1c80433b5b42305c3167a8660
     extension_metadata_has_reproducible = ge_same_major("7.1.0") or ge("8.0.0-pre.20240213.1"),
+    # Whether repository_ctx.repo_metadata has the reproducible parameter (#25938)
+    # https://github.com/bazelbuild/bazel/commit/ad74aa5d9e29e7d4ab3043328ee25901be9e14f6
+    # https://github.com/bazelbuild/bazel/commit/33ee3b5acebbfffe74ef2ab8c3f437cb38382843
+    repo_metadata_has_reproducible = ge_same_major("8.3.0") or ge("9.0.0-pre.20250831.1"),
     # Whether repository_ctx#getenv exists (#19511)
     # Note: This primarily targets conditionally adding environ
     # attributes to repository rule declarations.  Inside repository rule
@@ -119,6 +126,10 @@ _rules = struct(
     # metadata_files parameter.  Introduced in commit
     # https://github.com/bazelbuild/bazel/commit/ef54ef5d17a013c863c4e2fb0583e6bd209645f2.
     instrumented_files_info_has_metadata_files = ge("7.0.0-pre.20230710.5"),
+    # Whether coverage_common.instrumented_files_info supports the
+    # baseline_coverage_files parameter.  Introduced in commit
+    # https://github.com/bazelbuild/bazel/commit/e672aceda6fba37171bebce77c5ee62442337c23
+    instrumented_files_info_has_baseline_coverage_files = gt("9.0.0-pre.20250610.2"),
     # Whether treeartifacts can have symlinks pointing outside of the tree artifact. (#21263)
     permits_treeartifact_uplevel_symlinks = ge("7.1.0"),
     # Whether rule extension APIs are available by default
@@ -135,7 +146,7 @@ _rules = struct(
     # Internal only, don't use outside rules_java, rules_python & rules_shell.
     # TODO: Use a larger version range after cherry-picking
     # https://github.com/bazelbuild/bazel/commit/e81949554f3ecab5e2c4afd79031f498f36427fe
-    _has_launcher_maker_toolchain = gt("9.0.0-pre.20250506.6"),
+    _has_launcher_maker_toolchain = ge_same_major("8.3.0") or ge("9.0.0-pre.20250516.1"),
 )
 
 _toolchains = struct(
@@ -145,6 +156,12 @@ _toolchains = struct(
     # Whether the use_target_platform_constraints attribute is available on the toolchain rule (#25123)
     # https://github.com/bazelbuild/bazel/commit/ba9e539a086859afaa4d2b3bf8d3afb44bcd06ce
     has_use_target_platform_constraints = ge("8.2.0"),
+    # Whether genrule.toolchains accepts toolchain_type targets
+    # https://github.com/bazelbuild/bazel/commit/0e876b1794d4db58b72949014401d22cc65d94a1
+    genrule_accepts_toolchain_types = ge_same_major("8.3.0") or ge("9.0.0-pre.20241016.1"),
+    # Whether the default_test_toolchain_type exists
+    # https://github.com/bazelbuild/bazel/commit/7d685648a8a9e4ea203f95ad983088a17103f4a6
+    has_default_test_toolchain_type = ge("9.0.0-pre.20250324.2"),
 )
 
 bazel_features = struct(

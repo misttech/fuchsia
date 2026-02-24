@@ -38,7 +38,7 @@ type genFileInfo struct {
 	created    bool         // Whether the file was created by protoc
 	from       *genFileInfo // The actual file protoc produced if not Path
 	unique     bool         // True if this base name is unique in expected results
-	ambiguous bool         // True if there were more than one possible outputs that matched this file
+	ambiguous  bool         // True if there were more than one possible outputs that matched this file
 }
 
 func run(args []string) error {
@@ -56,6 +56,7 @@ func run(args []string) error {
 	outPath := flags.String("out_path", "", "The base output path to write to.")
 	plugin := flags.String("plugin", "", "The go plugin to use.")
 	importpath := flags.String("importpath", "", "The importpath for the generated sources.")
+	strict := flags.Bool("strict", false, "whether to fail if any expected output file is not generated")
 	flags.Var(&options, "option", "The plugin options.")
 	flags.Var(&descriptors, "descriptor_set", "The descriptor set to read.")
 	flags.Var(&expected, "expected", "The expected output files.")
@@ -185,9 +186,18 @@ func run(args []string) error {
 	for _, f := range files {
 		switch {
 		case f.expected && !f.created:
-			return fmt.Errorf("file %q expected from plugin %q but not created", f.path, *plugin)
+			if *strict {
+				return fmt.Errorf("file %q expected from plugin %q but not created", f.path, *plugin)
+			}
+			// Some plugins only create output files if the proto source files
+			// have relevant definitions (e.g., services for grpc_gateway). Create
+			// trivial files that the compiler will ignore for missing outputs.
+			data := []byte("// +build ignore\n\npackage ignore")
+			if err := ioutil.WriteFile(abs(f.path), data, 0644); err != nil {
+				return err
+			}
 		case f.expected && f.ambiguous:
-			fmt.Fprintf(buf, "Ambiguous output %v.\n", f.path)
+			fmt.Fprintf(buf, "ambiguous output %v.\n", f.path)
 		case f.from != nil:
 			data, err := ioutil.ReadFile(f.from.path)
 			if err != nil {
