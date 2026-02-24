@@ -1155,13 +1155,6 @@ class VmPageList final {
     return true;
   }
 
-  // Takes the content out of this page list and places them in the provided |splice| list, which
-  // must have already been initialized but still be empty. The range to be taken is determined by
-  // the provided |offset| and the length of the |splice| list, and will be |Finalize|d before
-  // returning. May return ZX_ERR_OUT_OF_MEMORY, in which case an unspecified number of pages will
-  // have been moved into |splice|.
-  zx_status_t TakePages(uint64_t offset, VmPageSpliceList* splice);
-
   uint64_t HeapAllocationBytes() const { return list_.size() * sizeof(VmPageListNode); }
 
   // Allow the implementation to use a one-past-the-end for VmPageListNode offsets.
@@ -1682,7 +1675,7 @@ class VmPageList final {
 };
 
 // Class which holds the list of vm_page structs removed from a VmPageList
-// by TakePages. The list include information about uncommitted pages and markers.
+// by AddPagesFrom. The list include information about uncommitted pages and markers.
 // Every splice list is expected to go through the following series of states:
 // 1. The splice list is created.
 // 2. List is Initialized with the desired range.
@@ -1714,6 +1707,21 @@ class VmPageSpliceList final {
   // Pops the next page off of the splice list. It is invalid to pop a page from a non-finalized
   // splice list.
   VmPageOrMarker Pop();
+
+  // Takes the content out of |source| and places them in this splice list, which must have already
+  // been initialized but still be empty. The range to be taken is determined by the provided
+  // |offset| and the length of this splice list. May return ZX_ERR_OUT_OF_MEMORY, in which case an
+  // unspecified number of pages will have been moved into this splice list.
+  //
+  // Takes a function with the signature void(VmPageOrMarker *src, VmPageOrMarker *dst, uint64_t
+  // offset), which is expected to move content from |src| to |dst|.
+  template <typename F>
+  zx_status_t AddPagesFrom(F merge_func, VmPageList& source, uint64_t offset) {
+    const uint64_t end = offset + length_;
+    bool result = source.MergeRangeOnto(merge_func, page_list_, offset, end);
+    Finalize();
+    return result ? ZX_OK : ZX_ERR_NO_MEMORY;
+  }
 
   // Iterates all pages in this splice list without taking ownership. Pages are not considered
   // processed and can not be removed using this iterator. The callback is expected to have the

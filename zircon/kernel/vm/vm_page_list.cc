@@ -1191,16 +1191,6 @@ zx_status_t VmPageList::ClipIntervalEnd(uint64_t interval_end, uint64_t len) {
   return ZX_OK;
 }
 
-zx_status_t VmPageList::TakePages(uint64_t offset, VmPageSpliceList* splice) {
-  const uint64_t end = offset + splice->length_;
-
-  bool result = MergeRangeOnto(
-      [](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) { *dst = ktl::move(*src); },
-      splice->page_list_, offset, end);
-  splice->Finalize();
-  return result ? ZX_OK : ZX_ERR_NO_MEMORY;
-}
-
 VmPageSpliceList::~VmPageSpliceList() {
   switch (state_) {
     case State::Constructed:

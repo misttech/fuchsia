@@ -5643,7 +5643,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
 
   VmCompression* compression = Pmm::Node().GetPageCompression();
 
-  // If we do not have a parent, and the page splice list is empty, then we can use TakePages to
+  // If we do not have a parent, and the page splice list is empty, then we can use AddPagesFrom to
   // directly move the page list nodes into the splice list. It is possible to both have not parent
   // and not have an empty splice list if the parent was concurrently closed while performing this
   // operation, in which case as its an infrequent race condition we fall through to the less
@@ -5681,7 +5681,9 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
     // sure we're not inside an interval; checking a single offset for membership should suffice.
     ASSERT(found_page || !page_list_.IsOffsetInZeroInterval(range.offset));
 
-    zx_status_t status = page_list_.TakePages(range.offset, pages);
+    zx_status_t status = pages->AddPagesFrom(
+        [](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) { *dst = ktl::move(*src); },
+        page_list_, range.offset);
     if (status != ZX_OK) {
       DEBUG_ASSERT(status == ZX_ERR_NO_MEMORY);
       return status;
