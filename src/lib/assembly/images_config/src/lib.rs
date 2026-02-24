@@ -17,11 +17,22 @@ pub use images_config::{
 };
 
 pub use board_filesystem_config::{
-    BoardFilesystemConfig, GptMode, PostProcessingScript, VBMetaDescriptor, VBMetaStyle,
-    ZbiCompression,
+    BoardFilesystemConfig, FxfsBlobFormat, GptMode, PostProcessingScript, VBMetaDescriptor,
+    VBMetaStyle, ZbiCompression,
 };
 
 pub use product_filesystem_config::{
     BlobFvmVolumeConfig, BlobfsLayout, DataFilesystemFormat, DataFvmVolumeConfig,
     FilesystemImageMode, FvmVolumeConfig, ImageName, ProductFilesystemConfig, VolumeConfig,
 };
+
+/// Returns true if the value is equal to its default.
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    t == &T::default()
+}
+
+/// Dereferences the bool. This allows for skipping the serialization of boolean fields that default
+/// to true.
+fn is_true(v: &bool) -> bool {
+    *v
+}

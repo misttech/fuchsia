@@ -6,8 +6,8 @@ use crate::BlobfsContents;
 use crate::base_package::BasePackage;
 
 use anyhow::{Context, Result};
-use assembly_fxfs::FxfsBuilder;
-use assembly_images_config::Fxfs;
+use assembly_fxfs::{CompressionAlgorithm, FxfsBuilder};
+use assembly_images_config::{Fxfs, FxfsBlobFormat};
 use camino::{Utf8Path, Utf8PathBuf};
 use image_assembly_config::ImageAssemblyConfig;
 use std::collections::HashMap;
@@ -33,12 +33,14 @@ pub async fn construct_fxfs(
         maximum_contents_size: fxfs_config.maximum_contents_size,
         ..Default::default()
     };
-    let mut fxfs_builder = FxfsBuilder::new();
+    let blob_format = match fxfs_config.blob_format {
+        FxfsBlobFormat::Uncompressed => None,
+        FxfsBlobFormat::Zstd => Some(CompressionAlgorithm::Zstd),
+        FxfsBlobFormat::Lz4 => Some(CompressionAlgorithm::Lz4),
+    };
+    let mut fxfs_builder = FxfsBuilder::new(blob_format);
     if let Some(size) = fxfs_config.size_bytes {
         fxfs_builder.set_size(size);
-    }
-    if !fxfs_config.compression_enabled {
-        fxfs_builder.disable_compression();
     }
 
     // Add the base and cache packages.

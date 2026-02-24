@@ -330,7 +330,7 @@ pub struct NandFvm {
 }
 
 /// The parameters describing how to create an Fxfs image.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(default)]
 pub struct Fxfs {
     /// The size of Fxfs image to generate.  The base system's contents must not exceed this size.
@@ -344,14 +344,9 @@ pub struct Fxfs {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub maximum_contents_size: Option<u64>,
 
-    /// Whether blobs in fxblob should be compressed during assembly. Defaults to true.
-    pub compression_enabled: bool,
-}
-
-impl Default for Fxfs {
-    fn default() -> Self {
-        Self { size_bytes: None, maximum_contents_size: None, compression_enabled: true }
-    }
+    /// How blobs should be formatted in the base fxfs image during assembly.
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub blob_format: bfc::FxfsBlobFormat,
 }
 
 impl ImagesConfig {
@@ -398,7 +393,7 @@ impl ImagesConfig {
                     images.push(Image::Fxfs(Fxfs {
                         size_bytes,
                         maximum_contents_size: board.fxfs.size_checker_maximum_bytes,
-                        compression_enabled: board.fxfs.compression_enabled,
+                        blob_format: board.fxfs.blob_format,
                     }));
                 }
                 pfc::VolumeConfig::Fvm(fvm) => {
@@ -519,6 +514,7 @@ mod tests {
                 blob_maximum_bytes: None,
                 data_maximum_bytes: None,
                 compression_enabled: true,
+                blob_format: bfc::FxfsBlobFormat::Zstd,
             },
             fvm: bfc::Fvm {
                 slice_size: bfc::FvmSliceSize(5678),
@@ -569,6 +565,7 @@ mod tests {
                 blob_maximum_bytes: None,
                 data_maximum_bytes: None,
                 compression_enabled: false,
+                blob_format: bfc::FxfsBlobFormat::Uncompressed,
             },
             fvm: bfc::Fvm {
                 slice_size: bfc::FvmSliceSize(5678),
@@ -678,7 +675,7 @@ mod tests {
                     Image::Fxfs(Fxfs {
                         size_bytes: Some(1234),
                         maximum_contents_size: Some(5678),
-                        compression_enabled: true,
+                        blob_format: bfc::FxfsBlobFormat::Zstd,
                     }),
                 ],
             }

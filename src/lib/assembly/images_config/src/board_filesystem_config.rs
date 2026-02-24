@@ -351,6 +351,21 @@ pub enum VBMetaStyle {
     AndroidPvmDebug,
 }
 
+/// How blobs should be formatted in the base fxfs image during assembly.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum FxfsBlobFormat {
+    /// Blobs will not be compressed.
+    Uncompressed,
+
+    /// Blobs will be compressed with Zstd.
+    #[default]
+    Zstd,
+
+    /// Blobs will be compressed with LZ4.
+    Lz4,
+}
+
 /// The parameters describing how to create an Fxfs image.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields, default)]
@@ -374,7 +389,14 @@ pub struct Fxfs {
     pub data_maximum_bytes: Option<u64>,
 
     /// Whether blobs in fxblob should be compressed during assembly. Defaults to true.
+    ///
+    /// *NOTE*: This field is deprecated. Use `blob_format` instead.
+    #[serde(skip_serializing_if = "crate::is_true")]
     pub compression_enabled: bool,
+
+    /// How blobs should be formatted in the base fxfs image during assembly.
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub blob_format: FxfsBlobFormat,
 }
 
 impl Default for Fxfs {
@@ -385,6 +407,7 @@ impl Default for Fxfs {
             blob_maximum_bytes: None,
             data_maximum_bytes: None,
             compression_enabled: true,
+            blob_format: FxfsBlobFormat::default(),
         }
     }
 }
@@ -616,6 +639,35 @@ mod tests {
                 Utf8PathBuf::from_str("inner/path/nested").unwrap(),
             ],
             found_dest
+        );
+    }
+
+    #[test]
+    fn test_fxfs_blob_format_deserialization() {
+        assert_eq!(
+            serde_json::from_value::<FxfsBlobFormat>(serde_json::json!("zstd")).unwrap(),
+            FxfsBlobFormat::Zstd
+        );
+        assert_eq!(
+            serde_json::from_value::<FxfsBlobFormat>(serde_json::json!("lz4")).unwrap(),
+            FxfsBlobFormat::Lz4
+        );
+        assert_eq!(
+            serde_json::from_value::<FxfsBlobFormat>(serde_json::json!("uncompressed")).unwrap(),
+            FxfsBlobFormat::Uncompressed
+        );
+    }
+
+    #[test]
+    fn test_fxfs_default_serialization() {
+        assert_eq!(
+            serde_json::to_value(Fxfs::default()).unwrap(),
+            serde_json::json!({
+                "blob_maximum_bytes": null,
+                "data_maximum_bytes": null,
+                "size_bytes": null,
+                "size_checker_maximum_bytes": null,
+            })
         );
     }
 }

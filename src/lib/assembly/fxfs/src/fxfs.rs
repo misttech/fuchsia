@@ -29,22 +29,13 @@ pub struct FxfsBuilder {
 
 impl FxfsBuilder {
     /// Construct a new FxfsBuilder.
-    pub fn new() -> Self {
-        FxfsBuilder {
-            manifest: BlobManifest::default(),
-            size_bytes: None,
-            compression_algorithm: Some(CompressionAlgorithm::Zstd),
-        }
+    pub fn new(compression_algorithm: Option<CompressionAlgorithm>) -> Self {
+        FxfsBuilder { manifest: BlobManifest::default(), size_bytes: None, compression_algorithm }
     }
 
     /// Sets the target image size.
     pub fn set_size(&mut self, size_bytes: u64) {
         self.size_bytes = Some(size_bytes)
-    }
-
-    /// Disables the compression of blobs in the image.
-    pub fn disable_compression(&mut self) {
-        self.compression_algorithm = None;
     }
 
     /// Add a package to fxfs by inserting every blob mentioned in the `package_manifest` on the
@@ -169,7 +160,7 @@ mod tests {
         let output_path_clone = output_path.clone();
         let sparse_output_path_clone = sparse_output_path.clone();
 
-        let mut builder = FxfsBuilder::new();
+        let mut builder = FxfsBuilder::new(None);
         builder.set_size(32 * 1024 * 1024);
         builder.add_package(manifest).unwrap();
 

@@ -9,3 +9,4 @@
 mod fxfs;
 
 pub use fxfs::{FxfsBuilder, read_blobs_json};
+pub use fxfs_make_blob_image::CompressionAlgorithm;
