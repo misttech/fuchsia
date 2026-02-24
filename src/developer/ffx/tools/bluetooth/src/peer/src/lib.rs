@@ -53,7 +53,7 @@ impl FfxMain for PeerTool {
             PeerSubCommand::Connect(ref cmd) => {
                 let Some(peer_id) = to_identifier(&peers, &cmd.id_or_addr) else {
                     return Err(fho::Error::User(anyhow::anyhow!(
-                        "Unable to connect: Unknown address {}",
+                        "Unable to connect: Unknown peer {}",
                         cmd.id_or_addr
                     )));
                 };
@@ -75,7 +75,7 @@ impl FfxMain for PeerTool {
             PeerSubCommand::Disconnect(ref cmd) => {
                 let Some(peer_id) = to_identifier(&peers, &cmd.id_or_addr) else {
                     return Err(fho::Error::User(anyhow::anyhow!(
-                        "Unable to disconnect: Unknown address {}",
+                        "Unable to disconnect: Unknown peer {}",
                         cmd.id_or_addr
                     )));
                 };
@@ -97,7 +97,7 @@ impl FfxMain for PeerTool {
             PeerSubCommand::Forget(ref cmd) => {
                 let Some(peer_id) = to_identifier(&peers, &cmd.id_or_addr) else {
                     return Err(fho::Error::User(anyhow::anyhow!(
-                        "Unable to forget: Unknown address {}",
+                        "Unable to forget: Unknown peer {}",
                         cmd.id_or_addr
                     )));
                 };
