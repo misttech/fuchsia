@@ -326,6 +326,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_route",
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
+  "//src/starnix/lib/thread_create_vmars",
   "//src/starnix/lib/usercopy",
   "//src/storage/crypt/starnix:lib",
   "//src/storage/ext4/lib/metadata",
