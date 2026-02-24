@@ -6,6 +6,7 @@
 #define SRC_LIB_UNWINDER_ARM_EHABI_MODULE_H_
 
 #include "gtest/gtest_prod.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 
@@ -17,7 +18,10 @@ inline int32_t DecodePrel31(uint32_t ptr) { return static_cast<int32_t>(SignExte
 
 class ArmEhAbiModule {
  public:
-  ArmEhAbiModule(Memory* elf, uint32_t elf_ptr) : elf_(elf), elf_ptr_(elf_ptr) {}
+  explicit ArmEhAbiModule(const LoadedElfModule& loaded_elf_module)
+      : loaded_elf_module_(loaded_elf_module),
+        elf_(loaded_elf_module_.binary_memory()),
+        elf_ptr_(static_cast<uint32_t>(loaded_elf_module_.load_address())) {}
 
   // Load the .ARM.exidx binary search table.
   [[nodiscard]] Error Load();
@@ -56,6 +60,7 @@ class ArmEhAbiModule {
 
   fit::result<Error, IdxHeader> PrepareToStep(const Registers& current);
 
+  const LoadedElfModule& loaded_elf_module_;
   Memory* const elf_ = nullptr;
   const uint32_t elf_ptr_ = 0;
 

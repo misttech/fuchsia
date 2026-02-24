@@ -5,6 +5,7 @@
 #ifndef SRC_LIB_UNWINDER_SCS_UNWINDER_H_
 #define SRC_LIB_UNWINDER_SCS_UNWINDER_H_
 
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 #include "src/lib/unwinder/unwinder_base.h"
@@ -20,8 +21,9 @@ namespace unwinder {
 //     SCS, and the unwinder has no way to detect; those frames will be dropped silently.
 class ShadowCallStackUnwinder : public UnwinderBase {
  public:
-  // We need |CfiUnwinder::IsValidPC|.
-  explicit ShadowCallStackUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
+  // We need |ElfModuleCache::IsValidPC|.
+  explicit ShadowCallStackUnwinder(const ElfModuleCache& module_cache)
+      : UnwinderBase(module_cache) {}
 
   Error Step(Memory* scs, const Frame& current, Frame& next) override;
   void AsyncStep(AsyncMemory* scs, const Frame& current,

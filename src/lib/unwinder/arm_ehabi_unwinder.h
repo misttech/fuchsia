@@ -6,7 +6,7 @@
 #define SRC_LIB_UNWINDER_ARM_EHABI_UNWINDER_H_
 
 #include "src/lib/unwinder/arm_ehabi_module.h"
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 #include "src/lib/unwinder/unwinder_base.h"
@@ -18,8 +18,8 @@ namespace unwinder {
 // https://github.com/ARM-software/abi-aa/blob/c51addc3dc03e73a016a1e4edf25440bcac76431/ehabi32/ehabi32.rst
 class ArmEhAbiUnwinder : public UnwinderBase {
  public:
-  // CfiUnwinder is needed for |IsValidPC| and |GetModuleInfoForPC|.
-  explicit ArmEhAbiUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
+  // ElfModuleCache is needed for |IsValidPC| and |GetModuleForPc|.
+  explicit ArmEhAbiUnwinder(const ElfModuleCache& module_cache) : UnwinderBase(module_cache) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
@@ -29,17 +29,19 @@ class ArmEhAbiUnwinder : public UnwinderBase {
   Frame::Trust trust() const override { return Frame::Trust::kArmEhAbi; }
 
  private:
-  Error Step(Memory* stack, const Module* elf_module, const Registers& current, Registers& next);
+  Error Step(Memory* stack, const LoadedElfModule& loaded_elf_module, const Registers& current,
+             Registers& next);
 
-  void AsyncStep(AsyncMemory* stack, const Module* elf_module, const Registers& current,
+  void AsyncStep(AsyncMemory* stack, const LoadedElfModule& elf_module, const Registers& current,
                  fit::callback<void(Error, Registers)> cb);
 
-  // Looksup the EhAbiModule
+  // Looksup the EhAbiModule.
   struct EhAbiModuleResult {
     ArmEhAbiModule* ehabi_module = nullptr;
     bool should_synchronize_stack = false;
   };
-  fit::result<Error, EhAbiModuleResult> GetEhAbiModuleFromModuleInfo(const Module* elf_module);
+  fit::result<Error, EhAbiModuleResult> GetEhAbiModuleFromModuleInfo(
+      const LoadedElfModule& elf_module);
 
   // Lazily loaded.
   std::map<uint32_t, std::unique_ptr<ArmEhAbiModule>> module_map_;

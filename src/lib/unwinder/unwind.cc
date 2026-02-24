@@ -49,7 +49,7 @@ bool PcIsReturnAddress(const Registers& regs) {
   return regs.Get(reg_id, val).has_err();
 }
 
-void FixupFrame(CfiUnwinder* cfi_unwinder, Frame& next) {
+void FixupFrame(const ElfModuleCache& module_cache, Frame& next) {
   // If the frame was identified with an S augmentation by the CFI unwinder, then we know that
   // this definitely not a return address.
   if (next.is_signal_frame) {
@@ -60,7 +60,7 @@ void FixupFrame(CfiUnwinder* cfi_unwinder, Frame& next) {
   // Successfully probing a sigreturn frame means the next frame needs to be unwound by the
   // sigreturn unwinder. Only do this if the CFI unwinder failed to detect the 'S' augmentation.
   if (!next.is_signal_frame) {
-    if (auto err = SigReturnUnwinder::ProbePCForSigReturn(cfi_unwinder, next.regs); err.ok()) {
+    if (auto err = SigReturnUnwinder::ProbePCForSigReturn(module_cache, next.regs); err.ok()) {
       next.pc_is_return_address = false;
       next.is_signal_frame = true;
       return;
@@ -85,7 +85,7 @@ Error TryUnwinder(UnwinderBase* unwinder, Memory* stack, const Frame& current, F
   }
 
   next.trust = unwinder->trust();
-  FixupFrame(unwinder->cfi_unwinder(), next);
+  FixupFrame(unwinder->module_cache(), next);
 
   return Success();
 }
@@ -101,7 +101,7 @@ void TryAsyncUnwinder(UnwinderBase* unwinder, AsyncMemory* stack, const Frame& c
     }
 
     next_frame.trust = unwinder->trust();
-    FixupFrame(unwinder->cfi_unwinder(), next_frame);
+    FixupFrame(unwinder->module_cache(), next_frame);
     return cb(Success(), std::move(next_frame));
   });
 }
@@ -177,11 +177,11 @@ std::vector<Frame> Unwinder::Unwind(Memory* stack, const Registers& registers, s
 }
 
 void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
-  ArmEhAbiUnwinder arm_ehabi_unwinder(&cfi_unwinder_);
-  FramePointerUnwinder fp_unwinder(&cfi_unwinder_);
-  PltUnwinder plt_unwinder(&cfi_unwinder_);
-  ShadowCallStackUnwinder scs_unwinder(&cfi_unwinder_);
-  SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
+  ArmEhAbiUnwinder arm_ehabi_unwinder(module_cache_);
+  FramePointerUnwinder fp_unwinder(module_cache_);
+  PltUnwinder plt_unwinder(module_cache_);
+  ShadowCallStackUnwinder scs_unwinder(module_cache_);
+  SigReturnUnwinder sigreturn_unwinder(module_cache_);
 
   bool success = false;
   std::string err_msg;
@@ -278,11 +278,11 @@ AsyncUnwinder::AsyncUnwinder(std::span<const Module> modules)
   //      and PC are recovered for each frame.
   //   5. Finally try to use the shadow call stack. If it works, then any remaining frames must also
   //      be unwound from the shadow call stack as well since the SP is lost.
-  unwinders_.emplace_back(std::make_unique<SigReturnUnwinder>(&cfi_unwinder_));
-  unwinders_.emplace_back(std::make_unique<ArmEhAbiUnwinder>(&cfi_unwinder_));
-  unwinders_.emplace_back(std::make_unique<PltUnwinder>(&cfi_unwinder_));
-  unwinders_.emplace_back(std::make_unique<FramePointerUnwinder>(&cfi_unwinder_));
-  unwinders_.emplace_back(std::make_unique<ShadowCallStackUnwinder>(&cfi_unwinder_));
+  unwinders_.emplace_back(std::make_unique<SigReturnUnwinder>(module_cache_));
+  unwinders_.emplace_back(std::make_unique<ArmEhAbiUnwinder>(module_cache_));
+  unwinders_.emplace_back(std::make_unique<PltUnwinder>(module_cache_));
+  unwinders_.emplace_back(std::make_unique<FramePointerUnwinder>(module_cache_));
+  unwinders_.emplace_back(std::make_unique<ShadowCallStackUnwinder>(module_cache_));
 }
 
 void AsyncUnwinder::Unwind(AsyncMemory::Delegate* delegate, const Registers& registers,

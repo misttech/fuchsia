@@ -5,9 +5,9 @@
 #include "src/lib/unwinder/arm_ehabi_unwinder.h"
 
 #include "src/lib/unwinder/arm_ehabi_module.h"
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
-#include "src/lib/unwinder/module.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
@@ -38,17 +38,17 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
     regs.SetPC(pc);
   }
 
-  const Module* elf_module;
-  if (auto err = cfi_unwinder_->GetModuleForPc(pc, &elf_module); err.has_err()) {
-    return err;
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
 
-  switch (elf_module->size) {
+  switch (loaded_elf_module->get().size()) {
     case Module::AddressSize::k32Bit:
       // Make sure we mark the next registers as 32 bit so we're setting the expected PC, LR, and SP
       // registers.
       next.regs = Registers(Registers::Arch::kArm32);
-      return Step(stack, elf_module, regs, next.regs);
+      return Step(stack, loaded_elf_module->get(), current.regs, next.regs);
     case Module::AddressSize::k64Bit:
       return Error("Module for PC is not 32 bit.");
     default:
@@ -56,16 +56,14 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   }
 }
 
-Error ArmEhAbiUnwinder::Step(Memory* stack, const Module* elf_module, const Registers& current,
-                             Registers& next) {
-  ArmEhAbiModule* ehabi_module;
-  if (auto result = GetEhAbiModuleFromModuleInfo(elf_module); result.is_ok()) {
-    ehabi_module = result.value().ehabi_module;
-  } else {
-    return result.error_value();
+Error ArmEhAbiUnwinder::Step(Memory* stack, const LoadedElfModule& loaded_elf_module,
+                             const Registers& current, Registers& next) {
+  auto ehabi_module = GetEhAbiModuleFromModuleInfo(loaded_elf_module);
+  if (ehabi_module.is_error()) {
+    return ehabi_module.error_value();
   }
 
-  return ehabi_module->Step(stack, current, next);
+  return ehabi_module->ehabi_module->Step(stack, current, next);
 }
 
 void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
@@ -88,20 +86,20 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
     regs.SetPC(pc);
   }
 
-  const Module* elf_module = nullptr;
-  if (auto err = cfi_unwinder_->GetModuleForPc(pc, &elf_module); err.has_err()) {
-    return cb(err, Registers(current.regs.arch()));
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    return cb(loaded_elf_module.error_value(), Registers(current.regs.arch()));
   }
 
-  if (elf_module->size != Module::AddressSize::k32Bit) {
+  if (loaded_elf_module->get().size() != Module::AddressSize::k32Bit) {
     cb(Error("Module for PC is not 32 bit."), Registers(current.regs.arch()));
     return;
   }
 
-  AsyncStep(stack, elf_module, regs, std::move(cb));
+  AsyncStep(stack, loaded_elf_module->get(), regs, std::move(cb));
 }
 
-void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Module* elf_module,
+void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const LoadedElfModule& elf_module,
                                  const Registers& current,
                                  fit::callback<void(Error, Registers)> cb) {
   auto result = GetEhAbiModuleFromModuleInfo(elf_module);
@@ -127,24 +125,22 @@ void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Module* elf_module,
 }
 
 fit::result<Error, ArmEhAbiUnwinder::EhAbiModuleResult>
-ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(const Module* elf_module) {
-  // The CFI Unwinder keeps a record of all the modules, so it can properly find the right module
-  // for this PC. Since we don't have to keep track of anything other than the 32 bit modules here
-  // we can just index on the load address of the already found module.
-  auto it = module_map_.find(static_cast<uint32_t>(elf_module->load_address));
+ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(const LoadedElfModule& loaded_elf_module) {
+  // The ModuleCache keeps a record of all the modules, so it can properly find the right module
+  // for this PC. Since we don't have to keep track of anything other than the 32 bit modules
+  // here we can just index on the load address of the already found module.
+  auto it = module_map_.find(static_cast<uint32_t>(loaded_elf_module.load_address()));
 
   EhAbiModuleResult result;
 
   if (it == module_map_.end()) {
     // Need to insert this module.
-    auto ehabi_module =
-        std::make_unique<ArmEhAbiModule>(elf_module->binary_memory, elf_module->load_address);
+    auto ehabi_module = std::make_unique<ArmEhAbiModule>(loaded_elf_module);
 
     if (auto err = ehabi_module->Load(); err.has_err()) {
       // Now try with the debug info memory if it's available.
-      if (elf_module->debug_info_memory) {
-        ehabi_module = std::make_unique<ArmEhAbiModule>(elf_module->debug_info_memory,
-                                                        elf_module->load_address);
+      if (loaded_elf_module.debug_info_memory()) {
+        ehabi_module = std::make_unique<ArmEhAbiModule>(loaded_elf_module);
         if (auto debug_err = ehabi_module->Load(); debug_err.has_err()) {
           return fit::error(Error("Failed to load .ARM.exidx sections: stripped binary: " +
                                   err.msg() + "; unstripped binary: " + debug_err.msg()));
@@ -154,9 +150,11 @@ ArmEhAbiUnwinder::GetEhAbiModuleFromModuleInfo(const Module* elf_module) {
       }
     }
 
-    // If either of the above worked, then we have a valid ARM EH ABI module to add to our cache.
-    it =
-        module_map_.insert(std::make_pair(elf_module->load_address, std::move(ehabi_module))).first;
+    // If either of the above worked, then we have a valid ARM EH ABI module to add to our
+    // cache.
+    it = module_map_
+             .insert(std::make_pair(loaded_elf_module.load_address(), std::move(ehabi_module)))
+             .first;
     result.should_synchronize_stack = true;
   }
 

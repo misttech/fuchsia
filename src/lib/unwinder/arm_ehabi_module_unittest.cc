@@ -42,32 +42,37 @@ namespace unwinder {
 TEST(ArmEhAbiModule, Search) {
   // This only works if p_offset == p_vaddr in the elf file.
   FileMemory memory(GetTestFilePath());
-  ArmEhAbiModule module(&memory, 0);
+  // We're faking a loaded process, but since we're not actually loaded anywhere into memory the
+  // load address is zero.
+  Module elf_module(0, &memory, Module::AddressMode::kProcess);
+  LoadedElfModule loaded_elf_module(elf_module);
+  ASSERT_TRUE(loaded_elf_module.Load().is_ok());
+  ArmEhAbiModule ehabi_module(loaded_elf_module);
 
-  ASSERT_TRUE(module.Load().ok());
+  ASSERT_TRUE(ehabi_module.Load().ok());
 
   ArmEhAbiModule::IdxHeader entry;
 
   // Test with an address below all of the entries. This is an error.
-  Error error = module.Search(0, entry);
+  Error error = ehabi_module.Search(0, entry);
   ASSERT_TRUE(error.has_err());
 
   // Test with an address above all of the entries. This won't return an error, but instead will
   // return the last entry in the table.
-  error = module.Search(std::numeric_limits<uint32_t>::max(), entry);
+  error = ehabi_module.Search(std::numeric_limits<uint32_t>::max(), entry);
   ASSERT_TRUE(error.ok());
   EXPECT_EQ(entry.header.fn_addr, 0x160A4u);
 
   // This should get us the specific entry with a function address at 0x11FAC and compact inline
   // representation.
-  error = module.Search(0x11FB0, entry);
+  error = ehabi_module.Search(0x11FB0, entry);
   ASSERT_TRUE(error.ok());
   EXPECT_EQ(entry.header.fn_addr, 0x11FACu);
   EXPECT_EQ(entry.type, ArmEhAbiModule::IdxHeader::Type::kCompactInline);
 
   // This should get us the specific entry with a function address at 0x13284 and an offset to the
   // .ARM.extab section with the unwinding instructions.
-  error = module.Search(0x13290, entry);
+  error = ehabi_module.Search(0x13290, entry);
   ASSERT_TRUE(error.ok());
   EXPECT_EQ(entry.header.fn_addr, 0x13284u);
   EXPECT_EQ(entry.type, ArmEhAbiModule::IdxHeader::Type::kCompact);

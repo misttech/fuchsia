@@ -4,7 +4,7 @@
 
 #include "src/lib/unwinder/scs_unwinder.h"
 
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
@@ -39,7 +39,7 @@ Error ShadowCallStackUnwinder::Step(Memory* scs, uint64_t scs_pointer, Registers
   if (!ra) {
     return Success();
   }
-  if (!cfi_unwinder_->IsValidPC(ra)) {
+  if (!module_cache().IsValidPC(ra)) {
     return Error("Invalid shadow call stack");
   }
 

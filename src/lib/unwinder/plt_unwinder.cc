@@ -6,7 +6,8 @@
 
 #include <cstdint>
 
-#include "src/lib/unwinder/cfi_module.h"
+#include "src/lib/unwinder/elf_module_cache.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 
 namespace unwinder {
 
@@ -92,10 +93,10 @@ Error PltUnwinder::StepX64(Memory* stack, const Registers& current, Registers& n
     return err;
   }
   uint64_t ra;
-  if (cfi_unwinder_->IsValidPC(sp_val[0])) {
+  if (module_cache().IsValidPC(sp_val[0])) {
     ra = sp_val[0];
     sp += 8;
-  } else if (cfi_unwinder_->IsValidPC(sp_val[1])) {
+  } else if (module_cache().IsValidPC(sp_val[1])) {
     ra = sp_val[1];
     sp += 16;
   } else {
@@ -129,12 +130,12 @@ Error PltUnwinder::StepArm32(Memory* stack, const Registers& current, Registers&
   // Check whether the machine instruction is a PLT entry to avoid false positives. The compiler
   // inserts an invalid instruction encoded as d4d4d4d4 represented in little endian that we use as
   // a signature.
-  CfiModuleInfo* cfi_module;
-  if (auto err = cfi_unwinder_->GetCfiModuleInfoForPc(lr, &cfi_module); err.has_err()) {
-    return err;
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(lr);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
   uint32_t instruction;
-  if (auto err = cfi_module->binary->memory()->Read((pc & ~0xf) | 0xc, instruction);
+  if (auto err = loaded_elf_module->get().binary_memory()->Read((pc & ~0xf) | 0xc, instruction);
       err.has_err()) {
     return err;
   }
@@ -168,12 +169,13 @@ Error PltUnwinder::StepArm64(Memory* stack, const Registers& current, Registers&
 
   // Check whether the machine instruction is a PLT entry to avoid false positives.
   // We use "br x17" as a signature, which is d61f0220 represented in little endian.
-  CfiModuleInfo* cfi_module;
-  if (auto err = cfi_unwinder_->GetCfiModuleInfoForPc(lr, &cfi_module); err.has_err()) {
-    return err;
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(lr);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
+
   uint32_t br_instruction;
-  if (auto err = cfi_module->binary->memory()->Read((pc & ~0xf) | 0xc, br_instruction);
+  if (auto err = loaded_elf_module->get().binary_memory()->Read((pc & ~0xf) | 0xc, br_instruction);
       err.has_err()) {
     return err;
   }

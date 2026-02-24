@@ -5,9 +5,7 @@
 #ifndef SRC_LIB_UNWINDER_FP_UNWINDER_H_
 #define SRC_LIB_UNWINDER_FP_UNWINDER_H_
 
-#include <vector>
-
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
@@ -19,8 +17,7 @@ namespace unwinder {
 // a function has frame pointer enabled, so we try our best.
 class FramePointerUnwinder : public UnwinderBase {
  public:
-  // We need |CfiUnwinder::IsValidPC|.
-  explicit FramePointerUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
+  explicit FramePointerUnwinder(const ElfModuleCache& module_cache) : UnwinderBase(module_cache) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
   void AsyncStep(AsyncMemory* stack, const Frame& current,
@@ -28,11 +25,13 @@ class FramePointerUnwinder : public UnwinderBase {
   Frame::Trust trust() const override { return Frame::Trust::kFP; }
 
  private:
-  Error Step(Memory* stack, const Registers& current, Registers& next, CfiModuleInfo* module_info);
-  void AsyncStep(AsyncMemory* stack, const Registers& current, CfiModuleInfo* module_info,
+  Error Step(Memory* stack, const Registers& current, Registers& next,
+             const LoadedElfModule& loaded_elf_module);
+  void AsyncStep(AsyncMemory* stack, const Registers& current,
+                 const LoadedElfModule& loaded_elf_module,
                  fit::callback<void(Error, Registers)> cb);
   Error ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_t& next_fp, uint64_t& next_pc,
-                        CfiModuleInfo* module_info);
+                        const LoadedElfModule& loaded_elf_module);
 };
 
 }  // namespace unwinder

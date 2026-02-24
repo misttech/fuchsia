@@ -7,8 +7,9 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 
@@ -50,31 +51,28 @@ Error FramePointerUnwinder::Step(Memory* stack, const Frame& current, Frame& nex
     return e;
   }
 
-  CfiModuleInfo* info;
-  if (auto e = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); e.has_err()) {
-    return e;
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
 
-  return Step(stack, current.regs, next.regs, info);
+  return Step(stack, current.regs, next.regs, loaded_elf_module->get());
 }
 
 Error FramePointerUnwinder::Step(Memory* stack, const Registers& current, Registers& next,
-                                 CfiModuleInfo* module_info) {
-  uint64_t fp = 0;
-
-  if (auto result = GetValidatedFP(current); result.is_ok()) {
-    fp = result.value();
-  } else {
-    return result.error_value();
+                                 const LoadedElfModule& loaded_elf_module) {
+  auto fp = GetValidatedFP(current);
+  if (fp.is_error()) {
+    return fp.error_value();
   }
 
   uint64_t next_fp;
   uint64_t next_pc;
-  if (auto err = ReadNextFpAndSp(stack, fp, next_fp, next_pc, module_info); err.has_err()) {
+  if (auto err = ReadNextFpAndSp(stack, *fp, next_fp, next_pc, loaded_elf_module); err.has_err()) {
     return err;
   }
 
-  next.SetSP(fp);
+  next.SetSP(*fp);
   next.SetPC(next_pc);
   next.SetFP(next_fp);
   return Success();
@@ -88,40 +86,38 @@ void FramePointerUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,
     return;
   }
 
-  CfiModuleInfo* info;
-  if (auto e = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); e.has_err()) {
-    cb(e, Registers(current.regs.arch()));
+  auto loaded_elf_module = module_cache().GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    cb(loaded_elf_module.error_value(), Registers(current.regs.arch()));
     return;
   }
 
-  AsyncStep(stack, current.regs, info, std::move(cb));
+  AsyncStep(stack, current.regs, loaded_elf_module->get(), std::move(cb));
 }
 
 void FramePointerUnwinder::AsyncStep(AsyncMemory* stack, const Registers& current,
-                                     CfiModuleInfo* module_info,
+                                     const LoadedElfModule& loaded_elf_module,
                                      fit::callback<void(Error, Registers)> cb) {
-  uint64_t fp = 0;
-
-  if (auto result = GetValidatedFP(current); result.is_ok()) {
-    fp = result.value();
-  } else {
-    cb(result.error_value(), Registers(current.arch()));
+  auto fp = GetValidatedFP(current);
+  if (fp.is_error()) {
+    cb(fp.error_value(), Registers(current.arch()));
     return;
   }
 
   // There's no harm in potentially reading more than we need, since |ReadNextFpAndSp| will account
   // for expected register sizes for this module.
   constexpr uint32_t kDefaultReadSize = 16;
-  stack->FetchMemoryRanges({{fp, kDefaultReadSize}}, [=, cb = std::move(cb)]() mutable {
+  stack->FetchMemoryRanges({{*fp, kDefaultReadSize}}, [=, cb = std::move(cb)]() mutable {
     uint64_t next_fp;
     uint64_t next_pc;
-    if (auto err = ReadNextFpAndSp(stack, fp, next_fp, next_pc, module_info); err.has_err()) {
+    if (auto err = ReadNextFpAndSp(stack, *fp, next_fp, next_pc, loaded_elf_module);
+        err.has_err()) {
       cb(err, Registers(current.arch()));
       return;
     }
 
     Registers next(current.arch());
-    next.SetSP(fp);
+    next.SetSP(*fp);
     next.SetPC(next_pc);
     next.SetFP(next_fp);
     cb(Success(), std::move(next));
@@ -129,8 +125,9 @@ void FramePointerUnwinder::AsyncStep(AsyncMemory* stack, const Registers& curren
 }
 
 Error FramePointerUnwinder::ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_t& next_fp,
-                                            uint64_t& next_pc, CfiModuleInfo* module_info) {
-  switch (module_info->module.size) {
+                                            uint64_t& next_pc,
+                                            const LoadedElfModule& loaded_elf_module) {
+  switch (loaded_elf_module.size()) {
     case Module::AddressSize::k32Bit: {
       // Read 32 bit integers from the stack and upcast them to 64 bit integers for the caller.
       uint32_t next_fp32;
@@ -165,15 +162,8 @@ Error FramePointerUnwinder::ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_
       return Error("Unknown pointer size!");
   }
 
-  // Check if we have CFI for the next PC, if we do, we can do bounds checking to ensure that it
-  // looks right. If that module doesn't have CFI, then we can't perform the bounds checking but it
-  // isn't an error. We should not use |CfiUnwinder::IsValidPC| since that will return false in any
-  // failure case within |GetCfiModuleInfoForPc| rather than just for the PC validation.
-  CfiModuleInfo* next_info = nullptr;
-  if (cfi_unwinder_->GetCfiModuleInfoForPc(next_pc, &next_info).ok()) {
-    if (!next_info->binary->IsValidPC(next_pc)) {
-      return Error("next PC %#" PRIx64 " is not pointing to any code", next_pc);
-    }
+  if (!module_cache().IsValidPC(next_pc)) {
+    return Error("next PC %#" PRIx64 " is not pointing to any code", next_pc);
   }
 
   return Success();

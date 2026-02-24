@@ -6,6 +6,7 @@
 #define SRC_LIB_UNWINDER_CFI_UNWINDER_H_
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 
@@ -34,8 +35,7 @@ struct CfiModuleInfo {
 
 class CfiUnwinder : public UnwinderBase {
  public:
-  explicit CfiUnwinder(const ElfModuleCache& elf_module_cache)
-      : UnwinderBase(this), elf_module_cache_(elf_module_cache) {}
+  explicit CfiUnwinder(const ElfModuleCache& elf_module_cache) : UnwinderBase(elf_module_cache) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
@@ -43,20 +43,6 @@ class CfiUnwinder : public UnwinderBase {
                  fit::callback<void(Error, Registers)> cb) override;
 
   Frame::Trust trust() const override { return Frame::Trust::kCFI; }
-
-  // For other unwinders that want to check whether a value looks like a valid PC.
-  bool IsValidPC(uint64_t pc);
-
-  // Fetch the corresponding CfiModuleInfo for the given PC value. The CfiModuleInfo will always
-  // attempt to load CFI directives for the given module, which can return errors if the CFI is
-  // missing or invalid. If this function returns Success, then the CFI was successfully loaded.
-  Error GetCfiModuleInfoForPc(uint64_t pc, CfiModuleInfo** out);
-
-  // Returns the Module object for the binary without attempting to load either .eh_frame or
-  // .debug_frame. This may be used by fallback unwinders to probe memory when debug info is
-  // unavailable or incomplete. Errors are only returned if the given |pc| is not within any known
-  // modules. Callers must ensure that the binary or debug_info memory is valid before using them.
-  Error GetModuleForPc(uint64_t pc, const Module** out);
 
  private:
   // If the returned value is fit::ok, then the contained boolean indicates whether the next frame
@@ -69,7 +55,8 @@ class CfiUnwinder : public UnwinderBase {
 
   fit::result<Error, Registers> ConvertTo32BitIfNeeded(uint64_t pc, const Registers& current);
 
-  const ElfModuleCache& elf_module_cache_;
+  using CfiModuleInfoRef = std::reference_wrapper<const CfiModuleInfo>;
+  fit::result<Error, CfiModuleInfoRef> GetCfiModuleInfoForPc(uint64_t pc);
 
   // Mapping from module load addresses to a pair of (module description, lazily-initialized CFI
   // modules for the binary and optional debugging info).

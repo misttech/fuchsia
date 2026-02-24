@@ -82,7 +82,10 @@ TEST(ArmEhAbiParser, CollectInstructionsTableLookup) {
 
   // Use the higher level Module class to figure out what the offset is for us so we don't have to
   // do it by hand.
-  ArmEhAbiModule ehabi_module(&memory, 0);
+  Module elf_module(0x0, &memory, Module::AddressMode::kProcess);
+  LoadedElfModule loaded_elf_module(elf_module);
+  ASSERT_TRUE(loaded_elf_module.Load().is_ok());
+  ArmEhAbiModule ehabi_module(loaded_elf_module);
   ASSERT_TRUE(ehabi_module.Load().ok());
 
   constexpr uint32_t kTargetPc = 0x13e54;

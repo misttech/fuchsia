@@ -12,14 +12,13 @@
 namespace unwinder {
 
 class AsyncMemory;
-class CfiUnwinder;
+class ElfModuleCache;
 class Memory;
 
-// Base class for all unwinders. The CfiUnwinder derived class offers some utilities for inspecting
-// the underlying module synchronously that are used by other derived classes.
+// Base class for all unwinders.
 class UnwinderBase {
  public:
-  explicit UnwinderBase(CfiUnwinder* cfi_unwinder) : cfi_unwinder_(cfi_unwinder) {}
+  explicit UnwinderBase(const ElfModuleCache& module_cache) : module_cache_(module_cache) {}
   virtual ~UnwinderBase() = default;
 
   // Unwind one frame, populating |next| with the new register values. |next| is invalid if an error
@@ -36,10 +35,10 @@ class UnwinderBase {
   // The trust that should be associated with this unwinder.
   virtual Frame::Trust trust() const = 0;
 
-  virtual CfiUnwinder* cfi_unwinder() const { return cfi_unwinder_; }
+  const ElfModuleCache& module_cache() const { return module_cache_; }
 
- protected:
-  CfiUnwinder* cfi_unwinder_;
+ private:
+  const ElfModuleCache& module_cache_;
 };
 
 }  // namespace unwinder

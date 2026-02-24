@@ -8,8 +8,9 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/error.h"
+#include "src/lib/unwinder/loaded_elf_module.h"
 
 namespace unwinder {
 
@@ -140,27 +141,30 @@ void SigReturnUnwinder::AsyncStep(AsyncMemory* stack, uint64_t pc, uint64_t sp_o
   });
 }
 
-Error SigReturnUnwinder::ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Registers& regs) {
-  uint64_t pc;
+// static.
+Error SigReturnUnwinder::ProbePCForSigReturn(const ElfModuleCache& module_cache,
+                                             const Registers& regs) {
+  uint64_t pc = 0;
   if (auto err = regs.GetPC(pc); err.has_err()) {
     return err;
   }
 
-  return ProbePCForSigReturn(cfi_unwinder, regs.arch(), pc);
+  return ProbePCForSigReturn(module_cache, regs.arch(), pc);
 }
 
-Error SigReturnUnwinder::ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, Registers::Arch arch,
-                                             uint64_t pc) {
-  const Module* elf_module;
-  if (auto err = cfi_unwinder->GetModuleForPc(pc, &elf_module); err.has_err()) {
-    return err;
+// static.
+Error SigReturnUnwinder::ProbePCForSigReturn(const ElfModuleCache& module_cache,
+                                             Registers::Arch arch, uint64_t pc) {
+  auto loaded_elf_module = module_cache.GetLoadedElfModuleForPc(pc);
+  if (loaded_elf_module.is_error()) {
+    return loaded_elf_module.error_value();
   }
 
-  if (elf_module->binary_memory == nullptr) {
+  if (loaded_elf_module->get().binary_memory() == nullptr) {
     return Error("No binary memory found for address: %#" PRIx64, pc);
   }
 
-  Memory* binary_memory = elf_module->binary_memory;
+  Memory* binary_memory = loaded_elf_module->get().binary_memory();
   switch (arch) {
     case Registers::Arch::kArm32:
       return ProbeArm32SigReturn(binary_memory, pc);
@@ -182,7 +186,7 @@ Error SigReturnUnwinder::StepArm32(Memory* stack, uint64_t pc, uint64_t sp_offse
   // 00000114 <__kernel_rt_sigreturn>:
   //      114: e3a070ad      mov     r7, #173
   //      118: ef000000      svc     #0x0
-  if (auto err = ProbePCForSigReturn(cfi_unwinder_, Registers::Arch::kArm32, pc); err.has_err()) {
+  if (auto err = ProbePCForSigReturn(module_cache(), Registers::Arch::kArm32, pc); err.has_err()) {
     return err;
   }
 
@@ -231,8 +235,7 @@ Error SigReturnUnwinder::StepArm64(Memory* stack, uint64_t pc, uint64_t sp_offse
   // 00000000000001d0 <__kernel_rt_sigreturn>:
   //      1d0: d2801168      mov     x8, #0x8b
   //      1d4: d4000001      svc     #0
-
-  if (auto err = ProbePCForSigReturn(cfi_unwinder_, Registers::Arch::kArm64, pc); err.has_err()) {
+  if (auto err = ProbePCForSigReturn(module_cache(), Registers::Arch::kArm64, pc); err.has_err()) {
     return err;
   }
 
