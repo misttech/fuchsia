@@ -75,7 +75,6 @@ platform_deps = [
   "//third_party/rust_crates:log",
   "//third_party/rust_crates:rustc-hash",
   "//third_party/rust_crates:scopeguard",
-  "//third_party/rust_crates:zstd",
   "//third_party/zstd",
 ]
 
@@ -104,6 +103,7 @@ rustc_library("platform") {
       "//src/storage/crypt/starnix:lib",
       "//src/storage/fxfs:lib",
       "//src/storage/fxfs/crypto/insecure",
+      "//src/storage/fxfs/make-blob-image",
       "//src/storage/lib/blob_writer:blob-writer",
       "//src/storage/lib/block_protocol",
       "//src/storage/lib/block_server:vmo_backed_block_server",

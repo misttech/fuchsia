@@ -4,7 +4,8 @@
 
 use anyhow::{Context, Error, anyhow};
 use delivery_blob::Type1Blob;
-use delivery_blob::compression::ChunkedArchive;
+pub use delivery_blob::compression::CompressionAlgorithm;
+use delivery_blob::compression::{ChunkedArchive, ChunkedArchiveOptions};
 use fuchsia_async as fasync;
 use fuchsia_merkle::{Hash, MerkleRootBuilder};
 use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
@@ -29,7 +30,6 @@ use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::PathBuf;
 use storage_device::DeviceHolder;
 use storage_device::file_backed_device::FileBackedDevice;
-use zstd::stream::read::Decoder;
 
 pub const BLOB_VOLUME_NAME: &str = "blob";
 
@@ -68,7 +68,7 @@ pub async fn make_blob_image(
     blobs: Vec<(Hash, PathBuf)>,
     json_output_path: &str,
     target_size: Option<u64>,
-    compression_enabled: bool,
+    compression_algorithm: Option<CompressionAlgorithm>,
 ) -> Result<(), Error> {
     let output_image = std::fs::OpenOptions::new()
         .read(true)
@@ -103,8 +103,8 @@ pub async fn make_blob_image(
         BLOCK_SIZE,
         block_count,
     ));
-    let fxblob = FxBlobBuilder::new(device, compression_enabled).await?;
-    let blobs_json = install_blobs(&fxblob, blobs).await.map_err(|e| {
+    let fxblob = FxBlobBuilder::new(device).await?;
+    let blobs_json = install_blobs(&fxblob, blobs, compression_algorithm).await.map_err(|e| {
         if target_size != 0 && FxfsError::NoSpace.matches(&e) {
             e.context(format!(
                 "Configured image size {} is too small to fit the base system image.",
@@ -174,13 +174,12 @@ fn create_sparse_image(
 /// Builder used to construct a new Fxblob instance ready for flashing to a device.
 pub struct FxBlobBuilder {
     blob_directory: Directory<ObjectStore>,
-    compression_enabled: bool,
     filesystem: OpenFxFilesystem,
 }
 
 impl FxBlobBuilder {
     /// Creates a new [`FxBlobBuilder`] backed by the given `device`.
-    pub async fn new(device: DeviceHolder, compression_enabled: bool) -> Result<Self, Error> {
+    pub async fn new(device: DeviceHolder) -> Result<Self, Error> {
         let filesystem = FxFilesystemBuilder::new()
             .format(true)
             .trim_config(None)
@@ -197,7 +196,7 @@ impl FxBlobBuilder {
         let blob_directory = Directory::open(&vol, vol.root_directory_object_id())
             .await
             .context("Unable to open root blob directory")?;
-        Ok(Self { blob_directory, compression_enabled, filesystem })
+        Ok(Self { blob_directory, filesystem })
     }
 
     /// Finalizes building the FxBlob instance this builder represents. The filesystem will not be
@@ -244,7 +243,7 @@ impl FxBlobBuilder {
                 BlobData::Uncompressed(data) => {
                     writer.write_bytes(data).await.context("write blob contents")?;
                 }
-                BlobData::Compressed(archive) => {
+                BlobData::CompressedZstd(archive) | BlobData::CompressedLz4(archive) => {
                     for chunk in archive.chunks() {
                         writer
                             .write_bytes(&chunk.compressed_data)
@@ -263,14 +262,19 @@ impl FxBlobBuilder {
     }
 
     /// Helper function to quickly create a blob to install from in-memory data. Mainly for testing.
-    pub fn generate_blob(&self, data: Vec<u8>) -> Result<BlobToInstall, Error> {
-        BlobToInstall::new(data, self.filesystem.block_size() as usize, self.compression_enabled)
+    pub fn generate_blob(
+        &self,
+        data: Vec<u8>,
+        compression_algorithm: Option<CompressionAlgorithm>,
+    ) -> Result<BlobToInstall, Error> {
+        BlobToInstall::new(data, self.filesystem.block_size() as usize, compression_algorithm)
     }
 }
 
 enum BlobData {
     Uncompressed(Vec<u8>),
-    Compressed(ChunkedArchive),
+    CompressedZstd(ChunkedArchive),
+    CompressedLz4(ChunkedArchive),
 }
 
 fn compressed_offsets(chunked_archive: &ChunkedArchive) -> Vec<u64> {
@@ -303,14 +307,14 @@ impl BlobToInstall {
     pub fn new(
         data: Vec<u8>,
         fs_block_size: usize,
-        compression_enabled: bool,
+        compression_algorithm: Option<CompressionAlgorithm>,
     ) -> Result<Self, Error> {
         let (hash, hashes) =
             MerkleRootBuilder::new(BlobMetadataLeafHashCollector::new()).complete(&data);
 
         let uncompressed_size = data.len();
-        let data = if compression_enabled {
-            maybe_compress(data, fs_block_size)
+        let data = if let Some(compression_algorithm) = compression_algorithm {
+            maybe_compress(data, fs_block_size, compression_algorithm)
         } else {
             BlobData::Uncompressed(data)
         };
@@ -318,9 +322,17 @@ impl BlobToInstall {
             BlobData::Uncompressed(_) => {
                 BlobMetadata { merkle_leaves: hashes, format: BlobFormat::Uncompressed }
             }
-            BlobData::Compressed(chunked_archive) => BlobMetadata {
+            BlobData::CompressedZstd(chunked_archive) => BlobMetadata {
                 merkle_leaves: hashes,
                 format: BlobFormat::ChunkedZstd {
+                    uncompressed_size: uncompressed_size as u64,
+                    chunk_size: chunked_archive.chunk_size() as u64,
+                    compressed_offsets: compressed_offsets(&chunked_archive),
+                },
+            },
+            BlobData::CompressedLz4(chunked_archive) => BlobMetadata {
+                merkle_leaves: hashes,
+                format: BlobFormat::ChunkedLz4 {
                     uncompressed_size: uncompressed_size as u64,
                     chunk_size: chunked_archive.chunk_size() as u64,
                     compressed_offsets: compressed_offsets(&chunked_archive),
@@ -335,14 +347,14 @@ impl BlobToInstall {
     pub fn new_from_file(
         path: PathBuf,
         fs_block_size: usize,
-        compression_enabled: bool,
+        compression_algorithm: Option<CompressionAlgorithm>,
     ) -> Result<Self, Error> {
         let mut data = Vec::new();
         std::fs::File::open(&path)
             .with_context(|| format!("Unable to open `{:?}'", &path))?
             .read_to_end(&mut data)
             .with_context(|| format!("Unable to read contents of `{:?}'", &path))?;
-        let blob = Self::new(data, fs_block_size, compression_enabled)?;
+        let blob = Self::new(data, fs_block_size, compression_algorithm)?;
         Ok(Self { source: Some(path), ..blob })
     }
 
@@ -354,10 +366,10 @@ impl BlobToInstall {
 async fn install_blobs(
     fxblob: &FxBlobBuilder,
     blobs: Vec<(Hash, PathBuf)>,
+    compression_algorithm: Option<CompressionAlgorithm>,
 ) -> Result<BlobsJsonOutput, Error> {
     let num_blobs = blobs.len();
     let fs_block_size = fxblob.filesystem.block_size() as usize;
-    let compression_enabled = fxblob.compression_enabled;
     // We don't need any backpressure as the channel guarantees at least one slot per sender.
     let (tx, rx) = futures::channel::mpsc::channel::<BlobToInstall>(0);
     // Generate each blob in parallel using a thread pool.
@@ -366,8 +378,11 @@ async fn install_blobs(
     let generate = fasync::unblock(move || {
         thread_pool.install(|| {
             blobs.par_iter().try_for_each(|(hash, path)| {
-                let blob =
-                    BlobToInstall::new_from_file(path.clone(), fs_block_size, compression_enabled)?;
+                let blob = BlobToInstall::new_from_file(
+                    path.clone(),
+                    fs_block_size,
+                    compression_algorithm,
+                )?;
                 if &blob.hash != hash {
                     let calculated_hash = &blob.hash;
                     let path = path.display();
@@ -416,18 +431,32 @@ async fn install_blob_with_json_output(
     })
 }
 
-fn maybe_compress(buf: Vec<u8>, filesystem_block_size: usize) -> BlobData {
+fn maybe_compress(
+    buf: Vec<u8>,
+    filesystem_block_size: usize,
+    compression_algorithm: CompressionAlgorithm,
+) -> BlobData {
     if buf.len() <= filesystem_block_size {
         return BlobData::Uncompressed(buf); // No savings, return original data.
     }
-    let archive: ChunkedArchive = ChunkedArchive::new(&buf, Type1Blob::CHUNKED_ARCHIVE_OPTIONS)
-        .expect("failed to compress data");
+    let chunked_archive_options = match compression_algorithm {
+        CompressionAlgorithm::Zstd => {
+            // TODO(https://fxbug.dev/450626615) Use chunked-compression V3.
+            Type1Blob::CHUNKED_ARCHIVE_OPTIONS
+        }
+        CompressionAlgorithm::Lz4 => ChunkedArchiveOptions::V3 { compression_algorithm },
+    };
+    let archive =
+        ChunkedArchive::new(&buf, chunked_archive_options).expect("failed to compress data");
     if archive.compressed_data_size().checked_next_multiple_of(filesystem_block_size).unwrap()
         >= buf.len()
     {
         BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
-        BlobData::Compressed(archive)
+        match compression_algorithm {
+            CompressionAlgorithm::Zstd => BlobData::CompressedZstd(archive),
+            CompressionAlgorithm::Lz4 => BlobData::CompressedLz4(archive),
+        }
     }
 }
 
@@ -456,6 +485,7 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
     let layer_set = root_dir.store().tree().layer_set();
     let mut merger = layer_set.merger();
     let mut iter = root_dir.iter(&mut merger).await?;
+    let blob_extraction_futures = futures::stream::FuturesUnordered::new();
 
     while let Some((name, object_id, descriptor)) = iter.get() {
         if *descriptor == fxfs::object_store::ObjectDescriptor::File {
@@ -482,34 +512,85 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
                 read_buf.write_all(&buf.as_slice()[..bytes])?;
             }
 
-            // We can bulk decompress all chunks since the payload of a
-            // chunked archive is still a valid zstd stream.
             let metadata = BlobMetadata::read_from(&handle).await?;
-            match metadata.format {
-                BlobFormat::ChunkedZstd { uncompressed_size, .. } => {
-                    let mut decoder = Decoder::new(&read_buf[..])?;
-                    let decompressed_size = std::io::copy(&mut decoder, &mut file)?;
-                    if decompressed_size != uncompressed_size {
-                        return Err(anyhow!(
-                            "The decompressed size does not match
-                        the expected size from the blob metadata."
-                        ));
+            blob_extraction_futures.push(fasync::unblock(move || -> Result<(), Error> {
+                match metadata.format {
+                    BlobFormat::ChunkedZstd {
+                        uncompressed_size,
+                        compressed_offsets,
+                        chunk_size,
+                    } => decompress_blob(
+                        &read_buf,
+                        uncompressed_size,
+                        compressed_offsets,
+                        chunk_size,
+                        CompressionAlgorithm::Zstd,
+                        &mut file,
+                    ),
+                    BlobFormat::ChunkedLz4 {
+                        uncompressed_size,
+                        compressed_offsets,
+                        chunk_size,
+                    } => decompress_blob(
+                        &read_buf,
+                        uncompressed_size,
+                        compressed_offsets,
+                        chunk_size,
+                        CompressionAlgorithm::Lz4,
+                        &mut file,
+                    ),
+                    BlobFormat::Uncompressed => {
+                        file.write_all(&read_buf)?;
+                        Ok(())
                     }
                 }
-                BlobFormat::Uncompressed => {
-                    file.write_all(&read_buf)?;
-                }
-            }
+            }));
         }
         iter.advance().await?;
     }
+    blob_extraction_futures.try_collect::<()>().await?;
     Ok(())
+}
+
+fn decompress_blob(
+    blob_data: &[u8],
+    uncompressed_size: u64,
+    compressed_offsets: Vec<u64>,
+    chunk_size: u64,
+    compression_algorithm: CompressionAlgorithm,
+    out: &mut std::fs::File,
+) -> Result<(), Error> {
+    let mut decompressor = compression_algorithm.decompressor();
+    let mut buf = vec![0; chunk_size as usize];
+    let mut total_decompressed_size = 0;
+    for i in 0..compressed_offsets.len() {
+        let start_offset = compressed_offsets[i] as usize;
+        let end_offset = if i + 1 == compressed_offsets.len() {
+            blob_data.len()
+        } else {
+            compressed_offsets[i + 1] as usize
+        };
+        let decompressed_size =
+            decompressor.decompress_into(&blob_data[start_offset..end_offset], &mut buf, i)?;
+        total_decompressed_size += decompressed_size;
+        out.write_all(&buf[..decompressed_size])?;
+    }
+    if total_decompressed_size != uncompressed_size as usize {
+        Err(anyhow!(
+            "Decompressed size does not match expected size {} {}",
+            total_decompressed_size,
+            uncompressed_size
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{BlobsJsonOutput, BlobsJsonOutputEntry, extract_blobs, make_blob_image};
     use assert_matches::assert_matches;
+    use delivery_blob::compression::CompressionAlgorithm;
     use fuchsia_async as fasync;
     use fxfs::filesystem::FxFilesystem;
     use fxfs::object_store::StoreOptions;
@@ -525,7 +606,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[fasync::run(10, test)]
-    async fn test_extract_blobs() {
+    async fn test_extract_blobs_zstd() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
 
@@ -545,7 +626,53 @@ mod tests {
             vec![(merkle_hash, input_blob_path.clone())],
             dir.join("blobs1.json").to_str().unwrap(),
             None,
-            true, // Enable compression
+            Some(CompressionAlgorithm::Zstd),
+        )
+        .await
+        .expect("make_blob_image failed");
+
+        extract_blobs(sparse_path, out_dir.clone())
+            .await
+            .expect("Extraction failed inside extract_blobs");
+
+        let mut extracted_files = std::fs::read_dir(&out_dir).expect("out_dir should exist");
+        let first_entry = extracted_files
+            .next()
+            .expect("No files were extracted!")
+            .expect("Failed to read directory entry");
+
+        let extracted_blob_path = first_entry.path();
+        let final_len = std::fs::metadata(&extracted_blob_path).unwrap().len();
+
+        assert_eq!(
+            final_len,
+            data.len() as u64,
+            "Decompressed data size does not match original size",
+        );
+    }
+
+    #[fasync::run(10, test)]
+    async fn test_extract_blobs_lz4() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+
+        let input_blob_path = dir.join("input.txt");
+        let image_path = dir.join("fxfs1.blk");
+        let sparse_path = dir.join("fxfs1.sparse.blk");
+        let out_dir = dir.join("extracted_out");
+
+        let data = "C".repeat(128 * 1024);
+        std::fs::write(&input_blob_path, &data).unwrap();
+
+        let merkle_hash = fuchsia_merkle::root_from_slice(data.as_bytes());
+
+        make_blob_image(
+            image_path.to_str().unwrap(),
+            Some(sparse_path.to_str().unwrap()),
+            vec![(merkle_hash, input_blob_path.clone())],
+            dir.join("blobs1.json").to_str().unwrap(),
+            None,
+            Some(CompressionAlgorithm::Lz4),
         )
         .await
         .expect("make_blob_image failed");
@@ -598,7 +725,7 @@ mod tests {
             blobs_in,
             blobs_json_path.as_os_str().to_str().unwrap(),
             /*target_size=*/ None,
-            /*compression_enabled=*/ true,
+            Some(CompressionAlgorithm::Zstd),
         )
         .await
         .expect("make_blob_image failed");
@@ -731,7 +858,7 @@ mod tests {
             blobs_in.clone(),
             blobs_json_path.as_os_str().to_str().unwrap(),
             /*target_size=*/ None,
-            /*compression_enabled=*/ true,
+            Some(CompressionAlgorithm::Zstd),
         )
         .await
         .expect("make_blob_image failed");
@@ -743,7 +870,7 @@ mod tests {
             blobs_in,
             blobs_json_path.as_os_str().to_str().unwrap(),
             /*target_size=*/ None,
-            /*compression_enabled=*/ false,
+            /*compression_algorithm=*/ None,
         )
         .await
         .expect("make_blob_image failed");
@@ -775,7 +902,7 @@ mod tests {
             blobs_in.clone(),
             blobs_json_path.as_os_str().to_str().unwrap(),
             /*target_size=*/ Some(200 * 1024 * 1024),
-            /*compression_enabled=*/ true,
+            Some(CompressionAlgorithm::Zstd),
         )
         .await
         .expect("make_blob_image failed");

@@ -14,7 +14,7 @@ use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
 use fxfs::object_store::ObjectStore;
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
-use fxfs_make_blob_image::FxBlobBuilder;
+use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::io::Write;
@@ -112,8 +112,9 @@ pub async fn install_blobs(builder: &FxBlobBuilder) -> Result<Vec<[u8; 32]>, Err
     // A large and easily compressed blob, since compression is enabled. Aim to exceed a single
     // compression chunk.
     {
-        let blob_info =
-            builder.generate_blob(vec![42; 200000]).context("Generate compressible blob")?;
+        let blob_info = builder
+            .generate_blob(vec![42; 200000], Some(CompressionAlgorithm::Zstd))
+            .context("Generate compressible blob")?;
         builder.install_blob(&blob_info).await.context("Install compressible blob")?;
         blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
     }
@@ -123,14 +124,18 @@ pub async fn install_blobs(builder: &FxBlobBuilder) -> Result<Vec<[u8; 32]>, Err
         let mut rng = SmallRng::seed_from_u64(42);
         let mut data = Vec::new();
         data.resize_with(32000, || rng.random());
-        let blob_info = builder.generate_blob(data).context("Generate random blob")?;
+        let blob_info = builder
+            .generate_blob(data, Some(CompressionAlgorithm::Zstd))
+            .context("Generate random blob")?;
         builder.install_blob(&blob_info).await.context("Install random blob")?;
         blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
     }
 
     // A smaller blob, small enough to not have a merkle tree.
     {
-        let blob_info = builder.generate_blob(vec![42; 100]).context("Generate small blob")?;
+        let blob_info = builder
+            .generate_blob(vec![42; 100], Some(CompressionAlgorithm::Zstd))
+            .context("Generate small blob")?;
         builder.install_blob(&blob_info).await.context("Install small blob")?;
         blob_names.push(blob_info.hash().as_array::<32>().unwrap().clone());
     }
@@ -143,12 +148,10 @@ pub async fn create_image() -> Result<(), Error> {
     let path = golden_image_dir()?.join(latest_image_filename());
 
     let (device, blob_names) = {
-        let blob_image_builder = FxBlobBuilder::new(
-            DeviceHolder::new(FakeDevice::new(IMAGE_BLOCKS, IMAGE_BLOCK_SIZE)),
-            true,
-        )
-        .await
-        .context("Creating blob image builder")?;
+        let blob_image_builder =
+            FxBlobBuilder::new(DeviceHolder::new(FakeDevice::new(IMAGE_BLOCKS, IMAGE_BLOCK_SIZE)))
+                .await
+                .context("Creating blob image builder")?;
         let blob_names = install_blobs(&blob_image_builder).await?;
         (blob_image_builder.finalize().await.context("Finalize blob image")?.0, blob_names)
     };

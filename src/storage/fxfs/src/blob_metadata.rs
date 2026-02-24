@@ -213,6 +213,7 @@ impl From<BlobMetadataUnversioned> for BlobMetadataV53 {
 pub enum BlobFormatV53 {
     Uncompressed,
     ChunkedZstd { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
+    ChunkedLz4 { uncompressed_size: u64, chunk_size: u64, compressed_offsets: Vec<u64> },
 }
 
 /// Custom serialization and deserialization for the merkle leaves which treats them as one large
@@ -346,12 +347,32 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 3)]
-    async fn test_write_read() {
+    async fn test_write_read_zstd() {
         let (fs, object) = test_filesystem_and_empty_object().await;
 
         let metadata = BlobMetadata {
             merkle_leaves: vec![[1; 32], [2; 32], [3; 32], [4; 32]],
             format: BlobFormat::ChunkedZstd {
+                uncompressed_size: 128 * 1024,
+                chunk_size: 32 * 1024,
+                compressed_offsets: vec![0, 100, 200, 400],
+            },
+        };
+        metadata.write_to(&object).await.expect("failed to write attribute");
+        let read_metadata =
+            BlobMetadata::read_from(&object).await.expect("failed to read attribute");
+        assert_eq!(read_metadata, metadata);
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_write_read_lz4() {
+        let (fs, object) = test_filesystem_and_empty_object().await;
+
+        let metadata = BlobMetadata {
+            merkle_leaves: vec![[1; 32], [2; 32], [3; 32], [4; 32]],
+            format: BlobFormat::ChunkedLz4 {
                 uncompressed_size: 128 * 1024,
                 chunk_size: 32 * 1024,
                 compressed_offsets: vec![0, 100, 200, 400],

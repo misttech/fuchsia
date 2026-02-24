@@ -12,6 +12,7 @@ use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
 use anyhow::{Context as _, Error, anyhow, ensure};
+use delivery_blob::compression::CompressionAlgorithm;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ServerEnd, create_request_stream};
 use fidl_fuchsia_fxfs::{
     BlobCreatorMarker, BlobCreatorRequest, BlobCreatorRequestStream, BlobReaderMarker,
@@ -233,7 +234,23 @@ impl BlobDirectory {
                         compressed_offsets,
                     } => (
                         *uncompressed_size,
-                        Some(CompressionInfo::new(*chunk_size, compressed_offsets)?),
+                        Some(CompressionInfo::new(
+                            *chunk_size,
+                            compressed_offsets,
+                            CompressionAlgorithm::Zstd,
+                        )?),
+                    ),
+                    BlobFormat::ChunkedLz4 {
+                        uncompressed_size,
+                        chunk_size,
+                        compressed_offsets,
+                    } => (
+                        *uncompressed_size,
+                        Some(CompressionInfo::new(
+                            *chunk_size,
+                            compressed_offsets,
+                            CompressionAlgorithm::Lz4,
+                        )?),
                     ),
                 };
                 let merkle_verifier = metadata.into_merkle_verifier(id.hash)?;

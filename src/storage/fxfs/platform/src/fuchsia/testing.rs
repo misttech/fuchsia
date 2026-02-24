@@ -103,6 +103,7 @@ impl TestFixture {
 
         let blob_resupplied_count =
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let volume_name = if options.as_blob { "blob" } else { "vol" };
         let (filesystem, volume, volumes_directory) = if options.format {
             let mut builder = FxFilesystemBuilder::new().format(true);
             if let Some(pre_commit_hook) = options.pre_commit_hook {
@@ -112,7 +113,7 @@ impl TestFixture {
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
-                    "vol",
+                    volume_name,
                     NewChildStoreOptions {
                         options: StoreOptions {
                             crypt: if options.encrypted { Some(crypt.clone()) } else { None },
@@ -161,7 +162,7 @@ impl TestFixture {
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
                 .volume(
-                    "vol",
+                    volume_name,
                     StoreOptions {
                         crypt: if options.encrypted { Some(crypt.clone()) } else { None },
                         ..StoreOptions::default()
@@ -208,7 +209,7 @@ impl TestFixture {
         volume.root().clone().serve(fio::PERM_READABLE | fio::PERM_WRITABLE, server_end);
 
         let (volume_out_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        volumes_directory.lock().await.add_mount("vol", &volume);
+        volumes_directory.lock().await.add_mount(volume_name, &volume);
         volumes_directory
             .serve_volume(&volume, server_end, options.as_blob)
             .expect("serve_volume failed");

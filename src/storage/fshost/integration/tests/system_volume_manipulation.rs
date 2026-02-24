@@ -16,7 +16,7 @@ use fshost_test_fixture::disk_builder::{
 };
 use fshost_test_fixture::{TestFixture, write_blob};
 use fuchsia_component::client::{connect_to_protocol_at_dir_root, connect_to_protocol_at_dir_svc};
-use fxfs_make_blob_image::FxBlobBuilder;
+use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
@@ -333,9 +333,10 @@ async fn create_fxblob_image() -> zx::Vmo {
             .await
             .unwrap(),
         );
-        let fxblob = FxBlobBuilder::new(device, /*compression_enabled*/ true).await.unwrap();
+        let fxblob = FxBlobBuilder::new(device).await.unwrap();
         for data in TEST_BLOBS {
-            let blob = fxblob.generate_blob(data.to_vec()).unwrap();
+            let blob =
+                fxblob.generate_blob(data.to_vec(), Some(CompressionAlgorithm::Zstd)).unwrap();
             fxblob.install_blob(&blob).await.unwrap();
         }
         fxblob.finalize().await.unwrap().1

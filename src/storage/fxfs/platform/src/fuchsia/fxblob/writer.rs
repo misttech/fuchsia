@@ -13,7 +13,9 @@ use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use delivery_blob::Type1Blob;
-use delivery_blob::compression::{ChunkInfo, ChunkedDecompressor, decode_archive};
+use delivery_blob::compression::{
+    ChunkInfo, ChunkedDecompressor, CompressionAlgorithm, decode_archive,
+};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
 use fuchsia_merkle::{BufferedMerkleRootBuilder, Hash};
@@ -134,7 +136,6 @@ impl DeliveryBlobWriter {
         let keys = lock_keys![LockKey::object(store.store_object_id(), parent.object_id())];
         let mut transaction = store
             .filesystem()
-            .clone()
             .new_transaction(keys, Default::default())
             .await
             .context("Failed to create transaction.")?;
@@ -341,9 +342,12 @@ impl DeliveryBlobWriter {
 
         let compression_info = match &metadata.format {
             BlobFormat::Uncompressed => None,
-            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => {
-                Some(CompressionInfo::new(*chunk_size, &compressed_offsets)?)
-            }
+            BlobFormat::ChunkedZstd { chunk_size, compressed_offsets, .. } => Some(
+                CompressionInfo::new(*chunk_size, &compressed_offsets, CompressionAlgorithm::Zstd)?,
+            ),
+            BlobFormat::ChunkedLz4 { chunk_size, compressed_offsets, .. } => Some(
+                CompressionInfo::new(*chunk_size, &compressed_offsets, CompressionAlgorithm::Lz4)?,
+            ),
         };
         let merkle_verifier = metadata.into_merkle_verifier(root)?;
 
@@ -652,7 +656,7 @@ fn parse_seek_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
     use core::ops::Range;
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, CreateBlobError};
@@ -660,6 +664,9 @@ mod tests {
     use fuchsia_async::epoch::Epoch;
     use fuchsia_async::{self as fasync, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
+    use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
+    use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     fn generate_list_of_writes(compressed_data_len: u64) -> Vec<Range<u64>> {
         let mut list_of_writes = vec![];
@@ -1525,6 +1532,7 @@ mod tests {
                     *chunk_size = BLOB_SIZE as u64;
                     compressed_offsets.truncate(1);
                 }
+                BlobFormat::ChunkedLz4 { .. } => panic!("Expected Zstd"),
             }
             metadata.write_to(&blob_object).await.expect("Failed to write blob metadata");
         };
@@ -1550,6 +1558,51 @@ mod tests {
         }
 
         assert_eq!(fixture.read_blob(hash).await, blob_data);
+        std::mem::drop(old_blob_vmo);
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_overwrite_lz4_to_zstd() {
+        // There's currently no LZ4 delivery blobs so only LZ4 -> ZSTD can be tested. That's also
+        // why make-blob-image is used to generate the LZ4 blob.
+
+        const BLOB_SIZE: usize = (128 + 16) * 1024;
+        let device = DeviceHolder::new(FakeDevice::new(16384, 512));
+        let blob_data = vec![0xAA; BLOB_SIZE];
+        let fxblob_builder = FxBlobBuilder::new(device).await.unwrap();
+        let blob = fxblob_builder
+            .generate_blob(blob_data.clone(), Some(CompressionAlgorithm::Lz4))
+            .unwrap();
+        let blob_hash = blob.hash();
+        fxblob_builder.install_blob(&blob).await.unwrap();
+        let device = fxblob_builder.finalize().await.unwrap().0;
+        device.reopen(/*read_only=*/ false);
+        let fixture = open_blob_fixture(device).await;
+        assert_eq!(fixture.read_blob(blob_hash).await, blob_data);
+
+        // A VMO from the original blob must be held to get `overwrite_me` to be called.
+        let old_blob_vmo = fixture.get_blob_vmo(blob_hash).await;
+
+        {
+            let writer =
+                fixture.create_blob(&blob_hash, true).await.expect("Failed to create BlobWriter");
+            let delivery_data = Type1Blob::generate(&blob_data, CompressionMode::Always);
+            let vmo = writer
+                .get_vmo(delivery_data.len() as u64)
+                .await
+                .expect("transport error on get_vmo")
+                .expect("failed to get vmo");
+
+            vmo.write(&delivery_data, 0).expect("failed to write to vmo");
+            writer
+                .bytes_ready(delivery_data.len() as u64)
+                .await
+                .expect("transport error on bytes_ready")
+                .expect("failed to write data to vmo");
+        }
+
+        assert_eq!(fixture.read_blob(blob_hash).await, blob_data);
         std::mem::drop(old_blob_vmo);
         fixture.close().await;
     }

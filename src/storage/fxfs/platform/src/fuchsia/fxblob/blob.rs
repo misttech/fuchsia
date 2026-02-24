@@ -15,6 +15,7 @@ use crate::fuchsia::pager::{
 use crate::fuchsia::volume::{BASE_READ_AHEAD_SIZE, FxVolume};
 use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
+use delivery_blob::compression::{CompressionAlgorithm, ThreadLocalDecompressor};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_async::epoch::Epoch;
@@ -278,11 +279,6 @@ impl PagerBacked for FxBlob {
     }
 
     async fn aligned_read(&self, range: Range<u64>) -> Result<buffer::Buffer<'_>, Error> {
-        thread_local! {
-            static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
-                std::cell::RefCell::new(zstd::bulk::Decompressor::new().unwrap());
-        }
-
         self.record_page_fault_metric(&range);
 
         let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
@@ -302,7 +298,7 @@ impl PagerBacked for FxBlob {
 
                 let mut decompression_errors = 0;
                 let len = (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
-                let decompressed_size = loop {
+                loop {
                     let (read, _) = try_join!(
                         self.handle.read(aligned.start, compressed_buf.as_mut()),
                         async {
@@ -332,61 +328,24 @@ impl PagerBacked for FxBlob {
                     );
 
                     let buf = buffer.as_mut_slice();
-                    match DECOMPRESSOR.with(|decompressor| {
+                    let decompression_result = {
                         fxfs_trace::duration!("blob-decompress", "len" => len);
-                        let mut decompressor = decompressor.borrow_mut();
-                        decompressor.decompress_to_buffer(
+                        compression_info.decompress(
                             &compressed_buf.as_slice()[compressed_buf_range],
                             &mut buf[..len],
+                            range.start,
                         )
-                    }) {
-                        Ok(size) => break size,
+                    };
+                    match decompression_result {
+                        Ok(()) => break,
                         Err(error) => {
-                            static DONE_ONCE: AtomicBool = AtomicBool::new(false);
-                            if !DONE_ONCE.swap(true, Ordering::Relaxed) {
-                                if let Ok(proxy) = connect_to_protocol::<
-                                    fidl_fuchsia_feedback::CrashReporterMarker,
-                                >() {
-                                    let size = compressed_buf.len() as u64;
-                                    let vmo = zx::Vmo::create(size).unwrap();
-                                    vmo.write(compressed_buf.as_slice(), 0).unwrap();
-                                    if let Err(e) = proxy
-                                        .file_report(CrashReport {
-                                            program_name: Some("fxfs".to_string()),
-                                            crash_signature: Some(
-                                                "fuchsia-fxfs-decompression_error".to_string(),
-                                            ),
-                                            is_fatal: Some(false),
-                                            annotations: Some(vec![
-                                                Annotation {
-                                                    key: "fxfs.range".to_string(),
-                                                    value: format!("{:?}", range),
-                                                },
-                                                Annotation {
-                                                    key: "fxfs.compressed_offsets".to_string(),
-                                                    value: format!("{:?}", compressed_offsets),
-                                                },
-                                                Annotation {
-                                                    key: "fxfs.merkle_root".to_string(),
-                                                    value: format!("{}", self.merkle_root),
-                                                },
-                                            ]),
-                                            attachments: Some(vec![Attachment {
-                                                key: "fxfs_compressed_data".to_string(),
-                                                value: Buffer { vmo, size },
-                                            }]),
-                                            ..Default::default()
-                                        })
-                                        .await
-                                    {
-                                        error!(e:?; "Failed to file crash report");
-                                    } else {
-                                        warn!("Filed crash report for decompression error");
-                                    }
-                                } else {
-                                    error!("Failed to connect to crash report service");
-                                }
-                            }
+                            record_decompression_error_crash_report(
+                                compressed_buf.as_slice(),
+                                &range,
+                                &compressed_offsets,
+                                &self.merkle_root,
+                            )
+                            .await;
                             decompression_errors += 1;
                             if decompression_errors == 2 {
                                 bail!(
@@ -398,14 +357,10 @@ impl PagerBacked for FxBlob {
                             }
                         }
                     }
-                }; // loop
+                } // loop
                 if decompression_errors > 0 {
                     info!("Read succeeded on second attempt");
                 }
-                ensure!(
-                    decompressed_size == len,
-                    anyhow!(FxfsError::IntegrityError).context("Decompressed length mismatch")
-                );
                 len
             }
         };
@@ -427,10 +382,16 @@ pub struct CompressionInfo {
     // storing the 0 avoids the allocation for blobs smaller than the chunk size.
     small_offsets: Box<[u32]>,
     large_offsets: Box<[u64]>,
+    decompressor: ThreadLocalDecompressor,
 }
 
 impl CompressionInfo {
-    pub fn new(chunk_size: u64, offsets: &[u64]) -> Result<Self, Error> {
+    pub fn new(
+        chunk_size: u64,
+        offsets: &[u64],
+        compression_algorithm: CompressionAlgorithm,
+    ) -> Result<Self, Error> {
+        let decompressor = compression_algorithm.thread_local_decompressor();
         if chunk_size == 0 {
             return Err(FxfsError::IntegrityError.into());
         } else if offsets.is_empty() || *offsets.first().unwrap() != 0 {
@@ -442,7 +403,12 @@ impl CompressionInfo {
         } else if offsets.len() == 1 {
             // Simple case where the blob is smaller than the chunk size so only the 0 offset is
             // present. The 0 isn't stored so no allocation is necessary.
-            Ok(Self { chunk_size, small_offsets: Box::default(), large_offsets: Box::default() })
+            Ok(Self {
+                chunk_size,
+                small_offsets: Box::default(),
+                large_offsets: Box::default(),
+                decompressor,
+            })
         } else if *offsets.last().unwrap() <= u32::MAX as u64 {
             // Check the last index first since most compressed blobs are going to be smaller
             // than 4GiB making all offsets small.
@@ -450,6 +416,7 @@ impl CompressionInfo {
                 chunk_size,
                 small_offsets: offsets[1..].iter().map(|x| *x as u32).collect(),
                 large_offsets: Box::default(),
+                decompressor,
             })
         } else {
             // The partition point is the index of the first compressed offset that's > u32::MAX.
@@ -458,6 +425,7 @@ impl CompressionInfo {
                 chunk_size,
                 small_offsets: offsets[1..partition_point].iter().map(|x| *x as u32).collect(),
                 large_offsets: offsets[partition_point..].into(),
+                decompressor,
             })
         }
     }
@@ -467,32 +435,93 @@ impl CompressionInfo {
         range: &Range<u64>,
     ) -> Result<(u64, Option<NonZero<u64>>), Error> {
         ensure!(range.start.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
+        ensure!(range.start < range.end, FxfsError::Inconsistent);
 
-        // The "0" compression offset isn't stored so all of the compression offsets are shifted
-        // left by 1. This makes `start_index - 1` the start of the range.
-        let start_index = (range.start / self.chunk_size) as usize;
-        let start_offset = if start_index == 0 {
-            0
-        } else if start_index - 1 < self.small_offsets.len() {
-            self.small_offsets[start_index - 1] as u64
-        } else if start_index - 1 - self.small_offsets.len() < self.large_offsets.len() {
-            self.large_offsets[start_index - 1 - self.small_offsets.len()]
-        } else {
-            return Err(FxfsError::OutOfRange.into());
-        };
+        let start_chunk_index = (range.start / self.chunk_size) as usize;
+        let start_offset = self
+            .compressed_offset_for_chunk_index(start_chunk_index)
+            .ok_or(FxfsError::OutOfRange)?;
 
         // The end of the range may not be aligned to the chunk size for the last chunk.
-        let end_index = range.end.div_ceil(self.chunk_size) as usize - 1;
-        let end_offset = if end_index < self.small_offsets.len() {
-            ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
-            Some(NonZero::new(self.small_offsets[end_index] as u64).unwrap())
-        } else if end_index - self.small_offsets.len() < self.large_offsets.len() {
-            ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
-            Some(NonZero::new(self.large_offsets[end_index - self.small_offsets.len()]).unwrap())
-        } else {
-            None
+        let end_chunk_index = range.end.div_ceil(self.chunk_size) as usize;
+        let end_offset = match self.compressed_offset_for_chunk_index(end_chunk_index) {
+            None => None,
+            Some(offset) => {
+                // This isn't the last chunk so the end must be aligned.
+                ensure!(range.end.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
+                // `CompressionInfo::new` validates that all of the offsets are ascending. The end
+                // of the range is greater than the start so this can never be 0.
+                Some(NonZero::new(offset).unwrap())
+            }
         };
         Ok((start_offset, end_offset))
+    }
+
+    fn compressed_offset_for_chunk_index(&self, chunk_index: usize) -> Option<u64> {
+        // The "0" compressed offset isn't stored so all of the indices are shifted left by 1.
+        if chunk_index == 0 {
+            Some(0)
+        } else if chunk_index - 1 < self.small_offsets.len() {
+            Some(self.small_offsets[chunk_index - 1] as u64)
+        } else if chunk_index - 1 - self.small_offsets.len() < self.large_offsets.len() {
+            Some(self.large_offsets[chunk_index - 1 - self.small_offsets.len()])
+        } else {
+            None
+        }
+    }
+
+    /// Decompress the bytes of `src` into `dst`.
+    ///   - `src` is allowed to span multiple chunks.
+    ///   - `dst` must have the exact size of the uncompressed bytes.
+    ///   - `dst_start_offset` is the location of the uncompressed bytes within the blob and must be
+    ///     chunk aligned. This is necessary for determining the chunk boundaries in `src`.
+    fn decompress(
+        &self,
+        mut src: &[u8],
+        mut dst: &mut [u8],
+        dst_start_offset: u64,
+    ) -> Result<(), Error> {
+        ensure!(dst_start_offset.is_multiple_of(self.chunk_size), FxfsError::Inconsistent);
+
+        let start_chunk_index = (dst_start_offset / self.chunk_size) as usize;
+        let chunk_count = dst.len().div_ceil(self.chunk_size as usize);
+        let mut start_offset = self
+            .compressed_offset_for_chunk_index(start_chunk_index)
+            .ok_or(FxfsError::Inconsistent)?;
+
+        // Decompress each chunk individually.
+        for chunk_index in start_chunk_index..(start_chunk_index + chunk_count) {
+            match self.compressed_offset_for_chunk_index(chunk_index + 1) {
+                Some(end_offset) => {
+                    let (to_decompress, src_remaining) = src
+                        .split_at_checked((end_offset - start_offset) as usize)
+                        .ok_or(FxfsError::Inconsistent)?;
+                    let (to_decompress_into, dst_remaining) = dst
+                        .split_at_mut_checked(self.chunk_size as usize)
+                        .ok_or(FxfsError::Inconsistent)?;
+
+                    let decompressed_bytes = self.decompressor.decompress_into(
+                        to_decompress,
+                        to_decompress_into,
+                        chunk_index,
+                    )?;
+                    ensure!(
+                        decompressed_bytes == to_decompress_into.len(),
+                        FxfsError::Inconsistent
+                    );
+                    src = src_remaining;
+                    dst = dst_remaining;
+                    start_offset = end_offset;
+                }
+                None => {
+                    let decompressed_bytes =
+                        self.decompressor.decompress_into(src, dst, chunk_index)?;
+                    ensure!(decompressed_bytes == dst.len(), FxfsError::Inconsistent);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -519,6 +548,55 @@ fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size: u6
     }
 }
 
+async fn record_decompression_error_crash_report(
+    compressed_buf: &[u8],
+    uncompressed_offsets: &Range<u64>,
+    compressed_offsets: &Range<u64>,
+    merkle_root: &Hash,
+) {
+    static DONE_ONCE: AtomicBool = AtomicBool::new(false);
+    if !DONE_ONCE.swap(true, Ordering::Relaxed) {
+        if let Ok(proxy) = connect_to_protocol::<fidl_fuchsia_feedback::CrashReporterMarker>() {
+            let size = compressed_buf.len() as u64;
+            let vmo = zx::Vmo::create(size).unwrap();
+            vmo.write(compressed_buf, 0).unwrap();
+            if let Err(e) = proxy
+                .file_report(CrashReport {
+                    program_name: Some("fxfs".to_string()),
+                    crash_signature: Some("fuchsia-fxfs-decompression_error".to_string()),
+                    is_fatal: Some(false),
+                    annotations: Some(vec![
+                        Annotation {
+                            key: "fxfs.range".to_string(),
+                            value: format!("{:?}", uncompressed_offsets),
+                        },
+                        Annotation {
+                            key: "fxfs.compressed_offsets".to_string(),
+                            value: format!("{:?}", compressed_offsets),
+                        },
+                        Annotation {
+                            key: "fxfs.merkle_root".to_string(),
+                            value: format!("{}", merkle_root),
+                        },
+                    ]),
+                    attachments: Some(vec![Attachment {
+                        key: "fxfs_compressed_data".to_string(),
+                        value: Buffer { vmo, size },
+                    }]),
+                    ..Default::default()
+                })
+                .await
+            {
+                error!(e:?; "Failed to file crash report");
+            } else {
+                warn!("Filed crash report for decompression error");
+            }
+        } else {
+            error!("Failed to connect to crash report service");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,11 +604,18 @@ mod tests {
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PageInRange;
     use crate::fuchsia::volume::{MAX_READ_AHEAD_SIZE, MemoryPressureConfig};
+    use crate::fxblob::testing::open_blob_fixture;
     use assert_matches::assert_matches;
     use delivery_blob::CompressionMode;
+    use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
     use fuchsia_async as fasync;
     use fuchsia_async::epoch::Epoch;
+    use fxfs_make_blob_image::FxBlobBuilder;
     use std::time::Duration;
+    use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
+
+    const CHUNK_SIZE: usize = 32 * 1024;
 
     #[fasync::run(10, test)]
     async fn test_empty_blob() {
@@ -624,6 +709,25 @@ mod tests {
     }
 
     #[fasync::run(10, test)]
+    async fn test_lz4_blob() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 512));
+        let blob_data = vec![0xAA; 68 * 1024];
+        let fxblob_builder = FxBlobBuilder::new(device).await.unwrap();
+        let blob = fxblob_builder
+            .generate_blob(blob_data.clone(), Some(CompressionAlgorithm::Lz4))
+            .unwrap();
+        let blob_hash = blob.hash();
+        fxblob_builder.install_blob(&blob).await.unwrap();
+        let device = fxblob_builder.finalize().await.unwrap().0;
+        device.reopen(/*read_only=*/ false);
+        let fixture = open_blob_fixture(device).await;
+
+        assert_eq!(fixture.read_blob(blob_hash).await, blob_data);
+
+        fixture.close().await;
+    }
+
+    #[fasync::run(10, test)]
     async fn test_blob_vmos_are_immutable() {
         let fixture = new_blob_fixture().await;
 
@@ -645,54 +749,59 @@ mod tests {
 
     const COMPRESSED_BLOB_CHUNK_SIZE: u64 = 32 * 1024;
     const MAX_SMALL_OFFSET: u64 = u32::MAX as u64;
+    const ZSTD: CompressionAlgorithm = CompressionAlgorithm::Zstd;
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_start_with_zero() {
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[]).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[1]).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0]).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[1], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0], ZSTD).is_ok());
     }
 
     #[fuchsia::test]
     fn test_compression_info_offsets_must_be_sorted() {
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 2]).is_ok());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 2, 1]).is_err());
-        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 1]).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 2], ZSTD).is_ok());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 2, 1], ZSTD).is_err());
+        assert!(CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 1, 1], ZSTD).is_err());
     }
 
     #[fuchsia::test]
     fn test_compression_info_splitting_offsets() {
         // Single chunk blob doesn't store any offsets.
-        let compression_info = CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0]).unwrap();
+        let compression_info =
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0], ZSTD).unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert!(compression_info.large_offsets.is_empty());
 
         // Single small offset.
-        let compression_info = CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10]).unwrap();
+        let compression_info =
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10], ZSTD).unwrap();
         assert_eq!(&*compression_info.small_offsets, &[10]);
         assert!(compression_info.large_offsets.is_empty());
 
         // Multiple small offsets.
         let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10, 20, 30]).unwrap();
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, 10, 20, 30], ZSTD).unwrap();
         assert_eq!(&*compression_info.small_offsets, &[10, 20, 30]);
         assert!(compression_info.large_offsets.is_empty());
 
         // One less than the largest small offset.
         let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET - 1]).unwrap();
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET - 1], ZSTD)
+                .unwrap();
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1]);
         assert!(compression_info.large_offsets.is_empty());
 
         // The largest small offset.
         let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET]).unwrap();
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET], ZSTD).unwrap();
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX]);
         assert!(compression_info.large_offsets.is_empty());
 
         // The smallest large offset.
         let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 1]).unwrap();
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 1], ZSTD)
+                .unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 1]);
 
@@ -700,6 +809,7 @@ mod tests {
         let compression_info = CompressionInfo::new(
             COMPRESSED_BLOB_CHUNK_SIZE,
             &[0, MAX_SMALL_OFFSET - 1, MAX_SMALL_OFFSET, MAX_SMALL_OFFSET + 1],
+            ZSTD,
         )
         .unwrap();
         assert_eq!(&*compression_info.small_offsets, &[u32::MAX - 1, u32::MAX]);
@@ -707,7 +817,8 @@ mod tests {
 
         // Single large offset.
         let compression_info =
-            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 10]).unwrap();
+            CompressionInfo::new(COMPRESSED_BLOB_CHUNK_SIZE, &[0, MAX_SMALL_OFFSET + 10], ZSTD)
+                .unwrap();
         assert!(compression_info.small_offsets.is_empty());
         assert_eq!(&*compression_info.large_offsets, &[MAX_SMALL_OFFSET + 10]);
 
@@ -715,6 +826,7 @@ mod tests {
         let compression_info = CompressionInfo::new(
             COMPRESSED_BLOB_CHUNK_SIZE,
             &[0, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
+            ZSTD,
         )
         .unwrap();
         assert!(compression_info.small_offsets.is_empty());
@@ -727,6 +839,7 @@ mod tests {
         let compression_info = CompressionInfo::new(
             COMPRESSED_BLOB_CHUNK_SIZE,
             &[0, 10, 20, MAX_SMALL_OFFSET + 10, MAX_SMALL_OFFSET + 20],
+            ZSTD,
         )
         .unwrap();
         assert_eq!(&*compression_info.small_offsets, &[10, 20]);
@@ -744,7 +857,7 @@ mod tests {
             chunk_size: u64,
             read_ahead_size: u64,
         ) {
-            let compression_info = CompressionInfo::new(chunk_size, offsets).unwrap();
+            let compression_info = CompressionInfo::new(chunk_size, offsets, ZSTD).unwrap();
             for (i, range) in expected_ranges.iter().enumerate() {
                 let i = i as u64;
                 let result = compression_info
@@ -817,6 +930,7 @@ mod tests {
                 MAX_SMALL_OFFSET + 40,
                 MAX_SMALL_OFFSET + 50,
             ],
+            ZSTD,
         )
         .unwrap();
 
@@ -887,6 +1001,132 @@ mod tests {
         assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 128 * 1024), 96 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 128 * 1024), 128 * 1024);
         assert_eq!(read_ahead_size_for_chunk_size(96 * 1024, 128 * 1024), 96 * 1024);
+    }
+
+    fn build_compression_info(size: usize) -> (CompressionInfo, Vec<u8>, Vec<u8>) {
+        let options =
+            ChunkedArchiveOptions::V3 { compression_algorithm: CompressionAlgorithm::Lz4 };
+        let mut compressor = options.compressor();
+        let mut uncompressed_data = Vec::with_capacity(size);
+        {
+            let mut run_length = 1;
+            let mut run_value: u8 = 0;
+            while uncompressed_data.len() < size {
+                uncompressed_data
+                    .resize(std::cmp::min(uncompressed_data.len() + run_length, size), run_value);
+                run_length = (run_length + 1) % 19 + 1;
+                run_value = (run_value + 1) % 17;
+            }
+        }
+        let mut compressed_offsets = vec![0];
+        let mut compressed_data = vec![];
+        for chunk in uncompressed_data.chunks(CHUNK_SIZE) {
+            let mut compressed_chunk = compressor.compress(chunk, 0).unwrap();
+            compressed_data.append(&mut compressed_chunk);
+            compressed_offsets.push(compressed_data.len() as u64);
+        }
+        compressed_offsets.pop();
+        (
+            CompressionInfo::new(CHUNK_SIZE as u64, &compressed_offsets, CompressionAlgorithm::Lz4)
+                .unwrap(),
+            compressed_data,
+            uncompressed_data,
+        )
+    }
+
+    #[fuchsia::test]
+    fn test_compression_info_decompress_single_chunk() {
+        let (compression_info, compressed_data, uncompressed_data) =
+            build_compression_info(CHUNK_SIZE);
+        let mut decompressed_data = vec![0u8; CHUNK_SIZE + 1];
+
+        compression_info
+            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE], 0)
+            .expect("failed to decompress");
+        assert_eq!(uncompressed_data, decompressed_data[0..CHUNK_SIZE]);
+
+        // Too small of destination buffer.
+        compression_info
+            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
+            .expect_err("decompression should fail");
+
+        // Too large of destination buffer.
+        compression_info
+            .decompress(&compressed_data, &mut decompressed_data[0..CHUNK_SIZE - 1], 0)
+            .expect_err("decompression should fail");
+    }
+
+    #[fuchsia::test]
+    fn test_compression_info_decompress_multiple_chunks() {
+        fn slice_for_chunks<'a>(
+            compressed_data: &'a [u8],
+            compression_info: &CompressionInfo,
+            chunks: Range<u64>,
+        ) -> &'a [u8] {
+            let (start, end) = compression_info
+                .compressed_range_for_uncompressed_range(
+                    &(chunks.start * CHUNK_SIZE as u64..chunks.end * CHUNK_SIZE as u64),
+                )
+                .unwrap();
+            let end = end.map_or(compressed_data.len() as u64, NonZero::<u64>::get);
+            &compressed_data[start as usize..end as usize]
+        }
+
+        const BLOB_SIZE: usize = CHUNK_SIZE * 4 + 4096;
+        let (compression_info, compressed_data, uncompressed_data) =
+            build_compression_info(BLOB_SIZE);
+        let mut decompressed_data = vec![0u8; BLOB_SIZE];
+
+        // Decompress the entire blob.
+        compression_info
+            .decompress(&compressed_data, &mut decompressed_data, 0)
+            .expect("failed to decompress");
+        assert_eq!(uncompressed_data, decompressed_data);
+
+        // Decompress just the whole chunks.
+        compression_info
+            .decompress(
+                slice_for_chunks(&compressed_data, &compression_info, 0..4),
+                &mut decompressed_data[0..CHUNK_SIZE * 4],
+                0,
+            )
+            .expect("failed to decompress");
+        assert_eq!(&uncompressed_data[0..CHUNK_SIZE], &decompressed_data[0..CHUNK_SIZE]);
+
+        // Too small of destination buffer for whole chunks.
+        compression_info
+            .decompress(
+                slice_for_chunks(&compressed_data, &compression_info, 0..4),
+                &mut decompressed_data[0..CHUNK_SIZE * 4 - 1],
+                0,
+            )
+            .expect_err("decompression should fail");
+
+        // Too large of destination buffer for whole chunks.
+        compression_info
+            .decompress(
+                slice_for_chunks(&compressed_data, &compression_info, 0..4),
+                &mut decompressed_data[0..CHUNK_SIZE * 4 + 1],
+                0,
+            )
+            .expect_err("decompression should fail");
+
+        // Decompress just the tail.
+        let partial_chunk = slice_for_chunks(&compressed_data, &compression_info, 4..5);
+        compression_info
+            .decompress(partial_chunk, &mut decompressed_data[0..4096], CHUNK_SIZE as u64 * 4)
+            .expect("failed to decompress");
+        assert_eq!(&uncompressed_data[CHUNK_SIZE * 4..], &decompressed_data[0..4096]);
+
+        // Too small of destination buffer for the tail.
+        compression_info
+            .decompress(partial_chunk, &mut decompressed_data[0..4095], CHUNK_SIZE as u64 * 4)
+            .expect_err("decompression should fail");
+
+        // Too large of destination buffer for the tail.
+        compression_info
+            .decompress(partial_chunk, &mut decompressed_data[0..4097], CHUNK_SIZE as u64 * 4)
+            .expect_err("decompression should fail");
     }
 
     #[fasync::run(10, test)]
