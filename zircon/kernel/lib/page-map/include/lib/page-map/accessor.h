@@ -63,7 +63,7 @@ class Accessor {
   // Write (copy) |src| to the object.
   //
   // It is an error to call this on an invalid instance.
-  void Write(const Object& src);
+  void Write(const Object& src) const;
 
   // Like Read, but for reading only one field of an object.
   //
@@ -89,7 +89,7 @@ class Accessor {
   //
   template <auto Field, typename FieldType = decltype(Field)>
     requires ktl::is_class_v<Object>
-  void Write(const FieldType& src_field);
+  void Write(const FieldType& src_field) const;
 
  private:
   // So |PageMap::MakeAccessor| can call the private constructor.
@@ -185,7 +185,7 @@ inline void Accessor<Object>::Read(auto& dst) const {
 }
 
 template <typename Object>
-inline void Accessor<Object>::Write(const Object& src) {
+inline void Accessor<Object>::Write(const Object& src) const {
   *object_ = src;
   BarrierAfterCopy(object_);
 }
@@ -193,7 +193,7 @@ inline void Accessor<Object>::Write(const Object& src) {
 template <typename Object>
 template <auto Field, typename FieldType>
   requires ktl::is_class_v<Object>
-inline void Accessor<Object>::Write(const FieldType& src) {
+inline void Accessor<Object>::Write(const FieldType& src) const {
   FieldRef<Field>::Of(*object_) = src;
   BarrierAfterCopy(object_);
 }
