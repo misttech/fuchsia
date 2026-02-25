@@ -27,6 +27,8 @@ using ::testing::Pair;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
 
+constexpr char kTestCompilationModePath[] = "/tmp/build_compilation_mode.txt";
+
 class StartupAnnotationsTest : public ::testing::Test {
  public:
   void SetUp() override {}
@@ -54,10 +56,12 @@ TEST_F(StartupAnnotationsTest, Keys) {
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+                            /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(startup_annotations, UnorderedElementsAreArray({
                                        Key(kBuildBoardKey),
+                                       Key(kBuildCompilationModeKey),
                                        Key(kBuildProductKey),
                                        Key(kBuildLatestCommitDateKey),
                                        Key(kBuildPlatformBackstopKey),
@@ -67,7 +71,6 @@ TEST_F(StartupAnnotationsTest, Keys) {
                                        Key(kBuildPlatformVersionPreviousBootKey),
                                        Key(kBuildProductVersionKey),
                                        Key(kBuildProductVersionPreviousBootKey),
-                                       Key(kBuildIsDebugKey),
                                        Key(kDeviceBoardNameKey),
                                        Key(kDeviceNumCPUsKey),
                                        Key(kSystemBootIdCurrentKey),
@@ -95,6 +98,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
       {kBuildProductPath, "product"},
       {kBuildCommitDatePath, "commit-date"},
       {kBuildMinUtcStampPath, "1748946819"},
+      {kTestCompilationModePath, "compilation-mode"},
       {kCurrentBuildVersionPath, "current-version"},
       {kPreviousBuildVersionPath, "previous-version"},
       {kCurrentBuildPlatformVersionPath, "current-platform-version"},
@@ -116,12 +120,14 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
                              /*last_boot_runtime=*/std::nullopt,
                              /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+                            /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(
       startup_annotations,
       UnorderedElementsAre(
           Pair(kBuildBoardKey, ErrorOrString("board")),
+          Pair(kBuildCompilationModeKey, ErrorOrString("compilation-mode")),
           Pair(kBuildProductKey, ErrorOrString("product")),
           Pair(kBuildLatestCommitDateKey, ErrorOrString("commit-date")),
           Pair(kBuildPlatformBackstopKey, ErrorOrString("2025-06-03T10:33:39+00:00")),
@@ -131,7 +137,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
           Pair(kBuildPlatformVersionPreviousBootKey, ErrorOrString("previous-platform-version")),
           Pair(kBuildProductVersionKey, ErrorOrString("current-product-version")),
           Pair(kBuildProductVersionPreviousBootKey, ErrorOrString("previous-product-version")),
-          Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
+          Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, ErrorOrString("current-boot-id")),
           Pair(kSystemBootIdPreviousKey, ErrorOrString("previous-boot-id")),
           Pair(kSystemBootIdTimelineKey, ErrorOrString("boot-id-timeline")),
@@ -156,12 +162,14 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+                            /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(
       startup_annotations,
       UnorderedElementsAre(
           Pair(kBuildBoardKey, ErrorOrString(Error::kFileReadFailure)),
+          Pair(kBuildCompilationModeKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildProductKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildLatestCommitDateKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildPlatformBackstopKey, ErrorOrString(Error::kFileReadFailure)),
@@ -171,7 +179,7 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
           Pair(kBuildPlatformVersionPreviousBootKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildProductVersionKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildProductVersionPreviousBootKey, ErrorOrString(Error::kFileReadFailure)),
-          Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
+          Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemBootIdPreviousKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemBootIdTimelineKey, ErrorOrString(Error::kFileReadFailure)),
@@ -204,7 +212,8 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+                            /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(startup_annotations,
               Contains(Pair(kBuildPlatformBackstopKey, ErrorOrString(Error::kBadValue))));
@@ -233,20 +242,21 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+                            /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(
       startup_annotations,
       UnorderedElementsAre(
-          Pair(kBuildBoardKey, _), Pair(kBuildProductKey, _), Pair(kBuildLatestCommitDateKey, _),
-          Pair(kBuildPlatformBackstopKey, _),
+          Pair(kBuildBoardKey, _), Pair(kBuildCompilationModeKey, _), Pair(kBuildProductKey, _),
+          Pair(kBuildLatestCommitDateKey, _), Pair(kBuildPlatformBackstopKey, _),
           Pair(kBuildVersionKey, ErrorOrString("current-version")),
           Pair(kBuildVersionPreviousBootKey, ErrorOrString("previous-version")),
           Pair(kBuildPlatformVersionKey, ErrorOrString("current-platform-version")),
           Pair(kBuildPlatformVersionPreviousBootKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kBuildProductVersionKey, ErrorOrString("current-product-version")),
           Pair(kBuildProductVersionPreviousBootKey, ErrorOrString("previous-version")),
-          Pair(kBuildIsDebugKey, _), Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
+          Pair(kDeviceBoardNameKey, _), Pair(kDeviceNumCPUsKey, _),
           Pair(kSystemBootIdCurrentKey, _), Pair(kSystemBootIdPreviousKey, _),
           Pair(kSystemBootIdTimelineKey, _), Pair(kSystemLastRebootRuntimeKey, _),
           Pair(kSystemLastRebootTotalSuspendedTimeKey, _), Pair(kSystemLastRebootUptimeKey, _),

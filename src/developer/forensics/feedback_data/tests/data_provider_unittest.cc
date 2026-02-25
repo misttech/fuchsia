@@ -340,16 +340,13 @@ TEST_F(DataProviderTest, GetSnapshot_AnnotationsAsAttachment) {
     },
     "%s": {
       "type": "string"
-    },
-    "%s": {
-      "type": "string"
     }
   },
   "additionalProperties": false
 })",
-                       feedback::kBuildBoardKey, feedback::kBuildIsDebugKey,
-                       feedback::kBuildLatestCommitDateKey, feedback::kBuildProductKey,
-                       feedback::kBuildVersionKey, feedback::kDeviceBoardNameKey))
+                       feedback::kBuildBoardKey, feedback::kBuildLatestCommitDateKey,
+                       feedback::kBuildProductKey, feedback::kBuildVersionKey,
+                       feedback::kDeviceBoardNameKey))
                    .HasParseError());
   rapidjson::SchemaDocument schema(schema_json);
   rapidjson::SchemaValidator validator(schema);

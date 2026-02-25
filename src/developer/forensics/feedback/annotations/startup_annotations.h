@@ -18,7 +18,8 @@ namespace forensics::feedback {
 // Gets annotations that are available immediately and synchronously when the component starts and
 // never change while it is running.
 Annotations GetStartupAnnotations(const RebootLog& reboot_log,
-                                  SpontaneousRebootReason spontaneous_reboot_reason);
+                                  SpontaneousRebootReason spontaneous_reboot_reason,
+                                  const std::string& compilation_mode_path);
 
 }  // namespace forensics::feedback
 

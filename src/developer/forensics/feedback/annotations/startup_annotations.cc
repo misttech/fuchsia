@@ -82,22 +82,16 @@ ErrorOrString BoardName() {
   return ErrorOrString(out_board_name.value());
 }
 
-std::string IsDebug() {
-#ifndef NDEBUG
-  return "true";
-#else
-  return "false";
-#endif
-}
-
 std::string NumCPUs() { return std::to_string(zx_system_get_num_cpus()); }
 
 }  // namespace
 
 Annotations GetStartupAnnotations(const RebootLog& reboot_log,
-                                  const SpontaneousRebootReason spontaneous_reboot_reason) {
+                                  const SpontaneousRebootReason spontaneous_reboot_reason,
+                                  const std::string& compilation_mode_path) {
   return {
       {kBuildBoardKey, ReadAnnotation(kBuildBoardPath)},
+      {kBuildCompilationModeKey, ReadAnnotation(compilation_mode_path)},
       {kBuildProductKey, ReadAnnotation(kBuildProductPath)},
       {kBuildLatestCommitDateKey, ReadAnnotation(kBuildCommitDatePath)},
       {kBuildPlatformBackstopKey, ReadAnnotation(kBuildMinUtcStampPath, FormatSecondsSinceEpoch)},
@@ -108,7 +102,6 @@ Annotations GetStartupAnnotations(const RebootLog& reboot_log,
       {kBuildProductVersionKey, ReadAnnotation(kCurrentBuildProductVersionPath)},
       {kBuildProductVersionPreviousBootKey,
        ReadAnnotationWithFallback(kPreviousBuildProductVersionPath, kPreviousBuildVersionPath)},
-      {kBuildIsDebugKey, ErrorOrString(IsDebug())},
       {kDeviceBoardNameKey, BoardName()},
       {kDeviceNumCPUsKey, ErrorOrString(NumCPUs())},
       {kSystemBootIdCurrentKey, ReadAnnotation(kCurrentBootIdPath)},

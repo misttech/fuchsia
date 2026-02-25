@@ -16,6 +16,7 @@ namespace forensics::feedback {
 // KEYS
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 constexpr const char kBuildBoardKey[] = "build.board";
+constexpr const char kBuildCompilationModeKey[] = "build.compilation-mode";
 constexpr const char kBuildVersionKey[] = "build.version";
 constexpr const char kBuildVersionPreviousBootKey[] = "build.version.previous-boot";
 constexpr const char kBuildPlatformVersionKey[] = "build.platform.version";
@@ -26,7 +27,6 @@ constexpr const char kBuildProductVersionPreviousBootKey[] = "build.product.vers
 constexpr const char kBuildProductKey[] = "build.product";
 constexpr const char kBuildLatestCommitDateKey[] = "build.latest-commit-date";
 constexpr const char kBuildPlatformBackstopKey[] = "build.platform.utc-backstop";
-constexpr const char kBuildIsDebugKey[] = "build.is_debug";
 constexpr const char kDebugReportUploadBootId[] = "debug.report.upload.boot-id";
 constexpr const char kDebugReportUploadUptime[] = "debug.report.upload.uptime";
 constexpr const char kDebugReportUuid[] = "debug.report.uuid";

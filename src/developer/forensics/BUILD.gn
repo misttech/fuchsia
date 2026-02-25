@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/config/compilation_modes.gni")
 import("//build/dist/renamed_binary.gni")
 
 ###############################################################################
@@ -42,6 +43,7 @@ fuchsia_package("pkg") {
   package_name = "forensics"
 
   deps = [
+    ":compilation_mode_resource",
     ":exceptions",
     ":feedback",
   ]
@@ -124,4 +126,17 @@ resource("feedback_default_snapshot_config") {
 
 fuchsia_structured_config_cpp_elf_lib("exceptions_config") {
   cm_label = ":exceptions_manifest"
+}
+
+generated_file("compilation_mode") {
+  outputs = [ "${target_out_dir}/build_compilation_mode.txt" ]
+  contents = compilation_mode
+  visibility = [ ":*" ]
+}
+
+resource("compilation_mode_resource") {
+  sources = get_target_outputs(":compilation_mode")
+  outputs = [ "data/build_compilation_mode.txt" ]
+  deps = [ ":compilation_mode" ]
+  visibility = [ ":*" ]
 }

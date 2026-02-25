@@ -30,7 +30,7 @@ TEST_F(ProdConfigTest, DefaultSnapshot) {
 
   EXPECT_THAT(config->default_annotations, UnorderedElementsAreArray({
                                                "build.board",
-                                               "build.is_debug",
+                                               "build.compilation-mode",
                                                "build.latest-commit-date",
                                                "build.product",
                                                "build.version",
