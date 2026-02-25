@@ -10,6 +10,7 @@
 
 pub mod error;
 pub mod features;
+pub mod load;
 pub mod one_or_many;
 pub mod types;
 pub(crate) mod validate;
