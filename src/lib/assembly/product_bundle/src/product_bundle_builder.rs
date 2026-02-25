@@ -31,7 +31,6 @@ pub struct ProductBundleBuilder {
     product_bundle_name: String,
     product_bundle_version: String,
     sdk_version: String,
-    partitions: Option<PartitionsConfig>,
     system_a: Option<AssembledSystem>,
     system_b: Option<AssembledSystem>,
     system_r: Option<AssembledSystem>,
@@ -67,7 +66,6 @@ impl ProductBundleBuilder {
             product_bundle_name,
             product_bundle_version,
             sdk_version: "not_built_from_sdk".into(),
-            partitions: None,
             system_a: None,
             system_b: None,
             system_r: None,
@@ -82,13 +80,6 @@ impl ProductBundleBuilder {
     /// Set the SDK version if built from the SDK.
     pub fn sdk_version(mut self, version: String) -> Self {
         self.sdk_version = version;
-        self
-    }
-
-    /// Set a partitions config directly into the PB instead of fetching from
-    /// the board.
-    pub fn partitions(mut self, partitions: PartitionsConfig) -> Self {
-        self.partitions = Some(partitions);
         self
     }
 
@@ -159,7 +150,6 @@ impl ProductBundleBuilder {
             product_bundle_name,
             product_bundle_version: _,
             sdk_version,
-            partitions,
             system_a,
             system_b,
             system_r,
@@ -186,7 +176,7 @@ impl ProductBundleBuilder {
         let (system_r, packages_r) = write_assembled_system(system_r, out_dir.join("system_r"))?;
 
         // Write the partitions config to `out_dir`.
-        let partitions = write_partitions(partitions, &system_a, &system_b, &system_r, &out_dir)?;
+        let partitions = write_partitions(&system_a, &system_b, &system_r, &out_dir)?;
 
         // Write the gerrit image size report.
         if let Some(gerrit_size_report) = gerrit_size_report {
@@ -313,7 +303,6 @@ impl ProductBundleBuilder {
 
 /// Find the partitions config, complete some checks, and write it to `out_dir`.
 fn write_partitions(
-    partitions: Option<PartitionsConfig>,
     system_a: &Option<AssembledSystem>,
     system_b: &Option<AssembledSystem>,
     system_r: &Option<AssembledSystem>,
@@ -321,11 +310,10 @@ fn write_partitions(
 ) -> Result<PartitionsConfig> {
     let out_dir = out_dir.as_ref();
 
-    // Load the partitions config from the boards and product bundle, and
-    // ensure they are all identical.
-    let mut chosen_partitions: Option<(PartitionsConfig, bool)> = partitions.map(|p| (p, true));
-    let mut maybe_add_partitions_config = |path: Option<&Utf8PathBuf>| -> Result<()> {
-        if let Some(path) = path {
+    // Load the partitions config from the boards and ensure they are all identical.
+    let mut chosen_partitions: Option<(PartitionsConfig, bool)> = None;
+    for system in [system_a, system_b, system_r] {
+        if let Some(path) = partitions_from_system(system.as_ref()) {
             let another_config = PartitionsConfig::from_dir(&path)
                 .with_context(|| format!("Parsing partitions config: {}", &path))?;
 
@@ -349,11 +337,7 @@ fn write_partitions(
                 }
             }
         }
-        Ok(())
-    };
-    maybe_add_partitions_config(partitions_from_system(system_a.as_ref()))?;
-    maybe_add_partitions_config(partitions_from_system(system_b.as_ref()))?;
-    maybe_add_partitions_config(partitions_from_system(system_r.as_ref()))?;
+    }
 
     let partitions = chosen_partitions.ok_or_else(|| anyhow!("Missing a partitions config"))?.0;
     let partitions = partitions.write_to_dir(out_dir.join("partitions"), None::<Utf8PathBuf>)?;

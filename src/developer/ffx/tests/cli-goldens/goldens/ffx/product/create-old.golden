@@ -50,18 +50,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "partitions"
-        }
-      },
-      "optionality": "optional",
-      "long": "--partitions",
-      "short": null,
-      "description": "path to a partitions config, which lists the physical partitions of the target.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "system-a"
         }
       },

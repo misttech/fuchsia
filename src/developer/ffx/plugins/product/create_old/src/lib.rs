@@ -8,7 +8,7 @@
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
 use assembly_container::AssemblyContainer;
-use assembly_partitions_config::{PartitionsConfig, Slot as PartitionSlot};
+use assembly_partitions_config::Slot as PartitionSlot;
 use assembly_sdk::SdkToolProvider;
 use assembly_tool::ToolProvider;
 use ffx_config::EnvironmentContext;
@@ -86,11 +86,6 @@ pub async fn pb_create_with_sdk_version(
     };
     let mut pb_builder = ProductBundleBuilder::new(cmd.product_name.clone(), version)
         .sdk_version(sdk_version.to_string());
-    if let Some(path) = &cmd.partitions {
-        let partitions = PartitionsConfig::from_dir(&path)
-            .with_context(|| format!("Parsing partitions config: {}", &path))?;
-        pb_builder = pb_builder.partitions(partitions);
-    }
     if let Some(system_path) = &cmd.system_a {
         let system = AssembledSystem::from_dir(system_path)?;
         pb_builder = pb_builder.system(system, PartitionSlot::A);
@@ -149,6 +144,8 @@ fn read_version_from_file(version_file: &camino::Utf8PathBuf) -> Result<String> 
 mod test {
     use super::*;
     use assembled_system::Image;
+    use assembly_container::DirectoryPathBuf;
+    use assembly_partitions_config::PartitionsConfig;
     use assembly_release_info::{ProductBundleReleaseInfo, SystemReleaseInfo};
     use assembly_tool::testing::{FakeToolProvider, blobfs_side_effect};
     use camino::{Utf8Path, Utf8PathBuf};
@@ -171,6 +168,16 @@ mod test {
         let partitions_file = File::create(&partitions_path).unwrap();
         serde_json::to_writer(&partitions_file, &PartitionsConfig::default()).unwrap();
 
+        let system_dir = tempdir.join("system");
+        AssembledSystem {
+            images: vec![],
+            board_name: "board_name".into(),
+            partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
+            system_release_info: SystemReleaseInfo::new_for_testing(),
+        }
+        .write_to_dir(&system_dir, None::<Utf8PathBuf>)
+        .unwrap();
+
         let tool_provider = Box::new(FakeToolProvider::new_with_side_effect(blobfs_side_effect));
 
         pb_create_with_sdk_version(
@@ -178,8 +185,7 @@ mod test {
                 product_name: String::default(),
                 product_version: Some(String::default()),
                 product_version_file: None,
-                partitions: Some(partitions_dir),
-                system_a: None,
+                system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,
                 tuf_keys: None,
@@ -207,7 +213,7 @@ mod test {
                 product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
                 sdk_version: String::default(),
-                system_a: None,
+                system_a: Some(vec![]),
                 system_b: None,
                 system_r: None,
                 repositories: vec![],
@@ -217,9 +223,9 @@ mod test {
                     name: String::default(),
                     version: "unversioned".to_string(),
                     sdk_version: String::default(),
-                    system_a: None,
+                    system_a: Some(SystemReleaseInfo::new_for_testing()),
                     system_b: None,
-                    system_r: None
+                    system_r: None,
                 })
             })
         );
@@ -242,7 +248,7 @@ mod test {
         AssembledSystem {
             images: Default::default(),
             board_name: "my_board".into(),
-            partitions_config: None,
+            partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
@@ -255,10 +261,9 @@ mod test {
                 product_name: String::default(),
                 product_version: Some(String::default()),
                 product_version_file: None,
-                partitions: Some(partitions_dir),
                 system_a: Some(system_dir.clone()),
                 system_b: None,
-                system_r: Some(system_dir.clone()),
+                system_r: Some(system_dir),
                 tuf_keys: None,
                 ota_manifest_key: None,
                 update_package_version_file: None,
@@ -338,10 +343,9 @@ mod test {
                     product_name: String::default(),
                     product_version: Some(String::default()),
                     product_version_file: None,
-                    partitions: Some(partitions_dir),
                     system_a: Some(system_dir.clone()),
                     system_b: None,
-                    system_r: Some(system_dir.clone()),
+                    system_r: Some(system_dir),
                     tuf_keys: None,
                     ota_manifest_key: None,
                     update_package_version_file: None,
@@ -378,7 +382,7 @@ mod test {
         AssembledSystem {
             images: Default::default(),
             board_name: "my_board".into(),
-            partitions_config: None,
+            partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
             system_release_info: SystemReleaseInfo::new_for_testing(),
         }
         .write_to_dir(&system_dir, None::<Utf8PathBuf>)
@@ -394,10 +398,9 @@ mod test {
                 product_name: String::default(),
                 product_version: Some(String::default()),
                 product_version_file: None,
-                partitions: Some(partitions_dir),
                 system_a: Some(system_dir.clone()),
                 system_b: None,
-                system_r: Some(system_dir.clone()),
+                system_r: Some(system_dir),
                 tuf_keys: Some(tuf_keys),
                 ota_manifest_key: None,
                 update_package_version_file: None,
@@ -469,6 +472,18 @@ mod test {
         let tuf_keys = tempdir.join("keys");
         test_utils::make_repo_keys_dir(&tuf_keys);
 
+        let system_dir = tempdir.join("system");
+        let zbi_path = tempdir.join("fuchsia.zbi");
+        std::fs::write(&zbi_path, "zbi").unwrap();
+        AssembledSystem {
+            images: vec![Image::ZBI { path: zbi_path, signed: false }],
+            board_name: "board_name".into(),
+            partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
+            system_release_info: SystemReleaseInfo::new_for_testing(),
+        }
+        .write_to_dir(&system_dir, None::<Utf8PathBuf>)
+        .unwrap();
+
         let tool_provider = Box::new(FakeToolProvider::new_with_side_effect(blobfs_side_effect));
 
         pb_create_with_sdk_version(
@@ -476,8 +491,7 @@ mod test {
                 product_name: String::default(),
                 product_version: Some(String::default()),
                 product_version_file: None,
-                partitions: Some(partitions_dir),
-                system_a: None,
+                system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,
                 tuf_keys: Some(tuf_keys),
@@ -508,7 +522,7 @@ mod test {
                 product_version: _,
                 partitions,
                 sdk_version: _,
-                system_a: None,
+                system_a: Some(_),
                 system_b: None,
                 system_r: None,
                 repositories,
@@ -553,6 +567,16 @@ mod test {
         vd_file1.write_all(DEVICE_1.as_bytes())?;
         vd_file2.write_all(DEVICE_2.as_bytes())?;
 
+        let system_dir = tempdir.join("system");
+        AssembledSystem {
+            images: vec![],
+            board_name: "board_name".into(),
+            partitions_config: Some(DirectoryPathBuf::new(partitions_dir)),
+            system_release_info: SystemReleaseInfo::new_for_testing(),
+        }
+        .write_to_dir(&system_dir, None::<Utf8PathBuf>)
+        .unwrap();
+
         let tool_provider = Box::new(FakeToolProvider::new_with_side_effect(blobfs_side_effect));
 
         pb_create_with_sdk_version(
@@ -560,8 +584,7 @@ mod test {
                 product_name: String::default(),
                 product_version: Some(String::default()),
                 product_version_file: None,
-                partitions: Some(partitions_dir),
-                system_a: None,
+                system_a: Some(system_dir),
                 system_b: None,
                 system_r: None,
                 tuf_keys: None,
@@ -588,8 +611,8 @@ mod test {
                 product_name: String::default(),
                 product_version: "unversioned".to_string(),
                 partitions: PartitionsConfig::default(),
-                sdk_version: String::default(),
-                system_a: None,
+                sdk_version: "".to_string(),
+                system_a: Some(vec![]),
                 system_b: None,
                 system_r: None,
                 repositories: vec![],
@@ -599,9 +622,9 @@ mod test {
                     name: String::default(),
                     version: "unversioned".to_string(),
                     sdk_version: String::default(),
-                    system_a: None,
+                    system_a: Some(SystemReleaseInfo::new_for_testing()),
                     system_b: None,
-                    system_r: None
+                    system_r: None,
                 }),
             })
         );
