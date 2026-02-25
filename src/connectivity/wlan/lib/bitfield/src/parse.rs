@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{braced, parenthesized, token, Ident, LitInt, Path, Result, Token, Type};
+use syn::{Ident, LitInt, Path, Result, Token, Type, braced, parenthesized, token};
 
 pub enum BitRange {
     Closed { start_inclusive: LitInt, separator: Token![..=], end_inclusive: LitInt },
@@ -75,12 +75,11 @@ impl Parse for UserType {
     }
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
 pub enum AliasSpec {
     Unnamed {
         _underscore: Token![_],
     },
-    SingleName(Alias),
+    SingleName(Box<Alias>),
     Union {
         _union_keyword: Token![union],
         _brace: token::Brace,
@@ -92,7 +91,7 @@ impl AliasSpec {
     pub fn all_aliases(&self) -> Vec<&Alias> {
         match self {
             AliasSpec::Unnamed { .. } => vec![],
-            AliasSpec::SingleName(name) => vec![name],
+            AliasSpec::SingleName(name) => vec![name.as_ref()],
             AliasSpec::Union { aliases, .. } => aliases.iter().collect(),
         }
     }
@@ -122,7 +121,7 @@ impl Parse for AliasSpec {
                 aliases: brace_contents.parse_terminated(Alias::parse, Token![,])?,
             }
         } else {
-            AliasSpec::SingleName(input.parse()?)
+            AliasSpec::SingleName(Box::new(input.parse()?))
         })
     }
 }

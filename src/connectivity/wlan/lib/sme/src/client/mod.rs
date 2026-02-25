@@ -294,16 +294,15 @@ impl<T: Into<ConnectFailure>> From<T> for ConnectResult {
     }
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
 #[derive(Debug, PartialEq)]
 pub enum RoamResult {
     Success(Box<BssDescription>),
-    Failed(RoamFailure),
+    Failed(Box<RoamFailure>),
 }
 
 impl<T: Into<RoamFailure>> From<T> for RoamResult {
     fn from(failure: T) -> Self {
-        RoamResult::Failed(failure.into())
+        RoamResult::Failed(Box::new(failure.into()))
     }
 }
 
@@ -346,7 +345,6 @@ impl ConnectTransactionSink {
 
 pub type ConnectTransactionStream = mpsc::UnboundedReceiver<ConnectTransactionEvent>;
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
 #[derive(Debug, PartialEq)]
 pub enum ConnectTransactionEvent {
     OnConnectResult { result: ConnectResult, is_reconnect: bool },
@@ -632,10 +630,9 @@ impl From<ServingApInfo> for fidl_sme::ServingApInfo {
 }
 
 // TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientSmeStatus {
-    Connected(ServingApInfo),
+    Connected(Box<ServingApInfo>),
     Connecting(Ssid),
     Roaming(Bssid),
     Idle,
@@ -655,7 +652,7 @@ impl From<ClientSmeStatus> for fidl_sme::ClientStatusResponse {
     fn from(client_sme_status: ClientSmeStatus) -> fidl_sme::ClientStatusResponse {
         match client_sme_status {
             ClientSmeStatus::Connected(serving_ap_info) => {
-                fidl_sme::ClientStatusResponse::Connected(serving_ap_info.into())
+                fidl_sme::ClientStatusResponse::Connected((*serving_ap_info).into())
             }
             ClientSmeStatus::Connecting(ssid) => {
                 fidl_sme::ClientStatusResponse::Connecting(ssid.to_vec())

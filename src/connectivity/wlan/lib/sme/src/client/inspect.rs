@@ -557,7 +557,7 @@ mod tests {
         // SME is connected. Aside from verifying that existing fields are kept, key things we
         // want to check are that "last_link_up" and "connected_to" are populated, and
         // "connecting_to" is cleared out.
-        let status = ClientSmeStatus::Connected(test_utils::fake_serving_ap_info());
+        let status = ClientSmeStatus::Connected(Box::new(test_utils::fake_serving_ap_info()));
         pulse.update(status);
         assert_data_tree!(inspector, root: {
             last_pulse: {
@@ -602,7 +602,7 @@ mod tests {
 
         let mut serving_ap_info = test_utils::fake_serving_ap_info();
         serving_ap_info.wmm_param = None;
-        let status = ClientSmeStatus::Connected(serving_ap_info.clone());
+        let status = ClientSmeStatus::Connected(Box::new(serving_ap_info.clone()));
         pulse.update(status);
         assert_data_tree!(inspector, root: {
             last_pulse: contains {
@@ -617,7 +617,7 @@ mod tests {
         let mut wmm_param =
             *ie::parse_wmm_param(&test_utils::fake_wmm_param().bytes[..]).expect("parse wmm");
         serving_ap_info.wmm_param = Some(wmm_param);
-        let status = ClientSmeStatus::Connected(serving_ap_info.clone());
+        let status = ClientSmeStatus::Connected(Box::new(serving_ap_info.clone()));
         pulse.update(status);
         assert_data_tree!(inspector, root: {
             last_pulse: contains {
@@ -671,7 +671,7 @@ mod tests {
         wmm_param.ac_vi_params.ecw_min_max.set_ecw_max(14);
         wmm_param.ac_vo_params.txop_limit = 0xaa;
         serving_ap_info.wmm_param = Some(wmm_param);
-        let status = ClientSmeStatus::Connected(serving_ap_info.clone());
+        let status = ClientSmeStatus::Connected(Box::new(serving_ap_info.clone()));
         pulse.update(status);
         assert_data_tree!(inspector, root: {
             last_pulse: contains {
@@ -717,7 +717,7 @@ mod tests {
         });
 
         serving_ap_info.wmm_param = None;
-        let status = ClientSmeStatus::Connected(serving_ap_info.clone());
+        let status = ClientSmeStatus::Connected(Box::new(serving_ap_info.clone()));
         pulse.update(status);
         assert_data_tree!(inspector, root: {
             last_pulse: contains {

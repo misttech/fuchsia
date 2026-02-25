@@ -49,31 +49,30 @@ pub struct OpRadioConfig {
     basic_rates: Vec<u8>,
 }
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
+struct StartingState {
+    ctx: Context,
+    ssid: Ssid,
+    rsn_cfg: Option<RsnCfg>,
+    _capabilities: mac::CapabilityInfo,
+    _rates: Vec<SupportedRate>,
+    start_responder: Responder<StartResult>,
+    stop_responders: Vec<Responder<fidl_sme::StopApResultCode>>,
+    _start_timeout: EventHandle,
+    op_radio_cfg: OpRadioConfig,
+}
+
 enum State {
-    Idle {
-        ctx: Context,
-    },
-    Starting {
-        ctx: Context,
-        ssid: Ssid,
-        rsn_cfg: Option<RsnCfg>,
-        capabilities: mac::CapabilityInfo,
-        rates: Vec<SupportedRate>,
-        start_responder: Responder<StartResult>,
-        stop_responders: Vec<Responder<fidl_sme::StopApResultCode>>,
-        start_timeout: EventHandle,
-        op_radio_cfg: OpRadioConfig,
-    },
-    Stopping {
-        ctx: Context,
-        stop_req: fidl_mlme::StopRequest,
-        responders: Vec<Responder<fidl_sme::StopApResultCode>>,
-        stop_timeout: Option<EventHandle>,
-    },
-    Started {
-        bss: InfraBss,
-    },
+    Idle(Box<IdleState>),
+    Started(Box<StartedState>),
+    Starting(Box<StartingState>),
+    Stopping(Box<StoppingState>),
+}
+
+struct StoppingState {
+    ctx: Context,
+    stop_req: fidl_mlme::StopRequest,
+    responders: Vec<Responder<fidl_sme::StopApResultCode>>,
+    stop_timeout: Option<EventHandle>,
 }
 
 #[derive(Clone)]
@@ -82,7 +81,7 @@ pub struct RsnCfg {
     rsne: Rsne,
 }
 
-struct InfraBss {
+struct StartedState {
     ssid: Ssid,
     rsn_cfg: Option<RsnCfg>,
     clients: HashMap<MacAddr, RemoteClient>,
@@ -100,6 +99,10 @@ pub struct Context {
 
 pub struct ApSme {
     state: Option<State>,
+}
+
+struct IdleState {
+    ctx: Context,
 }
 
 #[derive(Debug, PartialEq)]
@@ -121,14 +124,14 @@ impl ApSme {
         let (mlme_sink, mlme_stream) = mpsc::unbounded();
         let (timer, time_stream) = timer::create_timer();
         let sme = ApSme {
-            state: Some(State::Idle {
+            state: Some(State::Idle(Box::new(IdleState {
                 ctx: Context {
                     device_info,
                     spectrum_management_support,
                     mlme_sink: MlmeSink::new(mlme_sink.clone()),
                     timer,
                 },
-            }),
+            }))),
         };
         (sme, MlmeSink::new(mlme_sink), mlme_stream, time_stream)
     }
@@ -136,7 +139,8 @@ impl ApSme {
     pub fn on_start_command(&mut self, config: Config) -> oneshot::Receiver<StartResult> {
         let (responder, receiver) = Responder::new();
         self.state = self.state.take().map(|state| match state {
-            State::Idle { mut ctx } => {
+            State::Idle(idle_state) => {
+                let mut ctx = idle_state.ctx;
                 let op_radio_cfg = match validate_radio_cfg(
                     &ctx.device_info.bands[..],
                     &config.radio_cfg,
@@ -144,7 +148,7 @@ impl ApSme {
                 ) {
                     Err(result) => {
                         responder.respond(result);
-                        return State::Idle { ctx };
+                        return State::Idle(Box::new(IdleState { ctx }));
                     }
                     Ok(op_radio_cfg) => op_radio_cfg,
                 };
@@ -153,7 +157,7 @@ impl ApSme {
                 let rsn_cfg = match rsn_cfg_result {
                     Err(e) => {
                         responder.respond(e);
-                        return State::Idle { ctx };
+                        return State::Idle(Box::new(IdleState { ctx }));
                     }
                     Ok(rsn_cfg) => rsn_cfg,
                 };
@@ -178,7 +182,7 @@ impl ApSme {
                     Ok(req) => req,
                     Err(result) => {
                         responder.respond(result);
-                        return State::Idle { ctx };
+                        return State::Idle(Box::new(IdleState { ctx }));
                     }
                 };
 
@@ -189,27 +193,27 @@ impl ApSme {
                 let event = Event::Sme { event: SmeEvent::StartTimeout };
                 let start_timeout = ctx.timer.schedule(event);
 
-                State::Starting {
+                State::Starting(Box::new(StartingState {
                     ctx,
                     ssid: config.ssid,
                     rsn_cfg,
-                    capabilities,
-                    rates,
+                    _capabilities: capabilities,
+                    _rates: rates,
                     start_responder: responder,
                     stop_responders: vec![],
-                    start_timeout,
+                    _start_timeout: start_timeout,
                     op_radio_cfg,
-                }
+                }))
             }
-            s @ State::Starting { .. } => {
+            s @ State::Starting(_) => {
                 responder.respond(StartResult::PreviousStartInProgress);
                 s
             }
-            s @ State::Stopping { .. } => {
+            s @ State::Stopping(_) => {
                 responder.respond(StartResult::Canceled);
                 s
             }
-            s @ State::Started { .. } => {
+            s @ State::Started(_) => {
                 responder.respond(StartResult::AlreadyStarted);
                 s
             }
@@ -220,32 +224,34 @@ impl ApSme {
     pub fn on_stop_command(&mut self) -> oneshot::Receiver<fidl_sme::StopApResultCode> {
         let (responder, receiver) = Responder::new();
         self.state = self.state.take().map(|mut state| match state {
-            State::Idle { mut ctx } => {
+            State::Idle(idle_state) => {
+                let mut ctx = idle_state.ctx;
                 // We don't have an SSID, so just do a best-effort StopAP request with no SSID
                 // filled in
                 let stop_req = fidl_mlme::StopRequest { ssid: Ssid::empty().into() };
                 let timeout = send_stop_req(&mut ctx, stop_req.clone());
-                State::Stopping {
+                State::Stopping(Box::new(StoppingState {
                     ctx,
                     stop_req,
                     responders: vec![responder],
                     stop_timeout: Some(timeout),
-                }
+                }))
             }
-            State::Starting { ref mut stop_responders, .. } => {
-                stop_responders.push(responder);
+            State::Starting(ref mut starting_state) => {
+                starting_state.stop_responders.push(responder);
                 state
             }
-            State::Stopping { mut ctx, stop_req, mut responders, mut stop_timeout } => {
-                responders.push(responder);
+            State::Stopping(mut state) => {
+                state.responders.push(responder);
                 // No stop request is ongoing, so forward this stop request.
                 // The previous stop request may have timed out or failed and we are in an
                 // unclean state where we don't know whether the AP has stopped or not.
-                stop_timeout =
-                    stop_timeout.or_else(|| Some(send_stop_req(&mut ctx, stop_req.clone())));
-                State::Stopping { ctx, stop_req, responders, stop_timeout }
+                state.stop_timeout = state
+                    .stop_timeout
+                    .or_else(|| Some(send_stop_req(&mut state.ctx, state.stop_req.clone())));
+                State::Stopping(state)
             }
-            State::Started { mut bss } => {
+            State::Started(mut bss) => {
                 // IEEE Std 802.11-2016, 6.3.12.2.3: The SME should notify associated non-AP STAs of
                 // imminent infrastructure BSS termination before issuing the MLME-STOP.request
                 // primitive.
@@ -264,12 +270,12 @@ impl ApSme {
 
                 let stop_req = fidl_mlme::StopRequest { ssid: bss.ssid.to_vec() };
                 let timeout = send_stop_req(&mut bss.ctx, stop_req.clone());
-                State::Stopping {
+                State::Stopping(Box::new(StoppingState {
                     ctx: bss.ctx,
                     stop_req,
                     responders: vec![responder],
                     stop_timeout: Some(timeout),
-                }
+                }))
             }
         });
         receiver
@@ -277,13 +283,11 @@ impl ApSme {
 
     pub fn get_running_ap(&self) -> Option<fidl_sme::Ap> {
         match self.state.as_ref() {
-            Some(State::Started { bss: InfraBss { ssid, op_radio_cfg, clients, .. }, .. }) => {
-                Some(fidl_sme::Ap {
-                    ssid: ssid.to_vec(),
-                    channel: op_radio_cfg.channel.primary,
-                    num_clients: clients.len() as u16,
-                })
-            }
+            Some(State::Started(bss)) => Some(fidl_sme::Ap {
+                ssid: bss.ssid.to_vec(),
+                channel: bss.op_radio_cfg.channel.primary,
+                num_clients: bss.clients.len() as u16,
+            }),
             _ => None,
         }
     }
@@ -302,62 +306,35 @@ impl super::Station for ApSme {
     fn on_mlme_event(&mut self, event: MlmeEvent) {
         debug!("received MLME event: {:?}", &event);
         self.state = self.state.take().map(|state| match state {
-            State::Idle { .. } => {
+            State::Idle(_) => {
                 warn!("received MlmeEvent while ApSme is idle {:?}", mlme_event_name(&event));
                 state
             }
-            State::Starting {
-                ctx,
-                ssid,
-                rsn_cfg,
-                capabilities,
-                rates,
-                start_responder,
-                stop_responders,
-                start_timeout,
-                op_radio_cfg,
-            } => match event {
-                MlmeEvent::StartConf { resp } => handle_start_conf(
-                    resp,
-                    ctx,
-                    ssid,
-                    rsn_cfg,
-                    op_radio_cfg,
-                    start_responder,
-                    stop_responders,
-                ),
+            State::Starting(state) => match event {
+                MlmeEvent::StartConf { resp } => handle_start_conf(resp, *state),
                 _ => {
                     warn!(
                         "received MlmeEvent while ApSme is starting {:?}",
                         mlme_event_name(&event)
                     );
-                    State::Starting {
-                        ctx,
-                        ssid,
-                        rsn_cfg,
-                        capabilities,
-                        rates,
-                        start_responder,
-                        stop_responders,
-                        start_timeout,
-                        op_radio_cfg,
-                    }
+                    State::Starting(state)
                 }
             },
-            State::Stopping { ctx, stop_req, mut responders, stop_timeout } => match event {
+            State::Stopping(mut state) => match event {
                 MlmeEvent::StopConf { resp } => match resp.result_code {
                     fidl_mlme::StopResultCode::Success
                     | fidl_mlme::StopResultCode::BssAlreadyStopped => {
-                        for responder in responders.drain(..) {
+                        for responder in state.responders.drain(..) {
                             responder.respond(fidl_sme::StopApResultCode::Success);
                         }
-                        State::Idle { ctx }
+                        State::Idle(Box::new(IdleState { ctx: state.ctx }))
                     }
                     fidl_mlme::StopResultCode::InternalError => {
-                        for responder in responders.drain(..) {
+                        for responder in state.responders.drain(..) {
                             responder.respond(fidl_sme::StopApResultCode::InternalError);
                         }
-                        State::Stopping { ctx, stop_req, responders, stop_timeout: None }
+                        state.stop_timeout = None;
+                        State::Stopping(state)
                     }
                 },
                 _ => {
@@ -365,10 +342,10 @@ impl super::Station for ApSme {
                         "received MlmeEvent while ApSme is stopping {:?}",
                         mlme_event_name(&event)
                     );
-                    State::Stopping { ctx, stop_req, responders, stop_timeout }
+                    State::Stopping(state)
                 }
             },
-            State::Started { mut bss } => {
+            State::Started(mut bss) => {
                 match event {
                     MlmeEvent::OnChannelSwitched { info } => bss.handle_channel_switch(info),
                     MlmeEvent::AuthenticateInd { ind } => bss.handle_auth_ind(ind),
@@ -388,67 +365,49 @@ impl super::Station for ApSme {
                         warn!("unsupported MlmeEvent type {:?}; ignoring", mlme_event_name(&event))
                     }
                 }
-                State::Started { bss }
+                State::Started(bss)
             }
         });
     }
 
     fn on_timeout(&mut self, timed_event: timer::Event<Event>) {
-        self.state = self.state.take().map(|mut state| match state {
-            State::Idle { .. } => state,
-            State::Starting {
-                start_timeout,
-                mut ctx,
-                start_responder,
-                stop_responders,
-                capabilities,
-                rates,
-                ssid,
-                rsn_cfg,
-                op_radio_cfg,
-            } => match timed_event.event {
+        self.state = self.state.take().map(|state| match state {
+            State::Idle(_) => state,
+            State::Starting(state) => match timed_event.event {
                 Event::Sme { event: SmeEvent::StartTimeout } => {
+                    let StartingState { mut ctx, start_responder, stop_responders, ssid, .. } =
+                        *state;
                     warn!("Timed out waiting for MLME to start");
                     start_responder.respond(StartResult::TimedOut);
                     if stop_responders.is_empty() {
-                        State::Idle { ctx }
+                        State::Idle(Box::new(IdleState { ctx }))
                     } else {
                         let stop_req = fidl_mlme::StopRequest { ssid: ssid.to_vec() };
                         let timeout = send_stop_req(&mut ctx, stop_req.clone());
-                        State::Stopping {
+                        State::Stopping(Box::new(StoppingState {
                             ctx,
                             stop_req,
                             responders: stop_responders,
                             stop_timeout: Some(timeout),
-                        }
+                        }))
                     }
                 }
-                _ => State::Starting {
-                    start_timeout,
-                    ctx,
-                    start_responder,
-                    stop_responders,
-                    capabilities,
-                    rates,
-                    ssid,
-                    rsn_cfg,
-                    op_radio_cfg,
-                },
+                _ => State::Starting(state),
             },
-            State::Stopping { ctx, stop_req, mut responders, mut stop_timeout } => {
+            State::Stopping(mut state) => {
                 if let Event::Sme { event: SmeEvent::StopTimeout } = timed_event.event {
-                    for responder in responders.drain(..) {
+                    for responder in state.responders.drain(..) {
                         responder.respond(fidl_sme::StopApResultCode::TimedOut);
                     }
-                    stop_timeout = None;
+                    state.stop_timeout = None;
                 }
                 // If timeout triggered, then the responders and the timeout are cleared, and
                 // we are left in an unclean stopping state
-                State::Stopping { ctx, stop_req, responders, stop_timeout }
+                State::Stopping(state)
             }
-            State::Started { ref mut bss } => {
+            State::Started(mut bss) => {
                 bss.handle_timeout(timed_event);
-                state
+                State::Started(bss)
             }
         });
     }
@@ -566,45 +525,40 @@ fn validate_radio_cfg(
 }
 
 #[allow(clippy::too_many_arguments, reason = "mass allow for https://fxbug.dev/381896734")]
-fn handle_start_conf(
-    conf: fidl_mlme::StartConfirm,
-    mut ctx: Context,
-    ssid: Ssid,
-    rsn_cfg: Option<RsnCfg>,
-    op_radio_cfg: OpRadioConfig,
-    start_responder: Responder<StartResult>,
-    stop_responders: Vec<Responder<fidl_sme::StopApResultCode>>,
-) -> State {
-    if stop_responders.is_empty() {
+fn handle_start_conf(conf: fidl_mlme::StartConfirm, mut state: StartingState) -> State {
+    if state.stop_responders.is_empty() {
         match conf.result_code {
             fidl_mlme::StartResultCode::Success => {
-                start_responder.respond(StartResult::Success);
-                State::Started {
-                    bss: InfraBss {
-                        ssid,
-                        rsn_cfg,
-                        clients: HashMap::new(),
-                        aid_map: aid::Map::default(),
-                        op_radio_cfg,
-                        ctx,
-                    },
-                }
+                state.start_responder.respond(StartResult::Success);
+                State::Started(Box::new(StartedState {
+                    ssid: state.ssid,
+                    rsn_cfg: state.rsn_cfg,
+                    clients: HashMap::new(),
+                    aid_map: aid::Map::default(),
+                    op_radio_cfg: state.op_radio_cfg,
+                    ctx: state.ctx,
+                }))
             }
             result_code => {
                 error!("failed to start BSS: {:?}", result_code);
-                start_responder.respond(StartResult::InternalError);
-                State::Idle { ctx }
+                state.start_responder.respond(StartResult::InternalError);
+                State::Idle(Box::new(IdleState { ctx: state.ctx }))
             }
         }
     } else {
-        start_responder.respond(StartResult::Canceled);
-        let stop_req = fidl_mlme::StopRequest { ssid: ssid.to_vec() };
-        let timeout = send_stop_req(&mut ctx, stop_req.clone());
-        State::Stopping { ctx, stop_req, responders: stop_responders, stop_timeout: Some(timeout) }
+        state.start_responder.respond(StartResult::Canceled);
+        let stop_req = fidl_mlme::StopRequest { ssid: state.ssid.to_vec() };
+        let timeout = send_stop_req(&mut state.ctx, stop_req.clone());
+        State::Stopping(Box::new(StoppingState {
+            ctx: state.ctx,
+            stop_req,
+            responders: state.stop_responders,
+            stop_timeout: Some(timeout),
+        }))
     }
 }
 
-impl InfraBss {
+impl StartedState {
     /// Removes a client from the map.
     ///
     /// A client may only be removed via |remove_client| if:

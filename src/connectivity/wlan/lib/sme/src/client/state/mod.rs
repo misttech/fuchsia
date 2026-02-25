@@ -145,7 +145,6 @@ statemachine!(
     Disconnecting => [Connecting, Idle],
 );
 
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
 /// Only one PostDisconnectAction may be selected at a time. This means that
 /// in some cases a connect or disconnect might be reported as finished when
 /// we're actually still in a disconnecting state, since a different trigger
@@ -156,7 +155,7 @@ statemachine!(
 enum PostDisconnectAction {
     ReportConnectFinished { sink: ConnectTransactionSink, result: ConnectResult },
     RespondDisconnect { responder: fidl_sme::ClientSmeDisconnectResponder },
-    BeginConnect { cmd: ConnectCommand },
+    BeginConnect(Box<ConnectCommand>),
     ReportRoamFinished { sink: ConnectTransactionSink, result: RoamResult },
     None,
 }
@@ -171,7 +170,7 @@ impl std::fmt::Debug for PostDisconnectAction {
         f.write_str("PostDisconnectAction::")?;
         match self {
             PostDisconnectAction::RespondDisconnect { .. } => f.write_str("RespondDisconnect"),
-            PostDisconnectAction::BeginConnect { .. } => f.write_str("BeginConnect"),
+            PostDisconnectAction::BeginConnect(_) => f.write_str("BeginConnect"),
             PostDisconnectAction::ReportConnectFinished { .. } => {
                 f.write_str("ReportConnectFinished")
             }
@@ -324,8 +323,8 @@ impl Idle {
                 }
                 AfterDisconnectState::Idle(self)
             }
-            PostDisconnectAction::BeginConnect { cmd } => {
-                match self.on_connect(cmd, state_change_ctx, context) {
+            PostDisconnectAction::BeginConnect(cmd) => {
+                match self.on_connect(*cmd, state_change_ctx, context) {
                     Ok(connecting) => AfterDisconnectState::Connecting(connecting),
                     Err(idle) => AfterDisconnectState::Idle(idle),
                 }
@@ -1007,10 +1006,9 @@ impl Associated {
 }
 
 // Used when the next state after a roam failure is conditionally determined (e.g. if target needs deauth).
-#[allow(clippy::large_enum_variant)] // TODO(https://fxbug.dev/401087337)
 enum AfterRoamFailureState {
-    Idle(Idle),
-    Disconnecting(Disconnecting),
+    Idle(Box<Idle>),
+    Disconnecting(Box<Disconnecting>),
 }
 
 impl Roaming {
@@ -1227,7 +1225,7 @@ impl Disconnecting {
             PostDisconnectAction::ReportRoamFinished { mut sink, result } => {
                 report_roam_finished(&mut sink, result);
             }
-            PostDisconnectAction::BeginConnect { mut cmd } => {
+            PostDisconnectAction::BeginConnect(mut cmd) => {
                 report_connect_finished(&mut cmd.connect_txn_sink, ConnectResult::Canceled);
             }
             PostDisconnectAction::None => (),
@@ -1437,9 +1435,9 @@ impl ClientState {
                         Ok(associated) => transition.to(associated).into(),
                         Err(after_roam_failure_state) => match after_roam_failure_state {
                             AfterRoamFailureState::Disconnecting(disconnecting) => {
-                                transition.to(disconnecting).into()
+                                transition.to(*disconnecting).into()
                             }
-                            AfterRoamFailureState::Idle(idle) => transition.to(idle).into(),
+                            AfterRoamFailureState::Idle(idle) => transition.to(*idle).into(),
                         },
                     }
                 }
@@ -1462,9 +1460,9 @@ impl ClientState {
                         Ok(associated) => transition.to(associated).into(),
                         Err(after_roam_failure_state) => match after_roam_failure_state {
                             AfterRoamFailureState::Disconnecting(disconnecting) => {
-                                transition.to(disconnecting).into()
+                                transition.to(*disconnecting).into()
                             }
-                            AfterRoamFailureState::Idle(idle) => transition.to(idle).into(),
+                            AfterRoamFailureState::Idle(idle) => transition.to(*idle).into(),
                         },
                     }
                 }
@@ -1548,7 +1546,7 @@ impl ClientState {
 
         let new_state = self.disconnect_internal(
             context,
-            PostDisconnectAction::BeginConnect { cmd },
+            PostDisconnectAction::BeginConnect(Box::new(cmd)),
             &mut state_change_ctx,
         );
 
@@ -1718,7 +1716,7 @@ impl ClientState {
                 }
                 LinkState::LinkUp { .. } => {
                     let latest_ap_state = &associated.latest_ap_state;
-                    ClientSmeStatus::Connected(ServingApInfo {
+                    ClientSmeStatus::Connected(Box::new(ServingApInfo {
                         bssid: latest_ap_state.bssid,
                         ssid: latest_ap_state.ssid.clone(),
                         rssi_dbm: latest_ap_state.rssi_dbm,
@@ -1730,7 +1728,7 @@ impl ClientState {
                         vht_cap: latest_ap_state.raw_vht_cap(),
                         probe_resp_wsc: latest_ap_state.probe_resp_wsc(),
                         wmm_param: associated.wmm_param,
-                    })
+                    }))
                 }
                 // LinkState always transition to EstablishingRsna or LinkUp on initialization
                 // and never transition back
@@ -1739,7 +1737,7 @@ impl ClientState {
             },
             Self::Roaming(roaming) => ClientSmeStatus::Roaming(roaming.cmd.bss.bssid),
             Self::Disconnecting(disconnecting) => match &disconnecting.action {
-                PostDisconnectAction::BeginConnect { cmd } => {
+                PostDisconnectAction::BeginConnect(cmd) => {
                     ClientSmeStatus::Connecting(cmd.bss.ssid.clone())
                 }
                 _ => ClientSmeStatus::Idle,
@@ -1923,14 +1921,14 @@ fn roam_handle_result(
             status_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
             establish_rsna_failure_reason: None,
         };
-        return Err(AfterRoamFailureState::Disconnecting(Roaming::to_disconnecting(
+        return Err(AfterRoamFailureState::Disconnecting(Box::new(Roaming::to_disconnecting(
             "Roam failed; unexpected BSSID in result".to_owned(),
             failure,
             state.cfg,
             state.cmd.connect_txn_sink,
             state_change_ctx,
             context,
-        )));
+        ))));
     }
 
     #[allow(clippy::clone_on_copy, reason = "mass allow for https://fxbug.dev/381896734")]
@@ -1954,7 +1952,7 @@ fn roam_handle_result(
                     };
 
                     if result_fields.target_bss_authenticated {
-                        return Err(AfterRoamFailureState::Disconnecting(
+                        return Err(AfterRoamFailureState::Disconnecting(Box::new(
                             Roaming::to_disconnecting(
                                 "Roam failed; SME failed to initialize LinkState".to_owned(),
                                 failure,
@@ -1963,10 +1961,10 @@ fn roam_handle_result(
                                 state_change_ctx,
                                 context,
                             ),
-                        ));
+                        )));
                     } else {
                         report_roam_finished(&mut state.cmd.connect_txn_sink, failure.into());
-                        return Err(AfterRoamFailureState::Idle(Idle { cfg: state.cfg }));
+                        return Err(AfterRoamFailureState::Idle(Box::new(Idle { cfg: state.cfg })));
                     }
                 }
             };
@@ -2007,7 +2005,7 @@ fn roam_handle_result(
             for ind in state.eapol_cache.drain(..) {
                 associated = associated
                     .on_eapol_ind(ind, state_change_ctx, context)
-                    .map_err(AfterRoamFailureState::Disconnecting)?;
+                    .map_err(|e| AfterRoamFailureState::Disconnecting(Box::new(e)))?;
             }
             Ok(associated)
         }
@@ -2027,16 +2025,20 @@ fn roam_handle_result(
             };
 
             if result_fields.target_bss_authenticated {
-                Err(AfterRoamFailureState::Disconnecting(Roaming::to_disconnecting(
+                Err(AfterRoamFailureState::Disconnecting(Box::new(Roaming::to_disconnecting(
                     msg,
                     failure,
                     state.cfg,
                     state.cmd.connect_txn_sink,
                     state_change_ctx,
                     context,
-                )))
+                ))))
             } else {
-                Err(AfterRoamFailureState::Idle(state.to_idle(msg, failure, state_change_ctx)))
+                Err(AfterRoamFailureState::Idle(Box::new(state.to_idle(
+                    msg,
+                    failure,
+                    state_change_ctx,
+                ))))
             }
         }
     }
@@ -4495,7 +4497,7 @@ mod tests {
         let mut h = TestHelper::new();
         let (cmd, mut connect_txn_stream) = connect_command_one();
         let mut selected_bss = cmd.bss.clone();
-        let state = disconnecting_state(PostDisconnectAction::BeginConnect { cmd });
+        let state = disconnecting_state(PostDisconnectAction::BeginConnect(Box::new(cmd)));
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
         let roam_start_ind = MlmeEvent::RoamStartInd {
@@ -4517,7 +4519,7 @@ mod tests {
         let mut h = TestHelper::new();
         let (cmd, mut connect_txn_stream) = connect_command_one();
         let mut selected_bss = cmd.bss.clone();
-        let state = disconnecting_state(PostDisconnectAction::BeginConnect { cmd });
+        let state = disconnecting_state(PostDisconnectAction::BeginConnect(Box::new(cmd)));
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
         let fidl_selected_bss = fidl_common::BssDescription::from(*selected_bss.clone());
@@ -4810,7 +4812,7 @@ mod tests {
         let state = state.connect(cmd2, &mut h.context);
         let disconnecting =
             assert_matches!(&state, ClientState::Disconnecting(disconnecting) => disconnecting);
-        assert_matches!(&disconnecting.action, PostDisconnectAction::BeginConnect { .. });
+        assert_matches!(&disconnecting.action, PostDisconnectAction::BeginConnect(_));
         assert_matches!(h.executor.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
         let state = exchange_deauth(state, &mut h);
         assert_connecting(state, &connect_command_two().0.bss);
@@ -4841,7 +4843,7 @@ mod tests {
     fn disconnect_while_disconnecting_for_pending_connect() {
         let mut h = TestHelper::new();
         let (cmd, mut connect_txn_stream) = connect_command_one();
-        let state = disconnecting_state(PostDisconnectAction::BeginConnect { cmd });
+        let state = disconnecting_state(PostDisconnectAction::BeginConnect(Box::new(cmd)));
 
         let (_fut, responder) = make_disconnect_request(&mut h);
         let state = state.disconnect(
