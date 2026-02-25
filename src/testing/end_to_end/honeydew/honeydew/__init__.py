@@ -19,12 +19,14 @@ _CUSTOM_FUCHSIA_DEVICE_CLASS: type[
 ] = fuchsia_device_impl.FuchsiaDeviceImpl
 
 
+# The return type of this function can change at runtime with register_custom_fuchsia_device which
+# modifies _CUSTOM_FUCHSIA_DEVICE_CLASS.
 def create_device(
     device_info: custom_types.DeviceInfo,
     ffx_config_data: FfxConfigData,
     # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
     config: dict[str, Any] | None = None,
-) -> fuchsia_device_interface.FuchsiaDevice:
+) -> fuchsia_device_impl.FuchsiaDeviceImpl:
     """Factory method that creates and returns the device class.
 
     Args:
@@ -69,7 +71,8 @@ def create_device(
                 }
 
     Returns:
-        Fuchsia device object
+        Either a FuchsiaDeviceImpl or an instance of the class configured
+        with register_custom_fuchsia_device.
 
     Raises:
         errors.FuchsiaDeviceError: Failed to create Fuchsia device object.

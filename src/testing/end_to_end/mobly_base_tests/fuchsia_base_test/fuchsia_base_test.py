@@ -123,9 +123,9 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        self.fuchsia_devices: list[
-            fuchsia_device.FuchsiaDevice
-        ] = self.register_controller(fuchsia_device_mobly_controller)
+        self.fuchsia_devices = self.register_controller(
+            fuchsia_device_mobly_controller
+        )
         self.openwrt_aps: list[OpenwrtAp] = self.register_controller(
             openwrt_ap, required=False, min_number=0
         )
