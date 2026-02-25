@@ -70,6 +70,7 @@ impl Default for fdf_channel_call_args {
     }
 }
 pub type fdf_channel_call_args_t = fdf_channel_call_args;
+pub const FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS: u32 = 1;
 pub const FDF_DISPATCHER_OPTION_SYNCHRONIZED: u32 = 0;
 pub const FDF_DISPATCHER_OPTION_UNSYNCHRONIZED: u32 = 1;
 pub const FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS: u32 = 2;

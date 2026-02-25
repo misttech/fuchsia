@@ -35,7 +35,6 @@ __BEGIN_CDECLS
 //
 //   void driver_start(void) {
 //     const char* name = "my_driver";
-//     TODO(https://fxbug.dev/42166901): update this once scheduler_role is supported.
 //     const char* scheduler_role = "";
 //     struct dispatcher_shutdown_observer my_observer;
 //     my_observer.fdf_observer.handler = shutdown_handler;
@@ -78,7 +77,8 @@ struct fdf_dispatcher_shutdown_observer {
 //   * `FDF_DISPATHER_OPTION_SYNCHRONIZED` or `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED` - sets whether
 //     parallel callbacks in the callbacks set in the dispatcher are allowed.
 //   * `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS` - the dispatcher may not share zircon threads with
-//     other drivers. This may not be set with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED`.
+//     other drivers. This may not be set with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED` or on a
+//     scheduler role that has `FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS` set on it.
 //
 // |name| is reported via diagnostics. It is similar to setting the name of a thread.
 // |name_len| is the length of the string, without including the terminated NULL character. If
@@ -89,7 +89,6 @@ struct fdf_dispatcher_shutdown_observer {
 // threads with the dispatcher.
 // |scheduler_role_len | is the length of the string, without including the terminating
 // NULL character.
-// TODO(https://fxbug.dev/42166901): currently |scheduler_role| is not implemented.
 //
 // |observer| will be called after |fdf_dispatcher_shutdown_async| has been called,
 // and the dispatcher has completed its asynchronous shutdown.

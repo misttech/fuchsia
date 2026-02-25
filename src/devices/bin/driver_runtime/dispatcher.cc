@@ -328,7 +328,11 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
 
   bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
   bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
-  if (unsynchronized && allow_sync_calls) {
+  bool thread_pool_no_sync_calls =
+      thread_pool->scheduler_role_options() & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS;
+  // don't allow a sync calls dispatcher that is also unsynchronized or running on a no sync calls
+  // thread pool.
+  if (allow_sync_calls && (unsynchronized || thread_pool_no_sync_calls)) {
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (!owner) {

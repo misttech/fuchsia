@@ -33,6 +33,11 @@ typedef struct fdf_channel_call_args {
   uint32_t* rd_num_handles;
 } fdf_channel_call_args_t;
 
+// Scheduler Role options
+
+// This flag will prevent any dispatchers from being created on the role that allow sync calls.
+static const uint32_t FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS = 1u << 0;
+
 // Dispatcher creation options
 
 // This flag disallows parallel calls into callbacks set in the dispatcher.

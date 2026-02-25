@@ -162,6 +162,10 @@ uint32_t fdf_env_get_scheduler_role_opts(const char* scheduler_role, size_t sche
 // Sets the options for the given scheduler role. This can be used to enforce restrictions
 // on the kinds of dispatchers that can be created on this scheduler role.
 //
+// Currently available options include:
+// - `FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS` will not allow any dispatchers on the
+// scheduler role to be created with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
+//
 // |scheduler_role| is the name of the role which is passed when creating dispatchers.
 // |scheduler_role_len| is the length of the string, without including the terminating
 // NULL character.

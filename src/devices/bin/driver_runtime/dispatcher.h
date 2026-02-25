@@ -179,10 +179,15 @@ class Dispatcher : public async_dispatcher_t,
 
     zx_status_t set_scheduler_role_options(uint32_t options) {
       // reject unknown options
-      if (options != 0) {
+      if ((options & ~FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS) != 0) {
         return ZX_ERR_INVALID_ARGS;
       }
       fbl::AutoLock al(&lock_);
+      // don't allow setting no-sync-calls if there's already an allow-sync-calls dispatcher.
+      if ((options & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS) &&
+          allow_sync_call_dispatchers_ != 0) {
+        return ZX_ERR_NOT_SUPPORTED;
+      }
       scheduler_role_options_ = options;
       return ZX_OK;
     }
@@ -1114,4 +1119,4 @@ struct fdf_dispatcher : public driver_runtime::Dispatcher {
   // NOTE: Intentionally empty, do not add to this.
 };
 
-#endif  //  SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_RUNTIME_DISPATCHER_H_
