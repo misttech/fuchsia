@@ -1,7 +1,6 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use crate::errors::FxfsError;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
@@ -478,6 +477,8 @@ impl<S: HandleOwner> Directory<S> {
     /// lookup.
     #[trace]
     pub async fn lookup(&self, name: &str) -> Result<Option<(u64, ObjectDescriptor, bool)>, Error> {
+        let _measure =
+            crate::metrics::DurationMeasureScope::new(&crate::metrics::directory_metrics().lookup);
         if self.is_deleted() {
             return Ok(None);
         }

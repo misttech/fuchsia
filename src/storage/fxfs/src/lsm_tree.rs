@@ -11,10 +11,13 @@ pub mod types;
 
 use crate::drop_event::DropEvent;
 use crate::log::*;
+use crate::metrics::DurationMeasureScope;
 use crate::object_handle::{ReadObjectHandle, WriteBytes};
 use crate::serialized_types::{LATEST_VERSION, Version};
+
 use anyhow::Error;
 use cache::{ObjectCache, ObjectCacheResult};
+
 use fuchsia_sync::{Mutex, RwLock};
 use persistent_layer::{PersistentLayer, PersistentLayerWriter};
 use skip_list_layer::SkipListLayer;
@@ -210,6 +213,8 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Inserts an item into the mutable layer.
     /// Returns error if item already exists.
     pub fn insert(&self, item: Item<K, V>) -> Result<(), Error> {
+        let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().insert);
+
         let key = item.key.clone();
         let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value.clone()) };
         {
@@ -226,6 +231,9 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
 
     /// Replaces or inserts an item into the mutable layer.
     pub fn replace_or_insert(&self, item: Item<K, V>) {
+        let _measure =
+            DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().replace_or_insert);
+
         let key = item.key.clone();
         let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value.clone()) };
         {
@@ -241,6 +249,8 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
 
     /// Merges the given item into the mutable layer.
     pub fn merge_into(&self, item: Item<K, V>, lower_bound: &K) {
+        let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().merge_into);
+
         let key = item.key.clone();
         {
             // `seal` below relies on us holding a read lock whilst we do the mutation.
@@ -259,6 +269,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     where
         K: Eq,
     {
+        let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().find);
         // It is important that the cache lookup is done prior to fetching the layer set as the
         // placeholder returned acts as a sort of lock for the validity of the item that may be
         // inserted later via that placeholder.
