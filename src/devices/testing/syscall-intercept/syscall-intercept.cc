@@ -18,8 +18,7 @@
 #include "fidl/fuchsia.test.syscalls/cpp/wire_types.h"
 
 namespace syscall_intercept {
-
-class Handler;
+namespace {
 
 struct State {
   // Number of calls counted so far.
@@ -29,15 +28,8 @@ struct State {
   zx_status_t status = ZX_ERR_INTERNAL;
 };
 
-namespace {
-
 fbl::Mutex state_instance_lock;
 std::unique_ptr<State> state_instance TA_GUARDED(state_instance_lock);
-
-// Only accessed by FIDL.
-std::unique_ptr<Handler> handler;
-
-}  // namespace
 
 class Handler : public fidl::WireServer<fuchsia_test_syscalls::Control> {
  public:
@@ -95,6 +87,11 @@ class Handler : public fidl::WireServer<fuchsia_test_syscalls::Control> {
   async_dispatcher_t* dispatcher_;
   fidl::ServerBindingGroup<fuchsia_test_syscalls::Control> bindings_;
 };
+
+// Only accessed by FIDL.
+std::unique_ptr<Handler> handler;
+
+}  // namespace
 
 SuspendObserver::SuspendObserver(const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                                  async_dispatcher_t* dispatcher) {
