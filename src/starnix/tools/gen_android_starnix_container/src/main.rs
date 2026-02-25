@@ -6,7 +6,7 @@ use argh::FromArgs;
 use camino::Utf8PathBuf;
 
 use anyhow::Result;
-mod depfile;
+use depfile::Depfile;
 
 use starnix_container::StarnixContainerGenerator;
 
@@ -71,7 +71,14 @@ fn main() -> Result<()> {
         ramdisk: cmd.ramdisk,
         fstab: cmd.fstab,
         init: cmd.init,
-        depfile: cmd.depfile,
     };
-    container.build()
+
+    let mut depfile = Depfile::new();
+    container.build(&mut depfile)?;
+
+    if let Some(path) = cmd.depfile {
+        depfile.write_to(path)?;
+    }
+
+    Ok(())
 }

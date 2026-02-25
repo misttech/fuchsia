@@ -5,6 +5,7 @@
 use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs};
 use anyhow::{Context, Result};
 use assembly_config_schema::ProductConfig;
+use assembly_config_schema::product_settings::StarnixImagesOrPackage;
 use assembly_container::AssemblyContainer;
 use assembly_release_info::{ProductReleaseInfo, ReleaseInfo};
 use assembly_util::{get_release_repository, get_release_version, validate_release_info_string};
@@ -13,10 +14,12 @@ use depfile::Depfile;
 use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
+use starnix_container::StarnixContainerGenerator;
 use std::io::Cursor;
 
 pub fn new(args: &ProductArgs) -> Result<()> {
     let mut config = ProductConfig::from_config_path(&args.config)?;
+    let mut depfile = Depfile::new();
 
     for path in &args.product_input_bundles {
         let pib = ProductInputBundle::from_dir(path)?;
@@ -41,12 +44,51 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         pibs: config.product_input_bundles.values().map(|p| p.release_info.clone()).collect(),
     };
 
+    // Build starnix container
+    let starnix_containers = &mut config.product.starnix_containers;
+    let temp_dir = tempfile::tempdir().context("creating temp dir for starnix containers")?;
+    for container in starnix_containers {
+        let (system, ramdisk, vendor) = match &container.images_or_package {
+            StarnixImagesOrPackage::Images(i) => {
+                Ok((i.system.clone(), i.ramdisk.clone(), i.vendor.clone()))
+            }
+            StarnixImagesOrPackage::Package(_) => Err(anyhow::anyhow!(
+                // TODO(https://fxbug.dev/450326888): Update starnix container generator crate to support hybrid assembly.
+                "Hybrid starnix containers are not yet supported in assembly_config_tool",
+            )),
+        }?;
+        let outdir_path = temp_dir.path().join(&container.name);
+        std::fs::create_dir_all(&outdir_path).context("creating container temp dir")?;
+        let outdir =
+            Utf8PathBuf::try_from(outdir_path).context("converting temp dir path to utf8")?;
+        StarnixContainerGenerator {
+            name: container.name.clone(),
+            outdir: outdir.clone(),
+            base: container.base.manifest.clone(),
+            hals: container.hals.iter().map(|hal| hal.manifest.clone()).collect(),
+            skip_subpackages: container.skip_subpackages,
+            system,
+            ramdisk,
+            vendor,
+            fstab: container.fstab.clone(),
+            init: container.init.clone(),
+        }
+        .build(&mut depfile)?;
+
+        // Update the container to point to the new package.
+        let manifest_path = outdir.join("package_manifest.json");
+        container.images_or_package = StarnixImagesOrPackage::Package(manifest_path);
+    }
     // Build systems generally don't add package names to the config, so it
     // serializes index numbers in place of package names by default.
     // We add the package names in now, so all the rest of the rules can assume
     // the config has proper package names.
     let config = config.add_package_names()?;
-    config.write_to_dir(&args.output, args.depfile.as_ref())?;
+    config.write_to_dir_with_depfile(&args.output, Some(&mut depfile))?;
+
+    if let Some(depfile_path) = &args.depfile {
+        depfile.write_to(depfile_path)?;
+    }
     Ok(())
 }
 

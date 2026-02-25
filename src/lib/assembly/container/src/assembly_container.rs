@@ -76,14 +76,43 @@ pub trait AssemblyContainer {
     /// A depfile will also be written that includes all the files that were
     /// opened or copied.
     fn write_to_dir(
-        mut self,
+        self,
         dir: impl AsRef<Utf8Path>,
         depfile_path: Option<impl AsRef<Utf8Path>>,
     ) -> Result<Self>
     where
         Self: Sized + WalkPaths + Serialize,
     {
+        if let Some(depfile_path) = depfile_path {
+            let config_path = dir.as_ref().join(Self::get_config_filename());
+
+            let mut depfile = Depfile::new_with_output(&config_path);
+            let s = self.write_to_dir_with_depfile(&dir, Some(&mut depfile))?;
+
+            depfile
+                .write_to(&depfile_path)
+                .with_context(|| format!("Writing depfile: {}", depfile_path.as_ref()))?;
+            Ok(s)
+        } else {
+            self.write_to_dir_with_depfile(&dir, None)
+        }
+    }
+
+    /// Write an assembly container to a directory on disk, using the provided
+    /// depfile to track inputs and outputs.
+    ///
+    /// The paths will be transformed from absolute to relative before writing
+    /// them to disk.
+    fn write_to_dir_with_depfile(
+        mut self,
+        dir: impl AsRef<Utf8Path>,
+        depfile: Option<&mut Depfile>,
+    ) -> Result<Self>
+    where
+        Self: Sized + WalkPaths + Serialize,
+    {
         let config_path = dir.as_ref().join(Self::get_config_filename());
+        let mut depfile = depfile;
 
         // Ignore failures to remove the directory.
         let _ = std::fs::remove_dir_all(dir.as_ref());
@@ -97,9 +126,6 @@ pub trait AssemblyContainer {
         std::fs::create_dir_all(&packages_dir)?;
         std::fs::create_dir_all(&subpackages_dir)?;
         let mut package_copier = PackageCopier::new(&packages_dir, &subpackages_dir, &blobs_dir);
-
-        // Collect all inputs into a depfile.
-        let mut depfile = Depfile::new_with_output(&config_path);
 
         // Collect all output paths to ensure we don't have any duplicates.
         let mut outputs = BTreeSet::new();
@@ -133,7 +159,9 @@ pub trait AssemblyContainer {
 
                 // All other files are copied directly.
                 FileType::Unknown => {
-                    depfile.add_input(&path);
+                    if let Some(depfile) = depfile.as_deref_mut() {
+                        depfile.add_input(&path);
+                    }
                     let name = path
                         .file_name()
                         .ok_or_else(|| anyhow!("Path is missing a filename: {}", &path))?;
@@ -169,7 +197,9 @@ pub trait AssemblyContainer {
         let package_deps = package_copier.perform_copy().with_context(|| {
             format!("Copying all packages reference by the config into: {}", dir.as_ref())
         })?;
-        depfile.add_inputs(package_deps);
+        if let Some(depfile) = depfile {
+            depfile.add_inputs(package_deps);
+        }
 
         // Write the new config to the `dir`.
         let config_file = std::fs::File::create(config_path)?;
@@ -183,13 +213,6 @@ pub trait AssemblyContainer {
             Ok(())
         })
         .context("Making all the paths absolute")?;
-
-        // Write the depfile.
-        if let Some(depfile_path) = depfile_path {
-            depfile
-                .write_to(&depfile_path)
-                .with_context(|| format!("Writing depfile: {}", depfile_path.as_ref()))?;
-        }
 
         Ok(self)
     }

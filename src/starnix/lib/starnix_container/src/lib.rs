@@ -24,8 +24,8 @@ use depfile::Depfile;
 
 #[derive(Debug, Clone)]
 pub struct StarnixContainerGenerator {
-    pub name: String,                 //name of the starnix container
-    pub outdir: Utf8PathBuf,          //directory to place outputs into
+    pub name: String,                //name of the starnix container
+    pub outdir: Utf8PathBuf,         //directory to place outputs into
     pub base: Utf8PathBuf, //path to package archive containing additional resources to include
     pub hals: Vec<Utf8PathBuf>, //path to hal package archive
     pub skip_subpackages: bool, //whether to skip including HALs as subpackages.
@@ -34,7 +34,6 @@ pub struct StarnixContainerGenerator {
     pub vendor: Option<Utf8PathBuf>, //path to an Android vendor partition image
     pub fstab: Option<Utf8PathBuf>, //path to fstab, will go in /odm which overrides the one in /vendor
     pub init: Vec<Utf8PathBuf>, //path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
-    pub depfile: Option<Utf8PathBuf>, //path to a depfile to write
 }
 
 pub const S_IFDIR: u16 = 0x4000;
@@ -220,14 +219,12 @@ impl StarnixContainerGenerator {
         Ok(builder)
     }
 
-    pub fn build(self) -> Result<()> {
+    pub fn build(self, deps: &mut Depfile) -> Result<()> {
         // Track inputs and outputs for producing a depfile for incremental build correctness.
-        let mut deps = Depfile::new();
 
         // Bootstrap the package builder with the contents of the base package, but update the
         // internal and published names.
-        let mut builder =
-            self.clone().clone_package(&self.base, &self.outdir.to_string(), &mut deps)?;
+        let mut builder = self.clone().clone_package(&self.base, &self.outdir.to_string(), deps)?;
         builder.name(&self.name);
         builder.published_name(&self.name);
         builder.manifest_blobs_relative_to(fuchsia_pkg::RelativeTo::File);
@@ -363,18 +360,6 @@ impl StarnixContainerGenerator {
             .map(|p| p.to_string()),
         );
 
-        if let Some(depfile) = self.depfile {
-            // Create the parent directory just in case it doesn't exist, which would cause depfile
-            // write to fail.
-            let dir = &depfile
-                .parent()
-                .context(format!("Getting parent dir for depfile: {}", depfile))?;
-            std::fs::create_dir_all(dir)
-                .with_context(|| format!("Creating directory for depfile: {}", dir))?;
-
-            let _ = deps.write_to(depfile);
-        }
-
         Ok(())
     }
 }
@@ -424,12 +409,12 @@ mod tests {
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
-            depfile: None,
-            fstab: None,
             init: vec![],
             skip_subpackages: false,
+            fstab: None,
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and the
         // HALs are listed as subpackages.
@@ -507,12 +492,12 @@ mod tests {
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
-            depfile: None,
-            fstab: None,
             init: vec![],
             skip_subpackages: true,
+            fstab: None,
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and the
         // HALs are not listed as subpackages.
@@ -556,12 +541,12 @@ mod tests {
             vendor: None,
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
-            depfile: None,
-            fstab: None,
             init: vec![],
             skip_subpackages: false,
+            fstab: None,
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and
         // there is an additional `.rc` file corresponding to `test-hal`.
@@ -632,12 +617,12 @@ mod tests {
             vendor: None,
             ramdisk: vec![],
             hals: vec![hal_manifest_path],
-            depfile: None,
-            fstab: None,
             init: vec![],
             skip_subpackages: false,
+            fstab: None,
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and
         // there is an additional `.xml` file corresponding to `test-hal`.
@@ -701,12 +686,12 @@ tmpfs   /data       tmpfs   defaults            wait
             vendor: None,
             ramdisk: vec![],
             hals: vec![],
-            depfile: None,
-            fstab: Some(fstab_path),
             init: vec![],
             skip_subpackages: false,
+            fstab: Some(fstab_path),
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and
         // there is an additional `.xml` file corresponding to `test-hal`.
@@ -759,12 +744,12 @@ tmpfs   /data       tmpfs   defaults            wait
             vendor: None,
             ramdisk: vec![],
             hals: vec![],
-            depfile: None,
-            fstab: None,
             init: vec![init_path],
             skip_subpackages: false,
+            fstab: None,
         };
-        container.build().unwrap();
+        let mut deps = Depfile::new();
+        container.build(&mut deps).unwrap();
 
         // Read the package manifest, and ensure the correct files are present as blobs, and
         // there is an additional `.xml` file corresponding to `test-hal`.
@@ -817,13 +802,12 @@ tmpfs   /data       tmpfs   defaults            wait
             vendor: None,
             ramdisk: vec![],
             hals: vec![],
-            depfile: None,
             fstab: None,
             init: vec![],
             skip_subpackages: false,
         };
 
-        let result = container.build();
+        let result = container.build(&mut Depfile::new());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(format!("{:#}", err).contains("Failed to extract EXT4 image"));
@@ -847,13 +831,12 @@ tmpfs   /data       tmpfs   defaults            wait
             vendor: None,
             ramdisk: vec![invalid_ramdisk_path],
             hals: vec![],
-            depfile: None,
             fstab: None,
             init: vec![],
             skip_subpackages: false,
         };
 
-        let result = container.build();
+        let result = container.build(&mut Depfile::new());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(format!("{:#}", err).contains("Failed to parse ramdisk"));

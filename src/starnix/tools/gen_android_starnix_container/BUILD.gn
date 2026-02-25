@@ -62,16 +62,14 @@ if (is_host) {
     edition = "2024"
     with_unit_tests = true
     deps = [
+      "//src/lib/depfile",
       "//src/starnix/lib/starnix_container",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:camino",
     ]
 
-    sources = [
-      "src/depfile.rs",
-      "src/main.rs",
-    ]
+    sources = [ "src/main.rs" ]
     rustenv = [ "ROOT_OUT_DIR=$relative_root_out_dir" ]
 
     configs += [ "//src/starnix/config:starnix_clippy_lints" ]

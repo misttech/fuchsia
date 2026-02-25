@@ -67,7 +67,10 @@
                         "manifest": "packages/ams-light-test"
                     }
                 ],
-                "skip_subpackages": true
+                "skip_subpackages": true,
+                "images_or_package": {
+                    "package": "product/starnix_containers/0/images_or_package/Package/package_manifest.json"
+                }
             }
         ]
     }
