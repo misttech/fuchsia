@@ -322,6 +322,52 @@
             metric_type: "Occurrence",
             selector: "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/metrics/bredr:set_connectable_false_events",
         },
+
+        // Pairing result (ID 105)
+        {
+            event_codes: [
+                12, // ErrorCentralLmpTransactionCollision
+            ],
+            metric_id: 105,
+            metric_type: "Occurrence",
+            selector: [
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/secure_simple_pairing_state:central_lmp_transaction_collision",
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/legacy_pairing_state:central_lmp_transaction_collision",
+            ],
+        },
+        {
+            event_codes: [
+                13, // ErrorCentralDifferentTransactionCollision
+            ],
+            metric_id: 105,
+            metric_type: "Occurrence",
+            selector: [
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/secure_simple_pairing_state:central_different_transaction_collision",
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/legacy_pairing_state:central_different_transaction_collision",
+            ],
+        },
+        {
+            event_codes: [
+                14, // ErrorPeripheralLmpTransactionCollision
+            ],
+            metric_id: 105,
+            metric_type: "Occurrence",
+            selector: [
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/secure_simple_pairing_state:peripheral_lmp_transaction_collision",
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/legacy_pairing_state:peripheral_lmp_transaction_collision",
+            ],
+        },
+        {
+            event_codes: [
+                15, // ErrorPeripheralDifferentTransactionCollision
+            ],
+            metric_id: 105,
+            metric_type: "Occurrence",
+            selector: [
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/secure_simple_pairing_state:peripheral_different_transaction_collision",
+                "core/bluetooth-core/bt-host-collection\\:bt-host_*:root/adapter/bredr_connection_manager/connections/connection_*/pairing_state_manager/legacy_pairing_state:peripheral_different_transaction_collision",
+            ],
+        },
     ],
     poll_rate_sec: 300,
     project_id: 2322225253,
