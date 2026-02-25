@@ -52,3 +52,10 @@ group("e2e_tests") {
       deps + public_deps + data_deps == [],
       "The workbench product does not support running the `e2e_tests` group in infra.")
 }
+
+# WARNING: Known to infrastructure.
+group("performance_tests") {
+  testonly = true
+
+  deps = [ "//src/tests/end_to_end/perf:test" ]
+}
