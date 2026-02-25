@@ -324,6 +324,20 @@ __EXPORT zx_status_t fdf_env_set_thread_limit(const char* scheduler_role, size_t
       std::string_view(scheduler_role, scheduler_role_len), max_threads);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+__EXPORT uint32_t fdf_env_get_scheduler_role_opts(const char* scheduler_role,
+                                                  size_t scheduler_role_len) {
+  return driver_runtime::DispatcherCoordinator::GetSchedulerRoleOpts(
+      std::string_view(scheduler_role, scheduler_role_len));
+}
+
+__EXPORT zx_status_t fdf_env_set_scheduler_role_opts(const char* scheduler_role,
+                                                     size_t scheduler_role_len, uint32_t options) {
+  return driver_runtime::DispatcherCoordinator::SetSchedulerRoleOpts(
+      std::string_view(scheduler_role, scheduler_role_len), options);
+}
+#endif
+
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
 __EXPORT zx_status_t fdf_env_get_driver_on_tid(zx_koid_t tid, const void** out_driver) {
   if (!out_driver) {

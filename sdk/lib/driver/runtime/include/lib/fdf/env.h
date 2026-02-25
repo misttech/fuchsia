@@ -151,6 +151,30 @@ uint32_t fdf_env_get_thread_limit(const char* scheduler_role, size_t scheduler_r
 zx_status_t fdf_env_set_thread_limit(const char* scheduler_role, size_t scheduler_role_len,
                                      uint32_t max_threads);
 
+/// Returns the currently set options for the scheduler role as a uint32_t bitmask.
+//
+// |scheduler_role| is the name of the role which is passed when creating dispatchers.
+// |scheduler_role_len| is the length of the string, without including the terminating
+// NULL character.
+uint32_t fdf_env_get_scheduler_role_opts(const char* scheduler_role, size_t scheduler_role_len)
+    ZX_AVAILABLE_SINCE(NEXT);
+
+// Sets the options for the given scheduler role. This can be used to enforce restrictions
+// on the kinds of dispatchers that can be created on this scheduler role.
+//
+// |scheduler_role| is the name of the role which is passed when creating dispatchers.
+// |scheduler_role_len| is the length of the string, without including the terminating
+// NULL character.
+// |options| is the new options for the scheduler role.
+//
+// # Errors
+//
+// ZX_ERR_INVALID_ARGS: |options| contains unknown or invalid options.
+// ZX_ERR_NOT_SUPPORTED: |options| contains an option that wouldn't allow a dispatcher that
+// already exists on this scheduler role.
+zx_status_t fdf_env_set_scheduler_role_opts(const char* scheduler_role, size_t scheduler_role_len,
+                                            uint32_t options) ZX_AVAILABLE_SINCE(NEXT);
+
 // Adds an allowed scheduler role for the given driver.
 void fdf_env_add_allowed_scheduler_role_for_driver(const void* driver, const char* role,
                                                    size_t role_length) ZX_AVAILABLE_SINCE(27);

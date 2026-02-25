@@ -1418,9 +1418,11 @@ inline constexpr std::string_view kRestrictedDriverRuntimeSymbols[] = {
     "fdf_env_dispatcher_get_dump_deprecated",
     "fdf_env_dispatcher_has_queued_tasks",
     "fdf_env_get_current_driver",
+    "fdf_env_get_scheduler_role_opts",
     "fdf_env_get_thread_limit",
     "fdf_env_register_driver_entry",
     "fdf_env_register_driver_exit",
+    "fdf_env_set_scheduler_role_opts",
     "fdf_env_set_thread_limit",
     "fdf_env_shutdown_dispatchers_async",
     // keep-sorted end

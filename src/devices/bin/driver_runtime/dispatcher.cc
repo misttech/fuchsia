@@ -1735,8 +1735,8 @@ zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatc
 uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) {
   auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
-    if (result.is_error()) {
+    auto result = GetDispatcherCoordinator().GetThreadPool(scheduler_role);
+    if (!result.has_value()) {
       return 0;
     }
     thread_pool = *result;
@@ -1751,11 +1751,38 @@ zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_rol
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
     auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
     if (result.is_error()) {
-      return 0;
+      return result.error_value();
     }
     thread_pool = *result;
   }
   return thread_pool->set_thread_limit(max_threads);
+}
+
+// static
+uint32_t DispatcherCoordinator::GetSchedulerRoleOpts(std::string_view scheduler_role) {
+  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+    auto result = GetDispatcherCoordinator().GetThreadPool(scheduler_role);
+    if (!result.has_value()) {
+      return 0;
+    }
+    thread_pool = *result;
+  }
+  return thread_pool->scheduler_role_options();
+}
+
+// static
+zx_status_t DispatcherCoordinator::SetSchedulerRoleOpts(std::string_view scheduler_role,
+                                                        uint32_t opts) {
+  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
+    if (result.is_error()) {
+      return result.error_value();
+    }
+    thread_pool = *result;
+  }
+  return thread_pool->set_scheduler_role_options(opts);
 }
 
 zx_duration_mono_t DispatcherCoordinator::ScanThreadsForStalls() {
@@ -1914,6 +1941,16 @@ void DispatcherCoordinator::Reset() {
     unmanaged_thread_pool_.value().Reset();
   }
   unmanaged_thread_pool_.reset();
+}
+
+std::optional<Dispatcher::ThreadPool*> DispatcherCoordinator::GetThreadPool(
+    std::string_view scheduler_role) {
+  fbl::AutoLock al(&lock_);
+  auto iter = role_to_thread_pool_.find(std::string(scheduler_role));
+  if (iter != role_to_thread_pool_.end()) {
+    return std::make_optional(&(*iter));
+  }
+  return std::nullopt;
 }
 
 zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool(

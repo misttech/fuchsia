@@ -16,7 +16,7 @@ pub const DRIVER_REGISTRATION_VERSION_MAX: u32 = 1;
 pub type fdf_handle_t = zx_handle_t;
 pub type fdf_txid_t = zx_txid_t;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct fdf_arena {
     _unused: [u8; 0],
 }
@@ -104,7 +104,7 @@ unsafe extern "C" {
     pub fn fdf_arena_drop_ref(arena: *mut fdf_arena_t);
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct fdf_dispatcher {
     _unused: [u8; 0],
 }
@@ -355,6 +355,20 @@ unsafe extern "C" {
         scheduler_role: *const ::core::ffi::c_char,
         scheduler_role_len: usize,
         max_threads: u32,
+    ) -> zx_status_t;
+}
+unsafe extern "C" {
+    #[doc = " Returns the currently set options for the scheduler role as a uint32_t bitmask."]
+    pub fn fdf_env_get_scheduler_role_opts(
+        scheduler_role: *const ::core::ffi::c_char,
+        scheduler_role_len: usize,
+    ) -> u32;
+}
+unsafe extern "C" {
+    pub fn fdf_env_set_scheduler_role_opts(
+        scheduler_role: *const ::core::ffi::c_char,
+        scheduler_role_len: usize,
+        options: u32,
     ) -> zx_status_t;
 }
 unsafe extern "C" {

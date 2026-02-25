@@ -172,6 +172,21 @@ class Dispatcher : public async_dispatcher_t,
       return ZX_OK;
     }
 
+    uint32_t scheduler_role_options() const {
+      fbl::AutoLock al(&lock_);
+      return scheduler_role_options_;
+    }
+
+    zx_status_t set_scheduler_role_options(uint32_t options) {
+      // reject unknown options
+      if (options != 0) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+      fbl::AutoLock al(&lock_);
+      scheduler_role_options_ = options;
+      return ZX_OK;
+    }
+
     bool ScanThreadsForStalls();
 
     uint32_t num_dispatchers() const {
@@ -272,6 +287,10 @@ class Dispatcher : public async_dispatcher_t,
     std::string scheduler_role_;
 
     mutable fbl::Mutex lock_;
+    // Options that affect the kinds of dispatchers that can be created on this thread pool.
+    // This is guarded by the lock because we have to prevent the precondition specified by
+    // these options from being violated while they're being set.
+    uint32_t scheduler_role_options_ __TA_GUARDED(&lock_) = 0;
     // Tracks the number of dispatchers which have sync calls allowed. We want to only spawn enough
     // threads needed so that every sync call dispatcher can have a thread to itself, at most.
     // See |MaxThreadsLocked| for more info.
@@ -914,6 +933,8 @@ class DispatcherCoordinator {
   // Implementation of fdf_env_*.
   static uint32_t GetThreadLimit(std::string_view scheduler_role);
   static zx_status_t SetThreadLimit(std::string_view scheduler_role, uint32_t max_threads);
+  static uint32_t GetSchedulerRoleOpts(std::string_view scheduler_role);
+  static zx_status_t SetSchedulerRoleOpts(std::string_view scheduler_role, uint32_t opts);
   zx_duration_mono_t ScanThreadsForStalls();
   void RegisterStallScanner(fdf_env_stall_scanner_t* stall_scanner);
   void TriggerStallScanner();
@@ -939,6 +960,8 @@ class DispatcherCoordinator {
   // deadlock.
   void Reset();
 
+  // Returns the thread pool for |scheduler_role| if it exists.
+  std::optional<Dispatcher::ThreadPool*> GetThreadPool(std::string_view scheduler_role);
   // Returns the thread pool for |scheduler_role|.
   // If the thread pool does not exists, creates the thread pool and starts the initial thread.
   zx::result<Dispatcher::ThreadPool*> GetOrCreateThreadPool(std::string_view scheduler_role);
