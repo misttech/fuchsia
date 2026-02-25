@@ -7,7 +7,7 @@ use super::{
 };
 use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
 use crate::utils::Size;
-use crate::{input_device, mouse_binding, touch_binding};
+use crate::{input_device, metrics, mouse_binding, touch_binding};
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use core::cell::RefCell;
@@ -15,6 +15,7 @@ use fidl_fuchsia_input_report as fidl_input_report;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{ArrayProperty, Node as InspectNode};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -63,6 +64,7 @@ impl ContenderFactory for GestureArenaInitialContenders {
 pub fn make_input_handler(
     inspect_node: &InspectNode,
     input_handlers_node: &InspectNode,
+    metrics_logger: metrics::MetricsLogger,
 ) -> std::rc::Rc<dyn crate::input_handler::BatchInputHandler> {
     // TODO(https://fxbug.dev/42056283): Remove log message.
     log::info!("touchpad: created input handler");
@@ -71,6 +73,7 @@ pub fn make_input_handler(
         inspect_node,
         MAX_TOUCHPAD_EVENT_LOG_ENTRIES,
         input_handlers_node,
+        metrics_logger,
     ))
 }
 
@@ -344,6 +347,8 @@ pub(super) struct GestureArena {
     contender_factory: Box<dyn ContenderFactory>,
     mutable_state: RefCell<MutableState>,
     inspect_log: RefCell<BoundedListNode>,
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
     /// The inventory of this handler's Inspect status.
     inspect_status: InputHandlerStatus,
 }
@@ -354,9 +359,16 @@ impl GestureArena {
         contender_factory: Box<dyn ContenderFactory>,
         inspector: &fuchsia_inspect::Inspector,
         max_inspect_log_entries: usize,
+        metrics_logger: metrics::MetricsLogger,
     ) -> GestureArena {
         let test_node = inspector.root().create_child("test_node");
-        Self::new_internal(contender_factory, inspector.root(), max_inspect_log_entries, &test_node)
+        Self::new_internal(
+            contender_factory,
+            inspector.root(),
+            max_inspect_log_entries,
+            &test_node,
+            metrics_logger,
+        )
     }
 
     fn new_internal(
@@ -364,6 +376,7 @@ impl GestureArena {
         inspect_node: &InspectNode,
         max_inspect_log_entries: usize,
         input_handlers_node: &InspectNode,
+        metrics_logger: metrics::MetricsLogger,
     ) -> GestureArena {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
@@ -377,6 +390,7 @@ impl GestureArena {
                 inspect_node.create_child("gestures_event_log"),
                 max_inspect_log_entries,
             )),
+            metrics_logger,
             inspect_status,
         }
     }
@@ -1075,8 +1089,10 @@ impl InputHandler for GestureArena {
                 vec![input_event]
             }
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                );
                 vec![input_event]
             }
         }
@@ -1750,7 +1766,7 @@ mod tests {
         };
         use crate::input_handler::InputHandlerStatus;
         use crate::utils::Size;
-        use crate::{Position, input_device, touch_binding};
+        use crate::{Position, input_device, metrics, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -1769,6 +1785,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             })
         }
@@ -1785,6 +1802,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             });
             arena.handle_input_event(make_unhandled_touchpad_event()).await;
@@ -1803,6 +1821,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             });
             arena.handle_input_event(make_unhandled_mouse_event()).await;
@@ -1822,6 +1841,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             });
             arena.handle_input_event(make_unhandled_keyboard_event()).await;
@@ -2167,7 +2187,7 @@ mod tests {
             make_unhandled_mouse_event, make_unhandled_touchpad_event,
         };
         use crate::input_handler::InputHandlerStatus;
-        use crate::{Position, input_device, mouse_binding, touch_binding};
+        use crate::{Position, input_device, metrics, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -2220,6 +2240,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             })
         }
@@ -2739,7 +2760,7 @@ mod tests {
             make_unhandled_mouse_event, make_unhandled_touchpad_event,
         };
         use crate::input_handler::InputHandlerStatus;
-        use crate::{Position, input_device, mouse_binding, touch_binding};
+        use crate::{Position, input_device, metrics, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -2784,6 +2805,7 @@ mod tests {
                     fuchsia_inspect::Inspector::default().root().create_child("some_key"),
                     1,
                 )),
+                metrics_logger: metrics::MetricsLogger::default(),
                 inspect_status: InputHandlerStatus::default(),
             })
         }
@@ -3186,7 +3208,7 @@ mod tests {
             ContenderFactoryOnceOrPanic, StubContender, TOUCH_CONTACT_INDEX_FINGER,
         };
         use crate::utils::Size;
-        use crate::{Position, input_device, touch_binding};
+        use crate::{Position, input_device, metrics, touch_binding};
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report::{self as fidl_input_report, UnitType};
 
@@ -3294,6 +3316,7 @@ mod tests {
                 Box::new(contender_factory),
                 &fuchsia_inspect::Inspector::default(),
                 1,
+                metrics::MetricsLogger::default(),
             ));
             contender.set_next_result(ExamineEventResult::Mismatch(Reason::Basic("some reason")));
             arena
@@ -3337,6 +3360,7 @@ mod tests {
                 Box::new(contender_factory),
                 &fuchsia_inspect::Inspector::default(),
                 1,
+                metrics::MetricsLogger::default(),
             ));
             contender.set_next_result(ExamineEventResult::Mismatch(Reason::Basic("some reason")));
 
@@ -3383,6 +3407,7 @@ mod tests {
                 Box::new(contender_factory),
                 &fuchsia_inspect::Inspector::default(),
                 1,
+                metrics::MetricsLogger::default(),
             ));
             contender.set_next_result(ExamineEventResult::Mismatch(Reason::Basic("some reason")));
 
@@ -3452,6 +3477,7 @@ mod tests {
                 Box::new(contender_factory),
                 &fuchsia_inspect::Inspector::default(),
                 1,
+                metrics::MetricsLogger::default(),
             ));
             contender.set_next_result(ExamineEventResult::Mismatch(Reason::Basic("some reason")));
 
@@ -3526,6 +3552,7 @@ mod tests {
                 Box::new(contender_factory),
                 &fuchsia_inspect::Inspector::default(),
                 1,
+                metrics::MetricsLogger::default(),
             ));
             contender.set_next_result(ExamineEventResult::Mismatch(Reason::Basic("some reason")));
             arena
@@ -3550,7 +3577,9 @@ mod tests {
             make_touchpad_descriptor, make_unhandled_keyboard_event, make_unhandled_mouse_event,
             make_unhandled_touchpad_event,
         };
-        use crate::{Position, Size, input_device, keyboard_binding, mouse_binding, touch_binding};
+        use crate::{
+            Position, Size, input_device, keyboard_binding, metrics, mouse_binding, touch_binding,
+        };
         use assert_matches::assert_matches;
         use maplit::hashset;
         use std::rc::Rc;
@@ -3574,6 +3603,7 @@ mod tests {
                 &inspector.root(),
                 2,
                 &fake_handlers_node,
+                metrics::MetricsLogger::default(),
             );
             diagnostics_assertions::assert_data_tree!(inspector, root: {
                 gestures_event_log: {},
@@ -3602,6 +3632,7 @@ mod tests {
                 &inspector.root(),
                 1,
                 &fake_handlers_node,
+                metrics::MetricsLogger::default(),
             ));
 
             arena.clone().handle_input_event(make_unhandled_touchpad_event()).await;
@@ -3669,7 +3700,12 @@ mod tests {
                 detailed_int_mismatch_contender,
                 gesture_matching_contender.clone(),
             ]));
-            let arena = Rc::new(GestureArena::new_for_test(contender_factory, &inspector, 100));
+            let arena = Rc::new(GestureArena::new_for_test(
+                contender_factory,
+                &inspector,
+                100,
+                metrics::MetricsLogger::default(),
+            ));
             let touchpad_descriptor = input_device::InputDeviceDescriptor::Touchpad(
                 touch_binding::TouchpadDeviceDescriptor {
                     device_id: 1,
@@ -3929,7 +3965,12 @@ mod tests {
             let contender_factory = Box::new(ContenderFactoryOnceOrPanic::new(vec![
                 gesture_matching_contender.clone(),
             ]));
-            let arena = Rc::new(GestureArena::new_for_test(contender_factory, &inspector, 100));
+            let arena = Rc::new(GestureArena::new_for_test(
+                contender_factory,
+                &inspector,
+                100,
+                metrics::MetricsLogger::default(),
+            ));
 
             gesture_matching_contender
                 .set_next_result(ExamineEventResult::Contender(gesture_matching_contender.clone()));
@@ -4027,6 +4068,7 @@ mod tests {
                 }),
                 &inspector,
                 100,
+                metrics::MetricsLogger::default(),
             ));
             matching_contender
                 .set_next_result(ExamineEventResult::Contender(matching_contender.clone()));
@@ -4122,6 +4164,7 @@ mod tests {
                 Box::new(EmptyContenderFactory {}),
                 &inspector,
                 2,
+                metrics::MetricsLogger::default(),
             ));
             arena.clone().handle_input_event(make_unhandled_touchpad_event()).await; // 0
             arena.clone().handle_input_event(make_unhandled_touchpad_event()).await; // 1
@@ -4144,6 +4187,7 @@ mod tests {
                 Box::new(EmptyContenderFactory {}),
                 &inspector,
                 2,
+                metrics::MetricsLogger::default(),
             ));
             let mut handle_event_fut = arena.clone().handle_input_event(input_device::InputEvent {
                 device_event: input_device::InputDeviceEvent::Touchpad(

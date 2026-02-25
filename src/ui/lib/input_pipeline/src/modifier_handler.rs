@@ -6,10 +6,12 @@ use crate::input_device::{
     Handled, InputDeviceEvent, InputEvent, InputEventType, UnhandledInputEvent,
 };
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
+use crate::metrics;
 use async_trait::async_trait;
 use fidl_fuchsia_ui_input3::{KeyMeaning, Modifiers, NonPrintableKey};
 use fuchsia_inspect::health::Reporter;
 use keymaps::{LockStateKeys, ModifierState};
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -29,6 +31,9 @@ pub struct ModifierHandler {
 
     /// The tracked lock state.
     lock_state: RefCell<LockStateKeys>,
+
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
@@ -92,8 +97,13 @@ impl UnhandledInputHandler for ModifierHandler {
             }
             // Pass other events through.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }
@@ -101,8 +111,10 @@ impl UnhandledInputHandler for ModifierHandler {
 }
 
 impl ModifierHandler {
-    /// Creates a new [ModifierHandler].
-    pub fn new(input_handlers_node: &fuchsia_inspect::Node) -> Rc<Self> {
+    pub fn new(
+        input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Rc<Self> {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
             "modifier_handler",
@@ -111,6 +123,7 @@ impl ModifierHandler {
         Rc::new(Self {
             modifier_state: RefCell::new(ModifierState::new()),
             lock_state: RefCell::new(LockStateKeys::new()),
+            metrics_logger,
             inspect_status,
         })
     }
@@ -123,19 +136,28 @@ pub struct ModifierMeaningHandler {
     /// The tracked state of the modifiers.
     modifier_state: RefCell<ModifierState>,
 
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
+
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
 }
 
 impl ModifierMeaningHandler {
-    /// Creates a new [ModifierMeaningHandler].
-    pub fn new(input_handlers_node: &fuchsia_inspect::Node) -> Rc<Self> {
+    pub fn new(
+        input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Rc<Self> {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
             "modifier_meaning_handler",
             /* generates_events */ false,
         );
-        Rc::new(Self { modifier_state: RefCell::new(ModifierState::new()), inspect_status })
+        Rc::new(Self {
+            modifier_state: RefCell::new(ModifierState::new()),
+            metrics_logger,
+            inspect_status,
+        })
     }
 }
 
@@ -203,8 +225,13 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             }
             // Pass other events through.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }
@@ -236,7 +263,7 @@ mod tests {
     async fn test_decoration() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ModifierHandler::new(&test_node);
+        let handler = ModifierHandler::new(&test_node, metrics::MetricsLogger::default());
         let input_event =
             get_unhandled_input_event(KeyboardEvent::new(Key::CapsLock, KeyEventType::Pressed));
         let result = handler.handle_unhandled_input_event(input_event.clone()).await;
@@ -255,7 +282,7 @@ mod tests {
     async fn test_key_meaning_decoration() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ModifierMeaningHandler::new(&test_node);
+        let handler = ModifierMeaningHandler::new(&test_node, metrics::MetricsLogger::default());
         {
             let input_event = get_unhandled_input_event(
                 KeyboardEvent::new(Key::RightAlt, KeyEventType::Pressed)
@@ -311,7 +338,7 @@ mod tests {
 
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ModifierHandler::new(&test_node);
+        let handler = ModifierHandler::new(&test_node, metrics::MetricsLogger::default());
         let clone_handler = move || handler.clone();
         let result = futures::future::join_all(
             input_events
@@ -368,7 +395,7 @@ mod tests {
 
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ModifierHandler::new(&test_node);
+        let handler = ModifierHandler::new(&test_node, metrics::MetricsLogger::default());
         let clone_handler = move || handler.clone();
         let result = futures::future::join_all(
             input_events
@@ -411,8 +438,10 @@ mod tests {
     async fn modifier_handlers_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let _modifier_handler = ModifierHandler::new(&fake_handlers_node);
-        let _modifier_meaning_handler = ModifierMeaningHandler::new(&fake_handlers_node);
+        let _modifier_handler =
+            ModifierHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
+        let _modifier_meaning_handler =
+            ModifierMeaningHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 modifier_handler: {
@@ -445,8 +474,10 @@ mod tests {
     async fn modifier_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let modifier_handler = ModifierHandler::new(&fake_handlers_node);
-        let modifier_meaning_handler = ModifierMeaningHandler::new(&fake_handlers_node);
+        let modifier_handler =
+            ModifierHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
+        let modifier_meaning_handler =
+            ModifierMeaningHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         let device_descriptor =
             InputDeviceDescriptor::Keyboard(keyboard_binding::KeyboardDeviceDescriptor {
                 keys: vec![Key::A, Key::B, Key::RightAlt],

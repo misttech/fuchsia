@@ -94,6 +94,7 @@ pub async fn handle_input(
     let interaction_state_handler = InteractionStateHandler::new(
         zx::MonotonicDuration::from_millis(idle_threshold_ms as i64),
         &input_handlers_node,
+        metrics_logger.clone(),
         interaction_state_publisher,
         suspend_enabled,
         enable_button_baton_passing,
@@ -314,18 +315,25 @@ async fn register_keyboard_related_input_handlers(
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     // Add as early as possible, but not before inspect handlers.
-    let mut assembly = add_chromebook_keyboard_handler(assembly, input_handlers_node);
+    let mut assembly =
+        add_chromebook_keyboard_handler(assembly, input_handlers_node, metrics_logger.clone());
 
     // Display ownership deals with keyboard events.
     assembly = assembly.add_display_ownership(display_ownership_event, input_handlers_node);
-    assembly = add_modifier_handler(assembly, input_handlers_node);
+    assembly = add_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
 
     // Add the text settings handler early in the pipeline to use the
     // keymap settings in the remainder of the pipeline.
     assembly = add_text_settings_handler(assembly, input_handlers_node, metrics_logger.clone());
-    assembly = add_keymap_handler(assembly, input_handlers_node);
-    assembly = add_key_meaning_modifier_handler(assembly, input_handlers_node);
-    assembly = add_dead_keys_handler(assembly, icu_data_loader, input_handlers_node);
+    assembly = add_keymap_handler(assembly, input_handlers_node, metrics_logger.clone());
+    assembly =
+        add_key_meaning_modifier_handler(assembly, input_handlers_node, metrics_logger.clone());
+    assembly = add_dead_keys_handler(
+        assembly,
+        icu_data_loader,
+        input_handlers_node,
+        metrics_logger.clone(),
+    );
 
     // ime_handler is the last handler for key event handling, it sends out key events to
     // listeners. Please double check tracing events, when changing the handlers assembly order.
@@ -350,8 +358,12 @@ async fn register_mouse_related_input_handlers(
     // Add the touchpad gestures handler after the click-drag handler,
     // since the gestures handler creates mouse events but already
     // disambiguates between click and drag gestures.
-    let mut assembly =
-        add_touchpad_gestures_handler(assembly, input_pipeline_node, input_handlers_node);
+    let mut assembly = add_touchpad_gestures_handler(
+        assembly,
+        input_pipeline_node,
+        input_handlers_node,
+        metrics_logger.clone(),
+    );
 
     // Add handler to scale pointer motion based on speed of sensor
     // motion. This allows touchpads and mice to be easily used for
@@ -508,10 +520,12 @@ async fn build_input_pipeline_assembly(
 fn add_chromebook_keyboard_handler(
     assembly: InputPipelineAssembly,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     assembly.add_handler(
         input_pipeline::chromebook_keyboard_handler::ChromebookKeyboardHandler::new(
             input_handlers_node,
+            metrics_logger,
         ),
     )
 }
@@ -520,9 +534,12 @@ fn add_chromebook_keyboard_handler(
 fn add_modifier_handler(
     assembly: InputPipelineAssembly,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
-    assembly
-        .add_handler(input_pipeline::modifier_handler::ModifierHandler::new(input_handlers_node))
+    assembly.add_handler(input_pipeline::modifier_handler::ModifierHandler::new(
+        input_handlers_node,
+        metrics_logger,
+    ))
 }
 
 /// Hooks up the modifier keys handler based on key meanings.  This must come
@@ -530,9 +547,11 @@ fn add_modifier_handler(
 fn add_key_meaning_modifier_handler(
     assembly: InputPipelineAssembly,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     assembly.add_handler(input_pipeline::modifier_handler::ModifierMeaningHandler::new(
         input_handlers_node,
+        metrics_logger,
     ))
 }
 
@@ -569,8 +588,9 @@ fn add_text_settings_handler(
 fn add_keymap_handler(
     assembly: InputPipelineAssembly,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
-    assembly.add_handler(keymap_handler::KeymapHandler::new(input_handlers_node))
+    assembly.add_handler(keymap_handler::KeymapHandler::new(input_handlers_node, metrics_logger))
 }
 
 /// Hooks up the dead keys handler. This allows us to input accented characters by composing a
@@ -579,8 +599,13 @@ fn add_dead_keys_handler(
     assembly: InputPipelineAssembly,
     loader: icu_data::Loader,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
-    assembly.add_handler(dead_keys_handler::DeadKeysHandler::new(loader, input_handlers_node))
+    assembly.add_handler(dead_keys_handler::DeadKeysHandler::new(
+        loader,
+        input_handlers_node,
+        metrics_logger,
+    ))
 }
 
 async fn add_ime(
@@ -630,10 +655,12 @@ fn add_touchpad_gestures_handler(
     assembly: InputPipelineAssembly,
     inspect_node: &inspect::Node,
     input_handlers_node: &inspect::Node,
+    metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     assembly.add_handler(input_pipeline::make_touchpad_gestures_handler(
         inspect_node,
         input_handlers_node,
+        metrics_logger,
     ))
 }
 

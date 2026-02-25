@@ -19,6 +19,7 @@ use crate::input_device::{
 };
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
+use crate::metrics;
 use async_trait::async_trait;
 use fidl_fuchsia_input::Key;
 use fidl_fuchsia_ui_input3::KeyEventType;
@@ -26,6 +27,7 @@ use fuchsia_inspect::health::Reporter;
 use fuchsia_trace as ftrace;
 use keymaps::KeyState;
 use maplit::hashmap;
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -79,6 +81,9 @@ static REMAPPED_KEYS: LazyLock<HashMap<Key, KeyPair>> = LazyLock::new(|| {
 pub struct ChromebookKeyboardHandler {
     // Handler's mutable state must be accessed via RefCell.
     state: RefCell<Inner>,
+
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
@@ -153,8 +158,10 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
             }
             // Pass other events unchanged.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                );
                 vec![InputEvent::from(input_event)]
             }
         }
@@ -163,13 +170,16 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
 
 impl ChromebookKeyboardHandler {
     /// Creates a new instance of the handler.
-    pub fn new(input_handlers_node: &fuchsia_inspect::Node) -> Rc<Self> {
+    pub fn new(
+        input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Rc<Self> {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
             "chromebook_keyboard_handler",
             /* generates_events */ true,
         );
-        Rc::new(Self { state: RefCell::new(Default::default()), inspect_status })
+        Rc::new(Self { state: RefCell::new(Default::default()), metrics_logger, inspect_status })
     }
 
     /// Gets the next event time that is at least as large as event_time, and
@@ -503,7 +513,7 @@ mod tests {
     fn next_event_time() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         assert_eq!(
             zx::MonotonicInstant::from_nanos(10),
             handler.next_event_time(zx::MonotonicInstant::from_nanos(10))
@@ -549,7 +559,7 @@ mod tests {
     async fn conversion_matching_keyboard(input_key: Key, output_key: Key) {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -583,7 +593,7 @@ mod tests {
     async fn conversion_mismatching_keyboard(input_key: Key, output_key: Key) {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MISMATCHING_KEYBOARD_DESCRIPTOR,
@@ -610,7 +620,7 @@ mod tests {
     async fn search_key_only() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -639,7 +649,7 @@ mod tests {
     async fn f1_conversion() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -691,7 +701,7 @@ mod tests {
     async fn with_search_key_pressed(input_key: Key, output_key: Key) {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -723,7 +733,7 @@ mod tests {
     async fn search_released_before_f1() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -762,7 +772,7 @@ mod tests {
     async fn search_key_a_is_delayed_leftmeta_a() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -800,7 +810,7 @@ mod tests {
     async fn f1_and_f2_interleaved_conversion() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -839,7 +849,7 @@ mod tests {
     async fn search_pressed_before_f1_released() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -883,7 +893,7 @@ mod tests {
     async fn search_pressed_while_f1_and_f2_pressed() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -935,7 +945,7 @@ mod tests {
     async fn key_combination() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
-        let handler = ChromebookKeyboardHandler::new(&test_node);
+        let handler = ChromebookKeyboardHandler::new(&test_node, metrics::MetricsLogger::default());
         let input = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,
@@ -976,7 +986,8 @@ mod tests {
     async fn chromebook_keyboard_handler_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let _handler = ChromebookKeyboardHandler::new(&fake_handlers_node);
+        let _handler =
+            ChromebookKeyboardHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 chromebook_keyboard_handler: {
@@ -998,7 +1009,8 @@ mod tests {
     async fn chromebook_keyboard_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let handler = ChromebookKeyboardHandler::new(&fake_handlers_node);
+        let handler =
+            ChromebookKeyboardHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         let events = new_key_sequence(
             zx::MonotonicInstant::from_nanos(42),
             &MATCHING_KEYBOARD_DESCRIPTOR,

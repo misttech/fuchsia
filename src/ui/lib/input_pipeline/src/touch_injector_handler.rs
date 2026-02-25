@@ -114,8 +114,10 @@ impl BatchInputHandler for TouchInjectorHandler {
         let has_different_device_events =
             events.iter().any(|e| e.device_descriptor.device_id() != device_id);
         if has_different_device_events {
-            // TODO: b/478249522 - add metrics logger, this should never happen because the batching is from drivers.
-            log::warn!("TouchInjectorHandler: Received events from different devices");
+            self.metrics_logger.log_error(
+                InputPipelineErrorMetricDimensionEvent::TouchInjectorReceivedInputFrameContainsEventsFromMultipleDevices,
+                std::format!("TouchInjectorHandler: Received events from different devices"),
+            );
             return events;
         }
 

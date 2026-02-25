@@ -7,10 +7,10 @@
 //! See [KeymapHandler] for details.
 
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
-use crate::{input_device, keyboard_binding};
+use crate::{input_device, keyboard_binding, metrics};
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
-
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,13 +19,16 @@ use std::rc::Rc;
 /// but does not lend itself to generalized text editing.
 ///
 /// Create a new one with [KeymapHandler::new].
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct KeymapHandler {
     /// Tracks the state of the modifier keys.
     modifier_state: RefCell<keymaps::ModifierState>,
 
     /// Tracks the lock state (NumLock, CapsLock).
     lock_state: RefCell<keymaps::LockStateKeys>,
+
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
@@ -77,8 +80,10 @@ impl UnhandledInputHandler for KeymapHandler {
             }
             // Pass other events unchanged.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                );
                 vec![input_device::InputEvent::from(input_event)]
             }
         }
@@ -87,7 +92,10 @@ impl UnhandledInputHandler for KeymapHandler {
 
 impl KeymapHandler {
     /// Creates a new instance of the keymap handler.
-    pub fn new(input_handlers_node: &fuchsia_inspect::Node) -> Rc<Self> {
+    pub fn new(
+        input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
+    ) -> Rc<Self> {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
             "keymap_handler",
@@ -96,6 +104,7 @@ impl KeymapHandler {
         Rc::new(Self {
             modifier_state: Default::default(),
             lock_state: Default::default(),
+            metrics_logger,
             inspect_status,
         })
     }
@@ -281,7 +290,7 @@ mod tests {
         let test_node = inspector.root().create_child("test_node");
         for test in &tests {
             let mut actual: Vec<Option<finput3::KeyMeaning>> = vec![];
-            let handler = KeymapHandler::new(&test_node);
+            let handler = KeymapHandler::new(&test_node, metrics::MetricsLogger::default());
             for event in &test.events {
                 let mut result = handler
                     .clone()
@@ -300,7 +309,7 @@ mod tests {
     async fn keymap_handler_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let _handler = KeymapHandler::new(&fake_handlers_node);
+        let _handler = KeymapHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 keymap_handler: {
@@ -322,7 +331,8 @@ mod tests {
     async fn keymap_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let keymap_handler = KeymapHandler::new(&fake_handlers_node);
+        let keymap_handler =
+            KeymapHandler::new(&fake_handlers_node, metrics::MetricsLogger::default());
         let device_descriptor = input_device::InputDeviceDescriptor::Keyboard(
             keyboard_binding::KeyboardDeviceDescriptor {
                 keys: vec![finput::Key::A, finput::Key::B],

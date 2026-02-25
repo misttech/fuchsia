@@ -44,7 +44,7 @@ fn log_on_failure(result: Result<Result<(), metrics::Error>, fidl::Error>) {
 }
 
 /// A client connection to the Cobalt logging service.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct MetricsLogger(Option<metrics::MetricEventLoggerProxy>);
 
 impl MetricsLogger {

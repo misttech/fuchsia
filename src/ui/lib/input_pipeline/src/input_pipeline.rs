@@ -112,7 +112,11 @@ impl InputPipelineAssembly {
         display_ownership_event: zx::Event,
         input_handlers_node: &fuchsia_inspect::Node,
     ) -> InputPipelineAssembly {
-        let h = DisplayOwnership::new(display_ownership_event, input_handlers_node);
+        let h = DisplayOwnership::new(
+            display_ownership_event,
+            input_handlers_node,
+            self.metrics_logger.clone(),
+        );
         let metrics_logger_clone = self.metrics_logger.clone();
         let h_clone = h.clone();
         let sender_clone = self.sender.clone();
@@ -283,7 +287,7 @@ impl InputPipeline {
         inspect_node.record_uint("handlers_healthy", handlers_count as u64);
 
         // Initializes all handlers and starts the input pipeline loop.
-        InputPipeline::run(receiver, handlers);
+        InputPipeline::run(receiver, handlers, metrics_logger.clone());
 
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
         let input_device_bindings: InputDeviceBindingHashMap = Arc::new(Mutex::new(HashMap::new()));
@@ -581,6 +585,7 @@ impl InputPipeline {
     fn run(
         mut receiver: UnboundedReceiver<Vec<input_device::InputEvent>>,
         handlers: Vec<Rc<dyn input_handler::BatchInputHandler>>,
+        metrics_logger: metrics::MetricsLogger,
     ) {
         fasync::Task::local(async move {
             for handler in &handlers {
@@ -630,8 +635,9 @@ impl InputPipeline {
                 {
                     groups_seen += 1;
                     if groups_seen == 2 {
-                        log::warn!(
-                            "it is not recommanded to contains multiple type of event in 1 send"
+                        metrics_logger.log_error(
+                            InputPipelineErrorMetricDimensionEvent::InputFrameContainsMultipleTypesOfEvents,
+                            "it is not recommended to contain multiple types of events in 1 send".to_string(),
                         );
                     }
                     let mut events_in_group: Vec<_> = event_group.collect();
@@ -931,7 +937,7 @@ mod tests {
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
         };
-        InputPipeline::run(receiver, handlers);
+        InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
 
         // Send an input event from each device.
         let first_device_events = send_input_event(first_device_binding.input_event_sender());
@@ -991,7 +997,7 @@ mod tests {
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
         };
-        InputPipeline::run(receiver, handlers);
+        InputPipeline::run(receiver, handlers, metrics::MetricsLogger::default());
 
         // Send an input event.
         let input_events = send_input_event(input_device_binding.input_event_sender());
@@ -1358,7 +1364,7 @@ mod tests {
                 .into_components();
 
         // Run the pipeline logic
-        InputPipeline::run(pipeline_receiver, handlers);
+        InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
 
         // Create a Fake event
         let fake_event = input_device::InputEvent {
@@ -1430,7 +1436,7 @@ mod tests {
                 .into_components();
 
         // Run the pipeline logic
-        InputPipeline::run(pipeline_receiver, handlers);
+        InputPipeline::run(pipeline_receiver, handlers, metrics::MetricsLogger::default());
 
         // Create events
         let mouse_event_1 = create_mouse_event(1.0, 1.0);

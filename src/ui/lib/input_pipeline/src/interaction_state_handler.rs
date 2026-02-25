@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #![cfg(fuchsia_api_level_at_least = "HEAD")]
-use crate::input_device;
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
+use crate::{input_device, metrics};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher, Subscriber};
@@ -16,6 +16,7 @@ use fuchsia_component::client::connect_to_protocol;
 
 use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -103,6 +104,9 @@ pub struct InteractionStateHandler {
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
 
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
+
     // TODO(b/443729860): Remove these temporary feature flags once enabled.
     enable_button_baton_passing: bool,
     enable_mouse_baton_passing: bool,
@@ -115,6 +119,7 @@ impl InteractionStateHandler {
     pub async fn new(
         idle_threshold_ms: zx::MonotonicDuration,
         input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
         state_publisher: InteractionStatePublisher,
         suspend_enabled: bool,
         enable_button_baton_passing: bool,
@@ -150,6 +155,7 @@ impl InteractionStateHandler {
         Rc::new(Self::new_internal(
             idle_threshold_ms,
             zx::MonotonicInstant::get(),
+            metrics_logger,
             lease_holder,
             inspect_status,
             state_publisher,
@@ -163,6 +169,7 @@ impl InteractionStateHandler {
     /// Sets the initial idleness timer relative to fake time at 0 for tests.
     async fn new_for_test(
         idle_threshold_ms: zx::MonotonicDuration,
+        metrics_logger: metrics::MetricsLogger,
         lease_holder: Option<Rc<RefCell<LeaseHolder>>>,
         state_publisher: InteractionStatePublisher,
     ) -> Rc<Self> {
@@ -178,6 +185,7 @@ impl InteractionStateHandler {
         Rc::new(Self::new_internal(
             idle_threshold_ms,
             zx::MonotonicInstant::ZERO,
+            metrics_logger,
             lease_holder,
             inspect_status,
             state_publisher,
@@ -190,6 +198,7 @@ impl InteractionStateHandler {
     fn new_internal(
         idle_threshold_ms: zx::MonotonicDuration,
         initial_timestamp: zx::MonotonicInstant,
+        metrics_logger: metrics::MetricsLogger,
         lease_holder: Option<Rc<RefCell<LeaseHolder>>>,
         inspect_status: InputHandlerStatus,
         state_publisher: InteractionStatePublisher,
@@ -208,6 +217,7 @@ impl InteractionStateHandler {
             idle_transition_task: Cell::new(Some(task)),
             last_event_time: RefCell::new(initial_timestamp),
             lease_holder,
+            metrics_logger,
             state_publisher,
             inspect_status,
             enable_button_baton_passing,
@@ -346,8 +356,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
         match unhandled_input_event.device_event {
             input_device::InputDeviceEvent::ConsumerControls(..) => {
                 if self.enable_button_baton_passing {
-                    // TODO: b/478249522 - add cobalt logging
-                    log::warn!("Button event with baton passing");
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                        "Button event with baton passing".to_string(),
+                    );
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -366,8 +378,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
             }
             input_device::InputDeviceEvent::Mouse(..) => {
                 if self.enable_mouse_baton_passing {
-                    // TODO: b/478249522 - add cobalt logging
-                    log::warn!("Mouse event with baton passing");
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                        "Mouse event with baton passing".to_string(),
+                    );
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -386,8 +400,10 @@ impl UnhandledInputHandler for InteractionStateHandler {
             }
             input_device::InputDeviceEvent::TouchScreen(..) => {
                 if self.enable_touch_baton_passing {
-                    // TODO: b/478249522 - add cobalt logging
-                    log::warn!("Touch event with baton passing");
+                    self.metrics_logger.log_error(
+                        InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                        "Touch event with baton passing".to_string(),
+                    );
                 } else {
                     fuchsia_trace::duration!("input", "interaction_state_handler[processing]");
                     // Clamp the time to now so that clients cannot send events far off
@@ -405,8 +421,13 @@ impl UnhandledInputHandler for InteractionStateHandler {
                 }
             }
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
             }
         }
 
@@ -470,6 +491,7 @@ mod tests {
         (
             InteractionStateHandler::new_for_test(
                 ACTIVITY_TIMEOUT,
+                metrics::MetricsLogger::default(),
                 lease_holder,
                 interaction_hanging_get.new_publisher(),
             )

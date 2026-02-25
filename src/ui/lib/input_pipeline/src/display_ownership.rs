@@ -5,6 +5,7 @@
 use crate::input_device::{self, InputEvent, UnhandledInputEvent};
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::{KeyboardDeviceDescriptor, KeyboardEvent};
+use crate::metrics;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_composition_internal as fcomp;
@@ -14,6 +15,7 @@ use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use keymaps::KeyState;
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::LazyLock;
@@ -109,6 +111,9 @@ pub struct DisplayOwnership {
     /// it alive to ensure that it keeps running.
     _display_ownership_task: Task<()>,
 
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
+
     /// The inventory of this handler's Inspect status.
     inspect_status: InputHandlerStatus,
 
@@ -131,14 +136,21 @@ impl DisplayOwnership {
     pub fn new(
         display_ownership_event: impl AsHandleRef + 'static,
         input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
-        DisplayOwnership::new_internal(display_ownership_event, None, input_handlers_node)
+        DisplayOwnership::new_internal(
+            display_ownership_event,
+            None,
+            input_handlers_node,
+            metrics_logger,
+        )
     }
 
     #[cfg(test)]
     pub fn new_for_test(
         display_ownership_event: impl AsHandleRef + 'static,
         loop_done: UnboundedSender<()>,
+        metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
@@ -146,6 +158,7 @@ impl DisplayOwnership {
             display_ownership_event,
             Some(loop_done),
             &fake_handlers_node,
+            metrics_logger,
         )
     }
 
@@ -153,6 +166,7 @@ impl DisplayOwnership {
         display_ownership_event: impl AsHandleRef + 'static,
         _loop_done: Option<UnboundedSender<()>>,
         input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
         let initial_state = display_ownership_event
             // scenic guarantees that ANY_DISPLAY_EVENT is asserted. If it is
@@ -196,6 +210,7 @@ impl DisplayOwnership {
             key_state: RefCell::new(KeyState::new()),
             display_ownership_change_receiver: RefCell::new(Some(ownership_receiver)),
             _display_ownership_task: display_ownership_task,
+            metrics_logger,
             inspect_status,
             #[cfg(test)]
             loop_done: RefCell::new(_loop_done),
@@ -283,8 +298,13 @@ impl UnhandledInputHandler for DisplayOwnership {
                 self.key_state.borrow_mut().update(e.get_event_type(), e.get_key());
             }
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
             }
         }
         let is_display_ownership_lost = self.is_display_ownership_lost();
@@ -397,7 +417,11 @@ mod tests {
         // We use a wrapper to signal test_event correctly, since doing it wrong
         // by hand causes tests to hang, which isn't the best dev experience.
         let mut wrangler = DisplayWrangler::new(test_event);
-        let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
+        let handler = DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
 
         let handler_clone = handler.clone();
         let handler_sender_clone = handler_sender.clone();
@@ -483,7 +507,11 @@ mod tests {
         let (handler_sender, test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
-        let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
+        let handler = DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
 
         let handler_clone = handler.clone();
         let handler_sender_clone = handler_sender.clone();
@@ -553,7 +581,11 @@ mod tests {
         let (handler_sender, test_receiver) = mpsc::unbounded::<Vec<InputEvent>>();
         let (loop_done_sender, mut loop_done) = mpsc::unbounded::<()>();
         let mut wrangler = DisplayWrangler::new(test_event);
-        let handler = DisplayOwnership::new_for_test(handler_event, loop_done_sender);
+        let handler = DisplayOwnership::new_for_test(
+            handler_event,
+            loop_done_sender,
+            metrics::MetricsLogger::default(),
+        );
 
         let handler_clone = handler.clone();
         let handler_sender_clone = handler_sender.clone();
@@ -654,6 +686,7 @@ mod tests {
             handler_event,
             Some(loop_done_sender),
             &fake_handlers_node,
+            metrics::MetricsLogger::default(),
         );
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
@@ -685,6 +718,7 @@ mod tests {
             handler_event,
             Some(loop_done_sender),
             &fake_handlers_node,
+            metrics::MetricsLogger::default(),
         );
         let handler_clone = handler.clone();
         let handler_sender_clone = handler_sender.clone();

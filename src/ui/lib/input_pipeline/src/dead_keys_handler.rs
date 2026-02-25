@@ -41,10 +41,12 @@ use crate::input_device::{
 };
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::keyboard_binding::KeyboardEvent;
+use crate::metrics;
 use async_trait::async_trait;
 use core::fmt;
 use fidl_fuchsia_ui_input3::{KeyEventType, KeyMeaning};
 use fuchsia_inspect::health::Reporter;
+use metrics_registry::InputPipelineErrorMetricDimensionEvent;
 use std::cell::RefCell;
 use std::rc::Rc;
 use {rust_icu_sys as usys, rust_icu_unorm2 as unorm};
@@ -300,6 +302,9 @@ pub struct DeadKeysHandler {
     /// a reference to an ICU data loader.
     _data: icu_data::Loader,
 
+    /// The metrics logger.
+    metrics_logger: metrics::MetricsLogger,
+
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
 }
@@ -339,21 +344,22 @@ impl DeadKeysHandler {
     pub fn new(
         icu_data: icu_data::Loader,
         input_handlers_node: &fuchsia_inspect::Node,
+        metrics_logger: metrics::MetricsLogger,
     ) -> Rc<Self> {
         let inspect_status = InputHandlerStatus::new(
             input_handlers_node,
             "dead_keys_handler",
             /* generates_events */ false,
         );
-        let handler = DeadKeysHandler {
+        Rc::new(Self {
             state: RefCell::new(State::S0000),
+            metrics_logger,
             // The NFC normalizer performs the needed composition and is not
             // lossy.
             normalizer: unorm::UNormalizer::new_nfc().unwrap(),
             _data: icu_data,
             inspect_status,
-        };
-        Rc::new(handler)
+        })
     }
 
     fn handle_unhandled_input_event_internal(
@@ -385,8 +391,13 @@ impl DeadKeysHandler {
 
             // Pass other events unchanged.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
                 vec![InputEvent::from(unhandled_input_event)]
             }
         }
@@ -1272,7 +1283,8 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
         let loader = icu_data::Loader::new().unwrap();
-        let handler = super::DeadKeysHandler::new(loader, &test_node);
+        let handler =
+            super::DeadKeysHandler::new(loader, &test_node, metrics::MetricsLogger::default());
         for test in tests {
             let actuals: Vec<InputEvent> = test
                 .inputs
@@ -1294,7 +1306,8 @@ mod tests {
         let loader = icu_data::Loader::new().unwrap();
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let _handler = DeadKeysHandler::new(loader, &fake_handlers_node);
+        let _handler =
+            DeadKeysHandler::new(loader, &fake_handlers_node, metrics::MetricsLogger::default());
         diagnostics_assertions::assert_data_tree!(inspector, root: {
             input_handlers_node: {
                 dead_keys_handler: {
@@ -1317,7 +1330,8 @@ mod tests {
         let loader = icu_data::Loader::new().unwrap();
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
-        let handler = DeadKeysHandler::new(loader, &fake_handlers_node);
+        let handler =
+            DeadKeysHandler::new(loader, &fake_handlers_node, metrics::MetricsLogger::default());
 
         // Inspect should count unhandled key events and ignore irrelevent InputEvent types.
         let events = vec![

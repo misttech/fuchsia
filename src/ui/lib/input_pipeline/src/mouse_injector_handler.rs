@@ -163,8 +163,10 @@ impl InputHandler for MouseInjectorHandler {
                 self.inspect_status.count_handled_event();
             }
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!("uninterested input event: {:?}", input_event.get_event_type()),
+                );
             }
         }
         vec![input_event]

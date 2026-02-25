@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::gestures::gesture_arena;
-use crate::{Position, input_device, mouse_binding, touch_binding};
+use crate::{Position, input_device, metrics, mouse_binding, touch_binding};
 use fidl_fuchsia_input_report as fidl_input_report;
 
 /// Takes a sequence of InputEvents and return a sequence of InputEvents the
@@ -13,8 +13,11 @@ pub(super) async fn run_gesture_arena_test(
 ) -> Vec<Vec<input_device::InputEvent>> {
     let inspector = fuchsia_inspect::Inspector::default();
     let test_node = inspector.root().create_child("test_node");
-    let handler =
-        gesture_arena::make_input_handler(fuchsia_inspect::Inspector::default().root(), &test_node);
+    let handler = gesture_arena::make_input_handler(
+        fuchsia_inspect::Inspector::default().root(),
+        &test_node,
+        metrics::MetricsLogger::default(),
+    );
 
     let mut output: Vec<Vec<input_device::InputEvent>> = vec![];
 

@@ -88,8 +88,13 @@ impl UnhandledInputHandler for TextSettingsHandler {
             }
             // Pass a non-keyboard event through.
             _ => {
-                // TODO: b/478249522 - add cobalt logging
-                log::warn!("Unhandled input event: {:?}", unhandled_input_event.get_event_type());
+                self.metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::HandlerReceivedUninterestedEvent,
+                    std::format!(
+                        "uninterested input event: {:?}",
+                        unhandled_input_event.get_event_type()
+                    ),
+                );
                 vec![input_device::InputEvent::from(unhandled_input_event)]
             }
         }
