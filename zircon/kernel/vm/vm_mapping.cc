@@ -39,6 +39,7 @@ namespace {
 KCOUNTER(vm_mapping_attribution_queries, "vm.attributed_memory.mapping.queries")
 KCOUNTER(vm_mappings_merged, "vm.aspace.mapping.merged_neighbors")
 KCOUNTER(vm_mappings_protect_no_write, "vm.aspace.mapping.protect_without_write")
+KCOUNTER(vm_mappings_state_dead, "vm.aspace.mapping.state.dead")
 
 }  // namespace
 
@@ -136,6 +137,7 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
 VmMapping::~VmMapping() {
   canary_.Assert();
   LTRACEF("%p aspace %p base %#" PRIxPTR " size %#zx\n", this, aspace_.get(), base_, size_);
+  vm_mappings_state_dead.Add(-1);
 }
 
 fbl::RefPtr<VmObject> VmMapping::vmo() const {
@@ -927,6 +929,7 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   // mark ourself as dead
   parent_ = nullptr;
   state_ = LifeCycleState::DEAD;
+  vm_mappings_state_dead.Add(1);
   return ZX_OK;
 }
 
