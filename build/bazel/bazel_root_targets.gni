@@ -118,10 +118,22 @@ if (current_toolchain == host_toolchain) {
 
       if (_root_target.install_host_tool) {
         _host_tool_target = "${_gn_target_name}.host_tool"
-        copy(_host_tool_target) {
-          outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
-          sources = [ _ninja_output ]
-          deps = [ _root_target.gn_subtarget_label ]
+
+        if (current_toolchain == toolchain_variant.base) {
+          # There is more than one host_toolchain when variants are involved, or when
+          # building tools for multiple host environments, so we only want to do this
+          # copy in the base host toolchain to avoid multiple targets generating the
+          # same output.
+          copy(_host_tool_target) {
+            outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
+            sources = [ _ninja_output ]
+            deps = [ _root_target.gn_subtarget_label ]
+          }
+        } else {
+          # Redirect to the base host_toolchain, where the copy rule above is.
+          group(_host_tool_target) {
+            public_deps = [ ":${_host_tool_target}(${toolchain_variant.base})" ]
+          }
         }
         _all_deps += [ ":${_host_tool_target}" ]
       }
