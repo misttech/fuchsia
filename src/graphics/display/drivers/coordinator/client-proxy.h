@@ -40,7 +40,7 @@ class ClientProxy {
 
   ~ClientProxy();
 
-  zx_status_t Init(inspect::Node* parent_node,
+  zx_status_t Init(inspect::Node client_node,
                    fidl::ServerEnd<fuchsia_hardware_display::Coordinator> server_end,
                    fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
                        coordinator_listener_client_end);

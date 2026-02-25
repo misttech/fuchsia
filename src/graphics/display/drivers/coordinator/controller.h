@@ -31,6 +31,7 @@
 #include "src/graphics/display/drivers/coordinator/capture-image.h"
 #include "src/graphics/display/drivers/coordinator/client-id.h"
 #include "src/graphics/display/drivers/coordinator/client-priority.h"
+#include "src/graphics/display/drivers/coordinator/client-set.h"
 #include "src/graphics/display/drivers/coordinator/display-info.h"
 #include "src/graphics/display/drivers/coordinator/engine-driver-client.h"
 #include "src/graphics/display/drivers/coordinator/engine-listener-fidl-adapter.h"
@@ -210,20 +211,7 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   display::DriverBufferCollectionId next_driver_buffer_collection_id_ =
       display::DriverBufferCollectionId(1);
 
-  std::list<std::unique_ptr<ClientProxy>> clients_;
-  ClientId next_client_id_ = ClientId(1);
-
-  // Pointers to instances owned by `clients_`.
-  ClientProxy* client_owning_displays_ = nullptr;
-  ClientProxy* virtcon_client_ = nullptr;
-  ClientProxy* primary_client_ = nullptr;
-
-  // True iff the corresponding client can dispatch FIDL events.
-  bool virtcon_client_ready_ = false;
-  bool primary_client_ready_ = false;
-
-  fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ =
-      fuchsia_hardware_display::wire::VirtconMode::kFallback;
+  ClientSet clients_;
 
   std::unique_ptr<EngineDriverClient> engine_driver_client_;
 

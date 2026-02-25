@@ -187,14 +187,13 @@ void ClientProxy::TearDown() {
 }
 
 zx_status_t ClientProxy::Init(
-    inspect::Node* parent_node,
+    inspect::Node client_node,
     fidl::ServerEnd<fuchsia_hardware_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
   ZX_DEBUG_ASSERT(controller_.IsRunningOnDriverDispatcher());
 
-  node_ =
-      parent_node->CreateChild(fbl::StringPrintf("client-%" PRIu64, handler_.id().value()).c_str());
+  node_ = std::move(client_node);
   node_.RecordString("priority", DebugStringFromClientPriority(handler_.priority()));
   is_owner_property_ = node_.CreateBool("is_owner", false);
 

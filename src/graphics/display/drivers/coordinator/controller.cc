@@ -94,14 +94,7 @@ void Controller::AddDisplay(std::unique_ptr<AddedDisplayInfo> added_display_info
 
   // TODO(https://fxbug.dev/317914671): Pass parsed display metadata to driver.
 
-  if (virtcon_client_ready_) {
-    ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
-    virtcon_client_->OnDisplaysChanged(added_ids, /*removed_display_ids=*/{});
-  }
-  if (primary_client_ready_) {
-    ZX_DEBUG_ASSERT(primary_client_ != nullptr);
-    primary_client_->OnDisplaysChanged(added_ids, /*removed_display_ids=*/{});
-  }
+  clients_.DispatchOnDisplaysChanged(added_ids, /*removed_display_ids=*/{});
 }
 
 void Controller::RemoveDisplay(display::DisplayId removed_display_id) {
@@ -120,14 +113,7 @@ void Controller::RemoveDisplay(display::DisplayId removed_display_id) {
   const std::array<display::DisplayId, 1> removed_display_ids = {
       removed_display_id,
   };
-  if (virtcon_client_ready_) {
-    ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
-    virtcon_client_->OnDisplaysChanged(/*added_display_ids=*/{}, removed_display_ids);
-  }
-  if (primary_client_ready_) {
-    ZX_DEBUG_ASSERT(primary_client_ != nullptr);
-    primary_client_->OnDisplaysChanged(/*added_display_ids=*/{}, removed_display_ids);
-  }
+  clients_.DispatchOnDisplaysChanged(/*added_display_ids=*/{}, removed_display_ids);
 }
 
 void Controller::OnDisplayAdded(std::unique_ptr<AddedDisplayInfo> added_display_info) {
@@ -179,14 +165,7 @@ void Controller::OnCaptureComplete() {
           pending_release_capture_image_id_ = display::kInvalidDriverCaptureImageId;
         }
 
-        if (virtcon_client_ready_) {
-          ZX_DEBUG_ASSERT(virtcon_client_ != nullptr);
-          virtcon_client_->OnCaptureComplete();
-        }
-        if (primary_client_ready_) {
-          ZX_DEBUG_ASSERT(primary_client_ != nullptr);
-          primary_client_->OnCaptureComplete();
-        }
+        clients_.DispatchOnCaptureComplete();
       });
   if (post_task_result.is_error()) {
     fdf::error("Failed to dispatch capture complete task: {}", post_task_result);
@@ -249,28 +228,9 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
     }
   }
 
-  // The display configuration associated with the VSync event can come
-  // from one of the currently connected clients, or from a previously
-  // connected client that is now disconnected.
-  std::optional<ClientPriority> config_stamp_source = std::nullopt;
-  ClientProxy* const client_proxies[] = {primary_client_, virtcon_client_};
-  for (ClientProxy* client_proxy : client_proxies) {
-    if (client_proxy == nullptr) {
-      continue;
-    }
-
-    const std::list<ClientProxy::ConfigStampPair>& pending_stamps =
-        client_proxy->pending_applied_config_stamps();
-    auto it = std::ranges::find_if(pending_stamps,
-                                   [&](const ClientProxy::ConfigStampPair& pending_stamp) {
-                                     return pending_stamp.driver_stamp >= driver_config_stamp;
-                                   });
-    if (it != pending_stamps.end() && it->driver_stamp == driver_config_stamp) {
-      config_stamp_source = std::make_optional(client_proxy->client_priority());
-      // Obsolete stamps will be removed in `Client::OnDisplayVsync()`.
-      break;
-    }
-  };
+  // Obsolete stamps will be removed in `Client::OnDisplayVsync()`.
+  std::optional<ClientPriority> config_stamp_source =
+      clients_.FindConfigStampSource(driver_config_stamp);
 
   if (!display_info.pending_layer_change) {
     // Each image in the `info->images` set can fall into one of the following
@@ -332,15 +292,8 @@ void Controller::ProcessDisplayVsync(display::DisplayId display_id,
     fdf::debug("VSync event dropped; the config owner disconnected");
     return;
   }
-
-  switch (config_stamp_source.value()) {
-    case ClientPriority::kPrimary:
-      primary_client_->OnDisplayVsync(display_id, timestamp_mono.get(), driver_config_stamp);
-      break;
-    case ClientPriority::kVirtcon:
-      virtcon_client_->OnDisplayVsync(display_id, timestamp_mono.get(), driver_config_stamp);
-      break;
-  }
+  clients_.DispatchOnDisplayVsync(display_id, timestamp_mono, driver_config_stamp,
+                                  config_stamp_source.value());
 }
 
 void Controller::ApplyConfig(DisplayConfig& display_config,
@@ -437,12 +390,13 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
     applied_client_id_ = client_id;
 
-    if (client_owning_displays_ != nullptr) {
+    ClientProxy* client_owning_displays = clients_.GetClientOwningDisplays();
+    if (client_owning_displays != nullptr) {
       if (switching_client) {
-        client_owning_displays_->ReapplySpecialConfigs();
+        client_owning_displays->ReapplySpecialConfigs();
       }
 
-      client_owning_displays_->UpdateConfigStampMapping({
+      client_owning_displays->UpdateConfigStampMapping({
           .driver_stamp = driver_config_stamp,
           .client_stamp = client_config_stamp,
       });
@@ -484,30 +438,7 @@ void Controller::ReleaseCaptureImage(display::DriverCaptureImageId driver_captur
 void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
 
-  virtcon_mode_ = virtcon_mode;
-  HandleClientOwnershipChanges();
-}
-
-void Controller::HandleClientOwnershipChanges() {
-  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-
-  ClientProxy* new_client_owning_displays;
-  if (virtcon_mode_ == fidl_display::wire::VirtconMode::kForced ||
-      (virtcon_mode_ == fidl_display::wire::VirtconMode::kFallback && primary_client_ == nullptr)) {
-    new_client_owning_displays = virtcon_client_;
-  } else {
-    new_client_owning_displays = primary_client_;
-  }
-
-  if (new_client_owning_displays != client_owning_displays_) {
-    if (client_owning_displays_ != nullptr) {
-      client_owning_displays_->SetOwnership(false);
-    }
-    if (new_client_owning_displays) {
-      new_client_owning_displays->SetOwnership(true);
-    }
-    client_owning_displays_ = new_client_owning_displays;
-  }
+  clients_.SetVirtconMode(virtcon_mode);
 }
 
 void Controller::OnClientDead(ClientProxy* client) {
@@ -519,26 +450,7 @@ void Controller::OnClientDead(ClientProxy* client) {
   if (unbinding_) {
     return;
   }
-
-  if (client == virtcon_client_) {
-    virtcon_client_ = nullptr;
-    virtcon_mode_ = fidl_display::wire::VirtconMode::kFallback;
-    virtcon_client_ready_ = false;
-  } else if (client == primary_client_) {
-    primary_client_ = nullptr;
-    primary_client_ready_ = false;
-  } else {
-    ZX_DEBUG_ASSERT_MSG(false, "Dead client is neither Virtcon nor Primary\n");
-  }
-
-  // Avoid trying to tell the disconnected client that it lost display ownership.
-  if (client == client_owning_displays_) {
-    client_owning_displays_ = nullptr;
-  }
-  clients_.remove_if(
-      [client](std::unique_ptr<ClientProxy>& list_client) { return list_client.get() == client; });
-
-  HandleClientOwnershipChanges();
+  clients_.OnClientDisconnected(client);
 }
 
 zx::result<std::span<const display::ModeAndId>> Controller::GetDisplayPreferredModes(
@@ -579,31 +491,12 @@ zx::result<fbl::Vector<display::PixelFormat>> Controller::GetSupportedPixelForma
   return zx::ok(std::move(pixel_formats));
 }
 
-namespace {
-
-void PrintChannelKoids(ClientPriority client_priority, const zx::channel& channel) {
-  zx_info_handle_basic_t info{};
-  size_t actual, avail;
-  zx_status_t status = channel.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), &actual, &avail);
-  if (status != ZX_OK || info.type != ZX_OBJ_TYPE_CHANNEL) {
-    fdf::debug("Could not get koids for handle(type={}): {}", info.type, status);
-    return;
-  }
-  ZX_DEBUG_ASSERT(actual == avail);
-  fdf::info("{} client connecting on channel (c=0x{:x}, s=0x{:x})",
-            DebugStringFromClientPriority(client_priority), info.related_koid, info.koid);
-}
-
-}  // namespace
-
 zx_status_t Controller::CreateClient(
     ClientPriority client_priority,
     fidl::ServerEnd<fidl_display::Coordinator> coordinator_server_end,
     fidl::ClientEnd<fuchsia_hardware_display::CoordinatorListener>
         coordinator_listener_client_end) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-
-  PrintChannelKoids(client_priority, coordinator_server_end.channel());
 
   fbl::AllocChecker alloc_checker;
   auto post_task_state = fbl::make_unique_checked<DisplayTaskState>(&alloc_checker);
@@ -617,41 +510,14 @@ zx_status_t Controller::CreateClient(
     return ZX_ERR_UNAVAILABLE;
   }
 
-  if ((client_priority == ClientPriority::kVirtcon && virtcon_client_ != nullptr) ||
-      (client_priority == ClientPriority::kPrimary && primary_client_ != nullptr)) {
-    fdf::debug("{} client already bound", DebugStringFromClientPriority(client_priority));
-    return ZX_ERR_ALREADY_BOUND;
+  zx::result<ClientId> connect_result =
+      clients_.ConnectClient(this, client_priority, std::move(coordinator_server_end),
+                             std::move(coordinator_listener_client_end));
+  if (connect_result.is_error()) {
+    fdf::debug("Failed to connect client: {}", connect_result.status_string());
+    return connect_result.error_value();
   }
-
-  ClientId client_id = next_client_id_;
-  ++next_client_id_;
-  auto client = std::make_unique<ClientProxy>(this, client_priority, client_id);
-
-  zx_status_t status = client->Init(&root_, std::move(coordinator_server_end),
-                                    std::move(coordinator_listener_client_end));
-  if (status != ZX_OK) {
-    fdf::debug("Failed to init client {}", status);
-    return status;
-  }
-
-  ClientProxy* client_ptr = client.get();
-  clients_.push_back(std::move(client));
-
-  fdf::debug("New {} client [{}] connected.", DebugStringFromClientPriority(client_priority),
-             client_ptr->client_id().value());
-
-  switch (client_priority) {
-    case ClientPriority::kVirtcon:
-      ZX_DEBUG_ASSERT(virtcon_client_ == nullptr);
-      ZX_DEBUG_ASSERT(!virtcon_client_ready_);
-      virtcon_client_ = client_ptr;
-      break;
-    case ClientPriority::kPrimary:
-      ZX_DEBUG_ASSERT(primary_client_ == nullptr);
-      ZX_DEBUG_ASSERT(!primary_client_ready_);
-      primary_client_ = client_ptr;
-  }
-  HandleClientOwnershipChanges();
+  const ClientId client_id = connect_result.value();
 
   zx::result<> post_task_result = display::PostTask(
       std::move(post_task_state), *driver_dispatcher()->async_dispatcher(), [this, client_id]() {
@@ -659,37 +525,21 @@ zx_status_t Controller::CreateClient(
           return;
         }
 
-        ClientProxy* client_proxy;
-        if (virtcon_client_ != nullptr && virtcon_client_->client_id() == client_id) {
-          client_proxy = virtcon_client_;
-        } else if (primary_client_ != nullptr && primary_client_->client_id() == client_id) {
-          client_proxy = primary_client_;
-        } else {
+        if (displays_.is_empty()) {
+          std::span<const display::DisplayId> current_display_ids;
+          clients_.SendInitialState(client_id, current_display_ids);
           return;
         }
 
-        // Add all existing displays to the client
-        if (displays_.size() > 0) {
-          display::DisplayId current_displays[displays_.size()];
-          int initialized_display_count = 0;
-          for (const DisplayInfo& display : displays_) {
-            current_displays[initialized_display_count] = display.id();
-            ++initialized_display_count;
-          }
-          std::span<display::DisplayId> removed_display_ids = {};
-          client_proxy->OnDisplaysChanged(
-              std::span<display::DisplayId>(current_displays, initialized_display_count),
-              removed_display_ids);
+        display::DisplayId current_displays[displays_.size()];
+        int initialized_display_count = 0;
+        for (const DisplayInfo& display : displays_) {
+          current_displays[initialized_display_count] = display.id();
+          ++initialized_display_count;
         }
-
-        if (virtcon_client_ == client_proxy) {
-          ZX_DEBUG_ASSERT(!virtcon_client_ready_);
-          virtcon_client_ready_ = true;
-        } else {
-          ZX_DEBUG_ASSERT(primary_client_ == client_proxy);
-          ZX_DEBUG_ASSERT(!primary_client_ready_);
-          primary_client_ready_ = true;
-        }
+        std::span<const display::DisplayId> current_display_ids(current_displays,
+                                                                initialized_display_count);
+        clients_.SendInitialState(client_id, current_display_ids);
       });
   return post_task_result.status_value();
 }
@@ -784,12 +634,7 @@ void Controller::PrepareStop() {
 
   {
     unbinding_ = true;
-
-    // Tear down all existing clients. This ensures that all clients will not
-    // send `ImportImage()` and `ApplyConfiguration()` requests.
-    for (auto& client : clients_) {
-      client->TearDown();
-    }
+    clients_.CloseAll();
 
     vsync_monitor_.Deinitialize();
 
@@ -814,6 +659,7 @@ Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
       driver_dispatcher_(std::move(driver_dispatcher)),
       engine_listener_fidl_adapter_(this, driver_dispatcher_->borrow()),
       vsync_monitor_(root_.CreateChild("vsync_monitor"), driver_dispatcher_->async_dispatcher()),
+      clients_(root_.CreateChild("clients")),
       engine_driver_client_(std::move(engine_driver_client)) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(engine_driver_client_ != nullptr);
