@@ -220,13 +220,18 @@ do
   esac
 done
 
-[[ -n "$subbuild_dir" ]] || {
-  die "Expected a ninja -C subdir, but found none."
-}
-readonly subbuild_base="${subbuild_dir##*/}"  # basename
+if [[ -n "$subbuild_dir" ]]; then
+  readonly subbuild_base="${subbuild_dir##*/}"  # basename
+else
+  # For non-ninja commands, subbuild_dir is not expected.
+  # Default to something generic for log directory structure.
+  readonly subbuild_base="top"
+fi
 
 # Upload additional invocation artifacts, such as ninja outputs.
 # Ninja output paths are relative to $subbuild_dir.
+# If the wrapped command is not ninja, it is unlikely to specify
+# these extra outputs, so this section is expected to be a no-op.
 readonly ninja_outputs=(
   "$action_metrics"
   "$chrome_trace"
@@ -237,7 +242,11 @@ do
   [[ -z "$f" ]] || {
     case "$f" in
       /*) rsproxy_options+=( --post_build_uploads="$f" ) ;;  # absolute path
-      *) rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
+      *)
+        if [[ -n "$subbuild_dir" ]]; then
+          rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
+        fi
+        ;;
     esac
   }
 done
