@@ -33,8 +33,9 @@ class FakeServer {
 
  private:
   class FakeInterface;
-  std::unique_ptr<FakeInterface> interface_ = nullptr;
-  std::unique_ptr<BlockServer> server_ = nullptr;
+
+  std::unique_ptr<FakeInterface> interface_;
+  std::unique_ptr<BlockServer> server_;
 };
 
 }  // namespace block_server
