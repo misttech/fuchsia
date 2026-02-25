@@ -29,6 +29,16 @@ class PageMap;
 //
 // Use |PageMap::MakeAccessor| to create an Accessor.
 //
+// Accessors can be used in two ways Read/Write and raw.
+//
+// The Read() and Write() methods provide TOCTOU-safe access to an object or its fields by copying
+// to/from the object (or fields) fields and then issuing a compiler barrier to prevent copy
+// elision.
+//
+// The raw() method provides direct access to the object or its fields.  Because raw() provides no
+// compiler barrier, its use can be susceptible to TOCTOU.  Use with caution.  Prefer to use
+// Read()/Write() whenever possible.  See also |BarrierAfterCopyTo|.
+//
 // Instances of Accessor are not safe for concurrent use (i.e. not thread-safe).
 template <typename Object>
 class Accessor {
@@ -91,6 +101,32 @@ class Accessor {
     requires ktl::is_class_v<Object>
   void Write(const FieldType& src_field) const;
 
+  // A compiler barrier used to prevent copy elision induced TOCTOU.
+  //
+  // This is intended for use *after* copying to |*dst|, but *before* validating the copy.  It is
+  // designed to prevent TOCTOU in the case where the compiler might otherwise elide the copy.
+  //
+  // By telling the compiler that this volatile assembly statement uses the object-in-memory pointed
+  // to by dst as both output and input, we ensure the compiler:
+  //   - cannot optimize-away a preceding copy to |*dst|
+  //   - cannot reorder a validation of |*dst| occurring after the barrier with a use of |*dst|
+  //     preceding the barrier.
+  template <typename T>
+  static void BarrierAfterCopyTo(T* dst) {
+    __asm__ volatile("" : "+m"(*dst));
+  }
+
+  // Provides direct access to the underlying object when Read()/Write() won't cut it.
+  //
+  // Prefer to use Read()/Write() instead.
+  //
+  // It is a programming error to call this on an instance that isn't |IsValid()|.
+  //
+  // WARNING: This provides no TOCTOU protection.  You must issue an appropriate compiler barrier
+  // yourself.  See |BarrierAfterCopyTo|.  Do not use this if you are not familiar with TOCTOU and
+  // copy elision.
+  Object& raw() const { return *object_; }
+
  private:
   // So |PageMap::MakeAccessor| can call the private constructor.
   friend class PageMap;
@@ -127,21 +163,6 @@ class Accessor {
     }
   }
 
-  // A compiler barrier used to prevent copy elision induced TOCTOU.
-  //
-  // This is intended for use *after* copying to |*dst|, but *before* validating the copy.  It is
-  // designed to prevent TOCTOU in the case where the compiler might otherwise elide the copy.
-  //
-  // By telling the compiler that this volatile assembly statement uses the object-in-memory pointed
-  // to by dst as both output and input, we ensure the compiler:
-  //   - cannot optimize-away a preceding copy to |*dst|
-  //   - cannot reorder a validation of |*dst| occurring after the barrier with a use of |*dst|
-  //     preceding the barrier.
-  template <typename T>
-  static void BarrierAfterCopy(T* dst) {
-    __asm__ volatile("" : "+m"(*dst));
-  }
-
   // Many Accessor instances may refer to a single Entry.  Entry must outlive is Accessors.
   //
   // May be null if this object was used as the source of a move operation (see move constructor).
@@ -173,7 +194,7 @@ inline Accessor<Object>& Accessor<Object>::operator=(Accessor&& other) {
 template <typename Object>
 inline void Accessor<Object>::Read(Object& dst) const {
   dst = *object_;
-  BarrierAfterCopy(&dst);
+  BarrierAfterCopyTo(&dst);
 }
 
 template <typename Object>
@@ -181,13 +202,13 @@ template <auto Field>
   requires ktl::is_class_v<Object>
 inline void Accessor<Object>::Read(auto& dst) const {
   dst = FieldRef<Field>::Of(*object_);
-  BarrierAfterCopy(&dst);
+  BarrierAfterCopyTo(&dst);
 }
 
 template <typename Object>
 inline void Accessor<Object>::Write(const Object& src) const {
   *object_ = src;
-  BarrierAfterCopy(object_);
+  BarrierAfterCopyTo(object_);
 }
 
 template <typename Object>
@@ -195,7 +216,7 @@ template <auto Field, typename FieldType>
   requires ktl::is_class_v<Object>
 inline void Accessor<Object>::Write(const FieldType& src) const {
   FieldRef<Field>::Of(*object_) = src;
-  BarrierAfterCopy(object_);
+  BarrierAfterCopyTo(object_);
 }
 
 }  // namespace page_map
