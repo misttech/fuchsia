@@ -104,7 +104,7 @@ impl<C: Clock + 'static> DebugState<C> {
 
     pub fn start_media_buttons_listener(self: Arc<Self>) {
         if !self.debug_enabled {
-            debug!("Debug mode not enabled, skipping media button listener registration.");
+            info!("Debug mode not enabled, skipping media button listener registration.");
             return;
         }
 
@@ -154,13 +154,21 @@ impl<C: Clock + 'static> DebugState<C> {
     fn process_button_event(&self, event: &MediaButtonsEvent) -> bool {
         let mut state = self.button_press_state.lock();
         if state.crash_report_in_progress {
-            debug!("Crash report in progress, ignoring button event.");
+            info!("Crash report in progress, ignoring button event.");
             return false;
         }
         if let Some(power_is_pressed) = event.power
             && (power_is_pressed || state.power_was_pressed)
         {
-            debug!("Detected overlapping POWER button activity; resetting FUNCTION button counter");
+            if state.count >= 3 {
+                info!(
+                    "Detected overlapping POWER button activity; resetting FUNCTION button counter."
+                );
+            } else {
+                debug!(
+                    "Detected overlapping POWER button activity; resetting FUNCTION button counter."
+                );
+            }
             state.power_was_pressed = power_is_pressed;
             state.count = 0;
             return false;
@@ -182,6 +190,13 @@ impl<C: Clock + 'static> DebugState<C> {
 
         state.last_press_time_ns = now_ns;
 
+        if state.count >= 3 {
+            info!(
+                "Identified {:?} side button presses in a row. {:?} in a row will trigger a crash report and reboot sequence.",
+                state.count, REQUIRED_PRESS_COUNT
+            );
+        }
+
         if state.count >= REQUIRED_PRESS_COUNT {
             state.count = 0;
             state.crash_report_in_progress = true;
@@ -198,7 +213,7 @@ impl<C: Clock + 'static> DebugState<C> {
         if !self.debug_enabled {
             return;
         }
-        debug!("Resetting debug button press state.");
+        info!("Resetting debug button press state.");
         *self.button_press_state.lock() = ButtonPressState::new();
     }
 
