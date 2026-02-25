@@ -124,3 +124,23 @@ defines a Persistence Tag. Each tag accepts the following fields:
 | **`max_bytes`**                 | integer                   | The maximum allowed size of the fetched Inspect payload in bytes. If the sampled data exceeds this limit, the saved data will be replaced with an error string. |
 | **`min_seconds_between_fetch`** | integer                   | How frequently Archivist should sample these selectors.                                                                                                         |
 | **`persist_across_boot`**       | boolean (default `false`) | If `true`, saved data is not cleared on the next boot and will continue to accumulate historical boot data.                                                     |
+
+## Privacy considerations
+
+Persistence is a powerful tool for debugging, but it can also be a privacy risk
+if not used carefully.
+
+- **Cross-boot linkage**: Enabling `persist_across_boot` preserves saved data
+  across boots, accumulating historical data. This creates a long-term record of
+  device usage, which could be used to track users across multiple boots. This
+  can also violate other privacy safeguards, such as fingerprinting a device or
+  user across a time-limited pseudonymous ID.
+
+- **Data retention**: Persistence data is stored on the device and can be
+  accessed by anyone with physical access to the device. It is important to
+  consider the sensitivity of the data you are persisting and whether it should
+  be protected with additional security measures.
+
+- **Data minimization**: Only persist the data that you need to debug your
+  component. Avoid persisting unnecessary data, as this can increase the privacy
+  risk.
