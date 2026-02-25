@@ -158,6 +158,7 @@ fi
   --out "$outdir" \
   --platform "$input_bundles_dir" \
   --zbi-only \
+  --auth no-auth \
   "${ffx_args[@]}"
 
 echo "You can now flash the kernel with fastboot."
