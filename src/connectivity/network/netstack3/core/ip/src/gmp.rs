@@ -977,7 +977,8 @@ fn schedule_v1_compat<I: IpExt, CC: GmpTypeLayout<I, BC>, BC: GmpBindingsContext
     bindings_ctx: &mut BC,
     state: GmpStateRef<'_, I, CC, BC>,
 ) {
-    let GmpStateRef { gmp, config, .. } = state;
+    let GmpStateRef { gmp, config, enabled, .. } = state;
+    assert!(enabled, "should not schedule v1 compat timer when disabled");
     let timeout = gmp.v2_proto.older_version_querier_present_timeout(config);
     let _: Option<_> =
         gmp.timers.schedule_after(bindings_ctx, TimerIdInner::V1Compat, (), timeout.into());
@@ -1209,5 +1210,29 @@ mod tests {
         let testutil::FakeGmpContextInner { v1_messages, v2_messages } = &core_ctx.inner;
         assert_eq!(v1_messages, &Vec::new());
         assert_eq!(v2_messages, &Vec::<Vec<_>>::new());
+    }
+
+    #[ip_test(I)]
+    fn v1_no_compat_timer_when_disabled<I: TestIpExt>() {
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            testutil::new_context_with_mode::<I>(GmpMode::V2);
+        core_ctx.enabled = false;
+        core_ctx.gmp_handle_disabled(&mut bindings_ctx, &FakeDeviceId);
+        assert_eq!(
+            v1::handle_query_message(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                &FakeDeviceId,
+                &FakeV1Query {
+                    group_addr: I::GROUP_ADDR1.get(),
+                    max_response_time: Duration::from_secs(1)
+                }
+            ),
+            Err(NotAMemberErr(I::GROUP_ADDR1.get()))
+        );
+        // Should stay in V2 mode.
+        assert_eq!(core_ctx.gmp.mode, GmpMode::V2);
+        // No timers should exist.
+        core_ctx.gmp.timers.assert_timers([]);
     }
 }

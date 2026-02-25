@@ -561,6 +561,14 @@ where
     Q: QueryMessage<I>,
 {
     core_ctx.with_gmp_state_mut_and_ctx(device, |mut core_ctx, mut state| {
+        // If the protocol is disabled, we should have already turned every
+        // group membership state to `NonMember`. This shortcut also allows us
+        // to skip the compatibility timer, which we should not be tracking
+        // while disabled - compatibility state is cleared and the proto mode
+        // is reverted to v2 on disablement.
+        if !state.enabled {
+            return Err(NotAMemberErr(query.group_addr()));
+        }
         // Allow protocol to decide entering v1 compatibility mode if we see a
         // v1 message and we're not in forced v1.
         //
