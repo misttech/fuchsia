@@ -8,6 +8,8 @@
 
 namespace page_map {
 
+PageMap PageMap::gPageMap_;
+
 zx::result<object_cache::UniquePtr<internal::Entry>> PageMap::MakeEntry(
     fbl::RefPtr<VmObjectPaged> vmo, size_t page_offset_in_vmo) {
   // Commit and pin.

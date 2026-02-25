@@ -87,6 +87,9 @@ class PageMap {
   zx::result<Accessor<Object>> MakeAccessor(fbl::RefPtr<VmObjectPaged> vmo,
                                             size_t object_offset_in_vmo);
 
+  // Returns a reference to the global PageMap.
+  static PageMap& Get() { return gPageMap_; }
+
  private:
   // So it can call |Release|.
   friend internal::Entry;
@@ -109,6 +112,9 @@ class PageMap {
   void Release(internal::Entry& entry);
 
   Lock<CriticalMutex>* get_lock() const { return &lock_; }
+
+  // The global PageMap.
+  static PageMap gPageMap_;
 
   mutable DECLARE_CRITICAL_MUTEX(PageMap) lock_;
   using Map = fbl::WAVLTree<internal::Entry::Key, object_cache::UniquePtr<internal::Entry>>;
