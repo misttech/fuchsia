@@ -294,15 +294,24 @@ def main():
         parent = os.path.dirname(dstdir)
         if not os.path.exists(parent):
             os.makedirs(parent)
-        # hardlink regular files instead of symlinking to handle non-Go
-        # files that we want to embed using //go:embed, which doesn't
-        # support symlinks.
-        # TODO(https://fxbug.dev/42162237): Add a separate mechanism for
-        # declaring embedded files, and only hardlink those files
-        # instead of hardlinking all sources.
         if os.path.isdir(src):
             os.symlink(src, dstdir)
+        elif os.path.islink(src):
+            # If the source being copied is a link already, we avoid linking it again,
+            # which can be unreliable.
+            #
+            # This is a very rare case, so the performance impact is negligible.
+            #
+            # See https://fxbug.dev/484373200 for details.
+            shutil.copyfile(src, dstdir)
         else:
+            # Hardlink regular files instead of symlinking to handle non-Go
+            # files that we want to embed using the `//go:embed` directive,
+            # which doesn't support symlinks.
+            #
+            # TODO(https://fxbug.dev/42162237): Add a separate mechanism for
+            # declaring embedded files, and only hardlink those files
+            # instead of hardlinking all sources.
             try:
                 os.link(src, dstdir)
             except OSError:
