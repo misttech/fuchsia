@@ -1229,16 +1229,19 @@ async fn wake_timer_loop(
                         if needs_cancel {
                             log_long_op!(stop_hrtimer(&timer_proxy, &timer_config));
                         }
-                        hrtimer_status = Some(log_long_op!(schedule_hrtimer(
-                            scope.clone(),
-                            now,
-                            &timer_proxy,
-                            schedulable_deadline,
-                            snd.clone(),
-                            &timer_config,
-                            &schedule_delay_prop,
-                            &hrtimer_node,
-                        )));
+                        hrtimer_status = Some(
+                            schedule_hrtimer(
+                                scope.clone(),
+                                now,
+                                &timer_proxy,
+                                schedulable_deadline,
+                                snd.clone(),
+                                &timer_config,
+                                &schedule_delay_prop,
+                                &hrtimer_node,
+                            )
+                            .await,
+                        );
                     }
                 }
             }
@@ -1277,7 +1280,7 @@ async fn wake_timer_loop(
                         let _i = ScopedInc::new(&schedule_hrtimer_count);
                         // Reschedule the hardware timer if the removed timer is the earliest one,
                         // and another one exists.
-                        let new_timer_state = log_long_op!(schedule_hrtimer(
+                        let new_timer_state = schedule_hrtimer(
                             scope.clone(),
                             now,
                             &timer_proxy,
@@ -1286,7 +1289,8 @@ async fn wake_timer_loop(
                             &timer_config,
                             &schedule_delay_prop,
                             &hrtimer_node,
-                        ));
+                        )
+                        .await;
                         let old_hrtimer_status = hrtimer_status.replace(new_timer_state);
                         if let Some(task) = old_hrtimer_status.map(|ev| ev.task) {
                             // Allow the task to complete. Since this task should have been
@@ -1327,16 +1331,19 @@ async fn wake_timer_loop(
                 // There is a timer to reschedule, do that now.
                 hrtimer_status = match timers.peek_deadline_as_boot() {
                     None => None,
-                    Some(deadline) => Some(log_long_op!(schedule_hrtimer(
-                        scope.clone(),
-                        now,
-                        &timer_proxy,
-                        deadline,
-                        snd.clone(),
-                        &timer_config,
-                        &schedule_delay_prop,
-                        &hrtimer_node,
-                    ))),
+                    Some(deadline) => Some(
+                        schedule_hrtimer(
+                            scope.clone(),
+                            now,
+                            &timer_proxy,
+                            deadline,
+                            snd.clone(),
+                            &timer_config,
+                            &schedule_delay_prop,
+                            &hrtimer_node,
+                        )
+                        .await,
+                    ),
                 }
             }
             Cmd::AlarmFidlError { expired_deadline, error } => {
@@ -1375,16 +1382,19 @@ async fn wake_timer_loop(
                 .expect("notification succeeds");
                 hrtimer_status = match timers.peek_deadline_as_boot() {
                     None => None, // No remaining timers, nothing to schedule.
-                    Some(deadline) => Some(log_long_op!(schedule_hrtimer(
-                        scope.clone(),
-                        now,
-                        &timer_proxy,
-                        deadline,
-                        snd.clone(),
-                        &timer_config,
-                        &schedule_delay_prop,
-                        &hrtimer_node,
-                    ))),
+                    Some(deadline) => Some(
+                        schedule_hrtimer(
+                            scope.clone(),
+                            now,
+                            &timer_proxy,
+                            deadline,
+                            snd.clone(),
+                            &timer_config,
+                            &schedule_delay_prop,
+                            &hrtimer_node,
+                        )
+                        .await,
+                    ),
                 }
             }
             Cmd::AlarmDriverError {
@@ -1435,16 +1445,19 @@ async fn wake_timer_loop(
                         // today.
                         hrtimer_status = match timers.peek_deadline_as_boot() {
                             None => None,
-                            Some(deadline) => Some(log_long_op!(schedule_hrtimer(
-                                scope.clone(),
-                                now,
-                                &timer_proxy,
-                                deadline,
-                                snd.clone(),
-                                &timer_config,
-                                &schedule_delay_prop,
-                                &hrtimer_node,
-                            ))),
+                            Some(deadline) => Some(
+                                schedule_hrtimer(
+                                    scope.clone(),
+                                    now,
+                                    &timer_proxy,
+                                    deadline,
+                                    snd.clone(),
+                                    &timer_config,
+                                    &schedule_delay_prop,
+                                    &hrtimer_node,
+                                )
+                                .await,
+                            ),
                         }
                     }
                 }
@@ -1466,16 +1479,19 @@ async fn wake_timer_loop(
                     // Should we request a wake lock here?
                     hrtimer_status = match timers.peek_deadline_as_boot() {
                         None => None,
-                        Some(deadline) => Some(log_long_op!(schedule_hrtimer(
-                            scope.clone(),
-                            now,
-                            &timer_proxy,
-                            deadline,
-                            snd.clone(),
-                            &timer_config,
-                            &schedule_delay_prop,
-                            &hrtimer_node,
-                        ))),
+                        Some(deadline) => Some(
+                            schedule_hrtimer(
+                                scope.clone(),
+                                now,
+                                &timer_proxy,
+                                deadline,
+                                snd.clone(),
+                                &timer_config,
+                                &schedule_delay_prop,
+                                &hrtimer_node,
+                            )
+                            .await,
+                        ),
                     }
                 }
             }
