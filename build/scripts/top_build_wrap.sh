@@ -271,7 +271,7 @@ then
   done
 
   reproxy_shutdown_opts=()
-  if [[ "$enable_resultstore" == 1 ]]
+  if [[ "$enable_resultstore" == 0 ]]
   then
     # When resultstore is enabled, we need to wait for reproxy to fully
     # shutdown to guarantee that produces the logs and metrics that will
