@@ -22,6 +22,7 @@ struct Args {
 pub enum FxtDump {
     Dump(Dump),
     CategoryStats(CategoryStats),
+    Fidl(FidlMessages),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -57,6 +58,18 @@ pub struct CategoryStats {
     /// if set, only include the top `limit` entries
     #[argh(option)]
     pub limit: Option<usize>,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
+    name = "fidl",
+    description = "Print information about the FIDL messages in the trace",
+    example = "fx fxtdump fidl trace.fxt"
+)]
+pub struct FidlMessages {
+    #[argh(positional)]
+    pub input: String,
 }
 
 fn format_size(size: usize) -> String {
@@ -193,6 +206,25 @@ fn category_stats<R: std::io::Read>(
     }
 }
 
+fn fidl_messages<R: std::io::Read>(fxt: &mut SessionParser<R>) {
+    for record in fxt {
+        match record {
+            Ok(fxt::TraceRecord::Event(fxt::EventRecord {
+                payload: fxt::EventPayload::DurationBegin,
+                category,
+                name,
+                ..
+            })) => {
+                if category == "kernel:ipc" && name != "ChannelMessage" {
+                    println!("{name}");
+                }
+            }
+            Ok(_) => {}
+            Err(parse_err) => eprintln!("WARNING {:#}", parse_err),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
@@ -208,6 +240,12 @@ fn main() -> Result<()> {
             let mut reader = BufReader::new(file);
             let mut session = SessionParser::new(&mut reader);
             dump(&mut session, strict)
+        }
+        FxtDump::Fidl(FidlMessages { input }) => {
+            let file = File::open(input)?;
+            let mut reader = BufReader::new(file);
+            let mut session = SessionParser::new(&mut reader);
+            fidl_messages(&mut session)
         }
     }
 
