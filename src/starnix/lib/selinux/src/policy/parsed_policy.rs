@@ -763,135 +763,135 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let mut context = PolicyValidationContext { data: self.data.clone() };
+        let context = PolicyValidationContext { data: self.data.clone() };
 
         self.magic
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating magic")?;
         self.signature
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating signature")?;
         self.policy_version
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating policy_version")?;
         self.config
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating config")?;
         self.counts
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating counts")?;
         self.policy_capabilities
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating policy_capabilities")?;
         self.permissive_map
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating permissive_map")?;
         self.common_symbols
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating common_symbols")?;
         self.classes
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating classes")?;
         self.roles
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating roles")?;
         self.types
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating types")?;
         self.users
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating users")?;
         self.conditional_booleans
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating conditional_booleans")?;
         self.sensitivities
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating sensitivities")?;
         self.categories
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating categories")?;
         self.access_vector_rules
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating access_vector_rules")?;
         self.conditional_lists
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating conditional_lists")?;
         self.role_transitions
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating role_transitions")?;
         self.role_allowlist
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating role_allowlist")?;
         self.filename_transition_list
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating filename_transition_list")?;
         self.initial_sids
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating initial_sids")?;
         self.filesystems
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating filesystems")?;
         self.ports
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating ports")?;
         self.network_interfaces
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating network_interfaces")?;
         self.nodes
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating nodes")?;
         self.fs_uses
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating fs_uses")?;
         self.ipv6_nodes
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating ipv6 nodes")?;
         self.infinitiband_partition_keys
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating infinitiband_partition_keys")?;
         self.infinitiband_end_ports
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating infinitiband_end_ports")?;
         self.generic_fs_contexts
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating generic_fs_contexts")?;
         self.range_transitions
-            .validate(&mut context)
+            .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
             .context("validating range_transitions")?;
         for attribute_map_offset in &self.attribute_maps {
             self.reparse_attribute_map(*attribute_map_offset)
-                .validate(&mut context)
+                .validate(&context)
                 .map_err(anyhow::Error::from)
                 .context("validating attribute_maps")?;
         }

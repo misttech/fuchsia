@@ -588,7 +588,7 @@ pub(super) trait Validate {
     type Error: Into<anyhow::Error>;
 
     /// Validates a `Self`, returning a `Self::Error` if `self` is internally inconsistent.
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error>;
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error>;
 }
 
 pub(super) trait ValidateArray<M, D> {
@@ -598,7 +598,7 @@ pub(super) trait ValidateArray<M, D> {
 
     /// Validates a `Self`, returning a `Self::Error` if `self` is internally inconsistent.
     fn validate_array(
-        context: &mut PolicyValidationContext,
+        context: &PolicyValidationContext,
         metadata: &M,
         items: &[D],
     ) -> Result<(), Self::Error>;
@@ -613,7 +613,7 @@ pub(super) trait Counted {
 impl<T: Validate> Validate for Option<T> {
     type Error = <T as Validate>::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         match self {
             Some(value) => value.validate(context),
             None => Ok(()),
@@ -626,7 +626,7 @@ impl Validate for le::U32 {
 
     /// Using a raw `le::U32` implies no additional constraints on its value. To operate with
     /// constraints, define a `struct T(le::U32);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -636,7 +636,7 @@ impl Validate for u8 {
 
     /// Using a raw `u8` implies no additional constraints on its value. To operate with
     /// constraints, define a `struct T(u8);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -646,7 +646,7 @@ impl Validate for [u8] {
 
     /// Using a raw `[u8]` implies no additional constraints on its value. To operate with
     /// constraints, define a `struct T([u8]);` and `impl Validate for T { ... }`.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -654,7 +654,7 @@ impl Validate for [u8] {
 impl<B: SplitByteSlice, T: Validate + FromBytes + KnownLayout + Immutable> Validate for Ref<B, T> {
     type Error = <T as Validate>::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         self.deref().validate(context)
     }
 }
@@ -753,7 +753,7 @@ macro_rules! array_type_validate_deref_both {
         impl Validate for $type_name {
             type Error = anyhow::Error;
 
-            fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
@@ -773,7 +773,7 @@ macro_rules! array_type_validate_deref_data {
         impl Validate for $type_name {
             type Error = anyhow::Error;
 
-            fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
@@ -793,7 +793,7 @@ macro_rules! array_type_validate_deref_metadata_data_vec {
         impl Validate for $type_name {
             type Error = anyhow::Error;
 
-            fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 
@@ -813,7 +813,7 @@ macro_rules! array_type_validate_deref_none_data_vec {
         impl Validate for $type_name {
             type Error = anyhow::Error;
 
-            fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
                 let metadata = &self.metadata;
                 metadata.validate(context)?;
 

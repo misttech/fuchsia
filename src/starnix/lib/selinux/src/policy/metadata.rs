@@ -32,7 +32,7 @@ pub(super) struct Magic(le::U32);
 impl Validate for Magic {
     type Error = ValidateError;
 
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         let found_magic = self.0.get();
         if found_magic != SELINUX_MAGIC {
             Err(ValidateError::InvalidMagic { found_magic })
@@ -50,7 +50,7 @@ impl ValidateArray<SignatureMetadata, u8> for Signature {
     type Error = ValidateError;
 
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &SignatureMetadata,
         items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -70,7 +70,7 @@ impl Validate for SignatureMetadata {
     type Error = ValidateError;
 
     /// [`SignatureMetadata`] has no constraints.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         let found_length = self.0.get();
         if found_length > POLICYDB_STRING_MAX_LENGTH {
             Err(ValidateError::InvalidSignatureLength { found_length })
@@ -99,7 +99,7 @@ impl PolicyVersion {
 impl Validate for PolicyVersion {
     type Error = ValidateError;
 
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         let found_policy_version = self.0.get();
         if found_policy_version < POLICYDB_VERSION_MIN
             || found_policy_version > POLICYDB_VERSION_MAX
@@ -146,7 +146,7 @@ impl Validate for Config {
 
     /// All validation for [`Config`] is necessary to parse it correctly. No additional validation
     /// required.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -180,7 +180,7 @@ impl Validate for Counts {
     type Error = anyhow::Error;
 
     /// [`Counts`] have no internal consistency requirements.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -197,14 +197,14 @@ mod tests {
     macro_rules! validate_test {
         ($parse_output:ident, $data:expr, $result:tt, $check_impl:block) => {{
             let data = Arc::new($data);
-            let mut context = PolicyValidationContext { data: data.clone() };
+            let context = PolicyValidationContext { data: data.clone() };
             fn check_by_value($result: Result<(), <$parse_output as Validate>::Error>) {
                 $check_impl
             }
 
             let (by_value_parsed, _tail) = $parse_output::parse(PolicyCursor::new(&data))
                 .expect("successful parse for validate test");
-            let by_value_result = by_value_parsed.validate(&mut context);
+            let by_value_result = by_value_parsed.validate(&context);
             check_by_value(by_value_result);
         }};
     }
@@ -236,12 +236,12 @@ mod tests {
             u32::from_le_bytes(bytes.clone().as_slice().try_into().unwrap());
 
         let data = Arc::new(bytes);
-        let mut context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone() };
         let (magic, tail) = PolicyCursor::parse::<Magic>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
         assert_eq!(
             Err(ValidateError::InvalidMagic { found_magic: expected_invalid_magic }),
-            magic.validate(&mut context)
+            magic.validate(&context)
         );
     }
 
@@ -298,7 +298,7 @@ mod tests {
     fn invalid_policy_version() {
         let bytes = [(POLICYDB_VERSION_MIN - 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let mut context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
@@ -306,12 +306,12 @@ mod tests {
             Err(ValidateError::InvalidPolicyVersion {
                 found_policy_version: POLICYDB_VERSION_MIN - 1
             }),
-            policy_version.validate(&mut context)
+            policy_version.validate(&context)
         );
 
         let bytes = [(POLICYDB_VERSION_MAX + 1).to_le_bytes().as_slice()].concat();
         let data = Arc::new(bytes);
-        let mut context = PolicyValidationContext { data: data.clone() };
+        let context = PolicyValidationContext { data: data.clone() };
         let (policy_version, tail) =
             PolicyCursor::parse::<PolicyVersion>(PolicyCursor::new(&data)).expect("magic");
         assert_eq!(data.len(), tail.offset() as usize);
@@ -319,7 +319,7 @@ mod tests {
             Err(ValidateError::InvalidPolicyVersion {
                 found_policy_version: POLICYDB_VERSION_MAX + 1
             }),
-            policy_version.validate(&mut context)
+            policy_version.validate(&context)
         );
     }
 

@@ -180,7 +180,7 @@ where
     type Error = anyhow::Error;
 
     /// [`SymbolList`] has no internal constraints beyond those imposed by [`Array`].
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         self.metadata.validate(context).map_err(Into::<anyhow::Error>::into)?;
         self.data.as_slice().validate(context).map_err(Into::<anyhow::Error>::into)?;
 
@@ -216,7 +216,7 @@ impl Validate for Metadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound on `primary_names_count` or `count`?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -226,7 +226,7 @@ impl Validate for [CommonSymbol] {
 
     /// [`CommonSymbols`] have no internal constraints beyond those imposed by individual
     /// [`CommonSymbol`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -265,7 +265,7 @@ impl ValidateArray<CommonSymbolMetadata, Permission> for CommonSymbol {
 
     /// [`CommonSymbol`] have no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &CommonSymbolMetadata,
         _items: &[Permission],
     ) -> Result<(), Self::Error> {
@@ -290,7 +290,7 @@ impl ValidateArray<CommonSymbolStaticMetadata, u8> for CommonSymbolMetadata {
 
     /// Array of [`u8`] sized by [`CommonSymbolStaticMetadata`] requires no additional validation.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &CommonSymbolStaticMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -317,7 +317,7 @@ impl Validate for CommonSymbolStaticMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound on `length`?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -337,7 +337,7 @@ impl Validate for Permissions {
 
     /// [`Permissions`] have no internal constraints beyond those imposed by individual
     /// [`Permission`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -366,7 +366,7 @@ impl ValidateArray<PermissionMetadata, u8> for Permission {
 
     /// [`Permission`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &PermissionMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -393,7 +393,7 @@ impl Validate for PermissionMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound on `length`?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         // `id` must be a valid `AccessVector` bit-index in the range 1..=32.
         if self.id < 1 || self.id > 32 {
             return Err(anyhow!("Permission Id is not valid AV index"));
@@ -410,7 +410,7 @@ impl Validate for Constraints {
 
     /// [`Constraints`] has no internal constraints beyond those imposed by individual
     /// [`Constraint`] objects.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -462,7 +462,7 @@ impl ValidateArray<ConstraintTermCount, ConstraintTerm> for ConstraintExpr {
     /// [`Array`]. The `ParsedPolicy::validate()` function separately validates
     /// that the constraint expression is well-formed.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ConstraintTermCount,
         _items: &[ConstraintTerm],
     ) -> Result<(), Self::Error> {
@@ -497,7 +497,7 @@ impl Counted for ConstraintTermCount {
 impl Validate for ConstraintTermCount {
     type Error = anyhow::Error;
 
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -509,7 +509,7 @@ impl Validate for ConstraintTerms {
     /// individual [`ConstraintTerm`] objects. The `ParsedPolicy::validate()`
     /// function separately validates that the constraint expression is
     /// well-formed.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -587,7 +587,7 @@ impl Validate for ConstraintTermMetadata {
 
     /// Further validation is done by the `ParsedPolicy::validate()` function,
     /// which separately validates that constraint expressions are well-formed.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         if !(self.constraint_term_type > 0
             && self.constraint_term_type <= CONSTRAINT_TERM_TYPE_EXPR_WITH_NAMES)
         {
@@ -664,7 +664,7 @@ pub(super) fn find_common_symbol_by_name_bytes<'a>(
 impl Validate for [Class] {
     type Error = anyhow::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         // TODO: Validate internal consistency between consecutive [`Class`] instances.
         for class in self {
             // TODO: Validate `self.constraints` and `self.validate_transitions`.
@@ -788,7 +788,7 @@ impl ClassDefaults {
 impl Validate for ClassDefaults {
     type Error = anyhow::Error;
 
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         ClassDefault::validate(self.default_user.get()).context("default user")?;
         ClassDefault::validate(self.default_role.get()).context("default role")?;
         ClassDefault::validate(self.default_type.get()).context("default type")?;
@@ -907,7 +907,7 @@ impl ValidateArray<ClassValidateTransitionsCount, ConstraintTerm> for ClassValid
 
     /// [`ClassValidateTransitions`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ClassValidateTransitionsCount,
         _items: &[ConstraintTerm],
     ) -> Result<(), Self::Error> {
@@ -929,7 +929,7 @@ impl Validate for ClassValidateTransitionsCount {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound on class validate transitions count?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -943,7 +943,7 @@ impl ValidateArray<ClassPermissions, Constraint> for ClassConstraints {
 
     /// [`ClassConstraints`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ClassPermissions,
         _items: &[Constraint],
     ) -> Result<(), Self::Error> {
@@ -960,7 +960,7 @@ impl ValidateArray<ClassCommonKey, Permission> for ClassPermissions {
 
     /// [`ClassPermissions`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ClassCommonKey,
         _items: &[Permission],
     ) -> Result<(), Self::Error> {
@@ -984,7 +984,7 @@ impl ValidateArray<ClassKey, u8> for ClassCommonKey {
 
     /// [`ClassCommonKey`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ClassKey,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1008,7 +1008,7 @@ impl ValidateArray<ClassMetadata, u8> for ClassKey {
 
     /// [`ClassKey`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ClassMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1044,7 +1044,7 @@ impl Validate for ClassMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be an upper bound `u32` values in [`ClassMetadata`]?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         if self.id.get() == 0 {
             return Err(ValidateError::NonOptionalIdIsZero.into());
         } else {
@@ -1057,7 +1057,7 @@ impl Validate for [Role] {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency between consecutive [`Role`] instances.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1114,7 +1114,7 @@ impl ValidateArray<RoleStaticMetadata, u8> for RoleMetadata {
 
     /// [`RoleMetadata`] has no internal constraints beyond those imposed by [`Array`].
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &RoleStaticMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1141,7 +1141,7 @@ impl Validate for RoleStaticMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Should there be any constraints on `length`, `value`, or `bounds`?
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1150,7 +1150,7 @@ impl Validate for [Type] {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency between consecutive [`Type`] instances.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1208,7 +1208,7 @@ impl ValidateArray<TypeMetadata, u8> for Type {
 
     /// TODO: Validate that `PS::deref(&self.data)` is an ascii string that contains a valid type name.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &TypeMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1235,7 +1235,7 @@ impl Validate for TypeMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Validate [`TypeMetadata`] internals.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1244,7 +1244,7 @@ impl Validate for [User] {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency between consecutive [`User`] instances.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1307,7 +1307,7 @@ impl ValidateArray<UserMetadata, u8> for UserData {
 
     /// TODO: Validate consistency between [`UserMetadata`] in `self.metadata` and `[u8]` key in `self.data`.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &UserMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1333,7 +1333,7 @@ impl Validate for UserMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Validate [`UserMetadata`] internals.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1445,7 +1445,7 @@ impl Validate for [ConditionalBoolean] {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`ConditionalBoolean`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1459,7 +1459,7 @@ impl ValidateArray<ConditionalBooleanMetadata, u8> for ConditionalBoolean {
 
     /// TODO: Validate consistency between [`ConditionalBooleanMetadata`] and `[u8]` key.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &ConditionalBooleanMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1495,7 +1495,7 @@ impl Validate for ConditionalBooleanMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency of [`ConditionalBooleanMetadata`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1504,7 +1504,7 @@ impl Validate for [Sensitivity] {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`Sensitivity`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1547,7 +1547,7 @@ impl Validate for Sensitivity {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency of `self.metadata` and `self.level`.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         NonZeroU32::new(self.level.sensitivity.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }
@@ -1562,7 +1562,7 @@ impl ValidateArray<SensitivityStaticMetadata, u8> for SensitivityMetadata {
 
     /// TODO: Validate consistency between [`SensitivityMetadata`] and `[u8]` key.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &SensitivityStaticMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1589,7 +1589,7 @@ impl Validate for SensitivityStaticMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency of [`SensitivityStaticMetadata`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1598,7 +1598,7 @@ impl Validate for [Category] {
     type Error = anyhow::Error;
 
     /// TODO: Validate consistency of sequence of [`Category`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -1622,7 +1622,7 @@ impl ValidateArray<CategoryMetadata, u8> for Category {
 
     /// TODO: Validate consistency between [`CategoryMetadata`] and `[u8]` key.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         _metadata: &CategoryMetadata,
         _items: &[u8],
     ) -> Result<(), Self::Error> {
@@ -1650,7 +1650,7 @@ impl Validate for CategoryMetadata {
     type Error = anyhow::Error;
 
     /// TODO: Validate internal consistency of [`CategoryMetadata`].
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         NonZeroU32::new(self.id.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
         Ok(())
     }

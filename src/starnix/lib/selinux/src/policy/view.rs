@@ -116,7 +116,7 @@ impl<T: Parse> View<T> {
 impl<T: Validate + Parse> Validate for View<T> {
     type Error = anyhow::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         let object = self.parse(&context.data);
         object.validate(context).map_err(Into::<anyhow::Error>::into)
     }
@@ -439,7 +439,7 @@ where
 {
     type Error = anyhow::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         let policy_data = context.data.clone();
         for element in self
             .index

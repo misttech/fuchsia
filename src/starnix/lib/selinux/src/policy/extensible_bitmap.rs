@@ -147,7 +147,7 @@ impl Iterator for ExtensibleBitmapSpansIterator<'_> {
 impl Validate for Vec<ExtensibleBitmap> {
     type Error = <ExtensibleBitmap as Validate>::Error;
 
-    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
         for extensible_bitmap in self {
             extensible_bitmap.validate(context)?;
         }
@@ -161,7 +161,7 @@ impl Validate for Metadata {
 
     /// Validates that [`ExtensibleBitmap`] metadata is internally consistent with data
     /// representation assumptions.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         // Only one size for `MapItem` instances is supported.
         let found_size = self.map_item_size_bits.get();
         if found_size != MAP_NODE_BITS {
@@ -231,7 +231,7 @@ impl Validate for [MapItem] {
 
     /// All [`MapItem`] validation requires access to [`Metadata`]; validation performed in
     /// `ExtensibleBitmap<PS>::validate()`.
-    fn validate(&self, _context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -243,7 +243,7 @@ impl ValidateArray<Metadata, MapItem> for ExtensibleBitmap {
     /// expected to be stored in ascending order (by `start_bit`), and their bit ranges must fall
     /// within the range `[0, metadata.high_bit())`.
     fn validate_array(
-        _context: &mut PolicyValidationContext,
+        _context: &PolicyValidationContext,
         metadata: &Metadata,
         items: &[MapItem],
     ) -> Result<(), Self::Error> {
@@ -421,12 +421,12 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context = PolicyValidationContext { data: policy_data.clone() };
+                let context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
                     Err(ValidateError::InvalidExtensibleBitmapItemSize {
                         found_size: MAP_NODE_BITS - 1
                     }),
-                    parsed.validate(&mut context).map_err(as_validate_error)
+                    parsed.validate(&context).map_err(as_validate_error)
                 );
                 Some((parsed, tail))
             }
@@ -449,13 +449,13 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context = PolicyValidationContext { data: policy_data.clone() };
+                let context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
                     Err(ValidateError::MisalignedExtensibleBitmapHighBit {
                         found_size: MAP_NODE_BITS,
                         found_high_bit: (MAP_NODE_BITS * 10) + 1
                     }),
-                    parsed.validate(&mut context).map_err(as_validate_error),
+                    parsed.validate(&context).map_err(as_validate_error),
                 );
                 Some((parsed, tail))
             }
@@ -515,8 +515,8 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context = PolicyValidationContext { data: policy_data.clone() };
-                match parsed.validate(&mut context).map_err(as_validate_error) {
+                let context = PolicyValidationContext { data: policy_data.clone() };
+                match parsed.validate(&context).map_err(as_validate_error) {
                     Err(ValidateError::MisalignedExtensibleBitmapItemStartBit {
                         found_start_bit,
                         ..
@@ -552,9 +552,9 @@ mod tests {
             {
                 let (parsed, tail) = result.expect("parsed");
                 assert_eq!(36, tail.offset());
-                let mut context = PolicyValidationContext { data: policy_data.clone() };
+                let context = PolicyValidationContext { data: policy_data.clone() };
                 assert_eq!(
-                    parsed.validate(&mut context).map_err(as_validate_error),
+                    parsed.validate(&context).map_err(as_validate_error),
                     Err(ValidateError::OutOfOrderExtensibleBitmapItems {
                         found_start_bit: MAP_NODE_BITS * 2,
                         min_start: (MAP_NODE_BITS * 7) + MAP_NODE_BITS,
