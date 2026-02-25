@@ -168,6 +168,12 @@ pub struct GuestConfig {
     #[serde(default)]
     pub ovmf_vars: PathBuf,
 
+    /// And arm64 bootloader that runs in EL3 and is capable of ultimately
+    /// loading -kernel and -initrd QEMU specifications via Linux's boot
+    /// protocol.
+    #[serde(default)]
+    pub secure_bootloader_arm64: Option<PathBuf>,
+
     /// Path to the product bundle from where the emulator is staged.
     /// TODO(https://fxbug.dev/381263769): Note that this is passed to make-fuchsia-vol for
     /// constructing GPT images until a better solution is in place. Please avoid using it, as it

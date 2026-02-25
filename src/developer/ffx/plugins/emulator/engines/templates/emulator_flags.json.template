@@ -79,7 +79,12 @@
         {{#if (eq device.cpu.architecture "arm64")}}
             "-machine",
             {{#if (eq host.acceleration "none")}}
-                "virt-9.2,virtualization=true,gic-version=3,highmem-ecam=off",
+                {{#if guest.secure_bootloader_arm64}}
+                    "virt-9.2,virtualization=true,secure=true,gic-version=3,highmem-ecam=off",
+                    "-bios", "{{guest.secure_bootloader_arm64}}",
+                {{else}}
+                    "virt-9.2,virtualization=true,gic-version=3,highmem-ecam=off",
+                {{/if}}
                 "-cpu", "max",
             {{else}}
                 "virt-9.2,gic-version=3,highmem-ecam=off",

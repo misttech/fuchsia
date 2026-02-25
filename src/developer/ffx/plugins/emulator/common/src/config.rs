@@ -26,6 +26,10 @@ pub const OVMF_CODE_X64: &'static str = "uefi_internal_x64";
 /// The SDK tool file for the arm64 UEFI (QEMU_EFI.fd)
 pub const OVMF_CODE_ARM64: &'static str = "uefi_internal_arm64";
 
+/// An arm64 secure bootloader capable of booting a QEMU kernel via Linux's
+/// boot protocol.
+pub const BOOTLOADER_SECURE_ARM64: &'static str = "secure_bootloader_arm64";
+
 /// The experimental flag for the console subcommand. Defaults to false.
 pub const EMU_CONSOLE_FLAG: &'static str = "emu.console.enabled";
 

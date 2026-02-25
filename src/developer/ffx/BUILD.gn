@@ -100,6 +100,8 @@ if (current_toolchain == default_toolchain) {
                       "//prebuilt/third_party/edk2/qemu-x64/OVMF_CODE.fd")
               uefi_internal_arm64 = rebase_path(
                       "//prebuilt/third_party/edk2/qemu-arm64/QEMU_EFI.fd")
+              secure_bootloader_arm64 = rebase_path(
+                      "//prebuilt/firmware/arm-trusted-firmware-qemu-bios/qemu_fw.bios")
             }
           }
 

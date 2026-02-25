@@ -10,7 +10,9 @@ use emulator_instance::{
     NetworkingMode, OperatingSystem,
 };
 use ffx_config::EnvironmentContext;
-use ffx_emulator_common::config::{EMU_UPSCRIPT_FILE, KVM_PATH, OVMF_CODE_ARM64, OVMF_CODE_X64};
+use ffx_emulator_common::config::{
+    BOOTLOADER_SECURE_ARM64, EMU_UPSCRIPT_FILE, KVM_PATH, OVMF_CODE_ARM64, OVMF_CODE_X64,
+};
 use ffx_emulator_common::split_once;
 use ffx_emulator_common::tuntap::tap_available;
 use ffx_emulator_config::convert_bundle_to_configs;
@@ -108,6 +110,10 @@ pub(crate) async fn make_configs(
                     log::warn!("cannot find key metadata file at {p:?}");
                 }
             }
+        }
+
+        if emu_config.device.cpu.architecture == CpuArchitecture::Arm64 {
+            emu_config.guest.secure_bootloader_arm64 = ffx_config::get_host_tool(&ctx, BOOTLOADER_SECURE_ARM64).ok();
         }
         emu_config
     };
