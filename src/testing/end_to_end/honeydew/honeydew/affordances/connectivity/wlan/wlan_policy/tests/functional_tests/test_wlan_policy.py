@@ -67,7 +67,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             access_points[0] if access_points else None
         )
 
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.wait_for_interface(self.device.netstack, PortClass.WLAN_CLIENT)
         )
 

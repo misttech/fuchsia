@@ -192,7 +192,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
 
         @functools.wraps(self.make_ready)
         def make_ready() -> None:
-            fuchsia_async_extension.get_test_loop().run_until_complete(
+            fuchsia_async_extension.get_loop().run_until_complete(
                 self.make_ready()
             )
 
@@ -200,9 +200,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
 
         @functools.wraps(self._close)
         def _close() -> None:
-            fuchsia_async_extension.get_test_loop().run_until_complete(
-                self._close()
-            )
+            fuchsia_async_extension.get_loop().run_until_complete(self._close())
 
         self._fuchsia_device_close.register_for_on_device_close(_close)
 
@@ -313,7 +311,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
                 )
 
     def set_country_code_sync(self, country_code: CountryCode) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.set_country_code(country_code)
         )
 
@@ -387,7 +385,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> f_wlan_policy.RequestStatus:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.connect(target_ssid, security_type, timeout=timeout)
         )
 
@@ -444,7 +442,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> list[NetworkConfig]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_saved_networks(timeout=timeout)
         )
 
@@ -497,7 +495,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> ClientStateSummary:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_status(timeout=timeout)
         )
 
@@ -568,7 +566,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> ClientStateSummary:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_update(timeout=timeout)
         )
 
@@ -652,7 +650,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.wait_until_update(expected_update, timeout=timeout)
         )
 
@@ -685,7 +683,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.remove_all_networks(timeout=timeout)
         )
 
@@ -726,7 +724,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.remove_network(
                 target_ssid, security_type, target_pwd, timeout=timeout
             )
@@ -799,7 +797,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.save_network(
                 target_ssid, security_type, target_pwd, timeout=timeout
             )
@@ -869,7 +867,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> list[str]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.scan_for_networks(timeout=timeout)
         )
 
@@ -923,7 +921,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         return list(scan_results)
 
     def set_new_update_listener_sync(self) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.set_new_update_listener()
         )
 
@@ -995,7 +993,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.start_client_connections(timeout=timeout)
         )
 
@@ -1046,7 +1044,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.stop_client_connections(timeout=timeout)
         )
 
@@ -1094,7 +1092,7 @@ class WlanPolicy(wlan_policy.WlanPolicy, AsyncLazyReady):
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.wait_for_no_connections(timeout=timeout)
         )
 

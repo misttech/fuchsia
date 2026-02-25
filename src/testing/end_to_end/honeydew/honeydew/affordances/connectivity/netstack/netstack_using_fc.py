@@ -110,7 +110,7 @@ class NetstackUsingFc(netstack.Netstack):
         )
 
     def list_interfaces_sync(self) -> list[InterfaceProperties]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.list_interfaces()
         )
 

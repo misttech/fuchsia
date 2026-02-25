@@ -95,7 +95,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
 
         @functools.wraps(self.make_ready)
         def make_ready() -> None:
-            fuchsia_async_extension.get_test_loop().run_until_complete(
+            fuchsia_async_extension.get_loop().run_until_complete(
                 self.make_ready()
             )
 
@@ -214,7 +214,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         mode: ConnectivityMode,
         band: OperatingBand,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.start(ssid, security, password, mode, band)
         )
 
@@ -270,7 +270,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         security: SecurityType,
         password: str | None,
     ) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.stop(ssid, security, password)
         )
 
@@ -324,7 +324,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
             self._access_point_controller.proxy.stop_all_access_points()
 
     def set_new_update_listener_sync(self) -> None:
-        fuchsia_async_extension.get_test_loop().run_until_complete(
+        fuchsia_async_extension.get_loop().run_until_complete(
             self.set_new_update_listener()
         )
 
@@ -382,7 +382,7 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp, AsyncLazyReady):
         self,
         timeout: float | None = None,
     ) -> list[AccessPointState]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_update(timeout)
         )
 

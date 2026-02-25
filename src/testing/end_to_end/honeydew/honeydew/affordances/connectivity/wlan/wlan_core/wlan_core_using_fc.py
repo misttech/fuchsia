@@ -85,7 +85,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
 
         @functools.wraps(self.make_ready)
         def make_ready() -> None:
-            fuchsia_async_extension.get_test_loop().run_until_complete(
+            fuchsia_async_extension.get_loop().run_until_complete(
                 self.make_ready()
             )
 
@@ -136,7 +136,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         bss_desc: f_wlan_common.BssDescription,
         authentication: f_wlan_common_security.Authentication,
     ) -> bool:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.connect(ssid, bss_desc, authentication)
         )
 
@@ -237,7 +237,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         role: f_wlan_common.WlanMacRole,
         sta_addr: str | None = None,
     ) -> int:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.create_iface(phy_id, role, sta_addr)
         )
 
@@ -287,7 +287,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         return create_iface_response.iface_id
 
     def destroy_iface_sync(self, iface_id: int) -> None:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.destroy_iface(iface_id)
         )
 
@@ -314,7 +314,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             ) from status
 
     def disconnect_sync(self) -> None:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.disconnect()
         )
 
@@ -341,7 +341,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
                     ) from status
 
     def get_country_sync(self, phy_id: int) -> CountryCode:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_country(phy_id)
         )
 
@@ -372,7 +372,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         )
 
     def set_country_sync(self, phy_id: int, code: CountryCode) -> None:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.set_country(phy_id, code)
         )
 
@@ -391,7 +391,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             ) from status
 
     def get_iface_id_list_sync(self) -> Sequence[int]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_iface_id_list()
         )
 
@@ -416,7 +416,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             ) from status
 
     def get_phy_id_list_sync(self) -> Sequence[int]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.get_phy_id_list()
         )
 
@@ -438,7 +438,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
             ) from status
 
     def query_interfaces_sync(self) -> WlanInterfaces:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.query_interfaces()
         )
 
@@ -477,7 +477,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
     def query_iface_sync(
         self, iface_id: int
     ) -> f_wlan_device_service.QueryIfaceResponse:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.query_iface(iface_id)
         )
 
@@ -530,7 +530,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
     def scan_for_bss_info_sync(
         self,
     ) -> dict[str, list[f_wlan_common.BssDescription]]:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.scan_for_bss_info()
         )
 
@@ -639,7 +639,7 @@ class WlanCore(wlan_core.WlanCore, AsyncLazyReady):
         return sme_client
 
     def status_sync(self) -> ClientStatusResponse:
-        return fuchsia_async_extension.get_test_loop().run_until_complete(
+        return fuchsia_async_extension.get_loop().run_until_complete(
             self.status()
         )
 

@@ -733,10 +733,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
 
             @wraps(test_logic)
             def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
-                return (
-                    fuchsia_async_extension.get_test_loop().run_until_complete(
-                        test_logic(*t_args, **t_kwargs)
-                    )
+                return fuchsia_async_extension.get_loop().run_until_complete(
+                    test_logic(*t_args, **t_kwargs)
                 )
 
             return super().generate_tests(
@@ -758,10 +756,8 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         ) -> Callable[P, T]:
             @wraps(func)
             def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                return (
-                    fuchsia_async_extension.get_test_loop().run_until_complete(
-                        func(*args, **kwargs)
-                    )
+                return fuchsia_async_extension.get_loop().run_until_complete(
+                    func(*args, **kwargs)
                 )
 
             return wrapper
