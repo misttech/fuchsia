@@ -400,6 +400,41 @@ impl Environment {
             fdf_env_set_thread_limit(scheduler_role_ptr, scheduler_role_len, max_threads)
         })
     }
+    /// Returns the currently set options for the scheduler role as a uint32_t bitmask.
+    ///
+    /// |scheduler_role| is the name of the role which is passed when creating dispatchers.
+    pub fn get_scheduler_role_opts(&self, scheduler_role: &str) -> u32 {
+        let scheduler_role_ptr = scheduler_role.as_ptr() as *mut ffi::c_char;
+        let scheduler_role_len = scheduler_role.len();
+        unsafe { fdf_env_get_scheduler_role_opts(scheduler_role_ptr, scheduler_role_len) }
+    }
+
+    /// When used with [`Self::set_scheduler_role_opts`], this will not allow any dispatchers on the
+    /// scheduler role to be created with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
+    pub const SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS: u32 = FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS;
+
+    /// Sets the options for the given scheduler role. This can be used to enforce restrictions
+    /// on the kinds of dispatchers that can be created on this scheduler role.
+    ///
+    /// |scheduler_role| is the name of the role which is passed when creating dispatchers.
+    /// |options| is the new options for the scheduler role.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::INVALID_ARGS`]: |options| contains unknown or invalid options.
+    /// [`Status::ERR_NOT_SUPPORTED`]: |options| contains an option that wouldn't allow a dispatcher
+    /// that already exists on this scheduler role.
+    pub fn set_scheduler_role_opts(
+        &self,
+        scheduler_role: &str,
+        options: u32,
+    ) -> Result<(), Status> {
+        let scheduler_role_ptr = scheduler_role.as_ptr() as *mut ffi::c_char;
+        let scheduler_role_len = scheduler_role.len();
+        Status::ok(unsafe {
+            fdf_env_set_scheduler_role_opts(scheduler_role_ptr, scheduler_role_len, options)
+        })
+    }
 
     /// Gets the driver currently running on the thread identified by |thread_koid|, if the thread
     /// is running on this driver host with a driver.
