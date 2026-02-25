@@ -7,6 +7,7 @@ test_suite(
     tests = [
         "//build/bazel/host_tests/cc_tests",
         "//build/bazel/host_tests/py_tests",
+        "//build/tools/json_validator/test:tests",
     ],
     visibility = ["//visibility:public"],
 )
