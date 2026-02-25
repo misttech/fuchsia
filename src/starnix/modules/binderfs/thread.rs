@@ -327,6 +327,7 @@ impl BinderThreadState {
         } else {
             if registration == RegistrationState::Auxilliary {
                 binder_process.thread_requested = false;
+                binder_process.thread_pool.inc_auxilliary_threads();
             }
             self.registration = registration;
             Ok(())

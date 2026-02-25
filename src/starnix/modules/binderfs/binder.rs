@@ -760,7 +760,7 @@ impl BinderDriver {
                         // Clone threads in the proc to lock them all until freeze is done.
                         let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_locked
                             .iter()
-                            .map(|p| p.thread_pool.0.values().map(|t| OwnedRef::share(t)))
+                            .map(|p| p.thread_pool.threads.values().map(|t| OwnedRef::share(t)))
                             .flatten()
                             .collect();
                         release_iter_after!(threads, current_task.kernel(), {

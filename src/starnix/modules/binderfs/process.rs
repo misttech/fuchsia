@@ -422,7 +422,7 @@ impl BinderProcess {
     pub fn kick_all_threads(&self) {
         log_trace!("kicking threads for BinderProcess id={}", self.identifier);
         let state = self.lock();
-        for thread in state.thread_pool.0.values() {
+        for thread in state.thread_pool.threads.values() {
             thread.lock().request_kick = true;
         }
         state.thread_pool.notify_all();
@@ -717,17 +717,17 @@ impl BinderProcess {
 impl<'a> BinderProcessGuard<'a> {
     /// Return the `BinderThread` with the given `tid`, creating it if it doesn't exist.
     pub fn find_or_register_thread(&mut self, tid: pid_t) -> OwnedRef<BinderThread> {
-        if let Some(thread) = self.thread_pool.0.get(&tid) {
+        if let Some(thread) = self.thread_pool.threads.get(&tid) {
             return OwnedRef::share(thread);
         }
         let thread = BinderThread::new(self, tid);
-        self.thread_pool.0.insert(tid, OwnedRef::share(&thread));
+        self.thread_pool.threads.insert(tid, OwnedRef::share(&thread));
         thread
     }
 
     /// Unregister the `BinderThread` with the given `tid`.
     pub fn unregister_thread(&mut self, current_task: &CurrentTask, tid: pid_t) {
-        self.thread_pool.0.remove(&tid).release(current_task.kernel());
+        self.thread_pool.remove(current_task, tid);
     }
 
     /// Inserts a reference to a binder object, returning a handle that represents it.
@@ -843,7 +843,7 @@ impl<'a> BinderProcessGuard<'a> {
     /// Whether the driver should request that the client starts a new thread.
     pub fn should_request_thread(&self, thread: &BinderThread) -> bool {
         !self.thread_requested
-            && self.thread_pool.registered_threads() < self.max_thread_count
+            && self.thread_pool.auxilliary_threads() < self.max_thread_count
             && thread.lock().is_main_or_registered()
             && self.base.available_threads.is_empty()
     }
@@ -878,7 +878,7 @@ impl Releasable for BinderProcess {
 
         state.handles.release(());
 
-        for thread in state.thread_pool.0.into_values() {
+        for thread in state.thread_pool.threads.into_values() {
             thread.release(context);
         }
     }
@@ -886,23 +886,39 @@ impl Releasable for BinderProcess {
 
 /// The set of threads that are interacting with the binder driver for a given process.
 #[derive(Debug, Default)]
-pub struct ThreadPool(pub BTreeMap<pid_t, OwnedRef<BinderThread>>);
+pub struct ThreadPool {
+    pub threads: BTreeMap<pid_t, OwnedRef<BinderThread>>,
+    auxilliary_threads_count: usize,
+}
 
 impl ThreadPool {
     fn notify_all(&self) {
-        for t in self.0.values() {
+        for t in self.threads.values() {
             t.command_queue_waiters.notify_all();
         }
     }
 
-    /// The number of registered thread in the pool. This doesn't count the main thread.
-    fn registered_threads(&self) -> usize {
-        self.0
-            .values()
-            .filter(|t| {
-                t.registration.load(Ordering::Acquire) == RegistrationState::Auxilliary.to_u8()
-            })
-            .count()
+    /// The number of threads in the pool with registration state Auxilliary.
+    fn auxilliary_threads(&self) -> usize {
+        self.auxilliary_threads_count
+    }
+
+    pub fn inc_auxilliary_threads(&mut self) {
+        self.auxilliary_threads_count += 1;
+    }
+
+    pub fn remove(&mut self, current_task: &CurrentTask, tid: pid_t) {
+        if let Some(thread) = self.threads.remove(&tid) {
+            if thread.registration.load(Ordering::Acquire) == RegistrationState::Auxilliary.to_u8()
+            {
+                if self.auxilliary_threads_count > 0 {
+                    self.auxilliary_threads_count -= 1;
+                } else {
+                    panic!("Attempt to decrement auxilliary_threads_count below 0");
+                }
+            }
+            thread.release(current_task.kernel());
+        }
     }
 }
 
