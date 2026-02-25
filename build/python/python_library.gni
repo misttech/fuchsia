@@ -230,7 +230,7 @@ template("python_library") {
     deps = [ ":${_labels.input_group}" ]
     if (_enable_mypy) {
       # Run python type checks using Mypy if enable_mypy flag is set.
-      deps += [ ":${_labels.mypy_checker}" ]
+      validations = [ ":${_labels.mypy_checker}" ]
     }
   }
 }
