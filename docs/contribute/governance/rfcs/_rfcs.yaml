@@ -3645,3 +3645,16 @@
   ]
   submitted: '2025-12-03'
   reviewed: '2026-01-05'
+
+- name: 'RFC-0278'
+  title: 'Restartable sequences'
+  short_description: 'Restartable sequences'
+  authors: ['abarth@google.com']
+  file: '0278_restartable_sequences.md'
+  area: ['Kernel']
+  issue: ['449980934']
+  gerrit_change_id: ['1385763']
+  status: 'Accepted'
+  reviewers: ['eieio@google.com', 'jamesr@google.com', 'maniscalco@google.com']
+  submitted: '2026-02-24'
+  reviewed: '2026-02-24'

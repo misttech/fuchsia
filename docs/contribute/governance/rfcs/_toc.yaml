@@ -572,3 +572,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0276_support_for_system_updates_with_changes_to_the_blob_format.md
   - title: "RFC-0277: Merging services and dictionaries"
     path: /docs/contribute/governance/rfcs/0277_merging_services_and_dictionaries.md
+  - title: "RFC-0278: Restartable sequences"
+    path: /docs/contribute/governance/rfcs/0278_restartable_sequences.md
