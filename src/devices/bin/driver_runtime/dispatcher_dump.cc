@@ -153,6 +153,11 @@ void Dispatcher::FormatDump(DumpState* state, std::vector<std::string>* dump_out
           "* Channel wait was not yet registered when the message was received: %lu times",
           non_inlined_stats.channel_wait_not_yet_registered);
     }
+    if (non_inlined_stats.no_thread_migration > 0) {
+      OutputFormattedString(
+          dump_out, "* Called into a dispatcher that wasn't allowed to migrate threads: %lu times",
+          non_inlined_stats.no_thread_migration);
+    }
   }
 
   if (state->queued_tasks.empty()) {

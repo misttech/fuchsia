@@ -347,6 +347,8 @@ class Dispatcher : public async_dispatcher_t,
     kReentrant,
     // The channel received a message, but no channel read was registered yet.
     kChannelWaitNotYetRegistered,
+    // We are queueing to a dispatcher that does not allow thread migration
+    kNoThreadMigration,
   };
 
   struct DebugStats {
@@ -358,6 +360,7 @@ class Dispatcher : public async_dispatcher_t,
       size_t unknown_thread = 0;
       size_t reentrant = 0;
       size_t channel_wait_not_yet_registered = 0;
+      size_t no_thread_migration = 0;
     };
 
     NonInlinedStats non_inlined = {};

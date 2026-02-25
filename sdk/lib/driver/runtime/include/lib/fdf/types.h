@@ -48,6 +48,10 @@ static const uint32_t FDF_DISPATCHER_OPTION_UNSYNCHRONIZED = 1u << 0;
 // This flag indicates that the dispatcher may not share zircon threads with other drivers.
 // Cannot be set in conjunction with `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED`.
 static const uint32_t FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS = 1u << 1;
+// This flag indicates that the dispatcher must not have its thread migrated at
+// runtime. It can only be used if the dispatcher's scheduler role has the
+// `FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS` option set.
+static const uint32_t FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION = 1u << 2;
 
 static const uint32_t FDF_DISPATCHER_OPTION_SYNCHRONIZATION_MASK = 1u << 0;
 

@@ -328,11 +328,16 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
 
   bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
   bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
+  bool no_thread_migration = options & FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION;
   bool thread_pool_no_sync_calls =
       thread_pool->scheduler_role_options() & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS;
   // don't allow a sync calls dispatcher that is also unsynchronized or running on a no sync calls
   // thread pool.
   if (allow_sync_calls && (unsynchronized || thread_pool_no_sync_calls)) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  // only allow limiting thread migration when on a no sync calls dispatcher *and* scheduler role
+  if (no_thread_migration && (!thread_pool_no_sync_calls || allow_sync_calls)) {
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (!owner) {
@@ -964,6 +969,10 @@ fit::result<Dispatcher::NonInlinedReason> Dispatcher::ShouldInline(
     std::unique_ptr<CallbackRequest>& callback_request) {
   auto req_type = callback_request->request_type();
 
+  if (thread_pool_->scheduler_role_options() & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS) {
+    return fit::error(NonInlinedReason::kNoThreadMigration);
+  }
+
   if (!unsynchronized_) {
     // Calling from a non-blocking dispatcher to a blocking dispatcher will lead to
     // the driver runtime queueing the callback onto the async loop.
@@ -1103,6 +1112,9 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
             break;
           case kReentrant:
             debug_stats_.non_inlined.reentrant++;
+            break;
+          case kNoThreadMigration:
+            debug_stats_.non_inlined.no_thread_migration++;
             break;
           default:
             LOGF(ERROR, "Unhandled NonInlinedReason");
