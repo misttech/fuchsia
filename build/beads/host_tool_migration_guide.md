@@ -158,7 +158,7 @@ any issues using `bazel2gn`, please reach out to jayzhuang@.
 
 | GN template | Bazel rule |
 |-------------|------------|
-| `go_binary` | `go_binary` |
+| `go_binary` | `go_binary_host_tool` |
 | `go_library` | `go_library` |
 | `go_test` | `go_test` |
 
@@ -197,10 +197,10 @@ should be migrated to:
 ```bazel
 # BUILD.bazel
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
-go_binary(
+go_binary_host_tool(
   name = "tool",
   srcs = [
     "main.go",
@@ -342,10 +342,10 @@ The Go binary target should be migrated to:
 ```bazel
 # BUILD.bazel
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
-go_binary(
+go_binary_host_tool(
   name = "main",
   srcs = [
     "main.go",
@@ -508,13 +508,13 @@ This is equivalent to the `if (is_host)` check wrapper in GN.
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 ...
 
-go_binary(
+go_binary_host_tool(
   name = "tool",
   target_compatible_with = HOST_CONSTRAINTS,
   ...
 )
 
-go_binary(
+go_binary_host_tool(
   name = "idk_tool",
   # Set to `HOST_OS_CONSTRAINTS` because this tool is shipped in the IDK.
   target_compatible_with = HOST_OS_CONSTRAINTS,

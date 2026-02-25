@@ -5,8 +5,9 @@
 # This BUILD.bazel file is created in the same directory as the BUILD.gn file targets are migrated
 # from.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
 # Creates the matching go_library target.
 #
@@ -46,7 +47,7 @@ go_library(
 # this target with the following annotation.
 
 # @bazel2gn:skip
-go_binary(
+go_binary_host_tool(
     # This field matches the name of the target in GN.
     #
     # NOTE: Target name is changed here to avoid name collision only for this example. You should
