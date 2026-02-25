@@ -646,7 +646,7 @@ impl SuspendResumeManager {
             suspend_stats.last_resume_reason = None;
         });
 
-        let wakeup_sources: Vec<String> = state
+        let mut wakeup_sources: Vec<String> = state
             .wakeup_sources
             .iter_mut()
             .filter_map(|(origin, source)| {
@@ -658,6 +658,13 @@ impl SuspendResumeManager {
                 }
             })
             .collect();
+
+        for source in state.external_wake_sources.values() {
+            if source.handle.wait_one(source.signals, zx::MonotonicInstant::INFINITE_PAST).is_ok() {
+                wakeup_sources.push(source.name.clone());
+            }
+        }
+
         let last_resume_reason = format!("Abort: {}", wakeup_sources.join(" "));
         state.update_suspend_stats(|suspend_stats| {
             // Power analysis tools require `Abort: ` in the case of failed suspends
