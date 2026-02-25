@@ -164,6 +164,9 @@ if (current_toolchain == default_toolchain) {
 
         # <kernel/scheduler.h> depends on <lib/stall.h>
         "//zircon/kernel/lib/stall:headers.config",
+
+        # <kernel/thread.h> depends on <lib/page-map/accessor.h>
+        "//zircon/kernel/lib/page-map:headers.config",
       ]
 
       configs = [ "//zircon/kernel:kernel_config" ]

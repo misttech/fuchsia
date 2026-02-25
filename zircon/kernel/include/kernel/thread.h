@@ -16,6 +16,7 @@
 #include <lib/flow_id.h>
 #include <lib/fxt/thread_ref.h>
 #include <lib/kconcurrent/chainlock.h>
+#include <lib/page-map/accessor.h>
 #include <lib/relaxed_atomic.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
@@ -1337,13 +1338,15 @@ struct Thread : public ChainLockable {
   }
 
   void SignalCheckRestartableSequenceIfNeeded() {
-    if (likely(!rseq_ptr_)) {
+    if (likely(!rseq_accessor_.IsValid())) {
       return;
     }
     signals_.fetch_or(THREAD_SIGNAL_CHECK_RSEQ, ktl::memory_order_relaxed);
   }
 
-  void set_rseq_ptr(zx_rseq_t* ptr) { rseq_ptr_ = ptr; }
+  void set_rseq_accessor(page_map::Accessor<zx_rseq_t> accessor) {
+    rseq_accessor_ = ktl::move(accessor);
+  }
 
   void CheckRestartableSequence(GeneralRegsSource source, void* gregs);
 
@@ -1896,17 +1899,17 @@ struct Thread : public ChainLockable {
   // Provides a way to execute custom logic when a thread is context switched to or away from.
   ContextSwitchFn context_switch_fn_;
 
-  // A pointer to the kernel mapping for the thread's restartable sequence structure, if any.
+  // An Accessor for the thread's restartable sequence structure, if any.
   //
   // This is used to detect when a thread is preempted or enters a waiting state
   // while in a restartable sequence.  When this happens, the restartable sequence
   // is interrupted, and the thread will restart the sequence when it resumes.
   //
-  // Kernel threads do not use restartable sequences, so this will always be null for kernel
+  // Kernel threads do not use restartable sequences, so this will always be !IsValid() for kernel
   // threads.
   //
   // Must be accessed only by the current thread.
-  zx_rseq_t* rseq_ptr_ = nullptr;
+  page_map::Accessor<zx_rseq_t> rseq_accessor_;
 
   // Used to track threads that have set |migrate_fn_|. This is used to migrate
   // threads before a CPU is taken offline.
