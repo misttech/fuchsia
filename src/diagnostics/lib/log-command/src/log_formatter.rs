@@ -404,6 +404,7 @@ where
                         show_file: !cmd.hide_file,
                         show_moniker: !cmd.hide_moniker,
                         show_full_moniker: cmd.show_full_moniker,
+                        prefer_url_component_name: cmd.prefer_url_component_name,
                     })
                 },
                 since: DeviceOrLocalTimestamp::new(cmd.since.as_ref(), cmd.since_boot.as_ref()),

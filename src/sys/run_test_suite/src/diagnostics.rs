@@ -147,14 +147,16 @@ mod test {
             .set_message("my info log")
             .build(),
         ];
-        let displayed_logs = vec![LogsDataBuilder::new(BuilderArgs {
-            moniker: "child".try_into().unwrap(),
-            timestamp: Timestamp::from_nanos(1000),
-            component_url: Some("test-child-url".into()),
-            severity: Severity::Warn,
-        })
-        .set_message("my info log")
-        .build()];
+        let displayed_logs = vec![
+            LogsDataBuilder::new(BuilderArgs {
+                moniker: "child".try_into().unwrap(),
+                timestamp: Timestamp::from_nanos(1000),
+                component_url: Some("test-child-url".into()),
+                severity: Severity::Warn,
+            })
+            .set_message("my info log")
+            .build(),
+        ];
 
         let mut log_artifact = vec![];
         assert_eq!(
@@ -395,7 +397,13 @@ mod test {
             String::from_utf8(log_artifact).unwrap(),
             altered_moniker_logs
                 .iter()
-                .map(|log| format!("{}\n", LogTextPresenter::new(log, Default::default())))
+                .map(|log| format!(
+                    "{}\n",
+                    LogTextPresenter::new(
+                        log,
+                        LogTextDisplayOptions { show_full_moniker: false, ..Default::default() }
+                    )
+                ))
                 .collect::<Vec<_>>()
                 .concat()
         );

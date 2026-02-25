@@ -1026,6 +1026,15 @@ impl Data<Logs> {
         })
     }
 
+    pub fn component_name_by_url(&self) -> Cow<'_, str> {
+        if let Some(url_str) = &self.metadata.component_url {
+            let last_part = url_str.rsplit('/').next().unwrap_or(url_str);
+            return Cow::Owned(last_part.to_string());
+        }
+        // No URL available, fallback to moniker
+        self.component_name()
+    }
+
     /// Returns the component name. This only makes sense for v1 components.
     pub fn component_name(&self) -> Cow<'_, str> {
         match &self.moniker {
@@ -1052,6 +1061,9 @@ pub struct LogTextDisplayOptions {
     /// Whether or not to display the full moniker.
     pub show_full_moniker: bool,
 
+    /// Whether or not to prefer the component URL over the moniker for the component name.
+    pub prefer_url_component_name: bool,
+
     /// Whether or not to display metadata like PID & TID.
     pub show_metadata: bool,
 
@@ -1073,6 +1085,7 @@ impl Default for LogTextDisplayOptions {
         Self {
             show_moniker: true,
             show_full_moniker: true,
+            prefer_url_component_name: false,
             show_metadata: true,
             show_tags: true,
             show_file: true,
@@ -1259,7 +1272,11 @@ impl fmt::Display for LogTextPresenter<'_> {
                 }
             }
         } else {
-            self.component_name()
+            if self.options.prefer_url_component_name {
+                self.component_name_by_url()
+            } else {
+                self.component_name()
+            }
         };
         if self.options.show_moniker {
             write!(f, "[{moniker}]")?;
@@ -1871,12 +1888,16 @@ mod tests {
         .build();
 
         assert_eq!(
-            "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
+            "[00012.345678][123][456][fake-url][foo,bar] INFO: [some_file.cc(420)] some message test=property value=test",
             format!(
                 "{}",
                 LogTextPresenter::new(
                     &data,
-                    LogTextDisplayOptions { show_full_moniker: false, ..Default::default() }
+                    LogTextDisplayOptions {
+                        show_full_moniker: false,
+                        prefer_url_component_name: true,
+                        ..Default::default()
+                    }
                 )
             )
         )
