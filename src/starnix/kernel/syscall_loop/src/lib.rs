@@ -50,7 +50,7 @@ unsafe extern "C" {
         restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
         restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
         restricted_state: *mut zx::sys::zx_restricted_exception_t,
-        extended_pstate: *const ExtendedPstateState,
+        extended_pstate: *mut ExtendedPstateState,
     ) -> zx::sys::zx_status_t;
 }
 
@@ -101,8 +101,13 @@ fn run_task(
         return Ok(exit_status);
     }
 
+    // The restricted_state_ptr points at our bound state. It will remain the
+    // same value for the duration of the restricted loop. The value it points
+    // out will be mutated by restricted_enter_loop.
     let restricted_state_ptr = restricted_state.bound_state.as_ptr();
-    let extended_pstate_ptr = &current_task.thread_state.extended_pstate as *const _;
+    // This extended pstate pointer points to the storage for extended processor
+    // state (vector and FP registers).
+    let extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
 
     let mut restricted_enter_context = RestrictedEnterContext {
         current_task,

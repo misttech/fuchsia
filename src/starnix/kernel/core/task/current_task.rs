@@ -168,7 +168,33 @@ impl CurrentCreds {
     }
 }
 
-/// The thread related information of a `CurrentTask`. The information should never be used  outside
+#[derive(Clone)]
+pub enum ArchExtendedPstateStorage {
+    // Storage for 64 bit restricted mode.
+    State64(Box<ExtendedPstateState>),
+}
+
+impl ArchExtendedPstateStorage {
+    pub fn as_ptr(&mut self) -> *mut ExtendedPstateState {
+        match self {
+            ArchExtendedPstateStorage::State64(state) => state.as_mut() as *mut _,
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            ArchExtendedPstateStorage::State64(state) => state.reset(),
+        }
+    }
+}
+
+impl Default for ArchExtendedPstateStorage {
+    fn default() -> Self {
+        Self::State64(Default::default())
+    }
+}
+
+/// The thread related information of a `CurrentTask`. The information should never be used outside
 /// of the thread owning the `CurrentTask`.
 #[derive(Default)]
 pub struct ThreadState<T: RegisterStorage> {
@@ -178,7 +204,7 @@ pub struct ThreadState<T: RegisterStorage> {
     pub registers: RegisterState<T>,
 
     /// Copy of the current extended processor state including floating point and vector registers.
-    pub extended_pstate: ExtendedPstateState,
+    pub extended_pstate: ArchExtendedPstateStorage,
 
     /// The errno code (if any) that indicated this task should restart a syscall.
     pub restart_code: Option<ErrnoCode>,
@@ -226,7 +252,7 @@ impl<T: RegisterStorage> ThreadState<T> {
 
     pub fn replace_registers<O: RegisterStorage>(&mut self, other: &ThreadState<O>) {
         self.registers.load(*other.registers);
-        self.extended_pstate = other.extended_pstate;
+        self.extended_pstate = other.extended_pstate.clone();
     }
 
     pub fn get_user_register(&mut self, offset: usize) -> Result<usize, Errno> {

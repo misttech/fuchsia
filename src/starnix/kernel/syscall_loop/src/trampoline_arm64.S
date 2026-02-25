@@ -14,7 +14,7 @@ END_FUNCTION(breakpoint_for_module_changes)
 //  x1    restricted_exit_callback: extern "C" fn(*mut RestrictedEnterContext<'_>, u64) -> bool,
 //  x2    restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
 //  x3    restricted_state: *mut zx::sys::zx_restricted_exception_t,
-//  x4    extended_pstate: *const ExtendedPstateState,
+//  x4    extended_pstate: *mut ExtendedPstateState,
 //  x0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // This function:

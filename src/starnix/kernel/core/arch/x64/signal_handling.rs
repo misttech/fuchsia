@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::signals::{SignalInfo, SignalState};
-use crate::task::{CurrentTask, Task};
-use extended_pstate::ExtendedPstateState;
+use crate::task::{ArchExtendedPstateStorage, CurrentTask, Task};
 use starnix_logging::log_debug;
 use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_types::arch::ArchWidth;
@@ -79,7 +78,7 @@ impl SignalStackFrame {
         _task: &Task,
         arch_width: ArchWidth,
         registers: &RegisterState<RegisterStorageEnum>,
-        extended_pstate: &ExtendedPstateState,
+        extended_pstate: &ArchExtendedPstateStorage,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
         action: sigaction_t,
@@ -168,7 +167,10 @@ pub fn align_stack_pointer(pointer: u64) -> u64 {
     pointer - (pointer % 16 + 8)
 }
 
-fn get_xstate(extended_pstate: &ExtendedPstateState) -> XState {
+fn get_xstate(extended_pstate: &ArchExtendedPstateStorage) -> XState {
+    let extended_pstate = match extended_pstate {
+        ArchExtendedPstateStorage::State64(extended_pstate) => extended_pstate,
+    };
     const_assert_eq!(std::mem::size_of::<uapi::_xstate>(), extended_pstate::X64_XSAVE_AREA_SIZE);
 
     #[allow(
@@ -244,14 +246,14 @@ pub fn restore_registers(
         return error!(EINVAL);
     }
 
+    let extended_pstate = match &mut current_task.thread_state.extended_pstate {
+        ArchExtendedPstateStorage::State64(state) => state,
+    };
     #[allow(
         clippy::undocumented_unsafe_blocks,
         reason = "Force documented unsafe blocks in Starnix"
     )]
-    current_task
-        .thread_state
-        .extended_pstate
-        .set_x64_xsave_area(unsafe { std::mem::transmute(xstate.base_xstate) });
+    extended_pstate.set_x64_xsave_area(unsafe { std::mem::transmute(xstate.base_xstate) });
 
     Ok(())
 }

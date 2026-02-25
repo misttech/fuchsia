@@ -148,12 +148,12 @@ impl ExtendedPstateState {
 /// Restores the current extended architectural process state.
 ///
 /// # Safety
-///    - state_addr must point to an instance of ExtendedPstateState.
+///    - state_addr must point to a pointer to an instance of ExtendedPstateState.
 pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
     let state = state_addr as *const ExtendedPstateState;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
-        (&*state).restore()
+        (*state).restore()
     }
 }
 
@@ -161,12 +161,12 @@ pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
 /// Save the current extended architectural process state.
 ///
 /// # Safety
-///    - state_addr must point to an exclusively owned instance of ExtendedPstateState.
+///    - state_addr must point to pointer to an an exclusively owned instance of ExtendedPstateState.
 pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
     let state = state_addr as *mut ExtendedPstateState;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
-        (&mut *state).save()
+        (*state).save()
     }
 }
 
@@ -175,12 +175,12 @@ pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
 /// Restores the current extended AArch32-visible architectural process state.
 ///
 /// # Safety
-///    - state_addr must point to an instance of ExtendedAarch32PstateState.
+///    - state_addr must point to pointer to an instance of ExtendedAarch32PstateState.
 pub unsafe extern "C" fn restore_extended_aarch32_pstate(state_addr: usize) {
     let state = state_addr as *const ExtendedAarch32PstateState;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
-        (&*state).restore()
+        (*state).restore()
     }
 }
 
@@ -189,12 +189,12 @@ pub unsafe extern "C" fn restore_extended_aarch32_pstate(state_addr: usize) {
 /// Saves the current extended AArch32-visible architectural process state.
 ///
 /// # Safety
-///    - state_addr must point to an exclusively owned instance of ExtendedAarch32PstateState.
+///    - state_addr must point to a pointer to an exclusively owned instance of ExtendedAarch32PstateState.
 pub unsafe extern "C" fn save_extended_aarch32_pstate(state_addr: usize) {
     let state = state_addr as *mut ExtendedAarch32PstateState;
     #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
     unsafe {
-        (&mut *state).save()
+        (*state).save()
     }
 }
 

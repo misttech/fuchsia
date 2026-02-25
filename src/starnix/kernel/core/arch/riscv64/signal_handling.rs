@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::signals::{SignalInfo, SignalState};
-use crate::task::{CurrentTask, Task};
+use crate::task::{ArchExtendedPstateStorage, CurrentTask, Task};
 use extended_pstate::ExtendedPstateState;
 use extended_pstate::riscv64::{NUM_V_REGISTERS, RiscvVectorCsrs, VLEN};
 use starnix_logging::log_debug;
@@ -54,12 +54,15 @@ impl SignalStackFrame {
         task: &Task,
         arch_width: ArchWidth,
         registers: &mut RegisterState<RegisterStorageEnum>,
-        extended_pstate: &ExtendedPstateState,
+        extended_pstate: &ArchExtendedPstateStorage,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
         _action: sigaction_t,
         stack_pointer: UserAddress,
     ) -> Result<SignalStackFrame, Errno> {
+        let extended_pstate = match extended_pstate {
+            ArchExtendedPstateStorage::State64(state) => state,
+        };
         let context = ucontext {
             uc_flags: 0,
             uc_link: Default::default(),
@@ -192,7 +195,10 @@ pub fn restore_registers(
     }
 
     let d_state = unsafe { &signal_stack_frame.context.uc_mcontext.__bindgen_anon_1.sc_fpregs.d };
-    let state = current_task.thread_state.extended_pstate.get_riscv64_state_mut();
+    let extended_pstate = match &mut current_task.thread_state.extended_pstate {
+        ArchExtendedPstateStorage::State64(state) => state,
+    };
+    let state = extended_pstate.get_riscv64_state_mut();
     state.fp_registers = d_state.f;
     state.fcsr = d_state.fcsr;
 

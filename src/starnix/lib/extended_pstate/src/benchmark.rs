@@ -44,10 +44,11 @@ fn main() {
         if *PREFERRED_STRATEGY <= strategy {
             bench.with_function(&format!("SaveAndRestore/{:?}", strategy), move |b| {
                 let mut state = ExtendedPstateState::with_strategy(strategy);
+                let state_ptr = &raw mut state as usize;
                 #[allow(clippy::undocumented_unsafe_blocks)]
                 b.iter(|| unsafe {
-                    save_extended_pstate(&mut state as *mut _ as usize);
-                    restore_extended_pstate(&state as *const _ as usize);
+                    save_extended_pstate(state_ptr);
+                    restore_extended_pstate(state_ptr);
                 });
             })
         } else {
@@ -72,10 +73,11 @@ fn main() {
     {
         bench = bench.with_function("SaveAndRestore/Aarch64", |b| {
             let mut state = ExtendedPstateState::default();
+            let state_ptr = &raw mut state as usize;
             #[allow(clippy::undocumented_unsafe_blocks)]
             b.iter(|| unsafe {
-                save_extended_pstate(&mut state as *mut _ as usize);
-                restore_extended_pstate(&state as *const _ as usize);
+                save_extended_pstate(state_ptr);
+                restore_extended_pstate(state_ptr);
             });
         });
         bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
@@ -84,10 +86,11 @@ fn main() {
                 save_extended_aarch32_pstate,
             };
             let mut state = ExtendedAarch32PstateState::default();
+            let state_ptr = &raw mut state as usize;
             #[allow(clippy::undocumented_unsafe_blocks)]
             b.iter(|| unsafe {
-                save_extended_aarch32_pstate(&mut state as *mut _ as usize);
-                restore_extended_aarch32_pstate(&state as *const _ as usize);
+                save_extended_aarch32_pstate(state_ptr);
+                restore_extended_aarch32_pstate(state_ptr);
             });
         });
     }

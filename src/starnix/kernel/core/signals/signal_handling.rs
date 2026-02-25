@@ -8,8 +8,10 @@ use crate::arch::signal_handling::{
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::ptrace::StopState;
 use crate::signals::{KernelSignal, KernelSignalInfo, SignalDetail, SignalInfo, SignalState};
-use crate::task::{CurrentTask, ExitStatus, Task, TaskFlags, TaskWriteGuard, ThreadState, Waiter};
-use extended_pstate::ExtendedPstateState;
+use crate::task::{
+    ArchExtendedPstateStorage, CurrentTask, ExitStatus, Task, TaskFlags, TaskWriteGuard,
+    ThreadState, Waiter,
+};
 use starnix_logging::{log_info, log_trace, log_warn};
 use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
@@ -315,7 +317,7 @@ pub fn deliver_signal(
     mut task_state: TaskWriteGuard<'_>,
     mut siginfo: SignalInfo,
     registers: &mut RegisterState<RegisterStorageEnum>,
-    extended_pstate: &ExtendedPstateState,
+    extended_pstate: &ArchExtendedPstateStorage,
     restricted_exception: Option<zx::ExceptionReport>,
 ) -> Option<ExitStatus> {
     loop {
@@ -420,7 +422,7 @@ fn dispatch_signal_handler(
     task: &Task,
     arch_width: ArchWidth,
     registers: &mut RegisterState<RegisterStorageEnum>,
-    extended_pstate: &ExtendedPstateState,
+    extended_pstate: &ArchExtendedPstateStorage,
     signal_state: &mut SignalState,
     siginfo: SignalInfo,
     action: sigaction_t,

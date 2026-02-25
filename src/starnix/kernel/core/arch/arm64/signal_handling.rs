@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::signals::{SignalDetail, SignalInfo, SignalState};
-use crate::task::{CurrentTask, Task};
-use extended_pstate::ExtendedPstateState;
+use crate::task::{ArchExtendedPstateStorage, CurrentTask, Task};
 use starnix_logging::{log_debug, track_stub};
 use starnix_registers::{RegisterState, RegisterStorageEnum};
 use starnix_types::arch::ArchWidth;
@@ -54,7 +53,7 @@ impl SignalStackFrame {
         task: &Task,
         arch_width: ArchWidth,
         registers: &mut RegisterState<RegisterStorageEnum>,
-        extended_pstate: &ExtendedPstateState,
+        extended_pstate: &ArchExtendedPstateStorage,
         signal_state: &SignalState,
         siginfo: &SignalInfo,
         _action: sigaction_t,
@@ -88,7 +87,7 @@ impl SignalStackFrame {
                 uc_stack: uc_stack.try_into().map_err(|_| errno!(EINVAL))?,
                 uc_sigmask64: uapi::sigset_t::from(signal_state.mask()).into(),
                 uc_mcontext: zerocopy::transmute!(regs),
-                extended_pstate: get_pstate_extended_data(extended_pstate),
+                extended_pstate: get_pstate_extended_data(extended_pstate), // TODO(https://fxbug.dev/486225910): This isn't right for aarch32.
                 ..Default::default()
             };
             context32.write_to_prefix(&mut context).unwrap();
@@ -224,33 +223,41 @@ const SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE: usize = 4096;
 // each identified with a `_aarch64_ctx` header. The end is indicated with both fields in the
 // header set to 0.
 fn get_pstate_extended_data(
-    extended_pstate: &ExtendedPstateState,
+    extended_pstate: &ArchExtendedPstateStorage,
 ) -> [u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE] {
-    let mut result = [0u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE];
+    match extended_pstate {
+        ArchExtendedPstateStorage::State64(extended_pstate) => {
+            let mut result = [0u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE];
 
-    let fpsimd = fpsimd_context {
-        head: _aarch64_ctx {
-            magic: FPSIMD_MAGIC,
-            size: std::mem::size_of::<fpsimd_context>() as u32,
-        },
-        fpsr: extended_pstate.get_arm64_fpsr(),
-        fpcr: extended_pstate.get_arm64_fpcr(),
-        vregs: *extended_pstate.get_arm64_qregs(),
-    };
-    let _ = fpsimd.write_to_prefix(&mut result);
+            let fpsimd = fpsimd_context {
+                head: _aarch64_ctx {
+                    magic: FPSIMD_MAGIC,
+                    size: std::mem::size_of::<fpsimd_context>() as u32,
+                },
+                fpsr: extended_pstate.get_arm64_fpsr(),
+                fpcr: extended_pstate.get_arm64_fpcr(),
+                vregs: *extended_pstate.get_arm64_qregs(),
+            };
+            let _ = fpsimd.write_to_prefix(&mut result);
 
-    // TODO(b/313465152): Save ESR with `esr_context` and `ESR_MAGIC`. The register is read-only,
-    // but the signal handler may still need to read it from `sigcontext`.
-
-    result
+            // TODO(b/313465152): Save ESR with `esr_context` and `ESR_MAGIC`. The register is read-only,
+            // but the signal handler may still need to read it from `sigcontext`.
+            result
+        }
+    }
 }
 
 fn parse_pstate_extended_data(
     data: &[u8; SIGCONTEXT_EXTENDED_PSTATE_DATA_SIZE],
-    extended_pstate: &mut ExtendedPstateState,
+    extended_pstate: &mut ArchExtendedPstateStorage,
 ) -> Result<(), Errno> {
     const FPSIMD_CONTEXT_SIZE: u32 = std::mem::size_of::<fpsimd_context>() as u32;
     const ESR_CONTEXT_SIZE: u32 = std::mem::size_of::<esr_context>() as u32;
+
+    // TODO(https://fxbug.dev/486225910): This isn't right for aarch32. We should parse aarch32 specific data.
+    let extended_pstate = match extended_pstate {
+        ArchExtendedPstateStorage::State64(state) => state,
+    };
 
     let mut found_fpsimd = false;
     let mut offset: usize = 0;
