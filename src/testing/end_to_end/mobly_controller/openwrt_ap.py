@@ -6,7 +6,7 @@
 import logging
 from typing import Any, Dict, List
 
-from libs.openwrt_lib import OpenwrtAp
+from .access_point.openwrt_lib import OpenwrtAp
 
 __all__ = ["OpenwrtAp"]
 
