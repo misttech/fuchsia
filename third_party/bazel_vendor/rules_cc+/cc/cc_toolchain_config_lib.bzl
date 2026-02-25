@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """ A library of functions creating structs for CcToolchainConfigInfo."""
 
 def _check_is_none(obj, parameter_name, method_name):
@@ -615,3 +614,9 @@ def artifact_name_pattern(category_name, prefix, extension):
         extension = extension,
         type_name = "artifact_name_pattern",
     )
+
+def _is_gcc_compiler(compiler):
+    return "gcc" in compiler
+
+def get_profile_correction_flags(ctx):
+    return ["-fprofile-correction"] if hasattr(ctx.attr, "compiler") and _is_gcc_compiler(ctx.attr.compiler) else []

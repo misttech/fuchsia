@@ -359,6 +359,7 @@ class BazelRepositoryMap(object):
             "bazel_tools": self.IGNORED_REPO,
             "bazel_tools+cc_configure_extension+local_config_cc": self.IGNORED_REPO,
             "platforms+host_platform+host_platform": self.IGNORED_REPO,
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy": self.IGNORED_REPO,
             "rules_python++internal_deps+rules_python_internal": self.IGNORED_REPO,
             "rules_python++python+pythons_hub": self.IGNORED_REPO,
             "rules_shell+": self.IGNORED_REPO,
