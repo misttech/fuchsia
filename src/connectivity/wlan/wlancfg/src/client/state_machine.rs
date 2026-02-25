@@ -81,7 +81,7 @@ impl Client {
 impl ClientApi for Client {
     fn connect(&mut self, selection: types::ConnectSelection) -> Result<(), anyhow::Error> {
         self.req_sender
-            .try_send(ManualRequest::Connect(selection))
+            .try_send(ManualRequest::Connect(Box::new(selection)))
             .map_err(|e| format_err!("failed to send connect selection: {:?}", e))
     }
 
@@ -101,9 +101,8 @@ impl ClientApi for Client {
 }
 
 // TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 pub enum ManualRequest {
-    Connect(types::ConnectSelection),
+    Connect(Box<types::ConnectSelection>),
     Disconnect((types::DisconnectReason, oneshot::Sender<()>)),
 }
 
@@ -769,7 +768,8 @@ async fn connected_state(
                         };
                         return Ok(disconnecting_state(common_options, options).into_state());
                     }
-                    Some(ManualRequest::Connect(new_connect_selection)) => {
+                    Some(ManualRequest::Connect(box_connect_selection)) => {
+                        let new_connect_selection = *box_connect_selection;
                         // Check if it's the same network as we're currently connected to. If yes, reply immediately
                         if new_connect_selection.target.network
                             == options.network_identifier {
@@ -1065,8 +1065,8 @@ async fn notify_on_roam_result(
         iface_id: common_options.iface_id,
         result: result.clone(),
         updated_ap_state: (*options.ap_state).clone(),
-        original_ap_state,
-        request: pending_roam.request.clone(),
+        original_ap_state: Box::new(original_ap_state),
+        request: Box::new(pending_roam.request.clone()),
         request_time: pending_roam.timestamp,
         result_time: fasync::MonotonicInstant::now(),
     });

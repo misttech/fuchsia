@@ -226,8 +226,6 @@ impl ScanEventInspectData {
     }
 }
 
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[cfg_attr(test, derive(Debug))]
 pub enum TelemetryEvent {
     /// Request telemetry for the latest status
@@ -288,8 +286,8 @@ pub enum TelemetryEvent {
         iface_id: u16,
         result: fidl_sme::RoamResult,
         updated_ap_state: client::types::ApState,
-        original_ap_state: client::types::ApState,
-        request: PolicyRoamRequest,
+        original_ap_state: Box<client::types::ApState>,
+        request: Box<PolicyRoamRequest>,
         request_time: fasync::MonotonicInstant,
         result_time: fasync::MonotonicInstant,
     },
@@ -402,15 +400,13 @@ pub struct QueryStatusResult {
     connection_state: ConnectionStateInfo,
 }
 
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ConnectionStateInfo {
     Idle,
     Disconnected,
     Connected {
         iface_id: u16,
-        ap_state: client::types::ApState,
+        ap_state: Box<client::types::ApState>,
         telemetry_proxy: Option<fidl_fuchsia_wlan_sme::TelemetryProxy>,
     },
 }
@@ -585,14 +581,12 @@ pub fn serve_telemetry(
     (sender, fut)
 }
 
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum ConnectionState {
     // Like disconnected, but no downtime is tracked.
     Idle(IdleState),
-    Connected(ConnectedState),
-    Disconnected(DisconnectedState),
+    Connected(Box<ConnectedState>),
+    Disconnected(Box<DisconnectedState>),
 }
 
 #[derive(Debug)]
@@ -608,7 +602,7 @@ struct ConnectedState {
     new_connect_start_time: Option<fasync::MonotonicInstant>,
     prev_connection_stats: Option<fidl_fuchsia_wlan_stats::ConnectionStats>,
     multiple_bss_candidates: bool,
-    ap_state: client::types::ApState,
+    ap_state: Box<client::types::ApState>,
     network_is_likely_hidden: bool,
 
     last_signal_report: fasync::MonotonicInstant,
@@ -1143,23 +1137,27 @@ impl Telemetry {
                 };
                 let _result = sender.send(QueryStatusResult { connection_state: info });
             }
-            TelemetryEvent::StartEstablishConnection { reset_start_time } => match &mut self
-                .connection_state
-            {
-                ConnectionState::Idle(IdleState { connect_start_time })
-                | ConnectionState::Disconnected(DisconnectedState { connect_start_time, .. }) => {
-                    if reset_start_time || connect_start_time.is_none() {
-                        let _prev = connect_start_time.replace(now);
+            TelemetryEvent::StartEstablishConnection { reset_start_time } => {
+                match &mut self.connection_state {
+                    ConnectionState::Idle(IdleState { connect_start_time }) => {
+                        if reset_start_time || connect_start_time.is_none() {
+                            let _prev = connect_start_time.replace(now);
+                        }
+                    }
+                    ConnectionState::Disconnected(state) => {
+                        if reset_start_time || state.connect_start_time.is_none() {
+                            let _prev = state.connect_start_time.replace(now);
+                        }
+                    }
+                    ConnectionState::Connected(state) => {
+                        // When in connected state, only set the start time if `reset_start_time` is
+                        // true because it indicates the user triggers the new connect action.
+                        if reset_start_time {
+                            let _prev = state.new_connect_start_time.replace(now);
+                        }
                     }
                 }
-                ConnectionState::Connected(state) => {
-                    // When in connected state, only set the start time if `reset_start_time` is
-                    // true because it indicates the user triggers the new connect action.
-                    if reset_start_time {
-                        let _prev = state.new_connect_start_time.replace(now);
-                    }
-                }
-            },
+            }
             TelemetryEvent::ClearEstablishConnectionStartTime => match &mut self.connection_state {
                 ConnectionState::Idle(state) => {
                     let _start_time = state.connect_start_time.take();
@@ -1296,12 +1294,12 @@ impl Telemetry {
                             None
                         }
                     };
-                    self.connection_state = ConnectionState::Connected(ConnectedState {
+                    self.connection_state = ConnectionState::Connected(Box::new(ConnectedState {
                         iface_id,
                         new_connect_start_time: None,
                         prev_connection_stats: None,
                         multiple_bss_candidates,
-                        ap_state,
+                        ap_state: Box::new(ap_state),
                         network_is_likely_hidden,
 
                         // We have not received a signal report yet, but since this is used as
@@ -1322,7 +1320,7 @@ impl Telemetry {
                         ),
 
                         telemetry_proxy,
-                    });
+                    }));
                     self.last_checked_connection_state = now;
                 } else if !result.is_credential_rejected {
                     // In the case where the connection failed for a reason other than a credential
@@ -1356,33 +1354,34 @@ impl Telemetry {
                         ConnectionState::Connected(state) => {
                             // Update telemetry module internal state to reflect the start of a new
                             // BSS connection.
-                            self.connection_state = ConnectionState::Connected(ConnectedState {
-                                iface_id,
-                                new_connect_start_time: None,
-                                prev_connection_stats: None,
-                                multiple_bss_candidates: state.multiple_bss_candidates,
-                                ap_state: updated_ap_state.clone(),
-                                network_is_likely_hidden: state.network_is_likely_hidden,
+                            self.connection_state =
+                                ConnectionState::Connected(Box::new(ConnectedState {
+                                    iface_id,
+                                    new_connect_start_time: None,
+                                    prev_connection_stats: None,
+                                    multiple_bss_candidates: state.multiple_bss_candidates,
+                                    ap_state: Box::new(updated_ap_state.clone()),
+                                    network_is_likely_hidden: state.network_is_likely_hidden,
 
-                                // We have not received a signal report yet, but since this is used as
-                                // indicator for whether driver is still responsive, set it to the
-                                // connection start time for now.
-                                last_signal_report: now,
-                                // TODO(https://fxbug.dev/404889275): Consider renaming the Inspect
-                                // property name to no longer to refer to "counter"
-                                num_consecutive_get_counter_stats_failures: InspectableU64::new(
-                                    0,
-                                    &self.inspect_node,
-                                    "num_consecutive_get_counter_stats_failures",
-                                ),
-                                is_driver_unresponsive: InspectableBool::new(
-                                    false,
-                                    &self.inspect_node,
-                                    "is_driver_unresponsive",
-                                ),
+                                    // We have not received a signal report yet, but since this is used as
+                                    // indicator for whether driver is still responsive, set it to the
+                                    // connection start time for now.
+                                    last_signal_report: now,
+                                    // TODO(https://fxbug.dev/404889275): Consider renaming the Inspect
+                                    // property name to no longer to refer to "counter"
+                                    num_consecutive_get_counter_stats_failures: InspectableU64::new(
+                                        0,
+                                        &self.inspect_node,
+                                        "num_consecutive_get_counter_stats_failures",
+                                    ),
+                                    is_driver_unresponsive: InspectableBool::new(
+                                        false,
+                                        &self.inspect_node,
+                                        "is_driver_unresponsive",
+                                    ),
 
-                                telemetry_proxy: state.telemetry_proxy.clone(),
-                            });
+                                    telemetry_proxy: state.telemetry_proxy.clone(),
+                                }));
                             self.last_checked_connection_state = now;
                             // TODO(https://fxbug.dev/135975) Log roam success to Cobalt and Inspect.
                         }
@@ -1487,7 +1486,7 @@ impl Telemetry {
                 }
 
                 self.connection_state = if track_subsequent_downtime {
-                    ConnectionState::Disconnected(DisconnectedState {
+                    ConnectionState::Disconnected(Box::new(DisconnectedState {
                         disconnected_since: now,
                         disconnect_info: info,
                         connect_start_time,
@@ -1497,7 +1496,7 @@ impl Telemetry {
                         accounted_no_saved_neighbor_duration: zx::MonotonicDuration::from_seconds(
                             0,
                         ),
-                    })
+                    }))
                 } else {
                     ConnectionState::Idle(IdleState { connect_start_time })
                 };
@@ -3238,8 +3237,8 @@ impl StatsLogger {
         &mut self,
         result: fidl_sme::RoamResult,
         updated_ap_state: client::types::ApState,
-        original_ap_state: client::types::ApState,
-        request: PolicyRoamRequest,
+        original_ap_state: Box<client::types::ApState>,
+        request: Box<PolicyRoamRequest>,
         request_time: fasync::MonotonicInstant,
         result_time: fasync::MonotonicInstant,
     ) {
@@ -4902,7 +4901,7 @@ mod tests {
                 sender.send(QueryStatusResult {
                     connection_state: ConnectionStateInfo::Connected {
                         iface_id: 0,
-                        ap_state: random_bss_description!(Wpa2).into(),
+                        ap_state: Box::new(random_bss_description!(Wpa2).into()),
                         telemetry_proxy: Some(telemetry_proxy)
                     }
                 }).expect("failed to send query status result")
@@ -4951,9 +4950,9 @@ mod tests {
         // Setup the Telemetry struct so that it thinks that it is connected.
         let (telemetry_proxy, _telemetry_server) =
             fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>();
-        telemetry.connection_state = ConnectionState::Connected(ConnectedState {
+        telemetry.connection_state = ConnectionState::Connected(Box::new(ConnectedState {
             iface_id: 0,
-            ap_state: random_bss_description!(Wpa2).into(),
+            ap_state: Box::new(random_bss_description!(Wpa2).into()),
             telemetry_proxy: Some(telemetry_proxy),
 
             // The rest of the fields don't matter for this test case.
@@ -4972,7 +4971,7 @@ mod tests {
                 &telemetry.inspect_node,
                 "is_driver_unresponsive",
             ),
-        });
+        }));
 
         // Call handle_periodic_telemetry.
         let fut = telemetry.handle_periodic_telemetry();
@@ -5148,12 +5147,12 @@ mod tests {
             defect_sender,
         );
 
-        telemetry.connection_state = ConnectionState::Connected(ConnectedState {
+        telemetry.connection_state = ConnectionState::Connected(Box::new(ConnectedState {
             iface_id: 0,
             new_connect_start_time: None,
             prev_connection_stats: None,
             multiple_bss_candidates: false,
-            ap_state: generate_random_ap_state(),
+            ap_state: Box::new(generate_random_ap_state()),
             network_is_likely_hidden: false,
             last_signal_report: fasync::MonotonicInstant::now(),
             num_consecutive_get_counter_stats_failures: InspectableU64::new(
@@ -5167,7 +5166,7 @@ mod tests {
                 "is_driver_unresponsive",
             ),
             telemetry_proxy: None,
-        });
+        }));
 
         {
             // Send a disconnect event with empty disconnect info.
@@ -5956,8 +5955,8 @@ mod tests {
             iface_id: 1,
             result: roam_result.clone(),
             updated_ap_state: generate_random_ap_state(),
-            original_ap_state: generate_random_ap_state(),
-            request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
+            original_ap_state: Box::new(generate_random_ap_state()),
+            request: Box::new(generate_policy_roam_request([1, 1, 1, 1, 1, 1].into())),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         });
@@ -5990,8 +5989,8 @@ mod tests {
             iface_id: 1,
             result: roam_result.clone(),
             updated_ap_state: generate_random_ap_state(),
-            original_ap_state: generate_random_ap_state(),
-            request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
+            original_ap_state: Box::new(generate_random_ap_state()),
+            request: Box::new(generate_policy_roam_request([1, 1, 1, 1, 1, 1].into())),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         });
@@ -6023,8 +6022,8 @@ mod tests {
             iface_id: 1,
             result: roam_result,
             updated_ap_state: generate_random_ap_state(),
-            original_ap_state: generate_random_ap_state(),
-            request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
+            original_ap_state: Box::new(generate_random_ap_state()),
+            request: Box::new(generate_policy_roam_request([1, 1, 1, 1, 1, 1].into())),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         });
@@ -6596,8 +6595,8 @@ mod tests {
             iface_id: 1,
             result: roam_result,
             updated_ap_state: generate_random_ap_state(),
-            original_ap_state: generate_random_ap_state(),
-            request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
+            original_ap_state: Box::new(generate_random_ap_state()),
+            request: Box::new(generate_policy_roam_request([1, 1, 1, 1, 1, 1].into())),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         });
@@ -6618,8 +6617,8 @@ mod tests {
             iface_id: 1,
             result: roam_result,
             updated_ap_state: generate_random_ap_state(),
-            original_ap_state: generate_random_ap_state(),
-            request: generate_policy_roam_request([2, 2, 2, 2, 2, 2].into()),
+            original_ap_state: Box::new(generate_random_ap_state()),
+            request: Box::new(generate_policy_roam_request([2, 2, 2, 2, 2, 2].into())),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         });
@@ -8617,8 +8616,8 @@ mod tests {
             iface_id: IFACE_ID,
             result,
             updated_ap_state: random_bss_description!().into(),
-            original_ap_state: random_bss_description!().into(),
-            request: request.clone(),
+            original_ap_state: Box::new(random_bss_description!().into()),
+            request: Box::new(request.clone()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
         };
