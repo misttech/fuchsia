@@ -10,7 +10,6 @@ use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
-use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
@@ -1407,8 +1406,6 @@ impl FileOps for RemoteDirectoryObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        // If expose a handle to a directory to a Fuchsia component, we trust that it will not
-        // modify the directory in a way that will confuse Starnix.
         self.0
             .clone_proxy()
             .map_err(map_sync_io_client_error)
@@ -1561,12 +1558,12 @@ impl FileOps for RemoteFileObject {
     fn to_handle(
         &self,
         file: &FileObject,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        // To avoid cache coherency and security issues, we proxy remote files via the Starnix file
-        // server.  This will incur a performance penalty which we can optimize later if we need to.
-        serve_file_tagged(current_task, file, current_task.current_creds().clone(), "remote_files")
-            .map(|c| Some(c.0.into_handle().into()))
+        Self::io(file)
+            .clone_proxy()
+            .map_err(map_sync_io_client_error)
+            .map(|p| Some(p.into_channel().into()))
     }
 
     fn ioctl(
@@ -1652,8 +1649,6 @@ impl FileOps for AnonymousRemoteFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        // This is an anonymous file (not backed by `RemoteNode`).  Any external updates to the
-        // file's attributes will not be tracked by Starnix.
         self.io
             .clone_proxy()
             .map_err(map_sync_io_client_error)

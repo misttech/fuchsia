@@ -26,82 +26,12 @@ use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{errno, error, from_status_like_fdio, ino_t, off_t};
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::{self};
 use vfs::{
     ObjectRequestRef, ProtocolsExt, ToObjectRequest, attributes, execution_scope, file, path,
 };
-
-#[derive(Default)]
-struct FileServerStats {
-    /// The number of objects currently being served.  This will not count multiple connections to
-    /// the same object, or, for a directory, connections to any of its children.
-    serving: AtomicU64,
-
-    /// The total number of reads performed for files served.
-    reads: AtomicU64,
-
-    /// The total number of bytes read for files served.
-    read_bytes: AtomicU64,
-
-    /// The total number of writes performed for files served.
-    writes: AtomicU64,
-
-    /// The total number of writes written for files served.
-    write_bytes: AtomicU64,
-}
-
-struct FileServerRegistry {
-    stats: starnix_sync::Mutex<HashMap<&'static str, Arc<FileServerStats>>>,
-}
-
-impl FileServerRegistry {
-    fn get(kernel: &Kernel) -> Arc<Self> {
-        let mut is_new = false;
-        let registry = kernel.expando.get_or_init(|| {
-            is_new = true;
-            Self { stats: starnix_sync::Mutex::new(HashMap::new()) }
-        });
-        if is_new {
-            let registry_weak = Arc::downgrade(&registry);
-            kernel.inspect_node.record_lazy_child("file_server", move || {
-                let inspector = fuchsia_inspect::Inspector::default();
-                if let Some(registry) = registry_weak.upgrade() {
-                    let root = inspector.root();
-                    for (tag, stats) in registry.stats.lock().iter() {
-                        let node = root.create_child(*tag);
-                        node.record_uint("serving", stats.serving.load(Ordering::Relaxed));
-                        node.record_uint("reads", stats.reads.load(Ordering::Relaxed));
-                        node.record_uint("read_bytes", stats.read_bytes.load(Ordering::Relaxed));
-                        node.record_uint("writes", stats.writes.load(Ordering::Relaxed));
-                        node.record_uint("write_bytes", stats.write_bytes.load(Ordering::Relaxed));
-                        root.record(node);
-                    }
-                }
-                Box::pin(async { Ok(inspector) })
-            });
-        }
-        registry
-    }
-
-    fn get_stats(&self, tag: &'static str) -> Arc<FileServerStats> {
-        self.stats.lock().entry(tag).or_insert_with(|| Arc::default()).clone()
-    }
-}
-
-pub fn serve_file_tagged(
-    current_task: &CurrentTask,
-    file: &FileObject,
-    credentials: Arc<Credentials>,
-    tag: &'static str,
-) -> Result<(ClientEnd<fio::NodeMarker>, execution_scope::ExecutionScope), Errno> {
-    let (client_end, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
-    let scope = serve_file_at_tagged(server_end, current_task, file, credentials, tag)?;
-    Ok((client_end, scope))
-}
 
 /// Returns a handle implementing a fuchsia.io.Node delegating to the given `file`.
 pub fn serve_file(
@@ -109,31 +39,26 @@ pub fn serve_file(
     file: &FileObject,
     credentials: Arc<Credentials>,
 ) -> Result<(ClientEnd<fio::NodeMarker>, execution_scope::ExecutionScope), Errno> {
-    serve_file_tagged(current_task, file, credentials, "default")
+    let (client_end, server_end) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
+    let scope = serve_file_at(server_end, current_task, file, credentials)?;
+    Ok((client_end, scope))
 }
 
-pub fn serve_file_at_tagged(
+pub fn serve_file_at(
     server_end: ServerEnd<fio::NodeMarker>,
     current_task: &CurrentTask,
     file: &FileObject,
     credentials: Arc<Credentials>,
-    tag: &'static str,
 ) -> Result<execution_scope::ExecutionScope, Errno> {
     let kernel = current_task.kernel();
-    let stats = FileServerRegistry::get(&kernel).get_stats(tag);
     let open_flags = file.flags();
-    let starnix_file = StarnixNodeConnection::new(
-        &kernel,
-        file.weak_handle.upgrade().unwrap(),
-        credentials,
-        stats.clone(),
-    );
+    let starnix_file =
+        StarnixNodeConnection::new(&kernel, file.weak_handle.upgrade().unwrap(), credentials);
     let scope = execution_scope::ExecutionScope::new();
     kernel.kthreads.spawn_future(
         {
             let scope = scope.clone();
             move || async move {
-                stats.serving.fetch_add(1, Ordering::Relaxed);
                 let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
                 if starnix_file.is_dir() {
                     fidl_flags.to_object_request(server_end).handle(|object_request| {
@@ -157,21 +82,11 @@ pub fn serve_file_at_tagged(
                     });
                 }
                 scope.wait().await;
-                stats.serving.fetch_sub(1, Ordering::Relaxed);
             }
         },
         "serve_file_at",
     );
     Ok(scope)
-}
-
-pub fn serve_file_at(
-    server_end: ServerEnd<fio::NodeMarker>,
-    current_task: &CurrentTask,
-    file: &FileObject,
-    credentials: Arc<Credentials>,
-) -> Result<execution_scope::ExecutionScope, Errno> {
-    serve_file_at_tagged(server_end, current_task, file, credentials, "default")
 }
 
 #[async_trait::async_trait(?Send)]
@@ -322,7 +237,6 @@ struct StarnixNodeConnection {
     is_dir: bool,
     credentials: Arc<Credentials>,
     work_sender: std::sync::mpsc::Sender<Box<dyn Work>>,
-    stats: Arc<FileServerStats>,
 }
 
 fn lookup_parent(
@@ -341,12 +255,7 @@ fn lookup_parent(
 }
 
 impl StarnixNodeConnection {
-    fn new(
-        kernel: &Kernel,
-        file: FileHandle,
-        credentials: Arc<Credentials>,
-        stats: Arc<FileServerStats>,
-    ) -> Arc<Self> {
+    fn new(kernel: &Kernel, file: FileHandle, credentials: Arc<Credentials>) -> Arc<Self> {
         let (work_sender, receiver) = std::sync::mpsc::channel();
         let is_dir = file.node().is_dir();
         let closure = {
@@ -357,7 +266,7 @@ impl StarnixNodeConnection {
         };
         let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
         kernel.kthreads.spawner().spawn_from_request(req);
-        Arc::new(Self { is_dir, credentials, work_sender, stats })
+        Arc::new(Self { is_dir, credentials, work_sender })
     }
 
     fn spawn_task<R, E, F>(&self, f: F) -> Result<R, Errno>
@@ -407,10 +316,9 @@ impl StarnixNodeConnection {
     fn reopen(&self, flags: &impl ProtocolsExt) -> Result<Arc<Self>, Errno> {
         let credentials = self.credentials.clone();
         let flags = to_open_flags(flags);
-        let stats = self.stats.clone();
         self.spawn_task(async move |locked, current_task, file| {
             let file = file.name.open(locked, current_task, flags, AccessCheck::default())?;
-            Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials, stats))
+            Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials))
         })
     }
 
@@ -532,7 +440,6 @@ impl StarnixNodeConnection {
             // Open a path under the current directory.
             let starnix_file = self.spawn_task({
                 let credentials = self.credentials.clone();
-                let stats = self.stats.clone();
                 let create_directory = flags.creation_mode() != vfs::common::CreationMode::Never
                     && flags.create_directory();
                 let open_flags = to_open_flags(&flags);
@@ -567,7 +474,7 @@ impl StarnixNodeConnection {
                         }
                         f => f?,
                     };
-                    Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials, stats))
+                    Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials))
                 }
             })?;
 
@@ -852,55 +759,43 @@ impl file::File for StarnixNodeConnection {
 
 impl file::RawFileIoConnection for StarnixNodeConnection {
     async fn read(&self, count: u64) -> Result<Vec<u8>, zx::Status> {
-        self.stats.reads.fetch_add(1, Ordering::Relaxed);
-        let data: Vec<u8> = self
+        Ok(self
             .spawn_task_async(async move |locked, current_task, file| {
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read(locked, current_task, &mut data)?;
                 Ok(data.into())
             })
-            .await?;
-        self.stats.read_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
-        Ok(data)
+            .await?)
     }
 
     async fn read_at(&self, offset: u64, count: u64) -> Result<Vec<u8>, zx::Status> {
-        self.stats.reads.fetch_add(1, Ordering::Relaxed);
-        let data: Vec<u8> = self
-            .spawn_task_async(async move |locked, current_task, file| {
+        Ok(self
+            .spawn_task_async(async move |locked, current_task, file| -> Result<Vec<u8>, Errno> {
                 let mut data = VecOutputBuffer::new(count as usize);
                 file.read_at(locked, current_task, offset as usize, &mut data)?;
                 Ok(data.into())
             })
-            .await?;
-        self.stats.read_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
-        Ok(data)
+            .await?)
     }
 
     async fn write(&self, content: &[u8]) -> Result<u64, zx::Status> {
-        self.stats.writes.fetch_add(1, Ordering::Relaxed);
         let mut data = VecInputBuffer::new(content);
-        let written = self
+        Ok(self
             .spawn_task_async(async move |locked, current_task, file| {
                 let written = file.write(locked, current_task, &mut data)?;
                 Ok(written as u64)
             })
-            .await?;
-        self.stats.write_bytes.fetch_add(written, Ordering::Relaxed);
-        Ok(written)
+            .await?)
     }
 
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, zx::Status> {
-        self.stats.writes.fetch_add(1, Ordering::Relaxed);
         let mut data = VecInputBuffer::new(content);
-        let written = self
+        Ok(self
             .spawn_task_async(async move |locked, current_task, file| {
                 let written = file.write_at(locked, current_task, offset as usize, &mut data)?;
                 Ok(written as u64)
             })
-            .await?;
-        self.stats.write_bytes.fetch_add(written as u64, Ordering::Relaxed);
-        Ok(written)
+            .await?)
     }
 
     async fn seek(&self, offset: i64, origin: fio::SeekOrigin) -> Result<u64, zx::Status> {
