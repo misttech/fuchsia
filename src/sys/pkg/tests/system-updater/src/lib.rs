@@ -57,6 +57,7 @@ mod history;
 mod mode_force_recovery;
 mod mode_normal;
 mod ota_manifest;
+mod overwrites_blobs;
 mod progress_reporting;
 mod reboot_controller;
 mod retained_packages;
@@ -186,6 +187,7 @@ struct TestEnvBuilder {
     verify_existing_blobs: bool,
     blob_reader_mock:
         Option<Box<dyn FnMut(ffxfs::BlobReaderRequestStream) + Send + Sync + 'static>>,
+    blob_implementation: Option<blobfs_ramdisk::Implementation>,
 }
 
 impl TestEnvBuilder {
@@ -200,6 +202,7 @@ impl TestEnvBuilder {
             blobs: HashMap::new(),
             verify_existing_blobs: false,
             blob_reader_mock: None,
+            blob_implementation: None,
         }
     }
 
@@ -257,6 +260,12 @@ impl TestEnvBuilder {
         self
     }
 
+    fn cpp_blobfs(mut self) -> Self {
+        assert_eq!(self.blob_implementation, None);
+        self.blob_implementation = Some(blobfs_ramdisk::Implementation::CppBlobfs);
+        self
+    }
+
     async fn build(self) -> TestEnv {
         let Self {
             paver_service_builder,
@@ -268,6 +277,7 @@ impl TestEnvBuilder {
             blobs,
             verify_existing_blobs,
             blob_reader_mock,
+            blob_implementation,
         } = self;
 
         let test_dir = TempDir::new().expect("create test tempdir");
@@ -315,9 +325,12 @@ impl TestEnvBuilder {
             fs.add_remote("system", system);
         }
 
-        let blobfs = BlobfsRamdisk::builder().start().await.unwrap();
+        let mut blobfs_builder = BlobfsRamdisk::builder();
+        if let Some(blob_implementation) = blob_implementation {
+            blobfs_builder = blobfs_builder.implementation(blob_implementation);
+        }
+        let blobfs = blobfs_builder.start().await.unwrap();
         let blobfs = Arc::new(blobfs);
-        fs.add_remote("blob", blobfs.root_dir_handle().unwrap().into_proxy());
         fs.add_remote("blob-svc", blobfs.svc_dir().unwrap());
 
         let use_blob_reader_mock = blob_reader_mock.is_some();
@@ -568,7 +581,8 @@ impl TestEnvBuilder {
                             .path(format!("/blob-svc/{}", ffxfs::BlobReaderMarker::PROTOCOL_NAME))
                     })
                     .capability(
-                        Capability::directory("blob").path("/blob").rights(fio::RW_STAR_DIR),
+                        Capability::protocol::<ffxfs::BlobCreatorMarker>()
+                            .path(format!("/blob-svc/{}", ffxfs::BlobCreatorMarker::PROTOCOL_NAME)),
                     )
                     .capability(
                         Capability::directory("build-info")
@@ -1017,7 +1031,7 @@ impl MockOtaDownloaderService {
                 fpkg_internal::OtaDownloaderRequest::FetchBlob {
                     hash,
                     base_url,
-                    overwrite_existing: _,
+                    overwrite_existing,
                     responder,
                 } => {
                     self.interactions
@@ -1041,7 +1055,11 @@ impl MockOtaDownloaderService {
                         continue;
                     }
                     if let Some(content) = self.blobs.get(&hash) {
-                        let () = self.blobfs.write_blob(hash, content).await.unwrap();
+                        let () = self
+                            .blobfs
+                            .write_blob_with_overwrite(hash, content, overwrite_existing)
+                            .await
+                            .unwrap();
                         responder.send(Ok(()))?;
                     } else {
                         responder.send(Err(fpkg::ResolveError::BlobNotFound))?;

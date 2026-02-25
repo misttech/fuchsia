@@ -122,8 +122,6 @@
         },
         {
             directory: [
-                "blob",
-
                 // Needed so system-updater knows what board to install for.
                 "build-info",
             ],
@@ -148,6 +146,7 @@
         },
         {
             protocol: [
+                "fuchsia.fxfs.BlobCreator",
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.http.Loader",
