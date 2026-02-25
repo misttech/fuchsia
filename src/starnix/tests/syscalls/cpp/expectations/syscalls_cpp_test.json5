@@ -49,9 +49,6 @@
                 // TODO(https://fxbug.dev/455731133) re-enable after flake rate is reduced
                 "SignalHandling.SignalDeliveryWakesOnlyOneFutex",
 
-                // TODO(https://fxbug.dev/483116800): Deflake and re-enable
-                "LoopTest.RemoveLoopDeviceFromKernelDeviceRegistry",
-
                 // TODO(https://fxbug.dev/297440106)
                 // TODO(https://fxbug.dev/365540067)
                 "ZombieProcTest.ZombieStatus",
