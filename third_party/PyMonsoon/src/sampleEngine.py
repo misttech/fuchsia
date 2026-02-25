@@ -9,13 +9,10 @@ import math
 from Monsoon.calibrationData import calibrationData
 from Monsoon import Operations as ops
 from copy import deepcopy
-import numpy as np
 import signal
 import sys
 import usb
 import os
-import scipy as sp
-import scipy.stats
 
 class channels:
     timeStamp = 0
@@ -47,6 +44,7 @@ class ErrorHandlingModes:
 
 class SampleEngine:
     def __init__(self, Monsoon,bulkProcessRate=128, errorMode = ErrorHandlingModes.full, calsToKeep=5):
+        import numpy as np
         """Declares global variables.
         During testing, we found the garbage collector would slow down sampling enough to cause a
         lot of dropped samples.
@@ -123,6 +121,7 @@ class SampleEngine:
         pass
 
     def setStartTrigger(self,triggerStyle,triggerLevel):
+        import numpy as np
         """Controls the conditions when the sampleEngine starts recording measurements."""
         """triggerLevel: threshold for trigger start."""
         """triggerStyle:  GreaterThan or Lessthan."""
@@ -135,6 +134,7 @@ class SampleEngine:
         """triggerLevel: threshold for trigger stop."""
         """triggerStyle:  GreaterThan or Lessthan."""
         self.__stopTriggerLevel = triggerlevel
+        import numpy as np
         self.__stopTriggerStyle = np.vectorize(triggerstyle)
 
     def setTriggerChannel(self, triggerChannel):
@@ -240,6 +240,7 @@ class SampleEngine:
         return measurements
 
     def __evalStartTrigger(self, measurement):
+        import numpy as np
         """
         See if any of the measurements meet the conditions to start recording samples.
         measurement:  a 1xn array.
@@ -248,6 +249,7 @@ class SampleEngine:
         self.__startTriggerSet = np.any(self.__startTriggerStyle(measurement,self.__startTriggerLevel))
 
     def __evalStopTrigger(self,measurement):
+        import numpy as np
         """
         See if any of the measurements meet the conditions to stop recording samples.
         measurement:  a 1xn array of measurements.
@@ -260,6 +262,7 @@ class SampleEngine:
                 self.__stopTriggerSet = True
 
     def __vectorProcess(self,measurements):
+        import numpy as np
         """Translates raw ADC measurements into current values.
         measurements:  An nxm array of integers indexed by the global channel index scheme.
         """

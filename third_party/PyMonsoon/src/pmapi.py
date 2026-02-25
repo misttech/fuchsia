@@ -4,7 +4,6 @@ import ctypes
 import platform
 import usb.core
 import usb.util
-import numpy as np
 import os
 import platform
 import time
@@ -19,7 +18,7 @@ class USB_protocol(object):
         """Returns a list of the serial numbers of all devices connected to the system.
         Includes both HVPM LVPM hardware"""
         results = []
-      
+
         devices = usb.core.find(find_all=True, idVendor = 0x2AB9, idProduct = 0x0001)
         for device in devices:
             results.append(str(device.serial_number))
@@ -45,6 +44,7 @@ class USB_protocol(object):
                 return d.idVendor == 0x2AB9 and d.idProduct == 0x0001 and (serialno is None or d.serial_number == str(serialno))
             except:#Catches some platform-specific errors when connecting to multiple PMs simultaneously.
                 return False
+
         self.DEVICE = usb.core.find(custom_match=device_matcher)
         if (self.DEVICE is None):
             print('Unable to find device')
@@ -150,7 +150,7 @@ class USB_protocol(object):
         """Cleanup any loose ends, if present."""
         self.stopSampling()
         self.DEVICE.reset() #Releases the bulk endpoint, which dispose_resources apparently doesn't release.
-        usb.util.dispose_resources(self.DEVICE) 
+        usb.util.dispose_resources(self.DEVICE)
 
 
     def verifyReady(self,opcode):
@@ -163,7 +163,7 @@ class USB_protocol(object):
         firmwareRev = self.getValue(op.OpCodes.FirmwareVersion,1)
         if(firmwareRev >= 26):
             status = self.getValue(op.OpCodes.getStartStatus, 1)
-            return not np.bitwise_and(0x80,status)
+            return not 0x80 & status
         else:
             return True
 
@@ -227,7 +227,7 @@ class CPP_Backend_Protocol(object):
         path = os.path.dirname(path)
         if(platform.system() == "Linux"):
             libLocation=os.path.join(path,"Compiled/Linux/libcpp_backend.so")
-        elif(platform.system() is "Windows"):
+        elif(platform.system() == "Windows"):
             libLocation = os.path.join(path,"Compiled//WIN32//Cpp_backend.dll")
         else:
             raise NotImplementedError("OS not currently supported.")

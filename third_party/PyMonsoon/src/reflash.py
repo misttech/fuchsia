@@ -4,7 +4,6 @@ import usb.util
 import struct
 from Monsoon import Operations as op
 from copy import deepcopy
-import numpy as np
 
 import array
 DEVICE = None
@@ -149,7 +148,7 @@ class bootloaderMonsoon(object):
         """Translate a HEX file line into address, linetype, data, and checksum"""
         output = []
         for offset in range(1,len(line)-1,2):
-            output.append(struct.unpack("B",struct.pack('B',np.int(line[offset:offset+2],16))[0])[0])
+            output.append(struct.unpack("B",struct.pack('B',int(line[offset:offset+2],16))[0])[0])
         address = []
         length = output[0]
         address.append(output[1])

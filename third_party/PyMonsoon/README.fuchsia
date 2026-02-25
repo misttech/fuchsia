@@ -8,3 +8,6 @@ Description: Python API for Monsoon Power Monitor.
 Local Modifications:
   - See b/428985958.
   - Remove binaries; only keeping source files.
+  - Remove unused scipy references.
+  - Moved numpy imports to individual functions that use it (shortcut to avoid import not needed for
+    our use case).

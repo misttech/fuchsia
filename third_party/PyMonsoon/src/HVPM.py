@@ -6,7 +6,6 @@ import usb.util
 import struct
 from Monsoon import Operations as op
 
-import numpy as np
 #import pmapi
 from Monsoon import pmapi
 
@@ -25,7 +24,7 @@ class Monsoon(object):
         self.mainvoltageScale = 4
         self.usbVoltageScale = 2
         self.ADCRatio = (float)(62.5 / 1e6); #Each tick of the ADC represents this much voltage
-        self.padding = np.zeros(64)
+        self.padding = [0]*64
         pass
 
     def enumerateDevices(self):
@@ -52,7 +51,7 @@ class Monsoon(object):
     def setVout(self,value):
         #Check for overvoltage issue.
         #We've identified an issue with some units where these values are not set properly at the factory.
-        #This can cause wildly inaccurate vout settings.  
+        #This can cause wildly inaccurate vout settings.
         #if this fails, update to firmware Rev 32, and run HVPM.calibrateVoltage()
         self.checkDacValues()
         #End check
@@ -97,7 +96,7 @@ class Monsoon(object):
         #Aux channel
         self.Protocol.sendCommand(op.OpCodes.setAuxFineScale,3100)
         self.Protocol.sendCommand(op.OpCodes.setAuxCoarseScale,250)
-    
+
     def setMainFineScale(self,value):
         self.Protocol.sendCommand(op.OpCodes.setMainFineScale, value)
 
@@ -156,11 +155,11 @@ class Monsoon(object):
 
     def calibrateVoltage(self):
         self.Protocol.sendCommand(op.OpCodes.calibrateMainVoltage,0)
-    
+
     def checkDacValues(self):
         #Check for overvoltage issue.
         #We've identified an issue with some units where these values are not set properly at the factory.
-        #This can cause wildly inaccurate vout settings.  
+        #This can cause wildly inaccurate vout settings.
         #if this fails, update to firmware Rev 32, and run HVPM.calibrateVoltage()
         dacCalHigh = self.Protocol.getValue(op.OpCodes.dacCalHigh,2)
         dacCalLow = self.Protocol.getValue(op.OpCodes.dacCalLow,2)
@@ -194,7 +193,7 @@ class Monsoon(object):
         self.statusPacket.dacCalHigh = self.Protocol.getValue(op.OpCodes.dacCalHigh,2)
         self.statusPacket.dacCalLow = self.Protocol.getValue(op.OpCodes.dacCalLow,2)
 
-        
+
 
         #Calibration data
         self.statusPacket.mainFineScale = float(self.Protocol.getValue(op.OpCodes.setMainFineScale,2))
@@ -222,6 +221,7 @@ class Monsoon(object):
         return self.Protocol.BulkRead()
 
     def swizzlePacket(self, packet):
+        import numpy as np
         length = len(packet)
         packet = np.array(packet)
         evenBytes = packet[4::2]
@@ -239,10 +239,10 @@ class Monsoon(object):
         self.Protocol.reconnect(op.HardwareModel.HVPM,self.statusPacket.serialNumber)
     def resetToBootloader(self):
         """
-        Programmatically reset to bootloader mode.  
+        Programmatically reset to bootloader mode.
         Reconnect using the interface in reflash.py"""
         self.Protocol.resetToBootloader()
-        
+
 
 
 

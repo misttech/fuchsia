@@ -5,7 +5,6 @@ import usb.util
 import struct
 from Monsoon import Operations as op
 
-import numpy as np
 from Monsoon import pmapi
 
 
@@ -13,6 +12,7 @@ from Monsoon import pmapi
 class Monsoon(object):
 
     def __init__(self, *args, **kwargs):
+        import numpy as np
         self.DEVICE = None
         self.DEVICE_TYPE = None
         self.epBulkWriter = None
@@ -152,6 +152,7 @@ class Monsoon(object):
         return self.Protocol.BulkRead()
 
     def swizzlePacket(self, packet):
+        import numpy as np
         """Byte order for 2-byte values is swapped for the majority of the measurement packet.  This fixes that."""
         length = len(packet)
         packet = np.array(packet)
