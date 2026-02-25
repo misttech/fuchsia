@@ -978,6 +978,8 @@ By convention, the trace writer may also optionally include the following named
 argument when writing this record to provide additional information to trace
 consumers.
 
+- `"waker"`: `Koid` of the thread that unblocked the waking thread, if any.
+  Threads unblocked by an idle thread do not have this argument.
 - `"weight"`: `Int32` describing the relative [weight](/docs/concepts/kernel/fair_scheduler.md) of the waking thread
 
 #### Legacy Context Switch Record (context switch record type = 0)
