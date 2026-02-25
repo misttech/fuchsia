@@ -150,22 +150,63 @@ build_tool_args+=( "$@" )
   die "Missing wrapped command after --."
 }
 
+# Determine if this is a build-like command that needs wrapper orchestration.
+# Bazel's build-like commands include 'build', 'test', and 'run'.
+# Non-build commands (like bazel info, help, query) should bypass wrappers.
+# Also try to infer build_dir from build tool args (e.g. ninja -C).
+is_build=0
+inferred_build_dir=
+state="START"
+for arg in "${build_tool_args[@]}"; do
+  case "$state" in
+    START)
+      case "$arg" in
+        env | *=*) continue ;;  # skip environment variable prefixes
+        */bazel | bazel) state="GOT_BAZEL_LOOKING_FOR_SUBCOMMAND" ;;
+        *ninja*)
+          is_build=1
+          state="GOT_NINJA_LOOKING_FOR_ARGS"
+          ;;
+        *) state="DONE" ;;
+      esac
+      ;;
+    GOT_BAZEL_LOOKING_FOR_SUBCOMMAND)
+      case "$arg" in
+        -*) continue ;;
+        build|test|run)
+          is_build=1
+          state="DONE"
+          ;;
+        *) state="DONE" ;;
+      esac
+      ;;
+    GOT_NINJA_LOOKING_FOR_ARGS)
+      case "$arg" in
+        -C) state="GOT_NINJA_EXPECT_C_DIR" ;;
+        -C*)
+          inferred_build_dir="${arg#-C}"
+          ;;
+        -n | --dry-run | -t | -t* | -h | --help | --version)
+          is_build=0
+          ;;
+      esac
+      ;;
+    GOT_NINJA_EXPECT_C_DIR)
+      inferred_build_dir="$arg"
+      state="GOT_NINJA_LOOKING_FOR_ARGS"
+      ;;
+  esac
+  [[ "$state" != "DONE" ]] || break
+done
+
+if [[ "$is_build" == 0 ]]; then
+  debug "Bypassing wrapper orchestration for non-build command: ${build_tool_args[*]}"
+  exec "${build_tool_args[@]}"
+fi
+
 [[ -n "$build_dir" ]] || {
-  # Try to infer the build_dir from the build tool args.
-  prev_opt=
-  for opt in "${build_tool_args[@]}"
-  do
-    if [[ -n "$prev_opt" ]]
-    then
-      eval "$prev_opt"=\$opt
-      prev_opt=
-      continue
-    fi
-    case "$opt" in
-      -C) prev_opt=build_dir ;;  # ninja option
-    esac
-  done
-  debug "Inferred build-dir: $build_dir"
+  build_dir="$inferred_build_dir"
+  [[ -z "$build_dir" ]] || debug "Inferred build-dir: $build_dir"
 }
 [[ -n "$build_dir" ]] || die "Missing required --build-dir option."
 
