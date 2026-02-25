@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
+load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 # LINT.IfChange(idk_atom_info)
 def _create_test_atom_info_impl(ctx):
@@ -98,5 +99,85 @@ verify_atom_info = rule(
     attrs = {
         "atom": attr.label(mandatory = True, providers = [FuchsiaIdkAtomInfo]),
         "expected_atom_info": attr.label(mandatory = True, providers = [FuchsiaIdkAtomInfo]),
+    },
+)
+
+def _get_debug_file_impl(ctx):
+    debug = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].debug
+    if not debug:
+        fail("`debug` must not be empty")
+    return [DefaultInfo(files = depset([debug]))]
+
+get_debug_file = rule(
+    doc = "Simply declares the debug file from the `PrebuiltLibraryInfo` " +
+          "provider as an output. This allows tests to access the file.",
+    implementation = _get_debug_file_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            allow_files = False,
+            providers = [PrebuiltLibraryInfo],
+        ),
+    },
+)
+
+def _get_stripped_file_impl(ctx):
+    stripped = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].stripped
+    if not stripped:
+        fail("`stripped` must not be empty")
+    return [DefaultInfo(files = depset([stripped]))]
+
+get_stripped_file = rule(
+    doc = "Simply declares the stripped file from the `PrebuiltLibraryInfo` " +
+          "provider as an output. This allows tests to access the file.",
+    implementation = _get_stripped_file_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            allow_files = False,
+            providers = [PrebuiltLibraryInfo],
+        ),
+    },
+)
+
+def _get_link_lib_file_impl(ctx):
+    link_lib = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].link_lib
+    if not link_lib:
+        fail("`link_lib` must not be empty")
+    return [DefaultInfo(files = depset([link_lib]))]
+
+get_link_lib_file = rule(
+    doc = "Simply declares the link_lib file from the `PrebuiltLibraryInfo` " +
+          "provider as an output. This allows tests to access the file.",
+    implementation = _get_link_lib_file_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            allow_files = False,
+            providers = [PrebuiltLibraryInfo],
+        ),
+    },
+)
+
+def _get_ifs_file_impl(ctx):
+    ifs_file = ctx.attr.prebuilt_library[PrebuiltLibraryInfo].ifs_file
+    if not ifs_file:
+        fail("`ifs_file` must not be empty")
+    return [DefaultInfo(files = depset([ifs_file]))]
+
+get_ifs_file = rule(
+    doc = "Simply declares the ifs_file from the `PrebuiltLibraryInfo` " +
+          "provider as an output. This allows tests to access the file.",
+    implementation = _get_ifs_file_impl,
+    attrs = {
+        "prebuilt_library": attr.label(
+            doc = "The prebuilt library target",
+            mandatory = True,
+            allow_files = False,
+            providers = [PrebuiltLibraryInfo],
+        ),
     },
 )

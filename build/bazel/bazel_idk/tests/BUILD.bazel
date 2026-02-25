@@ -20,7 +20,15 @@ load(
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
-load(":rules.bzl", "create_test_atom_info", "verify_atom_info")
+load(
+    ":rules.bzl",
+    "create_test_atom_info",
+    "get_debug_file",
+    "get_ifs_file",
+    "get_link_lib_file",
+    "get_stripped_file",
+    "verify_atom_info",
+)
 
 create_idk_atom_for_test(
     name = "test_atom",
@@ -217,12 +225,10 @@ create_test_atom_info(
         "//build/bazel/bazel_idk/tests:test-shared-library_idk_verify_api",
     ],
     atom_files_map_generated_files = {
-        "arch/x64/debug/libmy_test_shared_library.so": ":test-shared-library_export",
-        # TODO(https://fxbug.dev/443982549): Update to stripped binary once exposed.
-        "arch/x64/dist/libmy_test_shared_library.so": ":test-shared-library_export",
-        # TODO(https://fxbug.dev/449812165): Update these to link stubs once exposed.
-        "arch/x64/lib/libmy_test_shared_library.so": ":test-shared-library_export",
-        "arch/x64/lib/libmy_test_shared_library.ifs": ":test-shared-library_export",
+        "arch/x64/lib/libmy_test_shared_library.so": ":test_shared_library_link_lib_file",
+        "arch/x64/lib/libmy_test_shared_library.ifs": ":test_shared_library_ifs_file",
+        "arch/x64/debug/libmy_test_shared_library.so": ":test_shared_library_debug_file",
+        "arch/x64/dist/libmy_test_shared_library.so": ":test_shared_library_stripped_file",
     },
     atom_files_map_source_files = {
         "pkg/test_shared_library/include/lib/test_lib/test_header.h": "include/lib/test_lib/test_header.h",
@@ -268,6 +274,59 @@ verify_file_path(
     testonly = True,
     expected_file_path = "build/bazel/bazel_idk/tests/libmy_test_shared_library.so",
     target = ":test-shared-library_export",
+)
+
+get_debug_file(
+    name = "test_shared_library_debug_file",
+    testonly = True,
+    prebuilt_library = ":test-shared-library_link_stubs",
+)
+
+verify_file_path(
+    name = "verify_test_shared_library_debug_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/libmy_test_shared_library.so",
+    target = ":test_shared_library_debug_file",
+)
+
+get_stripped_file(
+    name = "test_shared_library_stripped_file",
+    testonly = True,
+    prebuilt_library = ":test-shared-library_link_stubs",
+)
+
+verify_file_path(
+    name = "verify_test_shared_library_stripped_file_path",
+    testonly = True,
+    # TODO(https://fxbug.dev/443982549): Change to the stripped binary once it is available.
+    expected_file_path = "build/bazel/bazel_idk/tests/libmy_test_shared_library.so",
+    target = ":test_shared_library_stripped_file",
+)
+
+get_link_lib_file(
+    name = "test_shared_library_link_lib_file",
+    testonly = True,
+    prebuilt_library = ":test-shared-library_link_stubs",
+)
+
+verify_file_path(
+    name = "verify_test_shared_library_link_lib_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/link_stub/libmy_test_shared_library.so",
+    target = ":test_shared_library_link_lib_file",
+)
+
+get_ifs_file(
+    name = "test_shared_library_ifs_file",
+    testonly = True,
+    prebuilt_library = ":test-shared-library_link_stubs",
+)
+
+verify_file_path(
+    name = "verify_test_shared_library_ifs_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/libmy_test_shared_library.ifs",
+    target = ":test_shared_library_ifs_file",
 )
 
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
@@ -371,6 +430,19 @@ verify_file_path(
     testonly = True,
     expected_file_path = "build/bazel/bazel_idk/tests/test-static-library.export/libtest-static-library.a",
     target = ":test-static-library.export/test-static-library",
+)
+
+get_link_lib_file(
+    name = "test_static_library_link_lib_file",
+    testonly = True,
+    prebuilt_library = ":test-static-library_static_library_info",
+)
+
+verify_file_path(
+    name = "verify_test_static_library_link_lib_file_path",
+    testonly = True,
+    expected_file_path = "build/bazel/bazel_idk/tests/test-static-library.export/libtest-static-library.a",
+    target = ":test_static_library_link_lib_file",
 )
 
 # Tests `fuchsia_*` and `non_fuchsia_*` attributes for header and source files.
@@ -731,8 +803,13 @@ filegroup(
         # Verify that the file paths of prebuilt libraries are correct.
         ":verify_test_shared_library_file_path",
         ":verify_exported_test_shared_library_file_path",
+        ":verify_test_shared_library_debug_file_path",
+        ":verify_test_shared_library_stripped_file_path",
+        ":verify_test_shared_library_link_lib_file_path",
+        ":verify_test_shared_library_ifs_file_path",
         ":verify_test_static_library_file_path",
         ":verify_exported_test_static_library_file_path",
+        ":verify_test_static_library_link_lib_file_path",
 
         # Verify that the info about atoms that goes into the IDK is correct.
         ":verify_test_atom_info",

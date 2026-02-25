@@ -9,6 +9,7 @@ load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
+load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 load(":idk_common.bzl", "get_allowlist_target", "get_atom_visibility")
 
 visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/..."])
@@ -135,13 +136,8 @@ def _get_additional_info(ctx):
     """
 
     if ctx.attr.underlying_library:
-        # Assume the atom is a C++ prebuilt library.
         # If changing this, also change
         # //build/sdk/idk_prebuild_manifest.gni:cc_prebuilt_library.
-
-        # The first file in DefaultInfo is the final binary.
-        first_output_file = ctx.attr.underlying_library[DefaultInfo].files.to_list()[0]
-        lib_name = first_output_file.basename
 
         api_level = ctx.attr._current_api_level[BuildSettingInfo].value
         cpu_arch = _get_current_cpu_arch(ctx)
@@ -153,46 +149,45 @@ def _get_additional_info(ctx):
 
         additional_prebuild_info = dict(ctx.attr.additional_prebuild_info)
         files_map = dict(ctx.attr.files_map)
-        format = json.decode(additional_prebuild_info["format"])
 
+        lib_info = ctx.attr.underlying_library[PrebuiltLibraryInfo]
+        library_type = lib_info.type
+
+        if library_type != json.decode(additional_prebuild_info["format"]):
+            fail("Library type `%s` does not match format `%s`." %
+                 (library_type, additional_prebuild_info["format"]))
+
+        # All types have a link library.
         link_lib_dest_dir = "%s/lib" % idk_prebuilt_base
-        link_lib_dest = "%s/%s" % (link_lib_dest_dir, lib_name)
+        link_lib_dest = "%s/%s" % (link_lib_dest_dir, lib_info.link_lib.basename)
+        files_map[link_lib_dest] = lib_info.link_lib
+        binaries["link_lib"] = link_lib_dest
 
-        if format == "shared":
-            debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_name)
-            dist_lib_dest = "%s/dist/%s" % (idk_prebuilt_base, lib_name)
-
-            # For shared libraries, the final binary is the unstripped library.
-            files_map[debug_lib_dest] = first_output_file
-            binaries["debug_lib"] = debug_lib_dest
-
-            # TODO(https://fxbug.dev/443982549): Once a stripped binary is
-            # exposed, specify the correct label to `files_map`.
-            files_map[dist_lib_dest] = first_output_file
-            binaries["dist_lib"] = dist_lib_dest
-            binaries["dist_path"] = "lib/%s" % lib_name
-
-            # TODO(https://fxbug.dev/449812165): Once the link stub is exposed,
-            # specify the correct label to `files_map`.
-            # a link stub is exposed.
-            files_map[link_lib_dest] = first_output_file
-            binaries["link_lib"] = link_lib_dest
-
-            # TODO(https://fxbug.dev/449812165): Once the IFS file is exposed,
-            # get the `ifs_name` from it and specify the correct label to `files_map`.
-            ifs_name = lib_name[:-2] + "ifs"
-            ifs_dest = "%s/%s" % (link_lib_dest_dir, ifs_name)
-            files_map[ifs_dest] = first_output_file
+        if library_type == "shared":
+            ifs_dest = "%s/%s" % (link_lib_dest_dir, lib_info.ifs_file.basename)
+            files_map[ifs_dest] = lib_info.ifs_file
             binaries["ifs"] = ifs_dest
 
-        elif format == "static":
-            # For static libraries, the final binary is the link_lib.
-            files_map[link_lib_dest] = first_output_file
-            binaries["link_lib"] = link_lib_dest
+            debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_info.debug.basename)
+            files_map[debug_lib_dest] = lib_info.debug
+            binaries["debug_lib"] = debug_lib_dest
+
+            dist_lib_dest = "%s/dist/%s" % (idk_prebuilt_base, lib_info.stripped.basename)
+            files_map[dist_lib_dest] = lib_info.stripped
+            binaries["dist_lib"] = dist_lib_dest
+            binaries["dist_path"] = "lib/%s" % lib_info.stripped.basename
+
+        elif library_type == "static":
+            if (hasattr(lib_info, "ifs_file") or
+                hasattr(lib_info, "debug") or
+                hasattr(lib_info, "stripped")):
+                fail("Files unexpected for a static library were provided.")
 
         else:
-            fail("Unrecognized `format` '%s'." % format)
+            fail("Unrecognized library_type '%s'." % library_type)
 
+        if "binaries" in additional_prebuild_info:
+            fail("`binaries` should not already be populated in `additional_prebuild_info`.")
         additional_prebuild_info["binaries"] = json.encode(binaries)
 
         return additional_prebuild_info, files_map
@@ -339,7 +334,7 @@ Possible values, from most restrictive to least restrictive:
             mandatory = False,
         ),
         "underlying_library": attr.label(
-            providers = [DefaultInfo],
+            providers = [PrebuiltLibraryInfo],
             doc = "The underlying library (e.g., C++ prebuilt library) represented by this atom." +
                   "Information will be extracted from it for prebuild info.",
             mandatory = False,
@@ -376,7 +371,16 @@ def _idk_atom_impl(
         api_contents_map,
         allowlist,
         prebuilt_library_format,
+        additional_prebuild_info,
         **kwargs):
+    if prebuilt_library_format:
+        prebuild_info_format = json.decode(additional_prebuild_info["format"])
+        if prebuilt_library_format != prebuild_info_format:
+            fail("`prebuilt_library_format` `%s` does not match `%s` in `additional_prebuild_info`." %
+                 (prebuilt_library_format, prebuild_info_format))
+    elif "format" in additional_prebuild_info:
+        fail("`additional_prebuild_info` must not contain `format` when `prebuilt_library_format` is not specified.")
+
     # The allowlist must be passed as a label attribute due to
     # https://fxbug.dev/446911800. Verify that the correct allowlist is passed.
     allowlist_string = "//%s:%s" % (allowlist.package, allowlist.name)
@@ -436,6 +440,7 @@ def _idk_atom_impl(
         api_file_path = api_file_path,
         api_contents_map = api_contents_map,
         atom_build_deps = atom_build_deps,
+        additional_prebuild_info = additional_prebuild_info,
         testonly = testonly,
         **kwargs
     )
@@ -482,6 +487,12 @@ Atoms will be checked for category and API area violations when generating the I
         "api_contents_map": attr.string_keyed_label_dict(
             doc = "See _create_idk_atom().",
             allow_files = True,
+            default = {},
+            configurable = False,
+        ),
+        "additional_prebuild_info": attr.string_dict(
+            doc = "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings.",
+            mandatory = False,
             default = {},
             configurable = False,
         ),

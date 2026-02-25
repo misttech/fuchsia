@@ -8,6 +8,11 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library", "cc_shared_library")
 load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 load(
+    "//build/bazel/rules/cc:shared_library.bzl",
+    "generate_companion_files_for_shared_library",
+    "get_library_info_for_static_library",
+)
+load(
     ":cc_verification.bzl",
     "create_verify_no_duplicate_files_target",
     "create_verify_pragma_once_target",
@@ -205,10 +210,10 @@ def _idk_cc_prebuilt_library_impl(
     if prebuilt_library_type == "shared":
         # Create the exportable shared library. This generates the `.so` file
         # that will be included in the IDK.
-        underlying_library_for_idk_target_name = name + "_export"
+        exported_target_name = name + "_export"
 
         cc_shared_library(
-            name = underlying_library_for_idk_target_name,
+            name = exported_target_name,
             shared_lib_name = "lib%s.so" % output_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
@@ -232,22 +237,40 @@ def _idk_cc_prebuilt_library_impl(
             name = name,
             hdrs = hdrs_for_bazel_library,
             includes = [import_include_path],
-            shared_library = ":%s" % underlying_library_for_idk_target_name,
+            shared_library = ":%s" % exported_target_name,
             testonly = testonly,
             # In-tree code should depend on the imported shared library.
             visibility = visibility,
         )
+
+        underlying_library_info_target_name = name + "_link_stubs"
+        generate_companion_files_for_shared_library(
+            name = underlying_library_info_target_name,
+            shared_library = exported_target_name,
+            testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
+        )
     elif prebuilt_library_type == "static":
         # Create the exportable static library. This generates the `.a` file
         # that will be included in the IDK.
-        underlying_library_for_idk_target_name = name + ".export/" + name
+        exported_target_name = name + ".export/" + name
 
         # TODO(https://fxbug.dev/450004374): Remove `native.` once rules_cc supports it.
         native.cc_static_library(
-            name = underlying_library_for_idk_target_name,
+            name = exported_target_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
             # Only the IDK atom target should depend on this target.
+            visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
+        )
+
+        underlying_library_info_target_name = name + "_static_library_info"
+        get_library_info_for_static_library(
+            name = underlying_library_info_target_name,
+            static_library = exported_target_name,
+            testonly = testonly,
+            # Required for tests using `create_test_atom_info()`.
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         )
     else:
@@ -350,7 +373,7 @@ def _idk_cc_prebuilt_library_impl(
         api_contents_map = api_contents_map,
         files_map = idk_files_map,
         idk_deps = idk_deps,
-        underlying_library = ":%s" % underlying_library_for_idk_target_name,
+        underlying_library = ":%s" % underlying_library_info_target_name,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         prebuilt_library_format = prebuilt_library_type,
