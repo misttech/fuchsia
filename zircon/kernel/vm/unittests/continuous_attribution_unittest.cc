@@ -916,6 +916,77 @@ bool continuous_attribution_tracker_merge_into_child() {
   END_TEST;
 }
 
+// Test that ReleaseOwnedPagesRangeLocked correctly updates the populated slot count when it can
+// work entirely within the local page list.
+bool continuous_attribution_tracker_release_owned_self() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 10 * kPageSize, &vmo));
+  fbl::RefPtr<VmCowPages> vmo_cow = vmo->DebugGetCowPages();
+
+  ASSERT_OK(vmo->CommitRange(0, 10 * kPageSize));
+
+  EXPECT_EQ(10u, vmo_cow->DebugGetPopulatedSlotsCount());
+
+  // Call ReleaseOwnedPagesRangeLocked indirectly through Resize.
+  ASSERT_OK(vmo->Resize(4 * kPageSize));
+
+  EXPECT_EQ(4u, vmo_cow->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
+// Test that ReleaseOwnedPagesRangeLocked correctly updates the populated slot count in hidden
+// parents.
+bool continuous_attribution_tracker_release_owned_parent() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> a;
+  ASSERT_OK(
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, 2 * kPageSize, &a));
+
+  ASSERT_OK(a->CommitRange(0, 2 * kPageSize));
+
+  fbl::RefPtr<VmObject> b_no_paged;
+  ASSERT_OK(a->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                           /*size=*/2 * kPageSize, /*copy_name=*/false, &b_no_paged));
+  ASSERT_NONNULL(b_no_paged);
+  fbl::RefPtr<VmObjectPaged> b = DownCastVmObject<VmObjectPaged>(b_no_paged);
+  ASSERT_NONNULL(b);
+
+  // Decrement the share count of the parent content.
+  ASSERT_OK(b->CommitRange(kPageSize, kPageSize));
+
+  fbl::RefPtr<VmCowPages> a_cow = a->DebugGetCowPages();
+  fbl::RefPtr<VmCowPages> parent_cow = a_cow->DebugGetParent();
+  ASSERT_NONNULL(parent_cow);
+
+  EXPECT_EQ(2u, a_cow->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(2u, parent_cow->DebugGetPopulatedSlotsCount());
+
+  // Call ReleaseOwnedPagesRangeLocked indirectly through Resize.
+  ASSERT_OK(a->Resize(kPageSize));
+
+  EXPECT_EQ(1u, a_cow->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(1u, parent_cow->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -940,6 +1011,8 @@ VM_UNITTEST(continuous_attribution_tracker_remove_loaned_high_priority)
 VM_UNITTEST(continuous_attribution_tracker_add_pages)
 VM_UNITTEST(continuous_attribution_tracker_merge_spurious_parent_content)
 VM_UNITTEST(continuous_attribution_tracker_merge_into_child)
+VM_UNITTEST(continuous_attribution_tracker_release_owned_self)
+VM_UNITTEST(continuous_attribution_tracker_release_owned_parent)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

@@ -2764,17 +2764,33 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
   DEBUG_ASSERT(offset <= size_);
   DEBUG_ASSERT(offset + len <= size_);
 
+  uint32_t populated_slots_removed_from_this = 0;
+  // Must record these to the continuous_attribution_tracker_ before returning.
+  auto do_record = fit::defer([&]() {
+    if (populated_slots_removed_from_this > 0) {
+      AssertHeld(lock_ref());
+      continuous_attribution_tracker_.Decrement(populated_slots_removed_from_this);
+    }
+  });
+
   __UNINITIALIZED BatchPQRemove page_remover(freed_list);
 
   // If we know that the only pages in this range that need to be freed are from our own page list,
   // and we no longer need to consider our parent, then just remove them.
   if (!is_parent_hidden_locked() || offset >= parent_limit_) {
     if (offset == 0 && len == size_) {
-      page_list_.RemoveAllContent(
-          [&page_remover](VmPageOrMarker&& p) { page_remover.PushContent(&p); });
+      page_list_.RemoveAllContent([&](VmPageOrMarker&& p) {
+        if (p.IsPageOrRef() || p.IsParentContent()) {
+          ++populated_slots_removed_from_this;
+        }
+        page_remover.PushContent(&p);
+      });
     } else {
       page_list_.RemovePages(
-          [&page_remover](VmPageOrMarker* p, uint64_t off) {
+          [&](VmPageOrMarker* p, uint64_t off) {
+            if (p->IsPageOrRef() || p->IsParentContent()) {
+              ++populated_slots_removed_from_this;
+            }
             page_remover.PushContent(p);
             return ZX_ERR_NEXT;
           },
@@ -2793,11 +2809,14 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
   // Decrement the share count on all pages, both directly owned by us and shared via our parents,
   // that this node can see, and free any pages with a zero ref count.
   zx_status_t status = RemoveOwnedHierarchyPagesInRangeLocked(
-      [&](VmPageOrMarker* p, const VmCowPages* owner, uint64_t this_offset, uint64_t owner_offset) {
+      [&](VmPageOrMarker* p, VmCowPages* owner, uint64_t this_offset, uint64_t owner_offset) {
         // Explicitly handle this case separately since although we would naturally find these to
         // have a share_count of 0 and free them, we would always like to free any markers, however
         // we can only free markers that are precisely in 'this' since markers have no refcount.
         if (this == owner) {
+          if (p->IsPageOrRef() || p->IsParentContent()) {
+            ++populated_slots_removed_from_this;
+          }
           page_remover.PushContent(p);
           return ZX_ERR_NEXT;
         }
@@ -2805,6 +2824,8 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
         if (p->IsPage()) {
           vm_page_t* page = p->Page();
           if (page->object.share_count == 0) {
+            AssertHeld(owner->lock_ref());
+            owner->continuous_attribution_tracker_.Decrement(1);
             page_remover.PushContent(p);
           } else {
             page->object.share_count--;
@@ -2812,6 +2833,8 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
         } else if (p->IsReference()) {
           const uint32_t share_count = compression->GetMetadata(p->Reference());
           if (share_count == 0) {
+            AssertHeld(owner->lock_ref());
+            owner->continuous_attribution_tracker_.Decrement(1);
             page_remover.PushContent(p);
           } else {
             compression->SetMetadata(p->Reference(), share_count - 1);
@@ -2828,6 +2851,7 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
     page_list_.RemovePages(
         [&](VmPageOrMarker* slot, uint64_t offset) {
           DEBUG_ASSERT(slot->IsParentContent());
+          ++populated_slots_removed_from_this;
           *slot = VmPageOrMarker::Empty();
           return ZX_ERR_NEXT;
         },
