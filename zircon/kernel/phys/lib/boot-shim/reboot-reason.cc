@@ -50,7 +50,7 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
   option = option.substr(0, option.find_first_of(' '));
 
   if (option.empty()) {
-    fprintf(log, "%s: ERROR %.*s was empty, no reboot reason.", shim_name,
+    fprintf(log, "%s: ERROR %.*s was empty, no reboot reason.\n", shim_name,
             static_cast<int>(kBootArg.size() - 1), kBootArg.data());
     return;
   }
@@ -66,7 +66,7 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
     }
   }
 
-  fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.", shim_name,
+  fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.\n", shim_name,
           static_cast<int>(kBootArg.size() - 1), kBootArg.data(), static_cast<int>(option.size()),
           option.data());
 }
