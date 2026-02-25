@@ -11,6 +11,7 @@
 #include <zircon/types.h>
 
 #include <arch/arm64/periphmap.h>
+#include <arch/arm64/smccc.h>
 #include <dev/power.h>
 #include <dev/power/moonflower/init.h>
 #include <dev/psci.h>
@@ -22,6 +23,25 @@
 #define LOCAL_TRACE 0
 
 namespace {
+
+// SMC64 fast call (0xc), SiP Service Call (0x2), boot service (0x01), function 0x09
+constexpr uint32_t kTzConfigHwForRamDumpFuncId = 0xc2000109;
+// 2 value type parameters, see encoding in lib/qualcomm/smc/smc.h
+constexpr uint32_t kTzConfigHwForRamDumpParamId = 0x2;
+
+int64_t moonflower_config_hw_for_ram_dump(uint64_t disable_wd_dbg, uint64_t boot_partition_sel) {
+  arm_smccc_result_t res = arm_smccc_smc(kTzConfigHwForRamDumpFuncId, kTzConfigHwForRamDumpParamId,
+                                         disable_wd_dbg, boot_partition_sel, 0, 0, 0, 0);
+  return static_cast<int64_t>(res.x0);
+}
+
+// Configures hardware registers before a controlled shutdown/reboot to ensure
+// the hardware shuts down correctly.
+void moonflower_configure_hw_for_shutdown() {
+  int64_t r = moonflower_config_hw_for_ram_dump(1 /* disable_wd_dbg */, 0 /* boot_partition_sel */);
+  if (r)
+    dprintf(INFO, "POWER: Failed to configure moonflower for shutdown/reboot: %" PRId64 "\n", r);
+}
 
 // Reboot modes, as understood by the moonflower bootloader
 // These need to be written to spmi-sdam nvmem cell restart_reason
@@ -67,6 +87,11 @@ zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
+zx_status_t moonflower_power_shutdown() {
+  moonflower_configure_hw_for_shutdown();
+  return psci_system_off();
+}
+
 constexpr size_t kPowerDomainCount = 1;
 constexpr uint32_t kDomainId = 0;
 constexpr uint64_t kMaxOppIndex = 3;
@@ -107,7 +132,7 @@ void init_opp_reg() {
 // arguments passed to the PSCI reboot call
 constexpr pdev_power_ops moonflower_power_ops = {
     .reboot = moonflower_power_reboot,
-    .shutdown = psci_system_off,
+    .shutdown = moonflower_power_shutdown,
     .cpu_off = psci_cpu_off,
     .cpu_on = psci_cpu_on,
     .get_cpu_state = psci_get_cpu_state,
