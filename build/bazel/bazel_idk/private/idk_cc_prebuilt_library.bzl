@@ -5,6 +5,7 @@
 """Defines an IDK C/C++ prebuilt library."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@rules_cc//cc:cc_static_library.bzl", "cc_static_library")
 load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library", "cc_shared_library")
 load("//build/bazel/rules:zx_library.bzl", "apply_common_zx_library_modifications")
 load(
@@ -256,8 +257,7 @@ def _idk_cc_prebuilt_library_impl(
         # that will be included in the IDK.
         exported_target_name = name + ".export/" + name
 
-        # TODO(https://fxbug.dev/450004374): Remove `native.` once rules_cc supports it.
-        native.cc_static_library(
+        cc_static_library(
             name = exported_target_name,
             deps = [":%s" % cc_library_name],
             testonly = testonly,
