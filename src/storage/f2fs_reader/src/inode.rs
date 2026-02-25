@@ -280,14 +280,10 @@ impl Inode {
 
             if header.inline_flags.contains(InlineFlags::Data) {
                 // Inline data skips the first address slot then repurposes the remainder as data.
-                ensure!(
-                    (header.size as usize)
-                        .checked_add(4)
-                        .map(|end| end <= rest.len())
-                        .unwrap_or(false),
-                    "Invalid or corrupt inode."
-                );
-                inline_data = Some(rest[4..4 + header.size as usize].to_vec().into_boxed_slice());
+                ensure!(rest.len() >= 4, "Invalid inline data (insufficient remaining space)");
+                let data = &rest[4..];
+                ensure!(header.size <= data.len() as u64, "Invalid or corrupt inode.");
+                inline_data = Some(data[..header.size as usize].to_vec().into_boxed_slice());
             } else if header.inline_flags.contains(InlineFlags::Dentry) {
                 // Repurposes i_addr to store a set of directory entry records.
                 inline_dentry = Some(InlineDentry::try_from_bytes(rest)?);
@@ -458,12 +454,21 @@ impl Iterator for DataBlocksIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let (log_start, phys_start) = self.next_block.take().or_else(|| self.iter.next())?;
         let mut len = 1;
+
+        // Maximum file size is 2^32 blocks.
+        // Iterators don't return errors so we ignore over-sized files to avoid overflow issues.
+        if self.iter.inode.header.size > BLOCK_SIZE as u64 * u32::MAX as u64 {
+            return None;
+        }
         let file_end = (self.iter.inode.header.size.next_multiple_of(BLOCK_SIZE as u64)
             / BLOCK_SIZE as u64) as u32;
+
         loop {
             match self.iter.next() {
                 Some((log, phys))
-                    if log == log_start + len && phys == phys_start + len && log != file_end =>
+                    if Some(log) == log_start.checked_add(len)
+                        && Some(phys) == phys_start.checked_add(len)
+                        && log != file_end =>
                 {
                     len += 1;
                 }
