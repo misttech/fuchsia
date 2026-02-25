@@ -77,6 +77,22 @@ declare_args() {
                                         ]
                                         install_host_tool = true
                                       },
+
+                                      # Bazel migration example.
+                                      {
+                                        bazel_label = "//build/beads/migration_examples/go/after:example_bin_migrated"
+
+                                        # This copy_outputs is necessary because `go_binary` from
+                                        # `rules_go` in Bazel places the executable in a
+                                        # subdirectory of the output directory.
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/example_bin_migrated_/example_bin_migrated"
+                                            ninja = "example_bin_migrated"
+                                          },
+                                        ]
+                                        install_host_tool = true
+                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration

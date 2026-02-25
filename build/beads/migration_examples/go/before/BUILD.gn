@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/go/go_binary.gni")
+import("//build/go/go_library.gni")
+import("//build/go/go_test.gni")
+import("//build/host.gni")
+
+if (is_host) {
+  go_library("example_lib") {
+    sources = [
+      "main.go",
+      "main_test.go",
+    ]
+    deps = [ "//third_party/golibs:github.com/kr/pretty" ]
+  }
+
+  # This is a host tool, it is only buildable with `fx build --host`.
+  go_binary("example_bin") {
+    embed = [ ":example_lib" ]
+  }
+
+  # You don't need to migrate go_test rules for now.
+  go_test("example_test") {
+    embed = [ ":example_lib" ]
+    deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
+  }
+
+  # This target installs the host tool to ${host_tools_dir} (e.g. out/default/host_tools).
+  #
+  # You don't need to migrate this tool, instead, set `install_host_tool = true`
+  # when adding your migrated Bazel host tool to `//build/bazel/bazel_root_targets_list.gni`.
+  install_host_tools("host_tool") {
+    deps = [ ":example_bin" ]
+    outputs = [ "example_bin" ]
+  }
+}
+
+# These are convenience groups in GN.
+#
+# You don't need to migrate these groups, leave them as-is.
+# You do need to update dep paths after you migrate go_binary above.
+group("tests") {
+  testonly = true
+  deps = [ ":example_test($host_toolchain)" ]
+}
+
+group("examples") {
+  testonly = true
+  deps = [
+    ":example_test($host_toolchain)",
+    ":host_tool($host_toolchain)",
+  ]
+}
