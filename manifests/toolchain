@@ -153,7 +153,7 @@
     <!-- Ninja from https://ninja-build.org/ -->
     <!-- TODO(phosek): link to bot/recipe/autoroller(?) -->
     <package name="fuchsia/third_party/ninja/${platform}"
-             version="git_revision:69e236ff5a230a9065381ddc8635064a3f30f474"
+             version="git_revision:21d62f0e10aa9be5506f9acde1fe4901a9053648"
              platforms="linux-amd64,linux-arm64,windows-amd64"
              path="prebuilt/third_party/ninja/{{.OS}}-{{.Arch}}"/>
 
