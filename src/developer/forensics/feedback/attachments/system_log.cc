@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "src/developer/forensics/feedback_data/constants.h"
+#include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/developer/forensics/utils/log_format.h"
 #include "src/developer/forensics/utils/purge_memory.h"
@@ -47,6 +48,14 @@ size_t AppendRepeated(const size_t last_msg_repeated, std::string& append_to) {
 
 LogBuffer::LogBuffer(const StorageSize capacity, RedactorBase* redactor)
     : redactor_(redactor), capacity_(capacity.ToBytes()) {}
+
+std::optional<zx::time_boot> LogBuffer::FirstTimestamp() const {
+  return messages_.empty() ? std::nullopt : std::make_optional(messages_.front().timestamp);
+}
+
+std::optional<zx::time_boot> LogBuffer::LastTimestamp() const {
+  return messages_.empty() ? std::nullopt : std::make_optional(messages_.back().timestamp);
+}
 
 bool LogBuffer::Add(LogSink::MessageOr message) {
   if (message.is_ok()) {
@@ -203,12 +212,14 @@ LogBuffer::Message::Message(const LogSink::MessageOr& message, zx::time_boot def
 
 SystemLog::SystemLog(async_dispatcher_t* dispatcher,
                      std::shared_ptr<sys::ServiceDirectory> services, timekeeper::Clock* clock,
-                     RedactorBase* redactor, const zx::duration active_period)
+                     RedactorBase* redactor, const zx::duration active_period,
+                     cobalt::Logger* cobalt, LogBuffer* buffer)
     : dispatcher_(dispatcher),
-      buffer_(feedback_data::kCurrentLogBufferSize, redactor),
-      source_(dispatcher, services, &buffer_,
+      buffer_(buffer),
+      source_(dispatcher, services, buffer_,
               std::make_unique<backoff::ExponentialBackoff>(zx::min(1), 2u, zx::hour(1))),
       clock_(clock),
+      cobalt_(cobalt),
       active_period_(active_period) {}
 
 namespace {
@@ -258,7 +269,7 @@ auto CompletesAndConsume() {
 
   auto self = ptr_factory_.GetWeakPtr();
 
-  buffer_.ExecuteAfter(clock_->BootNow(), std::move(complete_ok));
+  buffer_->ExecuteAfter(clock_->BootNow(), std::move(complete_ok));
 
   return consume.then([self, ticket](const ::fpromise::result<void, Error>& result)
                           -> ::fpromise::result<AttachmentValue> {
@@ -276,7 +287,24 @@ auto CompletesAndConsume() {
     self->make_inactive_.Cancel();
     self->make_inactive_.PostDelayed(self->dispatcher_, self->active_period_);
 
-    auto system_log = self->buffer_.ToString();
+    auto system_log = self->buffer_->ToString();
+
+    // ToString sorts the logs, so we can assume the platform's log buffer is at capacity if the
+    // first log has a timestamp > 0. Note that this is not referring to Feedback's buffer's
+    // capacity (checked by EnforceCapacity).
+    if (const std::optional<zx::time_boot> first_timestamp = self->buffer_->FirstTimestamp();
+        first_timestamp.has_value() && first_timestamp.value() > zx::time_boot(0)) {
+      self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogBytesAtCapacityMetricId,
+                                     system_log.size());
+
+      if (const std::optional<zx::time_boot> last_timestamp = self->buffer_->LastTimestamp();
+          last_timestamp.has_value()) {
+        const int64_t duration = (*last_timestamp - *first_timestamp).to_mins();
+        self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogDurationAtCapacityMetricId,
+                                       duration);
+      }
+    }
+
     if (system_log.empty()) {
       const Error error = (result.is_ok()) ? Error::kMissingValue : result.error();
       return ::fpromise::ok(AttachmentValue(error));

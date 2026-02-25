@@ -20,6 +20,7 @@
 #include "src/developer/forensics/feedback/attachments/previous_boot_log.h"
 #include "src/developer/forensics/feedback/attachments/system_log.h"
 #include "src/developer/forensics/feedback_data/inspect_data_budget.h"
+#include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/backoff/backoff.h"
 #include "src/lib/timekeeper/clock.h"
@@ -34,13 +35,15 @@ class AttachmentProviders {
                       std::optional<zx::duration> delete_previous_boot_log_at,
                       timekeeper::Clock* clock, RedactorBase* redactor,
                       feedback_data::InspectDataBudget* inspect_data_budget,
-                      std::set<std::string> allowlist, std::optional<std::string> dlog);
+                      std::set<std::string> allowlist, std::optional<std::string> dlog,
+                      cobalt::Logger* cobalt);
 
   AttachmentManager* GetAttachmentManager() { return &attachment_manager_; }
 
   static std::unique_ptr<backoff::Backoff> AttachmentProviderBackoff();
 
  private:
+  LogBuffer log_buffer_;
   KernelLog kernel_log_;
   SystemLog system_log_;
   Inspect inspect_;

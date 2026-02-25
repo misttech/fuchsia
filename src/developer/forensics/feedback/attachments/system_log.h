@@ -14,11 +14,13 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "src/developer/forensics/feedback/attachments/provider.h"
 #include "src/developer/forensics/feedback/attachments/types.h"
 #include "src/developer/forensics/feedback_data/log_source.h"
+#include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/developer/forensics/utils/storage_size.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -45,6 +47,12 @@ class LogBuffer : public feedback_data::LogSink {
 
   // It's safe continue to writing to a LogBuffer if the log source has been interrupted.
   bool SafeAfterInterruption() const override { return true; }
+
+  // Returns std::nullopt if the buffer is empty.
+  std::optional<zx::time_boot> FirstTimestamp() const;
+
+  // Returns std::nullopt if the buffer is empty.
+  std::optional<zx::time_boot> LastTimestamp() const;
 
   std::string ToString();
 
@@ -92,7 +100,8 @@ class LogBuffer : public feedback_data::LogSink {
 class SystemLog : public AttachmentProvider {
  public:
   SystemLog(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
-            timekeeper::Clock* clock, RedactorBase* redactor, zx::duration active_period);
+            timekeeper::Clock* clock, RedactorBase* redactor, zx::duration active_period,
+            cobalt::Logger* cobalt, LogBuffer* buffer);
 
   // Returns a promise to the system log and allows collection to be terminated early with |ticket|.
   ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
@@ -107,10 +116,11 @@ class SystemLog : public AttachmentProvider {
 
   async_dispatcher_t* dispatcher_;
 
-  LogBuffer buffer_;
+  LogBuffer* buffer_;
   feedback_data::LogSource source_;
 
   timekeeper::Clock* clock_;
+  cobalt::Logger* cobalt_;
 
   zx::duration active_period_;
   bool is_active_{false};

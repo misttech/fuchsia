@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -21,8 +22,10 @@
 
 #include "src/developer/forensics/feedback/attachments/types.h"
 #include "src/developer/forensics/feedback_data/constants.h"
+#include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
+#include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/forensics/testing/stubs/diagnostics_archive.h"
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
@@ -66,6 +69,31 @@ std::string MessageJson(const int id) {
       id, id);
 }
 
+std::string MessageJsonWithTimestamp(const int id, const uint64_t timestamp) {
+  return fxl::StringPrintf(
+      R"JSON(
+[
+  {
+    "metadata": {
+      "timestamp": %lu,
+      "severity": "INFO",
+      "pid": 200,
+      "tid": 300,
+      "tags": ["tag_%d"]
+    },
+    "payload": {
+      "root": {
+        "message": {
+          "value": "Message %d"
+        }
+      }
+    }
+  }
+]
+)JSON",
+      timestamp, id, id);
+}
+
 std::vector<std::string> Messages() { return {MessageJson(1), MessageJson(2), MessageJson(3)}; }
 
 class SystemLogTest : public UnitTestFixture {
@@ -73,7 +101,12 @@ class SystemLogTest : public UnitTestFixture {
   SystemLogTest()
       : executor_(dispatcher()),
         clock_(dispatcher()),
-        system_log_(dispatcher(), services(), &clock_, &redactor_, kActivePeriod) {}
+        cobalt_(dispatcher(), services(), &clock_),
+        log_buffer_(feedback_data::kCurrentLogBufferSize, &redactor_),
+        system_log_(dispatcher(), services(), &clock_, &redactor_, kActivePeriod, &cobalt_,
+                    &log_buffer_) {
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+  }
 
  protected:
   void SetUpLogServer(std::vector<std::string> messages) {
@@ -105,7 +138,15 @@ class SystemLogTest : public UnitTestFixture {
     });
   }
 
- protected:
+  void AddMessageToBuffer(std::string message, const int64_t timestamp) {
+    fuchsia::logger::LogMessage log_message;
+    log_message.time = zx::time_boot(timestamp);
+    log_message.msg = std::move(message);
+    log_message.severity = fuchsia::diagnostics::types::Severity::INFO;
+
+    log_buffer_.Add(::fpromise::ok(std::move(log_message)));
+  }
+
   static constexpr auto kActivePeriod = zx::hour(1);
   static constexpr auto kLogTimestamp = zx::sec(1234);
 
@@ -117,7 +158,9 @@ class SystemLogTest : public UnitTestFixture {
   timekeeper::AsyncTestClock clock_;
   IdentityRedactor redactor_{inspect::BoolProperty()};
   std::unique_ptr<stubs::DiagnosticsArchiveBase> log_server_;
+  cobalt::Logger cobalt_;
 
+  LogBuffer log_buffer_;
   SystemLog system_log_;
 };
 
@@ -255,6 +298,163 @@ TEST_F(SystemLogTest, ActivePeriodResets) {
 
   // Connection is still open because active period was reset with the last call to Get
   ASSERT_TRUE(LogServer().IsBound());
+}
+
+TEST_F(SystemLogTest, NoCobaltLogsIfNoMessages) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({});
+
+  // Prime the clock so log collection won't be completed due to message timestamps.
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentValue log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentValue& result) { log = std::move(result); }));
+
+  // Giving some time to actually collect some log data, so that system_log is not empty
+  RunLoopUntilIdle();
+
+  // Forcefully terminating log collection
+  GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(ReceivedCobaltEvents(), IsEmpty());
+}
+
+TEST_F(SystemLogTest, NoCobaltLogsIfNegativeFirstTimestamp) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({});
+
+  AddMessageToBuffer("Message 1", /*timestamp=*/-1000000000);
+  AddMessageToBuffer("Message 2", /*timestamp=*/1000000000);
+  AddMessageToBuffer("Message 3", /*timestamp=*/2000000000);
+
+  // Prime the clock so log collection won't be completed due to message timestamps.
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentValue log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentValue& result) { log = std::move(result); }));
+
+  // Giving some time to actually collect some log data, so that system_log is not empty
+  RunLoopUntilIdle();
+
+  // Forcefully terminating log collection
+  GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
+
+  RunLoopUntilIdle();
+
+  // The timestamp formatter expects unsigned integers so -1 becomes a large positive number.
+  EXPECT_THAT(log, AttachmentValueIs(
+                       R"([1266874888.709][00000][00000][] INFO: Message 1
+[00001.000][00000][00000][] INFO: Message 2
+[00002.000][00000][00000][] INFO: Message 3
+)",
+                       Error::kDefault));
+  EXPECT_THAT(ReceivedCobaltEvents(), IsEmpty());
+}
+
+TEST_F(SystemLogTest, NoCobaltLogsIfUnderCapacity) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({
+      MessageJsonWithTimestamp(1, /*timestamp=*/0),
+      MessageJsonWithTimestamp(2, /*timestamp=*/1000000000),
+      MessageJsonWithTimestamp(3, /*timestamp=*/2000000000),
+  });
+
+  // Prime the clock so log collection won't be completed due to message timestamps.
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentValue log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentValue& result) { log = std::move(result); }));
+
+  // Giving some time to actually collect some log data, so that system_log is not empty
+  RunLoopUntilIdle();
+
+  // Forcefully terminating log collection
+  GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(log, AttachmentValueIs(
+                       R"([00000.000][00200][00300][tag_1] INFO: Message 1
+[00001.000][00200][00300][tag_2] INFO: Message 2
+[00002.000][00200][00300][tag_3] INFO: Message 3
+)",
+                       Error::kDefault));
+  EXPECT_THAT(ReceivedCobaltEvents(), IsEmpty());
+}
+
+TEST_F(SystemLogTest, BufferSortedBeforeLoggingToCobalt) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({
+      MessageJsonWithTimestamp(2, /*timestamp=*/61000000000),
+      MessageJsonWithTimestamp(1, /*timestamp=*/1000000000),
+      MessageJsonWithTimestamp(3, /*timestamp=*/121000000000),
+  });
+
+  // Prime the clock so log collection won't be completed due to message timestamps.
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentValue log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentValue& result) { log = std::move(result); }));
+
+  // Giving some time to actually collect some log data, so that system_log is not empty
+  RunLoopUntilIdle();
+
+  // Forcefully terminating log collection
+  GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(log, AttachmentValueIs(
+                       R"([00001.000][00200][00300][tag_1] INFO: Message 1
+[00061.000][00200][00300][tag_2] INFO: Message 2
+[00121.000][00200][00300][tag_3] INFO: Message 3
+)",
+                       Error::kDefault));
+  EXPECT_THAT(
+      ReceivedCobaltEvents(),
+      UnorderedElementsAreArray({
+          cobalt::Event(cobalt::EventType::kInteger, /*syslog_bytes_at_capacity*/ 112u, {}, 147u),
+          cobalt::Event(cobalt::EventType::kInteger, /*syslog_duration_at_capacity*/ 113u, {}, 2u),
+      }));
+}
+
+TEST_F(SystemLogTest, CobaltLogsIfAtCapacity) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({
+      MessageJsonWithTimestamp(1, /*timestamp=*/1000000000),
+      MessageJsonWithTimestamp(2, /*timestamp=*/61000000000),
+      MessageJsonWithTimestamp(3, /*timestamp=*/121000000000),
+  });
+
+  // Prime the clock so log collection won't be completed due to message timestamps.
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentValue log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentValue& result) { log = std::move(result); }));
+
+  // Giving some time to actually collect some log data, so that system_log is not empty
+  RunLoopUntilIdle();
+
+  // Forcefully terminating log collection
+  GetSystemLog().ForceCompletion(kTicket, Error::kDefault);
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(log, AttachmentValueIs(
+                       R"([00001.000][00200][00300][tag_1] INFO: Message 1
+[00061.000][00200][00300][tag_2] INFO: Message 2
+[00121.000][00200][00300][tag_3] INFO: Message 3
+)",
+                       Error::kDefault));
+  EXPECT_THAT(
+      ReceivedCobaltEvents(),
+      UnorderedElementsAreArray({
+          cobalt::Event(cobalt::EventType::kInteger, /*syslog_bytes_at_capacity*/ 112u, {}, 147u),
+          cobalt::Event(cobalt::EventType::kInteger, /*syslog_duration_at_capacity*/ 113u, {}, 2u),
+      }));
 }
 
 TEST_F(SystemLogTest, GetCalledWithSameTicket) {
@@ -626,7 +826,7 @@ TEST(LogBufferTest, NotifyInterruption) {
 [00020.000][00100][00101][tag1, tag2] INFO: log 1
 )");
 
-  // Should clear the buffer.
+  // Should be clear the buffer.
   buffer.NotifyInterruption();
 
   EXPECT_THAT(buffer.ToString(), IsEmpty());
