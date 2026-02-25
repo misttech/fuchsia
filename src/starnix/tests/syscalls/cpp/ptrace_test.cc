@@ -1394,9 +1394,6 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
 
   RunChildInForkedProcess();
 
-  // Wait for initial SIGSTOP.
-  WaitForChildStop(SIGSTOP);
-
   // Expect initial SIGSTOP via signalfd
   struct signalfd_siginfo ssi;
   ASSERT_EQ(SAFE_SYSCALL(read(sfd, &ssi, sizeof(ssi))), static_cast<ssize_t>(sizeof(ssi)));
@@ -1405,12 +1402,10 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
   EXPECT_EQ(ssi.ssi_status, SIGSTOP);
 
+  WaitForChildStop(SIGSTOP);
   CheckSignalInfo(SIGSTOP, SI_TKILL);
 
   SetBreakpointAndContinue();
-
-  // Wait for breakpoint.
-  WaitForChildStop(SIGTRAP);
 
   // Expect breakpoint SIGCHLD via signalfd
   ASSERT_EQ(SAFE_SYSCALL(read(sfd, &ssi, sizeof(ssi))), static_cast<ssize_t>(sizeof(ssi)));
@@ -1419,6 +1414,7 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
   EXPECT_EQ(ssi.ssi_status, SIGTRAP);
 
+  WaitForChildStop(SIGTRAP);
   CheckSignalInfo(SIGTRAP, SI_KERNEL);
 
   close(sfd);
