@@ -261,8 +261,36 @@ class Scheduler {
   // successfully assigning it to a scheduler.
   static void Unblock(Thread::UnblockList thread_list) TA_REQ(chainlock_transaction_token);
 
-  // Unblock a thread, but do not reschedule for the thread. A reschedule may
-  // still be issued for power level changes.
+  // Similar to Unblock, except that it uses different target CPU selection
+  // criteria to enable a "synchronous wake", if possible.
+  //
+  // A synchronous wake is a sequence of operations where the current thread
+  // wakes another thread, updates the woken thread's scheduling parameters, and
+  // then blocks, such that, under compatible conditions, the woken thread
+  // replaces the current thread as the actively running thread on the CPU in
+  // the _same reschedule operation_. A correctly executed synchronous wake
+  // optimizes queuing latency in synchronous wake-and-wait operations, such as
+  // channel calls.
+  //
+  // Due to the structure of run queues and wait queues, and their respective
+  // locking protocols, a synchronous wake cannot be implemented as a single
+  // scheduler operation. Instead, some variation of the following sequence of
+  // operations must be executed to achieve the same effect:
+  //
+  // 1. Prevent immediate rescheduling in step 2 using an appropriate mechanism,
+  //    or combination of mechanisms, for the use case (i.e. spinlock + irq
+  //    disable, preempt disable, eager resched disable).
+  // 2. Unblock the target thread and place it on the same CPU as the current
+  //    thread, if possible.
+  // 3. Update the target thread's scheduling parameters to transfer bandwidth
+  //    and/or urgency from the current to the target thread, if possible.
+  // 4. Block the current thread and reschedule the local CPU, and remote CPU if
+  //    applicable.
+  //
+  // This method implements step 2 of the synchronous wake sequence. Note that
+  // the normal unblock may be used in place of this method without impacting
+  // correctness. However, suboptimal task placement can occur at step 2 and
+  // multiple reschedules may be necessary in steps 3 and 4.
   static void UnblockSynchronous(Thread* thread) TA_REQ(chainlock_transaction_token)
       TA_REL(thread->get_lock());
 
@@ -639,7 +667,7 @@ class Scheduler {
   static cpu_num_t FindActiveSchedulerForThread(Thread* thread, Callable action)
       TA_REQ_SHARED(thread->get_lock()) {
     while (true) {
-      const cpu_num_t target_cpu = FindTargetCpu(thread);
+      const cpu_num_t target_cpu = FindTargetCpu(thread, UnblockType::Normal);
       Scheduler* const target = Get(target_cpu);
       Guard<MonitoredSpinLock, NoIrqSave> target_queue_guard{&target->queue_lock_, SOURCE_TAG};
 
@@ -652,6 +680,23 @@ class Scheduler {
     }
   }
 
+  // Indicates how to select the target CPU for the woken task. This flag is a
+  // hint to enable more optimal CPU placement for "synchronous wake"
+  // operations, but is not required for correctness. See UnblockSynchronous for
+  // more details.
+  enum class UnblockType : bool {
+    // Indicates that the target CPU selection process should place the woken
+    // task based solely on its own scheduling properties and last CPU history.
+    Normal,
+
+    // Indicates that the target CPU selection process should place the task
+    // based on both the woken and current threads' scheduling properties,
+    // particularly the CPU and urgency of the current thread, such that, under
+    // compatible conditions, the woken thread can replace the current thread on
+    // a CPU as it blocks in the same reschedule operation.
+    Synchronous,
+  };
+
   // A helper function used by FindActiveSchedulerForThread.  Returns a CPU to
   // run the given thread on, but does not lock that scheduler, meaning that the
   // selected scheduler can become de-activated before the caller can lock it.
@@ -659,8 +704,8 @@ class Scheduler {
   // Typically, users will want to use FindActiveSchedulerForThread instead,
   // which will supply a locked scheduler which is guaranteed to be active.
   //
-  static cpu_num_t FindTargetCpu(Thread* thread) TA_REQ_SHARED(thread->get_lock())
-      TA_EXCL(queue_lock_);
+  static cpu_num_t FindTargetCpu(Thread* thread, UnblockType unblock_type)
+      TA_REQ_SHARED(thread->get_lock()) TA_EXCL(queue_lock_);
 
   // Increment the kcounter which tracks the number of times that an extra
   // attempt to find an active scheduler was needed during
@@ -727,8 +772,9 @@ class Scheduler {
 
     cpu_mask_t Mask() const { return cpu_num_to_mask(target_cpu) | cpus_to_reschedule; }
   };
+
   // Common logic for unblock API.
-  static RescheduleTargets UnblockCommon(Thread* thread, SchedTime now)
+  static RescheduleTargets UnblockCommon(Thread* thread, SchedTime now, UnblockType unblock_type)
       TA_REQ(chainlock_transaction_token, thread->get_lock());
 
   // Common logic for reschedule API.
@@ -1374,6 +1420,10 @@ class Scheduler {
   // Scheduler::LockHandoff to release the previous thread's lock after a
   // context switch operation has fully completed.
   Thread* previous_thread_{nullptr};
+
+  // Utility type that tracks values related to the thread being placed when
+  // finding a target CPU for a waking or migrating thread.
+  class ThreadDemand;
 
   // Utility type that tracks values used for comparing candidate thread
   // placements when finding a target CPU for a waking or migrating thread.

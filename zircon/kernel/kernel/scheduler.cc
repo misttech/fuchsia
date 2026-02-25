@@ -24,8 +24,6 @@
 #include <zircon/time.h>
 #include <zircon/types.h>
 
-#include <new>
-
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <arch/thread.h>
@@ -42,6 +40,7 @@
 #include <ktl/algorithm.h>
 #include <ktl/forward.h>
 #include <ktl/limits.h>
+#include <ktl/new.h>
 #include <ktl/span.h>
 #include <ktl/tuple.h>
 #include <ktl/utility.h>
@@ -81,6 +80,22 @@ KCOUNTER(counter_fair_timeline_snap_count, "scheduler.fair-timeline-snap.count")
 // Counts the amount of variable time the fair timeline was snapped forward to
 // make a fair thread eligible to run.
 KCOUNTER(counter_fair_timeline_snap_time, "scheduler.fair-timeline-snap.time")
+
+// Counts the number of times a task wakes up normally and is placed on the last
+// CPU it ran on.
+KCOUNTER(counter_wakeup_normal_local, "scheduler.wakeup.normal-local")
+
+// Counts the number of times a task wakes up normally and is placed on a
+// different CPU than the last CPU it ran on.
+KCOUNTER(counter_wakeup_normal_migrated, "scheduler.wakeup.normal-migrated")
+
+// Counts the number of times a task wakes up synchronously and is placed on the
+// CPU the waker ran on.
+KCOUNTER(counter_wakeup_synchronous_local, "scheduler.wakeup.synchronous-local")
+
+// Counts the number of times a task wakes up synchronously and is placed on a
+// different CPU than the CPU the waker ran on.
+KCOUNTER(counter_wakeup_synchronous_migrated, "scheduler.wakeup.synchronous-migrated")
 
 namespace {
 
@@ -1117,6 +1132,136 @@ Scheduler::DequeueResult Scheduler::EvaluateNextThread(
   return DequeueThread(now, queue_guard);
 }
 
+// Utility type that tracks values related to the thread being placed when
+// finding a target CPU for a waking or migrating thread.
+class Scheduler::ThreadDemand {
+ public:
+  ThreadDemand(const ThreadDemand&) = default;
+  ThreadDemand& operator=(const ThreadDemand&) = default;
+
+  // Returns the thread demand parameters for the given thread and unblock type.
+  // When the unblock type is synchronous, values from the current thread are
+  // also considered.
+  static ThreadDemand Get(const Thread* woken_thread, UnblockType unblock_type)
+      TA_REQ_SHARED(woken_thread->get_lock()) {
+    const SchedTime woken_thread_finish_time = woken_thread->scheduler_state().finish_time();
+
+    const SchedUtilization woken_utilization =
+        IsDeadlineThread(woken_thread)
+            ? woken_thread->scheduler_state().effective_profile().deadline().utilization
+            : SchedUtilization{0};
+
+    // Bandwidth demand is based only on the woken thread for the normal
+    // unblock type.
+    if (unblock_type == UnblockType::Normal) {
+      const ThreadDemand demand{woken_utilization,
+                                SchedUtilization{0},
+                                woken_thread_finish_time,
+                                woken_thread->scheduler_state().last_cpu(),
+                                INVALID_CPU,
+                                IsFairThread(woken_thread)};
+
+      LOCAL_KTRACE_INSTANT(
+          QUEUE, "ThreadDemand::Get", ("woken_thread_finish_time", woken_thread_finish_time),
+          ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
+          ("woken_thread_utilization", Round<uint32_t>(1000 * demand.woken_thread_utilization())),
+          ("current_thread_utilization",
+           Round<uint32_t>(1000 * demand.current_thread_utilization())));
+
+      return demand;
+    }
+
+    // Bandwidth demand depends on both the woken and current threads for the
+    // synchronous unblock type.
+    const Thread* current_thread = Thread::Current::Get();
+    Scheduler* scheduler = Scheduler::Get();
+
+    // Briefly acquire the queue lock for the current scheduler, where the
+    // current thread is running, to allow read-only access to the relevant
+    // scheduler state.
+    Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+    scheduler->AssertInScheduler(*current_thread);
+
+    const SchedUtilization current_utilization =
+        IsDeadlineThread(current_thread)
+            ? current_thread->scheduler_state().effective_profile().deadline().utilization
+            : SchedUtilization{0};
+
+    const ThreadDemand demand{woken_utilization,
+                              current_utilization,
+                              woken_thread_finish_time,
+                              woken_thread->scheduler_state().last_cpu(),
+                              current_thread->scheduler_state().curr_cpu(),
+                              IsFairThread(woken_thread) && IsFairThread(current_thread)};
+
+    LOCAL_KTRACE_INSTANT(
+        QUEUE, "ThreadDemand::Get", ("woken_thread_finish_time", woken_thread_finish_time),
+        ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
+        ("woken_thread_utilization", Round<uint32_t>(1000 * demand.woken_thread_utilization())),
+        ("current_thread_utilization",
+         Round<uint32_t>(1000 * demand.current_thread_utilization())));
+
+    return demand;
+  }
+
+  // Returns the effective demand the thread would place on the given cpu,
+  // accounting for cached demand by the woken thread.
+  constexpr SchedUtilization GetEffectiveUtilization(cpu_num_t cpu_num,
+                                                     bool power_level_control_enabled) const {
+    // If power level control is enabled, and thus demand caching is being
+    // performed, the expiration of the woken thread's finish time is considered
+    // to avoid double counting demand cached on the last CPU it ran on. Note
+    // that the expiration of the finish time is compared with the current time
+    // here to maximize the accuracy of the prediction of the cached state,
+    // which could change in parallel with the overall CPU placement operation.
+    const bool woken_thread_demand_likely_cached = power_level_control_enabled &&
+                                                   cpu_num == woken_thread_last_cpu() &&
+                                                   woken_thread_finish_time() > CurrentTime();
+
+    // Return the additional demand that the woken thread would contribute to
+    // the given CPU, accounting for demand caching. The demand of the current
+    // thread, if contributing to the total demand, is already accounted for on
+    // the CPU it is running on.
+    const SchedUtilization total_utilization =
+        (!woken_thread_demand_likely_cached ? woken_thread_utilization() : SchedUtilization{0}) +
+        (cpu_num != current_thread_cpu() ? current_thread_utilization() : SchedUtilization{0});
+
+    return ktl::min(total_utilization, kThreadUtilizationMax);
+  }
+
+  constexpr cpu_num_t InitialCpu() const {
+    return current_thread_cpu_ != INVALID_CPU ? current_thread_cpu_ : woken_thread_last_cpu_;
+  }
+
+  constexpr SchedUtilization woken_thread_utilization() const { return woken_thread_utilization_; }
+  constexpr SchedUtilization current_thread_utilization() const {
+    return current_thread_utilization_;
+  }
+  constexpr SchedTime woken_thread_finish_time() const { return woken_thread_finish_time_; }
+  constexpr cpu_num_t woken_thread_last_cpu() const { return woken_thread_last_cpu_; }
+  constexpr cpu_num_t current_thread_cpu() const { return current_thread_cpu_; }
+  constexpr bool is_fair() const { return is_fair_; }
+
+ private:
+  constexpr ThreadDemand(SchedUtilization woken_thread_utilization,
+                         SchedUtilization current_thread_utilization,
+                         SchedTime woken_thread_finish_time, cpu_num_t woken_thread_last_cpu,
+                         cpu_num_t current_thread_cpu, bool is_fair)
+      : woken_thread_utilization_{woken_thread_utilization},
+        current_thread_utilization_{current_thread_utilization},
+        woken_thread_finish_time_{woken_thread_finish_time},
+        woken_thread_last_cpu_{woken_thread_last_cpu},
+        current_thread_cpu_{current_thread_cpu},
+        is_fair_{is_fair} {}
+
+  SchedUtilization woken_thread_utilization_;
+  SchedUtilization current_thread_utilization_;
+  SchedTime woken_thread_finish_time_;
+  cpu_num_t woken_thread_last_cpu_;
+  cpu_num_t current_thread_cpu_;
+  bool is_fair_;
+};
+
 // Latches a potential candidate placement for the thread and essential values
 // for making comparisons with other candidates. Dynamic values are exposed by
 // each Scheduler instance as relaxed atomics to avoid queue lock contention,
@@ -1128,28 +1273,10 @@ class Scheduler::CandidatePlacement {
  public:
   CandidatePlacement() = default;
 
-  enum class FinishTimeExpired : bool {
-    No,
-    Yes,
-  };
-  static constexpr FinishTimeExpired ToFinishTimeExpired(bool expired) {
-    return expired ? FinishTimeExpired::Yes : FinishTimeExpired::No;
-  }
-
-  enum class PowerLevelControl : bool {
-    Disabled,
-    Enabled,
-  };
-  static constexpr PowerLevelControl ToPowerLevelControl(bool enabled) {
-    return enabled ? PowerLevelControl::Enabled : PowerLevelControl::Disabled;
-  }
-
-  // Latches key values from the given CPU, thread, and power domain set.
-  static CandidatePlacement Evaluate(cpu_num_t cpu_num, const Thread* thread,
+  // Latches key values from the given CPU, demand, and power domain set.
+  static CandidatePlacement Evaluate(cpu_num_t cpu_num, const ThreadDemand& demand,
                                      const PowerDomainSet& power_domain_set,
-                                     FinishTimeExpired finish_time_expired,
-                                     PowerLevelControl power_level_control)
-      TA_REQ_SHARED(thread->get_lock()) {
+                                     bool power_level_control_enabled) {
     const Scheduler* scheduler = Scheduler::Get(cpu_num);
     const SchedDuration cpu_queue_time_ns = scheduler->exported_queue_time_ns();
     const SchedProcessingRate cpu_processing_rate = scheduler->exported_processing_rate();
@@ -1165,20 +1292,9 @@ class Scheduler::CandidatePlacement {
     SchedProcessingRate new_required_processing_rate = current_required_processing_rate;
     uint64_t estimated_power_delta_nw = 0;
 
-    // Add requirements for deadline threads.
-    if (IsDeadlineThread(thread)) {
-      // If the finish time of the deadline thread has not expired and power
-      // level control is enabled, its demand is likely to be in the bandwidth
-      // reservation cache of the last CPU it ran on and already accounted for
-      // in the current required processing rate. Avoid double counting the
-      // demand in the required processing rate of that candidate.
-      if (power_level_control == PowerLevelControl::Disabled ||
-          cpu_num != thread->scheduler_state().last_cpu() ||
-          finish_time_expired == FinishTimeExpired::Yes) {
-        new_required_processing_rate +=
-            thread->scheduler_state().effective_profile().deadline().utilization;
-      }
-    }
+    // Add the bandwidth demand for the thread.
+    new_required_processing_rate +=
+        demand.GetEffectiveUtilization(cpu_num, power_level_control_enabled);
 
     // Estimated energy cost comparisons are only necessary in heterogeneous /
     // multi-domain systems. In strict SMP systems, where all CPUs have the same
@@ -1230,9 +1346,9 @@ class Scheduler::CandidatePlacement {
         ("new required rate", Round<int64_t>(new_required_processing_rate * 1000)),
         ("estimated power delta nw", estimated_power_delta_nw));
 
-    return CandidatePlacement(IsFairThread(thread), scheduler->cluster(), cpu_queue_time_ns,
-                              cpu_processing_rate, new_required_processing_rate,
-                              cpu_deadline_utilization, estimated_power_delta_nw);
+    return CandidatePlacement(cpu_num, scheduler->cluster(), cpu_queue_time_ns, cpu_processing_rate,
+                              new_required_processing_rate, cpu_deadline_utilization,
+                              estimated_power_delta_nw);
   }
 
   CandidatePlacement(const CandidatePlacement&) = default;
@@ -1242,7 +1358,7 @@ class Scheduler::CandidatePlacement {
 
   // Returns true if the load balancing objectives and constraints are
   // sufficiently met that candidate selection can stop on this candidate.
-  constexpr bool IsSufficient() const {
+  constexpr bool IsSufficient(const ThreadDemand& demand) const {
     // If the estimated power is non-zero (i.e. there is an active energy model),
     // don't stop searching early, even if the other criteria are met. This
     // results in the search converging on the lowest power candidate that also
@@ -1250,12 +1366,22 @@ class Scheduler::CandidatePlacement {
     // TODO(https://fxbug.dev/448196664): Consider adding a configurable
     // threshold to terminate the search if the estimated power cost is
     // acceptably low.
-    return estimated_power_delta_nw() == 0 && queue_time_ns() <= kIntraClusterThreshold &&
-           is_admissible();
+    const bool migration_unnecessary_condition =
+        estimated_power_delta_nw() == 0 && queue_time_ns() <= kIntraClusterThreshold;
+
+    // Bypass the migration condition for synchronous wakeups. For normal
+    // wakeups, the current thread's CPU will be INVALID_CPU to indicate that it
+    // should not affect the placement decision.
+    const bool synchronous_condition = cpu() == demand.current_thread_cpu();
+
+    // If this is a synchronous wake up or migration is unnecessary, then stop
+    // searching for a better placement if the demand is admissible.
+    return (synchronous_condition || migration_unnecessary_condition) && is_admissible();
   }
 
   // Returns true if this candidate is a better alternative than the current target.
-  constexpr bool IsBetterThan(const CandidatePlacement& current_target) const {
+  constexpr bool IsBetterThan(const CandidatePlacement& current_target,
+                              const ThreadDemand& demand) const {
     LOCAL_KTRACE_INSTANT(
         QUEUE, "compare", ("Current queue time", current_target.queue_time_ns()),
         ("Current cluster", current_target.cluster()),
@@ -1264,7 +1390,7 @@ class Scheduler::CandidatePlacement {
         ("Candidate queue time", queue_time_ns()), ("Candidate cluster", cluster()),
         ("Candidate deadline utilization", Round<int64_t>(deadline_utilization() * 1000)));
 
-    if (is_fair_) {
+    if (demand.is_fair()) {
       // CPUs in the same logical cluster are considered equivalent in terms of
       // cache affinity. Choose the least loaded among the members of a cluster.
       if (cluster() == current_target.cluster()) {
@@ -1287,6 +1413,7 @@ class Scheduler::CandidatePlacement {
     return candidate_criteria < current_criteria;
   }
 
+  constexpr cpu_num_t cpu() const { return cpu_; }
   constexpr size_t cluster() const { return cluster_; }
   constexpr SchedDuration queue_time_ns() const { return queue_time_ns_; }
   constexpr SchedProcessingRate processing_rate() const { return processing_rate_; }
@@ -1299,13 +1426,13 @@ class Scheduler::CandidatePlacement {
   constexpr int is_admissible_order_key() const { return is_admissible() ? 0 : 1; }
 
  private:
-  constexpr CandidatePlacement(bool is_fair, size_t cluster, SchedDuration queue_time_ns,
+  constexpr CandidatePlacement(cpu_num_t cpu, size_t cluster, SchedDuration queue_time_ns,
                                SchedProcessingRate processing_rate,
                                SchedProcessingRate required_processing_rate,
                                SchedUtilization deadline_utilization,
                                uint64_t estimated_power_delta_nw)
       : is_valid_{true},
-        is_fair_{is_fair},
+        cpu_{cpu},
         cluster_{cluster},
         queue_time_ns_{queue_time_ns},
         processing_rate_{processing_rate},
@@ -1314,7 +1441,7 @@ class Scheduler::CandidatePlacement {
         estimated_power_delta_nw_{estimated_power_delta_nw} {}
 
   bool is_valid_{false};
-  bool is_fair_{false};
+  cpu_num_t cpu_{INVALID_CPU};
   size_t cluster_{0};
   SchedDuration queue_time_ns_{0};
   SchedProcessingRate processing_rate_{0};
@@ -1323,7 +1450,7 @@ class Scheduler::CandidatePlacement {
   uint64_t estimated_power_delta_nw_{0};
 };
 
-cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
+cpu_num_t Scheduler::FindTargetCpu(Thread* thread, UnblockType unblock_type) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "find_target");
 
   // Determine the set of CPUs the thread is allowed to run on.
@@ -1340,21 +1467,19 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
   LOCAL_KTRACE_INSTANT(DETAILED, "target_mask", ("online", mp_get_online_mask()),
                        ("active", active_mask));
 
-  // Find a suitable target CPU, starting at the last CPU the task ran on, if
-  // any. Candidates are considered in order of best to worst potential cache
-  // affinity.
-  const cpu_num_t last_cpu = thread_state.last_cpu_;
+  // Evaluate the bandwidth demand of the woken thread, which will include the
+  // bandwidth of the current thread for synchronous wakeups.
+  const ThreadDemand demand = ThreadDemand::Get(thread, unblock_type);
+
+  // Find a suitable target CPU, usually starting at the last CPU the task ran
+  // on, if any. Candidates are considered in order of best to worst potential
+  // cache affinity.
+  const cpu_num_t last_cpu = demand.InitialCpu();
   const cpu_num_t starting_cpu = last_cpu != INVALID_CPU ? last_cpu : current_cpu;
   const CpuSearchSet& search_set = percpu::Get(starting_cpu).search_set;
 
-  // A thread with an expired finish time is guaranteed to not have a cached
-  // bandwidth reservation on the last CPU it ran on.
-  const auto finish_time_expired =
-      CandidatePlacement::ToFinishTimeExpired(thread_state.finish_time() <= CurrentTime());
-
   // Loop over the search set for CPU the task last ran on to find a suitable
   // target.
-  cpu_num_t target_cpu = INVALID_CPU;
   CandidatePlacement target_queue;
 
   {
@@ -1365,8 +1490,7 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
     // the need for locking or snapshotting.
     Guard<MonitoredSpinLock, NoIrqSave> guard{&Get()->queue_lock_, SOURCE_TAG};
     const PowerDomainSet& power_domain_set = Get()->power_level_control_.power_domain_set();
-    const auto power_level_control =
-        CandidatePlacement::ToPowerLevelControl(Get()->power_level_control_.is_enabled());
+    const auto power_level_control_enabled = Get()->power_level_control_.is_enabled();
 
     for (const auto& entry : search_set.const_iterator()) {
       const cpu_num_t candidate_cpu = entry.cpu;
@@ -1374,14 +1498,13 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
 
       if (candidate_available) {
         const CandidatePlacement candidate_queue = CandidatePlacement::Evaluate(
-            candidate_cpu, thread, power_domain_set, finish_time_expired, power_level_control);
+            candidate_cpu, demand, power_domain_set, power_level_control_enabled);
 
-        if (!target_queue || candidate_queue.IsBetterThan(target_queue)) {
-          target_cpu = candidate_cpu;
+        if (!target_queue || candidate_queue.IsBetterThan(target_queue, demand)) {
           target_queue = candidate_queue;
 
           // Stop searching when the load balancing criteria have been sufficiently met.
-          if (target_queue.IsSufficient()) {
+          if (target_queue.IsSufficient(demand)) {
             break;
           }
         }
@@ -1389,9 +1512,24 @@ cpu_num_t Scheduler::FindTargetCpu(Thread* thread) {
     }
   }
 
-  DEBUG_ASSERT(target_cpu != INVALID_CPU);
-  trace = KTRACE_END_SCOPE(("last_cpu", last_cpu), ("target_cpu", target_cpu));
-  return target_cpu;
+  DEBUG_ASSERT(target_queue.cpu() != INVALID_CPU);
+
+  if (unblock_type == UnblockType::Normal) {
+    if (last_cpu == target_queue.cpu()) {
+      counter_wakeup_normal_local.Add(1);
+    } else {
+      counter_wakeup_normal_migrated.Add(1);
+    }
+  } else {
+    if (demand.current_thread_cpu() == target_queue.cpu()) {
+      counter_wakeup_synchronous_local.Add(1);
+    } else {
+      counter_wakeup_synchronous_migrated.Add(1);
+    }
+  }
+
+  trace = KTRACE_END_SCOPE(("last_cpu", last_cpu), ("target_cpu", target_queue.cpu()));
+  return target_queue.cpu();
 }
 
 void Scheduler::IncFindTargetCpuRetriesKcounter() { counter_find_target_cpu_retries.Add(1u); }
@@ -2790,7 +2928,8 @@ void Scheduler::Block(Thread* const current_thread) {
   Scheduler::Get()->RescheduleCommon(current_thread, trace.Completer());
 }
 
-Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime now) {
+Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime now,
+                                                      UnblockType unblock_type) {
   thread->canary().Assert();
 
   cpu_num_t target_cpu = INVALID_CPU;
@@ -2799,7 +2938,7 @@ Scheduler::RescheduleTargets Scheduler::UnblockCommon(Thread* thread, SchedTime 
     // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
     // adding it to the save_state_list_, as that would allow us to bypass CPU
     // selection when processing the list so long as the CPU is still online.
-    target_cpu = FindTargetCpu(thread);
+    target_cpu = FindTargetCpu(thread, unblock_type);
     const cpu_num_t last_cpu = thread->scheduler_state().last_cpu();
     const bool needs_migration = (last_cpu != INVALID_CPU && target_cpu != last_cpu &&
                                   thread->has_migrate_fn() && !thread->migrate_pending());
@@ -2840,7 +2979,7 @@ void Scheduler::Unblock(Thread* thread) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock");
   ChainLockTransaction::ActiveRef().AssertFinalized();
   const SchedTime now = CurrentTime();
-  RescheduleTargets targets = UnblockCommon(thread, now);
+  RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Normal);
   thread->get_lock().Release();
   trace.End();
 
@@ -2856,7 +2995,7 @@ void Scheduler::Unblock(Thread::UnblockList list) {
   while ((thread = list.pop_back()) != nullptr) {
     DEBUG_ASSERT(!thread->IsIdle());
     thread->get_lock().AssertAcquired();
-    RescheduleTargets targets = UnblockCommon(thread, now);
+    RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Normal);
     reschedule_mask |= targets.Mask();
     thread->get_lock().Release();
   }
@@ -2869,7 +3008,7 @@ void Scheduler::UnblockSynchronous(Thread* thread) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_unblock_sync");
   ChainLockTransaction::ActiveRef().AssertFinalized();
   const SchedTime now = CurrentTime();
-  RescheduleTargets targets = UnblockCommon(thread, now);
+  RescheduleTargets targets = UnblockCommon(thread, now, UnblockType::Synchronous);
   thread->get_lock().Release();
   trace.End();
 
