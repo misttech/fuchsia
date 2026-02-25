@@ -46,6 +46,7 @@ pub fn create_zircon_process<L>(
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
     name: TaskCommand,
+    arch_width: ArchWidth,
 ) -> Result<TaskInfo, Errno>
 where
     L: LockBefore<ProcessGroupState>,
@@ -63,8 +64,10 @@ where
         .set_critical(zx::JobCriticalOptions::RETCODE_NONZERO, &process)
         .map_err(|status| from_status_like_fdio!(status))?;
 
-    let memory_manager =
-        Arc::new(MemoryManager::new(root_vmar).map_err(|status| from_status_like_fdio!(status))?);
+    let memory_manager = Arc::new(
+        MemoryManager::new(root_vmar, arch_width)
+            .map_err(|status| from_status_like_fdio!(status))?,
+    );
 
     let thread_group = ThreadGroup::new(
         locked,
@@ -183,6 +186,7 @@ where
                 process_group,
                 SignalActions::default(),
                 initial_name.clone(),
+                ArchWidth::Arch64,
             )
         },
         creds.into(),
@@ -245,6 +249,7 @@ pub fn create_init_process(
                 process_group,
                 SignalActions::default(),
                 initial_name.clone(),
+                ArchWidth::Arch64,
             )
         },
         Credentials::root(),

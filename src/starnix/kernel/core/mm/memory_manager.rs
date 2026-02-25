@@ -2517,8 +2517,14 @@ impl MemoryManagerState {
 /// pinning.
 pub struct MlockShadowProcess(memory_pinning::ShadowProcess);
 
-fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
-    let (vmar, ptr) = vmar.allocate(
+fn create_user_vmar(root_vmar: &zx::Vmar, arch_width: ArchWidth) -> Result<zx::Vmar, zx::Status> {
+    let mut vmar_info = root_vmar.info()?;
+    if arch_width.is_arch32() {
+        vmar_info.len = (LOWER_4GB_LIMIT.ptr() - vmar_info.base) as usize;
+    } else {
+        assert_eq!(vmar_info.len, RESTRICTED_ASPACE_HIGHEST_ADDRESS - vmar_info.base);
+    }
+    let (vmar, ptr) = root_vmar.allocate(
         0,
         vmar_info.len,
         zx::VmarFlags::SPECIFIC
@@ -2855,18 +2861,21 @@ pub struct MemoryManager {
 }
 
 impl MemoryManager {
-    pub fn new(root_vmar: zx::Vmar) -> Result<Self, zx::Status> {
-        let info = root_vmar.info()?;
-        let user_vmar = create_user_vmar(&root_vmar, &info)?;
+    /// Returns a new
+    pub fn new(root_vmar: zx::Vmar, arch_width: ArchWidth) -> Result<Self, zx::Status> {
+        let user_vmar = create_user_vmar(&root_vmar, arch_width)?;
         let user_vmar_info = user_vmar.info()?;
-
-        debug_assert_eq!(RESTRICTED_ASPACE_BASE, user_vmar_info.base);
-        debug_assert_eq!(RESTRICTED_ASPACE_SIZE, user_vmar_info.len);
-
         Ok(Self::from_vmar(root_vmar, user_vmar, user_vmar_info))
     }
 
     fn from_vmar(root_vmar: zx::Vmar, user_vmar: zx::Vmar, user_vmar_info: zx::VmarInfo) -> Self {
+        // Ensure that the `user_vmar_info` matches assumptions for 32- or 64-bit layout.
+        debug_assert_eq!(RESTRICTED_ASPACE_BASE, user_vmar_info.base);
+        debug_assert!(
+            user_vmar_info.len == RESTRICTED_ASPACE_SIZE
+                || user_vmar_info.len == LOWER_4GB_LIMIT.ptr() - user_vmar_info.base
+        );
+
         // The private anonymous backing memory object extend from the user address 0 up to the
         // highest mappable address. The pages below `user_vmar_info.base` are never mapped, but
         // including them in the memory object makes the math for mapping address to memory object
@@ -3114,6 +3123,8 @@ impl MemoryManager {
         // See mm/README.md.
         let state: &mut MemoryManagerState = &mut self.state.write();
         let mut target_state = target.state.write();
+        debug_assert_eq!(state.user_vmar_info, target_state.user_vmar_info);
+
         let mut clone_cache = HashMap::<zx::Koid, Arc<MemoryObject>>::new();
 
         let backing_size = (state.user_vmar_info.base + state.user_vmar_info.len) as u64;
@@ -3230,21 +3241,14 @@ impl MemoryManager {
         // the old mappings to be dropped.
         let (_old_mappings, user_vmar) = {
             let mut state = self.state.write();
-            let mut info = self.root_vmar.info()?;
 
             // SAFETY: This operation is safe because this is the only `Task` active in the address-
             // space, and accesses by remote tasks will use syscalls on the `root_vmar`.
             unsafe { state.user_vmar.destroy()? }
             state.user_vmar = zx::NullableHandle::invalid().into();
 
-            if arch_width.is_arch32() {
-                info.len = (LOWER_4GB_LIMIT.ptr() - info.base) as usize;
-            } else {
-                info.len = RESTRICTED_ASPACE_HIGHEST_ADDRESS - info.base;
-            }
-
-            // Create the new userspace VMAR, to enmsure that the address range is (re-)reserved.
-            let user_vmar = create_user_vmar(&self.root_vmar, &info)?;
+            // Create the new userspace VMAR, to ensure that the address range is (re-)reserved.
+            let user_vmar = create_user_vmar(&self.root_vmar, arch_width)?;
 
             (std::mem::replace(&mut state.mappings, Default::default()), user_vmar)
         };

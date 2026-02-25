@@ -1737,6 +1737,7 @@ impl CurrentTask {
                     process_group,
                     signal_actions,
                     command.clone(),
+                    self.thread_state.arch_width(),
                 )?;
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);
