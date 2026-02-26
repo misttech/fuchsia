@@ -337,7 +337,7 @@ void trace_context::HandleSaveRollingBufferRequest(uint32_t wrapped_count,
   //
   // We achieve this by only calling trace_context::ServiceBuffers after:
   // 1) We have been notified that the buffer is full.
-  // 2) We are releasing the trace_context and we observer that we are the only one holding a
+  // 2) We are releasing the trace_context and we observe that we are the only one holding a
   //    context.
   handler_->ops->notify_buffer_full(handler_, wrapped_count, durable_data_end);
 }
@@ -348,4 +348,20 @@ void trace_context::MarkRollingBufferSaved(uint32_t wrapped_count, uint64_t dura
       ->rolling_data_end[static_cast<uint8_t>(RollingBufferState::ToBufferNumber(wrapped_count))] =
       0;
   rolling_buffer_.SetBufferServiced(wrapped_count);
+}
+
+void trace_context::FlushBuffer() {
+  if (rolling_buffer_.BytesAllocated() == 0) {
+    // Nothing to flush
+    return;
+  }
+  const AllocationResult alloc = rolling_buffer_.Flush();
+  const AllocationVisitor visitor{
+      [](Allocation alloc) { ZX_DEBUG_ASSERT(false && "Flushing must get switching result"); },
+      [](BufferFull) {
+        // There's already a pending flush or we're not in streaming mode.
+      },
+      [this](SwitchingAllocation alloc) { SetPendingBufferService(alloc.prev_state); },
+  };
+  std::visit(visitor, alloc);
 }

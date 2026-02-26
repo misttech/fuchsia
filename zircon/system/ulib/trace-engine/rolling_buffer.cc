@@ -142,3 +142,47 @@ AllocationResult RollingBuffer::AllocRecord(size_t num_bytes) {
     }
   }
 }
+
+AllocationResult RollingBuffer::Flush() {
+  RollingBufferState expected = state_.load(std::memory_order_relaxed);
+
+  // Flushing is similar to a regular allocation except that always roll to the next buffer and
+  // don't write any data to the allocation that we get.
+  while (true) {
+    const BufferNumber buffer_number = expected.GetBufferNumber();
+    ZX_DEBUG_ASSERT(!expected.IsBufferFilled(buffer_number));
+
+    std::optional<RollingBufferState> service_required = std::nullopt;
+    RollingBufferState desired;
+
+    if (expected.IsBufferFilled(NextBuffer(buffer_number))) {
+      // We're already trying to flush the buffers. Do nothing.
+      return BufferFull{};
+    }
+
+    // We're not in streaming mode, so we can't flush the buffers
+    if (rolling_buffers_[1].size_bytes() == 0) {
+      return BufferFull{};
+    }
+
+    service_required = std::optional<RollingBufferState>{expected};
+    // To roll the buffer, we need to:
+    //
+    // 1) Mark the current buffer as filled/requiring service.
+    // 2) Increment the wrapped count.
+    // 3) Allocate space in the next buffer.
+    desired = expected.WithBufferMarkedFilled(buffer_number)
+                  .WithOffset(static_cast<uint32_t>(0))
+                  .WithNextWrappedCount();
+
+    const bool success = state_.compare_exchange_weak(expected, desired, std::memory_order_relaxed,
+                                                      std::memory_order_relaxed);
+    if (success) {
+      const BufferNumber buffer_number = desired.GetBufferNumber();
+      const uint32_t offset = desired.GetBufferOffset();
+      uint8_t* const ptr = rolling_buffers_[static_cast<uint8_t>(buffer_number)].data() + offset;
+      return SwitchingAllocation{.ptr = reinterpret_cast<uint64_t*>(ptr),
+                                 .prev_state = service_required.value()};
+    }
+  }
+}

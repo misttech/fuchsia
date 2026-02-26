@@ -164,6 +164,8 @@ class RollingBuffer {
   //    to service the buffers so there's nothing to do.
   AllocationResult AllocRecord(size_t num_bytes);
 
+  AllocationResult Flush();
+
   // Return the total number of allocated bytes in the current buffer.
   size_t BytesAllocated() const;
 

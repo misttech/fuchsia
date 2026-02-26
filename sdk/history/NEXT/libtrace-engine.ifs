@@ -47,6 +47,7 @@ Symbols:
   - { Name: trace_context_write_string_record, Type: Func }
   - { Name: trace_context_write_thread_info_record, Type: Func }
   - { Name: trace_context_write_thread_record, Type: Func }
+  - { Name: trace_engine_flush_buffer, Type: Func }
   - { Name: trace_engine_flush_category_cache, Type: Func }
   - { Name: trace_engine_initialize, Type: Func }
   - { Name: trace_engine_mark_buffer_saved, Type: Func }

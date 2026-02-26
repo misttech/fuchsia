@@ -100,6 +100,17 @@ struct trace_context {
   // was made. Similarly for |durable_data_end|.
   void MarkRollingBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
 
+  // Requests to prepare the buffer to be read. Only has effect in streaming mode.
+  //
+  // Normally streaming mode only sends data once it has enough data to require a buffer swap and
+  // data flush. This produces fewer, but larger and bursty data transfers. Some clients may want
+  // more regular smaller data transfers. These clients may instead manually invoke FlushBuffer
+  // whenever they are ready for data.
+  //
+  // Once received, trace-engine will prepare the buffer to be read, and send a callback
+  // requesting a buffer save when it is ready.
+  void FlushBuffer();
+
   // This is only called from the engine to initiate a buffer save.
   void HandleSaveRollingBufferRequest(uint32_t wrapped_count, uint64_t durable_data_end);
 

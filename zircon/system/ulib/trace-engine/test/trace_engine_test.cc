@@ -346,3 +346,53 @@ TEST(TraceEngineTest, Alerts) {
   trace_engine_terminate();
   loop.RunUntilIdle();
 }
+
+TEST(TraceEngineTest, FlushBuffer) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  char buffer[4096];
+  struct flush_handler : trace_handler_t {
+    explicit flush_handler(const trace_handler_ops* ops) : trace_handler_t{ops} {}
+    bool flushed = false;
+  };
+
+  trace_handler_ops flush_ops = ops;
+  flush_ops.notify_buffer_full = [](trace_handler_t* handler, uint32_t, uint64_t) {
+    reinterpret_cast<flush_handler*>(handler)->flushed = true;
+  };
+
+  flush_handler handler{&flush_ops};
+  // We can't flush if the trace hasn't started
+  ASSERT_EQ(ZX_ERR_BAD_STATE, trace_engine_flush_buffer());
+  zx_status_t init = trace_engine_initialize(
+      loop.dispatcher(), &handler, TRACE_BUFFERING_MODE_STREAMING, buffer, sizeof(buffer));
+  ASSERT_EQ(init, ZX_OK);
+  loop.RunUntilIdle();
+
+  ASSERT_EQ(ZX_ERR_BAD_STATE, trace_engine_flush_buffer());
+  zx_status_t start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  // We should get an ok result, but shouldn't actually trigger a flush since there is no data.
+  ASSERT_EQ(ZX_OK, trace_engine_flush_buffer());
+  ASSERT_FALSE(handler.flushed);
+
+  trace_context_t* context = trace_acquire_context();
+  ASSERT_TRUE(context);
+  void* data = trace_context_alloc_record(context, 32);
+  uint64_t* ptr = reinterpret_cast<uint64_t*>(data);
+  ptr[0] = 1;
+  ptr[1] = 2;
+  ptr[2] = 3;
+  ptr[3] = 4;
+  trace_release_context(context);
+  ASSERT_FALSE(handler.flushed);
+
+  trace_engine_flush_buffer();
+  loop.RunUntilIdle();
+  ASSERT_TRUE(handler.flushed);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+}

@@ -15,16 +15,14 @@
 // See <trace/event.h> for instrumentation macros.
 //
 
-#ifndef ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_HANDLER_H_
-#define ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_HANDLER_H_
-
-#include <stdbool.h>
-
-#include <zircon/compiler.h>
-#include <zircon/types.h>
+#ifndef LIB_TRACE_ENGINE_HANDLER_H_
+#define LIB_TRACE_ENGINE_HANDLER_H_
 
 #include <lib/async/dispatcher.h>
 #include <lib/trace-engine/instrumentation.h>
+#include <stdbool.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
 __BEGIN_CDECLS
 
@@ -174,6 +172,22 @@ void trace_engine_terminate();
 // This function is thread-safe.
 zx_status_t trace_engine_mark_buffer_saved(uint32_t wrapped_count, uint64_t durable_data_end);
 
+// Requests that the engine flush its buffers earlier, even if they are not yet full. Only has
+// effect in streaming mode.
+//
+// Normally streaming mode only sends data once it has enough data to require a buffer swap and data
+// flush. This produces fewer, but larger and bursty data transfers. Some clients may want more
+// regular smaller data transfers. These clients may instead manually invoke a buffer flush whenever
+// they are ready for data.
+//
+// Returns |ZX_OK| if the current state is |TRACE_STARTED| or |TRACE_STOPPING|.
+// Returns |ZX_ERR_BAD_STATE| if current state is |TRACE_STOPPED|.
+//
+// This function is thread-safe.
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+zx_status_t trace_engine_flush_buffer() ZX_AVAILABLE_SINCE(NEXT);
+#endif
+
 __END_CDECLS
 
-#endif  // ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_HANDLER_H_
+#endif  // LIB_TRACE_ENGINE_HANDLER_H_

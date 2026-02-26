@@ -599,6 +599,27 @@ EXPORT_NO_DDK zx_status_t trace_engine_mark_buffer_saved(uint32_t wrapped_count,
   return ZX_OK;
 }
 
+// This is called by the handler after a flush request.
+// thread-safe
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+EXPORT_NO_DDK zx_status_t trace_engine_flush_buffer() ZX_AVAILABLE_SINCE(NEXT) {
+  trace_context_t* context = trace_acquire_context();
+
+  // There's no active trace to flush
+  if (!context) {
+    return ZX_ERR_BAD_STATE;
+  }
+
+  if (context->buffering_mode() != TRACE_BUFFERING_MODE_STREAMING) {
+    trace_release_context(context);
+    return ZX_ERR_BAD_STATE;
+  }
+  context->FlushBuffer();
+  trace_release_context(context);
+  return ZX_OK;
+}
+#endif
+
 namespace {
 
 void handle_all_observers_started() {
