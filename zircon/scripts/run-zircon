@@ -54,6 +54,7 @@ function HELP {
 }
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+readonly PREBUILT_DIR="$DIR/../../prebuilt"
 
 # Note these match the defaults in [virtual device specs](/build/images/flash/BUILD.gn;l=517)
 # and https://source.corp.google.com/fuchsia/build/sdk/virtual_device.gni
@@ -275,12 +276,12 @@ fi
 # by default use the qemu binary located in the fuchsia //prebuilt
 # repo if we can find it, but allow -q to override it for people
 # who want to use their own.
-if [[ -z $QEMUDIR && -d "$DIR/../prebuilt/downloads/qemu/bin" ]]; then
-    QEMUDIR="$DIR/../prebuilt/downloads/qemu/bin/"
+if [[ -z $QEMUDIR && -d "$PREBUILT_DIR/downloads/qemu/bin" ]]; then
+    QEMUDIR="$PREBUILT_DIR/downloads/qemu/bin/"
 fi
 
 if (( UEFI )); then
-  readonly EDK2DIR="$DIR/../../prebuilt/third_party/edk2/qemu-${ARCH}"
+  readonly EDK2DIR="$PREBUILT_DIR/third_party/edk2/qemu-${ARCH}"
   case $ARCH in
     x64)
     readonly UEFI_FIRMWARE="${EDK2DIR}/OVMF_CODE.fd"
@@ -508,7 +509,20 @@ case $ARCH in
           ARGS+=("-cpu" "host")
         else
           # Ask for all of the features TCG emulates
-          ARGS+=("-machine" "virtualization=true" "-cpu" "max")
+          ARGS+=("-machine" "virtualization=true")
+          ARGS+=("-cpu" "max")
+
+          # We boot arm64 TCG through a secure bootloader (that speaks Linux's
+          # boot protocol) when we can. This gives us a 'real' PSCI
+          # implementation to test against as well as a SMCCC TRNG, which QEMU
+          # does not implement itself.
+          #
+          # The firmware's two constraints are that the system must provide a
+          # GICv3 and support FEAT_RNG (which we get from `-cpu max`).
+          if [[ $GIC == 3 ]]; then
+            ARGS+=("-machine" "secure=true")
+            ARGS+=("-bios" "$PREBUILT_DIR/firmware/arm-trusted-firmware-qemu-bios/qemu_fw.bios")
+          fi
         fi
         # Ask for a specific virt machine version.
         # TODO(https://fxbug.dev/42131826) add support for high PCIe aperture
