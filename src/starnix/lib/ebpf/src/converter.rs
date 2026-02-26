@@ -163,6 +163,12 @@ fn cbpf_to_ebpf(
                         if (op == BPF_DIV || op == BPF_MOD) && bpf_instruction.k == 0 {
                             return Err(EbpfError::ProgramVerifyError("Division by 0".to_string()));
                         }
+                        // LSH and RSH by more than 31 are rejected.
+                        if (op == BPF_LSH || op == BPF_RSH) && bpf_instruction.k >= 32 {
+                            return Err(EbpfError::ProgramVerifyError(
+                                "Shift by 32 or more".to_string(),
+                            ));
+                        }
                         EbpfInstruction::new(
                             bpf_instruction.code as u8,
                             REG_A,
