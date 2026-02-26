@@ -15,7 +15,6 @@ async fn packageless_update_checks_needs_overwrite() {
         .cpp_blobfs()
         .ota_manifest(make_manifest([manifest::Blob {
             uncompressed_size: blob_content.len() as u64,
-            delivery_blob_type: 1,
             fuchsia_merkle_root: blob_hash,
         }]))
         .blob(blob_hash, blob_content.to_vec())

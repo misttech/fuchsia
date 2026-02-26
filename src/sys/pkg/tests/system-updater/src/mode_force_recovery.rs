@@ -136,7 +136,7 @@ async fn rejects_zbi() {
 
 #[fasync::run_singlethreaded(test)]
 async fn rejects_zbi_packageless() {
-    let manifest = OtaManifestV1 { images: vec![], ..make_forced_recovery_manifest() };
+    let manifest = OtaManifest { images: vec![], ..make_forced_recovery_manifest() };
     let env = TestEnv::builder().ota_manifest(manifest).build().await;
 
     let result = env.run_packageless_update().await;

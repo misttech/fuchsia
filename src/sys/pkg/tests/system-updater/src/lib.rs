@@ -6,8 +6,7 @@
 #![cfg(test)]
 
 use self::SystemUpdaterInteraction::*;
-use ::update_package::images::AssetType;
-use ::update_package::manifest::{self, OtaManifestV1};
+use ::update_package::manifest::{self, AssetType, OtaManifest};
 use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
@@ -110,30 +109,26 @@ pub fn make_images_json_recovery() -> String {
     .unwrap()
 }
 
-fn make_manifest(
-    blobs: impl IntoIterator<Item = ::update_package::manifest::Blob>,
-) -> OtaManifestV1 {
-    OtaManifestV1 {
+fn make_manifest(blobs: impl IntoIterator<Item = ::update_package::manifest::Blob>) -> OtaManifest {
+    OtaManifest {
+        build_info_version: "1.2.3.4".parse().unwrap(),
         board: "x64".to_string(),
         epoch: SOURCE_EPOCH,
         mode: ::update_package::UpdateMode::Normal,
+        blob_base_url: "https://fuchsia.com/blobs/1".into(),
         images: vec![manifest::Image {
-            fuchsia_merkle_root: hash(9),
-            sha256: EMPTY_SHA256.parse().unwrap(),
-            size: 0,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            delivery_blob_type: 1,
+            sha256: EMPTY_SHA256.parse().unwrap(),
+            blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
         }],
         blobs: blobs.into_iter().collect(),
-        blob_base_url: "https://fuchsia.com/blobs".into(),
-        build_version: "1.2.3.4".parse().unwrap(),
     }
 }
 
-fn make_forced_recovery_manifest() -> OtaManifestV1 {
+fn make_forced_recovery_manifest() -> OtaManifest {
     let mut manifest =
-        OtaManifestV1 { mode: ::update_package::UpdateMode::ForceRecovery, ..make_manifest([]) };
+        OtaManifest { mode: ::update_package::UpdateMode::ForceRecovery, ..make_manifest([]) };
     manifest.images[0].slot = manifest::Slot::R;
     manifest
 }
@@ -182,7 +177,7 @@ struct TestEnvBuilder {
     mount_data: bool,
     history: Option<serde_json::Value>,
     system_image_hash: Option<fuchsia_hash::Hash>,
-    ota_manifest: Option<String>,
+    ota_manifest: Option<Vec<u8>>,
     blobs: HashMap<Hash, Vec<u8>>,
     verify_existing_blobs: bool,
     blob_reader_mock:
@@ -230,15 +225,13 @@ impl TestEnvBuilder {
         self
     }
 
-    fn ota_manifest(mut self, manifest: OtaManifestV1) -> Self {
-        let versioned_manifest = manifest.into_versioned();
-        let manifest_json = serde_json::to_string(&versioned_manifest).unwrap();
-        self.ota_manifest = Some(manifest_json);
+    fn ota_manifest(mut self, manifest: OtaManifest) -> Self {
+        self.ota_manifest = Some(manifest.serialize());
         self
     }
 
-    fn ota_manifest_json(mut self, manifest_json: impl Into<String>) -> Self {
-        self.ota_manifest = Some(manifest_json.into());
+    fn ota_manifest_raw(mut self, manifest_bytes: impl Into<Vec<u8>>) -> Self {
+        self.ota_manifest = Some(manifest_bytes.into());
         self
     }
 
@@ -796,10 +789,7 @@ impl TestEnv {
                 let key_bytes = hex::decode(MANIFEST_PRIVATE_KEY).unwrap();
                 let key_pair =
                     ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
-                self.http_loader_service
-                    .manifest
-                    .as_ref()
-                    .map(|manifest| key_pair.sign(manifest.as_bytes()))
+                self.http_loader_service.manifest.as_ref().map(|manifest| key_pair.sign(manifest))
             }
             _ => None,
         };
@@ -1037,7 +1027,7 @@ impl MockOtaDownloaderService {
                     self.interactions
                         .lock()
                         .push(OtaDownloader(OtaDownloaderEvent::FetchBlob(hash.into())));
-                    assert_eq!(base_url, "https://fuchsia.com/blobs");
+                    assert_eq!(base_url, "https://fuchsia.com/blobs/1");
                     let hash = fidl_fuchsia_pkg_ext::BlobId::from(hash).into();
                     let blocker = self.blockers.lock().remove(&hash);
                     if let Some(blocker) = blocker {
@@ -1074,12 +1064,12 @@ impl MockOtaDownloaderService {
 type ResumeHandle = oneshot::Sender<()>;
 
 struct MockHttpLoaderService {
-    manifest: Option<String>,
+    manifest: Option<Vec<u8>>,
     blocker: Mutex<Option<oneshot::Sender<ResumeHandle>>>,
 }
 
 impl MockHttpLoaderService {
-    fn new(manifest: Option<String>) -> Self {
+    fn new(manifest: Option<Vec<u8>>) -> Self {
         Self { manifest, blocker: Mutex::new(None) }
     }
 
@@ -1107,11 +1097,11 @@ impl MockHttpLoaderService {
 
                     let url = request.url.unwrap();
                     let response = if url == MANIFEST_URL {
-                        let manifest_json = self.manifest.clone().unwrap();
+                        let manifest_bytes = self.manifest.clone().unwrap();
                         let (client, server) = zx::Socket::create_stream();
                         let mut server = fasync::Socket::from_socket(server);
                         fasync::Task::spawn(async move {
-                            server.write_all(manifest_json.as_bytes()).await.unwrap()
+                            server.write_all(&manifest_bytes).await.unwrap()
                         })
                         .detach();
 
@@ -1218,7 +1208,7 @@ const UPDATE_HASH: &str = "00112233445566778899aabbccddeeffffeeddccbbaa998877665
 const SYSTEM_IMAGE_HASH: &str = "42ade6f4fd51636f70c68811228b4271ed52c4eb9a647305123b4f4d0741f296";
 const SYSTEM_IMAGE_URL: &str = "fuchsia-pkg://fuchsia.com/system_image/0?hash=42ade6f4fd51636f70c68811228b4271ed52c4eb9a647305123b4f4d0741f296";
 const UPDATE_PKG_URL: &str = "fuchsia-pkg://fuchsia.com/update";
-const MANIFEST_URL: &str = "https://fuchsia.com/ota.json";
+const MANIFEST_URL: &str = "https://fuchsia.com/ota_manifest";
 const UPDATE_PKG_URL_PINNED: &str = "fuchsia-pkg://fuchsia.com/update?hash=00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100";
 
 fn resolved_urls(interactions: SystemUpdaterInteractions) -> Vec<String> {

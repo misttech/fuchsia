@@ -10,7 +10,7 @@ use delivery_blob::DeliveryBlobType;
 use epoch::EpochFile;
 use fuchsia_pkg::PackageManifest;
 use std::collections::{BTreeMap, BTreeSet};
-use update_package::manifest::{self, OtaManifestV1};
+use update_package::manifest::{self, OtaManifest};
 
 fn get_all_blobs(
     packages: &[(Option<Utf8PathBuf>, PackageManifest)],
@@ -56,11 +56,11 @@ pub fn write_ota_manifest(
     packages_a: &[(Option<Utf8PathBuf>, PackageManifest)],
     out_path: impl AsRef<std::path::Path>,
 ) -> anyhow::Result<()> {
-    let build_version = std::fs::read_to_string(version_file)
+    let version = std::fs::read_to_string(version_file)
         .context("reading version file")?
         .parse()
         .context("parsing version file")?;
-    let delivery_blob_type = delivery_blob_type.into();
+    let delivery_blob_type_val: u32 = delivery_blob_type.into();
 
     let mut images = vec![];
     let mut collect_images = |system: &AssembledSystem, slot| {
@@ -72,10 +72,10 @@ pub fn write_ota_manifest(
                     if has_signed_zbi && !signed {
                         continue;
                     }
-                    (path, manifest::ImageType::Asset(update_package::images::AssetType::Zbi))
+                    (path, manifest::ImageType::Asset(manifest::AssetType::Zbi))
                 }
                 Image::VBMeta(path) => {
-                    (path, manifest::ImageType::Asset(update_package::images::AssetType::Vbmeta))
+                    (path, manifest::ImageType::Asset(manifest::AssetType::Vbmeta))
                 }
                 Image::Dtbo(path) => (path, manifest::ImageType::Firmware("dtbo".into())),
                 Image::BasePackage(_)
@@ -89,7 +89,7 @@ pub fn write_ota_manifest(
                 | Image::TestRamdisk(_) => continue,
             };
             images.push(
-                manifest::Image::from_path(path, slot, image_type, delivery_blob_type)
+                manifest::Image::from_path(path, slot, image_type)
                     .with_context(|| format!("reading image: {path}"))?,
             );
         }
@@ -131,7 +131,6 @@ pub fn write_ota_manifest(
                             path,
                             manifest::Slot::AB,
                             manifest::ImageType::Firmware(firmware_type.into()),
-                            delivery_blob_type,
                         )
                         .with_context(|| format!("reading image: {path}"))?,
                     );
@@ -151,7 +150,6 @@ pub fn write_ota_manifest(
             &bootloader.image,
             manifest::Slot::AB,
             manifest::ImageType::Firmware(bootloader.partition_type.clone()),
-            delivery_blob_type,
         )
         .with_context(|| format!("reading image: {:?}", bootloader.image))?;
 
@@ -170,20 +168,19 @@ pub fn write_ota_manifest(
         .into_iter()
         .map(|(merkle, size)| manifest::Blob {
             uncompressed_size: size,
-            delivery_blob_type,
             fuchsia_merkle_root: merkle,
         })
         .collect();
 
-    let manifest = OtaManifestV1 {
-        build_version,
+    let manifest = OtaManifest {
+        build_info_version: version,
         board: partitions.hardware_revision.clone(),
         epoch: match epoch {
             EpochFile::Version1 { epoch } => *epoch,
         },
         mode: update_package::UpdateMode::Normal,
         // Relative to the OTA manifest URL.
-        blob_base_url: "blobs".into(),
+        blob_base_url: format!("blobs/{delivery_blob_type_val}"),
         images,
         blobs,
     };
@@ -191,9 +188,8 @@ pub fn write_ota_manifest(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating directory {}", parent.display()))?;
     }
-    let manifest_json =
-        serde_json::to_string(&manifest.into_versioned()).context("serializing ota manifest")?;
-    std::fs::write(&out_path, &manifest_json).context("writing ota manifest")?;
+    let manifest_bytes = manifest.serialize();
+    std::fs::write(&out_path, &manifest_bytes).context("writing ota manifest")?;
     if let Some(private_key_path) = private_key_path {
         let signature_path = ota_manifest_signature_path.ok_or_else(|| {
             anyhow::anyhow!("signature path is required if private key is provided")
@@ -203,7 +199,7 @@ pub fn write_ota_manifest(
         let pem = pem::parse(key_bytes).context("parsing pem")?;
         let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents)
             .map_err(|e| anyhow::anyhow!("parsing pkcs8: {e}"))?;
-        let signature = key_pair.sign(manifest_json.as_bytes());
+        let signature = key_pair.sign(&manifest_bytes);
         std::fs::write(signature_path, signature).context("writing signature")?;
     }
     Ok(())
@@ -307,74 +303,65 @@ mod tests {
         )
         .unwrap();
 
-        let manifest_json = std::fs::read_to_string(manifest_file.path()).unwrap();
+        let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
         let signature = std::fs::read(signature_file.path()).unwrap();
         let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
         let public_key = ring::signature::UnparsedPublicKey::new(
             &ring::signature::ED25519,
             key_pair.public_key().as_ref(),
         );
-        public_key.verify(manifest_json.as_bytes(), &signature).unwrap();
+        public_key.verify(&manifest_bytes, &signature).unwrap();
 
-        let value: serde_json::Value = serde_json::from_str(&manifest_json).unwrap();
-        let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
+        let manifest = manifest::parse_ota_manifest(&manifest_bytes).unwrap();
 
-        assert_eq!(manifest.build_version, "1.2.3.4".parse().unwrap());
+        assert_eq!(manifest.build_info_version, "1.2.3.4".parse().unwrap());
         assert_eq!(manifest.epoch, 1);
         assert_eq!(manifest.board, "board");
         assert_eq!(manifest.mode, update_package::UpdateMode::Normal);
-        assert_eq!(manifest.blob_base_url, "blobs");
+        assert_eq!(manifest.blob_base_url, "blobs/1");
         assert_eq!(manifest.images.len(), 2);
         assert_eq!(
             manifest.images[0],
-            update_package::manifest::Image {
-                slot: update_package::manifest::Slot::AB,
-                image_type: manifest::ImageType::Asset(update_package::images::AssetType::Zbi),
+            manifest::Image {
+                slot: manifest::Slot::AB,
+                image_type: manifest::ImageType::Asset(manifest::AssetType::Zbi),
                 sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     .parse()
                     .unwrap(),
-                size: 0,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root:
-                    "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
-                        .parse()
-                        .unwrap(),
+                blob: manifest::Blob {
+                    uncompressed_size: 0,
+                    fuchsia_merkle_root:
+                        "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+                            .parse()
+                            .unwrap(),
+                },
             }
         );
         assert_eq!(
             manifest.images[1],
-            update_package::manifest::Image {
-                slot: update_package::manifest::Slot::AB,
-                image_type: update_package::manifest::ImageType::Asset(
-                    update_package::images::AssetType::Vbmeta
-                ),
+            manifest::Image {
+                slot: manifest::Slot::AB,
+                image_type: manifest::ImageType::Asset(manifest::AssetType::Vbmeta),
                 sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     .parse()
                     .unwrap(),
-                size: 0,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root:
-                    "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
-                        .parse()
-                        .unwrap(),
+                blob: manifest::Blob {
+                    uncompressed_size: 0,
+                    fuchsia_merkle_root:
+                        "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b"
+                            .parse()
+                            .unwrap(),
+                },
             }
         );
         assert_eq!(manifest.blobs.len(), 2);
         assert_eq!(
             manifest.blobs[0],
-            update_package::manifest::Blob {
-                uncompressed_size: 100,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: meta_far_merkle,
-            }
+            manifest::Blob { uncompressed_size: 100, fuchsia_merkle_root: meta_far_merkle }
         );
         assert_eq!(
             manifest.blobs[1],
-            update_package::manifest::Blob {
-                uncompressed_size: 200,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: blob1_merkle,
-            }
+            manifest::Blob { uncompressed_size: 200, fuchsia_merkle_root: blob1_merkle }
         );
     }
 
@@ -501,70 +488,54 @@ mod tests {
         )
         .unwrap();
 
-        let value: serde_json::Value = serde_json::from_reader(manifest_file).unwrap();
-        let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
+        let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
+        let manifest = manifest::parse_ota_manifest(&manifest_bytes).unwrap();
 
-        assert_eq!(manifest.build_version, "1.2.3.4".parse().unwrap());
+        assert_eq!(manifest.build_info_version, "1.2.3.4".parse().unwrap());
         assert_eq!(manifest.epoch, 1);
         assert_eq!(manifest.board, "board");
         assert_eq!(manifest.images.len(), 6); // 3 from A, 2 from R, 1 bootloader
-        assert_eq!(manifest.images[0].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[0].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[0].image_type,
-            manifest::ImageType::Asset(update_package::images::AssetType::Zbi),
+            manifest::ImageType::Asset(manifest::AssetType::Zbi),
         );
-        assert_eq!(manifest.images[1].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[1].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[1].image_type,
-            update_package::manifest::ImageType::Asset(update_package::images::AssetType::Vbmeta),
+            manifest::ImageType::Asset(manifest::AssetType::Vbmeta),
         );
-        assert_eq!(manifest.images[2].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[2].slot, manifest::Slot::AB);
         assert_eq!(manifest.images[2].image_type, manifest::ImageType::Firmware("dtbo".into()));
-        assert_eq!(manifest.images[3].slot, update_package::manifest::Slot::R);
+        assert_eq!(manifest.images[3].slot, manifest::Slot::R);
         assert_eq!(
             manifest.images[3].image_type,
-            manifest::ImageType::Asset(update_package::images::AssetType::Zbi),
+            manifest::ImageType::Asset(manifest::AssetType::Zbi),
         );
-        assert_eq!(manifest.images[4].slot, update_package::manifest::Slot::R);
+        assert_eq!(manifest.images[4].slot, manifest::Slot::R);
         assert_eq!(
             manifest.images[4].image_type,
-            update_package::manifest::ImageType::Asset(update_package::images::AssetType::Vbmeta),
+            manifest::ImageType::Asset(manifest::AssetType::Vbmeta),
         );
-        assert_eq!(manifest.images[5].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[5].slot, manifest::Slot::AB);
         assert_eq!(manifest.images[5].image_type, manifest::ImageType::Firmware("bl_type".into()));
 
         assert_eq!(manifest.blobs.len(), 4);
         assert_eq!(
             manifest.blobs[0],
-            update_package::manifest::Blob {
-                uncompressed_size: 100,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: meta_far_merkle,
-            }
+            manifest::Blob { uncompressed_size: 100, fuchsia_merkle_root: meta_far_merkle }
         );
         assert_eq!(
             manifest.blobs[1],
-            update_package::manifest::Blob {
-                uncompressed_size: 200,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: blob1_merkle,
-            }
+            manifest::Blob { uncompressed_size: 200, fuchsia_merkle_root: blob1_merkle }
         );
         assert_eq!(
             manifest.blobs[2],
-            update_package::manifest::Blob {
-                uncompressed_size: 300,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: blob2_merkle,
-            }
+            manifest::Blob { uncompressed_size: 300, fuchsia_merkle_root: blob2_merkle }
         );
         assert_eq!(
             manifest.blobs[3],
-            update_package::manifest::Blob {
-                uncompressed_size: 400,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: subpackage_merkle,
-            }
+            manifest::Blob { uncompressed_size: 400, fuchsia_merkle_root: subpackage_merkle }
         );
     }
 
@@ -647,32 +618,32 @@ mod tests {
         )
         .unwrap();
 
-        let value: serde_json::Value = serde_json::from_reader(manifest_file).unwrap();
-        let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
+        let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
+        let manifest = manifest::parse_ota_manifest(&manifest_bytes).unwrap();
 
         assert_eq!(manifest.images.len(), 5);
         assert_eq!(manifest.blobs.len(), 0);
-        assert_eq!(manifest.images[0].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[0].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[0].image_type,
-            manifest::ImageType::Asset(update_package::images::AssetType::Zbi),
+            manifest::ImageType::Asset(manifest::AssetType::Zbi),
         );
-        assert_eq!(manifest.images[1].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[1].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[1].image_type,
-            update_package::manifest::ImageType::Asset(update_package::images::AssetType::Vbmeta),
+            manifest::ImageType::Asset(manifest::AssetType::Vbmeta),
         );
-        assert_eq!(manifest.images[2].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[2].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[2].image_type,
             manifest::ImageType::Firmware("recovery_zbi".into()),
         );
-        assert_eq!(manifest.images[3].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[3].slot, manifest::Slot::AB);
         assert_eq!(
             manifest.images[3].image_type,
             manifest::ImageType::Firmware("recovery_vbmeta".into()),
         );
-        assert_eq!(manifest.images[4].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[4].slot, manifest::Slot::AB);
         assert_eq!(manifest.images[4].image_type, manifest::ImageType::Firmware("bl_type".into()));
     }
 
@@ -721,12 +692,12 @@ mod tests {
         )
         .unwrap();
 
-        let value: serde_json::Value = serde_json::from_reader(manifest_file).unwrap();
-        let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
+        let manifest_bytes = std::fs::read(manifest_file.path()).unwrap();
+        let manifest = manifest::parse_ota_manifest(&manifest_bytes).unwrap();
 
         // Bootloader image should have de-duped so there's only one.
         assert_eq!(manifest.images.len(), 1);
-        assert_eq!(manifest.images[0].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[0].slot, manifest::Slot::AB);
         assert_eq!(manifest.images[0].image_type, manifest::ImageType::Firmware("bl_type".into()));
     }
 }
