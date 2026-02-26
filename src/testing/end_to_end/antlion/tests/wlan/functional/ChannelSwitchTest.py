@@ -393,7 +393,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             except HoneydewWlanError as e:
                 self.log.warning(f"Query iface {iface_id} failed: {e}")
                 continue
-            if result.role is f_wlan_common.WlanMacRole.AP:
+            if result.role == f_wlan_common.WlanMacRole.AP:
                 status = self.fuchsia_device.honeydew_fd.wlan_core.status_sync()
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(

@@ -160,11 +160,11 @@ class SoftAPParams:
     operating_band: OperatingBand
 
     def __str__(self) -> str:
-        if self.operating_band is OperatingBand.ANY:
+        if self.operating_band == OperatingBand.ANY:
             band = "any"
-        elif self.operating_band is OperatingBand.ONLY_2_4GHZ:
+        elif self.operating_band == OperatingBand.ONLY_2_4GHZ:
             band = "2g"
-        elif self.operating_band is OperatingBand.ONLY_5GHZ:
+        elif self.operating_band == OperatingBand.ONLY_5GHZ:
             band = "5g"
         else:
             raise TypeError(f'Unknown OperatingBand "{self.operating_band}"')
@@ -178,13 +178,13 @@ class SoftAPParams:
         security_mode = SecurityMode[security_type]
 
         password = d.get("password")
-        if password is None and security_mode is not SecurityMode.OPEN:
+        if password is None and security_mode != SecurityMode.OPEN:
             password = generate_random_password(security_mode=security_mode)
         if password is not None and not isinstance(password, str):
             raise TypeError(
                 f'"password" must be a str or None, got {type(password)}'
             )
-        if password is not None and security_mode is SecurityMode.OPEN:
+        if password is not None and security_mode == SecurityMode.OPEN:
             raise TypeError(
                 f'"password" must be None if "security_type" is "{SecurityMode.OPEN}"'
             )
@@ -332,7 +332,7 @@ class SoftApTest(base_test.WifiBaseTest):
                 SecurityMode.WPA3,
             ]:
                 for connectivity_mode in ConnectivityMode:
-                    if security_mode is SecurityMode.OPEN:
+                    if security_mode == SecurityMode.OPEN:
                         ssid_length = hostapd_constants.AP_SSID_LENGTH_2G
                         password = None
                     else:
@@ -494,7 +494,7 @@ class SoftApTest(base_test.WifiBaseTest):
             target_pwd=params.password,
             target_security=params.security_type,
             check_connectivity=params.connectivity_mode
-            is ConnectivityMode.UNRESTRICTED,
+            == ConnectivityMode.UNRESTRICTED,
         )
 
         asserts.assert_true(
@@ -534,13 +534,13 @@ class SoftApTest(base_test.WifiBaseTest):
 
         if isinstance(device, FuchsiaDevice):
             device.update_wlan_interfaces()
-            if role is DeviceRole.CLIENT:
+            if role == DeviceRole.CLIENT:
                 if device.wlan_client_test_interface_name is None:
                     raise TypeError(
                         "Expected wlan_client_test_interface_name to be str"
                     )
                 return device.wlan_client_test_interface_name
-            if role is DeviceRole.AP:
+            if role == DeviceRole.AP:
                 if device.wlan_ap_test_interface_name is None:
                     raise TypeError(
                         "Expected wlan_ap_test_interface_name to be str"

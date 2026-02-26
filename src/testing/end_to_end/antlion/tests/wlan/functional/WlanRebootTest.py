@@ -224,7 +224,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 security=security_profile,
                 # TODO(http://b/271628778): Remove ap_max_inactivity once
                 # Fuchsia respects 802.11w (PMF) comeback-time.
-                ap_max_inactivity=100 if band is BandType.BAND_5G else None,
+                ap_max_inactivity=100 if band == BandType.BAND_5G else None,
             ),
             radvd_config=RadvdConfig() if ip_version.ipv6() else None,
         )
@@ -240,9 +240,9 @@ class WlanRebootTest(base_test.WifiBaseTest):
         ip_version: IpVersionType,
     ) -> None:
         """Validate the DUT is pingable."""
-        if band is BandType.BAND_2G:
+        if band == BandType.BAND_2G:
             test_interface = self.access_point.wlan_2g
-        elif band is BandType.BAND_5G:
+        elif band == BandType.BAND_5G:
             test_interface = self.access_point.wlan_5g
 
         if ip_version == IpVersionType.IPV4:
@@ -404,12 +404,12 @@ class WlanRebootTest(base_test.WifiBaseTest):
         ip_version: IpVersionType = settings.ip_version
         security_mode: SecurityMode = settings.security_mode
         password: str | None = None
-        if security_mode is not SecurityMode.OPEN:
+        if security_mode != SecurityMode.OPEN:
             password = generate_random_password(security_mode=security_mode)
 
         # Skip hard reboots if no PDU present
         asserts.skip_if(
-            reboot_type is RebootType.HARD and len(self.pdu_devices) == 0,
+            reboot_type == RebootType.HARD and len(self.pdu_devices) == 0,
             "Hard reboots require a PDU device.",
         )
 
@@ -444,18 +444,18 @@ class WlanRebootTest(base_test.WifiBaseTest):
         self.dut.take_bug_report(self.current_test_info.record)
 
         # DUT reboots
-        if reboot_device is DeviceType.DUT:
-            if reboot_type is RebootType.SOFT:
+        if reboot_device == DeviceType.DUT:
+            if reboot_type == RebootType.SOFT:
                 self.fuchsia_device.reboot()
-            elif reboot_type is RebootType.HARD:
+            elif reboot_type == RebootType.HARD:
                 self.dut.hard_power_cycle(self.pdu_devices)
 
         # AP reboots
-        elif reboot_device is DeviceType.AP:
-            if reboot_type is RebootType.SOFT:
+        elif reboot_device == DeviceType.AP:
+            if reboot_type == RebootType.SOFT:
                 self.log.info("Cleanly stopping ap.")
                 self.access_point.stop_all_aps()
-            elif reboot_type is RebootType.HARD:
+            elif reboot_type == RebootType.HARD:
                 self.access_point.hard_power_cycle(self.pdu_devices)
             self.setup_ap(ssid, band, ip_version, security_mode, password)
 
@@ -466,8 +466,8 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 self.wait_for_dut_network_connection(ssid)
             except ConnectionError as e:
                 if (
-                    reboot_device is DeviceType.DUT
-                    and security_mode is SecurityMode.WPA3
+                    reboot_device == DeviceType.DUT
+                    and security_mode == SecurityMode.WPA3
                 ):
                     # TODO(http://b/271628778): Remove this try/except statement
                     # once Fuchsia respects 802.11w (PMF) comeback-time.

@@ -112,7 +112,7 @@ class WlanScanTest(base_test.WifiBaseTest):
         ssid = utils.rand_ascii_str(20)
         password = (
             utils.rand_ascii_str(10)
-            if t.security is SecurityMode.WPA2
+            if t.security == SecurityMode.WPA2
             else None
         )
         setup_ap(

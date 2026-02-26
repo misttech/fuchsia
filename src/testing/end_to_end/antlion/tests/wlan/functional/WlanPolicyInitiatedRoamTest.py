@@ -204,7 +204,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             result = self.fuchsia_device.honeydew_fd.wlan_core.query_iface_sync(
                 wlan_iface
             )
-            if result.role is f_wlan_common.WlanMacRole.CLIENT:
+            if result.role == f_wlan_common.WlanMacRole.CLIENT:
                 return utils.mac_address_list_to_str(bytes(result.sta_addr))
         raise ValueError(
             "Failed to get client interface mac address. No client interface found."
@@ -219,7 +219,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
         """
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         original_password = None
-        if test.original_security_mode is not SecurityMode.OPEN:
+        if test.original_security_mode != SecurityMode.OPEN:
             # Length 13, so it can be used for WEP or WPA
             original_password = utils.rand_ascii_str(13)
 
