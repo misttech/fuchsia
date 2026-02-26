@@ -92,8 +92,7 @@ class Tracee {
   bool results_written() const { return results_written_; }
 
  private:
-  // The size of the fifo, in packets.
-  // TODO(dje): The value will need playing with.
+  // The size of the fifo in packets.
   static constexpr size_t kFifoSizeInPackets = 4u;
 
   void TransitionToState(State new_state);

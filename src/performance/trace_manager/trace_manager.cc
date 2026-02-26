@@ -367,8 +367,9 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
   // deleted).
   session->WriteTraceInfo();
 
-  for (auto& bundle : providers_) {
-    session->AddProvider(&bundle);
+  for (auto& variant : providers_) {
+    std::visit([session = session.get()](auto& provider) { session->AddProvider(&provider); },
+               variant);
   }
 
   trace_controller_ = std::make_shared<TraceController>(app_, std::move(session));
@@ -379,12 +380,14 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
 void TraceManager::GetProviders(GetProvidersCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "GetProviders";
   std::vector<fuchsia_tracing_controller::ProviderInfo> provider_info;
-  for (const auto& provider : providers_) {
-    fuchsia_tracing_controller::ProviderInfo info;
-    info.id(provider.id);
-    info.pid(provider.pid);
-    info.name(provider.name);
-    provider_info.push_back(std::move(info));
+  for (const auto& variant : providers_) {
+    std::visit(
+        [&provider_info](const auto& provider) {
+          fuchsia_tracing_controller::ProviderInfo info{
+              {.id = provider.id, .pid = provider.pid, .name = provider.name}};
+          provider_info.push_back(std::move(info));
+        },
+        variant);
   }
   completer.Reply({{.providers = std::move(provider_info)}});
 }
@@ -428,19 +431,22 @@ void TraceManager::GetKnownCategories(GetKnownCategoriesCompleter::Sync& complet
   }
   std::vector<fpromise::promise<KnownCategoryVector>> promises;
   fpromise::promise<> timeout = executor_.MakeDelayedPromise(zx::sec(1));
-  for (const auto& provider : providers_) {
+  for (const auto& variant : providers_) {
     fpromise::bridge<KnownCategoryVector> bridge;
     promises.push_back(bridge.consumer.promise());
 
     CompleterMerger<KnownCategoryVector> merger{bridge.completer.bind()};
-    provider.provider->GetKnownCategories().Then(
-        [merger](fidl::Result<fuchsia_tracing_provider::Provider::GetKnownCategories>& result) {
-          if (result.is_ok()) {
-            merger(std::move(result->categories()));
-          } else {
-            merger({});
-          }
-        });
+    std::visit(
+        [merger](const auto& provider) {
+          provider.provider->GetKnownCategories().Then([merger](auto& result) {
+            if (result.is_ok()) {
+              merger(std::move(result->categories()));
+            } else {
+              merger({});
+            }
+          });
+        },
+        variant);
     timeout = fpromise::promise<>{timeout.and_then([merger = merger]() mutable { merger({}); })};
   }
   auto joined_promise =
@@ -477,28 +483,66 @@ void TraceManager::RegisterProviderWorker(
     fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider, uint64_t pid,
     const std::string& name) {
   FX_LOGS(DEBUG) << "Registering provider {" << pid << ":" << name << "}";
-  auto it = providers_.emplace(providers_.end(), std::move(provider), next_provider_id_++, pid,
-                               name, executor_.dispatcher());
+  auto it = providers_.emplace(providers_.end(), std::in_place_type<TraceProviderBundle>,
+                               std::move(provider), next_provider_id_++, pid, name,
+                               executor_.dispatcher());
 
-  it->SetOnUnbound([this, it](fidl::UnbindInfo info) {
+  std::get<TraceProviderBundle>(*it).SetOnUnbound([this, it](fidl::UnbindInfo info) {
+    auto& bundle = std::get<TraceProviderBundle>(*it);
     if (session()) {
-      session()->RemoveDeadProvider(&(*it));
+      session()->RemoveDeadProvider(&bundle);
     }
     providers_.erase(it);
   });
 
   if (session()) {
-    session()->AddProvider(&(*it));
+    session()->AddProvider(&std::get<TraceProviderBundle>(*it));
   }
 }
 
-// fidl
+void TraceManager::RegisterProviderV2Worker(
+    fidl::ClientEnd<fuchsia_tracing_provider::ProviderV2> provider, uint64_t pid,
+    const std::string& name) {
+  FX_LOGS(DEBUG) << "Registering provider V2 {" << pid << ":" << name << "}";
+  auto it = providers_.emplace(providers_.end(), std::in_place_type<ProviderConnection>,
+                               std::move(provider), next_provider_id_++, pid, name,
+                               executor_.dispatcher());
+
+  std::get<ProviderConnection>(*it).SetOnUnbound([this, it](fidl::UnbindInfo info) {
+    auto& connection = std::get<ProviderConnection>(*it);
+    if (session()) {
+      session()->RemoveDeadV2Provider(&connection);
+    }
+    providers_.erase(it);
+  });
+
+  if (session()) {
+    session()->AddProvider(&std::get<ProviderConnection>(*it));
+  }
+}
+
+void TraceManager::RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) {
+  RegisterProviderV2Worker(std::move(request.provider()), request.pid(), request.name());
+}
+
+void TraceManager::RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
+                                           RegisterV2SynchronouslyCompleter::Sync& completer) {
+  RegisterProviderV2Worker(std::move(request.provider()), request.pid(), request.name());
+  auto session_ptr = session();
+  bool already_started = (session_ptr && (session_ptr->state() == TraceSession::State::kStarting ||
+                                          session_ptr->state() == TraceSession::State::kStarted));
+  completer.Reply(fit::ok(already_started));
+}
+
+// Deprecated, but we need to support the old apis until all supported api levels drop support for
+// the api.
 void TraceManager::RegisterProvider(RegisterProviderRequest& request,
                                     RegisterProviderCompleter::Sync& completer) {
   RegisterProviderWorker(std::move(request.provider()), request.pid(), request.name());
 }
 
-// fidl
+// Deprecated, but we need to support the old apis until all supported api levels drop support for
+// the api.
 void TraceManager::RegisterProviderSynchronously(
     RegisterProviderSynchronouslyRequest& request,
     RegisterProviderSynchronouslyCompleter::Sync& completer) {

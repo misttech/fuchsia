@@ -16,8 +16,10 @@
 
 #include <list>
 #include <queue>
+#include <variant>
 
 #include "src/performance/trace_manager/config.h"
+#include "src/performance/trace_manager/provider_connection.h"
 #include "src/performance/trace_manager/trace_provider_bundle.h"
 #include "src/performance/trace_manager/trace_session.h"
 
@@ -53,6 +55,7 @@ class TraceController : public fidl::Server<fuchsia_tracing_controller::Session>
   void SendSessionStateEvent(fuchsia_tracing_controller::SessionState state);
   static fuchsia_tracing_controller::SessionState TranslateSessionState(TraceSession::State state);
 
+ private:
   TraceManagerApp* const app_;
 
   // We only set this to false when aborting.
@@ -89,25 +92,26 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
       fidl::UnknownMethodMetadata<fuchsia_tracing_controller::Provisioner> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  // |fuchsia_tracing_provider::Registry| implementation.
+  // Deprecated, but we need to support the old apis until all supported api levels drop support for
+  // the api.
   void RegisterProvider(RegisterProviderRequest& request,
                         RegisterProviderCompleter::Sync& completer) override;
+  // Deprecated, but we need to support the old apis until all supported api levels drop support for
+  // the api.
   void RegisterProviderSynchronously(
       RegisterProviderSynchronouslyRequest& request,
       RegisterProviderSynchronouslyCompleter::Sync& completer) override;
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
+  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override;
   void RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
-                               RegisterV2SynchronouslyCompleter::Sync& completer) override {
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
+                               RegisterV2SynchronouslyCompleter::Sync& completer) override;
 #endif
 
   void RegisterProviderWorker(fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider,
                               uint64_t pid, const std::string& name);
+  void RegisterProviderV2Worker(fidl::ClientEnd<fuchsia_tracing_provider::ProviderV2> provider,
+                                uint64_t pid, const std::string& name);
 
   void CloseSession();
 
@@ -117,7 +121,7 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
 
   std::shared_ptr<TraceController> trace_controller_;
   uint32_t next_provider_id_ = 1u;
-  std::list<TraceProviderBundle> providers_;
+  std::list<std::variant<TraceProviderBundle, ProviderConnection>> providers_;
   async::Executor& executor_;
 
   TraceManager(const TraceManager&) = delete;

@@ -17,12 +17,15 @@
 
 #include <iosfwd>
 #include <list>
+#include <variant>
 #include <vector>
 
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/performance/trace_manager/buffer_forwarder.h"
+#include "src/performance/trace_manager/provider_connection.h"
 #include "src/performance/trace_manager/trace_provider_bundle.h"
 #include "src/performance/trace_manager/tracee.h"
+#include "src/performance/trace_manager/traceev2.h"
 
 namespace tracing {
 
@@ -98,6 +101,9 @@ class TraceSession {
   // Initializes |provider| and adds it to this session.
   void AddProvider(TraceProviderBundle* provider);
 
+  // Initializes a v2 |provider| and adds it to this session.
+  void AddProvider(ProviderConnection* provider);
+
   // Called after all registered providers have been added.
   void MarkInitialized();
 
@@ -125,23 +131,27 @@ class TraceSession {
 
   // Remove |provider|, it's dead Jim.
   void RemoveDeadProvider(TraceProviderBundle* bundle);
+  void RemoveDeadV2Provider(ProviderConnection* connection);
 
  private:
   friend std::ostream& operator<<(std::ostream& out, TraceSession::State state);
 
   // Provider starting processing.
   void OnProviderStarted(TraceProviderBundle* bundle);
+  void OnV2ProviderStarted(ProviderConnection* connection);
   void CheckAllProvidersStarted();
   void NotifyStarted();
 
   // Provider stopping processing.
   void OnProviderStopped(TraceProviderBundle* bundle, bool write_results);
+  void OnV2ProviderStopped(ProviderConnection* connection, bool write_results);
   void CheckAllProvidersStopped();
   void NotifyStopped();
   void FinishStoppingDueToTimeout();
 
   // Provider termination processing.
   void OnProviderTerminated(TraceProviderBundle* bundle);
+  void OnV2ProviderTerminated(ProviderConnection* connection);
   void TerminateSessionIfEmpty();
   void FinishTerminatingDueToTimeout();
 
@@ -157,6 +167,7 @@ class TraceSession {
   // Returns false if a fatal error occurred, in which case the caller is expected to call
   // |Abort()| and immediately return as |this| will be deleted.
   static bool WriteProviderData(Tracee* tracee);
+  static bool WriteV2ProviderData(TraceeV2* tracee);
 
   // Abort's the trace session.
   // N.B. Upon return |this| will have been deleted.
@@ -175,9 +186,7 @@ class TraceSession {
   // The stop timeout is used for both stopping and terminating.
   zx::duration stop_timeout_;
 
-  // List of all registered providers (or "tracees"). Note that providers
-  // may come and go while tracing is active.
-  std::list<std::unique_ptr<Tracee>> tracees_;
+  std::list<std::variant<std::unique_ptr<Tracee>, std::unique_ptr<TraceeV2>>> tracees_;
 
   // Saved copy of Start()'s |additional_categories| parameter for tracees that
   // come along after tracing has started.
