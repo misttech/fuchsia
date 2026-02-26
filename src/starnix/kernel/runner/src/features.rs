@@ -5,6 +5,7 @@
 use crate::ContainerStartInfo;
 use anyhow::{Context, Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
+use starnix_core::device::block::add_mmc_block_device;
 use starnix_core::mm::MlockPinFlavor;
 use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits};
 use starnix_core::vfs::FsString;
@@ -124,8 +125,12 @@ pub struct Features {
 
     pub additional_mounts: Option<Vec<String>>,
 
-    // Support kernel level suspend/resume tests.
+    /// Support kernel level suspend/resume tests.
     pub wakeup_test: bool,
+
+    /// Add a stub block device entry for mmcblk0. This is required for certain containers that
+    /// query certain functionality based on block device naming.
+    pub mmcblk_stub: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -189,6 +194,7 @@ impl Features {
                 hvdcp_opti,
                 additional_mounts,
                 wakeup_test,
+                mmcblk_stub,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
@@ -279,6 +285,7 @@ impl Features {
                         .record_string("additional_mounts", format!("{:?}", additional_mounts));
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
                     inspect_node.record_bool("wakeup_test", *wakeup_test);
+                    inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
                 });
             }
         });
@@ -431,6 +438,7 @@ pub fn parse_features(
                 features.additional_mounts = Some(additional_mounts.clone())
             }
             (Feature::WakeupTest, _) => features.wakeup_test = true,
+            (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
         };
     }
 
@@ -625,6 +633,10 @@ pub fn run_container_features(
     }
     if features.wakeup_test {
         register_wakeup_test_device(locked, system_task)?;
+    }
+    if features.mmcblk_stub {
+        let _device = add_mmc_block_device(locked, system_task)
+            .context("Failed to add stub mmcblk0 device")?;
     }
     Ok(())
 }

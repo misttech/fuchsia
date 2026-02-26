@@ -23,6 +23,8 @@ pub const MISC_DYNANIC_MINOR_RANGE: Range<u32> = 52..128;
 // to 254 once we dynamically allocate those devices.
 pub const DYN_MAJOR_RANGE: Range<u32> = 234..252;
 
+pub const MMC_BLOCK_DEVICE_MAJOR: u32 = 179;
+
 // Unclear if this device number is assigned dynamically, but this value is what abarth observed
 // once for /dev/block/zram0.
 pub const ZRAM_MAJOR: u32 = 252;
@@ -62,6 +64,9 @@ impl DeviceType {
 
     // TUN
     pub const TUN: DeviceType = DeviceType::new(MISC_MAJOR, 200);
+
+    // Block Devices
+    pub const MMCBLK0: DeviceType = DeviceType::new(MMC_BLOCK_DEVICE_MAJOR, 0);
 
     pub const fn new(major: u32, minor: u32) -> DeviceType {
         // This encoding is part of the Linux UAPI. The encoded value is

@@ -45,6 +45,7 @@ pub fn build_block_device_directory(
             mode!(IFREG, 0o644),
         );
     });
+    dir.subdir("holders", 0o755, |_dir| {});
     dir.entry("size", BlockDeviceSizeFile::new_node(block_info), mode!(IFREG, 0o444));
 }
 

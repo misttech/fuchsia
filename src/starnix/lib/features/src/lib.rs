@@ -45,6 +45,7 @@ pub enum Feature {
     Wifi,
     AdditionalMounts,
     WakeupTest,
+    MmcblkStub,
 }
 
 /// Error returned when a feature is not recognized.
@@ -138,6 +139,7 @@ mod test {
             (Feature::Wifi, "wifi"),
             (Feature::AdditionalMounts, "additional_mounts"),
             (Feature::WakeupTest, "wakeup_test"),
+            (Feature::MmcblkStub, "mmcblk_stub"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);
