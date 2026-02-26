@@ -9,7 +9,6 @@ use starnix_rcu::{RcuCache, RcuReadScope};
 use std::hash::Hash;
 use std::ops::Add;
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx;
 
 /// Describes the performance statistics of a cache implementation.
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -94,8 +93,13 @@ where
 
 /// The number of shards to use for the cache stats.
 fn num_shards() -> usize {
-    let num_cpus = zx::system_get_num_cpus() as usize;
-    2 * num_cpus
+    // Return a static value. In a future implementation, this will depend on CPU count.
+    8
+}
+
+unsafe extern "C" {
+    /// `thrd_current` returns an identifier for the current thread.
+    fn thrd_current() -> std::ffi::c_ulong;
 }
 
 impl<A, R> AccessCache<A, R>
@@ -123,14 +127,11 @@ where
     }
 
     fn stats_shard(&self) -> &AtomicCacheStats {
-        thread_local! {
-            static SHARD_INDEX: usize = {
-                static NEXT_INDEX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                let index = NEXT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                index % num_shards()
-            };
-        }
-        SHARD_INDEX.with(|index| &self.stats[*index])
+        // SAFETY: there's nothing unsafe about this, we're just calling a C function.
+        let thread_id = unsafe { thrd_current() };
+        // Hash the thread id: it's the address of a thread-specific structure so it is likely aligned.
+        let index = (rapidhash::rapidhash(&thread_id.to_ne_bytes()) as usize) % num_shards();
+        &self.stats[index]
     }
 
     /// Searches the cache and returns a reference to the result `R` matching
