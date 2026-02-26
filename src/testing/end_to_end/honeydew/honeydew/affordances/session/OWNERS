@@ -1,6 +1,3 @@
-# Updates to this directory should be reviewed by one of the owners below.
-set noparent
-
 chaopeng@google.com
 file:/src/ui/scenic/OWNERS
 file:/src/ui/lib/input_pipeline/OWNERS
