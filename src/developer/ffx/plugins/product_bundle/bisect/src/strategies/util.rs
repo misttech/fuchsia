@@ -100,8 +100,14 @@ pub(super) fn should_continue(space: &SearchSpace, results: &Vec<StepResult>) ->
         return BisectionStatus::CulpritFound(Box::new(good_artifact), Box::new(bad_artifact));
     }
 
-    if space.iter_all_artifacts().all(|s| s.remaining_artifacts.len() <= 1) {
-        return BisectionStatus::Exhausted;
+    // Check if the current search space state points to an artifact set we've already tested.
+    // If we are about to test a configuration we've already tested, and we haven't found a
+    // culprit yet, it means the search space has been exhausted and we cannot make further
+    // progress.
+    if let Ok(current_vas) = space.get_current_versioned_artifact_set() {
+        if results.iter().any(|r| r.versioned_artifact_set == current_vas) {
+            return BisectionStatus::Exhausted;
+        }
     }
 
     BisectionStatus::Continue
@@ -299,7 +305,7 @@ mod tests {
             },
             StepResult {
                 // Platform and Product are different
-                versioned_artifact_set: create_mock_vas("3", "b", "x"),
+                versioned_artifact_set: create_mock_vas("4", "b", "x"),
                 image_path: None,
                 test_passed: false,
             },
@@ -310,15 +316,21 @@ mod tests {
     }
 
     #[test]
-    /// Verifies that the status is `Exhausted` when all dimensions have been
-    /// narrowed down to one or zero possibilities.
-    fn test_should_continue_returns_exhausted_when_all_dimensions_are_len_one() {
+    /// Verifies that the status is `Exhausted` when the next artifact to be tested
+    /// has already been tested, meaning we're stuck in an infinite loop without finding a culprit.
+    fn test_should_continue_returns_exhausted_when_current_artifact_already_tested() {
         let mut space = create_mock_search_space(vec!["3"], vec!["b"], vec!["y"]);
         space.platform.remaining_artifacts = 0..1;
         space.product.remaining_artifacts = 0..1;
         space.board.remaining_artifacts = 0..1;
 
-        let status = should_continue(&space, &vec![]);
+        let results = vec![StepResult {
+            versioned_artifact_set: space.get_current_versioned_artifact_set().unwrap(),
+            image_path: None,
+            test_passed: true,
+        }];
+
+        let status = should_continue(&space, &results);
         assert!(matches!(status, BisectionStatus::Exhausted));
     }
 
