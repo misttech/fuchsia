@@ -139,6 +139,7 @@ pub mod maur {
         kgsl_devinfo,
         kgsl_drawctxt_create,
         kgsl_drawctxt_destroy,
+        kgsl_gpu_command,
         kgsl_gpuobj_alloc,
         kgsl_gpuobj_free,
         kgsl_gpuobj_info,
@@ -172,6 +173,25 @@ macro_rules! kgsl_bitfield {
                 pub $field_name, _: ($shift + $mask.count_ones() - 1) as usize, $shift.try_into().unwrap();
             )?)*
         }
+
+        impl $name {
+            pub const DEFINED_BITS_MASK: $type = 0
+                $($( | ($bit as $type) )?)*
+                $($( | ($mask as $type) )?)*
+            ;
+        }
+
+        /// Returns the bitfield if all bits are defined, otherwise returns the undefined bits.
+        impl TryFrom<$type> for $name {
+            type Error = $type;
+            fn try_from(value: $type) -> Result<Self, $type> {
+                let undefined_bits = value & !Self::DEFINED_BITS_MASK;
+                if undefined_bits != 0 {
+                    return Err(undefined_bits);
+                }
+                Ok(Self(value))
+            }
+        }
     }
 }
 
@@ -199,6 +219,38 @@ kgsl_bitfield! {
     pub type_, range(uapi::KGSL_CONTEXT_TYPE_MASK, uapi::KGSL_CONTEXT_TYPE_SHIFT);
 }
 
+kgsl_bitfield! {
+    // KGSL_CMDBATCH flags
+    pub struct KgslCmdBatchFlags(u64);
+    pub memlist, bit(uapi::KGSL_CMDBATCH_MEMLIST);
+    pub marker, bit(uapi::KGSL_CMDBATCH_MARKER);
+    pub submit_ib_list, bit(uapi::KGSL_CMDBATCH_SUBMIT_IB_LIST);
+    pub ctx_switch, bit(uapi::KGSL_CMDBATCH_CTX_SWITCH);
+    pub profiling, bit(uapi::KGSL_CMDBATCH_PROFILING);
+    pub profiling_ktime, bit(uapi::KGSL_CMDBATCH_PROFILING_KTIME);
+    pub end_of_frame, bit(uapi::KGSL_CMDBATCH_END_OF_FRAME);
+    pub sync, bit(uapi::KGSL_CMDBATCH_SYNC);
+    pub pwr_constraint, bit(uapi::KGSL_CMDBATCH_PWR_CONSTRAINT);
+    pub sparse, bit(uapi::KGSL_CMDBATCH_SPARSE);
+}
+
+kgsl_bitfield! {
+    // KGSL_MEMFLAGS flags
+    pub struct KgslMemFlags(u64);
+    pub secure, bit(uapi::KGSL_MEMFLAGS_SECURE);
+    pub gpu_read_only, bit(uapi::KGSL_MEMFLAGS_GPUREADONLY);
+    pub gpu_write_only, bit(uapi::KGSL_MEMFLAGS_GPUWRITEONLY);
+    pub force_32bit, bit(uapi::KGSL_MEMFLAGS_FORCE_32BIT);
+    pub use_cpu_map, bit(uapi::KGSL_MEMFLAGS_USE_CPU_MAP);
+    pub sparse_phys, bit(uapi::KGSL_MEMFLAGS_SPARSE_PHYS);
+    pub sparse_virt, bit(uapi::KGSL_MEMFLAGS_SPARSE_VIRT);
+    pub incoherent, bit(uapi::KGSL_MEMFLAGS_IOCOHERENT);
+    pub type_, range(uapi::KGSL_MEMTYPE_MASK, uapi::KGSL_MEMTYPE_SHIFT);
+    pub align_bits, range(uapi::KGSL_MEMALIGN_MASK, uapi::KGSL_MEMALIGN_SHIFT);
+    // Caution! Unlike other range-based values, the USERMEM values are pre-shifted.
+    pub usermem, range(uapi::KGSL_MEMFLAGS_USERMEM_MASK, uapi::KGSL_MEMFLAGS_USERMEM_SHIFT);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,5 +266,9 @@ mod tests {
         assert!(flags.preamble());
         assert_eq!(flags.priority(), 9);
         assert_eq!(flags.type_(), uapi::KGSL_CONTEXT_TYPE_VK);
+        let invalid_flags = 0xCC000000;
+        let result = KgslCmdBatchFlags::try_from(invalid_flags | uapi::KGSL_CMDBATCH_MARKER as u64);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), invalid_flags);
     }
 }

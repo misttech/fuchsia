@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::KgslContextFlags;
 use crate::util::maur::{self, TaskWritable};
+use crate::util::{KgslCmdBatchFlags, KgslContextFlags, KgslMemFlags};
 use fdio::service_connect;
 use kgsl_libmagma::{
     Buffer, Connection, Context, Device, QueryOutput, Semaphore, initialize_logging,
 };
 use kgsl_magma_params::{AdrenoKgslParams, MAGMA_QCOM_ADRENO_QUERY_KGSL_PARAMS};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
-use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
+use magma::{
+    MAGMA_MAP_FLAG_READ, MAGMA_MAP_FLAG_WRITE, MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID,
+};
 use range_alloc::RangeAllocator;
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::mm::{MappingName, MemoryAccessorExt};
+use starnix_core::mm::{MappingName, MemoryAccessorExt, PAGE_SIZE};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
@@ -24,7 +26,7 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
-use starnix_uapi::{errno, error, uapi};
+use starnix_uapi::{errno, error, kgsl_command_object, kgsl_command_syncpoint, uapi};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -44,8 +46,10 @@ macro_rules! kgsl_debug {
     ($($arg:tt)*) => {};
 }
 
-// TODO(b/393160668): this should be PAGE_SIZE of the container
-const BUFFER_ALIGNMENT: u64 = 4096;
+/// The maximum alignment of any buffer that can be allocated. The additional address space used by
+/// many small buffers that only need page alignment is not a concern, as the total amount of
+/// address space is very large.
+const BUFFER_ALIGNMENT: u64 = 65536;
 
 /// Helper trait to manage allocations in units of BUFFER_ALIGNMENT.
 trait RangeAllocatorExt {
@@ -98,6 +102,15 @@ struct GpuObject {
     size: u64,
     mmapsize: u64,
     gpuaddr: u64,
+}
+
+fn map_flags(flags: KgslMemFlags) -> Result<u64, Errno> {
+    match (flags.gpu_read_only(), flags.gpu_write_only()) {
+        (true, false) => Ok(MAGMA_MAP_FLAG_READ),
+        (false, true) => Ok(MAGMA_MAP_FLAG_WRITE),
+        (false, false) => Ok(MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE),
+        (true, true) => Err(errno!(EINVAL)),
+    }
 }
 
 impl KgslFile {
@@ -171,10 +184,17 @@ impl KgslFile {
         // Reserve GPU secure VA space.
         allocator.allocate(adreno_kgsl_params.gpu_secure_va_size).ok_or_else(|| errno!(ENOMEM))?;
 
-        // Shadow buffer must immediately follow the secure VA space.
+        // Shadow buffer must immediately follow the secure VA space, which spans 0..gpu_secure_va_size.
         let shadow_size = adreno_kgsl_params.device_shadow_size;
         let shadow_buffer = connection.create_buffer(shadow_size).map_err(|_| errno!(ENOMEM))?;
-        let shadow_gpuaddr = allocator.allocate(shadow_size).ok_or_else(|| errno!(ENOMEM))?;
+        // Reserve space for the shadow buffer, but assign it the end of the secure VA space.
+        // This is necessary as the shadow must immediately follow the secure VA space which may
+        // not be aligned to the overly-conservative BUFFER_ALIGNMENT.
+        allocator.allocate(shadow_size).ok_or_else(|| errno!(ENOMEM))?;
+        let shadow_gpuaddr = adreno_kgsl_params.gpu_secure_va_size;
+        shadow_buffer
+            .map(shadow_gpuaddr, 0, shadow_size, MAGMA_MAP_FLAG_READ | MAGMA_MAP_FLAG_WRITE)
+            .map_err(|_| errno!(ENOMEM))?;
         let shadow = GpuObject {
             buffer: shadow_buffer,
             flags: adreno_kgsl_params.device_shadow_flags.into(),
@@ -367,10 +387,20 @@ impl KgslFile {
         let mut params = current_task.read_multi_arch_object(params_ref)?;
         kgsl_debug!("kgsl_gpuobj_alloc {:?}", params);
 
+        let flags = KgslMemFlags::try_from(params.flags).map_err(|bits| {
+            log_error!("kgsl: unknown memory flags {:#x}", bits);
+            errno!(EINVAL)
+        })?;
+        if BUFFER_ALIGNMENT % (1 << flags.align_bits()) != 0 {
+            log_error!("kgsl: unsupported alignment {}", flags.align_bits());
+            return error!(ENOTSUP);
+        }
+
         let buffer = self.connection.create_buffer(params.size).map_err(|_| errno!(ENOMEM))?;
         let size = buffer.size();
 
         let gpuaddr = self.allocator.lock().allocate(size).ok_or_else(|| errno!(ENOMEM))?;
+        buffer.map(gpuaddr, 0, size, map_flags(flags)?).map_err(|_| errno!(ENOMEM))?;
 
         let id = self.next_gpuobj_id.fetch_add(1, Ordering::Relaxed);
         if id == 0 {
@@ -479,7 +509,10 @@ impl KgslFile {
         let params_ref = maur::kgsl_drawctxt_create::new(current_task, arg);
         let mut params = current_task.read_multi_arch_object(params_ref)?;
         kgsl_debug!("kgsl_drawctxt_create {:?}", params);
-        let flags = KgslContextFlags(params.flags);
+        let flags = KgslContextFlags::try_from(params.flags).map_err(|bits| {
+            log_error!("kgsl: unknown context flags {:#x}", bits);
+            errno!(EINVAL)
+        })?;
         let context =
             self.connection.create_context(flags.priority().into()).map_err(|_| errno!(ENXIO))?;
         let id = self.next_context_id.fetch_add(1, Ordering::Relaxed);
@@ -508,6 +541,85 @@ impl KgslFile {
         } else {
             error!(EINVAL)
         }
+    }
+
+    fn kgsl_gpu_command(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params_ref = maur::kgsl_gpu_command::new(current_task, arg);
+        let params = current_task.read_multi_arch_object(params_ref)?;
+        kgsl_debug!("kgsl_gpu_command {:?}", params);
+        let contexts = self.contexts.lock();
+        let context = contexts.get(&params.context_id).ok_or_else(|| errno!(EINVAL))?;
+
+        let cmds = current_task.read_objects_to_vec::<kgsl_command_object>(
+            UserRef::from(UserAddress::from(params.cmdlist)),
+            params.numcmds as usize,
+        )?;
+        kgsl_debug!("kgsl_gpu_command cmds {:?}", cmds);
+        let objs = current_task.read_objects_to_vec::<kgsl_command_object>(
+            UserRef::from(UserAddress::from(params.objlist)),
+            params.numobjs as usize,
+        )?;
+        kgsl_debug!("kgsl_gpu_command objs {:?}", objs);
+        let syncs = current_task.read_objects_to_vec::<kgsl_command_syncpoint>(
+            UserRef::from(UserAddress::from(params.synclist)),
+            params.numsyncs as usize,
+        )?;
+        kgsl_debug!("kgsl_gpu_command syncs {:?}", syncs);
+        if syncs.len() > 0 {
+            // TODO(b/359831679): implement syncpoints
+            log_error!("kgsl: syncs not supported yet");
+            return error!(ENOTSUP);
+        }
+
+        if params.flags != 0 {
+            let flags = KgslCmdBatchFlags::try_from(params.flags).map_err(|bits| {
+                log_error!("kgsl: unknown command flags {:#x}", bits);
+                errno!(EINVAL)
+            })?;
+            log_warn!("kgsl: unsupported flags {:?}", flags);
+        }
+
+        let gpuobjs = self.gpuobjs.lock();
+
+        let to_exec_resources = |objects: &[kgsl_command_object],
+                                 kind: &str|
+         -> Result<Vec<kgsl_libmagma::ExecResource>, Errno> {
+            // The caller does not always set the id field of the command object, and the gpuaddr
+            // may not be the start of the buffer, so we have to search for the object manually.
+            // If this turns out to be a bottleneck, we may want to try an initial base address
+            // search before falling back to a full search and/or cache the results of the search.
+            // TODO(b/393160668): profile and optimize as necessary
+            objects
+                .iter()
+                .map(|obj| {
+                    let gpuobj = gpuobjs
+                        .values()
+                        .find(|o| obj.gpuaddr >= o.gpuaddr && obj.gpuaddr < o.gpuaddr + o.size)
+                        .ok_or_else(|| {
+                            log_error!("kgsl: {} gpuaddr {:#x} not found", kind, obj.gpuaddr);
+                            errno!(EINVAL)
+                        })?;
+                    Ok(kgsl_libmagma::ExecResource {
+                        buffer: gpuobj.buffer.clone(),
+                        offset: (obj.gpuaddr - gpuobj.gpuaddr) + obj.offset,
+                        length: obj.size,
+                    })
+                })
+                .collect()
+        };
+
+        let magma_resources = to_exec_resources(&objs, "resource")?;
+        let magma_command_buffers = to_exec_resources(&cmds, "command")?;
+
+        context
+            .execute_command(magma_command_buffers, magma_resources, vec![], vec![], 0)
+            .map_err(|_| errno!(EINVAL))?;
+
+        Ok(SUCCESS)
     }
 }
 
@@ -547,6 +659,7 @@ impl FileOps for KgslFile {
             uapi::IOCTL_KGSL_SYNCSOURCE_DESTROY => self.kgsl_syncsource_destroy(current_task, arg),
             uapi::IOCTL_KGSL_DRAWCTXT_CREATE => self.kgsl_drawctxt_create(current_task, arg),
             uapi::IOCTL_KGSL_DRAWCTXT_DESTROY => self.kgsl_drawctxt_destroy(current_task, arg),
+            uapi::IOCTL_KGSL_GPU_COMMAND => self.kgsl_gpu_command(current_task, arg),
             _ => {
                 track_stub!(TODO("https://fxbug.dev/393160668"), "kgsl ioctl", request);
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));
@@ -568,7 +681,7 @@ impl FileOps for KgslFile {
         _filename: starnix_core::vfs::NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         kgsl_debug!("mmap {:?} {:?} {:?} {:?}", addr, memory_offset, length, prot_flags);
-        let id = (memory_offset / BUFFER_ALIGNMENT) as u32;
+        let id = (memory_offset / *PAGE_SIZE) as u32;
         let gpuobjs = self.gpuobjs.lock();
         let gpuobj = gpuobjs.get(&id).ok_or_else(|| errno!(EINVAL))?;
         if length as u64 > gpuobj.mmapsize {

@@ -4,8 +4,9 @@
 
 use magma::{
     MAGMA_STATUS_OK, magma_buffer_get_handle, magma_buffer_id_t, magma_buffer_t,
-    magma_connection_create_buffer, magma_connection_create_context2,
-    magma_connection_create_semaphore, magma_connection_release, magma_connection_release_buffer,
+    magma_command_descriptor_t, magma_connection_create_buffer, magma_connection_create_context2,
+    magma_connection_create_semaphore, magma_connection_execute_command,
+    magma_connection_map_buffer, magma_connection_release, magma_connection_release_buffer,
     magma_connection_release_context, magma_connection_release_semaphore, magma_connection_t,
     magma_device_create_connection, magma_device_import, magma_device_query, magma_device_release,
     magma_device_t, magma_handle_t, magma_initialize_logging, magma_priority_t, magma_query_t,
@@ -52,7 +53,7 @@ pub enum QueryOutput {
     Buffer(zx::Vmo),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Device {
     inner: Arc<DeviceInternal>,
 }
@@ -109,7 +110,7 @@ impl Device {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Connection {
     inner: Arc<ConnectionInternal>,
 }
@@ -193,9 +194,8 @@ impl Connection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Context {
-    #[expect(dead_code)]
     inner: Arc<ContextInternal>,
 }
 
@@ -218,7 +218,75 @@ impl Drop for ContextInternal {
     }
 }
 
-#[derive(Debug)]
+pub struct ExecResource {
+    pub buffer: Buffer,
+    pub offset: u64,
+    pub length: u64,
+}
+
+impl Context {
+    pub fn execute_command(
+        &self,
+        command_buffers: Vec<ExecResource>,
+        resources: Vec<ExecResource>,
+        wait_semaphores: Vec<Semaphore>,
+        signal_semaphores: Vec<Semaphore>,
+        flags: u64,
+    ) -> Result<(), magma_status_t> {
+        // Concatenate resources and command buffers into a single list of resources.
+        let mut magma_resources: Vec<magma::magma_exec_resource> = resources
+            .iter()
+            .chain(command_buffers.iter())
+            .map(|r| magma::magma_exec_resource {
+                buffer_id: r.buffer.id(),
+                offset: r.offset,
+                length: r.length,
+            })
+            .collect();
+
+        // Create command buffers, pointing to the command buffer resources.
+        let mut magma_command_buffers: Vec<magma::magma_exec_command_buffer> = command_buffers
+            .iter()
+            .enumerate()
+            .map(|(i, _)| magma::magma_exec_command_buffer {
+                resource_index: (resources.len() + i) as u32,
+                unused: 0,
+                start_offset: 0,
+            })
+            .collect();
+
+        // Concatenate wait and signal semaphores.
+        let mut semaphore_ids: Vec<u64> = wait_semaphores
+            .iter()
+            .map(|s| s.id())
+            .chain(signal_semaphores.iter().map(|s| s.id()))
+            .collect();
+
+        let mut descriptor = magma_command_descriptor_t {
+            resource_count: magma_resources.len() as u32,
+            command_buffer_count: magma_command_buffers.len() as u32,
+            wait_semaphore_count: wait_semaphores.len() as u32,
+            signal_semaphore_count: signal_semaphores.len() as u32,
+            resources: magma_resources.as_mut_ptr(),
+            command_buffers: magma_command_buffers.as_mut_ptr(),
+            semaphore_ids: semaphore_ids.as_mut_ptr(),
+            flags,
+        };
+
+        // Safety: magma_connection_execute_command borrows all parameters.
+        let result = unsafe {
+            magma_connection_execute_command(
+                self.inner.connection.magma_connection,
+                self.inner.magma_context_id,
+                &mut descriptor,
+            )
+        };
+        magma_result(result).kgsl_log_error()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Semaphore {
     inner: Arc<SemaphoreInternal>,
 }
@@ -259,7 +327,7 @@ impl Drop for SemaphoreInternal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Buffer {
     inner: Arc<BufferInternal>,
 }
@@ -281,6 +349,28 @@ impl Buffer {
         // Safety: from_raw takes ownership of the handle.
         let handle = unsafe { zx::NullableHandle::from_raw(handle) };
         Ok(handle)
+    }
+
+    pub fn map(
+        &self,
+        hw_va: u64,
+        offset: u64,
+        length: u64,
+        flags: u64,
+    ) -> Result<(), magma_status_t> {
+        // Safety: magma_connection_map_buffer borrows the connection handle and buffer handle.
+        let result = unsafe {
+            magma_connection_map_buffer(
+                self.inner.connection.magma_connection,
+                hw_va,
+                self.inner.magma_buffer,
+                offset,
+                length,
+                flags,
+            )
+        };
+        magma_result(result).kgsl_log_error()?;
+        Ok(())
     }
 }
 
