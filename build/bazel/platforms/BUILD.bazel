@@ -129,8 +129,8 @@ platform(
     ],
     exec_properties = {
         "container-image": build_config.rbe_container_image,
-        "gceMachineType": build_config.rbe_gce_machine_type,
         "OSFamily": "Linux",
+        "Pool": build_config.rbe_pool_name,
     },
 )
 

@@ -170,7 +170,7 @@ def _get_rbe_config(repo_ctx):
             platform_values = _cfg_values_to_dict(line.removeprefix(platform_prefix))
 
     container_image = platform_values.get("container-image")
-    gce_machine_type = platform_values.get("gceMachineType")
+    pool_name = platform_values.get("Pool")
 
     instance_name = None
     for line in repo_ctx.read(reproxy_config_path).splitlines():
@@ -187,7 +187,7 @@ def _get_rbe_config(repo_ctx):
     return struct(
         instance_name = instance_name,
         container_image = container_image,
-        gce_machine_type = gce_machine_type,
+        pool_name = pool_name,
     )
 
 def _get_formatted_starlark_dict(dict_value, margin):
@@ -260,8 +260,8 @@ build_config = struct(
     # The RBE container image for remote build configuration. Empty if disabled.
     rbe_container_image = "{rbe_container_image}",
 
-    # The RBE default machine type for remote build configuration, e.g. "n2-standard-2".
-    rbe_gce_machine_type = "{rbe_gce_machine_type}",
+    # The RBE default RBE pool for remote build configuration, e.g. "default".
+    rbe_pool_name = "{rbe_pool_name}",
 
     # The path to the Ninja output directory, relative to the current
     # workspace root.
@@ -281,7 +281,7 @@ build_config = struct(
         host_cpu_constraint = host_cpu_constraint,
         rbe_instance_name = rbe_config.instance_name,
         rbe_container_image = rbe_config.container_image,
-        rbe_gce_machine_type = rbe_config.gce_machine_type,
+        rbe_pool_name = rbe_config.pool_name,
         ninja_output_dir = ninja_output_dir,
         fuchsia_source_dir = fuchsia_source_dir,
     )
@@ -295,7 +295,7 @@ build_config = struct(
         exec_properties = {
             "container-image": rbe_config.container_image,
             "OSFamily": "Linux",
-            "gceMachineType": rbe_config.gce_machine_type,
+            "Pool": rbe_config.pool_name,
         }
     else:
         exec_properties = {}

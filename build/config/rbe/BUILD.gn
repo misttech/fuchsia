@@ -11,7 +11,7 @@ import("//build/toolchain/rbe.gni")
 # Note: this does not impact the machine type used for C++ compilation.
 # See also :compile_big_rbe_machine.
 config("big_rbe_machine") {
-  _remote_flag = "--remote-flag=--platform=gceMachineType=n2-standard-8"
+  _remote_flag = "--remote-flag=--platform=Pool=large_worker"
 
   if (link_rbe_enable) {
     ldflags = [ _remote_flag ]
@@ -25,7 +25,7 @@ config("big_rbe_machine") {
 # Use a bigger remote worker to compile C++ translation units.
 # Note: this does not automatically apply to downstream link jobs.
 config("compile_big_rbe_machine") {
-  _remote_flag = "--remote-flag=--platform=gceMachineType=n2-standard-8"
+  _remote_flag = "--remote-flag=--platform=Pool=large_worker"
   if (cxx_rbe_enable) {
     cflags = [ _remote_flag ]
   }
