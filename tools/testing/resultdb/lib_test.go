@@ -148,7 +148,7 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 		t.Fatalf("Cannot parse test detail. got %s", err)
 	}
 
-	expectedTopLevelTestFailureReason := "200 test cases failed"
+	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed\nbar_2: test case failed\nbar_3: test case failed\nbar_4: test case failed\nbar_5: test case failed\nbar_6: test case failed\nbar_7: test case failed\nbar_8: test case failed\nbar_9: test case failed\nbar_10: test case failed\nbar_11: test case failed\nbar_12: test case failed\nbar_13: test case failed\nbar_14: test case failed\nbar_15: test case failed\nbar_16: test case failed\nbar_17: test case failed\nbar_18: test case failed\nbar_19: test case failed\nbar_20: test case failed\nbar_21: test case failed\nbar_22: test case failed\nbar_23: test case failed\nbar_24: test case failed\nbar_25: test case failed\nbar_26: test case failed\nbar_27: test case failed\nbar_28: test case failed\nbar_29: test case failed\nbar_30: test case failed\nbar_31: test case failed\nbar_32: test case failed\nbar_33: test case failed\nbar_34: test case failed\nbar_35: test case failed\nbar_36: test case failed\nbar_37: test case failed\nbar_38: test case failed\nbar_39: test case failed\nbar_40: test case failed\nbar_41: t"
 	if !(result.Status == resultpb.TestStatus_FAIL && result.FailureReason.PrimaryErrorMessage == expectedTopLevelTestFailureReason) {
 		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The primary error message is %q.\n The expected failure reason is %q.", result.FailureReason.PrimaryErrorMessage, expectedTopLevelTestFailureReason)
 	}

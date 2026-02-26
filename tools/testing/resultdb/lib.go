@@ -284,19 +284,23 @@ func hasFailedTest(topLevelTest *runtests.TestDetails) bool {
 
 func createDefaultTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 	var builder strings.Builder
-	failedTestCaseCount := 0
 	for _, testCase := range topLevelTest.Cases {
 		if testCase.Status == runtests.TestFailure {
 			if builder.Len() > 0 {
 				builder.WriteString("\n")
 			}
-			builder.WriteString(fmt.Sprintf("%s: test case failed", testCase.CaseName))
-			failedTestCaseCount++
+			if testCase.FailReason != "" {
+				builder.WriteString(fmt.Sprintf("%s: %s", testCase.CaseName, testCase.FailReason))
+			} else {
+				builder.WriteString(fmt.Sprintf("%s: test case failed", testCase.CaseName))
+			}
 		}
 	}
+
+	// Truncate to max length.
 	failureReason := builder.String()
 	if len(failureReason) > MaxFailureReasonLength {
-		failureReason = fmt.Sprintf("%d test cases failed", failedTestCaseCount)
+		failureReason = failureReason[:MaxFailureReasonLength]
 	}
 	return failureReason
 }
