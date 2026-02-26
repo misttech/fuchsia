@@ -14,8 +14,8 @@ use argh::FromArgs;
 use fidl::endpoints;
 use fidl::endpoints::ControlHandle;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
-use fuchsia_inspect::{Inspector, InspectorConfig, component};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use fuchsia_sync::Mutex;
 use futures::{FutureExt, StreamExt, TryStreamExt, select};
@@ -216,54 +216,6 @@ impl ComponentState {
             .await
             .context("Error importing from component startup handle")?;
 
-        let inspect_controller = {
-            let escrow_token = dict
-                .get::<sandbox::Handle<'a>>(FROZEN_INSPECT_VMO_KEY)
-                .await
-                .context("Failed to get frozen Inspect VMO")?
-                .export::<zx::NullableHandle>()
-                .await
-                .context("Failed to export handle")?
-                .into();
-
-            // Swap escrowed Inspect data with a new Tree server.
-            let token = finspect::EscrowToken { token: escrow_token };
-            let inspect_runtime::FetchEscrowResult { vmo, server } = inspect_runtime::fetch_escrow(
-                token,
-                inspect_runtime::FetchEscrowOptions::new().replace_with_tree(),
-            )
-            .await
-            .context("Failed to fetch escrowed Inspect data")?;
-
-            let opts = inspect_runtime::PublishOptions::default()
-                .custom_scope(scope.clone())
-                .on_tree_server(server.context("FetchEscrow did not return a TreeHandle")?);
-
-            // Check if Persistence has already published persisted data from last boot.
-            let escrowed_inspector = Inspector::new(InspectorConfig::default().vmo(vmo));
-            let escrowed_data = fuchsia_inspect::reader::read(&escrowed_inspector)
-                .await
-                .context("Failed to read escrowed Inspect data")?;
-
-            if let Some(_) = escrowed_data.get_property(PUBLISHED_TIME_KEY)
-                && let Some(_) = escrowed_data.get_child(PERSIST_NODE_NAME)
-            {
-                // Republish the read-only VMO. The VMO already contains
-                // persisted data from the last boot; no more work is necessary.
-                //
-                // Persistence needs to continue running to record data to
-                // persist for the next boot.
-                inspect_runtime::publish(&escrowed_inspector, opts)
-                    .context("Failed to publish escrowed (read-only) Inspect data")?
-            } else {
-                // Create a new, writable Inspect tree. The previous instance of
-                // Persistence did not receive the signal to persist data from
-                // the last boot, but this instance might.
-                inspect_runtime::publish(component::inspector(), opts)
-                    .context("Failed to publish Inspect data")?
-            }
-        };
-
         let persisted_bytes = dict
             .get::<sandbox::Data<'a>>(INSTANCE_STATE_KEY)
             .await
@@ -273,6 +225,51 @@ impl ComponentState {
             .context("Error exporting as buffer")?;
         let persisted: PersistedState = ciborium::from_reader(&persisted_bytes[..])
             .context("Failed to deserialize InstanceState")?;
+        let update_stage = persisted.update_stage.lock().clone();
+
+        let inspect_controller = match update_stage {
+            UpdateCheckStage::Waiting | UpdateCheckStage::Error => {
+                // Create a new, writable Inspect tree. The previous instance of
+                // Persistence did not receive the signal to persist data from
+                // the last boot, but this instance might.
+                let escrow_token = dict
+                    .get::<sandbox::Handle<'a>>(FROZEN_INSPECT_VMO_KEY)
+                    .await
+                    .context("Failed to get frozen Inspect VMO")?
+                    .export::<zx::NullableHandle>()
+                    .await
+                    .context("Failed to export handle")?
+                    .into();
+
+                // Swap escrowed Inspect data with a new Tree server.
+                let token = finspect::EscrowToken { token: escrow_token };
+                let inspect_runtime::FetchEscrowResult { vmo: _, server } =
+                    inspect_runtime::fetch_escrow(
+                        token,
+                        inspect_runtime::FetchEscrowOptions::new().replace_with_tree(),
+                    )
+                    .await
+                    .context("Failed to fetch escrowed Inspect data")?;
+
+                let opts = inspect_runtime::PublishOptions::default()
+                    .custom_scope(scope.clone())
+                    .on_tree_server(server.context("FetchEscrow did not return a TreeHandle")?);
+
+                let inspect_controller = inspect_runtime::publish(component::inspector(), opts)
+                    .context("Failed to publish Inspect data")?;
+
+                Some(inspect_controller)
+            }
+            UpdateCheckStage::Done | UpdateCheckStage::Skipped => {
+                // Persistence has already published persisted data from last
+                // boot. By not republishing, the existing frozen Inspect data
+                // remains published.
+                //
+                // Persistence needs to continue running to record data to
+                // persist for the next boot.
+                None
+            }
+        };
 
         // Do not spawn FIDL request handlers when returning from escrow. The
         // previous component instance escrowed its request streams, sending
@@ -284,7 +281,7 @@ impl ComponentState {
         Ok(Self {
             scheduler: Scheduler::new(&persisted.config),
             persisted: Arc::new(persisted),
-            inspect_controller: Arc::new(Mutex::new(Some(inspect_controller))),
+            inspect_controller: Arc::new(Mutex::new(inspect_controller)),
         })
     }
 
