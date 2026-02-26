@@ -108,19 +108,20 @@ void MockDisplayCoordinator::ReleaseEvent(
   imported_events_.erase(request->id.value);
 }
 
-void MockDisplayCoordinator::CreateLayer(CreateLayerCompleter::Sync& completer) {
+void MockDisplayCoordinator::CreateLayer(CreateLayerRequestView request,
+                                         CreateLayerCompleter::Sync& completer) {
   ++create_layer_count_;
   if (create_layer_fn_) {
-    create_layer_fn_();
+    create_layer_fn_(request->layer_id);
   }
 
-  static uint64_t layer_id_value = 1;
-  const uint64_t new_layer_id = layer_id_value++;
-  created_layer_ids_.insert(new_layer_id);
-  fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
-      {.value = new_layer_id},
-  };
-  completer.Reply(fit::ok(&response));
+  if (created_layer_ids_.contains(request->layer_id.value)) {
+    ++illegal_action_count_;
+    completer.Reply(fit::error(ZX_ERR_ALREADY_EXISTS));
+    return;
+  }
+  created_layer_ids_.insert(request->layer_id.value);
+  completer.Reply(fit::ok());
 }
 
 void MockDisplayCoordinator::DestroyLayer(

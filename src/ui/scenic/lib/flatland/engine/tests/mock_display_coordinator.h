@@ -110,7 +110,8 @@ class MockDisplayCoordinator
                SetLayerPrimaryAlphaCompleter::Sync&),
               (override));
 
-  MOCK_METHOD(void, CreateLayer, (CreateLayerCompleter::Sync&), (override));
+  MOCK_METHOD(void, CreateLayer,
+              (CreateLayerRequestView request, CreateLayerCompleter::Sync& completer), (override));
 
   MOCK_METHOD(void, DestroyLayer,
               (fuchsia_hardware_display::wire::CoordinatorDestroyLayerRequest*,

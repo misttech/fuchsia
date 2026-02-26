@@ -313,10 +313,19 @@ void Client::ReleaseEvent(ReleaseEventRequestView request,
   fences_.ReleaseEvent(event_id);
 }
 
-void Client::CreateLayer(CreateLayerCompleter::Sync& completer) {
+void Client::CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::CreateLayer");
 
-  // TODO(https://fxbug.dev/42079482): Layer IDs should be client-managed.
+  display::LayerId layer_id = display::LayerId(request->layer_id);
+  if (layer_id == display::kInvalidLayerId) {
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  if (layers_.find(layer_id).IsValid()) {
+    completer.ReplyError(ZX_ERR_ALREADY_EXISTS);
+    return;
+  }
 
   if (layers_.size() == kMaxLayers) {
     completer.ReplyError(ZX_ERR_NO_RESOURCES);
@@ -324,16 +333,14 @@ void Client::CreateLayer(CreateLayerCompleter::Sync& completer) {
   }
 
   fbl::AllocChecker alloc_checker;
-  display::LayerId layer_id = next_layer_id_;
   auto new_layer = fbl::make_unique_checked<Layer>(&alloc_checker, layer_id);
   if (!alloc_checker.check()) {
     completer.ReplyError(ZX_ERR_NO_MEMORY);
     return;
   }
-  ++next_layer_id_;
 
   layers_.insert(std::move(new_layer));
-  completer.ReplySuccess(layer_id.ToFidl());
+  completer.ReplySuccess();
 }
 
 void Client::DestroyLayer(DestroyLayerRequestView request,

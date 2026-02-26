@@ -107,7 +107,7 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void ImportEvent(ImportEventRequestView request, ImportEventCompleter::Sync& _completer) override;
   void ReleaseEvent(ReleaseEventRequestView request,
                     ReleaseEventCompleter::Sync& _completer) override;
-  void CreateLayer(CreateLayerCompleter::Sync& _completer) override;
+  void CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& _completer) override;
   void DestroyLayer(DestroyLayerRequestView request,
                     DestroyLayerCompleter::Sync& _completer) override;
   void SetDisplayMode(SetDisplayModeRequestView request,
@@ -247,9 +247,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   FenceCollection fences_;
 
   Layer::Map layers_;
-
-  // TODO(https://fxbug.dev/430976567): Move to client-managed LayerId values.
-  display::LayerId next_layer_id_ = display::LayerId(1);
 
   void NotifyDisplaysChanged(const int32_t* displays_added, uint32_t added_count,
                              const int32_t* displays_removed, uint32_t removed_count);

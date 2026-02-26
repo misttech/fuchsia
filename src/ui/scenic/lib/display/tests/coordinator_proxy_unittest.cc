@@ -139,7 +139,7 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
 // Test that CreateLayer() and DestroyLayer() immediately send the corresponding FIDL calls.
 TEST_F(CoordinatorProxyTest, CreateAndDestroyLayer) {
   bool create_layer_called = false;
-  mock_coordinator_->set_create_layer_fn([&] { create_layer_called = true; });
+  mock_coordinator_->set_create_layer_fn([&](WireLayerId layer_id) { create_layer_called = true; });
 
   std::optional<LayerId> destroyed_layer_id;
   mock_coordinator_->set_destroy_layer_fn(

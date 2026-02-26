@@ -81,6 +81,26 @@ fn next_image_id() -> u64 {
     ImageIdGenerator::default().next().expect("image_id")
 }
 
+#[derive(Default)]
+struct LayerIdGenerator {}
+
+impl Iterator for LayerIdGenerator {
+    type Item = LayerId;
+
+    fn next(&mut self) -> Option<LayerId> {
+        static NEXT_ID_VALUE: AtomicU64 = AtomicU64::new(1);
+        // NEXT_ID_VALUE only increments so it only requires atomicity, and we
+        // can use Relaxed order.
+        let value = NEXT_ID_VALUE.fetch_add(1, Ordering::Relaxed);
+        // fetch_add wraps on overflow, which we'll use as a signal
+        // that this generator is out of ids.
+        if value == 0 { None } else { Some(LayerId(value)) }
+    }
+}
+fn next_layer_id() -> LayerId {
+    LayerIdGenerator::default().next().expect("layer_id")
+}
+
 async fn create_and_import_event(
     coordinator: &CoordinatorProxy,
 ) -> Result<(Event, EventId), Error> {
@@ -123,9 +143,10 @@ impl Display {
     }
 
     pub async fn create_layer(&mut self) -> Result<(), Error> {
-        let result = self.coordinator.create_layer().await?;
+        let layer_id = next_layer_id();
+        let result = self.coordinator.create_layer(&layer_id.into()).await?;
         match result {
-            Ok(layer_id) => {
+            Ok(()) => {
                 self.layer_id = layer_id.into();
                 Ok(())
             }

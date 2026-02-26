@@ -298,6 +298,9 @@ class CoordinatorProxy {
   // const_cast for this specific purpose.
   const internal::DisplayEquivalence temp_display_equivalence_ = {};
 
+  // The ID to be assigned to the next layer created by `CreateLayer()`.
+  LayerId next_layer_id_ = LayerId(1);
+
   // Cached `CheckConfig()` results.  If there is no entry in the map, then it means that the
   // config has not been seen before, and a FIDL `CheckConfig()` call is necessary.  Otherwise
   // the stored boolean indicates whether a FIDL `CheckConfig()` call would succeed or fail

@@ -27,7 +27,7 @@ class MockDisplayCoordinator
   using ImportEventFn = std::function<void(zx::event event, WireEventId event_id)>;
   using ReleaseEventFn =
       std::function<void(fuchsia_hardware_display::wire::CoordinatorReleaseEventRequest*)>;
-  using CreateLayerFn = std::function<void()>;
+  using CreateLayerFn = std::function<void(WireLayerId)>;
   using DestroyLayerFn =
       std::function<void(fuchsia_hardware_display::wire::CoordinatorDestroyLayerRequest*)>;
   using SetDisplayModeFn = std::function<void(WireDisplayId, WireDisplayMode)>;
@@ -62,7 +62,7 @@ class MockDisplayCoordinator
                    ImportEventCompleter::Sync& completer) override;
   void ReleaseEvent(fuchsia_hardware_display::wire::CoordinatorReleaseEventRequest* request,
                     ReleaseEventCompleter::Sync& completer) override;
-  void CreateLayer(CreateLayerCompleter::Sync& completer) override;
+  void CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& completer) override;
   void DestroyLayer(fuchsia_hardware_display::wire::CoordinatorDestroyLayerRequest* request,
                     DestroyLayerCompleter::Sync& completer) override;
   void SetDisplayMode(fuchsia_hardware_display::wire::CoordinatorSetDisplayModeRequest* request,

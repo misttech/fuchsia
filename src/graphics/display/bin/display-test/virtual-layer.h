@@ -22,6 +22,8 @@
 
 namespace display_test {
 
+static constexpr display::LayerId kInitialLayerId(1);
+
 struct custom_layer_t {
   display::LayerId id;
   bool active;
@@ -105,8 +107,10 @@ class VirtualLayer {
   fbl::Vector<const Display*> displays_;
   fbl::Vector<custom_layer_t> layers_;
 
-  uint32_t width_;
-  uint32_t height_;
+  uint32_t width_ = 0;
+  uint32_t height_ = 0;
+
+  display::LayerId next_layer_id_{kInitialLayerId};
 };
 
 class PrimaryLayer : public VirtualLayer {

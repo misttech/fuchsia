@@ -98,7 +98,8 @@ class DisplayTest : public gtest::RealLoopFixture {
   display::WireLayerId InitializeDisplayLayer(
       const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
       display::Display* display) {
-    const auto create_layer_result = display_coordinator.sync()->CreateLayer();
+    display::WireLayerId layer_id = {.value = next_layer_id_++};
+    const auto create_layer_result = display_coordinator.sync()->CreateLayer(layer_id);
     if (!create_layer_result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL CreateLayer: " << create_layer_result.status_string();
       return {.value = fuchsia_hardware_display_types::kInvalidDispId};
@@ -108,7 +109,6 @@ class DisplayTest : public gtest::RealLoopFixture {
                      << zx_status_get_string(create_layer_result->error_value());
       return {.value = fuchsia_hardware_display_types::kInvalidDispId};
     }
-    display::WireLayerId layer_id = (*create_layer_result)->layer_id;
 
     const auto set_display_layers_result = display_coordinator.sync()->SetDisplayLayers(
         display->display_id().ToFidl(),
@@ -145,6 +145,7 @@ class DisplayTest : public gtest::RealLoopFixture {
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
+  uint64_t next_layer_id_ = 100;
 };
 
 // Create a buffer collection and set constraints on the display, the vulkan renderer

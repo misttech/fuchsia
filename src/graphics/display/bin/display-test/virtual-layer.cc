@@ -105,13 +105,14 @@ VirtualLayer::VirtualLayer(const fbl::Vector<Display>& displays, bool tiled) {
 custom_layer_t* VirtualLayer::CreateLayer(const fidl::WireSyncClient<fhd::Coordinator>& dc) {
   layers_.push_back(custom_layer_t());
   layers_[layers_.size() - 1].active = false;
+  layers_[layers_.size() - 1].id = next_layer_id_++;
 
-  auto result = dc->CreateLayer();
-  if (!result.ok() || result.value().is_error() != ZX_OK) {
-    printf("Creating layer failed\n");
+  fidl::WireResult<fuchsia_hardware_display::Coordinator::CreateLayer> result =
+      dc->CreateLayer(layers_[layers_.size() - 1].id.ToFidl());
+  if (!result.ok() || result.value().is_error()) {
+    printf("Creating layer failed: %s\n", result.status_string());
     return nullptr;
   }
-  layers_[layers_.size() - 1].id = display::LayerId(result.value()->layer_id);
 
   return &layers_[layers_.size() - 1];
 }

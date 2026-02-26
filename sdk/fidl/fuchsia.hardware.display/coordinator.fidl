@@ -196,9 +196,13 @@ closed protocol Coordinator {
     /// use from the time it is passed to SetDisplayLayers until a subsequent
     /// configuration is applied which does not include the layer or until its
     /// display is removed.
-    strict CreateLayer() -> (struct {
+    ///
+    /// * `layer_id` must be a valid ID (not equal to `INVALID_DISP_ID`).
+    /// * `layer_id` must not be in use (not equal to the ID of any currently
+    ///   existing layer in the same `Coordinator` session).
+    strict CreateLayer(struct {
         layer_id LayerId;
-    }) error zx.Status;
+    }) -> () error zx.Status;
 
     /// Destroys the given layer.
     ///

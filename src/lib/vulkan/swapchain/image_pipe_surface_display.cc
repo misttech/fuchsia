@@ -621,10 +621,13 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
             kTag);
   }
 
-  display_coordinator_->CreateLayer().ThenExactlyOnce(
-      [this, &status](fidl::Result<DisplayCoordinator::CreateLayer>& result) {
+  const fuchsia_hardware_display::LayerId layer_id(next_layer_id_);
+  ++next_layer_id_;
+  display_coordinator_->CreateLayer({layer_id})
+      .ThenExactlyOnce([this, layer_id,
+                        &status](fidl::Result<DisplayCoordinator::CreateLayer>& result) {
         if (result.is_ok()) {
-          layer_id_ = result.value().layer_id();
+          layer_id_ = layer_id;
           status = ZX_OK;
         } else {
           layer_id_ =

@@ -165,7 +165,11 @@ LayerId CoordinatorProxy::CreateLayer() {
   IncrementApiCallsReceived();
   IncrementApiCallsSent();
 
-  const auto create_layer_result = coordinator_.sync()->CreateLayer();
+  LayerId layer_id = next_layer_id_;
+  ++next_layer_id_;
+
+  fuchsia_hardware_display::wire::LayerId fidl_layer_id = {layer_id.value()};
+  const auto create_layer_result = coordinator_.sync()->CreateLayer(fidl_layer_id);
 
   if (!create_layer_result.ok()) {
     FX_LOGS(ERROR) << "CreateLayer transport error: " << create_layer_result.status_string();
@@ -177,7 +181,6 @@ LayerId CoordinatorProxy::CreateLayer() {
     return kInvalidLayerId;
   }
 
-  LayerId layer_id((*create_layer_result)->layer_id);
   FX_DCHECK(!layers_.contains(layer_id));
   layers_.try_emplace(layer_id);
   return layer_id;

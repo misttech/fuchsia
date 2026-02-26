@@ -340,6 +340,7 @@ class TestFidlClient {
  private:
   display::BufferCollectionId next_buffer_collection_id_{1};
   display::ImageId next_imported_image_id_{1};
+  display::LayerId next_layer_id_{1};
 
   fidl::WireSyncClient<fuchsia_hardware_display::Coordinator> coordinator_fidl_client_;
   const fidl::WireSyncClient<fuchsia_sysmem2::Allocator>& sysmem_;
@@ -472,21 +473,23 @@ zx::result<> TestFidlClient::ImportEvent(zx::event event, display::EventId event
 zx::result<display::LayerId> TestFidlClient::CreateLayer() {
   ZX_ASSERT(coordinator_fidl_client_.is_valid());
 
+  const display::LayerId layer_id = next_layer_id_;
+  ++next_layer_id_;
+
   fidl::WireResult<fuchsia_hardware_display::Coordinator::CreateLayer> fidl_transport_result =
-      coordinator_fidl_client_->CreateLayer();
+      coordinator_fidl_client_->CreateLayer(layer_id.ToFidl());
   if (!fidl_transport_result.ok()) {
     fdf::error("FIDL error calling CreateLayer: {}", fidl_transport_result.error());
     return zx::error(fidl_transport_result.status());
   }
 
-  fit::result<zx_status_t, fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse*>&
-      fidl_domain_result = fidl_transport_result.value();
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
   if (fidl_domain_result.is_error()) {
     fdf::warn("CreateLayer failed: {}", zx::make_result(fidl_domain_result.error_value()));
     return zx::error(fidl_domain_result.error_value());
   }
 
-  return zx::ok(display::LayerId(fidl_domain_result.value()->layer_id));
+  return zx::ok(layer_id);
 }
 
 zx::result<> TestFidlClient::ImportImage(const display::ImageMetadata& image_metadata,

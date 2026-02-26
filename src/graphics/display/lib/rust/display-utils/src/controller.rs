@@ -214,7 +214,9 @@ impl Coordinator {
     /// Allocates a new virtual hardware layer that is not associated with any display and has no
     /// configuration.
     pub async fn create_layer(&self) -> Result<LayerId> {
-        Ok(self.proxy().create_layer().await?.map_err(zx::Status::from_raw)?.into())
+        let layer_id = self.inner.write().next_free_layer_id()?;
+        self.proxy().create_layer(&layer_id.into()).await?.map_err(zx::Status::from_raw)?;
+        Ok(layer_id)
     }
 
     /// Creates and registers a zircon event with the display driver. The returned event can be
@@ -360,6 +362,11 @@ impl CoordinatorInner {
     fn next_free_event_id(&mut self) -> Result<EventId> {
         self.id_counter = self.id_counter.checked_add(1).ok_or(Error::IdsExhausted)?;
         Ok(EventId(self.id_counter))
+    }
+
+    fn next_free_layer_id(&mut self) -> Result<LayerId> {
+        self.id_counter = self.id_counter.checked_add(1).ok_or(Error::IdsExhausted)?;
+        Ok(LayerId(self.id_counter))
     }
 
     fn next_config_stamp(&mut self) -> Result<u64> {

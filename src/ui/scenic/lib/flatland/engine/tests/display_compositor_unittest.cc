@@ -1097,14 +1097,14 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   // Setup the EXPECT_CALLs for gmock.
   uint64_t layer_id_value = 1;
-  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(3)
-      .WillRepeatedly(
-          testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
-            fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
-                .layer_id = {.value = layer_id_value++},
-            };
-            completer.Reply(fit::ok(&response));
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                  request,
+              MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, layer_id_value++);
+            completer.Reply(fit::ok());
           }));
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
 
@@ -1306,14 +1306,14 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   // Setup the EXPECT_CALLs for gmock.
   // Note that a couple of layers are created upfront for the display.
   uint64_t layer_id_value = 1;
-  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(3)
-      .WillRepeatedly(
-          testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
-            fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
-                .layer_id = {.value = layer_id_value++},
-            };
-            completer.Reply(fit::ok(&response));
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                  request,
+              MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, layer_id_value++);
+            completer.Reply(fit::ok());
           }));
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
 
@@ -1603,14 +1603,14 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
   // Setup the EXPECT_CALLs for gmock.
   // We expect 1 layer for empty scene, and 2 layers for the pool (configured in SetUp).
   uint64_t layer_id_value = 1;
-  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(3)
-      .WillRepeatedly(
-          testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
-            fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
-                .layer_id = {.value = layer_id_value++},
-            };
-            completer.Reply(fit::ok(&response));
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                  request,
+              MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, layer_id_value++);
+            completer.Reply(fit::ok());
           }));
 
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
