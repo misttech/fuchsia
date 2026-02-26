@@ -421,6 +421,8 @@ impl CategoryCounter {
         // we ignore them.
         category_counter.remove("kernel:meta");
         category_counter.remove("kernel:sched");
+        // "starnix:atrace" delivers events via Perfetto blobs, so the category check will fail.
+        category_counter.remove("starnix:atrace");
         Self { category_counter, input_categories }
     }
 
@@ -478,6 +480,16 @@ mod test {
         // Kernel:meta and kernel:sched don't produce events with categories, so we should ignore
         // them.
         let mut counter = CategoryCounter::new(vec!["kernel:meta".into(), "kernel:sched".into()]);
+        counter.increment_category("some");
+        counter.increment_category("other");
+        counter.increment_category("categories");
+        assert!(counter.get_invalid_category_list().is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_starnix_atrace() {
+        // starnix:atrace doesn't produce events with categories, so we should ignore it.
+        let mut counter = CategoryCounter::new(vec!["starnix:atrace".into()]);
         counter.increment_category("some");
         counter.increment_category("other");
         counter.increment_category("categories");
