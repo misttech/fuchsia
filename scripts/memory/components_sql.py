@@ -67,6 +67,13 @@ from typing import Any, Dict
 #     flags INTEGER
 # }
 #
+# // Blob annotations for VMOs
+# Table blob_annotations {
+#     koid INTEGER [ref: > vmos.koid]
+#     manifest TEXT // Path to package's manifest
+#     path TEXT     // Path of blob in package
+# }
+#
 # // Associative table to join principals and resources.
 # Table principals_resources {
 #     principal_id INTEGER [primary key, ref: > principals.id]
@@ -186,6 +193,15 @@ def process_json_input(json_input: Dict[str, Any], output_path: str) -> None:
     )"""
     )
 
+    con.execute(
+        """CREATE TABLE blob_annotations (
+        koid INTEGER,
+        manifest TEXT,
+        path TEXT,
+        FOREIGN KEY(koid) REFERENCES vmos(koid) ON DELETE CASCADE
+    )"""
+    )
+
     data_resources = data["resources"]
     for data_resource in data_resources:
         res = data_resource["resource"]
@@ -216,6 +232,14 @@ def process_json_input(json_input: Dict[str, Any], output_path: str) -> None:
                     vmo["flags"],
                 ),
             )
+
+        for annotation in data_resource["annotations"]:
+            if "Blob" in annotation:
+                blob = annotation["Blob"]
+                con.execute(
+                    "INSERT INTO blob_annotations VALUES (?, ?, ?)",
+                    (koid, blob["manifest"], blob["path"]),
+                )
 
     con.execute(
         """CREATE TABLE principals_resources (
