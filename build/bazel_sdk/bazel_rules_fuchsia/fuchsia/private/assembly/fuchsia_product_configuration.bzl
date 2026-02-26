@@ -332,9 +332,6 @@ def fuchsia_product_configuration(
         base_driver_packages = None,
         ota_configuration = None,
         starnix_containers = [],
-        # Deprecated
-        # TODO(https://fxbug.dev/390189313): Remove once all clients stop using.
-        relative_paths = False,  # @unused
         **kwargs):
     """A new implementation of fuchsia_product_configuration that takes raw a json config.
 
@@ -366,8 +363,6 @@ def fuchsia_product_configuration(
         base_driver_packages: Base driver packages to include in product.
         ota_configuration: OTA configuration to use with the product.
         starnix_containers: List of Starnix containers.
-        relative_paths: Whether to generate an Assembly product configuration
-            with relative path, so it can be relocated.
         **kwargs: Common bazel rule args passed through to the implementation rule.
     """
 
