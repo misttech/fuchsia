@@ -11,6 +11,7 @@ BT_FILE_DEPS=(
     "scripts/fuchsia-vendored-python"
     "scripts/fuchsia-vendored-python3.11"
     "scripts/hermetic-env"
+    "build/scripts/main_build.py"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/build"
     "tools/devshell/jq.fx"
@@ -32,6 +33,7 @@ MOCK_PYTHON3="${MOCK_PYTHON3_DIR}/bin/python3"
 BT_MOCKED_TOOLS=(
   "build/api/client"
   "build/regenerator"
+  "build/scripts/top_build_wrap.sh"
   "scripts/fuchsia-vendored-python"
   "tools/devshell/lib/bazel_utils.sh"
   "tools/devshell/rbe"
@@ -64,6 +66,7 @@ setup_build_test() {
 
   # Misc mock binaries invoked by tools/devshell/build
   ninja="$(btf::make_mock_binary bin/ninja)"
+  top_build_wrapper="${BT_TEMP_DIR}/build/scripts/top_build_wrap.sh"
   build_api_client="${BT_TEMP_DIR}/build/api/client"
 
   bazel="$(btf::make_mock_binary bin/bazel)"
@@ -261,42 +264,114 @@ TEST_fx-build-with-fint() {
     setup_build_test
     setup_fint_build
     BT_EXPECT "${fx}" build --fint-params-path=path/to/build_config.proto
-    source "${fint}.mock_state"
+    source "${top_build_wrapper}.mock_state"
+
+    # Find where the wrapped command starts (after --)
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
     local expected_fint_args=(
       "${fint}"
       -log-level=error
       build
       -static=path/to/build_config.proto
-      -context=/dev/fd/ANY
+      -context=ANY
     )
-    # The last item in BT_MOCK_ARGS will be -context=/dev/fd/<SOME_NUMBER>
-    # Replace that with /dev/fd/ANY
-    local arg mock_args=()
-    for arg in "${BT_MOCK_ARGS[@]}"; do
+    # The last item in BT_MOCK_ARGS will be -context=/tmp/.../ANY
+    # Replace that with ANY
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
       case "${arg}" in
-        -context=/dev/fd/*)
-          arg="-context=/dev/fd/ANY"
+        -context=*)
+          arg="-context=ANY"
           ;;
       esac
-      mock_args+=("${arg}")
+      final_args+=("${arg}")
     done
-    BT_EXPECT_EQ "${mock_args[*]}" "${expected_fint_args[*]}"
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_fint_args[*]}"
 }
 
 TEST_fx-build-with-gn-label() {
     setup_build_test
     setup_build_api_results "//src:foo" "obj/src/foo"
     BT_EXPECT "${fx}" build //src:foo
-    source "${ninja}.mock_state"
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} obj/src/foo"
+    source "${top_build_wrapper}.mock_state"
+
+    # Find where the wrapped command starts (after --)
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
+    # Ninja command should have injected --dirty_sources_list
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
+      case "${arg}" in
+        */ninja_dirty_sources.log)
+          arg="ANY_DIRTY_SOURCES_LOG"
+          ;;
+      esac
+      final_args+=("${arg}")
+    done
+
+    local expected_ninja_args=(
+      "${ninja}"
+      --dirty_sources_list ANY_DIRTY_SOURCES_LOG
+      -j 8
+      --edge_weights_list=ninja_edge_weights.csv
+      -C "${TEST_BUILD_DIR}"
+      obj/src/foo
+    )
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_ninja_args[*]}"
 }
 
 TEST_fx-build-with-gn-label-and-j32() {
     setup_build_test
     setup_build_api_results "//src:foo" "obj/src/foo"
     BT_EXPECT "${fx}" build -j32 //src:foo
-    source "${ninja}.mock_state"
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j32 obj/src/foo"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
+      case "${arg}" in
+        */ninja_dirty_sources.log)
+          arg="ANY_DIRTY_SOURCES_LOG"
+          ;;
+      esac
+      final_args+=("${arg}")
+    done
+
+    local expected_ninja_args=(
+      "${ninja}"
+      --dirty_sources_list ANY_DIRTY_SOURCES_LOG
+      -j 32
+      --edge_weights_list=ninja_edge_weights.csv
+      -C "${TEST_BUILD_DIR}"
+      obj/src/foo
+    )
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_ninja_args[*]}"
 }
 
 TEST_fx-build-with-gn-label-and-enable_jobserver() {
@@ -305,24 +380,112 @@ TEST_fx-build-with-gn-label-and-enable_jobserver() {
     echo "{ \"enable_jobserver\": true }" > "${TEST_BUILD_DIR}/args.json"
     setup_build_api_results "//src:foo" "obj/src/foo"
     BT_EXPECT "${fx}" build //src:foo
-    source "${ninja}.mock_state"
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} --jobserver obj/src/foo"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
+      case "${arg}" in
+        */ninja_dirty_sources.log)
+          arg="ANY_DIRTY_SOURCES_LOG"
+          ;;
+      esac
+      final_args+=("${arg}")
+    done
+
+    local expected_ninja_args=(
+      "${ninja}"
+      --dirty_sources_list ANY_DIRTY_SOURCES_LOG
+      -j 8
+      --edge_weights_list=ninja_edge_weights.csv
+      -C "${TEST_BUILD_DIR}"
+      --jobserver
+      obj/src/foo
+    )
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_ninja_args[*]}"
 }
 
 TEST_fx-build-with-gn-label-and-j-32() {
     setup_build_test
     setup_build_api_results "//src:foo" "obj/src/foo"
     BT_EXPECT "${fx}" build -j 32 //src:foo
-    source "${ninja}.mock_state"
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j 32 obj/src/foo"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
+      case "${arg}" in
+        */ninja_dirty_sources.log)
+          arg="ANY_DIRTY_SOURCES_LOG"
+          ;;
+      esac
+      final_args+=("${arg}")
+    done
+
+    local expected_ninja_args=(
+      "${ninja}"
+      --dirty_sources_list ANY_DIRTY_SOURCES_LOG
+      -j 32
+      --edge_weights_list=ninja_edge_weights.csv
+      -C "${TEST_BUILD_DIR}"
+      obj/src/foo
+    )
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_ninja_args[*]}"
 }
 
 TEST_fx-build-with-ninja-path() {
     setup_build_test
     setup_build_api_results "obj/src/foo" "obj/src/foo"
     BT_EXPECT "${fx}" build obj/src/foo
-    source "${ninja}.mock_state"
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} obj/src/foo"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
+    local arg final_args=()
+    for arg in "${mock_args[@]}"; do
+      case "${arg}" in
+        */ninja_dirty_sources.log)
+          arg="ANY_DIRTY_SOURCES_LOG"
+          ;;
+      esac
+      final_args+=("${arg}")
+    done
+
+    local expected_ninja_args=(
+      "${ninja}"
+      --dirty_sources_list ANY_DIRTY_SOURCES_LOG
+      -j 8
+      --edge_weights_list=ninja_edge_weights.csv
+      -C "${TEST_BUILD_DIR}"
+      obj/src/foo
+    )
+    BT_EXPECT_EQ "${final_args[*]}" "${expected_ninja_args[*]}"
 }
 
 TEST_fx-build-with-bazel-non-host-label() {
@@ -334,7 +497,18 @@ TEST_fx-build-with-bazel-non-host-label() {
 TEST_fx-build-with-bazel-host-label() {
     setup_build_test
     BT_EXPECT "${fx}" build --host @//src/foo
-    source "${bazel}.mock_state"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
     local expected_bazel_command=(
       "${bazel}"
       build
@@ -342,13 +516,24 @@ TEST_fx-build-with-bazel-host-label() {
       --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
       @//src/foo
     )
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+    BT_EXPECT_EQ "${mock_args[*]}" "${expected_bazel_command[*]}"
 }
 
 TEST_fx-build-with-bazel-host-label-and-j32() {
     setup_build_test
     BT_EXPECT "${fx}" build --host -j32 @//src/foo
-    source "${bazel}.mock_state"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
     local expected_bazel_command=(
       "${bazel}"
       build
@@ -357,14 +542,25 @@ TEST_fx-build-with-bazel-host-label-and-j32() {
       --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
       @//src/foo
     )
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+    BT_EXPECT_EQ "${mock_args[*]}" "${expected_bazel_command[*]}"
 }
 
 TEST_fx-build-with-bazel-label-with-trailing-host() {
     setup_build_test
     # Unlike with GN build mode, --host can appear after the Bazel label
     BT_EXPECT "${fx}" build @//src/foo --host
-    source "${bazel}.mock_state"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
     local expected_bazel_command=(
       "${bazel}"
       build
@@ -372,14 +568,25 @@ TEST_fx-build-with-bazel-label-with-trailing-host() {
       --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
       @//src/foo
     )
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+    BT_EXPECT_EQ "${mock_args[*]}" "${expected_bazel_command[*]}"
 }
 
 TEST_fx-build-with-bazel-label-with-config-host() {
     setup_build_test
     # Unlike GN --toolchain options, --config can appear after the Bazel label.
     BT_EXPECT "${fx}" build @//src/foo --config=host
-    source "${bazel}.mock_state"
+    source "${top_build_wrapper}.mock_state"
+
+    local i wrapped_idx=-1
+    for (( i=0; i<${#BT_MOCK_ARGS[@]}; i++ )); do
+      if [[ "${BT_MOCK_ARGS[$i]}" == "--" ]]; then
+        wrapped_idx=$((i + 1))
+        break
+      fi
+    done
+    BT_EXPECT_NE "${wrapped_idx}" "-1"
+
+    local mock_args=("${BT_MOCK_ARGS[@]:$wrapped_idx}")
     local expected_bazel_command=(
       "${bazel}"
       build
@@ -387,7 +594,7 @@ TEST_fx-build-with-bazel-label-with-config-host() {
       --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
       @//src/foo
     )
-    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+    BT_EXPECT_EQ "${mock_args[*]}" "${expected_bazel_command[*]}"
 }
 
 TEST_fx-build-produces-build-tracking-events() {
