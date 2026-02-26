@@ -238,11 +238,11 @@ fn cbpf_to_ebpf(
                     BPF_LEN => {
                         ebpf_code.push(match config.len {
                             CbpfLenInstruction::Static { len } => {
-                                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, REG_A, 0, 0, len)
+                                EbpfInstruction::new(BPF_ALU | BPF_MOV | BPF_K, dst_reg, 0, 0, len)
                             }
                             CbpfLenInstruction::ContextField { offset } => EbpfInstruction::new(
                                 BPF_LDX | BPF_MEM | BPF_W,
-                                REG_A,
+                                dst_reg,
                                 REG_CONTEXT,
                                 offset,
                                 0,
