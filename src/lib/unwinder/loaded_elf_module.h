@@ -45,6 +45,13 @@ class LoadedElfModule {
 
   const std::vector<Elf64_Phdr>& phdrs() const { return phdrs_; }
 
+  // Helpers to get sections or segments.
+  [[nodiscard]] fit::result<Error, Elf64_Shdr> GetSectionByName(
+      std::string_view target_section) const;
+
+  // Always returns an Elf64_Phdr, even if this module is 32 bits.
+  [[nodiscard]] fit::result<Error, Elf64_Phdr> GetSegmentByType(uint32_t p_type) const;
+
  private:
   // Loads the ELF header to |ehdr_| (upcasting if necessary). |module_.binary_memory| is assumed to
   // be valid when this function is called.

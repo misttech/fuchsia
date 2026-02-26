@@ -6,6 +6,8 @@
 
 #include <elf.h>
 
+#include <safemath/checked_math.h>
+
 #include "src/lib/unwinder/arm_ehabi_parser.h"
 #include "src/lib/unwinder/elf_utils.h"
 #include "src/lib/unwinder/error.h"
@@ -28,14 +30,18 @@ Error ArmEhAbiModule::Load() {
     return Error("This doesn't look like an ELF module.");
   }
 
-  Elf32_Phdr phdr;
-  if (auto err = elf_utils::GetSegmentByType(elf_, elf_ptr_, PT_ARM_EXIDX, ehdr, phdr);
-      err.has_err()) {
-    return err;
+  auto phdr = loaded_elf_module_.GetSegmentByType(PT_ARM_EXIDX);
+  if (phdr.is_error()) {
+    return phdr.error_value();
   }
 
-  arm_exidx_start_ = elf_ptr_ + phdr.p_vaddr;
-  arm_exidx_end_ = arm_exidx_start_ + phdr.p_memsz;
+  if (!safemath::CheckAdd(elf_ptr_, phdr->p_vaddr).AssignIfValid(&arm_exidx_start_)) {
+    return Error("Overflowed while finding .ARM.exidx start.");
+  }
+
+  if (!safemath::CheckAdd(arm_exidx_start_, phdr->p_memsz).AssignIfValid(&arm_exidx_end_)) {
+    return Error("Overflowed while finding .ARM.exidx end.");
+  }
 
   return Success();
 }

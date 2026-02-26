@@ -27,38 +27,12 @@ fit::result<Error, Elf64_Ehdr> ReadEhdr(Memory* memory, uint64_t load_address) {
 
   Elf64_Ehdr ehdr64;
   if constexpr (std::is_same_v<Ehdr, Elf32_Ehdr>) {
-    memcpy(ehdr64.e_ident, ehdr.e_ident, EI_NIDENT);
-    ehdr64.e_type = ehdr.e_type;
-    ehdr64.e_machine = ehdr.e_machine;
-    ehdr64.e_version = ehdr.e_version;
-    ehdr64.e_entry = ehdr.e_entry;
-    ehdr64.e_phoff = ehdr.e_phoff;
-    ehdr64.e_shoff = ehdr.e_shoff;
-    ehdr64.e_flags = ehdr.e_flags;
-    ehdr64.e_ehsize = ehdr.e_ehsize;
-    ehdr64.e_phentsize = ehdr.e_phentsize;
-    ehdr64.e_phnum = ehdr.e_phnum;
-    ehdr64.e_shentsize = ehdr.e_shentsize;
-    ehdr64.e_shnum = ehdr.e_shnum;
-    ehdr64.e_shstrndx = ehdr.e_shstrndx;
+    ehdr64 = elf_utils::UpcastEhdr(ehdr);
   } else {
     ehdr64 = ehdr;
   }
 
   return fit::ok(ehdr64);
-}
-
-Elf64_Phdr UpcastPhdr(const Elf32_Phdr& phdr32) {
-  Elf64_Phdr phdr;
-  phdr.p_type = phdr32.p_type;
-  phdr.p_offset = phdr32.p_offset;
-  phdr.p_vaddr = phdr32.p_vaddr;
-  phdr.p_paddr = phdr32.p_paddr;
-  phdr.p_filesz = phdr32.p_filesz;
-  phdr.p_memsz = phdr32.p_memsz;
-  phdr.p_flags = phdr32.p_flags;
-  phdr.p_align = phdr32.p_align;
-  return phdr;
 }
 
 }  // namespace
@@ -105,8 +79,9 @@ fit::result<Error> LoadedElfModule::LoadElfHeader() {
       ehdr_ = *ehdr;
       break;
     }
-    default:
+    case Module::AddressSize::kUnknown: {
       return fit::error(Error("Unknown ELF class."));
+    }
   }
 
   if (!elf_utils::VerifyElfIdentification(*ehdr_, module_.size == Module::AddressSize::k32Bit
@@ -115,12 +90,72 @@ fit::result<Error> LoadedElfModule::LoadElfHeader() {
     return fit::error(Error("Invalid ELF header"));
   }
 
+  if (auto err = LoadPhdrs(*ehdr_); err.is_error()) {
+    return err;
+  }
+
   return fit::ok();
+}
+
+fit::result<Error, Elf64_Shdr> LoadedElfModule::GetSectionByName(
+    std::string_view target_section) const {
+  if (!ehdr_) {
+    return fit::error(Error("ELF Header not loaded!"));
+  }
+
+  Elf64_Shdr shdr;
+  switch (module_.size) {
+    case Module::AddressSize::k32Bit: {
+      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf32_Shdr>(
+          module_.binary_memory, module_.load_address, target_section, *ehdr_);
+      if (res.is_error()) {
+        return res.take_error();
+      }
+
+      shdr = elf_utils::UpcastShdr(*res);
+      break;
+    }
+    case Module::AddressSize::k64Bit: {
+      auto res = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(
+          module_.binary_memory, module_.load_address, target_section, *ehdr_);
+      if (res.is_error()) {
+        return res;
+      }
+
+      shdr = *res;
+      break;
+    }
+    case Module::AddressSize::kUnknown: {
+      return fit::error(Error("Unknown ELF class."));
+    }
+  }
+
+  return fit::ok(shdr);
+}
+
+fit::result<Error, Elf64_Phdr> LoadedElfModule::GetSegmentByType(uint32_t p_type) const {
+  if (phdrs_.empty()) {
+    return fit::error(Error("No phdrs loaded yet."));
+  }
+
+  const auto& found =
+      std::ranges::find_if(phdrs_, [=](const Elf64_Phdr& phdr) { return p_type == phdr.p_type; });
+
+  if (found != phdrs_.end()) {
+    return fit::ok(*found);
+  }
+
+  return fit::error(Error("Segment with type %d not found", p_type));
 }
 
 fit::result<Error> LoadedElfModule::LoadPhdrs(const Elf64_Ehdr& ehdr) {
   // Already loaded.
   if (!phdrs_.empty()) {
+    return fit::ok();
+  }
+
+  if (ehdr.e_phnum == 0) {
+    // No program headers to load.
     return fit::ok();
   }
 
@@ -149,7 +184,7 @@ fit::result<Error> LoadedElfModule::LoadPhdrs(const Elf64_Ehdr& ehdr) {
 
     std::ranges::transform(
         phdr32_buf, std::inserter(phdrs_, phdrs_.begin()),
-        [](const Elf32_Phdr& phdr32) -> Elf64_Phdr { return UpcastPhdr(phdr32); });
+        [](const Elf32_Phdr& phdr32) -> Elf64_Phdr { return elf_utils::UpcastPhdr(phdr32); });
   }
 
   pc_begin_ = std::numeric_limits<uint64_t>::max();

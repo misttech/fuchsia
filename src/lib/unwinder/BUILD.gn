@@ -33,6 +33,7 @@ static_library("unwinder") {
     "dwarf_expr.cc",
     "elf_module_cache.cc",
     "elf_module_cache.h",
+    "elf_utils.cc",
     "elf_utils.h",
     "error.cc",
     "fp_unwinder.cc",

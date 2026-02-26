@@ -5,6 +5,7 @@
 #include "src/lib/unwinder/cfi_module.h"
 
 #include <elf.h>
+#include <lib/fit/result.h>
 
 #include <cinttypes>
 #include <cstdint>
@@ -15,7 +16,6 @@
 #include <safemath/checked_math.h>
 
 #include "src/lib/unwinder/cfi_parser.h"
-#include "src/lib/unwinder/elf_utils.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/module.h"
 #include "src/lib/unwinder/registers.h"
@@ -138,20 +138,20 @@ Error CfiModule::Load() {
   }
 
   eh_frame_hdr_ptr_ = 0;
-  for (const auto& phdr : loaded_elf_module_.phdrs()) {
-    if (phdr.p_type == PT_GNU_EH_FRAME) {
-      if (loaded_elf_module_.mode() == Module::AddressMode::kProcess) {
-        if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr.p_vaddr)
-                 .AssignIfValid(&eh_frame_hdr_ptr_)) {
-          return Error("Calculated eh_frame_hdr start overflows");
-        }
-      } else {
-        if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr.p_offset)
-                 .AssignIfValid(&eh_frame_hdr_ptr_)) {
-          return Error("Calculated eh_frame_hdr start overflows");
-        }
-      }
-      break;
+  auto phdr = loaded_elf_module_.GetSegmentByType(PT_GNU_EH_FRAME);
+  if (phdr.is_error()) {
+    return phdr.error_value();
+  }
+
+  if (loaded_elf_module_.mode() == Module::AddressMode::kProcess) {
+    if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr->p_vaddr)
+             .AssignIfValid(&eh_frame_hdr_ptr_)) {
+      return Error("Calculated eh_frame_hdr start overflows");
+    }
+  } else {
+    if (!safemath::CheckAdd(loaded_elf_module_.load_address(), phdr->p_offset)
+             .AssignIfValid(&eh_frame_hdr_ptr_)) {
+      return Error("Calculated eh_frame_hdr start overflows");
     }
   }
 
@@ -233,15 +233,19 @@ Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
     return Error("no section info, is this a stripped binary?");
   }
 
-  Elf64_Shdr shdr;
-  if (auto err = elf_utils::GetSectionByName<Elf64_Ehdr, Elf64_Shdr>(
-          elf_, loaded_elf_module_.load_address(), ".debug_frame", ehdr, shdr);
-      err.has_err()) {
-    return err;
+  auto shdr = loaded_elf_module_.GetSectionByName(".debug_frame");
+  if (shdr.is_error()) {
+    return shdr.error_value();
   }
 
-  debug_frame_ptr_ = loaded_elf_module_.load_address() + shdr.sh_offset;
-  debug_frame_end_ = debug_frame_ptr_ + shdr.sh_size;
+  if (!safemath::CheckAdd(loaded_elf_module_.load_address(), shdr->sh_offset)
+           .AssignIfValid(&debug_frame_ptr_)) {
+    return Error("Overflowed finding debug_frame start.");
+  }
+
+  if (!safemath::CheckAdd(debug_frame_ptr_, shdr->sh_size).AssignIfValid(&debug_frame_end_)) {
+    return Error("Overflowed finding debug_frame end.");
+  }
 
   return Success();
 }
