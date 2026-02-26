@@ -454,7 +454,7 @@ void ReportStore::RemoveAll() {
 }
 
 bool ReportStore::RecreateFromFilesystem(ReportStoreMetadata& store_root) {
-  const bool success = store_root.RecreateFromFilesystem();
+  const bool success = store_root.RecreateFromAndCleanupFilesystem();
   for (const auto report_id : store_root.Reports()) {
     tags_->Register(report_id, {Logname(store_root.ReportProgram(report_id))});
   }

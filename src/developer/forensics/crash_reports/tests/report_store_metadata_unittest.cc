@@ -15,6 +15,8 @@
 
 #include "src/developer/forensics/testing/scoped_memfs_manager.h"
 #include "src/developer/forensics/utils/storage_size.h"
+#include "src/lib/files/directory.h"
+#include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
 
@@ -61,6 +63,18 @@ class ReportStoreMetadataTest : public ::testing::Test {
     return fs::path(ProgramPath(program)) / std::to_string(report_id);
   }
 
+  bool WriteFile(const std::string& relative_path, const std::string& value) {
+    return files::WriteFile(files::JoinPath(tmp_dir_.path(), relative_path), value);
+  }
+
+  bool IsFile(const std::string& relative_path) {
+    return files::IsFile(files::JoinPath(tmp_dir_.path(), relative_path));
+  }
+
+  bool IsDirectory(const std::string& relative_path) {
+    return files::IsDirectory(files::JoinPath(tmp_dir_.path(), relative_path));
+  }
+
  private:
   files::ScopedTempDir tmp_dir_;
   ReportStoreMetadata metadata_;
@@ -75,7 +89,7 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Reports) {
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 2", kValue));
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/1, "key 3", kValue));
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/2, "key 4", kValue));
-  metadata().RecreateFromFilesystem();
+  metadata().RecreateFromAndCleanupFilesystem();
 
   EXPECT_THAT(metadata().Reports(), UnorderedElementsAreArray({0, 1, 2}));
 
@@ -101,7 +115,7 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Reports) {
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/3, "key 2", kValue));
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/4, "key 3", kValue));
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/5, "key 4", kValue));
-  metadata().RecreateFromFilesystem();
+  metadata().RecreateFromAndCleanupFilesystem();
 
   EXPECT_THAT(metadata().Reports(), UnorderedElementsAreArray({0, 1, 2, 3, 4, 5}));
   EXPECT_TRUE(metadata().Contains(0));
@@ -142,7 +156,7 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Programs) {
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 2", kValue));
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/1, "key 3", kValue));
   ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/2, "key 4", kValue));
-  metadata().RecreateFromFilesystem();
+  metadata().RecreateFromAndCleanupFilesystem();
 
   EXPECT_THAT(metadata().Programs(), UnorderedElementsAreArray({
                                          "program 1",
@@ -159,7 +173,7 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Programs) {
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/3, "key 2", kValue));
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/4, "key 3", kValue));
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/5, "key 4", kValue));
-  metadata().RecreateFromFilesystem();
+  metadata().RecreateFromAndCleanupFilesystem();
 
   EXPECT_THAT(metadata().Programs(), UnorderedElementsAreArray({
                                          "program 1",
@@ -196,8 +210,77 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_FailsInitially) {
   ASSERT_FALSE(metadata.IsDirectoryUsable());
 
   scoped_mem_fs.Create("/cache/delayed/path");
-  metadata.RecreateFromFilesystem();
+  metadata.RecreateFromAndCleanupFilesystem();
   EXPECT_TRUE(metadata.IsDirectoryUsable());
+}
+
+TEST_F(ReportStoreMetadataTest, RecreateFromFilesystemProgramDirNotDirectory) {
+  ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 1", "value"));
+  ASSERT_TRUE(WriteFile("program 2", "value"));
+
+  ASSERT_TRUE(metadata().RecreateFromAndCleanupFilesystem());
+
+  EXPECT_TRUE(metadata().Contains("program 1"));
+  EXPECT_TRUE(IsDirectory("program 1"));
+
+  EXPECT_FALSE(metadata().Contains("program 2"));
+  EXPECT_FALSE(IsDirectory("program 2"));
+}
+
+TEST_F(ReportStoreMetadataTest, RecreateFromFilesystemReportDirNotDirectory) {
+  ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 1", "value"));
+  ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/1, "key 1", "value"));
+  ASSERT_TRUE(WriteFile("program 2/2", "value"));
+
+  ASSERT_TRUE(metadata().RecreateFromAndCleanupFilesystem());
+
+  EXPECT_TRUE(metadata().Contains("program 1"));
+  EXPECT_TRUE(IsDirectory("program 1"));
+
+  EXPECT_TRUE(metadata().Contains("program 2"));
+  EXPECT_TRUE(IsDirectory("program 2/1"));
+  EXPECT_FALSE(IsDirectory("program 2/2"));
+  EXPECT_FALSE(IsFile("program 2/2"));
+}
+
+TEST_F(ReportStoreMetadataTest, RecreateFromFilesystemReportDirNotInteger) {
+  ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 1", "value"));
+  ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/1, "key 1", "value"));
+
+  const std::string invalid_report_dir = fs::path(ProgramPath("program 2")) / "invalid";
+  ASSERT_TRUE(files::CreateDirectory(invalid_report_dir));
+
+  ASSERT_TRUE(metadata().RecreateFromAndCleanupFilesystem());
+
+  EXPECT_TRUE(metadata().Contains("program 1"));
+  EXPECT_TRUE(metadata().Contains(0));
+
+  EXPECT_TRUE(metadata().Contains("program 2"));
+  EXPECT_TRUE(metadata().Contains(1));
+  EXPECT_FALSE(metadata().Contains(2));
+  EXPECT_TRUE(IsDirectory("program 2/1"));
+  EXPECT_FALSE(IsDirectory(invalid_report_dir));
+}
+
+TEST_F(ReportStoreMetadataTest, RecreateFromFilesystemAttachmentNotFile) {
+  ASSERT_TRUE(WriteAttachment("program 1", /*report_id=*/0, "key 1", "value"));
+  ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/1, "key 1", "value"));
+  ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/2, "key 1", "value"));
+  ASSERT_TRUE(
+      files::CreateDirectory((fs::path(ProgramPath("program 2")) / "2" / "attachment").string()));
+  ASSERT_TRUE(WriteFile("program 2/2/attachment/key 2", "value"));
+
+  ASSERT_TRUE(metadata().RecreateFromAndCleanupFilesystem());
+
+  EXPECT_TRUE(metadata().Contains("program 1"));
+  EXPECT_TRUE(metadata().Contains(0));
+
+  EXPECT_TRUE(metadata().Contains("program 2"));
+  EXPECT_TRUE(metadata().Contains(1));
+  EXPECT_TRUE(metadata().Contains(2));
+  EXPECT_TRUE(IsDirectory("program 2/1"));
+  EXPECT_TRUE(IsFile("program 2/2/key 1"));
+  EXPECT_FALSE(IsDirectory("program 2/2/attachment"));
 }
 
 TEST_F(ReportStoreMetadataTest, ReportAttachmentPath_AttachmentExists) {

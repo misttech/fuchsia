@@ -30,11 +30,11 @@ class ReportStoreMetadata {
   // manipulated.
   bool IsDirectoryUsable() const;
 
-  // Recreates the metadata from the report store at |report_store_root_|.
+  // Recreates the metadata from the report store at |report_store_root_|. If any paths aren't in
+  // the expected format (e.g. the report ID directory name isn't an integer), it will be deleted.
   //
-  // Returns false if the |metadata| does not accurately represent the filesystem and the underlying
-  // directory can't safely be used.
-  bool RecreateFromFilesystem();
+  // Returns false if the the report store root can't be safely used.
+  bool RecreateFromAndCleanupFilesystem();
 
   bool Contains(ReportId report_id) const;
   bool Contains(const std::string& program) const;

@@ -9,8 +9,12 @@
 #include <algorithm>
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 #include "src/lib/files/directory.h"
+#include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
+#include "src/lib/fxl/strings/string_number_conversions.h"
 
 namespace forensics {
 namespace crash_reports {
@@ -22,10 +26,10 @@ ReportStoreMetadata::ReportStoreMetadata(std::string report_store_root, const St
       max_size_(max_size),
       current_size_(StorageSize::Bytes(0u)),
       is_directory_usable_(false) {
-  RecreateFromFilesystem();
+  RecreateFromAndCleanupFilesystem();
 }
 
-bool ReportStoreMetadata::RecreateFromFilesystem() {
+bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
   current_size_ = StorageSize::Bytes(0u);
   report_metadata_.clear();
   program_metadata_.clear();
@@ -36,15 +40,41 @@ bool ReportStoreMetadata::RecreateFromFilesystem() {
     return false;
   }
 
+  std::vector<fs::path> invalid_paths;
   for (const auto& program_dir : fs::directory_iterator(report_store_root_)) {
     const std::string program = program_dir.path().filename();
 
+    if (!files::IsDirectory(program_dir.path())) {
+      FX_LOGS(WARNING) << "Unexpectedly not a program directory. Deleting: " << program_dir.path();
+      invalid_paths.push_back(program_dir.path());
+      continue;
+    }
+
     for (const auto& report_dir : fs::directory_iterator(program_dir)) {
-      const ReportId report_id = std::stoull(report_dir.path().filename());
+      if (!files::IsDirectory(report_dir.path())) {
+        FX_LOGS(WARNING) << "Unexpectedly not a report directory. Deleting: " << report_dir.path();
+        invalid_paths.push_back(report_dir.path());
+        continue;
+      }
+
+      ReportId report_id;
+      if (!fxl::StringToNumberWithError(report_dir.path().filename().string(), &report_id)) {
+        FX_LOGS(WARNING) << "Report id unexpectedly not an integer: "
+                         << report_dir.path().filename() << ". Deleting: " << report_dir.path();
+        invalid_paths.push_back(report_dir.path());
+        continue;
+      }
 
       std::vector<std::string> attachments;
       StorageSize report_size = StorageSize::Bytes(0);
       for (const auto& attachment : fs::directory_iterator(report_dir)) {
+        if (!files::IsFile(attachment.path())) {
+          FX_LOGS(WARNING) << "Attachment file unexpectedly not a file. Deleting: "
+                           << attachment.path();
+          invalid_paths.push_back(attachment.path());
+          continue;
+        }
+
         attachments.push_back(attachment.path().filename());
         std::error_code ec;
         StorageSize attachment_size = StorageSize::Bytes(fs::file_size(attachment, ec));
@@ -63,6 +93,12 @@ bool ReportStoreMetadata::RecreateFromFilesystem() {
 
       program_metadata_[program].dir = program_dir.path();
       program_metadata_[program].report_ids.push_back(report_id);
+    }
+  }
+
+  for (const auto& path : invalid_paths) {
+    if (!files::DeletePath(path, /*recursive=*/true)) {
+      FX_LOGS(WARNING) << "Failed to delete: " << path;
     }
   }
 
