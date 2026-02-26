@@ -37,7 +37,30 @@ impl FromArgValue for Strategy {
 /// behavior change.
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
-#[argh(subcommand, name = "bisect")]
+#[argh(
+    subcommand,
+    name = "bisect",
+    note = "\
+    VERSION formats:
+  This parameter type (from-success, to-failure) refers to the product bundle version.
+
+  Steps to retrieve this information depends on which product bundle is being bisected,
+  but it can always be retrieved from the product bundle itself by running:
+
+    ffx product-bundle get-version <path/to/product/bundle>
+    ",
+    note = "\
+    For more information about how to use this tool, see go/fuchsia-product-bisection-userguide
+    ",
+    example = "\
+    // Bisect the core.vim3 product bundle between two provided versions.
+// (Note: core.vim3 is not yet supported: https://fxbug.dev/485981469 .)
+
+ffx product-bundle bisect core.vim3 \\
+    --from-success 29.20250826.6.1 \\
+    --to-failure 29.20250905.6.1
+    "
+)]
 pub struct BisectCommand {
     /// name of the product bundle being bisected.
     #[argh(positional)]

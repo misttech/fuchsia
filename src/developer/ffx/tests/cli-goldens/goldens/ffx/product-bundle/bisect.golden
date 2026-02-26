@@ -1,7 +1,9 @@
 {
   "name": "bisect",
   "description": "Generate a list of released versions between [--from-success] and [--to-failure] for every artifact contained within the given product bundle (e.g. platform, product, board). Assemble intermediate product bundles using combinations of the artifacts, and facilitate running tests on those PBs to quickly identify which artifact is the source of a bug or behavior change.",
-  "examples": [],
+  "examples": [
+    "// Bisect the core.vim3 product bundle between two provided versions.\n// (Note: core.vim3 is not yet supported: https://fxbug.dev/485981469 .)\n\nffx product-bundle bisect core.vim3 \\\n    --from-success 29.20250826.6.1 \\\n    --to-failure 29.20250905.6.1\n    "
+  ],
   "flags": [
     {
       "kind": "Switch",
@@ -96,7 +98,10 @@
       "hidden": false
     }
   ],
-  "notes": [],
+  "notes": [
+    "VERSION formats:\n  This parameter type (from-success, to-failure) refers to the product bundle version.\n\n  Steps to retrieve this information depends on which product bundle is being bisected,\n  but it can always be retrieved from the product bundle itself by running:\n\n    ffx product-bundle get-version <path/to/product/bundle>\n    ",
+    "For more information about how to use this tool, see go/fuchsia-product-bisection-userguide\n    "
+  ],
   "commands": [],
   "positionals": [
     {
