@@ -37,6 +37,12 @@ macro_rules! getter {
             NativeEndian::read_u64(&self.buffer.as_ref()[$offset])
         }
     };
+    ($name:ident, u128, $offset:expr) => {
+        pub fn $name(&self) -> u128 {
+            use $crate::byteorder::{ByteOrder, NativeEndian};
+            NativeEndian::read_u128(&self.buffer.as_ref()[$offset])
+        }
+    };
     ($name:ident, i8, $offset:expr) => {
         pub fn $name(&self) -> i8 {
             self.buffer.as_ref()[$offset]
@@ -58,6 +64,12 @@ macro_rules! getter {
         pub fn $name(&self) -> i64 {
             use $crate::byteorder::{ByteOrder, NativeEndian};
             NativeEndian::read_i64(&self.buffer.as_ref()[$offset])
+        }
+    };
+    ($name:ident, i128, $offset:expr) => {
+        pub fn $name(&self) -> i128 {
+            use $crate::byteorder::{ByteOrder, NativeEndian};
+            NativeEndian::read_i128(&self.buffer.as_ref()[$offset])
         }
     };
 }
@@ -109,6 +121,14 @@ macro_rules! setter {
             }
         }
     };
+    ($name:ident, u128, $offset:expr) => {
+        $crate::paste::item! {
+            pub fn [<set_ $name>](&mut self, value: u128) {
+                use $crate::byteorder::{ByteOrder, NativeEndian};
+                NativeEndian::write_u128(&mut self.buffer.as_mut()[$offset], value)
+            }
+        }
+    };
     ($name:ident, i8, $offset:expr) => {
         $crate::paste::item! {
             pub fn [<set_ $name>](&mut self, value: i8) {
@@ -137,6 +157,14 @@ macro_rules! setter {
             pub fn [<set_ $name>](&mut self, value: i64) {
                 use $crate::byteorder::{ByteOrder, NativeEndian};
                 NativeEndian::write_i64(&mut self.buffer.as_mut()[$offset], value)
+            }
+        }
+    };
+    ($name:ident, i128, $offset:expr) => {
+        $crate::paste::item! {
+            pub fn [<set_ $name>](&mut self, value: i128) {
+                use $crate::byteorder::{ByteOrder, NativeEndian};
+                NativeEndian::write_i128(&mut self.buffer.as_mut()[$offset], value)
             }
         }
     };

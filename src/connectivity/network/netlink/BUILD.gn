@@ -74,6 +74,7 @@ rustc_library("netlink") {
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:proptest",
     "//third_party/rust_crates:proptest-derive",
+    "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:test-case",
   ]
 

@@ -413,7 +413,7 @@ where
 }
 
 fn construct_request<R: RequestType>(
-    InetRequest { family, protocol, extensions, states, socket_id }: InetRequest,
+    InetRequest { family, protocol, extensions, states, socket_id, nlas: _ }: InetRequest,
 ) -> Result<eventloop::RequestArgs, Errno> {
     match family as u32 {
         linux_uapi::AF_INET => {
@@ -601,6 +601,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_types::ip::IpAddress;
+    use smallvec::smallvec;
 
     use crate::protocol_family::sock_diag::testutil::TestIpExt;
 
@@ -621,6 +622,7 @@ mod tests {
             extensions: ExtensionFlags::empty(),
             states: StateFlags::ESTABLISHED,
             socket_id,
+            nlas: smallvec![],
         };
 
         let args = construct_request::<Dump>(req).expect("valid request");
@@ -670,6 +672,7 @@ mod tests {
             extensions: ExtensionFlags::empty(),
             states: StateFlags::empty(),
             socket_id,
+            nlas: smallvec![],
         };
 
         let args = construct_request::<GetOne>(req).expect("valid request");
@@ -739,6 +742,7 @@ mod tests {
             extensions: ExtensionFlags::empty(),
             states: StateFlags::empty(),
             socket_id,
+            nlas: smallvec![],
         };
         let args = construct_request::<Destroy>(req).expect("valid request");
         let matchers = assert_matches!(args, eventloop::RequestArgs::Destroy(matchers) => matchers);
@@ -804,6 +808,7 @@ mod tests {
             extensions: ExtensionFlags::empty(),
             states: StateFlags::empty(),
             socket_id: socket_id.clone(),
+            nlas: smallvec![],
         };
         assert_eq!(construct_request::<Dump>(req), Err(Errno::ENOTSUP));
 
@@ -814,6 +819,7 @@ mod tests {
             extensions: ExtensionFlags::empty(),
             states: StateFlags::empty(),
             socket_id,
+            nlas: smallvec![],
         };
         assert_eq!(construct_request::<Dump>(req), Err(Errno::ENOTSUP));
 
@@ -828,6 +834,7 @@ mod tests {
                 net_types::ip::IpVersion::V4 => SocketId::new_v6(),
                 net_types::ip::IpVersion::V6 => SocketId::new_v4(),
             },
+            nlas: smallvec![],
         };
         assert_eq!(construct_request::<GetOne>(req.clone()), Err(Errno::EINVAL));
         assert_eq!(construct_request::<Destroy>(req.clone()), Err(Errno::EINVAL));

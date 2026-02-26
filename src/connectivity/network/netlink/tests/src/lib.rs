@@ -47,6 +47,7 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp as packet_formats_ndp;
+use smallvec::smallvec;
 use test_case::{test_case, test_matrix};
 
 use fidl_fuchsia_net_ext::FromExt as _;
@@ -1821,6 +1822,7 @@ async fn sock_diag_dump<I: Ip>(name: &str, proto: i32) {
             interface_id: 0,
             cookie: [0xFF; 8],
         },
+        nlas: smallvec![],
     };
 
     let mut message: NetlinkMessage<SockDiagRequest> = SockDiagRequest::InetRequest(req).into();
@@ -1884,6 +1886,7 @@ async fn sock_diag_get_one<I: Ip>(name: &str, proto: i32) {
             interface_id: 0,
             cookie: [0xFF; 8],
         },
+        nlas: smallvec![],
     };
 
     let mut message: NetlinkMessage<SockDiagRequest> = SockDiagRequest::InetRequest(req).into();
@@ -1979,6 +1982,7 @@ async fn sock_destroy_tcp<I: Ip>(name: &str) {
             // The match-all cookie.
             cookie: [0xFF; 8],
         },
+        nlas: smallvec![],
     };
 
     let msg = SockDiagRequest::InetSockDestroy(req);
@@ -2046,6 +2050,7 @@ async fn sock_destroy_id_mismatch<I: Ip>(name: &str) {
             interface_id: 0,
             cookie: [0xFF; 8],
         },
+        nlas: smallvec![],
     };
 
     let msg = SockDiagRequest::InetSockDestroy(req);

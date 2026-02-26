@@ -21,6 +21,7 @@ static REQ_UDP: LazyLock<InetRequest> = LazyLock::new(|| InetRequest {
     extensions: ExtensionFlags::empty(),
     states: StateFlags::ESTABLISHED,
     socket_id: SocketId::new_v4(),
+    nlas: smallvec![],
 });
 
 #[rustfmt::skip]
@@ -64,6 +65,7 @@ static REQ_TCP: LazyLock<InetRequest> = LazyLock::new(|| InetRequest {
     extensions: ExtensionFlags::empty(),
     states: StateFlags::ESTABLISHED,
     socket_id: SocketId::new_v4(),
+    nlas: smallvec![],
 });
 
 #[rustfmt::skip]

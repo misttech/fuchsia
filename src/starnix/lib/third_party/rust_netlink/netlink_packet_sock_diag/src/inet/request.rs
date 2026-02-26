@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Context;
-use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
-use netlink_packet_utils::{DecodeError, buffer};
+use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
+use netlink_packet_utils::traits::{Emitable, Parseable};
+use netlink_packet_utils::{DecodeError, ParseableParametrized, buffer};
+use smallvec::SmallVec;
 
 use crate::constants::*;
 use crate::inet::{SocketId, SocketIdBuffer};
@@ -16,7 +18,58 @@ buffer!(InetRequestBuffer(REQUEST_LEN) {
     pad: (u8, 3),
     states: (u32, 4..8),
     socket_id: (slice, 8..56),
+    payload: (slice, REQUEST_LEN..),
 });
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum RequestNla {
+    /// The raw bytes of a bytecode program. See [`crate::inet::bytecode`] for
+    /// parsing and serializing bytecode programs.
+    Bytecode(Vec<u8>),
+    Other(DefaultNla),
+}
+
+impl Nla for RequestNla {
+    fn value_len(&self) -> usize {
+        match self {
+            Self::Bytecode(v) => v.len(),
+            Self::Other(attr) => attr.value_len(),
+        }
+    }
+
+    fn kind(&self) -> u16 {
+        match self {
+            Self::Bytecode(_) => INET_DIAG_REQ_BYTECODE,
+            Self::Other(attr) => attr.kind(),
+        }
+    }
+
+    fn emit_value(&self, buffer: &mut [u8]) {
+        match self {
+            Self::Bytecode(v) => buffer[..v.len()].copy_from_slice(&v[..]),
+            Self::Other(attr) => attr.emit_value(buffer),
+        }
+    }
+}
+
+impl<'a, T: AsRef<[u8]> + ?Sized> InetRequestBuffer<&'a T> {
+    pub fn nlas(&self) -> impl Iterator<Item = Result<NlaBuffer<&'a [u8]>, DecodeError>> {
+        NlasIterator::new(self.payload()).map(|res| res.map_err(Into::into))
+    }
+}
+
+impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for RequestNla {
+    type Error = DecodeError;
+    fn parse(buf: &NlaBuffer<&'a T>) -> Result<Self, DecodeError> {
+        let payload = buf.value();
+        Ok(match buf.kind() {
+            INET_DIAG_REQ_BYTECODE => Self::Bytecode(payload.to_vec()),
+            kind => {
+                Self::Other(DefaultNla::parse(buf).context(format!("unknown NLA type {kind}"))?)
+            }
+        })
+    }
+}
 
 /// A request for Ipv4 and Ipv6 sockets
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -39,6 +92,7 @@ pub struct InetRequest {
     /// Unlike UNIX domain sockets, IPv4 and IPv6 sockets are
     /// identified using addresses and ports.
     pub socket_id: SocketId,
+    pub nlas: SmallVec<[RequestNla; 4]>,
 }
 
 bitflags! {
@@ -115,19 +169,25 @@ impl<'a, T: AsRef<[u8]> + ?Sized + 'a> Parseable<InetRequestBuffer<&'a T>> for I
         )
         .context(err)?;
 
+        let mut nlas = SmallVec::new();
+        for nla_buf in buf.nlas() {
+            nlas.push(RequestNla::parse(&nla_buf?)?);
+        }
+
         Ok(Self {
             family: buf.family(),
             protocol: buf.protocol(),
             extensions: ExtensionFlags::from_bits_truncate(buf.extensions()),
             states: StateFlags::from_bits_truncate(buf.states()),
             socket_id,
+            nlas,
         })
     }
 }
 
 impl Emitable for InetRequest {
     fn buffer_len(&self) -> usize {
-        REQUEST_LEN
+        REQUEST_LEN + self.nlas.as_slice().buffer_len()
     }
 
     fn emit(&self, buf: &mut [u8]) {
@@ -137,6 +197,7 @@ impl Emitable for InetRequest {
         buf.set_extensions(self.extensions.bits());
         buf.set_pad(0);
         buf.set_states(self.states.bits());
-        self.socket_id.emit(buf.socket_id_mut())
+        self.socket_id.emit(buf.socket_id_mut());
+        self.nlas.as_slice().emit(&mut buf.payload_mut());
     }
 }

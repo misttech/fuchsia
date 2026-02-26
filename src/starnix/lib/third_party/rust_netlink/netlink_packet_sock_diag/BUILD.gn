@@ -22,6 +22,7 @@ rustc_library("netlink_packet_sock_diag") {
   sources = [
     "src/buffer.rs",
     "src/constants.rs",
+    "src/inet/bytecode.rs",
     "src/inet/mod.rs",
     "src/inet/nlas.rs",
     "src/inet/request.rs",

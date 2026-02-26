@@ -274,3 +274,46 @@ pub const SHUT_WR: u8 = 1;
 /// Shutdown state of a socket. A socket shut down with `SHUT_RDWR`
 /// can no longer receive nor send data. See also `man 2 shutdown`.
 pub const SHUT_RDWR: u8 = 2;
+
+/// A request that contains an attached bytecode program.
+///
+/// From Linux's inet_diag.h:
+///
+/// > Bytecode is sequence of 4 byte commands followed by variable arguments.
+/// > All the commands identified by "code" are conditional jumps forward:
+/// > to offset cc+"yes" or to offset cc+"no". "yes" is supposed to be
+/// > length of the command and its arguments.
+///
+/// The program terminates when the instruction pointer passes the end of the
+/// program. The program matches the socket if the instruction pointer is just
+/// past the end, and rejects it if the instruction pointer is any further.
+pub const INET_DIAG_REQ_BYTECODE: u16 = 1;
+
+/// Jumps forward to `yes`.
+pub const INET_DIAG_BC_NOP: u8 = 0;
+/// Jump forward to `no`.
+pub const INET_DIAG_BC_JMP: u8 = 1;
+/// Source port greater than or equal to.
+pub const INET_DIAG_BC_S_GE: u8 = 2;
+/// Source port less than or equal to.
+pub const INET_DIAG_BC_S_LE: u8 = 3;
+/// Destination port greater than or equal to.
+pub const INET_DIAG_BC_D_GE: u8 = 4;
+/// Destination port less than or equal to.
+pub const INET_DIAG_BC_D_LE: u8 = 5;
+/// Socket was not explicitly bound to a port.
+pub const INET_DIAG_BC_AUTO: u8 = 6;
+/// Source IP and port match.
+pub const INET_DIAG_BC_S_COND: u8 = 7;
+/// Destination IP and port match.
+pub const INET_DIAG_BC_D_COND: u8 = 8;
+/// Device of the socket (if bound using SO_BINDTODEVICE).
+pub const INET_DIAG_BC_DEV_COND: u8 = 9;
+/// The socket mark, masked against a provided mask.
+pub const INET_DIAG_BC_MARK_COND: u8 = 10;
+/// Source port equals.
+pub const INET_DIAG_BC_S_EQ: u8 = 11;
+/// Destination port equals.
+pub const INET_DIAG_BC_D_EQ: u8 = 12;
+/// Cgroup ID.
+pub const INET_DIAG_BC_CGROUP_COND: u8 = 13;

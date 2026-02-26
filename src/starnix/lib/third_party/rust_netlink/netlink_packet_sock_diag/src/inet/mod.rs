@@ -11,5 +11,7 @@ pub use self::response::*;
 
 pub mod nlas;
 
+pub mod bytecode;
+
 #[cfg(test)]
 mod tests;
