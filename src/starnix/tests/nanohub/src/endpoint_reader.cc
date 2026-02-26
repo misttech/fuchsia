@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -90,11 +91,16 @@ bool check_symlink_file(const char* path1, const char* path2) {
 // Opens the given device path.
 // Returns a file descriptor on success, or -1 on failure.
 static int OpenDevice(const char* path) {
-  int fd = open(path, O_RDWR);
-  if (fd == -1) {
-    fprintf(stderr, "Error: Failed to open path: %s\n", path);
+  while (1) {
+    int fd = open(path, O_RDWR);
+    if (fd == -1) {
+      fprintf(stdout, "Warning: [%s] when attempting to open path: %s. Retrying...\n",
+              strerror(errno), path);
+      sleep(1);
+      continue;
+    }
+    return fd;
   }
-  return fd;
 }
 
 // Reads the contents of the given file descriptor into `out`.
