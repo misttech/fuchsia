@@ -650,4 +650,247 @@ TEST(SeccompTest, RetTrapSignalUsesRightArch) {
   });
 }
 
+TEST(SeccompTest, BpfIndRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_LDX | BPF_W | BPF_IMM, 0),
+        BPF_STMT(BPF_LD | BPF_W | BPF_IND, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfLdHRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_LD | BPF_H | BPF_ABS, offsetof(struct seccomp_data, nr)),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfLdBRejected) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_LD | BPF_B | BPF_ABS, offsetof(struct seccomp_data, nr)),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfLdxLen) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // Init X = 0 so verifier doesn't complain.
+        BPF_STMT(BPF_LDX | BPF_IMM, 0),
+        // Init A = 64
+        BPF_STMT(BPF_LD | BPF_IMM, 64),
+        // Linux: X = 64. Fuchsia (bug): A = 64, X unchanged (0).
+        BPF_STMT(BPF_LDX | BPF_W | BPF_LEN, 0),
+        // If A == X, SECCOMP_RET_ALLOW. Else ERRNO = 123.
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_X, 0, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 123),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0), 0);
+
+    // Try a syscall.
+    long res = syscall(SYS_getpid);
+    // On Linux, A == X (64 == 64), so it's allowed.
+    // On Fuchsia, A (64) != X (0), so it returns ERRNO.
+    EXPECT_NE(res, -1);
+  });
+}
+
+TEST(SeccompTest, BpfDivZero) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_ALU | BPF_DIV | BPF_K, 0),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    // Linux returns EINVAL. Fuchsia currently allows it.
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfLshTooLarge) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        BPF_STMT(BPF_ALU | BPF_LSH | BPF_K, 32),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    // Linux returns EINVAL. Fuchsia currently allows it.
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfDivXRuntime) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.ExpectSignal(SIGSYS);
+
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // Load 0 into X
+        BPF_STMT(BPF_LDX | BPF_IMM, 0),
+        // Divide A by X (0)
+        BPF_STMT(BPF_ALU | BPF_DIV | BPF_X, 0),
+        // Return ALLOW
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    EXPECT_EQ(0, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+
+    // Will trigger the filter.
+    // In Linux, division by zero terminates the BPF execution and returns 0 (KILL_THREAD).
+    // In Fuchsia, division by zero sets A=0 and CONTINUES, reaching RET ALLOW.
+    getpid();
+
+    // If we reach here, it means we survived, so Fuchsia behavior is observed.
+    // In Linux, the process is killed before this point.
+    // We exit with a specific code so we can check it.
+    exit(42);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(SeccompTest, BpfMemUninitialized) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // Read from uninitialized memory slot 0 into A
+        BPF_STMT(BPF_LD | BPF_MEM, 0),
+        // Return ALLOW
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+    // Linux tracks memory initialization and returns EINVAL.
+    // Fuchsia's cbpf_to_ebpf just maps this to a stack read without initialization tracking.
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0));
+    EXPECT_EQ(EINVAL, errno);
+  });
+}
+
+TEST(SeccompTest, BpfAbsOutOfBounds) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    // sizeof(seccomp_data) is 64.
+    // Linux checks k >= sizeof(seccomp_data), so 64 is invalid.
+    // Starnix checks k > sizeof(seccomp_data), so 64 is valid (bug).
+    sock_filter filter[] = {
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, sizeof(struct seccomp_data)),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+    sock_fprog prog = {
+        .len = ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+
+    // We expect the test to pass on Linux (result -1, errno EINVAL).
+    // If Starnix allows it (result 0), this expectation fails.
+    int res = prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0);
+    EXPECT_EQ(res, -1);
+    EXPECT_EQ(errno, EINVAL);
+  });
+}
+
+TEST(SeccompTest, BpfUninitX) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.ExpectSignal(SIGSYS);
+  helper.RunInForkedProcess([] {
+    EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+    sock_filter filter[] = {
+        // MOV X to A. X is uninitialized (should be 0).
+        // Linux allows this load.
+        BPF_STMT(BPF_MISC | BPF_TXA, 0),
+        BPF_STMT(BPF_RET | BPF_A, 0),
+    };
+    sock_fprog prog = {
+        .len = (unsigned short)ARRAY_SIZE(filter),
+        .filter = filter,
+    };
+
+    // Linux allows load.
+    EXPECT_EQ(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0), 0);
+
+    // Runtime:
+    // X is 0. A becomes 0. RET 0 -> KILL_THREAD.
+    syscall(__NR_getpid);
+    exit(0);  // Should not be reached.
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 }  // anonymous namespace

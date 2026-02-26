@@ -131,6 +131,18 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
+
+                // TODO(https://fxbug.dev/485971506): Fix seccomp bpf in Fuchsia
+                "SeccompTest.BpfIndRejected",
+                "SeccompTest.BpfLdHRejected",
+                "SeccompTest.BpfLdBRejected",
+                "SeccompTest.BpfLdxLen",
+                "SeccompTest.BpfDivZero",
+                "SeccompTest.BpfLshTooLarge",
+                "SeccompTest.BpfDivXRuntime",
+                "SeccompTest.BpfMemUninitialized",
+                "SeccompTest.BpfAbsOutOfBounds",
+                "SeccompTest.BpfUninitX",
             ],
         },
     ],
