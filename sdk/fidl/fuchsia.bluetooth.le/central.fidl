@@ -290,3 +290,12 @@ closed protocol Central {
         identifier bt.PeerIdString;
     });
 };
+
+/// Privileged version of the Central protocol, providing advanced features
+/// like socket offload. This protocol should only be routed to trusted and
+/// system components due to sensitive information and capabilities it composes.
+@available(added=NEXT)
+@discoverable(server="platform")
+closed protocol PrivilegedCentral {
+    compose Central;
+};

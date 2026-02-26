@@ -695,12 +695,12 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.bluetooth.le/ChannelListener.Accept",
+        "name": "fuchsia.bluetooth.le/ChannelListener.Connected",
         "strictness": "flexible",
-        "ordinal": "8021856324870536315",
+        "ordinal": "1099007400107710566",
         "direction": "two_way",
-        "request": "fuchsia.bluetooth.le/ChannelListenerAcceptRequest",
-        "response": "fuchsia.bluetooth.le/ChannelListener_Accept_Response"
+        "request": "fuchsia.bluetooth.le/ChannelListenerConnectedRequest",
+        "response": "fuchsia.bluetooth.le/ChannelListener_Connected_Response"
     },
     {
         "kind": "protocol",
@@ -709,14 +709,20 @@
         "transport": "channel"
     },
     {
-        "kind": "struct/member",
-        "name": "fuchsia.bluetooth.le/ChannelListenerAcceptRequest.channel",
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ChannelListenerConnectedRequest.channel",
         "ordinal": "1",
         "type": "fuchsia.bluetooth/Channel"
     },
     {
-        "kind": "struct",
-        "name": "fuchsia.bluetooth.le/ChannelListenerAcceptRequest",
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ChannelListenerConnectedRequest.ext_offload",
+        "ordinal": "2",
+        "type": "client_end:fuchsia.bluetooth.le/ChannelOffloadExt"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.bluetooth.le/ChannelListenerConnectedRequest",
         "resourceness": "resource"
     },
     {
@@ -761,6 +767,36 @@
     {
         "kind": "table",
         "name": "fuchsia.bluetooth.le/ChannelListenerRegistry_ListenL2cap_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/ChannelOffloadExt.StartOffload",
+        "strictness": "flexible",
+        "ordinal": "3302863655950434280",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/ChannelOffloadExtStartOffloadRequest",
+        "response": "fuchsia.bluetooth.le/ChannelOffloadExt_StartOffload_Response",
+        "error": "int32"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.bluetooth.le/ChannelOffloadExt",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.bluetooth.le/ChannelOffloadExtStartOffloadRequest"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ChannelOffloadExt_StartOffload_Response.offload_parameters",
+        "ordinal": "1",
+        "type": "fuchsia.bluetooth/L2capChannelOffloadParameters"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.bluetooth.le/ChannelOffloadExt_StartOffload_Response"
     },
     {
         "kind": "enum/member",
@@ -1133,6 +1169,12 @@
         "name": "fuchsia.bluetooth.le/ConnectionConnectL2capRequest.channel",
         "ordinal": "2",
         "type": "server_end:fuchsia.bluetooth/Channel"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/ConnectionConnectL2capRequest.ext_offload",
+        "ordinal": "4",
+        "type": "server_end:fuchsia.bluetooth.le/ChannelOffloadExt"
     },
     {
         "kind": "table/member",
@@ -1957,6 +1999,132 @@
         "name": "fuchsia.bluetooth.le/PhysicalLayer",
         "strictness": "flexible",
         "type": "uint8"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.Connect",
+        "strictness": "strict",
+        "ordinal": "3576709534865494980",
+        "direction": "one_way",
+        "request": "fuchsia.bluetooth.le/CentralConnectRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.ConnectPeripheral",
+        "strictness": "strict",
+        "ordinal": "8164300664993142618",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralConnectPeripheralRequest",
+        "response": "fuchsia.bluetooth.le/CentralConnectPeripheralResponse"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.CreateConnectedIsochronousGroup",
+        "strictness": "strict",
+        "ordinal": "433229464384712211",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralCreateConnectedIsochronousGroupRequest",
+        "response": "fuchsia.bluetooth.le/Central_CreateConnectedIsochronousGroup_Response",
+        "error": "fuchsia.bluetooth.le/CreateCigError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.DisconnectPeripheral",
+        "strictness": "strict",
+        "ordinal": "762287950220452605",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralDisconnectPeripheralRequest",
+        "response": "fuchsia.bluetooth.le/CentralDisconnectPeripheralResponse"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.GetPeripheral",
+        "strictness": "strict",
+        "ordinal": "684364827058770906",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralGetPeripheralRequest",
+        "response": "fuchsia.bluetooth.le/CentralGetPeripheralResponse"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.GetPeripherals",
+        "strictness": "strict",
+        "ordinal": "4015653360434054056",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralGetPeripheralsRequest",
+        "response": "fuchsia.bluetooth.le/CentralGetPeripheralsResponse"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.ListenL2cap",
+        "strictness": "strict",
+        "ordinal": "4163271092247470904",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/ChannelListenerRegistryListenL2capRequest",
+        "response": "fuchsia.bluetooth.le/ChannelListenerRegistry_ListenL2cap_Response",
+        "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.OnDeviceDiscovered",
+        "strictness": "strict",
+        "ordinal": "506895609942666678",
+        "direction": "event",
+        "request": "fuchsia.bluetooth.le/CentralOnDeviceDiscoveredRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.OnPeripheralDisconnected",
+        "strictness": "strict",
+        "ordinal": "5642002732075263711",
+        "direction": "event",
+        "request": "fuchsia.bluetooth.le/CentralOnPeripheralDisconnectedRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.OnScanStateChanged",
+        "strictness": "strict",
+        "ordinal": "6885682926580682047",
+        "direction": "event",
+        "request": "fuchsia.bluetooth.le/CentralOnScanStateChangedRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.Scan",
+        "strictness": "strict",
+        "ordinal": "4753287824271204703",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralScanRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.StartScan",
+        "strictness": "strict",
+        "ordinal": "1059699466289877803",
+        "direction": "two_way",
+        "request": "fuchsia.bluetooth.le/CentralStartScanRequest",
+        "response": "fuchsia.bluetooth.le/CentralStartScanResponse"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.StopScan",
+        "strictness": "strict",
+        "ordinal": "6879792045015185312",
+        "direction": "one_way"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral.SyncToPeriodicAdvertising",
+        "strictness": "strict",
+        "ordinal": "2141143943042090425",
+        "direction": "one_way",
+        "request": "fuchsia.bluetooth.le/CentralSyncToPeriodicAdvertisingRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.bluetooth.le/PrivilegedCentral",
+        "openness": "closed",
+        "transport": "channel"
     },
     {
         "kind": "protocol/member",

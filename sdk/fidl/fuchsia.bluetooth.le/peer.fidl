@@ -184,6 +184,12 @@ closed protocol Connection {
         2: channel server_end:bt.Channel;
         /// The PSM of the remote side to connect to.
         3: psm Psm;
+        /// Channel offload extension. See [`fuchsia.bluetooth.le/ChannelOffloadExt`].
+        /// Only privileged clients are allowed to offload channels. This
+        /// protocol will be closed for other clients. The client must
+        /// additionally call `ChannelOffloadExt.StartOffload` to start offloading.
+        @available(added=NEXT)
+        4: ext_offload server_end:ChannelOffloadExt;
     });
 
     /// Send synchronization information for a periodic advertising train identified by `sync_id` to

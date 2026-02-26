@@ -117,3 +117,32 @@ type ChannelParameters = table {
     /// For LE: Unused, must not be present.
     4: flush_timeout zx.Duration;
 };
+
+/// Set of low-level L2CAP channel parameters needed to transfer control of
+/// a channel to an offload processor.
+@available(added=NEXT)
+type L2capChannelOffloadParameters = table {
+    /// The HCI ACL connection handle to the peer over which this L2CAP channel exists.
+    /// Required.
+    1: acl_connection_handle uint16;
+
+    /// Required.
+    2: local_l2cap_channel_id uint16;
+
+    /// Required.
+    3: remote_l2cap_channel_id uint16;
+
+    /// The maximum payload size of a RX L2CAP PDU, not to be confused with the MTU of
+    /// application layer payloads.
+    /// Required.
+    4: local_l2cap_maximum_payload_size uint16;
+
+    /// The maximum paylod size of a TX L2CAP PDU, not to be confused with the MTU of
+    /// application layer payloads.
+    /// Required.
+    5: remote_l2cap_maximum_payload_size uint16;
+
+    /// The initial number of TX flow control credits received from the peer.
+    /// Optional. Not present for channels without flow control.
+    6: initial_tx_credits uint16;
+};

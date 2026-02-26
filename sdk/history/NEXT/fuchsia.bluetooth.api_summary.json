@@ -647,6 +647,46 @@
         "name": "fuchsia.bluetooth/Int8"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.acl_connection_handle",
+        "ordinal": "1",
+        "type": "uint16"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.initial_tx_credits",
+        "ordinal": "6",
+        "type": "uint16"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.local_l2cap_channel_id",
+        "ordinal": "2",
+        "type": "uint16"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.local_l2cap_maximum_payload_size",
+        "ordinal": "4",
+        "type": "uint16"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.remote_l2cap_channel_id",
+        "ordinal": "3",
+        "type": "uint16"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters.remote_l2cap_maximum_payload_size",
+        "ordinal": "5",
+        "type": "uint16"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.bluetooth/L2capChannelOffloadParameters"
+    },
+    {
         "kind": "enum/member",
         "name": "fuchsia.bluetooth/LogicalTransportType.LE_BIS",
         "value": "2"
