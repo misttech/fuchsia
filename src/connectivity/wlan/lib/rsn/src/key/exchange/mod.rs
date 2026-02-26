@@ -6,11 +6,11 @@ pub mod handshake;
 
 use self::handshake::fourway::{self, Fourway};
 use self::handshake::group_key::{self, GroupKey};
+use crate::Error;
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
 use crate::key::ptk::Ptk;
 use crate::rsna::{Dot11VerifiedKeyFrame, NegotiatedProtection, UpdateSink};
-use crate::Error;
 use zerocopy::SplitByteSlice;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,9 +41,8 @@ impl Key {
 }
 
 #[derive(Debug, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub enum Method {
-    FourWayHandshake(Fourway),
+    FourWayHandshake(Box<Fourway>),
     GroupKeyHandshake(GroupKey),
 }
 
@@ -71,7 +70,7 @@ impl Method {
 
     pub fn destroy(self) -> Config {
         match self {
-            Method::FourWayHandshake(hs) => hs.destroy(),
+            Method::FourWayHandshake(hs) => (*hs).destroy(),
             Method::GroupKeyHandshake(hs) => hs.destroy(),
         }
     }
