@@ -119,7 +119,7 @@ readonly NINJA_ACTION_METRICS_FILE="ninja_action_metrics.json"
 readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
 
 # Unified standalone build script that can enable RBE, profiling, ResultStore...
-readonly main_build_script="${FUCHSIA_DIR}/build/scripts/main_build.py"
+readonly top_build_wrapper="${FUCHSIA_DIR}/build/scripts/top_build_wrap.sh"
 
 # If ResultStore is enabled, wrap builds with ResultStore tools.
 RESULTSTORE_ENABLED=0
@@ -134,6 +134,19 @@ date="$(date +%Y%m%d-%H%M%S)"
 readonly date
 
 readonly jq="$PREBUILT_JQ"
+
+# TODO: Replace RBE_WRAPPER uses with $top_build_wrapper
+# For commands whose subprocesses may use reclient for RBE, prefix those
+# commands conditioned on 'if fx-rbe-enabled' (function).
+# This could not be made into a shell-function because it is used
+# as both a function and non-built-in command, and functions do not compose
+# by prefixing in shell.
+RBE_WRAPPER=( "$FUCHSIA_DIR"/build/rbe/fuchsia-reproxy-wrap.sh )
+# Propagate tracing option from `fx -x build` to the wrapper script.
+# This is less invasive than re-exporting SHELLOPTS.
+if [[ -o xtrace ]]; then
+  RBE_WRAPPER=(/bin/bash -x "${RBE_WRAPPER[@]}" )
+fi
 
 # fx-command-stdout-to-array runs a command and stores its standard output
 # into an array (expecting one item per line, preserving spaces).
@@ -162,9 +175,24 @@ fi
 readonly BUILD_LOGS_DIR=_build_logs
 readonly build_logs_root="${FUCHSIA_OUT_DIR}/${BUILD_LOGS_DIR}"
 
-# LINT.IfChange(build_log_dir_structure)
+# Establishes a centralized log directory for a build invocation.
+# The directory structure is:
+#   ${build_logs_root}/$(basename ${FUCHSIA_BUILD_DIR})/build.<timestamp>
+function fx-new-build-log-dir() {
+  fx-config-read
+  local -r out_dir_name="$(basename "${FUCHSIA_BUILD_DIR}")"
+  local -r log_dir_base="${build_logs_root}/${out_dir_name}"
+  mkdir -p "${log_dir_base}"
+
+  local timestamp
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  local log_dir
+  log_dir="$(mktemp -d "${log_dir_base}/build.${timestamp}.XXXXXXXX")"
+  echo "${log_dir}"
+}
+
 # Prints the path to the most recent build log directory
-# created by main_build.sh.
+# created by fx-new-build-log-dir().
 function fx-get-last-build-log-dir() {
   fx-build-dir-if-present || return
   local -r out_dir_name="$(basename "${FUCHSIA_BUILD_DIR}")"
@@ -178,7 +206,6 @@ function fx-get-last-build-log-dir() {
     fi
   fi
 }
-# LINT.ThenChange(/build/scripts/main_build.py:build_log_dir_structure)
 
 # Use this to conditionally prefix a command with "${RBE_WRAPPER[@]}".
 # NOTE: this function depends on FUCHSIA_BUILD_DIR which is set only after
@@ -997,6 +1024,66 @@ function fx-uuid {
   "${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())'
 }
 
+function fx-choose-build-concurrency {
+  # If any remote execution is enabled (e.g. via RBE),
+  # allow ninja to launch many more concurrent actions than what local
+  # resources can support.
+  if fx-rbe-enabled ; then
+    # The recommendation from the Goma team is to use 10*cpu-count for C++.
+    local cpus
+    cpus="$(fx-cpu-count)"
+    echo $((cpus * 10))
+  else
+    fx-cpu-count
+  fi
+}
+
+function fx-cpu-count {
+  local -r cpu_count=$(getconf _NPROCESSORS_ONLN)
+  echo "$cpu_count"
+}
+
+
+# Use a lock file around a command if possible.
+# Print a message if the lock isn't immediately entered,
+# and block until it is.
+function fx-try-locked {
+  if [[ -z "${_FX_LOCK_FILE}" ]]; then
+    fx-error "fx internal error: attempt to run locked command before fx-config-read"
+    exit 1
+  fi
+  if ! command -v shlock >/dev/null; then
+    # Can't lock! Fall back to unlocked operation.
+    fx-exit-on-failure "$@"
+  elif shlock -f "${_FX_LOCK_FILE}" -p $$; then
+    # This will cause a deadlock if any subcommand calls back to fx build,
+    # because shlock isn't reentrant by forked processes.
+    fx-cmd-locked "$@"
+  else
+    echo "Locked by ${_FX_LOCK_FILE}..."
+    while ! shlock -f "${_FX_LOCK_FILE}" -p $$; do sleep .1; done
+
+    # This message is critical for AI agents to understand when a build
+    # is proceeding after acquiring a lock. Do not remove.
+    echo "Lock acquired, proceeding with build."
+
+    fx-cmd-locked "$@"
+  fi
+}
+
+function fx-cmd-locked {
+  if [[ -z "${_FX_LOCK_FILE}" ]]; then
+    fx-error "fx internal error: attempt to run locked command before fx-config-read"
+    exit 1
+  fi
+  # Exit trap to clean up lock file. Intentionally use the current value of
+  # $_FX_LOCK_FILE rather than the value at the time that trap executes to
+  # ensure we delete the original file even if the value of $_FX_LOCK_FILE
+  # changes for whatever reason.
+  trap "[[ -n \"\${_FX_LOCK_FILE}\" ]] && rm -f \"\${_FX_LOCK_FILE}\"" EXIT
+  fx-exit-on-failure "$@"
+}
+
 function fx-exit-on-failure {
   "$@" || exit $?
 }
@@ -1005,7 +1092,7 @@ function fx-exit-on-failure {
 # prepending necessary RBE wrapper scripts to it.
 #
 # Arguments:
-#    print_full_cmd   if true, prints the full command line before
+#    print_full_cmd   if true, prints the full ninja command line before
 #                     executing it
 #    command_type     either "ninja" or "bazel"
 #
@@ -1013,54 +1100,334 @@ function fx-exit-on-failure {
 #
 function fx-run-build-command {
   local print_full_cmd="$1"
-  local command_type="$2"
-  shift 2
-  local -a args=(
-    "--build-dir" "${FUCHSIA_BUILD_DIR}"
-    "--out-dir" "${FUCHSIA_OUT_DIR}"
-    "--rbe=$(fx-rbe-enabled && echo true || echo false)"
-    "--resultstore=${RESULTSTORE_ENABLED}"
-    "--profile=${BUILD_PROFILE_ENABLED}"
-  )
-  if [[ "${print_full_cmd}" == "true" ]]; then
-    args+=("--verbose")
+  shift
+  local command_type="$1"
+  shift
+  local build_command=("$@")
+
+  # Check for a bad element in $PATH.
+  # We build tools in the build, such as touch(1), targeting Fuchsia. Those
+  # tools end up in the root of the build directory, which is also $PWD for
+  # tool invocations. As we don't have hermetic locations for all of these
+  # tools, when a user has an empty/pwd path component in their $PATH,
+  # the Fuchsia target tool will be invoked, and will fail.
+  # Implementation detail: Normally you would split path with IFS or a similar
+  # strategy, but catching the case where the first or last components are
+  # empty can be tricky in that case, so the pattern match strategy here covers
+  # the cases more easily. We check for three cases: empty prefix, empty suffix
+  # and empty inner.
+  case "${PATH}" in
+  :*|*:|*::*)
+    fx-error "Your \$PATH contains an empty element that will result in build failure."
+    fx-error "Remove the empty element from \$PATH and try again."
+    echo "${PATH}" | grep --color -E '^:|::|:$' >&2
+    exit 1
+  ;;
+  .:*|*:.|*:.:*)
+    fx-error "Your \$PATH contains the working directory ('.') that will result in build failure."
+    fx-error "Remove the '.' element from \$PATH and try again."
+    echo "${PATH}" | grep --color -E '^.:|:.:|:.$' >&2
+    exit 1
+  ;;
+  esac
+
+  local -a top_build_command=( "$top_build_wrapper" )
+  if [[ -o xtrace ]]; then
+    top_build_command=( /bin/bash -x "${top_build_command[@]}" )
   fi
-  args+=(
-    "${command_type}"
-    "$@"
+
+  # TERM is passed for the pretty ninja UI
+  # PATH is passed through.  The ninja actions should invoke tools without
+  # relying on PATH.
+  # TMPDIR was passed for Goma on macOS, but it might have other uses.
+  # NINJA_STATUS, NINJA_STATUS_MAX_COMMANDS and NINJA_STATUS_REFRESH_MILLIS
+  # are passed to control Ninja progress status.
+  #
+  # rbe_wrapper is used to auto-start/stop a (reclient) proxy process for the
+  # duration of the build, so that RBE-enabled build actions can operate
+  # through the proxy.
+  #
+  local -r build_uuid="$(fx-uuid)"
+  local -a user_rbe_env=()
+
+  [[ "${FX_BUILD_AUTO_AUTH:-NOT_SET}" == "NOT_SET" ]] || {
+    fx-warn "FX_BUILD_AUTO_AUTH is no longer used from the environment."
+    cat <<EOF
+To disable gcert-based authentication in build tools, manually set in .fx/config/build-auth:
+
+  loas_cert_type=restricted
+
+You can confirm that authentication still works with 'fx rbe auth'.
+EOF
+  }
+
+  if fx-build-needs-auth
+  then
+    local -r loas_type_detected="$(fx-command-run rbe _check_loas_type)"
+    top_build_command+=( --loas-type "$loas_type_detected" )
+
+    local -r loas_type_for_bazel="$loas_type_detected"
+    user_rbe_env+=(
+      # Automatic auth with gcert (from re-client bootstrap) needs $USER.
+      "USER=${USER}"
+
+      # Bazel sub-builds use FX_BUILD_LOAS_TYPE in wrapper.bazel.sh.
+      "FX_BUILD_LOAS_TYPE=$loas_type_for_bazel"
+
+      # A few tools need application credentials for authentication,
+      # like 'remotetool'.
+      # Explicitly set this variable without forwarding $HOME.
+      # User-overridable.
+      # Note: When using gcert to authenticate for bazel,
+      # unset this variable to prevent bazel from looking for a file
+      # that it doesn't need.  This is handled in bazel wrappers.
+      "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+
+      # For bazel subinvocations to be able to authenticate with gcert,
+      # need to forward the authentication socket (used by gnubby).
+      "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}"
+    )
+  else
+    top_build_command+=( --loas-type "skip" )
+  fi
+
+  # Create a unique log directory for this build invocation.
+  # Do this unconditionally, so that other build-log-consuming
+  # tools can use it.
+  local -r build_log_dir="$(fx-new-build-log-dir)"
+  top_build_command+=(
+    --build-dir "$FUCHSIA_BUILD_DIR"
+    --log-dir "$build_log_dir"
   )
-  "${main_build_script}" "${args[@]}"
+
+  # Record the invocation Id, which is also used for the top-level
+  # ninja invocation results streamed to ResultStore (if enabled).
+  echo "$build_uuid" > "$build_log_dir/invocation_id"
+
+  if fx-rbe-enabled
+  then
+    top_build_command+=( --rbe )
+
+    # Honor additional cfg files from the current build dir.
+    local -r rbe_config_json="$FUCHSIA_BUILD_DIR/rbe_config.json"
+    local -a proxy_cfg_args=()
+    if [[ -r "$rbe_config_json" ]]
+    then
+      # shellcheck disable=SC2207
+      all_proxy_cfgs=($("$jq" '.[] | .path' "$rbe_config_json" | sed -e 's|"\(.*\)"|\1|'))
+      # Adjust paths to be absolute.
+      for f in "${all_proxy_cfgs[@]}"
+      do top_build_command+=( --reproxy-cfg "$FUCHSIA_BUILD_DIR/$f" )
+        # cumulative, repeatable
+      done
+    fi
+
+    [[ "${USER-NOT_SET}" != "NOT_SET" ]] || {
+      echo "Error: USER is not set"
+      exit 1
+    }
+    user_rbe_env+=(
+      # Honor environment variable to disable RBE build metrics.
+      "FX_REMOTE_BUILD_METRICS=${FX_REMOTE_BUILD_METRICS}"
+    )
+  fi
+
+  envs=(
+    "FX_BUILD_UUID=$build_uuid"
+    "FX_BUILD_LOGDIR=$build_log_dir"
+    "${user_rbe_env[@]}"
+    "TERM=${TERM}"
+    "PATH=${PATH}"
+    # By default, also show the number of actively running actions.
+    "NINJA_STATUS=${NINJA_STATUS:-"[%f/%t][%p/%w](%r) "}"
+    # By default, print the 4 oldest commands that are still running.
+    "NINJA_STATUS_MAX_COMMANDS=${NINJA_STATUS_MAX_COMMANDS:-4}"
+    "NINJA_STATUS_REFRESH_MILLIS=${NINJA_STATUS_REFRESH_MILLIS:-100}"
+    "NINJA_PERSISTENT_MODE=${NINJA_PERSISTENT_MODE:-0}"
+    # Forward the following only if the environment already sets them:
+    ${MAKEFLAGS+"MAKEFLAGS=${MAKEFLAGS}"}
+    ${FUCHSIA_BAZEL_DISK_CACHE+"FUCHSIA_BAZEL_DISK_CACHE=${FUCHSIA_BAZEL_DISK_CACHE}"}
+    ${FUCHSIA_BAZEL_JOB_COUNT+"FUCHSIA_BAZEL_JOB_COUNT=$FUCHSIA_BAZEL_JOB_COUNT"}
+    ${FUCHSIA_DEBUG_BAZEL_SANDBOX+"FUCHSIA_DEBUG_BAZEL_SANDBOX=${FUCHSIA_DEBUG_BAZEL_SANDBOX}"}
+    ${NINJA_PERSISTENT_TIMEOUT_SECONDS+"NINJA_PERSISTENT_TIMEOUT_SECONDS=$NINJA_PERSISTENT_TIMEOUT_SECONDS"}
+    ${NINJA_PERSISTENT_LOG_FILE+"NINJA_PERSISTENT_LOG_FILE=$NINJA_PERSISTENT_LOG_FILE"}
+    ${TMPDIR+"TMPDIR=$TMPDIR"}
+    ${CLICOLOR_FORCE+"CLICOLOR_FORCE=$CLICOLOR_FORCE"}
+    ${FX_BUILD_RBE_STATS+"FX_BUILD_RBE_STATS=$FX_BUILD_RBE_STATS"}
+    ${FX_BUILD_QUIET+"FX_BUILD_QUIET=$FX_BUILD_QUIET"}
+    "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}"
+  )
+
+  if [[ "$BUILD_PROFILE_ENABLED" == 1 ]]
+  then top_build_command+=( --profile )
+  fi
+
+  if [[ "$command_type" == "ninja" ]]; then
+    # Inject a ninja option to save the dirty-sources log to a
+    # per-invocation log dir.
+    # For now, we only do this for the top-level ninja invocation,
+    # and not worry about sub-invocations.
+    # We implement this here instead of fx-run-ninja(), which is unaware
+    # of $build_log_dir.
+    local -r ninja_log_dir="${build_log_dir}/ninja_logs"
+    # This log dir is suitable for per-invocation ninja artifacts
+    # like trace files.
+    mkdir -p "$ninja_log_dir"
+
+    local -r dirty_sources_abspath="$ninja_log_dir/$NINJA_DIRTY_SOURCES_FILE"
+    # Produce a summary of the action counts by mnemonic.
+    local -r action_metrics_abspath="$ninja_log_dir/$NINJA_ACTION_METRICS_FILE"
+
+    local -a auto_ninja_args=(
+      --dirty_sources_list "$dirty_sources_abspath"
+      --action_metrics_output "$action_metrics_abspath"
+    )
+    build_command=(
+      # ninja or equivalent drop-in replacement
+      "${build_command[@]:0:1}"
+      # injecting here guarantees it precedes any -- before positional args
+      "${auto_ninja_args[@]}"
+      "${build_command[@]:1}"
+    )
+  fi
+
+  if [[ "${RESULTSTORE_ENABLED}" == 1 ]]; then
+    top_build_command+=( --resultstore )
+
+    local -a pre_build_uploads=(
+      args.gn
+    )
+    for f in "${pre_build_uploads[@]}"
+    do top_build_command+=(--pre-build-uploads "$FUCHSIA_BUILD_DIR/$f")
+    done
+  fi
+
+  local full_cmdline=(
+    env -i "${envs[@]}"
+    "${top_build_command[@]}"
+    --
+    "${build_command[@]}"
+  )
+
+  if [[ "${print_full_cmd}" = true ]]; then
+    echo "${full_cmdline[@]}"
+    echo
+  fi
+  if [[ "${command_type}" == "ninja" ]]; then
+    fx-try-locked "${full_cmdline[@]}"
+  else
+    # There is no need to use a lock file for Bazel
+    "${full_cmdline[@]}"
+  fi
 }
 
-# Run a Ninja build command after setting up the environment and prepending
-# optional wrappers for RBE and profiling to it.
+# Massage a ninja command line to add default -j and/or -l switches.
 # Arguments:
-#    print_full_cmd   if true, prints the full command line before
+#    print_full_cmd   if true, prints the full ninja command line before
 #                     executing it
-#    ninja command    the ninja command itself.
+#    ninja command    the ninja command itself. This can be used both to run
+#                     ninja directly or to run a wrapper script around ninja.
 function fx-run-ninja {
-  fx-run-build-command "$1" "ninja" "${@:2}"
+  # Separate the command from the arguments so we can prepend default -j/-l
+  # switch arguments.  They need to come before the user's arguments in case
+  # those include -- or something else that makes following arguments not be
+  # handled as normal switches.
+  local print_full_cmd="$1"
+  shift
+  local cmd="$1"
+  shift
+
+  local args=()
+  local full_cmdline
+  local cpu_load
+  local concurrency
+  local have_load=false
+  local have_jobs=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -l)
+      have_load=true
+      cpu_load="$2"
+      ;;
+    -j)
+      have_jobs=true
+      concurrency="$2"
+      ;;
+    -l*)
+      have_load=true
+      cpu_load="${1#-l}"
+      ;;
+    -j*)
+      have_jobs=true
+      concurrency="${1#-j}"
+      ;;
+    esac
+    args+=("$1")
+    shift
+  done
+
+  if ! "$have_load"; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      # Load level on Darwin is quite different from that of Linux, wherein a
+      # load level of 1 per CPU is not necessarily a prohibitive load level. An
+      # unscientific study of build side effects suggests that cpus*20 is a
+      # reasonable value to prevent catastrophic load (i.e. user can not kill
+      # the build, can not lock the screen, etc).
+      local cpus
+      cpus="$(fx-cpu-count)"
+      cpu_load=$((cpus * 20))
+      args=("-l" "${cpu_load}" "${args[@]}")
+    fi
+  elif [[ -z "${cpu_load}" ]]; then
+    echo "ERROR: Missing cpu load (-l) argument."
+    exit 1
+  fi
+
+  if ! "$have_jobs"; then
+    concurrency="$(fx-choose-build-concurrency)"
+    # macOS in particular has a low default for number of open file descriptors
+    # per process, which is prohibitive for higher job counts. Here we raise
+    # the number of allowed file descriptors per process if it appears to be
+    # low in order to avoid failures due to the limit. See `getrlimit(2)` for
+    # more information.
+    local min_limit=$((concurrency * 2))
+    if [[ $(ulimit -n) -lt "${min_limit}" ]]; then
+      ulimit -n "${min_limit}"
+    fi
+    args=("-j" "${concurrency}" "${args[@]}")
+  elif [[ -z "${concurrency}" ]]; then
+    echo "ERROR: Missing job count (-j) argument."
+    exit 1
+  fi
+
+  if [[ "${have_jobs}" ]]; then
+    # Pass any _explicit_ job count provided by the user to the Bazel
+    # launcher script through an environment variable.
+    # See https://fxbug.dev/351623259
+    FUCHSIA_BAZEL_JOB_COUNT=${concurrency}
+  fi
+
+
+  # Tell ninja to source edge weights from a GN-generated file of estimates
+  # that come from GN metadata on the actions.
+  # LINT.IfChange(edge_weights_file)
+  args=("--edge_weights_list=ninja_edge_weights.csv" "${args[@]}")
+  # LINT.ThenChange(//tools/integration/fint/ninja.go)
+
+  fx-run-build-command "${print_full_cmd}" "ninja" "${cmd}" "${args[@]}"
 }
 
 # Run a Bazel build command after setting up the environment and prepending
 # optional wrappers for RBE and profiling to it.
 # Arguments:
-#    print_full_cmd   if true, prints the full command line before
+#    print_full_cmd   if true, prints the full ninja command line before
 #                     executing it
-#    bazel command    the bazel command itself.
+#    ninja command    the ninja command itself. This can be used both to run
+#                     ninja directly or to run a wrapper script around ninja.
 function fx-run-bazel {
-  fx-run-build-command "$1" "bazel" "${@:2}"
-}
-
-# Run a fint build command after setting up the environment, prepending
-# optional wrappers for RBE and profiling to it, and generating a
-# context textproto with the right concurrency.
-# Arguments:
-#    print_full_cmd   if true, prints the full command line before
-#                     executing it
-#    fint command     the fint command itself.
-function fx-run-fint {
-  fx-run-build-command "$1" "fint" "${@:2}"
+  local print_full_cmd="$1"
+  shift
+  fx-run-build-command "${print_full_cmd}" bazel "$@"
 }
 
 function fx-get-image {

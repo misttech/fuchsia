@@ -671,7 +671,33 @@ function main {
     readonly fint="${FX_CACHE_DIR}/fint"
     "$FUCHSIA_DIR/tools/integration/bootstrap.sh" -o "$fint" || exit $?
 
-    (fx-run-fint "${is_logging}" "$fint" -log-level=error build -static="${fint_params_path}" "${extra_switches[@]}")
+    # TODO: replace RBE_WRAPPER with $top_build_wrapper
+    local rbe_wrapper=()
+    if fx-rbe-enabled
+    then
+      rbe_wrapper=("${RBE_WRAPPER[@]}" -- )
+    fi
+
+    # It's not ideal that we resort to constructing the textproto file as a
+    # string, but it's easier than writing a Go tool solely for the purpose of
+    # constructing a protobuf with a couple top-level string fields set.
+    if (( concurrency == 0 )); then
+      concurrency="$(fx-choose-build-concurrency)"
+      # macOS in particular has a low default for number of open file descriptors
+      # per process, which is prohibitive for higher job counts. Here we raise
+      # the number of allowed file descriptors per process if it appears to be
+      # low in order to avoid failures due to the limit. See `getrlimit(2)` for
+      # more information.
+      local min_limit=$((concurrency * 2))
+      if [[ $(ulimit -n) -lt "${min_limit}" ]]; then
+        ulimit -n "${min_limit}"
+      fi
+    fi
+    "${rbe_wrapper[@]}" "$fint" -log-level=error build -static="${fint_params_path}" -context=<(echo "
+checkout_dir: \"${FUCHSIA_DIR}\"
+build_dir: \"${FUCHSIA_BUILD_DIR}\"
+job_count: $concurrency
+")
     status=$?
     exit-with-message
   fi
