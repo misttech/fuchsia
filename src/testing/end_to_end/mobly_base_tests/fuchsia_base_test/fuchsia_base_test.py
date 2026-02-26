@@ -28,8 +28,6 @@ from mobly import signals, test_runner
 from mobly.base_test import BaseTestClass as MoblyBaseTestClass
 from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
-from mobly_controller import openwrt_ap
-from mobly_controller.openwrt_ap import OpenwrtAp
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -123,12 +121,9 @@ class FuchsiaBaseTest(MoblyBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        self.fuchsia_devices = self.register_controller(
-            fuchsia_device_mobly_controller
-        )
-        self.openwrt_aps: list[OpenwrtAp] = self.register_controller(
-            openwrt_ap, required=False, min_number=0
-        )
+        self.fuchsia_devices: list[
+            fuchsia_device.FuchsiaDevice
+        ] = self.register_controller(fuchsia_device_mobly_controller)
 
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS

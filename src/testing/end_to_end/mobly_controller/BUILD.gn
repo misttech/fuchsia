@@ -10,7 +10,7 @@ group("mobly_controller") {
   deps = [ ":mobly_controller_no_testonly" ]
 }
 
-# TODO: https://fxbug.dev/486509142 - Separate access_point into own library.
+# TODO(https://fxbug.dev/486509142): Separate access_point into own library.
 
 python_library("mobly_controller_no_testonly") {
   # In-tree-only tests should prefer ":mobly_controller" because that enforces
@@ -27,6 +27,7 @@ python_library("mobly_controller_no_testonly") {
   sources = [
     "__init__.py",
     "access_point/__init__.py",
+    "access_point/access_point_config.py",
     "access_point/openwrt_lib.py",
     "fuchsia_device.py",
     "openwrt_ap.py",

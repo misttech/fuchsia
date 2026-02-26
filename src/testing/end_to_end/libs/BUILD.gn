@@ -10,7 +10,7 @@ group("e2e_tests_libs") {
   deps = [ ":libs" ]
 }
 
-# TODO: https://fxbug.dev/486509630 - Clean up "libs" library and folder.
+# TODO(https://fxbug.dev/486509630): Clean up "libs" library and folder.
 
 python_library("libs") {
   library_name = "libs"

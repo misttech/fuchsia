@@ -10,16 +10,30 @@ from fuchsia_base_test import fuchsia_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, signals, test_runner
+from mobly_controller import openwrt_ap
+from mobly_controller.access_point.access_point_config import (
+    AccessPointConfig,
+    Band,
+    Security,
+)
+from mobly_controller.access_point.openwrt_lib import OpenwrtAp
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class OpenwrtApTest(fuchsia_base_test.FuchsiaBaseTest):
+class OpenwrtApScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         super().setup_class()
         self.log = logging.getLogger()
 
+        if not self.fuchsia_devices:
+            raise signals.TestAbortClass(
+                "At least one Fuchsia device is required"
+            )
+        self.openwrt_aps: list[OpenwrtAp] | None = self.register_controller(
+            openwrt_ap
+        )
         if not self.fuchsia_devices:
             raise signals.TestAbortClass(
                 "At least one Fuchsia device is required"
@@ -31,52 +45,130 @@ class OpenwrtApTest(fuchsia_base_test.FuchsiaBaseTest):
 
         self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
 
-        # TODO(b/461905545): generate ssid from random string util
-        # self.ssid = rand_ascii_str(10)
-        self.ssid = "test_ssid"
         self.openwrt_ap = self.openwrt_aps[0]
-        self.openwrt_ap.setup_ap(ssid=self.ssid)
+
+    async def _test_scan_and_connect(
+        self, wifi_config: AccessPointConfig
+    ) -> None:
+        """Helper to test scanning and connecting for a given Wi-Fi config."""
+        self.openwrt_ap.configure_wifi(wifi_config)
         asserts.assert_true(
-            self.openwrt_ap.verify_wifi_status(), "WiFi failed to start."
+            self.openwrt_ap.verify_wifi_status(band=wifi_config.band),
+            "WiFi failed to start.",
         )
 
-    def test_scan_and_connect(self) -> None:
-        """Test case for scanning and connecting to an OpenWRT AP."""
-        if not self.openwrt_ap:
-            raise signals.TestSkip("OpenWRT AP required for this test.")
+        self.log.info("Starting scan for SSID: %s", wifi_config.ssid)
+        bss_desc_for_ssid = None
+        for attempt in range(3):  # Retry up to 3 times
+            bss_scan_response = await self.device.wlan_core.scan_for_bss_info()
+            bss_desc_for_ssid = bss_scan_response.get(wifi_config.ssid)
+            if bss_desc_for_ssid and len(bss_desc_for_ssid) > 0:
+                break
+            self.log.info(
+                f"SSID {wifi_config.ssid} not found on attempt {attempt + 1}, retrying..."
+            )
+            import asyncio
 
-        self.log.info("Starting scan for SSID: %s", self.ssid)
-        bss_scan_response = self.device.wlan_core.scan_for_bss_info()
-        bss_desc_for_ssid = bss_scan_response.get(self.ssid)
+            await asyncio.sleep(2)
+
+        # TODO: https://fxbug.dev/487800358 - Create and use to_fidl() function.
+        if wifi_config.security == Security.WPA2:
+            if not wifi_config.password:
+                raise signals.TestFailure(
+                    "Password must be provided for WPA2 security"
+                )
+            authentication = f_wlan_common_security.Authentication(
+                f_wlan_common_security.Protocol.WPA2_PERSONAL,
+                f_wlan_common_security.Credentials(
+                    wpa=f_wlan_common_security.WpaCredentials(
+                        passphrase=wifi_config.password.encode("utf-8")
+                    )
+                ),
+            )
+        elif wifi_config.security in (Security.WPA3, Security.WPA2_WPA3):
+            if not wifi_config.password:
+                raise signals.TestFailure(
+                    "Password must be provided for WPA3 security"
+                )
+            authentication = f_wlan_common_security.Authentication(
+                f_wlan_common_security.Protocol.WPA3_PERSONAL,
+                f_wlan_common_security.Credentials(
+                    wpa=f_wlan_common_security.WpaCredentials(
+                        passphrase=wifi_config.password.encode("utf-8")
+                    )
+                ),
+            )
+        else:
+            authentication = f_wlan_common_security.Authentication(
+                f_wlan_common_security.Protocol.OPEN, None
+            )
 
         if bss_desc_for_ssid and len(bss_desc_for_ssid) > 0:
-            success = self.device.wlan_core.connect(
-                ssid=self.ssid,
+            success = await self.device.wlan_core.connect(
+                ssid=wifi_config.ssid,
                 bss_desc=bss_desc_for_ssid[0],
-                authentication=f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.OPEN, None
-                ),
+                authentication=authentication,
             )
             asserts.assert_true(success, "Failed to connect.")
         else:
-            asserts.fail(f"SSID {self.ssid} not found in bss descriptions.")
+            asserts.fail(
+                f"SSID {wifi_config.ssid} not found in bss descriptions."
+            )
 
-        self.device.wlan_core.disconnect()
-        status = self.device.wlan_core.status()
+        await self.device.wlan_core.disconnect()
+        status = await self.device.wlan_core.status()
         if status == ClientStatusIdle():
             return
         asserts.fail(
             f"Status did not return to idle after disconnect: {status}"
         )
 
+    async def test_scan_and_connect_2g(self) -> None:
+        """Test case for scanning and connecting to a 2G OpenWRT AP."""
+        await self._test_scan_and_connect(
+            AccessPointConfig.generate(
+                ssid=AccessPointConfig.random_string(),
+                security=Security.NONE,
+                band=Band.BAND_2G,
+            )
+        )
+
+    async def test_scan_and_connect_5g(self) -> None:
+        """Test case for scanning and connecting to a 5G OpenWRT AP."""
+        await self._test_scan_and_connect(
+            AccessPointConfig.generate(
+                ssid=AccessPointConfig.random_string(),
+                security=Security.NONE,
+                band=Band.BAND_5G,
+            )
+        )
+
+    async def test_scan_and_connect_wpa2(self) -> None:
+        """Test case for scanning and connecting to a WPA2 network."""
+        await self._test_scan_and_connect(
+            AccessPointConfig.generate(
+                ssid=AccessPointConfig.random_string(),
+                password=AccessPointConfig.random_string(16),
+                security=Security.WPA2,
+                band=Band.BAND_2G,
+            )
+        )
+
+    async def test_scan_and_connect_wpa3(self) -> None:
+        """Test case for scanning and connecting to a WPA3 network."""
+        await self._test_scan_and_connect(
+            AccessPointConfig.generate(
+                ssid=AccessPointConfig.random_string(),
+                password=AccessPointConfig.random_string(16),
+                security=Security.WPA2_WPA3,
+                band=Band.BAND_2G,
+            )
+        )
+
     def teardown_class(self) -> None:
         super().teardown_class()
         if self.openwrt_ap:
             self.openwrt_ap.close()
-        else:
-            _LOGGER.warning(
-                "Skipping AP teardown: No OpenWRT controller available."
-            )
 
 
 if __name__ == "__main__":
