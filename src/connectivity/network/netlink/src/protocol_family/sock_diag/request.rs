@@ -32,19 +32,20 @@ use async_trait::async_trait;
 use futures::SinkExt;
 use futures::channel::{mpsc, oneshot};
 use net_types::SpecifiedAddress as _;
-use net_types::ip::{Ip, IpInvariant, Ipv4, Ipv6};
+use net_types::ip::{Ip, IpInvariant, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, SubnetEither};
 use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NetlinkMessage, NetlinkPayload};
+use netlink_packet_sock_diag::inet::bytecode::{self, Bytecode};
 use netlink_packet_sock_diag::inet::{ExtensionFlags, InetRequest, SocketId, StateFlags};
 use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse, TCP_CLOSE, TCP_ESTABLISHED};
 use {
-    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
-    fidl_fuchsia_net_sockets as fnet_sockets, fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_net_sockets_ext as fnet_sockets_ext,
 };
 
 use crate::client::InternalClient;
-use crate::logging::log_warn;
+use crate::logging::{log_error, log_warn};
 use crate::messaging::Sender;
-
 use crate::netlink_packet;
 use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::NetlinkFamilyRequestHandler;
@@ -286,6 +287,11 @@ trait MatcherPolicy: Default {
     fn push_cookie(&mut self, cookie: u64);
 
     fn push_interface(&mut self, interface: u32);
+
+    fn apply_nlas(
+        &mut self,
+        nlas: &[netlink_packet_sock_diag::inet::RequestNla],
+    ) -> Result<(), Errno>;
 }
 
 struct SingleSocketMatcherPolicy<I, T> {
@@ -349,6 +355,15 @@ where
             ));
         }
     }
+
+    fn apply_nlas(
+        &mut self,
+        _nlas: &[netlink_packet_sock_diag::inet::RequestNla],
+    ) -> Result<(), Errno> {
+        // Bytecode programs are the only NLA we care about, and they're only
+        // supported for dump requests.
+        Ok(())
+    }
 }
 
 /// A [`MatcherPolicy`] used for NLM_F_DUMP requests, where unset fields are
@@ -410,18 +425,45 @@ where
     fn push_interface(&mut self, _interface: u32) {
         // Interface-based filtering can only happen in bytecode.
     }
+
+    fn apply_nlas(
+        &mut self,
+        nlas: &[netlink_packet_sock_diag::inet::RequestNla],
+    ) -> Result<(), Errno> {
+        for nla in nlas {
+            match nla {
+                netlink_packet_sock_diag::inet::RequestNla::Bytecode(bc) => {
+                    let parsed =
+                        match netlink_packet_sock_diag::inet::bytecode::Bytecode::parse(&bc[..]) {
+                            Ok(parsed) => parsed,
+                            Err(e) => {
+                                log_warn!("Failed to parse bytecode program: {e:?}");
+                                return Err(Errno::EINVAL);
+                            }
+                        };
+
+                    matchers_from_bytecode::<I, _>(&mut self.matchers, &parsed)?;
+                }
+                _ => {
+                    log_warn!("Received unsupported NLA: {nla:?}");
+                    return Err(Errno::ENOTSUP);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn construct_request<R: RequestType>(
-    InetRequest { family, protocol, extensions, states, socket_id, nlas: _ }: InetRequest,
+    InetRequest { family, protocol, extensions, states, socket_id, nlas }: InetRequest,
 ) -> Result<eventloop::RequestArgs, Errno> {
     match family as u32 {
-        linux_uapi::AF_INET => {
-            construct_request_with_ip_version::<R, Ipv4>(protocol, extensions, states, socket_id)
-        }
-        linux_uapi::AF_INET6 => {
-            construct_request_with_ip_version::<R, Ipv6>(protocol, extensions, states, socket_id)
-        }
+        linux_uapi::AF_INET => construct_request_with_ip_version::<R, Ipv4>(
+            protocol, extensions, states, socket_id, &nlas,
+        ),
+        linux_uapi::AF_INET6 => construct_request_with_ip_version::<R, Ipv6>(
+            protocol, extensions, states, socket_id, &nlas,
+        ),
         _ => {
             log_warn!(
                 "Received NETLINK_SOCK_DIAG request for \
@@ -437,13 +479,14 @@ fn construct_request_with_ip_version<R: RequestType, I: Ip>(
     extensions: ExtensionFlags,
     states: StateFlags,
     socket_id: SocketId,
+    nlas: &[netlink_packet_sock_diag::inet::RequestNla],
 ) -> Result<eventloop::RequestArgs, Errno> {
     match protocol as u32 {
         linux_uapi::IPPROTO_TCP => {
-            construct_request_inner::<R, I, Tcp>(extensions, states, socket_id)
+            construct_request_inner::<R, I, Tcp>(extensions, states, socket_id, nlas)
         }
         linux_uapi::IPPROTO_UDP => {
-            construct_request_inner::<R, I, Udp>(extensions, states, socket_id)
+            construct_request_inner::<R, I, Udp>(extensions, states, socket_id, nlas)
         }
         _ => {
             log_warn!(
@@ -466,6 +509,7 @@ fn construct_request_inner<R: RequestType, I: Ip, T: TransportConverter>(
         interface_id,
         cookie,
     }: SocketId,
+    nlas: &[netlink_packet_sock_diag::inet::RequestNla],
 ) -> Result<eventloop::RequestArgs, Errno> {
     let mut matchers = R::MatcherPolicy::<I, T>::default();
 
@@ -477,6 +521,8 @@ fn construct_request_inner<R: RequestType, I: Ip, T: TransportConverter>(
     matchers.push_dst_addr(destination_address)?;
     matchers.push_interface(interface_id);
     matchers.push_cookie(u64::from_ne_bytes(cookie));
+
+    matchers.apply_nlas(nlas)?;
 
     Ok(R::into_request::<I, T>(matchers, extensions))
 }
@@ -594,9 +640,112 @@ fn convert_address<I: Ip>(
     }
 }
 
+/// Parses the bytecode program against a small number of known forms in order
+/// to extract matchers from it.
+pub(crate) fn matchers_from_bytecode<I, M>(
+    matchers: &mut M,
+    bytecode: &Bytecode,
+) -> Result<(), Errno>
+where
+    I: Ip,
+    M: Extend<fnet_sockets_ext::IpSocketMatcher>,
+{
+    match bytecode.0.as_slice() {
+        [
+            bytecode::Instruction::Condition {
+                yes: bytecode::Action::Accept,
+                no: bytecode::Action::Reject,
+                condition:
+                    bytecode::Condition::SrcTuple(bytecode::TupleCondition {
+                        prefix_len,
+                        // This means "match any port", which translated to FIDL
+                        // is no matcher at all.
+                        port: None,
+                        addr,
+                    }),
+            },
+        ] => {
+            let subnet = match I::map_ip_in::<_, Option<SubnetEither>>(
+                IpInvariant(addr),
+                |IpInvariant(addr)| match addr {
+                    Some(std::net::IpAddr::V4(addr)) => {
+                        net_types::ip::Subnet::new((*addr).into(), *prefix_len)
+                            .ok()
+                            .map(|s: net_types::ip::Subnet<Ipv4Addr>| s.into())
+                    }
+                    _ => None,
+                },
+                |IpInvariant(addr)| match addr {
+                    Some(std::net::IpAddr::V6(addr)) => {
+                        net_types::ip::Subnet::new((*addr).into(), *prefix_len)
+                            .ok()
+                            .map(|s: net_types::ip::Subnet<Ipv6Addr>| s.into())
+                    }
+                    _ => None,
+                },
+            ) {
+                Some(subnet) => subnet,
+                None => {
+                    log_warn!("Failed to parse subnet from bytecode: {addr:?}/{prefix_len}");
+                    return Err(Errno::EINVAL);
+                }
+            };
+
+            matchers.extend(std::iter::once(fnet_sockets_ext::IpSocketMatcher::SrcAddr(
+                fnet_matchers_ext::BoundAddress::Bound(fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(subnet.into()),
+                    invert: false,
+                }),
+            )));
+            Ok(())
+        }
+        [
+            bytecode::Instruction::Condition {
+                yes: bytecode::Action::AdvanceBy(forward_1),
+                no: bytecode::Action::Reject,
+                condition: bytecode::Condition::Mark { mark: mark1, mask: mask1 },
+            },
+            bytecode::Instruction::Condition {
+                yes: bytecode::Action::AdvanceBy(forward_2),
+                no: bytecode::Action::Accept,
+                condition: bytecode::Condition::Mark { mark: mark2, mask: mask2 },
+            },
+            bytecode::Instruction::Jmp(bytecode::Action::Reject),
+        ] if forward_1.get() == 1 && forward_2.get() == 1 => {
+            matchers.extend(std::iter::once(fnet_sockets_ext::IpSocketMatcher::Mark(
+                fnet_matchers_ext::MarkInDomain {
+                    domain: fnet::MarkDomain::Mark1,
+                    mark: fnet_matchers_ext::Mark::Marked {
+                        mask: *mask1,
+                        between: *mark1..=*mark1,
+                        invert: false,
+                    },
+                },
+            )));
+            matchers.extend(std::iter::once(fnet_sockets_ext::IpSocketMatcher::Mark(
+                fnet_matchers_ext::MarkInDomain {
+                    domain: fnet::MarkDomain::Mark1,
+                    mark: fnet_matchers_ext::Mark::Marked {
+                        mask: *mask2,
+                        between: *mark2..=*mark2,
+                        invert: true,
+                    },
+                },
+            )));
+            Ok(())
+        }
+        [] => Ok(()),
+        _ => {
+            log_error!("Received unexpected bytecode program: {bytecode:?}");
+            Err(Errno::ENOTSUP)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroUsize;
 
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
@@ -839,5 +988,94 @@ mod tests {
         assert_eq!(construct_request::<GetOne>(req.clone()), Err(Errno::EINVAL));
         assert_eq!(construct_request::<Destroy>(req.clone()), Err(Errno::EINVAL));
         assert_matches!(construct_request::<Dump>(req), Ok(_));
+    }
+
+    #[ip_test(I)]
+    fn matchers_from_bytecode_one<I: TestIpExt>() {
+        let (addr, prefix_len) = I::map_ip::<_, (I::Addr, _)>(
+            (),
+            |()| (net_types::ip::Ipv4Addr::new([192, 0, 2, 0]), 24),
+            |()| (net_types::ip::Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]), 64),
+        );
+
+        let bytecode = Bytecode(vec![bytecode::Instruction::Condition {
+            yes: bytecode::Action::Accept,
+            no: bytecode::Action::Reject,
+            condition: bytecode::Condition::SrcTuple(bytecode::TupleCondition {
+                prefix_len,
+                port: None,
+                addr: Some(addr.to_ip_addr().into()),
+            }),
+        }]);
+        let mut matchers = Vec::new();
+        assert_matches!(matchers_from_bytecode::<I, _>(&mut matchers, &bytecode), Ok(()));
+        assert_eq!(
+            matchers,
+            vec![fnet_sockets_ext::IpSocketMatcher::SrcAddr(
+                fnet_matchers_ext::BoundAddress::Bound(fnet_matchers_ext::Address {
+                    matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                        SubnetEither::from(
+                            net_types::ip::Subnet::<I::Addr>::new(addr, prefix_len).unwrap()
+                        )
+                        .into(),
+                    ),
+                    invert: false,
+                }),
+            )]
+        );
+    }
+
+    #[ip_test(I)]
+    fn matchers_from_bytecode_two<I: TestIpExt>() {
+        let bytecode = Bytecode(vec![
+            bytecode::Instruction::Condition {
+                yes: bytecode::Action::AdvanceBy(NonZeroUsize::new(1).unwrap()),
+                no: bytecode::Action::Reject,
+                condition: bytecode::Condition::Mark { mark: 42, mask: 0xffff },
+            },
+            bytecode::Instruction::Condition {
+                yes: bytecode::Action::AdvanceBy(NonZeroUsize::new(1).unwrap()),
+                no: bytecode::Action::Accept,
+                condition: bytecode::Condition::Mark { mark: 327680, mask: 327680 },
+            },
+            bytecode::Instruction::Jmp(bytecode::Action::Reject),
+        ]);
+        let mut matchers = Vec::new();
+        assert_matches!(matchers_from_bytecode::<I, _>(&mut matchers, &bytecode), Ok(()));
+        assert_eq!(
+            matchers,
+            vec![
+                fnet_sockets_ext::IpSocketMatcher::Mark(fnet_matchers_ext::MarkInDomain {
+                    domain: fnet::MarkDomain::Mark1,
+                    mark: fnet_matchers_ext::Mark::Marked {
+                        mask: 0xffff,
+                        between: 42..=42,
+                        invert: false,
+                    },
+                }),
+                fnet_sockets_ext::IpSocketMatcher::Mark(fnet_matchers_ext::MarkInDomain {
+                    domain: fnet::MarkDomain::Mark1,
+                    mark: fnet_matchers_ext::Mark::Marked {
+                        mask: 327680,
+                        between: 327680..=327680,
+                        invert: true,
+                    },
+                })
+            ]
+        );
+    }
+
+    #[ip_test(I)]
+    fn matchers_from_bytecode_invalid<I: TestIpExt>() {
+        let program = bytecode::Bytecode(vec![bytecode::Instruction::Condition {
+            yes: bytecode::Action::Accept,
+            no: bytecode::Action::Reject,
+            condition: bytecode::Condition::AutoPort,
+        }]);
+
+        assert_matches!(
+            matchers_from_bytecode::<I, _>(&mut Vec::new(), &program),
+            Err(Errno::ENOTSUP)
+        );
     }
 }

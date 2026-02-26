@@ -143,6 +143,12 @@ impl From<Subnet> for net_types::ip::SubnetEither {
     }
 }
 
+impl From<net_types::ip::SubnetEither> for Subnet {
+    fn from(subnet: net_types::ip::SubnetEither) -> Self {
+        Self(subnet)
+    }
+}
+
 impl From<Subnet> for fnet::Subnet {
     fn from(subnet: Subnet) -> Self {
         let Subnet(subnet) = subnet;

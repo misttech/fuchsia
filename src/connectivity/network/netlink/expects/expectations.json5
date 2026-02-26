@@ -28,6 +28,7 @@
                 "routes::tests::handles_duplicate_route_watcher_event_v[46]",
                 "routes::tests::handles_unknown_route_watcher_event_v[46]",
                 "routes::tests::handles_remove_nonexisting_route_watcher_event_v[46]",
+                "protocol_family::sock_diag::request::tests::matchers_from_bytecode_invalid_v[46]",
             ],
         },
     ],
