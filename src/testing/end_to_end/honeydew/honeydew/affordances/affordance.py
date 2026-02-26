@@ -5,7 +5,8 @@
 
 import abc
 import functools
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+from collections.abc import Callable, Coroutine
+from typing import Any, ParamSpec, TypeVar
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -46,7 +47,7 @@ def ensure_ready(
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         self: AsyncLazyReady = args[0]  # type: ignore[assignment]
         assert isinstance(self, AsyncLazyReady)
-        if not self._ready:
+        if not self._ready:  # pylint: disable=protected-access
             await self.make_ready()
         return await method(*args, **kwargs)
 

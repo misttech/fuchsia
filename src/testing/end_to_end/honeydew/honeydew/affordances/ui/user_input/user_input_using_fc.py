@@ -266,11 +266,11 @@ class UserInputUsingFc(user_input.UserInput):
         self.verify_supported()
 
     def _is_moniker_present(self, target_moniker: str) -> bool:
-        """
-        Determines if a target moniker is present in the JSON output from
-        'ffx component list'.
+        """Determines if a target moniker is present in the JSON output from 'ffx component list'.
+
         Args:
             target_moniker: The moniker to search for (e.g., "core/ui/input-helper").
+
         Returns:
             bool: True if the moniker is found, False otherwise.
         """

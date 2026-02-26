@@ -52,10 +52,7 @@ class UserInputFCTests(unittest.TestCase):
     def test_verify_supported_no_raise(self) -> None:
         """Test for user_input_using_fc.UserInputUsingFc() method not raise error with virtual
         device support."""
-        self.ffx_transport_obj.run.return_value = (
-            '{"instances": [{"moniker": "%s"}]}'
-            % user_input_using_fc._INPUT_HELPER_COMPONENT
-        )
+        self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
         user_input_using_fc.UserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
@@ -63,10 +60,7 @@ class UserInputFCTests(unittest.TestCase):
         )
 
     def user_input(self) -> user_input_using_fc.UserInputUsingFc:
-        self.ffx_transport_obj.run.return_value = (
-            '{"instances": [{"moniker": "%s"}]}'
-            % user_input_using_fc._INPUT_HELPER_COMPONENT
-        )
+        self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
         return user_input_using_fc.UserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,

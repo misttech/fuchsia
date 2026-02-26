@@ -433,7 +433,7 @@ class FfxImpl(ffx_interface.FFX):
                         "FFX Triage: State captured after command failure (ffx target status):\n%s",
                         output,
                     )
-                except Exception as e:
+                except Exception as e:  # pylint: disable=broad-exception-caught
                     _LOGGER.warning(
                         "Failed to execute diagnostic 'ffx target status' on target %s: %s",
                         self._target_name,

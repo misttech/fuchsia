@@ -96,6 +96,7 @@ def suspend_resume(
     """Disconnects USB, idles, reconnects.
 
     Args:
+        device: Fuchsia device object.
         deadline: this will idle for increasing durations, up to this deadline.
     """
     if deadline is None:
@@ -108,12 +109,12 @@ def suspend_resume(
             ["session", "drop-power-lease"],
             machine=ffx_types.MachineFormat.DISABLE,
         )
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         # TODO(https://fxbug.dev/485577846): Don't swallow this error.
         # We should have a way to
         # drop the power lease even if it's already missing, e.g.,
         # `ffx session drop-power-lease --allow-missing`.
-        _LOGGER.warning(f"Failed to drop power lease: {e}")
+        _LOGGER.warning("Failed to drop power lease: %s", e)
 
     attempt = -1
     while True:
@@ -121,8 +122,7 @@ def suspend_resume(
 
         if deadline.is_due():
             asserts.fail("SAG did not suspend during idle.")
-
-        _LOGGER.info(f"Suspension attempt {attempt + 1}...")
+        _LOGGER.info("Suspension attempt %s...", attempt + 1)
         before_off_charger_stats = get_sag_suspend_stats(device)
 
         sleep_deadline = deadline.subdeadline_from_duration(
@@ -141,7 +141,8 @@ def suspend_resume(
         )
 
         _LOGGER.info(
-            f"Suspend stats during off-charger idle: \n{while_off_charger_stats}"
+            "Suspend stats during off-charger idle: \n%s",
+            while_off_charger_stats,
         )
 
         # Ensure we actually suspended.

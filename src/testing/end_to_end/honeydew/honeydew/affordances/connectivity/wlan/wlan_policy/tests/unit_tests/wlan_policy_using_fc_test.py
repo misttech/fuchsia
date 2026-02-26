@@ -202,7 +202,11 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         # Create a FIDL client to the ClientStateUpdates server.
-        def get_controller(requests: Channel, updates: Channel) -> None:
+        def get_controller(
+            # pylint: disable-next=unused-argument
+            requests: Channel,
+            updates: Channel,
+        ) -> None:
             self.client_state_updates_proxy = (
                 f_wlan_policy.ClientStateUpdatesClient(updates)
             )

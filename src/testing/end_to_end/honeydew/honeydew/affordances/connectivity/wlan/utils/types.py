@@ -782,6 +782,7 @@ class CountryCode(enum.StrEnum):
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Self:
+        """Create an instance from a 2-byte UTF-8 encoded string."""
         if len(data) != 2:
             raise ValueError(
                 f"Expected exactly 2 bytes, got {len(data)}: {data!r}"
