@@ -3,6 +3,24 @@
 This page provides troubleshooting tips for making an ADB connection to Fuchsia
 devices.
 
+## Install the adb tool {:#install-adb}
+
+To use `ffx starnix adb` commands, you must have the `adb` tool installed on
+your host machine.
+
+To install the `adb` tool:
+
+* **Linux (Debian-based)**: Run the following command:
+
+    ```posix-terminal
+    sudo apt install adb
+    ```
+
+* **Other platforms**: Download the [Android SDK Platform-Tools][platform-tools]
+  and ensure the `adb` binary is in your `PATH`.
+
+## Forwarding ADB ports
+
 If you cannot use the `adb` command to connect to your Fuchsia device over USB,
 you can connect to an Android instance running inside Starnix using TCP port
 forwarding:
@@ -73,3 +91,7 @@ export ANDROID_SERIAL=localhost:{{ '<var>' }}HOST_PORT{{ '</var>' }}
 ```
 
 Once this environment variable is set, you can use `adb` commands normally.
+
+<!-- Reference links -->
+
+[platform-tools]: https://developer.android.com/tools/releases/platform-tools

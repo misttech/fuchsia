@@ -33,6 +33,9 @@ use {fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
 use crate::common::*;
 
 const ADB_DEFAULT_PORT: u16 = 5555;
+const ADB_INSTALL_HELP: &str = "Install the adb tool from the Android SDK Platform-Tools and \
+    ensure adb is in your $PATH. For more information, see \
+    https://fuchsia.dev/fuchsia-src/development/starnix/troubleshooting_ffx_starnix_adb_connect#install-adb";
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
@@ -80,6 +83,7 @@ impl StarnixAdbCommand {
         socket_addr: SshAddrHolder,
         nodename: Option<String>,
     ) -> Result<AdbCommandOutput> {
+        self.check_adb()?;
         match self.subcommand {
             AdbSubcommand::Connect(args) => args
                 .run_connect(context, self.adb, &socket_addr, nodename)
@@ -89,6 +93,23 @@ impl StarnixAdbCommand {
                 args.run_proxy(&self.adb, rcs_connector).await.map(AdbCommandOutput::Proxy)
             }
         }
+    }
+
+    pub fn check_adb(&self) -> Result<()> {
+        let mut adb_cmd = Command::new(&self.adb);
+        adb_cmd.arg("--version");
+        if let Err(io_err) = adb_cmd.output() {
+            if io_err.kind() == ErrorKind::NotFound {
+                return_user_error!(
+                    "Could not find adb binary named `{}`. \
+                    adb is required for this command. {}",
+                    self.adb,
+                    ADB_INSTALL_HELP
+                );
+            }
+            return_bug!("Failed to check for adb at `{}`: {}", self.adb, io_err);
+        }
+        Ok(())
     }
 }
 
@@ -319,17 +340,9 @@ impl AdbProxyArgs {
             std::thread::spawn(move || {
                 let mut adb_command = Command::new(&adb_path);
                 adb_command.arg("connect").arg(listen_address.to_string());
-                match adb_command.status() {
-                    Ok(_) => {}
-                    Err(io_err) if io_err.kind() == ErrorKind::NotFound => {
-                        panic!(
-                            "Could not find adb binary named `{adb_path}`. If your adb is not in your $PATH, use the --adb flag to specify where to find it."
-                        );
-                    }
-                    Err(io_err) => {
-                        panic!("Failed to run `${adb_command:?}`: {io_err:?}");
-                    }
-                }
+                adb_command
+                    .status()
+                    .expect("Failed to run adb connect. This should have been caught by check_adb");
             });
         } else {
             println!("ADB bridge started. To connect: adb connect {listen_address}");
