@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -634,6 +635,10 @@ class Workspace:
 
         # clone fuchsia repository and reset it to the commit hash
         logger.log_info("Setup the fuchsia repository.")
+
+        # We fetch fuchsia repository from the last 2 days because git hook will
+        # refer to commit from yesterday to generate integration_daily_commit_hash.
+        two_days_ago = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
         if not self.cartfs_fuchsia_dir.exists():
             self._run(
                 [
@@ -641,7 +646,7 @@ class Workspace:
                     "clone",
                     "https://fuchsia.googlesource.com/fuchsia",
                     f"--revision={fuchsia_repo_commit_hash}",
-                    "--depth=100",
+                    f"--shallow-since={two_days_ago}",
                 ],
                 cwd=self.cartfs_directory,
             )
@@ -658,7 +663,12 @@ class Workspace:
         else:
             self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
             self._run(
-                ["git", "fetch", "origin", "--depth=100"],
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    "main:refs/remotes/origin/main",
+                ],
                 self.cartfs_fuchsia_dir,
             )
             logger.log_info(
