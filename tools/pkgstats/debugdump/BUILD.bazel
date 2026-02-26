@@ -1,0 +1,13 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_binary(
+    name = "debugdump",
+    srcs = ["main.go"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = ["//tools/fidl/lib/fidlgen_cpp"],
+)

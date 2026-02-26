@@ -33,7 +33,7 @@ if (is_host) {
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
     ]
-    data_deps = [ "debugdump:host($host_toolchain)" ]
+    data_deps = [ "//build/bazel/host:bazel_root_host_tools.debugdump.host_tool($host_toolchain)" ]
     inputs = [
       "templates/base_template.html.hbs",
       "templates/content.html.hbs",

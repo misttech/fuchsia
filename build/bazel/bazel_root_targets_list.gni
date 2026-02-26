@@ -77,6 +77,16 @@ declare_args() {
                                         ]
                                         install_host_tool = true
                                       },
+                                      {
+                                        bazel_label = "//tools/pkgstats/debugdump:debugdump"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugdump_/debugdump"
+                                            ninja = "debugdump"
+                                          },
+                                        ]
+                                        install_host_tool = true
+                                      },
 
                                       # Bazel migration example.
                                       {
