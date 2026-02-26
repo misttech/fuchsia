@@ -16,7 +16,7 @@ var emuTypeToPackage = map[string]CIPDPackage{
 	"AEMU":   {Name: "fuchsia/third_party/android/aemu/release-gfxstream/${platform}", Subdir: "aemu/bin"},
 	"QEMU":   {Name: "fuchsia/third_party/qemu/${platform}", Subdir: "qemu"},
 	"crosvm": {Name: "fuchsia/third_party/crosvm/${platform}", Subdir: "crosvm/bin"},
-	"EDK2":   {Name: "fuchsia/third_party/edk2", Subdir: "edk2"},
+	"EDK2":   {Name: "fuchsia/third_party/edk2", Subdir: "firmware/edk2"},
 }
 
 // AddEmuVersion applies the necessary emulator and edk2 package info required for the shard

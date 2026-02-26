@@ -75,8 +75,10 @@ type EmulatorConfig struct {
 	// This option should be used judiciously, as it can slow the process down.
 	Serial bool `json:"serial"`
 
-	// EDK2Dir is a path to a directory of EDK II (UEFI) prebuilts.
-	EDK2Dir string `json:"edk2_dir"`
+	// FirmwareDir is a path to a directory of QEMU firmware prebuilts. The
+	// contents consist of installed CIPD packages (each at
+	// FirmwareDir/$cipd_pkg_name).
+	FirmwareDir string `json:"firmware_dir"`
 
 	// Path to the fvm host tool.
 	FVMTool string `json:"fvm_tool"`
@@ -235,7 +237,7 @@ func (t *Emulator) Start(ctx context.Context, args []string, pbPath string, isBo
 	if err != nil {
 		return err
 	}
-	edk2Dir := filepath.Join(t.config.EDK2Dir, "qemu-"+string(t.config.Target))
+	edk2Dir := filepath.Join(t.config.FirmwareDir, "edk2", "qemu-"+string(t.config.Target))
 	tools := ffxutil.EmuTools{
 		Emulator:   absBin,
 		FVM:        t.config.FVMTool,

@@ -51,10 +51,10 @@ func GetBotanistConfig(shard *Shard, buildDir string, tools build.Tools) error {
 	emuConfig := configWithType{
 		Type: strings.ToLower(deviceType),
 		EmulatorConfig: targets.EmulatorConfig{
-			Path:     fmt.Sprintf("./%s/bin", strings.ToLower(deviceType)),
-			EDK2Dir:  "./edk2",
-			Target:   targets.Target(shard.TargetCPU()),
-			Emulator: shard.Env.Emulator,
+			Path:        fmt.Sprintf("./%s/bin", strings.ToLower(deviceType)),
+			FirmwareDir: "./firmware",
+			Target:      targets.Target(shard.TargetCPU()),
+			Emulator:    shard.Env.Emulator,
 			// Is a directive to run the emu process in a way in which we can
 			// synthesize a 'serial device'. We need only do this in the bringup
 			// case, this being used for executing tests at that level;

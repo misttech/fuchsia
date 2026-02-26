@@ -92,7 +92,7 @@
             {
                 "name": "fuchsia/third_party/edk2",
                 "version": "edk2_version",
-                "subdir": "edk2"
+                "subdir": "firmware/edk2"
             }
         ],
         "bot_dimensions": {
@@ -320,7 +320,7 @@
             {
                 "name": "fuchsia/third_party/edk2",
                 "version": "edk2_version",
-                "subdir": "edk2"
+                "subdir": "firmware/edk2"
             }
         ],
         "bot_dimensions": {
