@@ -217,6 +217,13 @@ void TraceManager::CloseSession() {
   trace_controller_.reset();
 }
 
+void TraceManager::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FX_LOGS(WARNING) << "Received an unknown Registry method with ordinal "
+                   << metadata.method_ordinal;
+}
+
 void TraceManager::OnEmptyControllerSet() {
   // While one controller could go away and another remain causing a trace
   // to not be terminated, at least handle the common case.

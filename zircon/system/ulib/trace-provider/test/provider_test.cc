@@ -65,6 +65,19 @@ class FakeTraceManager : public fidl::Server<fuchsia_tracing_provider::Registry>
       fuchsia_tracing_provider::RegistryRegisterProviderSynchronouslyRequest& request,
       RegisterProviderSynchronouslyCompleter::Sync& completer) override {}
 
+  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override {}
+
+  void RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
+                               RegisterV2SynchronouslyCompleter::Sync& completer) override {
+    completer.Reply(fit::ok(fuchsia_tracing_provider::RegistryRegisterV2SynchronouslyResponse{{
+        .started = false,
+    }}));
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
   std::optional<fidl::Client<fuchsia_tracing_provider::Provider>>& provider_client() {
     return provider_client_;
   }

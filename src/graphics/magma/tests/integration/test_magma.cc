@@ -97,6 +97,17 @@ class FakeTraceRegistry : public fidl::WireServer<fuchsia_tracing_provider::Regi
       RegisterProviderSynchronouslyRequestView request,
       RegisterProviderSynchronouslyCompleter::Sync& _completer) override {}
 
+  void RegisterV2(RegisterV2RequestView request, RegisterV2Completer::Sync& _completer) override {
+    loop_.Quit();
+  }
+  void RegisterV2Synchronously(RegisterV2SynchronouslyRequestView request,
+                               RegisterV2SynchronouslyCompleter::Sync& _completer) override {}
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
  private:
   async::Loop& loop_;
 };

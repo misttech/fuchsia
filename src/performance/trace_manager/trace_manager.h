@@ -73,6 +73,9 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
 
   // For testing.
   TraceSession* session() const;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   void OnEmptyControllerSet();
 
@@ -92,6 +95,16 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
   void RegisterProviderSynchronously(
       RegisterProviderSynchronouslyRequest& request,
       RegisterProviderSynchronouslyCompleter::Sync& completer) override;
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+  void RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
+                               RegisterV2SynchronouslyCompleter::Sync& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+#endif
 
   void RegisterProviderWorker(fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider,
                               uint64_t pid, const std::string& name);
