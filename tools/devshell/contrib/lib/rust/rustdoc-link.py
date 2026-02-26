@@ -459,7 +459,11 @@ def make_output_directories(args: Namespace) -> None:
     """This type of operation is often done by the build system, but since
     we are running outside of that we have to do it manually.
     """
-    if not args.dry_run:
+    if args.dry_run:
+        # We plan to write {args.build_dir}/docs/rust/actions.json, so ensure
+        # that the directory exists.
+        Path(args.build_dir, "docs", "rust").mkdir(parents=True, exist_ok=True)
+    else:
         # remove the destination to ensure that we always document into a fresh
         # directory
         shutil.rmtree(args.output_base, ignore_errors=True)
