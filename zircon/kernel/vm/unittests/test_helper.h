@@ -122,6 +122,11 @@ bool fill_and_test_user(user_inout_ptr<void> ptr, size_t len);
 // expected_mapped_page_count) and that remaining pages are unmapped.
 bool verify_mapped_page_range(vaddr_t base, size_t mapping_size, size_t expected_mapped_page_count);
 
+// Verify that |vmo| has |expected_bytes| tracked by the continuous attribution system.
+//
+// This test helper must only be called on paged, non-slice VMOs.
+bool verify_continuous_attribution_bytes(VmObject& vmo, uint64_t expected_bytes);
+
 // Helper function that produces a filled out AttributionCounts for testing simple VMOs that just
 // have private and no shared content.
 VmObject::AttributionCounts make_private_attribution_counts(uint64_t uncompressed,

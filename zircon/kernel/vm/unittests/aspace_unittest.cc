@@ -1330,6 +1330,7 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   // Map the left half of the VMO.
   EXPECT_EQ(aspace->is_user(), true);
@@ -1339,6 +1340,7 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit pages a little into the mapping, and past it.
@@ -1352,12 +1354,14 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   status = vmo->DecommitRange(4 * kPageSize, 8 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit some pages in the VMO again.
   status = vmo->CommitRange(0, 10 * kPageSize);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(10ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 10ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(8ul * kPageSize, 0));
 
@@ -1365,12 +1369,14 @@ static bool vm_mapping_attribution_commit_decommit_test() {
   status = mapping->DecommitRange(0, mapping->size());
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 2ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Destroy the mapping.
   status = mapping->Destroy();
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(2ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 2ul * kPageSize));
   EXPECT_TRUE((vm::AttributionCounts{}) == mapping->GetAttributedMemory());
 
   // Free the test address space.
@@ -1398,6 +1404,7 @@ static bool vm_mapping_attribution_map_unmap_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   // Map the left half of the VMO.
   EXPECT_EQ(aspace->is_user(), true);
@@ -1407,12 +1414,14 @@ static bool vm_mapping_attribution_map_unmap_test() {
   fbl::RefPtr<VmMapping> mapping = ktl::move(mapping_result->mapping);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
   EXPECT_TRUE(mapping->GetAttributedMemory() == AttributionCounts{});
 
   // Commit pages in the vmo via the mapping.
   status = mapping->MapRange(0, mapping->size(), true);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 8ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(8ul * kPageSize, 0));
 
@@ -1425,6 +1434,7 @@ static bool vm_mapping_attribution_map_unmap_test() {
   EXPECT_EQ(old_base, mapping->base());
   EXPECT_EQ(7ul * kPageSize, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 8ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(7ul * kPageSize, 0));
 
@@ -1436,6 +1446,7 @@ static bool vm_mapping_attribution_map_unmap_test() {
   EXPECT_EQ(old_base, mapping->base());
   EXPECT_EQ(4ul * kPageSize, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 8ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(4ul * kPageSize, 0));
 
@@ -1447,6 +1458,7 @@ static bool vm_mapping_attribution_map_unmap_test() {
   EXPECT_NE(old_base, mapping->base());
   EXPECT_EQ(3ul * kPageSize, mapping->size());
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(8ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 8ul * kPageSize));
   EXPECT_TRUE(mapping->GetAttributedMemory() ==
               make_private_attribution_counts(3ul * kPageSize, 0));
 
@@ -1476,6 +1488,7 @@ static bool vm_mapping_attribution_merge_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   // Create some contiguous mappings, marked unmergeable (default behavior) to begin with.
   struct {
@@ -1491,6 +1504,7 @@ static bool vm_mapping_attribution_merge_test() {
     ASSERT_EQ(ZX_OK, mapping_result.status_value());
     mappings[i].ref = ktl::move(mapping_result->mapping);
     EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+    EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
     EXPECT_TRUE(mappings[i].ref->GetAttributedMemory() == mappings[i].expected_attribution_counts);
     offset += kSize;
   }
@@ -1900,6 +1914,8 @@ static bool vm_mapping_page_fault_range_test() {
     EXPECT_OK(Thread::Current::SoftFaultInRange(child_mapping->base(), kReadFlags, kAllocSize));
     EXPECT_TRUE(verify_mapped_page_range(child_mapping->base(), kAllocSize, kTestPages));
     EXPECT_TRUE(original_counts == child_vmo->GetAttributedMemory());
+    EXPECT_TRUE(verify_continuous_attribution_bytes(
+        *child_vmo, original_counts.uncompressed_bytes + original_counts.compressed_bytes));
   }
 
   // Calling ReadUser will fault the requested range.

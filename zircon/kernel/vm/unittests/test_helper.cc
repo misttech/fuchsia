@@ -249,6 +249,23 @@ bool verify_mapped_page_range(vaddr_t base, size_t mapping_size,
   END_TEST;
 }
 
+bool verify_continuous_attribution_bytes(VmObject& vmo, uint64_t expected_bytes) {
+  BEGIN_TEST;
+
+  VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(&vmo);
+  ASSERT_NONNULL(paged, "only paged VMOs have a continuously tracked populated bytes count");
+  EXPECT_NE(VmObject::ChildType::kSlice, paged->child_type(),
+            "slice VMOs do not have a continuously tracked populated bytes count");
+
+  if constexpr (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED) {
+    const uint64_t tracked_slots = paged->DebugGetCowPages()->DebugGetPopulatedSlotsCount();
+    const uint64_t tracked_bytes = kPageSize * tracked_slots;
+    EXPECT_EQ(expected_bytes, tracked_bytes);
+  }
+
+  END_TEST;
+}
+
 VmObject::AttributionCounts make_private_attribution_counts(uint64_t uncompressed,
                                                             uint64_t compressed) {
   return vm::AttributionCounts{
