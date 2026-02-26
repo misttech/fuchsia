@@ -394,7 +394,7 @@ async fn retries() {
     pkg.verify_contents(&package_dir).await.unwrap();
 
     let hierarchy = env.pkg_resolver_inspect_hierarchy().await;
-    let repo_blob_url = format!("{}/blobs", served_repository.local_url());
+    let repo_blob_url = format!("{}/blobs/1", served_repository.local_url());
     let repo_blob_url = &repo_blob_url;
     assert_data_tree!(
         hierarchy,
@@ -468,7 +468,7 @@ async fn handles_429_responses() {
     // And the inspect data for the package resolver should indicate that it handled 429 responses.
     let hierarchy = env.pkg_resolver_inspect_hierarchy().await;
 
-    let repo_blob_url = format!("{}/blobs", served_repository.local_url());
+    let repo_blob_url = format!("{}/blobs/1", served_repository.local_url());
     let repo_blob_url = &repo_blob_url;
     assert_data_tree!(
         hierarchy,

@@ -419,6 +419,8 @@ impl QueuedResolver {
                 }
             }
             RepoNotFound(..)
+            | NoMirrors(..)
+            | BlobUrl(..)
             | OpenRepo(..)
             | Cache(Fidl(..))
             | Cache(ListNeeds(..))

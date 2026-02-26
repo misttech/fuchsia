@@ -16,8 +16,8 @@ closed protocol OtaDownloader {
     /// `PackageCache.Sync` to guarantee blobs are persisted after all blobs are fetched.
     ///
     /// + request `hash` the hash of the blob to fetch.
-    /// + request `base_url` the base URL of the blob, the full URL of the blob will be
-    ///   constructed as "$base_url/$delivery_blob_type/$hash".
+    /// + request `base_url` the base URL of the blob, including delivery blob type, the full URL of
+    ///   the blob will be constructed as "$base_url/$hash".
     /// + request `overwrite_existing` whether to overwrite the blob if it is already present.
     /// * error indicates failure. See `fuchsia.pkg.ResolveError` for values and error
     ///   scenarios.

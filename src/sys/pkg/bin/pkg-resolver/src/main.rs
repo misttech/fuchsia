@@ -154,6 +154,11 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
             }
         };
 
+    let delivery_blob_type: DeliveryBlobType =
+        structured_config.delivery_blob_type.try_into().with_context(|| {
+            format!("invalid delivery blob type {}", structured_config.delivery_blob_type)
+        })?;
+
     let repo_manager = Arc::new(AsyncRwLock::new(
         load_repo_manager(
             inspector.root().create_child("repository_manager"),
@@ -161,6 +166,7 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
             cobalt_sender.clone(),
             std::time::Duration::from_secs(structured_config.tuf_metadata_timeout_seconds.into()),
             data_proxy.clone(),
+            delivery_blob_type,
         )
         .await,
     ));
@@ -173,11 +179,6 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
         )
         .await,
     ));
-
-    let delivery_blob_type: DeliveryBlobType =
-        structured_config.delivery_blob_type.try_into().with_context(|| {
-            format!("invalid delivery blob type {}", structured_config.delivery_blob_type)
-        })?;
 
     let (blob_fetch_queue, blob_fetcher) = crate::cache::BlobFetcher::new(
         fuchsia_component::client::connect_to_protocol::<fpkg_http::ClientMarker>()
@@ -195,7 +196,6 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
             .download_resumption_attempts_limit(
                 structured_config.blob_download_resumption_attempts_limit,
             )
-            .blob_type(delivery_blob_type)
             .build(),
     );
     futures.push(blob_fetch_queue.boxed_local());
@@ -388,6 +388,7 @@ async fn load_repo_manager(
     mut cobalt_sender: ProtocolSender<fmetrics::MetricEvent>,
     tuf_metadata_timeout: Duration,
     data_proxy: Option<fio::DirectoryProxy>,
+    delivery_blob_type: DeliveryBlobType,
 ) -> RepositoryManager {
     // report any errors we saw, but don't error out because otherwise we won't be able
     // to update the system.
@@ -403,6 +404,7 @@ async fn load_repo_manager(
         error!("error loading dynamic repo config: {:#}", anyhow!(err));
         builder
     })
+    .delivery_blob_type(delivery_blob_type)
     .inspect_node(node)
     .load_static_configs_dir(STATIC_REPO_DIR)
     {

@@ -53,7 +53,6 @@ async fn initial_inspect_state() {
                 blob_header_timeout_seconds: 30u64,
                 blob_body_timeout_seconds: 30u64,
                 blob_download_resumption_attempts_limit: 50u64,
-                blob_type: 1u64,
                 queue: {},
                 raw_queue: {},
             },
@@ -159,7 +158,7 @@ async fn resolving_package_updates_inspect_state() {
                 },
                 stats: {
                     mirrors: {
-                        format!("{}/blobs", served_repository.local_url()) => {
+                        format!("{}/blobs/1", served_repository.local_url()) => {
                             network_blips: 0u64,
                             network_rate_limits: 0u64,
                         },

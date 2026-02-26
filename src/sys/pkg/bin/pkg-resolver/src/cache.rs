@@ -4,11 +4,10 @@
 
 use crate::repository::Repository;
 use crate::repository_manager::Stats;
-use delivery_blob::DeliveryBlobType;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{self as fpkg};
-use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, BlobInfo, MirrorConfig, RepositoryConfig};
+use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, BlobInfo};
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
 use fuchsia_sync::Mutex;
@@ -36,7 +35,6 @@ pub struct BlobFetchParams {
     header_network_timeout: zx::BootDuration,
     body_network_timeout: zx::BootDuration,
     download_resumption_attempts_limit: u32,
-    blob_type: DeliveryBlobType,
 }
 
 impl BlobFetchParams {
@@ -51,19 +49,15 @@ impl BlobFetchParams {
     pub fn download_resumption_attempts_limit(&self) -> u32 {
         self.download_resumption_attempts_limit
     }
-
-    pub fn blob_type(&self) -> DeliveryBlobType {
-        self.blob_type
-    }
 }
 
 pub async fn cache_package<'a>(
     repo: Arc<AsyncMutex<Repository>>,
-    config: &'a RepositoryConfig,
     url: &'a AbsolutePackageUrl,
     gc_protection: fpkg::GcProtection,
     cache: &'a pkg::cache::Client,
     blob_fetcher: &'a BlobFetcher,
+    blob_base_url: http::Uri,
     cobalt_sender: ProtocolSender<MetricEvent>,
     trace_id: ftrace::Id,
 ) -> Result<(BlobId, PackageDirectory), CacheError> {
@@ -79,8 +73,6 @@ pub async fn cache_package<'a>(
     let mut get = cache.get(meta_far_blob, gc_protection)?;
 
     let blob_fetch_res = async {
-        let mirrors = config.mirrors().to_vec().into();
-
         // Do not add the meta.far fetch to the queue if we are sure that the meta.far is already
         // cached to avoid blocking resolves of fully cached packages behind blob fetches (in the
         // case where the blob fetch queue is already at its concurrency limit).
@@ -133,7 +125,7 @@ pub async fn cache_package<'a>(
                     merkle,
                     FetchBlobContext {
                         opener: get.make_open_meta_blob(),
-                        mirrors: Arc::clone(&mirrors),
+                        blob_base_url: blob_base_url.clone(),
                         parent_trace_id: trace_id,
                     },
                 )
@@ -173,7 +165,7 @@ pub async fn cache_package<'a>(
                                     // TODO(b/303737132) Consider checking if the blob is cached
                                     // before adding to the queue, like is done for meta.fars.
                                     opener: get.make_open_blob(need.blob_id),
-                                    mirrors: Arc::clone(&mirrors),
+                                    blob_base_url: blob_base_url.clone(),
                                     parent_trace_id: trace_id,
                                 },
                             )
@@ -384,7 +376,6 @@ impl ToResolveError for FetchError {
         match self {
             CreateBlob(e) => e.to_resolve_error(),
             BlobWritten(_) => pkg::ResolveError::Internal,
-            NoMirrors => pkg::ResolveError::Internal,
             BlobUrl(_) => pkg::ResolveError::Internal,
             DownloadBlobFidl(_) => pkg::ResolveError::Internal,
             BlobWrittenFidl(_) => pkg::ResolveError::Internal,
@@ -466,17 +457,17 @@ pub enum MerkleForError {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FetchBlobContext {
     opener: pkg::cache::DeferredOpenBlob,
-    mirrors: Arc<[MirrorConfig]>,
+    blob_base_url: http::Uri,
     parent_trace_id: ftrace::Id,
 }
 
 impl FetchBlobContext {
     pub fn new(
         opener: pkg::cache::DeferredOpenBlob,
-        mirrors: Arc<[MirrorConfig]>,
+        blob_base_url: http::Uri,
         parent_trace_id: ftrace::Id,
     ) -> Self {
-        Self { opener, mirrors, parent_trace_id }
+        Self { opener, blob_base_url, parent_trace_id }
     }
 }
 
@@ -494,9 +485,8 @@ impl work_queue::TryMerge for FetchBlobContext {
             return Err(other);
         }
 
-        // Don't attempt to merge mirrors, but do merge these contexts if the mirrors are
-        // equivalent.
-        if self.mirrors != other.mirrors {
+        // Merge these contexts if the blob_base_urls are equivalent.
+        if self.blob_base_url != other.blob_base_url {
             return Err(other);
         }
 
@@ -581,25 +571,24 @@ async fn fetch_blob(
     context: FetchBlobContext,
     blob_fetch_params: BlobFetchParams,
 ) -> Result<(), FetchError> {
-    // TODO try the other mirrors depending on the errors encountered trying this one.
-    let mirror = context.mirrors.first().ok_or(FetchError::NoMirrors)?;
     let trace_id = ftrace::Id::random();
+    let FetchBlobContext { blob_base_url, parent_trace_id, opener } = context;
     let guard = ftrace::async_enter!(
         trace_id,
         c"app",
         c"fetch_blob_http",
         // Async tracing does not support multiple concurrent child durations, so we create
         // a new top-level duration and attach the parent duration as metadata.
-        "parent_trace_id" => u64::from(context.parent_trace_id),
+        "parent_trace_id" => u64::from(parent_trace_id),
         "hash" => merkle.to_string().as_str()
     );
     let inspect = inspect.http();
     let res = fetch_blob_http(
         &inspect,
         client,
-        mirror,
+        blob_base_url,
         merkle,
-        &context.opener,
+        &opener,
         blob_fetch_params,
         &stats,
         trace_id,
@@ -614,17 +603,15 @@ async fn fetch_blob(
 async fn fetch_blob_http(
     inspect: &inspect::TriggerAttempt<inspect::Http>,
     client: &fpkg_http::ClientProxy,
-    mirror: &MirrorConfig,
+    blob_base_url: http::Uri,
     merkle: BlobId,
     opener: &pkg::cache::DeferredOpenBlob,
     blob_fetch_params: BlobFetchParams,
     stats: &Mutex<Stats>,
     trace_id: ftrace::Id,
 ) -> Result<(), FetchError> {
-    let blob_mirror_url = mirror.blob_mirror_url().to_owned();
-    let mirror_stats = &stats.lock().for_mirror(blob_mirror_url.to_string());
-    let blob_url = &make_blob_url(blob_mirror_url, &merkle, blob_fetch_params.blob_type)
-        .map_err(FetchError::BlobUrl)?;
+    let mirror_stats = &stats.lock().for_mirror(blob_base_url.to_string());
+    let blob_url = &make_blob_url(blob_base_url, &merkle).map_err(FetchError::BlobUrl)?;
     inspect.set_mirror(&blob_url.to_string());
     let flaked = &AtomicBool::new(false);
 
@@ -684,11 +671,10 @@ async fn fetch_blob_http(
 }
 
 fn make_blob_url(
-    blob_mirror_url: http::Uri,
+    blob_base_url: http::Uri,
     merkle: &BlobId,
-    blob_type: DeliveryBlobType,
 ) -> Result<hyper::Uri, http_uri_ext::Error> {
-    blob_mirror_url.extend_dir_with_path(&format!("{}/{merkle}", u32::from(blob_type)))
+    blob_base_url.extend_dir_with_path(&merkle.to_string())
 }
 
 // On success, returns the size of the downloaded blob in bytes (useful for tracing).
@@ -723,9 +709,6 @@ pub(crate) enum FetchError {
     #[error("could not create blob")]
     CreateBlob(#[source] pkg::cache::OpenBlobError),
 
-    #[error("repository has no configured mirrors")]
-    NoMirrors,
-
     #[error("blob url error")]
     BlobUrl(#[source] http_uri_ext::Error),
 
@@ -756,7 +739,6 @@ impl FetchError {
                 | fpkg_http::ClientDownloadBlobError::Other => FetchErrorKind::Other,
             },
             CreateBlob { .. }
-            | NoMirrors
             | BlobWritten { .. }
             | BlobUrl { .. }
             | DownloadBlobFidl { .. }
@@ -770,7 +752,7 @@ impl FetchError {
             CreateBlob(pkg::cache::OpenBlobError::Fidl(e))
             | DownloadBlobFidl(e)
             | BlobWrittenFidl(e) => Some(e),
-            CreateBlob(_) | DownloadBlob(_) | BlobWritten(_) | NoMirrors | BlobUrl { .. } => None,
+            CreateBlob(_) | DownloadBlob(_) | BlobWritten(_) | BlobUrl { .. } => None,
         }
     }
 
@@ -799,43 +781,24 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            make_blob_url(
-                "http://example.com".parse::<Uri>().unwrap(),
-                &merkle,
-                DeliveryBlobType::Type1
-            )
-            .unwrap(),
-            format!("http://example.com/1/{merkle}").parse::<Uri>().unwrap()
+            make_blob_url("http://example.com".parse::<Uri>().unwrap(), &merkle,).unwrap(),
+            format!("http://example.com/{merkle}").parse::<Uri>().unwrap()
         );
 
         assert_eq!(
-            make_blob_url(
-                "http://example.com/noslash".parse::<Uri>().unwrap(),
-                &merkle,
-                DeliveryBlobType::Type1
-            )
-            .unwrap(),
-            format!("http://example.com/noslash/1/{merkle}").parse::<Uri>().unwrap()
+            make_blob_url("http://example.com/noslash".parse::<Uri>().unwrap(), &merkle,).unwrap(),
+            format!("http://example.com/noslash/{merkle}").parse::<Uri>().unwrap()
         );
 
         assert_eq!(
-            make_blob_url(
-                "http://example.com/slash/".parse::<Uri>().unwrap(),
-                &merkle,
-                DeliveryBlobType::Type1
-            )
-            .unwrap(),
-            format!("http://example.com/slash/1/{merkle}").parse::<Uri>().unwrap()
+            make_blob_url("http://example.com/slash/".parse::<Uri>().unwrap(), &merkle,).unwrap(),
+            format!("http://example.com/slash/{merkle}").parse::<Uri>().unwrap()
         );
 
         assert_eq!(
-            make_blob_url(
-                "http://example.com/twoslashes//".parse::<Uri>().unwrap(),
-                &merkle,
-                DeliveryBlobType::Type1
-            )
-            .unwrap(),
-            format!("http://example.com/twoslashes//1/{merkle}").parse::<Uri>().unwrap()
+            make_blob_url("http://example.com/twoslashes//".parse::<Uri>().unwrap(), &merkle,)
+                .unwrap(),
+            format!("http://example.com/twoslashes//{merkle}").parse::<Uri>().unwrap()
         );
 
         // IPv6 zone id
@@ -843,10 +806,9 @@ mod tests {
             make_blob_url(
                 "http://[fe80::e022:d4ff:fe13:8ec3%252]:8083/blobs/".parse::<Uri>().unwrap(),
                 &merkle,
-                DeliveryBlobType::Type1
             )
             .unwrap(),
-            format!("http://[fe80::e022:d4ff:fe13:8ec3%252]:8083/blobs/1/{merkle}")
+            format!("http://[fe80::e022:d4ff:fe13:8ec3%252]:8083/blobs/{merkle}")
                 .parse::<Uri>()
                 .unwrap()
         );

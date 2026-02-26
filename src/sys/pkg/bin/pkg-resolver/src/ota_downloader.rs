@@ -56,14 +56,9 @@ async fn fetch_blob(
         .parse::<http::Uri>()
         .with_context(|| format!("parsing url {base_url:?}"))
         .map_err(|e| (e, ResolveError::InvalidUrl))?;
-    let mirror = pkg::MirrorConfigBuilder::new(base_url.clone())
-        .map_err(|e| (e.into(), ResolveError::Internal))?
-        .blob_mirror_url(base_url)
-        .map_err(|(_buider, e)| (e.into(), ResolveError::Internal))?
-        .build();
     let context = crate::cache::FetchBlobContext::new(
         write_blobs.make_open_blob(hash, overwrite_existing),
-        [mirror].into(),
+        base_url,
         ftrace::Id::random(),
     );
     let () = blob_fetcher.push(hash, context).await.expect("processor exists").map_err(|e| {

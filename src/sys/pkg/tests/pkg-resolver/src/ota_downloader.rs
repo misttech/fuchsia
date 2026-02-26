@@ -22,7 +22,7 @@ async fn test_fetch_blob() {
     );
     let env = TestEnvBuilder::new().build().await;
     let served_repository = repo.server().start().unwrap();
-    let base_url = served_repository.local_url() + "/blobs";
+    let base_url = served_repository.local_url() + "/blobs/1";
 
     for blob in pkg.list_blobs() {
         let () = env.fetch_blob(blob.into(), &base_url).await.unwrap();
@@ -44,7 +44,7 @@ async fn test_fetch_blob_concurrent() {
     );
     let env = TestEnvBuilder::new().build().await;
     let served_repository = repo.server().start().unwrap();
-    let base_url = served_repository.local_url() + "/blobs";
+    let base_url = served_repository.local_url() + "/blobs/1";
 
     let () = futures::stream::iter(pkg.list_blobs())
         .for_each_concurrent(None, async |hash| {
@@ -62,7 +62,7 @@ async fn test_fetch_blob_404() {
         Arc::new(RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH).build().await.unwrap());
     let env = TestEnvBuilder::new().build().await;
     let served_repository = repo.server().start().unwrap();
-    let base_url = served_repository.local_url() + "/blobs";
+    let base_url = served_repository.local_url() + "/blobs/1";
 
     assert_matches!(
         env.fetch_blob([0; 32].into(), &base_url).await,

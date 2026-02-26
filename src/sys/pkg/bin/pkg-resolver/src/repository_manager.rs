@@ -6,6 +6,7 @@ use crate::cache::{BlobFetcher, CacheError, MerkleForError, ToResolveError, ToRe
 use crate::inspect_util::{self, InspectableRepositoryConfig};
 use crate::repository::Repository;
 use anyhow::{Context as _, anyhow};
+use delivery_blob::DeliveryBlobType;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, RepositoryConfig, RepositoryConfigs, cache};
@@ -15,6 +16,7 @@ use fuchsia_url::{AbsolutePackageUrl, RepositoryUrl};
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;
+use http_uri_ext::HttpUriExt as _;
 use log::{error, info};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap, btree_set};
@@ -41,6 +43,7 @@ pub struct RepositoryManager {
     inspect: RepositoryManagerInspectState,
     tuf_metadata_timeout: Duration,
     data_proxy: Option<fio::DirectoryProxy>,
+    delivery_blob_type: DeliveryBlobType,
 }
 
 #[derive(Debug)]
@@ -272,16 +275,26 @@ impl RepositoryManager {
             self.tuf_metadata_timeout,
         );
 
+        let delivery_blob_type = self.delivery_blob_type;
         let cobalt_sender = self.cobalt_sender.clone();
         async move {
             let repo = fut.await?;
+            let blob_mirror_url = config
+                .mirrors()
+                .first()
+                .ok_or(GetPackageError::NoMirrors(url.repository().clone()))?
+                .blob_mirror_url()
+                .to_owned();
+            let blob_base_url = blob_mirror_url
+                .extend_dir_with_path(&u32::from(delivery_blob_type).to_string())
+                .map_err(GetPackageError::BlobUrl)?;
             crate::cache::cache_package(
                 repo,
-                &config,
                 url,
                 gc_protection,
                 cache,
                 blob_fetcher,
+                blob_base_url,
                 cobalt_sender,
                 trace_id,
             )
@@ -382,6 +395,7 @@ pub struct RepositoryManagerBuilder<S = UnsetCobaltSender, N = UnsetInspectNode>
     inspect_node: N,
     tuf_metadata_timeout: Duration,
     data_proxy: Option<fio::DirectoryProxy>,
+    delivery_blob_type: DeliveryBlobType,
 }
 
 impl<S, N> RepositoryManagerBuilder<S, N> {
@@ -453,6 +467,7 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
             inspect_node: UnsetInspectNode,
             tuf_metadata_timeout,
             data_proxy,
+            delivery_blob_type: DeliveryBlobType::Type1,
         };
 
         if let Some(err) = err { Err((builder, err)) } else { Ok(builder) }
@@ -503,7 +518,14 @@ impl<S> RepositoryManagerBuilder<S, UnsetInspectNode> {
             inspect_node,
             tuf_metadata_timeout: self.tuf_metadata_timeout,
             data_proxy: self.data_proxy,
+            delivery_blob_type: self.delivery_blob_type,
         }
+    }
+
+    /// Use the given delivery_blob_type in the [RepositoryManager].
+    pub fn delivery_blob_type(mut self, delivery_blob_type: DeliveryBlobType) -> Self {
+        self.delivery_blob_type = delivery_blob_type;
+        self
     }
 }
 
@@ -522,6 +544,7 @@ impl<N> RepositoryManagerBuilder<UnsetCobaltSender, N> {
             inspect_node: self.inspect_node,
             tuf_metadata_timeout: self.tuf_metadata_timeout,
             data_proxy: self.data_proxy,
+            delivery_blob_type: self.delivery_blob_type,
         }
     }
 }
@@ -593,6 +616,7 @@ impl RepositoryManagerBuilder<ProtocolSender<MetricEvent>, inspect::Node> {
             inspect,
             tuf_metadata_timeout: self.tuf_metadata_timeout,
             data_proxy: self.data_proxy,
+            delivery_blob_type: self.delivery_blob_type,
         }
     }
 }
@@ -833,6 +857,12 @@ pub enum GetPackageError {
 
     #[error("while opening the package")]
     OpenPackage(#[from] cache::OpenError),
+
+    #[error("repository has no configured mirrors: {0}")]
+    NoMirrors(RepositoryUrl),
+
+    #[error("blob url error")]
+    BlobUrl(#[source] http_uri_ext::Error),
 }
 
 #[derive(Debug, Error)]
@@ -854,6 +884,8 @@ impl ToResolveError for GetPackageError {
             GetPackageError::OpenRepo(err) => err.to_resolve_error(),
             GetPackageError::Cache(err) => err.to_resolve_error(),
             GetPackageError::OpenPackage(err) => err.to_resolve_error(),
+            GetPackageError::NoMirrors(_) => pkg::ResolveError::Internal,
+            GetPackageError::BlobUrl(_) => pkg::ResolveError::Internal,
         }
     }
 }
