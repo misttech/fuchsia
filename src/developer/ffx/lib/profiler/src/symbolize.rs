@@ -39,13 +39,14 @@ impl std::fmt::Debug for ResolvedAddress {
 /// Symbolized record hash map. key: pid, value: all of the records belong to this pid.
 #[derive(Clone, Debug, Default)]
 pub struct SymbolizedRecords {
-    pub records: Vec<(Pid, Vec<SymbolizedRecord>)>,
+    pub records: Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>,
 }
 
 /// Symbolized bt list for a single tid.
 #[derive(Clone, Debug)]
 pub struct SymbolizedRecord {
     pub tid: Tid,
+    pub thread_name: Option<String>,
     pub call_stacks: Vec<Vec<ResolvedAddress>>,
 }
 
@@ -76,9 +77,9 @@ impl UnsymbolizedSamples {
         context: &ffx_config::EnvironmentContext,
     ) -> Result<SymbolizedRecords, SymbolizeError> {
         let handlers: Vec<(Pid, ProfilingRecordHandler)> = self.handlers.into_iter().collect();
-        let symbolized_samples = handlers.par_iter().chunks(NUM_PROCESS_PER_THREAD).map(|chunk| -> Result<Vec<(Pid, Vec<SymbolizedRecord>)>, SymbolizeError> {
+        let symbolized_samples = handlers.par_iter().chunks(NUM_PROCESS_PER_THREAD).map(|chunk| -> Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError> {
         let mut symbolizer = Symbolizer::with_context(context)?;
-        let symbolized_samples_per_thread: Result<Vec<(Pid, Vec<SymbolizedRecord>)>, SymbolizeError> = chunk.into_iter().map(|(pid, handler):&(Pid, ProfilingRecordHandler)| -> Result<(Pid, Vec<SymbolizedRecord>), SymbolizeError> {
+        let symbolized_samples_per_thread: Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError> = chunk.into_iter().map(|(pid, handler):&(Pid, ProfilingRecordHandler)| -> Result<(Pid, Option<String>, Vec<SymbolizedRecord>), SymbolizeError> {
                     let mut res_per_pid = vec![];
                     // We use a hashmap to store the seen backtrace, to avoid symbolize the same backtrace multiple times.
                     let mut seen_bt: HashMap<BacktraceDetails, ResolvedAddress> = HashMap::new();
@@ -91,8 +92,10 @@ impl UnsymbolizedSamples {
                         }
                     }
                     for (tid, backtraces) in &handler.backtrace_records {
+                        let thread_name = self.thread_names.get(tid).cloned();
                         let mut symbolized_record = SymbolizedRecord {
                             tid: *tid,
+                            thread_name,
                             call_stacks: Vec::new(),
                         };
 
@@ -116,11 +119,11 @@ impl UnsymbolizedSamples {
                         res_per_pid.push(symbolized_record);
                     }
                     symbolizer.reset();
-                    Ok((*pid, res_per_pid))
+                    Ok((*pid, handler.process_name.clone(), res_per_pid))
         })
-        .collect::<Result<Vec<(Pid, Vec<SymbolizedRecord>)>, SymbolizeError>>();
+        .collect::<Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError>>();
         symbolized_samples_per_thread
-        }).collect::<Result<Vec<Vec<(Pid, Vec<SymbolizedRecord>)>>, SymbolizeError>>()?;
+        }).collect::<Result<Vec<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>>, SymbolizeError>>()?;
         let symbolized_samples = symbolized_samples.into_iter().flatten().collect();
         if !pprof_conversion {
             std::fs::write(output, format!("{symbolized_samples:#?}\n"))?;

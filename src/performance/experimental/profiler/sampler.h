@@ -61,6 +61,26 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   fxl::WeakPtr<Sampler> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
   std::unordered_map<zx_koid_t, std::vector<Sample>>& GetSamples() { return samples_; }
+  std::unordered_map<zx_koid_t, std::string> GetProcessNames() {
+    std::unordered_map<zx_koid_t, std::string> names;
+    (void)targets_.ForEachProcess(
+        [&names](std::span<const zx_koid_t>, const ProcessTarget& target) -> zx::result<> {
+          names[target.pid] = target.name;
+          return zx::ok();
+        });
+    return names;
+  }
+  std::unordered_map<zx_koid_t, std::string> GetThreadNames() {
+    std::unordered_map<zx_koid_t, std::string> names;
+    (void)targets_.ForEachProcess(
+        [&names](std::span<const zx_koid_t>, const ProcessTarget& target) -> zx::result<> {
+          for (const auto& [tid, thread] : target.threads) {
+            names[tid] = thread.name;
+          }
+          return zx::ok();
+        });
+    return names;
+  }
   std::vector<zx::ticks> SamplingDurations() { return inspecting_durations_; }
   virtual zx::result<> AddTarget(JobTarget&& target);
   virtual ~Sampler() = default;

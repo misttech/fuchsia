@@ -44,6 +44,7 @@ pub struct BacktraceDetails(pub u64);
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ProfilingRecordHandler {
+    pub process_name: Option<String>,
     pub module_with_mmap_records: HashMap<u16, ModuleWithMmapDetails>,
     pub backtrace_records: HashMap<Tid, Vec<Vec<BacktraceDetails>>>,
 }
@@ -161,6 +162,7 @@ enum ParseStateMachine {
 #[derive(PartialEq, Debug)]
 pub struct UnsymbolizedSamples {
     pub handlers: HashMap<Pid, ProfilingRecordHandler>,
+    pub thread_names: HashMap<Tid, String>,
 }
 
 impl UnsymbolizedSamples {
@@ -268,7 +270,7 @@ impl UnsymbolizedSamples {
             }
         }
 
-        Ok(UnsymbolizedSamples { handlers: profiling_map })
+        Ok(UnsymbolizedSamples { handlers: profiling_map, thread_names: HashMap::new() })
     }
 }
 
@@ -462,6 +464,9 @@ mod tests {
         let mut expected_handlers = HashMap::new();
         expected_handlers.insert(Pid(4207), second_handler);
         expected_handlers.insert(Pid(1104), first_handler);
-        assert_eq!(UnsymbolizedSamples { handlers: expected_handlers }, handlers);
+        assert_eq!(
+            UnsymbolizedSamples { handlers: expected_handlers, thread_names: HashMap::new() },
+            handlers
+        );
     }
 }

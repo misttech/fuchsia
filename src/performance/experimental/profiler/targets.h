@@ -28,9 +28,19 @@
 #include "symbolization_context.h"
 
 namespace profiler {
+inline std::string GetThreadName(const zx::thread& thread) {
+  char name_buf[ZX_MAX_NAME_LEN];
+  if (zx_status_t status = thread.get_property(ZX_PROP_NAME, name_buf, sizeof(name_buf));
+      status != ZX_OK) {
+    name_buf[0] = '\0';
+  }
+  return std::string(name_buf);
+}
+
 struct ThreadTarget {
   zx::thread handle;
   zx_koid_t tid;
+  std::string name;
   mutable std::optional<uint64_t> restricted_state_addr;
 };
 
@@ -59,15 +69,17 @@ struct UnwinderData {
 };
 
 struct ProcessTarget {
-  ProcessTarget(zx::process process, zx_koid_t pid,
+  ProcessTarget(zx::process process, zx_koid_t pid, std::string name,
                 std::unordered_map<zx_koid_t, ThreadTarget> threads)
       : handle(std::move(process)),
         pid(pid),
+        name(std::move(name)),
         threads(std::move(threads)),
         unwinder_data(std::make_unique<UnwinderData>(handle.borrow())) {}
 
   zx::process handle;
   zx_koid_t pid;
+  std::string name;
   std::unordered_map<zx_koid_t, ThreadTarget> threads;
   std::unique_ptr<UnwinderData> unwinder_data;
   mutable std::vector<zx_info_maps_t> cached_mappings;

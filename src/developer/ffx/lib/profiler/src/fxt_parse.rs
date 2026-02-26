@@ -20,7 +20,7 @@ impl UnsymbolizedSamples {
         let file = File::open(input)?;
         let reader = BufReader::new(file);
         let mut parser = SessionParser::new(reader);
-        let mut unsymbolized = Self { handlers: HashMap::new() };
+        let mut unsymbolized = Self { handlers: HashMap::new(), thread_names: HashMap::new() };
         while let Some(record) = parser.next() {
             let record = record?;
             match record {
@@ -63,6 +63,16 @@ impl UnsymbolizedSamples {
                         backtraces.push(details);
                     }
                 },
+                TraceRecord::KernelObj(kernel_obj) => {
+                    if kernel_obj.ty == fxt::objects::KernelObjType::Process {
+                        let pid = Pid(kernel_obj.koid);
+                        let handler = unsymbolized.handlers.entry(pid).or_default();
+                        handler.process_name = Some(kernel_obj.name.to_string());
+                    } else if kernel_obj.ty == fxt::objects::KernelObjType::Thread {
+                        let tid = Tid(kernel_obj.koid);
+                        unsymbolized.thread_names.insert(tid, kernel_obj.name.to_string());
+                    }
+                }
                 _ => return Err(SymbolizeError::NonProfilerFxtRecord),
             }
         }
@@ -289,6 +299,7 @@ mod tests {
         let profiler_record_path: PathBuf = profiler_record.path().to_path_buf();
         let handlers = UnsymbolizedSamples::new_from_fxt_file(&profiler_record_path).unwrap();
         let first_handler = ProfilingRecordHandler {
+            process_name: None,
             module_with_mmap_records: HashMap::from([(
                 0,
                 ModuleWithMmapDetails {
@@ -325,6 +336,7 @@ mod tests {
         };
 
         let second_handler = ProfilingRecordHandler {
+            process_name: None,
             module_with_mmap_records: HashMap::from([
                 (
                     0,
@@ -372,6 +384,9 @@ mod tests {
         let mut expected_handlers = HashMap::new();
         expected_handlers.insert(Pid(4207), second_handler);
         expected_handlers.insert(Pid(1104), first_handler);
-        assert_eq!(UnsymbolizedSamples { handlers: expected_handlers }, handlers);
+        assert_eq!(
+            UnsymbolizedSamples { handlers: expected_handlers, thread_names: HashMap::new() },
+            handlers
+        );
     }
 }

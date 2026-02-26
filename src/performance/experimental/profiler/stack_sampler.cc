@@ -79,8 +79,10 @@ zx::result<> StackSampler::Stop() {
 void StackSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
                              zx::thread t) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  zx::result res =
-      targets_.AddThread(job_path, pid, ThreadTarget{.handle = std::move(t), .tid = tid});
+  std::string thread_name = profiler::GetThreadName(t);
+  zx::result res = targets_.AddThread(
+      job_path, pid,
+      ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
   if (res.is_error()) {
     FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
   }

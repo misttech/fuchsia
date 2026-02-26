@@ -192,6 +192,12 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process proc
   }
   FX_LOGS(DEBUG) << "Creating process target for " << handle_info.koid << ".";
 
+  char name[ZX_MAX_NAME_LEN];
+  if (zx_status_t status = process.get_property(ZX_PROP_NAME, name, sizeof(name));
+      status != ZX_OK) {
+    name[0] = '\0';
+  }
+
   zx::result<std::vector<zx_koid_t>> children = GetChildrenTids(process);
   if (children.is_error()) {
     return children.take_error();
@@ -205,10 +211,13 @@ zx::result<profiler::ProcessTarget> profiler::MakeProcessTarget(zx::process proc
       FX_PLOGS(ERROR, res) << "Failed to get handle for child (tid: " << child_tid << ")";
       continue;
     }
-    threads.try_emplace(
-        child_tid, profiler::ThreadTarget{.handle = std::move(child_thread), .tid = child_tid});
+    std::string thread_name = profiler::GetThreadName(child_thread);
+    threads.try_emplace(child_tid, profiler::ThreadTarget{.handle = std::move(child_thread),
+                                                          .tid = child_tid,
+                                                          .name = std::move(thread_name)});
   }
-  profiler::ProcessTarget process_target{std::move(process), handle_info.koid, std::move(threads)};
+  profiler::ProcessTarget process_target{std::move(process), handle_info.koid, std::string(name),
+                                         std::move(threads)};
 
   zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
       GetProcessModules(*zx::unowned_process{process_target.handle}, searcher);

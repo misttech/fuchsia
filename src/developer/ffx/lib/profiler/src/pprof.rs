@@ -81,7 +81,11 @@ impl ProfileBuilder {
     }
 
     pub fn build_profile(mut self, input: SymbolizedRecords) -> pproto::Profile {
-        for (pid, record_per_thread) in input.records {
+        for (pid, process_name, record_per_thread) in input.records {
+            let pid_label_str = match &process_name {
+                Some(name) => format!("process: {} (pid: {})", name, pid.0),
+                None => format!("pid: {}", pid.0),
+            };
             let pid_label = Label {
                 key: PID_INTERN,
                 str: self.st.intern(pid.to_string().as_str()),
@@ -91,13 +95,17 @@ impl ProfileBuilder {
             let pid_addr = ResolvedAddress {
                 addr: 0xDEADBEEF,
                 locations: vec![ResolvedLocation {
-                    function: "pid: ".to_owned() + &pid.to_string(),
+                    function: pid_label_str,
                     file_and_line: None,
                     library: None,
                     library_offset: 0,
                 }],
             };
             for record in record_per_thread {
+                let tid_label_str = match &record.thread_name {
+                    Some(name) => format!("thread: {} (tid: {})", name, record.tid.0),
+                    None => format!("tid: {}", record.tid.0),
+                };
                 for call_stack in record.call_stacks {
                     let mut sample = pproto::Sample::default();
                     let tid_label = Label {
@@ -111,7 +119,7 @@ impl ProfileBuilder {
                     let tid_addr = ResolvedAddress {
                         addr: 0xDEADBEEF,
                         locations: vec![ResolvedLocation {
-                            function: "tid: ".to_owned() + &record.tid.to_string(),
+                            function: tid_label_str.clone(),
                             file_and_line: None,
                             library: None,
                             library_offset: 0,
@@ -275,10 +283,14 @@ mod tests {
             make_resolved_address(0x3000, "another", "another.rs", 20),
         ];
 
-        let symbolized_record_for_tid =
-            SymbolizedRecord { tid, call_stacks: vec![call_stack_trace1, call_stack_trace2] };
+        let symbolized_record_for_tid = SymbolizedRecord {
+            tid,
+            thread_name: None,
+            call_stacks: vec![call_stack_trace1, call_stack_trace2],
+        };
 
-        let input = SymbolizedRecords { records: vec![(pid, vec![symbolized_record_for_tid])] };
+        let input =
+            SymbolizedRecords { records: vec![(pid, None, vec![symbolized_record_for_tid])] };
 
         let profile = builder.build_profile(input);
 

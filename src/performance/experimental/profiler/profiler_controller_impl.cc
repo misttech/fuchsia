@@ -112,7 +112,12 @@ zx::result<> PopulateTargets(profiler::TargetTree& tree, TaskFinder::FoundTasks&
     }
     auto [pid, process] = std::move(found_tasks->processes[0]);
 
-    profiler::ProcessTarget process_target{std::move(process), pid,
+    char name[ZX_MAX_NAME_LEN];
+    if (zx_status_t status = process.get_property(ZX_PROP_NAME, name, sizeof(name));
+        status != ZX_OK) {
+      name[0] = '\0';
+    }
+    profiler::ProcessTarget process_target{std::move(process), pid, std::string(name),
                                            std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
     FX_LOGS(DEBUG) << "Collecting process modules for process " << pid << ".";
     zx::result<std::map<std::vector<std::byte>, profiler::Module>> modules =
@@ -134,8 +139,11 @@ zx::result<> PopulateTargets(profiler::TargetTree& tree, TaskFinder::FoundTasks&
       }
     }
 
+    std::string thread_name = profiler::GetThreadName(thread);
     if (zx::result res =
-            tree.AddThread(pid, profiler::ThreadTarget{.handle = std::move(thread), .tid = koid});
+            tree.AddThread(pid, profiler::ThreadTarget{.handle = std::move(thread),
+                                                       .tid = koid,
+                                                       .name = std::move(thread_name)});
         res.is_error()) {
       FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread target: " << koid;
       return res;
@@ -531,10 +539,33 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
   fxt::WriteMagicNumberRecord(writer_.get());
   fxt::WriteInitializationRecord(writer_.get(), zx::ticks::per_second().get());
 
+  std::unordered_map<zx_koid_t, std::string> process_names = sampler_->GetProcessNames();
+  std::unordered_map<zx_koid_t, std::string> thread_names = sampler_->GetThreadNames();
+
   for (const auto& [pid, samples] : sampler_->GetSamples()) {
     if (samples.empty()) {
       continue;
     }
+
+    if (auto it = process_names.find(pid); it != process_names.end()) {
+      const std::string& name = it->second;
+      fxt::WriteKernelObjectRecord(
+          writer_.get(), fxt::Koid(pid), ZX_OBJ_TYPE_PROCESS,
+          fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+    }
+
+    std::set<zx_koid_t> seen_threads;
+    for (const auto& sample : samples) {
+      if (seen_threads.insert(sample.tid).second) {
+        if (auto it = thread_names.find(sample.tid); it != thread_names.end()) {
+          const std::string& name = it->second;
+          fxt::WriteKernelObjectRecord(
+              writer_.get(), fxt::Koid(sample.tid), ZX_OBJ_TYPE_THREAD,
+              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+        }
+      }
+    }
+
     uint16_t next_module_id = 0;
     // We'll use the timestamp from the first sample of this process for these records.
     zx::ticks process_timestamp = samples[0].timestamp;

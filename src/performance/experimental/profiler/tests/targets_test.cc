@@ -14,11 +14,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <set>
+#include <span>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <span>
 
 #include <gtest/gtest.h>
 
@@ -98,12 +98,12 @@ TEST(TargetsTest, JobsDone) {
 
 TEST(TargetsTest, TargetTreeAddProcessTopLevel) {
   profiler::TargetTree tree;
-  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 1,
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 1, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
 
   EXPECT_TRUE(tree.AddProcess(std::move(p1)).is_ok());
 
-  profiler::ProcessTarget p2{zx::process{ZX_HANDLE_INVALID}, 1,
+  profiler::ProcessTarget p2{zx::process{ZX_HANDLE_INVALID}, 1, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
   zx::result res = tree.AddProcess(std::move(p2));
   ASSERT_TRUE(res.is_error());
@@ -124,17 +124,17 @@ TEST(TargetsTest, TargetTreeAddJobTopLevel) {
 
 TEST(TargetsTest, TargetTreeAddThreadTopLevel) {
   profiler::TargetTree tree;
-  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 3};
+  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 3, .name = ""};
 
   zx::result res = tree.AddThread(4, std::move(t1));
   ASSERT_TRUE(res.is_error());
   EXPECT_EQ(res.status_value(), ZX_ERR_NOT_FOUND);
 
-  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 4,
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 4, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
   EXPECT_TRUE(tree.AddProcess(std::move(p1)).is_ok());
 
-  profiler::ThreadTarget t2{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 3};
+  profiler::ThreadTarget t2{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 3, .name = ""};
   res = tree.AddThread(4, std::move(t2));
   ASSERT_TRUE(res.is_ok());
 }
@@ -142,8 +142,8 @@ TEST(TargetsTest, TargetTreeAddThreadTopLevel) {
 TEST(TargetsTest, TargetTreeAddTargetsNestedNonExist) {
   profiler::TargetTree tree;
 
-  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 1};
-  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 2,
+  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 1, .name = ""};
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 2, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
   profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 3, std::vector<zx_koid_t>{}};
   profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 4, std::vector<zx_koid_t>{3}};
@@ -167,8 +167,8 @@ TEST(TargetsTest, TargetTreeAddTargetsNestedNonExist) {
 TEST(TargetsTest, TargetTreeAddTargetsNested) {
   profiler::TargetTree tree;
 
-  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 1};
-  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 2,
+  profiler::ThreadTarget t1{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 1, .name = ""};
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 2, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
   profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 3, std::vector<zx_koid_t>{}};
   profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 4, std::vector<zx_koid_t>{3}};
@@ -201,21 +201,21 @@ TEST(TargetsTest, TargetTreeForEachProcess) {
   constexpr zx_koid_t nested_pid4 = 9;
   constexpr zx_koid_t nested_pid5 = 10;
   constexpr zx_koid_t nested_pid6 = 11;
-  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, top_level_pid1,
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, top_level_pid1, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p2{zx::process{ZX_HANDLE_INVALID}, top_level_pid2,
+  profiler::ProcessTarget p2{zx::process{ZX_HANDLE_INVALID}, top_level_pid2, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p3{zx::process{ZX_HANDLE_INVALID}, nested_pid1,
+  profiler::ProcessTarget p3{zx::process{ZX_HANDLE_INVALID}, nested_pid1, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p4{zx::process{ZX_HANDLE_INVALID}, nested_pid2,
+  profiler::ProcessTarget p4{zx::process{ZX_HANDLE_INVALID}, nested_pid2, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p5{zx::process{ZX_HANDLE_INVALID}, nested_pid3,
+  profiler::ProcessTarget p5{zx::process{ZX_HANDLE_INVALID}, nested_pid3, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p6{zx::process{ZX_HANDLE_INVALID}, nested_pid4,
+  profiler::ProcessTarget p6{zx::process{ZX_HANDLE_INVALID}, nested_pid4, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p7{zx::process{ZX_HANDLE_INVALID}, nested_pid5,
+  profiler::ProcessTarget p7{zx::process{ZX_HANDLE_INVALID}, nested_pid5, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
-  profiler::ProcessTarget p8{zx::process{ZX_HANDLE_INVALID}, nested_pid6,
+  profiler::ProcessTarget p8{zx::process{ZX_HANDLE_INVALID}, nested_pid6, "",
                              std::unordered_map<zx_koid_t, profiler::ThreadTarget>{}};
   profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 1, std::vector<zx_koid_t>{}};
   profiler::JobTarget j2{zx::job{ZX_HANDLE_INVALID}, 2, std::vector<zx_koid_t>{1}};

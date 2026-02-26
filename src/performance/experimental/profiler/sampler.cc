@@ -135,7 +135,12 @@ zx::result<> profiler::Sampler::WatchTarget(const JobTarget& target) {
         // We've intercepted this process before its threads have started, so we don't recursively
         // add them here. We let the watcher handle the thread start exceptions as soon as we
         // acknowledge this process start exception.
-        ProcessTarget process_target{std::move(p), pid,
+        char name[ZX_MAX_NAME_LEN];
+        if (zx_status_t status = p.get_property(ZX_PROP_NAME, name, sizeof(name));
+            status != ZX_OK) {
+          name[0] = '\0';
+        }
+        ProcessTarget process_target{std::move(p), pid, std::string(name),
                                      std::unordered_map<zx_koid_t, ThreadTarget>()};
         // Furthermore, we need to watch each started process for threads it creates
         auto process_watcher = std::make_unique<ProcessWatcher>(
@@ -189,41 +194,43 @@ zx::result<> profiler::Sampler::Start(size_t buffer_size_mb /* unused, we buffer
   //
   // A job or process may have exited between us configuring our target tree and actually starting,
   // so if we find we're unable to attach to a task, we simply move on without it.
-  zx::result<> res = targets_.ForEachProcess([this](std::span<const zx_koid_t> job_path,
-                                                    const ProcessTarget& p) -> zx::result<> {
-    TRACE_DURATION("cpu_profiler", "Sampler::Start/ForEachProcess");
-    std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
+  zx::result<> res = targets_.ForEachProcess(
+      [this](std::span<const zx_koid_t> job_path, const ProcessTarget& p) -> zx::result<> {
+        TRACE_DURATION("cpu_profiler", "Sampler::Start/ForEachProcess");
+        std::vector<zx_koid_t> saved_path{job_path.begin(), job_path.end()};
 
-    CacheModules(p);
+        CacheModules(p);
 
-    auto process_watcher = std::make_unique<ProcessWatcher>(
-        p.handle.borrow(),
-        [saved_path, this](zx_koid_t pid, zx_koid_t tid, zx::thread t) {
-          zx::result res =
-              targets_.AddThread(saved_path, pid, ThreadTarget{.handle = std::move(t), .tid = tid});
-          if (res.is_error()) {
-            FX_PLOGS(ERROR, res.status_value())
-                << "Failed to add thread: " << tid << " pid: " << pid;
+        auto process_watcher = std::make_unique<ProcessWatcher>(
+            p.handle.borrow(),
+            [saved_path, this](zx_koid_t pid, zx_koid_t tid, zx::thread t) {
+              std::string thread_name = profiler::GetThreadName(t);
+              zx::result res = targets_.AddThread(
+                  saved_path, pid,
+                  ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
+              if (res.is_error()) {
+                FX_PLOGS(ERROR, res.status_value())
+                    << "Failed to add thread: " << tid << " pid: " << pid;
+              }
+            },
+            [saved_path, this](zx_koid_t pid, zx_koid_t tid) {
+              zx::result res = targets_.RemoveThread(saved_path, pid, tid);
+              if (res.is_error()) {
+                FX_PLOGS(ERROR, res.status_value())
+                    << "Failed to remove thread: " << tid << " pid: " << pid;
+              }
+            });
+
+        auto [it, emplaced] = process_watchers_.emplace(p.pid, std::move(process_watcher));
+        if (emplaced) {
+          if (zx::result watch_result = it->second->Watch(dispatcher_); watch_result.is_error()) {
+            // A watch may fail for a number of reason, possibly the process exited out from under
+            // us. Simply move on without it and attempt to watch the remaining processes.
+            FX_PLOGS(WARNING, watch_result.status_value()) << "Failed to watch process: " << p.pid;
           }
-        },
-        [saved_path, this](zx_koid_t pid, zx_koid_t tid) {
-          zx::result res = targets_.RemoveThread(saved_path, pid, tid);
-          if (res.is_error()) {
-            FX_PLOGS(ERROR, res.status_value())
-                << "Failed to remove thread: " << tid << " pid: " << pid;
-          }
-        });
-
-    auto [it, emplaced] = process_watchers_.emplace(p.pid, std::move(process_watcher));
-    if (emplaced) {
-      if (zx::result watch_result = it->second->Watch(dispatcher_); watch_result.is_error()) {
-        // A watch may fail for a number of reason, possibly the process exited out from under us.
-        // Simply move on without it and attempt to watch the remaining processes.
-        FX_PLOGS(WARNING, watch_result.status_value()) << "Failed to watch process: " << p.pid;
-      }
-    }
-    return zx::ok();
-  });
+        }
+        return zx::ok();
+      });
 
   if (res.is_error()) {
     return res;
@@ -323,8 +330,10 @@ void profiler::Sampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid
       FX_PLOGS(ERROR, target.status_value()) << "Failed to search up process: " << pid;
     }
   }
-  zx::result res =
-      targets_.AddThread(job_path, pid, ThreadTarget{.handle = std::move(t), .tid = tid});
+  std::string thread_name = profiler::GetThreadName(t);
+  zx::result res = targets_.AddThread(
+      job_path, pid,
+      ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
   if (res.is_error()) {
     FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
   }

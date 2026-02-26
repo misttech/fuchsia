@@ -277,8 +277,10 @@ void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid
 
   // Add the thread so we can later grab its address space and module information for
   // symbolization purposes.
-  if (zx::result res =
-          targets_.AddThread(job_path, pid, ThreadTarget{.handle = std::move(t), .tid = tid});
+  std::string thread_name = profiler::GetThreadName(t);
+  if (zx::result res = targets_.AddThread(
+          job_path, pid,
+          ThreadTarget{.handle = std::move(t), .tid = tid, .name = std::move(thread_name)});
       res.is_error()) {
     FX_PLOGS(ERROR, res.status_value()) << "Failed to add thread to session: " << tid;
   }
