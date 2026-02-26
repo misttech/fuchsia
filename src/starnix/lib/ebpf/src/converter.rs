@@ -158,7 +158,7 @@ fn cbpf_to_ebpf(
             BPF_ALU => match bpf_op(bpf_instruction) {
                 op @ (BPF_ADD | BPF_SUB | BPF_MUL | BPF_DIV | BPF_MOD | BPF_AND | BPF_OR
                 | BPF_XOR | BPF_LSH | BPF_RSH) => {
-                    let e_instr = if bpf_src(bpf_instruction) == BPF_K {
+                    if bpf_src(bpf_instruction) == BPF_K {
                         // Division and remainder by 0 are rejected.
                         if (op == BPF_DIV || op == BPF_MOD) && bpf_instruction.k == 0 {
                             return Err(EbpfError::ProgramVerifyError("Division by 0".to_string()));
@@ -169,17 +169,43 @@ fn cbpf_to_ebpf(
                                 "Shift by 32 or more".to_string(),
                             ));
                         }
-                        EbpfInstruction::new(
+                        ebpf_code.push(EbpfInstruction::new(
                             bpf_instruction.code as u8,
                             REG_A,
                             0,
                             0,
                             bpf_instruction.k as i32,
-                        )
+                        ));
                     } else {
-                        EbpfInstruction::new(bpf_instruction.code as u8, REG_A, REG_X, 0, 0)
+                        // Division and remainder by 0 must stop the execution and return 0.
+                        if op == BPF_DIV || op == BPF_MOD {
+                            // If X != 0, skip 1 instruction.
+                            ebpf_code.push(EbpfInstruction::new(
+                                BPF_JMP32 | BPF_JNE | BPF_K,
+                                REG_X,
+                                0,
+                                2,
+                                0,
+                            ));
+                            // Return 0.
+                            ebpf_code.push(EbpfInstruction::new(
+                                BPF_ALU | BPF_MOV | BPF_IMM,
+                                REG_A,
+                                0,
+                                0,
+                                0,
+                            ));
+                            ebpf_code.push(EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0));
+                        }
+
+                        ebpf_code.push(EbpfInstruction::new(
+                            bpf_instruction.code as u8,
+                            REG_A,
+                            REG_X,
+                            0,
+                            0,
+                        ));
                     };
-                    ebpf_code.push(e_instr);
                 }
                 BPF_NEG => {
                     ebpf_code.push(EbpfInstruction::new(BPF_ALU | BPF_NEG, REG_A, REG_A, 0, 0));
@@ -286,7 +312,7 @@ fn cbpf_to_ebpf(
                         prep_patch(bpf_instruction.k as usize, ebpf_code.len() - 1)?;
                     }
                     op @ (BPF_JGT | BPF_JGE | BPF_JEQ | BPF_JSET) => {
-                        // In cBPD, JMPs have a jump-if-true and jump-if-false branch. eBPF only
+                        // In cBPF, JMPs have a jump-if-true and jump-if-false branch. eBPF only
                         // has jump-if-true. In most cases only one of the two branches actually
                         // jumps (the other one is set to 0). In these cases the instruction can
                         // be translated to 1 eBPF instruction. Otherwise two instructions are

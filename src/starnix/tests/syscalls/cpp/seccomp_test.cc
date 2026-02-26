@@ -780,7 +780,7 @@ TEST(SeccompTest, BpfLshTooLarge) {
   });
 }
 
-TEST(SeccompTest, BpfDivXRuntime) {
+TEST(SeccompTest, BpfDivByZeroRuntime) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   helper.ExpectSignal(SIGSYS);
