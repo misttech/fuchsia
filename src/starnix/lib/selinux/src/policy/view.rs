@@ -7,9 +7,10 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::{Counted, Parse, PolicyValidationContext, Validate};
 
 use hashbrown::hash_table::HashTable;
+use rapidhash::RapidHasher;
 use static_assertions::const_assert;
 use std::fmt::Debug;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
@@ -332,7 +333,7 @@ where
     D::Metadata: Hash,
 {
     fn metadata_hash(metadata: &D::Metadata) -> u64 {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = RapidHasher::default();
         metadata.hash(&mut hasher);
         hasher.finish()
     }
