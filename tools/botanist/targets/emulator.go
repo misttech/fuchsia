@@ -245,8 +245,19 @@ func (t *Emulator) Start(ctx context.Context, args []string, pbPath string, isBo
 		UEFI_arm64: filepath.Join(edk2Dir, "QEMU_EFI.fd"),
 		UEFI_x64:   filepath.Join(edk2Dir, "OVMF_CODE.fd"),
 	}
+
+	deviceType := os.Getenv("FUCHSIA_DEVICE_TYPE")
+
+	// This firmware is only usable for arm64 QEMU TCG.
+	if t.config.Target == TargetARM64 && deviceType == "QEMU" && t.config.Emulator.Accel == build.AccelNone {
+		tools.SecureBootloaderArm64 = filepath.Join(
+			t.config.FirmwareDir,
+			"arm-trusted-firmware-qemu-bios",
+			"qemu_fw.bios",
+		)
+	}
 	startArgs := ffxutil.EmuStartArgs{
-		Engine:        strings.ToLower(os.Getenv("FUCHSIA_DEVICE_TYPE")),
+		Engine:        strings.ToLower(deviceType),
 		ProductBundle: filepath.Join(cwd, pbPath),
 		KernelArgs:    allKernelArgs,
 		Device:        t.config.Emulator.Device,

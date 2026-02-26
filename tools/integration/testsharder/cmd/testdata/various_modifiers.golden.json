@@ -93,6 +93,11 @@
                 "name": "fuchsia/third_party/edk2",
                 "version": "edk2_version",
                 "subdir": "firmware/edk2"
+            },
+            {
+                "name": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
+                "version": "arm-trusted-firmware-qemu-bios_version",
+                "subdir": "firmware/arm-trusted-firmware-qemu-bios"
             }
         ],
         "bot_dimensions": {
@@ -225,6 +230,11 @@
                 "name": "fuchsia/third_party/edk2",
                 "version": "edk2_version",
                 "subdir": "firmware/edk2"
+            },
+            {
+                "name": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
+                "version": "arm-trusted-firmware-qemu-bios_version",
+                "subdir": "firmware/arm-trusted-firmware-qemu-bios"
             }
         ],
         "bot_dimensions": {
@@ -357,6 +367,11 @@
                 "name": "fuchsia/third_party/edk2",
                 "version": "edk2_version",
                 "subdir": "firmware/edk2"
+            },
+            {
+                "name": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
+                "version": "arm-trusted-firmware-qemu-bios_version",
+                "subdir": "firmware/arm-trusted-firmware-qemu-bios"
             }
         ],
         "bot_dimensions": {

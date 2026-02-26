@@ -13,10 +13,11 @@ import (
 // emuTypeToPackage maps emulator device types to the associated CIPD package and subdir
 // to download the package to with respect to the current working directory of the shard.
 var emuTypeToPackage = map[string]CIPDPackage{
-	"AEMU":   {Name: "fuchsia/third_party/android/aemu/release-gfxstream/${platform}", Subdir: "aemu/bin"},
-	"QEMU":   {Name: "fuchsia/third_party/qemu/${platform}", Subdir: "qemu"},
-	"crosvm": {Name: "fuchsia/third_party/crosvm/${platform}", Subdir: "crosvm/bin"},
-	"EDK2":   {Name: "fuchsia/third_party/edk2", Subdir: "firmware/edk2"},
+	"AEMU":                           {Name: "fuchsia/third_party/android/aemu/release-gfxstream/${platform}", Subdir: "aemu/bin"},
+	"QEMU":                           {Name: "fuchsia/third_party/qemu/${platform}", Subdir: "qemu"},
+	"crosvm":                         {Name: "fuchsia/third_party/crosvm/${platform}", Subdir: "crosvm/bin"},
+	"EDK2":                           {Name: "fuchsia/third_party/edk2", Subdir: "firmware/edk2"},
+	"arm-trusted-firmware-qemu-bios": {Name: "fuchsia/firmware/arm-trusted-firmware-qemu-bios", Subdir: "firmware/arm-trusted-firmware-qemu-bios"},
 }
 
 // AddEmuVersion applies the necessary emulator and edk2 package info required for the shard
@@ -36,12 +37,16 @@ func AddEmuVersion(s *Shard, prebuiltVersions []build.PrebuiltVersion) error {
 	} else {
 		return fmt.Errorf("%s is not a supported emulator type", s.Env.Dimensions.DeviceType())
 	}
-	edk2Pkg := emuTypeToPackage["EDK2"]
-	if version, err := build.GetPackageVersion(prebuiltVersions, edk2Pkg.Name); err != nil {
-		return err
-	} else {
-		edk2Pkg.Version = version
+
+	for _, firmware := range []string{"EDK2", "arm-trusted-firmware-qemu-bios"} {
+		fwPkg := emuTypeToPackage[firmware]
+		if version, err := build.GetPackageVersion(prebuiltVersions, fwPkg.Name); err != nil {
+			return err
+		} else {
+			fwPkg.Version = version
+		}
+		pkgs = append(pkgs, fwPkg)
 	}
-	s.CIPDPackages = append(pkgs, edk2Pkg)
+	s.CIPDPackages = pkgs
 	return nil
 }

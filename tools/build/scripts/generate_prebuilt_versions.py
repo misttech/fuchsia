@@ -9,6 +9,7 @@ import sys
 import xml.etree.ElementTree
 
 PACKAGES = [
+    "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
     "fuchsia/third_party/qemu/${platform}",
     "fuchsia/third_party/android/aemu/release/${platform}",
     "fuchsia/third_party/android/aemu/release-gfxstream/${platform}",
@@ -34,7 +35,7 @@ def generate_prebuilt_versions(jiri_snapshot, output_file):
             {
                 "name": package_info.attrib["name"],
                 "version": package_info.attrib["version"],
-            }
+            },
         )
     with open(output_file, "w") as f:
         json.dump(prebuilt_versions, f, indent=2)

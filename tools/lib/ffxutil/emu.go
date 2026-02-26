@@ -17,11 +17,12 @@ import (
 // EmuTools represent tools used by `ffx emu`. If using tools not included in the SDK,
 // their paths should be provided in this struct to EmuStart().
 type EmuTools struct {
-	Emulator   string
-	FVM        string
-	ZBI        string
-	UEFI_arm64 string
-	UEFI_x64   string
+	Emulator              string
+	FVM                   string
+	ZBI                   string
+	UEFI_arm64            string
+	UEFI_x64              string
+	SecureBootloaderArm64 string
 }
 
 type EmuStartArgs struct {
@@ -64,6 +65,9 @@ func (f *FFXInstance) EmuStartConsole(ctx context.Context, sdkRoot, name string,
 	}
 	if tools.UEFI_x64 != "" {
 		toolsToOverride["uefi_internal_x64"] = tools.UEFI_x64
+	}
+	if tools.SecureBootloaderArm64 != "" {
+		toolsToOverride["secure_bootloader_arm64"] = tools.SecureBootloaderArm64
 	}
 	for toolName, toolPath := range toolsToOverride {
 		var err error

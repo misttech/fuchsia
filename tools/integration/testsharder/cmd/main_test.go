@@ -764,6 +764,10 @@ func (m *fakeModules) PrebuiltVersions() ([]build.PrebuiltVersion, error) {
 			Name:    "fuchsia/third_party/edk2",
 			Version: "edk2_version",
 		},
+		{
+			Name:    "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
+			Version: "arm-trusted-firmware-qemu-bios_version",
+		},
 	}, nil
 }
 func (m *fakeModules) ProductBundles() []build.ProductBundle { return m.productBundles }
