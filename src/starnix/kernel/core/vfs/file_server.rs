@@ -51,7 +51,9 @@ pub fn serve_file_at(
     credentials: Arc<Credentials>,
 ) -> Result<execution_scope::ExecutionScope, Errno> {
     let kernel = current_task.kernel();
-    let open_flags = file.flags();
+    // The TRUNC flag needs to be stripped as otherwise the Fuchsia VFS library will try and
+    // truncate the file when it creates the connection.
+    let fidl_flags: fio::OpenFlags = (file.flags() & !OpenFlags::TRUNC).into_fidl();
     let starnix_file =
         StarnixNodeConnection::new(&kernel, file.weak_handle.upgrade().unwrap(), credentials);
     let scope = execution_scope::ExecutionScope::new();
@@ -59,7 +61,6 @@ pub fn serve_file_at(
         {
             let scope = scope.clone();
             move || async move {
-                let fidl_flags: fio::OpenFlags = open_flags.into_fidl();
                 if starnix_file.is_dir() {
                     fidl_flags.to_object_request(server_end).handle(|object_request| {
                         object_request.take().create_connection_sync::<MutableConnection<_>, _>(
@@ -708,7 +709,9 @@ impl file::File for StarnixNodeConnection {
     async fn truncate(&self, length: u64) -> Result<(), zx::Status> {
         Ok(self
             .spawn_task_async(async move |locked, current_task, file| {
-                file.name.truncate(locked, current_task, length)
+                // `ftruncate` checks fewer permissions than `file.name.truncate`, which is what we
+                // want.
+                file.ftruncate(locked, current_task, length)
             })
             .await?)
     }
@@ -987,6 +990,127 @@ mod tests {
             scope.wait().await;
             // This ensures fs cannot be captures in the thread.
             std::mem::drop(fs);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn serve_file_strips_trunc() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let file_node = root
+                .create_node(
+                    locked,
+                    current_task,
+                    b"test".into(),
+                    FileMode::IFREG | FileMode::ALLOW_ALL,
+                    DeviceType::NONE,
+                )
+                .expect("create_node");
+
+            let file = file_node
+                .open(locked, current_task, OpenFlags::RDWR, AccessCheck::skip())
+                .expect("open");
+            file.write(locked, current_task, &mut VecInputBuffer::new(b"hello")).expect("write");
+
+            // Reopen with O_TRUNC.
+            let file_to_serve = current_task
+                .open_namespace_node_at(
+                    locked,
+                    root,
+                    b"test".into(),
+                    OpenFlags::RDWR | OpenFlags::TRUNC,
+                    FileMode::default(),
+                    ResolveFlags::default(),
+                    AccessCheck::skip(),
+                )
+                .expect("open O_TRUNC");
+
+            // Ensure it IS truncated by the open.
+            assert_eq!(
+                file_to_serve.node().fetch_and_refresh_info(locked, current_task).unwrap().size,
+                0
+            );
+
+            // Write something so we can check if it gets truncated again.
+            file_to_serve
+                .write(locked, current_task, &mut VecInputBuffer::new(b"world"))
+                .expect("write world");
+            assert_eq!(file_to_serve.node().info().size, 5);
+
+            let (client_end, scope) =
+                serve_file(current_task, &file_to_serve, Credentials::root()).expect("serve");
+
+            fuchsia_async::unblock(|| {
+                let zxio = Zxio::create(client_end.into_handle()).expect("create");
+                let mut attr = syncio::zxio_node_attributes_t::default();
+                attr.has.content_size = true;
+                let attr = zxio.attr_get(attr.has).expect("attr_get");
+                // If O_TRUNC was not stripped, the size would be 0 here.
+                assert_eq!(attr.content_size, 5);
+            })
+            .await;
+
+            scope.shutdown();
+            scope.wait().await;
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn truncate_checks_fd_permissions() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(locked, &kernel);
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let file_node = root
+                .create_node(
+                    locked,
+                    current_task,
+                    "test".into(),
+                    FileMode::IFREG | FileMode::IRWXU,
+                    DeviceType::NONE,
+                )
+                .expect("create_node");
+
+            let file = file_node
+                .open(locked, current_task, OpenFlags::RDWR, AccessCheck::skip())
+                .expect("open");
+            file.write(locked, current_task, &mut VecInputBuffer::new(b"hello")).expect("write");
+
+            // Serve the file as different user.
+            let (client_end, scope) = serve_file(
+                current_task,
+                &file,
+                Arc::new(Credentials {
+                    fsuid: 2000,
+                    cap_effective: Capabilities::empty(),
+                    ..Credentials::clone(&current_task.current_creds())
+                }),
+            )
+            .expect("serve");
+
+            fuchsia_async::unblock(move || {
+                let zxio = Zxio::create(client_end.into_handle()).expect("create");
+                // truncate should succeed because the FD is open for writing, even though the file
+                // is being served with a different user.
+                zxio.truncate(2).expect("truncate");
+
+                let mut attr = syncio::zxio_node_attributes_t::default();
+                attr.has.content_size = true;
+                let attr = zxio.attr_get(attr.has).expect("attr_get");
+                assert_eq!(attr.content_size, 2);
+            })
+            .await;
+
+            scope.shutdown();
+            scope.wait().await;
         })
         .await;
     }
