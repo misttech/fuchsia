@@ -37,9 +37,9 @@ TEST_F(TraceManagerTest, RegisterProviderWithFdio) {
 
   zx::channel ph2a, ph2b;
   ASSERT_EQ(zx::channel::create(0, &ph2a, &ph2b), ZX_OK);
-  fidl::ClientEnd<provider::Provider> provider2_h{std::move(ph2b)};
+  fidl::ClientEnd<provider::ProviderV2> provider2_h{std::move(ph2b)};
   auto result2 =
-      registry_ptr->RegisterProvider({{std::move(provider2_h), kProvider2Pid, kProvider2Name}});
+      registry_ptr->RegisterV2({{std::move(provider2_h), kProvider2Pid, kProvider2Name}});
   ASSERT_TRUE(result2.is_ok());
 
   // Provider registrations come in on a different channel than
@@ -85,8 +85,8 @@ TEST_F(TraceManagerTest, AddFakeProviders) {
   ASSERT_TRUE(AddFakeProvider(kProvider1Pid, kProvider1Name, &provider1));
   EXPECT_EQ(fake_provider_bindings().size(), 1u);
 
-  FakeProvider* provider2;
-  ASSERT_TRUE(AddFakeProvider(kProvider2Pid, kProvider2Name, &provider2));
+  FakeProviderV2* provider2;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider2Pid, kProvider2Name, &provider2));
   EXPECT_EQ(fake_provider_bindings().size(), 2u);
 
   // Provider registrations come in on a different channel than
@@ -136,8 +136,8 @@ TEST_F(TraceManagerTest, GetKnownCategories) {
       {{.name = "provider1_category", .description = "description1"}},
   });
 
-  FakeProvider* provider2;
-  ASSERT_TRUE(AddFakeProvider(kProvider2Pid, kProvider2Name, &provider2));
+  FakeProviderV2* provider2;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider2Pid, kProvider2Name, &provider2));
   EXPECT_EQ(fake_provider_bindings().size(), 2u);
   provider2->SetKnownCategories({
       {{.name = "foo"}},
@@ -195,8 +195,8 @@ TEST_F(TraceManagerTest, GetKnownCategoriesTimeout) {
       {{.name = "provider1_category", .description = "description1"}},
   });
 
-  FakeProvider* provider2;
-  ASSERT_TRUE(AddFakeProvider(kProvider2Pid, kProvider2Name, &provider2));
+  FakeProviderV2* provider2;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider2Pid, kProvider2Name, &provider2));
   EXPECT_EQ(fake_provider_bindings().size(), 2u);
   provider2->SetKnownCategories({
       {{.name = "foo"}},
@@ -204,10 +204,10 @@ TEST_F(TraceManagerTest, GetKnownCategoriesTimeout) {
       {{.name = "provider2_category", .description = "description2"}},
   });
 
-  FakeProvider* provider3;
-  ASSERT_TRUE(AddFakeProvider(kProvider3Pid, kProvider3Name, &provider3));
+  FakeProviderV2* provider3;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider3Pid, kProvider3Name, &provider3));
   EXPECT_EQ(fake_provider_bindings().size(), 3u);
-  provider2->SetKnownCategories({
+  provider3->SetKnownCategories({
       {{.name = "foo"}},
       {{.name = "bar"}},
       {{.name = "provider3_category", .description = "description3"}},

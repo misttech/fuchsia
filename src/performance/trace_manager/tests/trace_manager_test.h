@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -21,6 +22,7 @@
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/performance/trace_manager/app.h"
 #include "src/performance/trace_manager/tests/fake_provider.h"
+#include "src/performance/trace_manager/tests/fake_provider_v2.h"
 
 namespace tracing {
 namespace test {
@@ -92,7 +94,10 @@ class TraceManagerTest : public gtest::TestLoopFixture,
     return last_session_state_event_;
   }
 
-  const std::vector<std::unique_ptr<FakeProviderBinding>>& fake_provider_bindings() const {
+  using ProviderBinding =
+      std::variant<std::unique_ptr<FakeProviderBinding>, std::unique_ptr<FakeProviderV2Binding>>;
+
+  const std::vector<ProviderBinding>& fake_provider_bindings() const {
     return fake_provider_bindings_;
   }
 
@@ -104,6 +109,8 @@ class TraceManagerTest : public gtest::TestLoopFixture,
   // stored there, and is valid for the duration of the test.
   bool AddFakeProvider(zx_koid_t pid, const std::string& name,
                        FakeProvider** out_provider = nullptr);
+  bool AddFakeProviderV2(zx_koid_t pid, const std::string& name,
+                         FakeProviderV2** out_provider = nullptr);
 
   // Called from within |TraceManager| on |TraceSession| state changes.
   void OnSessionStateChange();
@@ -229,7 +236,7 @@ class TraceManagerTest : public gtest::TestLoopFixture,
   StopState stop_state_;
 
   // Containers for provider bindings so that they get cleaned up at the end of the test.
-  std::vector<std::unique_ptr<FakeProviderBinding>> fake_provider_bindings_;
+  std::vector<ProviderBinding> fake_provider_bindings_;
 };
 
 }  // namespace test

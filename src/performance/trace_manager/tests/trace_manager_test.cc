@@ -71,6 +71,32 @@ bool TraceManagerTest::AddFakeProvider(zx_koid_t pid, const std::string& name,
   return true;
 }
 
+bool TraceManagerTest::AddFakeProviderV2(zx_koid_t pid, const std::string& name,
+                                         FakeProviderV2** out_provider) {
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::Registry>::Create();
+  context_provider().public_service_directory()->Connect(
+      fidl::DiscoverableProtocolName<fuchsia_tracing_provider::Registry>, server_end.TakeChannel());
+  fidl::Client<fuchsia_tracing_provider::Registry> registry(std::move(client_end), dispatcher());
+
+  auto provider_impl = std::make_unique<FakeProviderV2>(pid, name);
+  auto provider = std::make_unique<FakeProviderV2Binding>(std::move(provider_impl));
+
+  auto provider_client = provider->NewBinding(dispatcher());
+  if (!provider_client.is_valid()) {
+    return false;
+  }
+
+  auto result = registry->RegisterV2({{std::move(provider_client), pid, name}});
+  if (result.is_error()) {
+    return false;
+  }
+  if (out_provider) {
+    *out_provider = provider->provider.get();
+  }
+  fake_provider_bindings_.push_back(std::move(provider));
+  return true;
+}
+
 TraceManagerTest::SessionState TraceManagerTest::GetSessionState() const {
   if (trace_manager()->session()) {
     switch (trace_manager()->session()->state()) {
@@ -356,41 +382,45 @@ bool TraceManagerTest::TerminateSession() {
 
 void TraceManagerTest::MarkAllProvidersStarted() {
   FX_LOGS(DEBUG) << "Marking all providers started";
-  for (const auto& p : fake_provider_bindings()) {
-    p->provider->MarkStarted();
+  for (const auto& binding : fake_provider_bindings_) {
+    std::visit([](const auto& p) { p->provider->MarkStarted(); }, binding);
   }
 }
 
 void TraceManagerTest::MarkAllProvidersStopped() {
   FX_LOGS(DEBUG) << "Marking all providers stopped";
-  for (const auto& p : fake_provider_bindings()) {
-    p->provider->MarkStopped();
+  for (const auto& binding : fake_provider_bindings_) {
+    std::visit([](const auto& p) { p->provider->MarkStopped(); }, binding);
   }
 }
 
 void TraceManagerTest::MarkAllProvidersTerminated() {
   FX_LOGS(DEBUG) << "Marking all providers terminated";
-  for (const auto& p : fake_provider_bindings()) {
-    p->provider->MarkTerminated();
+  for (const auto& binding : fake_provider_bindings_) {
+    std::visit([](const auto& p) { p->provider->MarkTerminated(); }, binding);
   }
 }
 
 void TraceManagerTest::VerifyCounts(int expected_start_count, int expected_stop_count) {
   SessionState state{GetSessionState()};
-  for (const auto& p : fake_provider_bindings()) {
-    const std::string& name = p->provider->name();
-    if (state != SessionState::kReady) {
-      EXPECT_EQ(p->provider->initialize_count(), 1) << name;
-    } else {
-      EXPECT_EQ(p->provider->initialize_count(), 0) << name;
-    }
-    EXPECT_EQ(p->provider->start_count(), expected_start_count) << name;
-    EXPECT_EQ(p->provider->stop_count(), expected_stop_count) << name;
-    if (state != SessionState::kNonexistent) {
-      EXPECT_EQ(p->provider->terminate_count(), 0) << name;
-    } else {
-      EXPECT_EQ(p->provider->terminate_count(), 1) << name;
-    }
+  for (const auto& binding : fake_provider_bindings_) {
+    std::visit(
+        [state, expected_start_count, expected_stop_count](const auto& p) {
+          const std::string& name = p->provider->name();
+          if (state != SessionState::kReady) {
+            EXPECT_EQ(p->provider->initialize_count(), 1) << name;
+          } else {
+            EXPECT_EQ(p->provider->initialize_count(), 0) << name;
+          }
+          EXPECT_EQ(p->provider->start_count(), expected_start_count) << name;
+          EXPECT_EQ(p->provider->stop_count(), expected_stop_count) << name;
+          if (state != SessionState::kNonexistent) {
+            EXPECT_EQ(p->provider->terminate_count(), 0) << name;
+          } else {
+            EXPECT_EQ(p->provider->terminate_count(), 1) << name;
+          }
+        },
+        binding);
   }
 }
 
