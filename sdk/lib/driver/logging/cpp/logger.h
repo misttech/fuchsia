@@ -31,6 +31,8 @@
 
 #include <zircon/availability.h>
 
+#include <optional>
+
 #if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
 #include <format>
 #include <source_location>
@@ -86,13 +88,17 @@ class Logger final {
   //
   // If we fail to connect to LogSink, or if there's any error the returned logger will be no-op.
 #if !HOST_LOGGING
-  static std::unique_ptr<Logger> Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
-                                         std::string_view name,
-                                         FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
+  static std::unique_ptr<Logger> Create2(
+      const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
+      FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                                         ,
-                                         bool wait_for_initial_interest = true
+      ,
+      bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+      ,
+      std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   );
 
   static zx::result<std::unique_ptr<Logger>> Create(
@@ -102,6 +108,10 @@ class Logger final {
       ,
       bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+      ,
+      std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
       )
       ZX_DEPRECATED_SINCE(1, 24, "Use Create2 which will return a no-op logger instead of failing");
 #endif  // !HOST_LOGGING
@@ -213,6 +223,10 @@ class Logger final {
       ,
       bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+      ,
+      std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   );
 #endif  // !HOST_LOGGING
 

@@ -656,7 +656,9 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  // Create our logger.
+  // Create our logger. This leaves out |DriverStartArgs.log_sink| because the DriverBase
+  // constructor has already consumed it, so |Create2| will fallback to opening a log channel from
+  // |incoming()|.
   auto logger = fdf::Logger::Create2(*incoming(), dispatcher(), note->payload.name);
 
   // Move the logger over into a shared_ptr instead of unique_ptr so we can pass it to the global

@@ -8,6 +8,8 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/processargs.h>
 
+#include <optional>
+
 #include "src/devices/lib/log/log.h"
 
 namespace {
@@ -181,15 +183,23 @@ void Runner::Start(StartRequestView request, StartCompleter::Sync& completer) {
   // We use the numbered handle, if it exists, to locate the moniker of the node we are starting
   // a driver for. This will be the case for starts that we have issued ourself through
   // |Runner::StartDriverComponent|.
-  auto& handles = request->start_info.numbered_handles();
-  if (handles.size() == 1 && handles[0].handle && handles[0].id == kTokenId) {
-    zx::result koid = GetKoid(handles[0].handle.get());
-    if (koid.is_error()) {
-      completer.Close(ZX_ERR_INVALID_ARGS);
-      return;
+  std::optional<zx_koid_t> token_koid;
+  if (request->start_info.has_numbered_handles()) {
+    for (auto& h : request->start_info.numbered_handles()) {
+      if (h.id == kTokenId && h.handle) {
+        zx::result koid = GetKoid(h.handle.get());
+        if (koid.is_error()) {
+          completer.Close(ZX_ERR_INVALID_ARGS);
+          return;
+        }
+        token_koid.emplace(*koid);
+        break;
+      }
     }
+  }
 
-    auto it = start_requests_.find(koid.value());
+  if (token_koid.has_value()) {
+    auto it = start_requests_.find(*token_koid);
     if (it == start_requests_.end()) {
       completer.Close(ZX_ERR_NOT_FOUND);
       return;

@@ -9,6 +9,8 @@
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/lib/driver-framework-migration-utils/logging/testing/dfv2-driver-with-logging.h"
@@ -36,8 +38,7 @@ class DriverLoggingTest : public ::testing::TestWithParam<fuchsia_logging::RawLo
     test_environment_.SyncCall([this, server = std::move(start_args->incoming_directory_server)](
                                    fdf_testing::internal::TestEnvironment* env) mutable {
       ASSERT_OK(env->AddLogSink([this](fidl::ServerEnd<fuchsia_logger::LogSink> server_end) {
-        ASSERT_FALSE(log_sink_);
-        log_sink_.emplace(GetParam(), std::move(server_end));
+        log_sinks_.emplace_back(GetParam(), std::move(server_end));
       }));
 
       zx::result result = env->Initialize(std::move(server));
@@ -68,7 +69,7 @@ class DriverLoggingTest : public ::testing::TestWithParam<fuchsia_logging::RawLo
   // Attaches a foreground dispatcher for us automatically.
   fdf_testing::DriverRuntime runtime_;
 
-  std::optional<fuchsia_logging::FakeLogSink> log_sink_;
+  std::vector<fuchsia_logging::FakeLogSink> log_sinks_;
 
   // We have to use a separate dispatcher to handle the log sink connection because we wait for the
   // interest synchronously when constructing the driver.

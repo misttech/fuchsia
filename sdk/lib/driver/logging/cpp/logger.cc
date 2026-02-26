@@ -23,6 +23,7 @@
 #include <array>
 #include <cstdarg>
 #include <iterator>
+#include <optional>
 
 namespace flog = ::fuchsia_logging;
 
@@ -80,18 +81,27 @@ void Logger::BeginRecord(flog::LogBuffer& buffer, FuchsiaLogSeverity severity,
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 }
 
-std::unique_ptr<Logger> Logger::Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
-                                        std::string_view name, FuchsiaLogSeverity min_severity
+std::unique_ptr<Logger> Logger::Create2(
+    const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
+    FuchsiaLogSeverity min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                                        ,
-                                        bool wait_for_initial_interest
+    ,
+    bool wait_for_initial_interest
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+    ,
+    std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 ) {
   auto result = Logger::MaybeCreate(ns, dispatcher, name, min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                     ,
                                     wait_for_initial_interest
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+                                    ,
+                                    std::move(maybe_log_sink)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   );
   if (!result.is_ok()) {
     return Logger::NoOp();
@@ -99,20 +109,27 @@ std::unique_ptr<Logger> Logger::Create2(const Namespace& ns, async_dispatcher_t*
   return std::move(result.value());
 }
 
-zx::result<std::unique_ptr<Logger>> Logger::Create(const Namespace& ns,
-                                                   async_dispatcher_t* dispatcher,
-                                                   std::string_view name,
-                                                   FuchsiaLogSeverity min_severity
+zx::result<std::unique_ptr<Logger>> Logger::Create(
+    const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
+    FuchsiaLogSeverity min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                                                   ,
-                                                   bool wait_for_initial_interest
+    ,
+    bool wait_for_initial_interest
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+    ,
+    std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 ) {
   auto result = Logger::MaybeCreate(ns, dispatcher, name, min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                     ,
                                     wait_for_initial_interest
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+                                    ,
+                                    std::move(maybe_log_sink)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   );
   if (!result.is_ok()) {
     return zx::ok(Logger::NoOp());
@@ -120,19 +137,32 @@ zx::result<std::unique_ptr<Logger>> Logger::Create(const Namespace& ns,
   return result;
 }
 
-zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(const Namespace& ns,
-                                                        async_dispatcher_t* dispatcher,
-                                                        std::string_view name,
-                                                        FuchsiaLogSeverity min_severity
+zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(
+    const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
+    FuchsiaLogSeverity min_severity
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                                                        ,
-                                                        bool wait_for_initial_interest
+    ,
+    bool wait_for_initial_interest
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+    ,
+    std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink
+#endif
 ) {
-  auto ns_result = ns.Connect<fuchsia_logger::LogSink>();
-  if (ns_result.is_error()) {
-    return ns_result.take_error();
+  zx::channel log_sink;
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  if (maybe_log_sink.has_value()) {
+    log_sink = maybe_log_sink->TakeChannel();
+  } else {
+#endif
+    auto ns_result = ns.Connect<fuchsia_logger::LogSink>();
+    if (ns_result.is_error()) {
+      return ns_result.take_error();
+    }
+    log_sink = ns_result->TakeChannel();
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   }
+#endif
 
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
   zx::socket client_end, server_end;
@@ -168,7 +198,7 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(const Namespace& ns,
   const char* tags[] = {"driver", name_str.c_str()};
   if (auto logger = flog::Logger::Create(flog::RawLogSettings{
           .min_log_level = min_severity,
-          .log_sink = ns_result->TakeChannel().release(),
+          .log_sink = log_sink.release(),
           .tags = tags,
           .tags_count = 2,
           .dispatcher = dispatcher,

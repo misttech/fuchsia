@@ -10,7 +10,9 @@
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
+#include <lib/zx/channel.h>
 #include <zircon/process.h>
+#include <zircon/processargs.h>
 
 #include <fbl/no_destructor.h>
 
@@ -67,13 +69,25 @@ Logger& GetOrCreateLogger() {
 
 Logger CreateLogger(fuchsia_logging::RawLogSettings* settings) {
   zx_koid_t pid = GetKoid(zx_process_self());
-  auto client_end = component::Connect<fuchsia_logger::LogSink>();
-  if (client_end.is_ok()) {
+
+  zx::channel log_sink;
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  log_sink = zx::channel{zx_take_startup_handle(PA_LOG_SINK)};
+#endif
+
+  if (!log_sink.is_valid()) {
+    auto client_end = component::Connect<fuchsia_logger::LogSink>();
+    if (client_end.is_ok()) {
+      log_sink = client_end->TakeChannel();
+    }
+  }
+
+  if (log_sink.is_valid()) {
     std::optional<fuchsia_logging::RawLogSettings> settings_storage;
     if (!settings) {
       settings = &settings_storage.emplace();
     }
-    settings->log_sink = client_end->TakeChannel().release();
+    settings->log_sink = log_sink.release();
     auto logger = fuchsia_logging::Logger::Create(*settings);
     if (logger.is_ok()) {
       return Logger(pid, *std::move(logger));

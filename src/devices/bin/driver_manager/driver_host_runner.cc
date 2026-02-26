@@ -358,18 +358,33 @@ void DriverHostRunner::Start(StartRequestView request, StartCompleter::Sync& com
   //  2. We avoid collisions that can occur when relying on the package URL
   //  3. We avoid relying on the resolved URL matching the package URL
   if (!request->start_info.has_numbered_handles()) {
-    fdf_log::error("Failed to start driver host'{}', invalid request", url);
+    fdf_log::error("Failed to start driver host '{}', invalid request", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
-  auto& handles = request->start_info.numbered_handles();
-  if (handles.size() != 1 || !handles[0].handle || handles[0].id != kTokenId) {
+  const auto& handles = request->start_info.numbered_handles();
+  if (handles.empty()) {
     fdf_log::error("Failed to start driver host '{}', invalid request", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
-  zx::result koid = GetKoid(zx::unowned_handle(handles[0].handle.get()));
+  bool found = false;
+  size_t idx = 0;
+  for (size_t i = 0; i < handles.size(); ++i) {
+    if (handles[i].id == kTokenId && handles[i].handle) {
+      idx = i;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    LOGF(ERROR, "Failed to start driver host '%s', invalid request", url.c_str());
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  zx::result koid = GetKoid(zx::unowned_handle(handles[idx].handle.get()));
   if (koid.is_error()) {
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;

@@ -17,8 +17,10 @@ source_set("test_node") {
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
   ]
 
-  public_deps =
-      [ "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+  ]
 }
 
 sdk_source_set("cpp") {

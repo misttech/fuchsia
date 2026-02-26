@@ -6,6 +6,7 @@ library fuchsia.driver.framework;
 using fuchsia.component.runner;
 using fuchsia.data;
 using fuchsia.io;
+using fuchsia.logger;
 using fuchsia.power.broker;
 using fuchsia.url;
 using zx;
@@ -130,4 +131,8 @@ type DriverStartArgs = resource table {
     /// by the driver host and never passed to the driver.
     @available(added=HEAD)
     14: power_element_args PowerElementArgs;
+
+    /// Log sink channel.
+    @available(added=HEAD)
+    15: log_sink client_end:fuchsia.logger.LogSink;
 };

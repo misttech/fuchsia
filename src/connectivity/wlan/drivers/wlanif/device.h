@@ -49,8 +49,6 @@ class Device final : public fdf::DriverBase {
   // This is static so that we can pass it to the Rust MLME over the C FFI.
   static void MlmeShutdownCallback(void* self_ptr, zx_status_t status);
 
-  std::unique_ptr<fdf::Logger> logger_;
-
   // |rust_mlme_| is only accessed by the default dispatcher to start and shutdown MLME in
   // |Device::Start| and |Device::PrepareStop| respectively.
   // Since it's only accessed by the default dispatcher, locking is not required.

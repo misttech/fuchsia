@@ -16,9 +16,7 @@ Device::Device(fdf::DriverStartArgs start_args,
                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : DriverBase("wlanif", std::move(start_args), std::move(driver_dispatcher)),
       rust_mlme_(nullptr, delete_fullmac_mlme_handle) {
-  auto logger = fdf::Logger::Create2(*incoming(), dispatcher(), "wlanif", FUCHSIA_LOG_INFO);
-  logger_ = std::move(logger);
-  ltrace_fn(*logger_);
+  ltrace_fn(logger());
 }
 
 Device::~Device() = default;
@@ -27,7 +25,7 @@ zx::result<> Device::Start() {
   zx::result<fidl::ClientEnd<fuchsia_wlan_fullmac::WlanFullmacImpl>> client_end =
       incoming()->Connect<fuchsia_wlan_fullmac::Service::WlanFullmacImpl>();
   if (client_end.is_error()) {
-    FDF_LOGL(ERROR, *logger_, "Connect to FullmacImpl failed: %s", client_end.status_string());
+    FDF_LOGL(ERROR, logger(), "Connect to FullmacImpl failed: %s", client_end.status_string());
     return client_end.take_error();
   }
 
@@ -41,7 +39,7 @@ zx::result<> Device::Start() {
       RustFullmacMlme(start_fullmac_mlme(client_end_handle, this, &Device::MlmeShutdownCallback),
                       delete_fullmac_mlme_handle);
   if (!rust_mlme_) {
-    FDF_LOGL(ERROR, *logger_, "Rust MLME is not valid");
+    FDF_LOGL(ERROR, logger(), "Rust MLME is not valid");
     return zx::error(ZX_ERR_BAD_HANDLE);
   }
 

@@ -5,7 +5,11 @@
 #include "src/devices/bin/driver_manager/driver_host.h"
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.logger/cpp/fidl.h>
+#include <fidl/fuchsia.logger/cpp/wire_messaging.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
+#include <zircon/processargs.h>
+#include <zircon/types.h>
 
 #include <memory>
 
@@ -246,6 +250,15 @@ void DriverHostComponent::Start(
             .lessor_client(std::move(power_element_args.lessor))
             .token(std::move(power_element_args.power_element_token))
             .Build());
+  }
+
+  if (start_info.has_numbered_handles()) {
+    for (auto& h : start_info.numbered_handles()) {
+      if (h.id == PA_LOG_SINK) {
+        args.log_sink(fidl::ClientEnd<fuchsia_logger::LogSink>{zx::channel{std::move(h.handle)}});
+        break;
+      }
+    }
   }
 
   auto status = SetEncodedConfig(args, start_info);

@@ -26,15 +26,17 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
     ZX_ASSERT_MSG(incoming.is_ok(), "%s", incoming.status_string());
     return std::move(incoming.value());
   }();
-  logger_ = [&incoming, this]() {
-    auto logger = Logger::Create2(incoming, dispatcher(), name_, FUCHSIA_LOG_INFO
+  logger_ = Logger::Create2(incoming, dispatcher(), name_, FUCHSIA_LOG_INFO
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
-                                  ,
-                                  logger_wait_for_initial_interest
+                            ,
+                            logger_wait_for_initial_interest
 #endif
-    );
-    return logger;
-  }();
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+                            ,
+                            std::move(start_args_.log_sink())
+#endif
+  );
+
   Logger::SetGlobalInstance(logger_.get());
   std::optional outgoing_request = std::move(start_args_.outgoing_dir());
   ZX_ASSERT(outgoing_request.has_value());
