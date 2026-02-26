@@ -201,9 +201,9 @@ def generate_target_action(
     meta: list[Metadata],
     build_dir: Path,
 ) -> TargetAction:
-    include_parts_dir_args = [
+    include_parts_dir_args = sorted(
         f"--include-parts-dir={m.rustdoc_parts_dir}" for m in meta
-    ]
+    )
     # let's document an empty crate to avoid calling rustdoc with no input crate
     target_crate_root = "/dev/null"
     flags = [
