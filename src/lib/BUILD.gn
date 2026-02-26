@@ -26,6 +26,7 @@ group("tests") {
     "directed_graph:tests",
     "driver_symbols:tests",
     "dynfidl:tests",
+    "elf-search:tests",
     "elfldltl:tests",
     "elflib:tests",
     "error/clonable_error:tests",

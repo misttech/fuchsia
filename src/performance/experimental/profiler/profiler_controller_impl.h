@@ -5,13 +5,13 @@
 #ifndef SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_PROFILER_CONTROLLER_IMPL_H_
 #define SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_PROFILER_CONTROLLER_IMPL_H_
 
+#include <elf-search.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.cpu.profiler/cpp/fidl.h>
 #include <lib/zx/process.h>
 #include <lib/zx/task.h>
 #include <lib/zx/thread.h>
 #include <zircon/compiler.h>
-#include <zircon/system/ulib/elf-search/include/elf-search.h>
 
 #include "component.h"
 #include "fxt_writer.h"

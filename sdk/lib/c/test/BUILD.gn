@@ -273,7 +273,7 @@ test("gwp-asan-test") {
     "//sdk/lib/c/scudo:gwp-asan-common",
     "//sdk/lib/fdio",
     "//sdk/lib/fit",
-    "//zircon/system/ulib/elf-search",
+    "//src/lib/elf-search",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest:zxtest-streams",
   ]

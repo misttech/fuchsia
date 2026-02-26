@@ -31,16 +31,15 @@ test("elf-search") {
   }
   sources = [ "elf-search-test.cc" ]
   deps = [
+    "..",
     "//sdk/lib/fdio",
     "//src/lib/elfldltl",
-    "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/test-utils",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
   data_deps = [ ":elf-search-test-helper" ]
-  include_dirs = [ "include" ]
 }
 
 bootfs_test("elf-search-bootfs-test") {

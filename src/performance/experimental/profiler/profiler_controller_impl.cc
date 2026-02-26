@@ -4,6 +4,7 @@
 
 #include "profiler_controller_impl.h"
 
+#include <elf-search.h>
 #include <elf.h>
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <fidl/fuchsia.sys2/cpp/fidl.h>
@@ -20,7 +21,6 @@
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
-#include <zircon/system/ulib/elf-search/include/elf-search.h>
 #include <zircon/types.h>
 
 #include <algorithm>

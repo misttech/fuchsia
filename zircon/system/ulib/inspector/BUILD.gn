@@ -22,8 +22,8 @@ zx_library("inspector") {
   deps = [
     ":gwp-asan",
     "//src/lib/debug:backtrace-request-utils",
+    "//src/lib/elf-search",
     "//src/lib/unwinder",
-    "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/pretty",
   ]
@@ -50,6 +50,6 @@ source_set("gwp-asan") {
   ]
   deps = [
     "//sdk/lib/c/scudo:gwp-asan-common",
-    "//zircon/system/ulib/elf-search",
+    "//src/lib/elf-search",
   ]
 }

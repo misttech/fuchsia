@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 
 shared_library("elf-search-wrapper") {
   sources = [ "src/elf-search.cc" ]
-  public_deps = [ "//zircon/system/ulib/elf-search" ]
+  deps = [ "//src/lib/elf-search" ]
 }
 
 rustc_binary("bin") {

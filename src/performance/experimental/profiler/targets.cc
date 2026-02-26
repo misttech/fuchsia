@@ -4,6 +4,7 @@
 
 #include "targets.h"
 
+#include <elf-search.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -13,7 +14,6 @@
 #include <lib/zx/thread.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
-#include <zircon/system/ulib/elf-search/include/elf-search.h>
 #include <zircon/types.h>
 
 #include <algorithm>

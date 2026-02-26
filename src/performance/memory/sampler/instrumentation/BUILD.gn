@@ -14,7 +14,7 @@ source_set("recorder") {
     ":poisson_sampler",
     "//sdk/fidl/fuchsia.memory.sampler:fuchsia.memory.sampler_cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//zircon/system/ulib/elf-search",
+    "//src/lib/elf-search",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]

@@ -5,13 +5,13 @@
 #ifndef SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_TARGETS_H_
 #define SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_TARGETS_H_
 
+#include <elf-search.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
 #include <lib/zx/thread.h>
-#include <zircon/system/ulib/elf-search/include/elf-search.h>
 #include <zircon/types.h>
 
 #include <memory>

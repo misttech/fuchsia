@@ -17,7 +17,6 @@ source_set("pager") {
     ":userpager",
     "//src/zircon/testing/maybe-standalone-test",
     "//zircon/kernel/lib/arch",
-    "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
