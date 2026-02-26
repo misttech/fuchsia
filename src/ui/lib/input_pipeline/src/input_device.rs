@@ -411,7 +411,8 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                     if let Some(previous_report) = previous_report.as_ref() {
                         debug_assert!(
                             previous_report.wake_lease.is_none(),
-                            "previous_report must not have a wake lease"
+                            "previous_report must not have a wake lease but does: {:?}",
+                            previous_report
                         );
                     }
 
