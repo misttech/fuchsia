@@ -14,8 +14,8 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use ebpf::{
-    BPF_ABS, BPF_IND, BPF_LD, BPF_ST, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId, NoMap,
-    ProgramArgument, Type, bpf_addressing_mode, bpf_class, convert_and_link_cbpf,
+    BPF_ABS, BPF_IND, BPF_LD, BPF_ST, BPF_W, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId,
+    NoMap, ProgramArgument, Type, bpf_addressing_mode, bpf_class, bpf_size, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
@@ -114,6 +114,10 @@ impl SeccompFilter {
             if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST)
                 && bpf_addressing_mode(insn) == BPF_IND
             {
+                return error!(EINVAL);
+            }
+            // 8 and 16 bits read and write are strictly forbidden.
+            if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST) && bpf_size(insn) != BPF_W {
                 return error!(EINVAL);
             }
         }

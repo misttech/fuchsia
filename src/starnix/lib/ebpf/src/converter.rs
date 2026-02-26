@@ -51,7 +51,7 @@ pub fn bpf_class(filter: &sock_filter) -> u8 {
 /// The bpf_size is the 4th and 5th bit of load and store
 /// instructions.  It indicates the bit width of the load / store
 /// target (8, 16, 32, 64 bits).
-fn bpf_size(filter: &sock_filter) -> u8 {
+pub fn bpf_size(filter: &sock_filter) -> u8 {
     (filter.code & 0x18) as u8
 }
 
