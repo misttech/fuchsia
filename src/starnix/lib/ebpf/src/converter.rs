@@ -10,9 +10,9 @@ use crate::EbpfError::*;
 use crate::api::{
     BPF_A, BPF_ABS, BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_B, BPF_DIV, BPF_EXIT, BPF_H, BPF_IMM,
     BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT, BPF_JMP, BPF_JMP32, BPF_JNE,
-    BPF_JSET, BPF_K, BPF_LD, BPF_LDX, BPF_LEN, BPF_LSH, BPF_MEM, BPF_MISC, BPF_MOV, BPF_MSH,
-    BPF_MUL, BPF_NEG, BPF_OR, BPF_RET, BPF_RSH, BPF_ST, BPF_STX, BPF_SUB, BPF_TAX, BPF_TXA, BPF_W,
-    BPF_X, BPF_XOR, EbpfInstruction,
+    BPF_JSET, BPF_K, BPF_LD, BPF_LDX, BPF_LEN, BPF_LSH, BPF_MEM, BPF_MISC, BPF_MOD, BPF_MOV,
+    BPF_MSH, BPF_MUL, BPF_NEG, BPF_OR, BPF_RET, BPF_RSH, BPF_ST, BPF_STX, BPF_SUB, BPF_TAX,
+    BPF_TXA, BPF_W, BPF_X, BPF_XOR, EbpfInstruction,
 };
 use crate::program::{
     BpfProgramContext, EbpfProgram, ProgramArgument, StaticHelperSet, link_program,
@@ -156,9 +156,13 @@ fn cbpf_to_ebpf(
 
         match bpf_class(bpf_instruction) {
             BPF_ALU => match bpf_op(bpf_instruction) {
-                BPF_ADD | BPF_SUB | BPF_MUL | BPF_DIV | BPF_AND | BPF_OR | BPF_XOR | BPF_LSH
-                | BPF_RSH => {
+                op @ (BPF_ADD | BPF_SUB | BPF_MUL | BPF_DIV | BPF_MOD | BPF_AND | BPF_OR
+                | BPF_XOR | BPF_LSH | BPF_RSH) => {
                     let e_instr = if bpf_src(bpf_instruction) == BPF_K {
+                        // Division and remainder by 0 are rejected.
+                        if (op == BPF_DIV || op == BPF_MOD) && bpf_instruction.k == 0 {
+                            return Err(EbpfError::ProgramVerifyError("Division by 0".to_string()));
+                        }
                         EbpfInstruction::new(
                             bpf_instruction.code as u8,
                             REG_A,
