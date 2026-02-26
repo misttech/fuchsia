@@ -4,7 +4,7 @@
 
 //! The harness provides a way to spin up drivers for unit testing.
 
-use crate::testing::dut::DriverUnderTest;
+pub use crate::testing::dut::DriverUnderTest;
 use crate::testing::logsink_connector;
 use crate::testing::node::NodeManager;
 use crate::{Driver, Incoming};
