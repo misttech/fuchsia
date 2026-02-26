@@ -57,31 +57,31 @@ the current state of the RFCOMM server, use `ffx inspect show core/bluetooth-cor
         advertised_channels:
           channel_number0: 1
           channel_number1: 2
-        peer_#:
-          peer_id
-          connected = (Connected / Disconnected)
-          multiplexer:
-            flow_control = (Credit-Based / None)
-            default_max_packet_size
-            role = (Unassigned / Negotiating / Initiator / Responder)
-            channel_#:
-              dlci
-              server_channel
-              initial_local_credits
-              initial_remote_credits
-              max_packet_size
-              flow_controller:
-                controller_type = (simple / credit_flow)
-                local_credits
-                remote_credits
-                inbound_stream:
-                  bytes_per_second_current
-                  start_time
-                  total_bytes
-                outbound_stream:
-                  bytes_per_second_current
-                  start_time
-                  total_bytes
+        peers:
+          <peer_id>:
+            connected = (Connected / Disconnected)
+            multiplexer:
+              flow_control = (Credit-Based / None)
+              default_max_packet_size
+              role = (Unassigned / Negotiating / Initiator / Responder)
+              channel_#:
+                dlci
+                server_channel
+                initial_local_credits
+                initial_remote_credits
+                max_packet_size
+                flow_controller:
+                  controller_type = (simple / credit_flow)
+                  local_credits
+                  remote_credits
+                  inbound_stream:
+                    bytes_per_second_current
+                    start_time
+                    total_bytes
+                  outbound_stream:
+                    bytes_per_second_current
+                    start_time
+                    total_bytes
 ```
 
 One peer child exists in the hierarchy for each RFCOMM Session between the local endpoint and remote

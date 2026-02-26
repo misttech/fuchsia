@@ -5,7 +5,6 @@
 use bt_rfcomm::{DLCI, Role, ServerChannel};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
-use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_derive::{AttachError, IValue, Inspect};
 
@@ -55,10 +54,10 @@ impl DuplexDataStreamInspect {
 /// An inspect node that represents information about the current state of a Session Channel.
 #[derive(Default, Debug, Inspect)]
 pub struct SessionChannelInspect {
+    /// The DLCI of this channel.
+    dlci: inspect::UintProperty,
     /// Server channel number assigned to the RFCOMM channel.
     server_channel: inspect::UintProperty,
-    /// The DLCI of the channel.
-    dlci: inspect::UintProperty,
     /// The initial local credit amount (if applicable).
     initial_local_credits: IValue<Option<u64>>,
     /// The initial remote credit amount (if applicable).
@@ -140,8 +139,6 @@ impl SessionMultiplexerInspect {
 /// An inspect node that represents information about the current state of the RFCOMM Session.
 #[derive(Debug)]
 pub struct SessionInspect {
-    /// The Bluetooth identifier assigned to the peer.
-    peer_id: PeerId,
     /// Whether the Session is currently connected to a peer.
     connected: inspect::StringProperty,
     inspect_node: inspect::Node,
@@ -150,16 +147,14 @@ pub struct SessionInspect {
 impl Inspect for &mut SessionInspect {
     fn iattach(self, parent: &inspect::Node, name: impl AsRef<str>) -> Result<(), AttachError> {
         self.inspect_node = parent.create_child(name.as_ref());
-        self.inspect_node.record_string("peer_id", self.peer_id.to_string());
         self.connected = self.inspect_node.create_string("connected", "Connected");
         Ok(())
     }
 }
 
 impl SessionInspect {
-    pub fn new(peer_id: PeerId) -> Self {
+    pub fn new() -> Self {
         Self {
-            peer_id,
             connected: inspect::StringProperty::default(),
             inspect_node: inspect::Node::default(),
         }
@@ -174,10 +169,35 @@ impl SessionInspect {
     }
 }
 
+/// An inspect node that represents the RFCOMM server.
+#[derive(Default, Debug)]
+pub struct RfcommServerInspect {
+    inspect_node: inspect::Node,
+    peers: inspect::Node,
+}
+
+impl Inspect for &mut RfcommServerInspect {
+    fn iattach(self, parent: &inspect::Node, name: impl AsRef<str>) -> Result<(), AttachError> {
+        self.inspect_node = parent.create_child(name.as_ref());
+        self.peers = self.inspect_node.create_child("peers");
+        Ok(())
+    }
+}
+
+impl RfcommServerInspect {
+    pub fn peers(&self) -> &inspect::Node {
+        &self.peers
+    }
+
+    pub fn node(&self) -> &inspect::Node {
+        &self.inspect_node
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use diagnostics_assertions::assert_data_tree;
     use fuchsia_async::DurationExt;
     use fuchsia_inspect_derive::WithInspect;
 
@@ -187,14 +207,12 @@ mod tests {
     async fn session_inspect_tree() {
         let inspect = inspect::Inspector::default();
 
-        let id = PeerId(999);
         let mut session_inspect =
-            SessionInspect::new(id).with_inspect(inspect.root(), "session").unwrap();
+            SessionInspect::new().with_inspect(inspect.root(), "session").unwrap();
 
         // Default inspect tree.
         assert_data_tree!(inspect, root: {
             session: {
-                peer_id: AnyProperty,
                 connected: "Connected",
             }
         });
@@ -203,7 +221,6 @@ mod tests {
         session_inspect.disconnect();
         assert_data_tree!(inspect, root: {
             session: {
-                peer_id: AnyProperty,
                 connected: "Disconnected",
             }
         });

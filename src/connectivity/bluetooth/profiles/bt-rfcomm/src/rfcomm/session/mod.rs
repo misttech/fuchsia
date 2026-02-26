@@ -160,7 +160,6 @@ impl SessionInner {
     /// `channel_opened_fn` is used by the `SessionInner` to relay peer-opened RFCOMM channels to
     /// local clients.
     fn create(
-        id: PeerId,
         max_packet_size: u16,
         outgoing_frame_sender: mpsc::Sender<Frame>,
         channel_opened_fn: ChannelOpenedFn,
@@ -171,7 +170,7 @@ impl SessionInner {
             pending_channels: HashMap::new(),
             outgoing_frame_sender,
             channel_opened_fn,
-            inspect: SessionInspect::new(id),
+            inspect: SessionInspect::new(),
         }
     }
 
@@ -888,7 +887,6 @@ impl Session {
         let max_rfcomm_packet_size =
             max_packet_size_from_l2cap_mtu(l2cap_channel.max_tx_size() as u16);
         let session_inner = Arc::new(Mutex::new(SessionInner::create(
-            id,
             max_rfcomm_packet_size,
             frames_to_peer_sender,
             channel_opened_callback,
@@ -1057,7 +1055,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use diagnostics_assertions::assert_data_tree;
     use fuchsia_async as fasync;
     use futures::Future;
     use futures::task::Poll;
@@ -1125,12 +1123,10 @@ mod tests {
     /// Creates and returns the SessionInner processing task. Uses a channel_opened_fn that
     /// indiscriminately accepts all opened RFCOMM channels.
     fn setup_session_task() -> (impl Future<Output = ()>, Channel) {
-        let id = PeerId(987);
         let (local, remote) = Channel::create_with_max_tx(MAX_PACKET_SIZE_FOR_TEST.into());
         let channel_opened_fn = Box::new(|_server_channel, _channel| async { Ok(()) }.boxed());
         let (frame_sender, frame_receiver) = mpsc::channel(0);
         let session_inner = Arc::new(Mutex::new(SessionInner::create(
-            id,
             local.max_tx_size() as u16,
             frame_sender,
             channel_opened_fn,
@@ -1174,7 +1170,6 @@ mod tests {
     /// channels. Use this to validate channel establishment.
     fn setup_session()
     -> (SessionInner, mpsc::Receiver<Frame>, mpsc::Receiver<Result<Channel, ErrorCode>>) {
-        let id = PeerId(5);
         let (channel_opened_fn, channel_receiver) = create_inbound_relay();
         let (outgoing_frame_sender, outgoing_frames) = mpsc::channel(0);
         let session = SessionInner {
@@ -1183,7 +1178,7 @@ mod tests {
             pending_channels: HashMap::new(),
             outgoing_frame_sender,
             channel_opened_fn,
-            inspect: SessionInspect::new(id),
+            inspect: SessionInspect::new(),
         };
         (session, outgoing_frames, channel_receiver)
     }
@@ -1316,7 +1311,6 @@ mod tests {
         // Default inspect tree.
         assert_data_tree!(@executor exec, inspect, root: {
             session_test: contains {
-                peer_id: AnyProperty,
                 connected: "Connected",
             },
         });
@@ -1333,7 +1327,6 @@ mod tests {
         // Inspect when Session is not active.
         assert_data_tree!(@executor exec, inspect, root: {
             session_test: contains {
-                peer_id: AnyProperty,
                 connected: "Disconnected",
             }
         });

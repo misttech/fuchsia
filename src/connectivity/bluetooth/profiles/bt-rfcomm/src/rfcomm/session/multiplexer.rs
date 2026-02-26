@@ -615,6 +615,7 @@ mod tests {
         // This line of code runs the executor to complete the drop of the future. Only then
         // will the `channel_1` inspect node be removed from the tree.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        // Read hierarchy again to verify channel_1 is gone.
         assert_data_tree!(@executor exec, inspect, root: {
             multiplexer: {
                 role: "Unassigned",

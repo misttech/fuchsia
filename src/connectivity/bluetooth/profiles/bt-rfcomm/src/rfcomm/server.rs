@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync, fuchsia_inspect as inspect};
 
+use crate::rfcomm::inspect::RfcommServerInspect;
 use crate::rfcomm::session::Session;
 use crate::rfcomm::types::{SignaledTask, status_to_rls_error};
 
@@ -131,13 +132,13 @@ pub struct RfcommServer {
     sessions: DetachableMap<PeerId, Session>,
 
     /// Inspect node for Sessions to attach to.
-    inspect: inspect::Node,
+    inspect: RfcommServerInspect,
 }
 
 impl Inspect for &mut RfcommServer {
     fn iattach(self, parent: &inspect::Node, name: impl AsRef<str>) -> Result<(), AttachError> {
-        self.inspect = parent.create_child(name.as_ref());
-        self.clients.iattach(&self.inspect, "advertised_channels")?;
+        self.inspect.iattach(parent, name)?;
+        self.clients.iattach(self.inspect.node(), "advertised_channels")?;
         Ok(())
     }
 }
@@ -147,7 +148,7 @@ impl RfcommServer {
         Self {
             clients: Clients::new(),
             sessions: DetachableMap::new(),
-            inspect: inspect::Node::default(),
+            inspect: RfcommServerInspect::default(),
         }
     }
 
@@ -234,7 +235,7 @@ impl RfcommServer {
             async move { clients.deliver_channel(peer_id, server_channel, channel).await }.boxed()
         });
         let mut session = Session::create(peer_id, l2cap, channel_opened_callback);
-        let _ = session.iattach(&self.inspect, inspect::unique_name("peer_"));
+        let _ = session.iattach(self.inspect.peers(), peer_id.to_string());
         let closed_fut = session.finished();
         if self.sessions.insert(peer_id, session).is_some() {
             debug!(peer_id:%; "Overwriting existing RFCOMM session");
@@ -589,5 +590,27 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut outbound_fut), Poll::Ready(Err(_)));
         // Responder should be notified of failure.
         assert_matches!(exec.run_until_stalled(&mut connect_request_fut), Poll::Ready(Ok(Err(_))));
+    }
+    #[fuchsia::test]
+    fn test_server_inspect_hierarchy() {
+        let (mut exec, mut rfcomm) = setup_rfcomm_manager();
+        let inspect = inspect::Inspector::default();
+        rfcomm.iattach(inspect.root(), "rfcomm_server").expect("should attach");
+
+        // Start up a session with remote peer.
+        let id = PeerId(1);
+        let (local, _remote) = Channel::create();
+        assert!(rfcomm.new_l2cap_connection(id, local).is_ok());
+
+        assert_data_tree!(@executor exec, inspect, root: {
+            rfcomm_server: {
+                peers: {
+                    "0000000000000001": contains {
+                        connected: "Connected",
+                    },
+                },
+                advertised_channels: contains {},
+            }
+        });
     }
 }
