@@ -5,7 +5,10 @@
 #ifndef ZIRCON_SYSTEM_ULIB_TRACE_PROVIDER_SESSION_H_
 #define ZIRCON_SYSTEM_ULIB_TRACE_PROVIDER_SESSION_H_
 
+#include <fidl/fuchsia.tracing.provider/cpp/wire.h>
 #include <lib/async/cpp/wait.h>
+#include <lib/fidl/cpp/wire/server.h>
+#include <lib/fit/function.h>
 #include <lib/trace-provider/handler.h>
 #include <lib/trace-provider/provider.h>
 #include <lib/zx/fifo.h>
@@ -20,18 +23,38 @@ namespace internal {
 
 class Session final : public trace::TraceHandler {
  public:
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  static void InitializeEngine(
+      async_dispatcher_t* dispatcher, trace_buffering_mode_t buffering_mode, zx::vmo buffer,
+      std::vector<std::string> categories,
+      fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding);
+  static void StartEngine(trace_start_mode_t start_mode, fit::closure cb);
+  static void StopEngine(fit::closure cb);
+  static void TerminateEngine(fit::closure cb);
+#else
   static void InitializeEngine(async_dispatcher_t* dispatcher,
                                trace_buffering_mode_t buffering_mode, zx::vmo buffer, zx::fifo fifo,
                                std::vector<std::string> categories);
   static void StartEngine(trace_start_mode_t start_mode);
   static void StopEngine();
   static void TerminateEngine();
+#endif
 
   ~Session() override;
 
+  // This is called in streaming mode when TraceManager reports back that
+  // it has saved the buffer.
+  static zx_status_t MarkBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
+
  private:
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  Session(async_dispatcher_t* dispatcher, void* buffer, size_t buffer_num_bytes,
+          std::vector<std::string> categories,
+          fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding);
+#else
   Session(async_dispatcher_t* dispatcher, void* buffer, size_t buffer_num_bytes, zx::fifo fifo,
           std::vector<std::string> categories);
+#endif
 
   // |trace::TraceHandler|
   bool IsCategoryEnabled(const char* category) override;
@@ -43,20 +66,22 @@ class Session final : public trace::TraceHandler {
   void NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end) override;
   void SendAlert(const char* alert_name) override;
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
   void HandleFifo(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                   const zx_packet_signal_t* signal);
   bool ReadFifoMessage();
   void SendFifoPacket(const trace_provider_packet_t* packet);
-
-  // This is called in streaming mode when TraceManager reports back that
-  // it has saved the buffer.
-  static zx_status_t MarkBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
+#endif
 
   async_dispatcher_t* const dispatcher_;
   void* buffer_;
   size_t buffer_num_bytes_;
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding_;
+#else
   zx::fifo fifo_;
   async::WaitMethod<Session, &Session::HandleFifo> fifo_wait_;
+#endif
   std::vector<std::string> enabled_categories_;
 
   Session(const Session&) = delete;
