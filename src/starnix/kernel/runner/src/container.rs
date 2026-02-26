@@ -601,6 +601,9 @@ async fn create_container(
                         if item.starts_with("androidboot.bootreason") && features.android_bootreason
                         {
                             // androidboot.rebootreason is sourced from the Fuchsia reboot reason.
+                            // It is still useful to log it from userspace to learn what the
+                            // possible values are.
+                            log_info!("Original devicetree bootarg {:?}", item);
                             continue;
                         }
                         kernel_cmdline.extend(b" ");
