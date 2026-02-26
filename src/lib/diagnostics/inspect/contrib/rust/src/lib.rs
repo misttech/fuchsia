@@ -11,6 +11,7 @@
 //!
 //! [fuchsia_inspect]: crate.fuchsia_inspect.html
 
+pub mod content_publisher;
 pub mod graph;
 pub mod id_enum;
 pub mod inspectable;
