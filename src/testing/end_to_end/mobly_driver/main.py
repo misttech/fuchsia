@@ -69,6 +69,22 @@ parser.add_argument(
     default=None,
     help="Whether to use the fuchsia device's name or ip for host-target interactions when using FFX and Fuchsia-Controller transports.",
 )
+parser.add_argument(
+    "--ap-ip",
+    default=None,
+    help="IP address of the access point.",
+)
+parser.add_argument(
+    "--ap-ssh-port",
+    default=None,
+    type=int,
+    help="SSH port of the access point.",
+)
+parser.add_argument(
+    "--ap-ssh-key",
+    default=None,
+    help="Path to the SSH key for the access point.",
+)
 
 parser.add_argument(
     "--v",
@@ -107,6 +123,11 @@ def main() -> None:
         params_path=args.params_yaml_path,
         ssh_path=os.path.abspath(args.ssh_path) if args.ssh_path else None,
         target_address_type=args.target_address_type,
+        ap_ip=args.ap_ip,
+        ap_ssh_port=args.ap_ssh_port,
+        ap_ssh_key=os.path.abspath(args.ap_ssh_key)
+        if args.ap_ssh_key
+        else None,
     )
     driver = factory.get_driver()
 

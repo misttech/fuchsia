@@ -241,6 +241,40 @@ class ApiMoblyTest(unittest.TestCase):
                 },
             ),
             param(
+                "success_access_point_ssh_config_no_ssh_path",
+                override_args={
+                    "mobly_controllers": [
+                        {
+                            "type": "AccessPoint",
+                            "ip": "192.168.42.11",
+                            "user": "root",
+                            "ssh_key": "some/key/path",
+                        },
+                    ],
+                    "ssh_path": None,
+                },
+                expected_config_obj={
+                    "MoblyParams": {"LogPath": "output_path"},
+                    "TestBeds": [
+                        {
+                            "Controllers": {
+                                "AccessPoint": [
+                                    {
+                                        "ssh_config": {
+                                            "host": "192.168.42.11",
+                                            "user": "root",
+                                            "identity_file": "some/key/path",
+                                        },
+                                    },
+                                ],
+                            },
+                            "Name": "tb_name",
+                            "TestParams": {},
+                        }
+                    ],
+                },
+            ),
+            param(
                 "success_valid_controllers_monsoon",
                 override_args={
                     "mobly_controllers": [

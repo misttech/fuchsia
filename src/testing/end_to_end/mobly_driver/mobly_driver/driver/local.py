@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Implements BaseDriver for the local execution environment."""
 
+import os
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -33,6 +34,9 @@ class LocalDriver(base.BaseDriver):
         config_path: Optional[str] = None,
         params_path: Optional[str] = None,
         target_address_type: Optional[str] = None,
+        ap_ip: Optional[str] = None,
+        ap_ssh_port: Optional[int] = None,
+        ap_ssh_key: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
 
@@ -59,6 +63,9 @@ class LocalDriver(base.BaseDriver):
         self._ffx_client = api_ffx.FfxClient(
             ffx_path=honeydew_config["transports"]["ffx"]["path"]
         )
+        self._ap_ip = ap_ip
+        self._ap_ssh_port = ap_ssh_port
+        self._ap_ssh_key = ap_ssh_key
 
         self._target_address_type: str = (
             target_address_type or _DEFAULT_TARGET_TYPE
@@ -142,6 +149,42 @@ class LocalDriver(base.BaseDriver):
                 fx_device["device_ip_port"] = str(target_ssh_address)
 
             mobly_controllers.append(fx_device)
+
+        if self._ap_ip:
+            ap_config = {
+                "type": api_infra.ACCESS_POINT,
+                "ip": self._ap_ip,
+                # Default SSH port 22 if not provided
+                "port": self._ap_ssh_port or 22,
+                "user": "root",
+                "wan_interface": "eth0",
+            }
+
+            if self._ap_ssh_key:
+                ap_config["ssh_key"] = self._ap_ssh_key
+            else:
+                # Try to find key in default locations
+                home = os.path.expanduser("~")
+                default_keys = [
+                    os.path.join(home, ".ssh", "onhub_testing_rsa"),
+                    os.path.join(home, ".ssh", "testing_rsa"),
+                ]
+                found_key = None
+                for key_path in default_keys:
+                    if os.path.exists(key_path):
+                        found_key = key_path
+                        break
+
+                if found_key:
+                    print(f"Using AP SSH key found at {found_key}")
+                    ap_config["ssh_key"] = found_key
+                else:
+                    raise common.DriverException(
+                        "AP IP provided but no SSH key found in default locations "
+                        f"({default_keys}) and --ap-ssh-key not specified."
+                    )
+
+            mobly_controllers.append(ap_config)
 
         config = api_mobly.new_testbed_config(
             testbed_name="GeneratedLocalTestbed",

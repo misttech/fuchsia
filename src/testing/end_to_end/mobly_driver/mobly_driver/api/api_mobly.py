@@ -202,11 +202,12 @@ def new_testbed_config(
                     controller[honeydew_key] = controller.pop(botanist_key)
         elif api_infra.ACCESS_POINT == controller_type:
             controller[SSH_CONFIG_KEY] = {
-                SSH_PATH_KEY: ssh_path,
                 SSH_HOST_KEY: controller.pop("ip"),
                 SSH_USER_KEY: controller.pop("user"),
                 SSH_IDENTITY_FILE_KEY: controller.pop("ssh_key"),
             }
+            if ssh_path:
+                controller[SSH_CONFIG_KEY][SSH_PATH_KEY] = ssh_path
 
         if controller_type in controllers:
             controllers[controller_type].append(controller)

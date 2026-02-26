@@ -27,6 +27,9 @@ class DriverFactory:
         params_path: Optional[str] = None,
         ssh_path: Optional[str] = None,
         target_address_type: Optional[str] = None,
+        ap_ip: Optional[str] = None,
+        ap_ssh_port: Optional[int] = None,
+        ap_ssh_key: Optional[str] = None,
     ) -> None:
         """Initializes the instance.
         Args:
@@ -46,6 +49,9 @@ class DriverFactory:
         self._params_path = params_path
         self._ssh_path = ssh_path
         self._target_address_type = target_address_type
+        self._ap_ip = ap_ip
+        self._ap_ssh_port = ap_ssh_port
+        self._ap_ssh_key = ap_ssh_key
 
     def get_driver(self) -> base.BaseDriver:
         """Returns an environment-specific Mobly Driver implementation.
@@ -64,6 +70,9 @@ class DriverFactory:
                 config_path=self._config_path,
                 params_path=self._params_path,
                 target_address_type=self._target_address_type,
+                ap_ip=self._ap_ip,
+                ap_ssh_port=self._ap_ssh_port,
+                ap_ssh_key=self._ap_ssh_key,
             )
         try:
             return infra.InfraDriver(
