@@ -25,7 +25,7 @@ use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
     SpecifiedAddr, SpecifiedAddress as _, Witness,
 };
-use netstack3_base::socket::{EitherStack, SocketCookie, SocketIpAddrExt as _};
+use netstack3_base::socket::{EitherStack, SocketCookie, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Counter, CounterCollectionSpec, CounterContext,
@@ -2379,10 +2379,10 @@ pub(crate) struct IcmpErrorSender<'a, I: IcmpHandlerIpExt, D> {
     err: I::IcmpError,
     /// The original source IP address of the packet (before the local-ingress
     /// hook evaluation).
-    src_ip: I::SourceAddress,
+    src_ip: SocketIpAddr<I::Addr>,
     /// The original destination IP address of the packet (before the
     /// local-ingress hook evaluation).
-    dst_ip: SpecifiedAddr<I::Addr>,
+    dst_ip: SocketIpAddr<I::Addr>,
     /// The frame destination of the packet.
     frame_dst: Option<FrameDestination>,
     /// The device out which to send the error.
@@ -2397,7 +2397,7 @@ pub(crate) struct IcmpErrorSender<'a, I: IcmpHandlerIpExt, D> {
 }
 
 impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
-    fn new<CC, B>(
+    pub fn new<CC, B>(
         core_ctx: &mut CC,
         err: I::IcmpError,
         packet: &I::Packet<B>,
@@ -2410,11 +2410,11 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
         CC: ResourceCounterContext<D, IpCounters<I>>,
         B: SplitByteSlice,
     {
-        let Some(src_ip) = I::SourceAddress::new(packet.src_ip()) else {
+        let Some(src_ip) = SocketIpAddr::new(packet.src_ip()) else {
             core_ctx.increment_both(device, |c| &c.unspecified_source);
             return None;
         };
-        let Some(dst_ip) = SpecifiedAddr::new(packet.dst_ip()) else {
+        let Some(dst_ip) = SocketIpAddr::new(packet.dst_ip()) else {
             return None;
         };
 
@@ -2442,7 +2442,7 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
     /// packet responsible for this error was parsed. It is expected to be in a
     /// state that allows undoing the IP packet parse (e.g. unmodified after the
     /// IP packet was parsed).
-    fn send<B, BC, CC>(self, core_ctx: &mut CC, bindings_ctx: &mut BC, mut body: B)
+    pub fn send<B, BC, CC>(self, core_ctx: &mut CC, bindings_ctx: &mut BC, mut body: B)
     where
         B: BufferMut,
         CC: IcmpErrorHandler<I, BC, DeviceId = D>,
@@ -2457,7 +2457,7 @@ impl<'a, I: IcmpHandlerIpExt, D> IcmpErrorSender<'a, I, D> {
 
         core_ctx.send_icmp_error_message(
             bindings_ctx,
-            device,
+            Some(device),
             frame_dst,
             src_ip,
             dst_ip,
@@ -2864,6 +2864,11 @@ where
                         let Some(src_ip) = I::received_source_as_icmp_source(src_ip) else {
                             return;
                         };
+
+                        let Some(dst_ip) = SocketIpAddr::new(dst_ip.get()) else {
+                            return;
+                        };
+
                         // TODO(https://fxbug.dev/362489447): Increment the TTL since we
                         // just decremented it. The fact that we don't do this is
                         // technically a violation of the ICMP spec (we're not
@@ -2875,7 +2880,7 @@ where
                         // still fix it eventually.
                         core_ctx.send_icmp_error_message(
                             bindings_ctx,
-                            inbound_device,
+                            Some(inbound_device),
                             frame_dst,
                             src_ip,
                             dst_ip,
@@ -3755,7 +3760,7 @@ fn handle_ipv6_parse_error<BC, B, CC>(
         return;
     }
     core_ctx.increment_both(device, |c| &c.parameter_problem);
-    let dst_ip = match SpecifiedAddr::new(dst_ip) {
+    let dst_ip = match SocketIpAddr::new(dst_ip) {
         Some(ip) => ip,
         None => {
             core_ctx.increment_both(device, |c| &c.unspecified_destination);
@@ -3773,7 +3778,9 @@ fn handle_ipv6_parse_error<BC, B, CC>(
             core_ctx.increment_both(device, |c| &c.unspecified_source);
             return;
         }
-        Some(Ipv6SourceAddr::Unicast(src_ip)) => src_ip,
+        Some(Ipv6SourceAddr::Unicast(src_ip)) => {
+            SocketIpAddr::new_from_ipv6_non_mapped_unicast(src_ip)
+        }
     };
 
     // Try raw parser to find main packet protocol and body offset. If this
@@ -3807,9 +3814,9 @@ fn handle_ipv6_parse_error<BC, B, CC>(
     IcmpErrorHandler::<Ipv6, _>::send_icmp_error_message(
         core_ctx,
         bindings_ctx,
-        device,
+        Some(device),
         frame_dst,
-        *src_ip,
+        src_ip,
         dst_ip,
         buffer,
         err,
@@ -4171,15 +4178,18 @@ pub fn receive_ipv6_packet<
                     core_ctx.increment_both(device, |c| &c.unspecified_source);
                     return;
                 }
-                Ipv6SourceAddr::Unicast(src_ip) => src_ip,
+                Ipv6SourceAddr::Unicast(src_ip) => {
+                    SocketIpAddr::new_from_ipv6_non_mapped_unicast(src_ip)
+                }
             };
+
             IcmpErrorHandler::<Ipv6, _>::send_icmp_error_message(
                 core_ctx,
                 bindings_ctx,
-                device,
+                Some(device),
                 frame_dst,
-                *src_ip,
-                dst_ip.into(),
+                src_ip,
+                SocketIpAddr::new_from_witness(dst_ip),
                 buffer,
                 Icmpv6Error::NetUnreachable,
                 meta.header_len(),

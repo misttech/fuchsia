@@ -18,8 +18,8 @@ use net_types::ip::{
     Ipv6SourceAddr, Mtu, SubnetError,
 };
 use net_types::{
-    LinkLocalAddress, LinkLocalUnicastAddr, MulticastAddr, MulticastAddress, NonMulticastAddr,
-    SpecifiedAddr, UnicastAddr, Witness,
+    LinkLocalAddress, LinkLocalUnicastAddr, MulticastAddr, MulticastAddress, SpecifiedAddr,
+    UnicastAddr, Witness,
 };
 use netstack3_base::socket::{AddrIsMappedError, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::Mutex;
@@ -256,36 +256,37 @@ impl<BT: IcmpBindingsTypes> AsMut<IcmpState<Ipv6, BT>> for Icmpv6State<BT> {
 
 /// An extension trait providing ICMP handler properties.
 pub trait IcmpHandlerIpExt: IpExt {
-    type SourceAddress: Witness<Self::Addr>;
+    /// The type of ICMP error messages.
     type IcmpError: IcmpError;
 
-    /// A try-conversion from [`Self::RecvSrcAddr`] to [`Self::SourceAddress`].
-    fn received_source_as_icmp_source(src: Self::RecvSrcAddr) -> Option<Self::SourceAddress>;
+    /// A try-conversion from [`Self::RecvSrcAddr`] to [`SocketIpAddr`].
+    fn received_source_as_icmp_source(src: Self::RecvSrcAddr) -> Option<SocketIpAddr<Self::Addr>>;
+
+    /// Returns the ICMP error to send when NUD fails.
+    fn nud_failure_icmp_error() -> Self::IcmpError;
 }
 
 impl IcmpHandlerIpExt for Ipv4 {
-    type SourceAddress = NonMulticastAddr<SpecifiedAddr<Ipv4Addr>>;
     type IcmpError = Icmpv4Error;
 
-    fn received_source_as_icmp_source(
-        src: Ipv4SourceAddr,
-    ) -> Option<NonMulticastAddr<SpecifiedAddr<Ipv4Addr>>> {
-        match src {
-            Ipv4SourceAddr::Specified(src) => Some(src),
-            Ipv4SourceAddr::Unspecified => None,
-        }
+    fn received_source_as_icmp_source(src: Ipv4SourceAddr) -> Option<SocketIpAddr<Ipv4Addr>> {
+        SocketIpAddr::new_from_ipv4_source(src)
+    }
+
+    fn nud_failure_icmp_error() -> Icmpv4Error {
+        Icmpv4Error::HostUnreachable
     }
 }
 
 impl IcmpHandlerIpExt for Ipv6 {
-    type SourceAddress = UnicastAddr<Ipv6Addr>;
     type IcmpError = Icmpv6Error;
 
-    fn received_source_as_icmp_source(src: Ipv6SourceAddr) -> Option<UnicastAddr<Ipv6Addr>> {
-        match src {
-            Ipv6SourceAddr::Unicast(src) => Some(src.get()),
-            Ipv6SourceAddr::Unspecified => None,
-        }
+    fn received_source_as_icmp_source(src: Ipv6SourceAddr) -> Option<SocketIpAddr<Ipv6Addr>> {
+        SocketIpAddr::new_from_ipv6_source(src)
+    }
+
+    fn nud_failure_icmp_error() -> Icmpv6Error {
+        Icmpv6Error::AddressUnreachable
     }
 }
 
@@ -318,6 +319,8 @@ pub enum Icmpv4Error {
     ProtocolUnreachable,
     /// Destination port is unreachable.
     PortUnreachable,
+    /// Host is unreachable.
+    HostUnreachable,
 }
 
 impl IcmpError for Icmpv4Error {
@@ -329,6 +332,91 @@ impl IcmpError for Icmpv4Error {
     }
     fn mtu_exceeded(_mtu: Mtu) -> Option<Self> {
         None
+    }
+}
+
+/// A type to allow implementing the required filtering traits on a concrete
+/// subset of message types.
+enum Icmpv4ErrorMessage {
+    TimeExceeded {
+        message: IcmpTimeExceeded,
+        code: <IcmpTimeExceeded as IcmpMessage<Ipv4>>::Code,
+    },
+    ParameterProblem {
+        message: Icmpv4ParameterProblem,
+        code: <Icmpv4ParameterProblem as IcmpMessage<Ipv4>>::Code,
+    },
+    DestUnreachable {
+        message: IcmpDestUnreachable,
+        code: <IcmpDestUnreachable as IcmpMessage<Ipv4>>::Code,
+    },
+}
+
+impl Icmpv4Error {
+    fn update_counters(&self, counters: &IcmpTxCounters<Ipv4>) {
+        match self {
+            Icmpv4Error::ParameterProblem { code, pointer: _ } => {
+                counters.parameter_problem.increment_code(*code);
+            }
+            Icmpv4Error::TtlExpired => {
+                counters.time_exceeded.increment_code(Icmpv4TimeExceededCode::TtlExpired);
+            }
+            Icmpv4Error::NetUnreachable => {
+                counters.net_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::DestNetworkUnreachable);
+            }
+            Icmpv4Error::ProtocolUnreachable => {
+                counters.protocol_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::DestProtocolUnreachable);
+            }
+            Icmpv4Error::PortUnreachable => {
+                counters.port_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::DestPortUnreachable);
+            }
+            Icmpv4Error::HostUnreachable => {
+                counters.address_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::DestHostUnreachable);
+            }
+        }
+    }
+
+    fn create_message(&self) -> Icmpv4ErrorMessage {
+        match self {
+            Icmpv4Error::ParameterProblem { code, pointer } => {
+                Icmpv4ErrorMessage::ParameterProblem {
+                    message: Icmpv4ParameterProblem::new(*pointer),
+                    code: *code,
+                }
+            }
+            Icmpv4Error::TtlExpired => Icmpv4ErrorMessage::TimeExceeded {
+                message: IcmpTimeExceeded::default(),
+                code: Icmpv4TimeExceededCode::TtlExpired,
+            },
+            Icmpv4Error::NetUnreachable => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::DestNetworkUnreachable,
+            },
+            Icmpv4Error::ProtocolUnreachable => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::DestProtocolUnreachable,
+            },
+            Icmpv4Error::PortUnreachable => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::DestPortUnreachable,
+            },
+            Icmpv4Error::HostUnreachable => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::DestHostUnreachable,
+            },
+        }
     }
 }
 
@@ -355,6 +443,8 @@ pub enum Icmpv6Error {
     },
     /// Destination port is unreachable.
     PortUnreachable,
+    /// Address is unreachable.
+    AddressUnreachable,
 }
 
 impl IcmpError for Icmpv6Error {
@@ -369,19 +459,131 @@ impl IcmpError for Icmpv6Error {
     }
 }
 
+/// A type to allow implementing the required filtering traits on a concrete
+/// subset of message types.
+enum Icmpv6ErrorMessage {
+    TimeExceeded {
+        message: IcmpTimeExceeded,
+        code: <IcmpTimeExceeded as IcmpMessage<Ipv6>>::Code,
+    },
+    PacketTooBig {
+        message: Icmpv6PacketTooBig,
+        code: <Icmpv6PacketTooBig as IcmpMessage<Ipv6>>::Code,
+    },
+    ParameterProblem {
+        message: Icmpv6ParameterProblem,
+        code: <Icmpv6ParameterProblem as IcmpMessage<Ipv6>>::Code,
+    },
+    DestUnreachable {
+        message: IcmpDestUnreachable,
+        code: <IcmpDestUnreachable as IcmpMessage<Ipv6>>::Code,
+    },
+}
+
+impl Icmpv6Error {
+    fn update_counters(&self, counters: &IcmpTxCounters<Ipv6>) {
+        match self {
+            Icmpv6Error::ParameterProblem { code, pointer: _, allow_dst_multicast: _ } => {
+                counters.parameter_problem.increment_code(*code);
+            }
+            Icmpv6Error::TtlExpired => {
+                counters.time_exceeded.increment_code(Icmpv6TimeExceededCode::HopLimitExceeded);
+            }
+            Icmpv6Error::NetUnreachable => {
+                counters.net_unreachable.increment();
+                counters.dest_unreachable.increment_code(Icmpv6DestUnreachableCode::NoRoute);
+            }
+            Icmpv6Error::PacketTooBig { mtu: _ } => {
+                counters.packet_too_big.increment();
+            }
+            Icmpv6Error::PortUnreachable => {
+                counters.port_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv6DestUnreachableCode::PortUnreachable);
+            }
+            Icmpv6Error::AddressUnreachable => {
+                counters.address_unreachable.increment();
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv6DestUnreachableCode::AddrUnreachable);
+            }
+        }
+    }
+
+    fn create_message(&self) -> Icmpv6ErrorMessage {
+        match self {
+            Icmpv6Error::ParameterProblem { code, pointer, allow_dst_multicast: _ } => {
+                Icmpv6ErrorMessage::ParameterProblem {
+                    message: Icmpv6ParameterProblem::new(*pointer),
+                    code: *code,
+                }
+            }
+            Icmpv6Error::TtlExpired => Icmpv6ErrorMessage::TimeExceeded {
+                message: IcmpTimeExceeded::default(),
+                code: Icmpv6TimeExceededCode::HopLimitExceeded,
+            },
+            Icmpv6Error::NetUnreachable => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::NoRoute,
+            },
+            Icmpv6Error::PacketTooBig { mtu } => Icmpv6ErrorMessage::PacketTooBig {
+                message: Icmpv6PacketTooBig::new((*mtu).into()),
+                code: IcmpZeroCode,
+            },
+            Icmpv6Error::PortUnreachable => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::PortUnreachable,
+            },
+            Icmpv6Error::AddressUnreachable => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::AddrUnreachable,
+            },
+        }
+    }
+
+    fn allow_dst_multicast(&self) -> bool {
+        // As per RFC 4443 section 2.4.e,
+        //
+        //   An ICMPv6 error message MUST NOT be originated as a result of
+        //   receiving the following:
+        //
+        //     (e.3) A packet destined to an IPv6 multicast address.  (There are
+        //           two exceptions to this rule: (1) the Packet Too Big Message
+        //           (Section 3.2) to allow Path MTU discovery to work for IPv6
+        //           multicast, and (2) the Parameter Problem Message, Code 2
+        //           (Section 3.4) reporting an unrecognized IPv6 option (see
+        //           Section 4.2 of [IPv6]) that has the Option Type highest-
+        //           order two bits set to 10).
+        match self {
+            Icmpv6Error::ParameterProblem { allow_dst_multicast, code, pointer: _ } => {
+                assert!(
+                    !allow_dst_multicast
+                        || *code == Icmpv6ParameterProblemCode::UnrecognizedIpv6Option
+                );
+                *allow_dst_multicast
+            }
+            Icmpv6Error::PacketTooBig { .. } => true,
+            _ => false,
+        }
+    }
+}
+
 /// The handler exposed by ICMP.
 pub trait IcmpErrorHandler<I: IcmpHandlerIpExt, BC>: DeviceIdContext<AnyDevice> {
     /// Sends an error message in response to an incoming packet.
     ///
     /// `src_ip` and `dst_ip` are the source and destination addresses of the
     /// incoming packet.
+    /// `original_packet` contains the contents of the entire original packet,
+    /// including the IP header. This must be a whole packet, not a packet fragment.
     fn send_icmp_error_message<B: BufferMut>(
         &mut self,
         bindings_ctx: &mut BC,
-        device: &Self::DeviceId,
+        device: Option<&Self::DeviceId>,
         frame_dst: Option<FrameDestination>,
-        src_ip: I::SourceAddress,
-        dst_ip: SpecifiedAddr<I::Addr>,
+        src_ip: SocketIpAddr<I::Addr>,
+        dst_ip: SocketIpAddr<I::Addr>,
         original_packet: B,
         error: I::IcmpError,
         header_len: usize,
@@ -396,10 +598,10 @@ impl<BC: IcmpBindingsContext, CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTx
     fn send_icmp_error_message<B: BufferMut>(
         &mut self,
         bindings_ctx: &mut BC,
-        device: &CC::DeviceId,
+        device: Option<&CC::DeviceId>,
         frame_dst: Option<FrameDestination>,
-        src_ip: NonMulticastAddr<SpecifiedAddr<Ipv4Addr>>,
-        dst_ip: SpecifiedAddr<Ipv4Addr>,
+        src_ip: SocketIpAddr<Ipv4Addr>,
+        dst_ip: SocketIpAddr<Ipv4Addr>,
         original_packet: B,
         icmp_error: Icmpv4Error,
         header_len: usize,
@@ -413,67 +615,19 @@ impl<BC: IcmpBindingsContext, CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTx
             return;
         }
 
-        let src_ip = SocketIpAddr::new_ipv4_specified(src_ip.get());
-        let dst_ip = SocketIpAddr::new_ipv4_specified(dst_ip);
-        match icmp_error {
-            Icmpv4Error::ParameterProblem { code, pointer } => send_icmpv4_parameter_problem(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                code,
-                Icmpv4ParameterProblem::new(pointer),
-                original_packet,
-                header_len,
-                marks,
-            ),
-            Icmpv4Error::TtlExpired => send_icmpv4_ttl_expired(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                header_len,
-                marks,
-            ),
-            Icmpv4Error::NetUnreachable => send_icmpv4_net_unreachable(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                header_len,
-                marks,
-            ),
-            Icmpv4Error::ProtocolUnreachable => send_icmpv4_protocol_unreachable(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                header_len,
-                marks,
-            ),
-            Icmpv4Error::PortUnreachable => send_icmpv4_port_unreachable(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                header_len,
-                marks,
-            ),
-        }
+        icmp_error.update_counters(&self.counters());
+        send_icmpv4_error_message(
+            self,
+            bindings_ctx,
+            device,
+            frame_dst,
+            src_ip,
+            dst_ip,
+            icmp_error.create_message(),
+            original_packet,
+            header_len,
+            marks,
+        );
     }
 }
 
@@ -483,31 +637,16 @@ impl<BC: IcmpBindingsContext, CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTx
     fn send_icmp_error_message<B: BufferMut>(
         &mut self,
         bindings_ctx: &mut BC,
-        device: &CC::DeviceId,
+        device: Option<&CC::DeviceId>,
         frame_dst: Option<FrameDestination>,
-        src_ip: UnicastAddr<Ipv6Addr>,
-        dst_ip: SpecifiedAddr<Ipv6Addr>,
+        src_ip: SocketIpAddr<Ipv6Addr>,
+        dst_ip: SocketIpAddr<Ipv6Addr>,
         original_packet: B,
         error: Icmpv6Error,
         header_len: usize,
         proto: Ipv6Proto,
         marks: &Marks,
     ) {
-        let src_ip: SocketIpAddr<Ipv6Addr> = match src_ip.into_specified().try_into() {
-            Ok(addr) => addr,
-            Err(AddrIsMappedError {}) => {
-                trace!("send_icmpv6_error_message: src_ip is mapped");
-                return;
-            }
-        };
-        let dst_ip: SocketIpAddr<Ipv6Addr> = match dst_ip.try_into() {
-            Ok(addr) => addr,
-            Err(AddrIsMappedError {}) => {
-                trace!("send_icmpv6_error_message: dst_ip is mapped");
-                return;
-            }
-        };
-
         // Check whether we MUST NOT send an ICMP error message because the
         // original packet was itself an ICMP error or redirect message.
         if is_icmp_error_or_redirect_message::<Ipv6>(proto, &original_packet.as_ref()[header_len..])
@@ -515,64 +654,19 @@ impl<BC: IcmpBindingsContext, CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTx
             return;
         }
 
-        match error {
-            Icmpv6Error::ParameterProblem { code, pointer, allow_dst_multicast } => {
-                send_icmpv6_parameter_problem(
-                    self,
-                    bindings_ctx,
-                    device,
-                    frame_dst,
-                    src_ip,
-                    dst_ip,
-                    code,
-                    Icmpv6ParameterProblem::new(pointer),
-                    original_packet,
-                    allow_dst_multicast,
-                    marks,
-                )
-            }
-            Icmpv6Error::TtlExpired => send_icmpv6_ttl_expired(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                marks,
-            ),
-            Icmpv6Error::NetUnreachable => send_icmpv6_net_unreachable(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                marks,
-            ),
-            Icmpv6Error::PacketTooBig { mtu } => send_icmpv6_packet_too_big(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                mtu,
-                original_packet,
-                marks,
-            ),
-            Icmpv6Error::PortUnreachable => send_icmpv6_port_unreachable(
-                self,
-                bindings_ctx,
-                device,
-                frame_dst,
-                src_ip,
-                dst_ip,
-                original_packet,
-                marks,
-            ),
-        }
+        error.update_counters(&self.counters());
+        send_icmpv6_error_message(
+            self,
+            bindings_ctx,
+            device,
+            frame_dst,
+            src_ip,
+            dst_ip,
+            error.create_message(),
+            original_packet,
+            error.allow_dst_multicast(),
+            marks,
+        )
     }
 }
 
@@ -2153,601 +2247,6 @@ fn receive_icmpv6_error<
     })
 }
 
-/// Send an ICMP(v4) message in response to receiving a packet destined for an
-/// unreachable address.
-///
-/// `send_icmpv4_host_unreachable` sends the appropriate ICMP message in
-/// response to receiving an IP packet from `src_ip` to `dst_ip`, where
-/// `dst_ip` is unreachable. In particular, this is an ICMP
-/// "destination unreachable" message with a "host unreachable" code.
-///
-/// `original_packet` must be an initial fragment or a complete IP
-/// packet, per [RFC 792 Introduction]:
-///
-///   Also ICMP messages are only sent about errors in handling fragment zero of
-///   fragemented [sic] datagrams.
-///
-/// `header_len` is the length of the header including all options.
-///
-/// [RFC 792 Introduction]: https://datatracker.ietf.org/doc/html/rfc792
-pub fn send_icmpv4_host_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().address_unreachable.increment();
-
-    send_icmpv4_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        device,
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4DestUnreachableCode::DestHostUnreachable,
-        original_packet,
-        header_len,
-        marks,
-    );
-}
-
-/// Send an ICMPv6 message in response to receiving a packet destined for an
-/// unreachable address.
-///
-/// `send_icmpv6_address_unreachable` sends the appropriate ICMP message in
-/// response to receiving an IP packet from `src_ip` to `dst_ip`, where
-/// `dst_ip` is unreachable. In particular, this is an ICMP
-/// "destination unreachable" message with an "address unreachable" code.
-///
-/// `original_packet` contains the contents of the entire original packet,
-/// including extension headers.
-pub fn send_icmpv6_address_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    original_packet: B,
-    marks: &Marks,
-) {
-    core_ctx.counters().address_unreachable.increment();
-
-    send_icmpv6_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        device,
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6DestUnreachableCode::AddrUnreachable,
-        original_packet,
-        marks,
-    );
-}
-
-/// Send an ICMP(v4) message in response to receiving a packet destined for an
-/// unsupported IPv4 protocol.
-///
-/// `send_icmpv4_protocol_unreachable` sends the appropriate ICMP message in
-/// response to receiving an IP packet from `src_ip` to `dst_ip` identifying an
-/// unsupported protocol - in particular, a "destination unreachable" message
-/// with a "protocol unreachable" code.
-///
-/// `original_packet` contains the contents of the entire original packet,
-/// including the IP header. This must be a whole packet, not a packet fragment.
-/// `header_len` is the length of the header including all options.
-fn send_icmpv4_protocol_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().protocol_unreachable.increment();
-
-    send_icmpv4_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4DestUnreachableCode::DestProtocolUnreachable,
-        original_packet,
-        header_len,
-        marks,
-    );
-}
-
-/// Send an ICMP(v4) message in response to receiving a packet destined for an
-/// unreachable local transport-layer port.
-///
-/// `send_icmpv4_port_unreachable` sends the appropriate ICMP message in
-/// response to receiving an IP packet from `src_ip` to `dst_ip` with an
-/// unreachable local transport-layer port. In particular, this is an ICMP
-/// "destination unreachable" message with a "port unreachable" code.
-///
-/// `original_packet` contains the contents of the entire original packet,
-/// including the IP header. This must be a whole packet, not a packet fragment.
-/// `header_len` is the length of the header including all options.
-pub(crate) fn send_icmpv4_port_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().port_unreachable.increment();
-
-    send_icmpv4_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4DestUnreachableCode::DestPortUnreachable,
-        original_packet,
-        header_len,
-        marks,
-    );
-}
-
-/// Send an ICMPv6 message in response to receiving a packet destined for an
-/// unreachable local transport-layer port.
-///
-/// `send_icmpv6_port_unreachable` is like [`send_icmpv4_port_unreachable`], but
-/// for ICMPv6.
-///
-/// `original_packet` contains the contents of the entire original packet,
-/// including extension headers.
-pub(crate) fn send_icmpv6_port_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    original_packet: B,
-    marks: &Marks,
-) {
-    core_ctx.counters().port_unreachable.increment();
-
-    send_icmpv6_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6DestUnreachableCode::PortUnreachable,
-        original_packet,
-        marks,
-    );
-}
-
-/// Send an ICMP(v4) message in response to receiving a packet destined for an
-/// unreachable network.
-///
-/// `send_icmpv4_net_unreachable` sends the appropriate ICMP message in response
-/// to receiving an IP packet from `src_ip` to an unreachable `dst_ip`. In
-/// particular, this is an ICMP "destination unreachable" message with a "net
-/// unreachable" code.
-///
-/// `original_packet` contains the contents of the entire original packet -
-/// including all IP headers. `header_len` is the length of the IPv4 header. It
-/// is ignored for IPv6.
-fn send_icmpv4_net_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().net_unreachable.increment();
-
-    send_icmpv4_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4DestUnreachableCode::DestNetworkUnreachable,
-        original_packet,
-        header_len,
-        marks,
-    );
-}
-
-/// Send an ICMPv6 message in response to receiving a packet destined for an
-/// unreachable network.
-///
-/// `send_icmpv6_net_unreachable` is like [`send_icmpv4_net_unreachable`], but
-/// for ICMPv6. It sends an ICMPv6 "destination unreachable" message with a "no
-/// route to destination" code.
-///
-/// `original_packet` contains the contents of the entire original packet
-/// including extension headers. `header_len` is the length of the IP header and
-/// all extension headers.
-fn send_icmpv6_net_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    original_packet: B,
-    marks: &Marks,
-) {
-    core_ctx.counters().net_unreachable.increment();
-
-    send_icmpv6_dest_unreachable(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6DestUnreachableCode::NoRoute,
-        original_packet,
-        marks,
-    );
-}
-
-/// Send an ICMP(v4) message in response to receiving a packet whose TTL has
-/// expired.
-///
-/// `send_icmpv4_ttl_expired` sends the appropriate ICMP in response to
-/// receiving an IP packet from `src_ip` to `dst_ip` whose TTL has expired. In
-/// particular, this is an ICMP "time exceeded" message with a "time to live
-/// exceeded in transit" code.
-///
-/// `original_packet` contains the contents of the entire original packet,
-/// including the header. `header_len` is the length of the IP header including
-/// options.
-fn send_icmpv4_ttl_expired<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    let code = Icmpv4TimeExceededCode::TtlExpired;
-    core_ctx.counters().time_exceeded.increment_code(code);
-
-    send_icmpv4_error_message(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4ErrorMessage::TimeExceeded { message: IcmpTimeExceeded::default(), code },
-        original_packet,
-        header_len,
-        marks,
-    )
-}
-
-/// Send an ICMPv6 message in response to receiving a packet whose hop limit has
-/// expired.
-///
-/// `send_icmpv6_ttl_expired` is like [`send_icmpv4_ttl_expired`], but for
-/// ICMPv6. It sends an ICMPv6 "time exceeded" message with a "hop limit
-/// exceeded in transit" code.
-///
-/// `original_packet` contains the contents of the entire original packet
-/// including extension headers. `header_len` is the length of the IP header and
-/// all extension headers.
-fn send_icmpv6_ttl_expired<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    original_packet: B,
-    marks: &Marks,
-) {
-    let code = Icmpv6TimeExceededCode::HopLimitExceeded;
-    core_ctx.counters().time_exceeded.increment_code(code);
-
-    send_icmpv6_error_message(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6ErrorMessage::TimeExceeded { message: IcmpTimeExceeded::default(), code },
-        original_packet,
-        false, /* allow_dst_multicast */
-        marks,
-    )
-}
-
-// TODO(joshlf): Test send_icmpv6_packet_too_big once we support fake IPv6 test
-// setups.
-
-/// Send an ICMPv6 message in response to receiving a packet whose size exceeds
-/// the MTU of the next hop interface.
-///
-/// `send_icmpv6_packet_too_big` sends an ICMPv6 "packet too big" message in
-/// response to receiving an IP packet from `src_ip` to `dst_ip` whose size
-/// exceeds the `mtu` of the next hop interface.
-fn send_icmpv6_packet_too_big<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    mtu: Mtu,
-    original_packet: B,
-    marks: &Marks,
-) {
-    core_ctx.counters().packet_too_big.increment();
-
-    send_icmpv6_error_message(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6ErrorMessage::PacketTooBig {
-            message: Icmpv6PacketTooBig::new(mtu.into()),
-            code: IcmpZeroCode,
-        },
-        original_packet,
-        // As per RFC 4443 section 2.4.e,
-        //
-        //   An ICMPv6 error message MUST NOT be originated as a result of
-        //   receiving the following:
-        //
-        //     (e.3) A packet destined to an IPv6 multicast address.  (There are
-        //           two exceptions to this rule: (1) the Packet Too Big Message
-        //           (Section 3.2) to allow Path MTU discovery to work for IPv6
-        //           multicast, and (2) the Parameter Problem Message, Code 2
-        //           (Section 3.4) reporting an unrecognized IPv6 option (see
-        //           Section 4.2 of [IPv6]) that has the Option Type highest-
-        //           order two bits set to 10).
-        //
-        //     (e.4) A packet sent as a link-layer multicast (the exceptions
-        //           from e.3 apply to this case, too).
-        //
-        // Thus, we explicitly allow sending a Packet Too Big error if the
-        // destination was a multicast packet.
-        true, /* allow_dst_multicast */
-        marks,
-    )
-}
-
-pub(crate) fn send_icmpv4_parameter_problem<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    code: Icmpv4ParameterProblemCode,
-    parameter_problem: Icmpv4ParameterProblem,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().parameter_problem.increment_code(code);
-
-    send_icmpv4_error_message(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4ErrorMessage::ParameterProblem { message: parameter_problem, code },
-        original_packet,
-        header_len,
-        marks,
-    )
-}
-
-/// Send an ICMPv6 Parameter Problem error message.
-///
-/// If the error message is Code 2 reporting an unrecognized IPv6 option that
-/// has the Option Type highest-order two bits set to 10, `allow_dst_multicast`
-/// must be set to `true`. See [`should_send_icmpv6_error`] for more details.
-///
-/// # Panics
-///
-/// Panics if `allow_multicast_addr` is set to `true`, but this Parameter
-/// Problem's code is not 2 (Unrecognized IPv6 Option).
-fn send_icmpv6_parameter_problem<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: &CC::DeviceId,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    code: Icmpv6ParameterProblemCode,
-    parameter_problem: Icmpv6ParameterProblem,
-    original_packet: B,
-    allow_dst_multicast: bool,
-    marks: &Marks,
-) {
-    // Only allow the `allow_dst_multicast` parameter to be set if the code is
-    // the unrecognized IPv6 option as that is one of the few exceptions where
-    // we can send an ICMP packet in response to a packet that was destined for
-    // a multicast address.
-    assert!(!allow_dst_multicast || code == Icmpv6ParameterProblemCode::UnrecognizedIpv6Option);
-
-    core_ctx.counters().parameter_problem.increment_code(code);
-
-    send_icmpv6_error_message(
-        core_ctx,
-        bindings_ctx,
-        Some(device),
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6ErrorMessage::ParameterProblem { message: parameter_problem, code },
-        original_packet,
-        allow_dst_multicast,
-        marks,
-    )
-}
-
-fn send_icmpv4_dest_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv4Addr>,
-    dst_ip: SocketIpAddr<Ipv4Addr>,
-    code: Icmpv4DestUnreachableCode,
-    original_packet: B,
-    header_len: usize,
-    marks: &Marks,
-) {
-    core_ctx.counters().dest_unreachable.increment_code(code);
-    send_icmpv4_error_message(
-        core_ctx,
-        bindings_ctx,
-        device,
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv4ErrorMessage::DestUnreachable { message: IcmpDestUnreachable::default(), code },
-        original_packet,
-        header_len,
-        marks,
-    )
-}
-
-fn send_icmpv6_dest_unreachable<
-    B: BufferMut,
-    BC: IcmpBindingsContext,
-    CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
->(
-    core_ctx: &mut CC,
-    bindings_ctx: &mut BC,
-    device: Option<&CC::DeviceId>,
-    frame_dst: Option<FrameDestination>,
-    src_ip: SocketIpAddr<Ipv6Addr>,
-    dst_ip: SocketIpAddr<Ipv6Addr>,
-    code: Icmpv6DestUnreachableCode,
-    original_packet: B,
-    marks: &Marks,
-) {
-    core_ctx.counters().dest_unreachable.increment_code(code);
-    send_icmpv6_error_message(
-        core_ctx,
-        bindings_ctx,
-        device,
-        frame_dst,
-        src_ip,
-        dst_ip,
-        Icmpv6ErrorMessage::DestUnreachable { message: IcmpDestUnreachable::default(), code },
-        original_packet,
-        false, /* allow_dst_multicast */
-        marks,
-    )
-}
-
-/// A type to allow implementing the required filtering traits on a concrete
-/// subset of message types.
-#[allow(missing_docs)]
-enum Icmpv4ErrorMessage {
-    TimeExceeded {
-        message: IcmpTimeExceeded,
-        code: <IcmpTimeExceeded as IcmpMessage<Ipv4>>::Code,
-    },
-    ParameterProblem {
-        message: Icmpv4ParameterProblem,
-        code: <Icmpv4ParameterProblem as IcmpMessage<Ipv4>>::Code,
-    },
-    DestUnreachable {
-        message: IcmpDestUnreachable,
-        code: <IcmpDestUnreachable as IcmpMessage<Ipv4>>::Code,
-    },
-}
-
 fn send_icmpv4_error_message<
     B: BufferMut,
     BC: IcmpBindingsContext,
@@ -2813,28 +2312,6 @@ fn send_icmpv4_error_message<
         Icmpv4ErrorMessage::ParameterProblem { message, code } => send!(message, code),
         Icmpv4ErrorMessage::DestUnreachable { message, code } => send!(message, code),
     }
-}
-
-/// A type to allow implementing the required filtering traits on a concrete
-/// subset of message types.
-#[allow(missing_docs)]
-enum Icmpv6ErrorMessage {
-    TimeExceeded {
-        message: IcmpTimeExceeded,
-        code: <IcmpTimeExceeded as IcmpMessage<Ipv6>>::Code,
-    },
-    PacketTooBig {
-        message: Icmpv6PacketTooBig,
-        code: <Icmpv6PacketTooBig as IcmpMessage<Ipv6>>::Code,
-    },
-    ParameterProblem {
-        message: Icmpv6ParameterProblem,
-        code: <Icmpv6ParameterProblem as IcmpMessage<Ipv6>>::Code,
-    },
-    DestUnreachable {
-        message: IcmpDestUnreachable,
-        code: <IcmpDestUnreachable as IcmpMessage<Ipv6>>::Code,
-    },
 }
 
 fn send_icmpv6_error_message<
@@ -4231,15 +3708,17 @@ mod tests {
         fn send_icmpv4_ttl_expired_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv4>,
         ) {
-            send_icmpv4_ttl_expired(
-                core_ctx,
+            let error = Icmpv4Error::TtlExpired;
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
-                &FakeDeviceId,
+                Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
                 EmptyBuf,
+                error,
                 0,
+                packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
             assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.ttl_expired.get(), 1);
@@ -4249,17 +3728,20 @@ mod tests {
         fn send_icmpv4_parameter_problem_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv4>,
         ) {
-            send_icmpv4_parameter_problem(
-                core_ctx,
+            let error = Icmpv4Error::ParameterProblem {
+                code: Icmpv4ParameterProblemCode::PointerIndicatesError,
+                pointer: 0,
+            };
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
-                &FakeDeviceId,
+                Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
-                Icmpv4ParameterProblemCode::PointerIndicatesError,
-                Icmpv4ParameterProblem::new(0),
                 EmptyBuf,
+                error,
                 0,
+                packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
             assert_geq!(
@@ -4272,16 +3754,16 @@ mod tests {
         fn send_icmpv4_dest_unreachable_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv4>,
         ) {
-            send_icmpv4_dest_unreachable(
-                core_ctx,
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V4.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V4.local_ip.try_into().unwrap(),
-                Icmpv4DestUnreachableCode::DestNetworkUnreachable,
                 EmptyBuf,
+                Icmpv4Error::NetUnreachable,
                 0,
+                packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
             assert_geq!(
@@ -4294,14 +3776,16 @@ mod tests {
         fn send_icmpv6_ttl_expired_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv6>,
         ) {
-            send_icmpv6_ttl_expired(
-                core_ctx,
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
-                &FakeDeviceId,
+                Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
                 EmptyBuf,
+                Icmpv6Error::TtlExpired,
+                0,
+                Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
             assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
@@ -4311,15 +3795,16 @@ mod tests {
         fn send_icmpv6_packet_too_big_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv6>,
         ) {
-            send_icmpv6_packet_too_big(
-                core_ctx,
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
-                &FakeDeviceId,
+                Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
-                Mtu::new(0),
                 EmptyBuf,
+                Icmpv6Error::PacketTooBig { mtu: Mtu::new(1280) },
+                0,
+                Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
             assert_geq!(core_ctx.icmp.tx_counters.packet_too_big.get(), 1);
@@ -4329,17 +3814,21 @@ mod tests {
         fn send_icmpv6_parameter_problem_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv6>,
         ) {
-            send_icmpv6_parameter_problem(
-                core_ctx,
+            let error = Icmpv6Error::ParameterProblem {
+                code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
+                pointer: 0,
+                allow_dst_multicast: false,
+            };
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
-                &FakeDeviceId,
+                Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
-                Icmpv6ParameterProblemCode::ErroneousHeaderField,
-                Icmpv6ParameterProblem::new(0),
                 EmptyBuf,
-                false,
+                error,
+                0,
+                Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
             assert_geq!(
@@ -4352,15 +3841,16 @@ mod tests {
         fn send_icmpv6_dest_unreachable_helper(
             CtxPair { core_ctx, bindings_ctx }: &mut FakeIcmpCtx<Ipv6>,
         ) {
-            send_icmpv6_dest_unreachable(
-                core_ctx,
+            core_ctx.send_icmp_error_message(
                 bindings_ctx,
                 Some(&FakeDeviceId),
                 Some(FrameDestination::Individual { local: true }),
                 TEST_ADDRS_V6.remote_ip.try_into().unwrap(),
                 TEST_ADDRS_V6.local_ip.try_into().unwrap(),
-                Icmpv6DestUnreachableCode::NoRoute,
                 EmptyBuf,
+                Icmpv6Error::NetUnreachable,
+                0,
+                Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
             assert_geq!(core_ctx.icmp.tx_counters.dest_unreachable.no_route.get(), 1);

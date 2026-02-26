@@ -10,7 +10,9 @@ use core::num::NonZeroU16;
 use core::ops::Deref;
 
 use derivative::Derivative;
-use net_types::ip::{GenericOverIp, Ip, IpAddress, Ipv4, Ipv4Addr, Ipv6Addr, Ipv6SourceAddr};
+use net_types::ip::{
+    GenericOverIp, Ip, IpAddress, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6Addr, Ipv6SourceAddr,
+};
 use net_types::{
     MulticastAddr, NonMappedAddr, ScopeableAddress, SpecifiedAddr, UnicastAddr, Witness, ZonedAddr,
 };
@@ -178,6 +180,16 @@ impl SocketIpAddr<Ipv4Addr> {
         addr.try_into().unwrap_or_else(|AddrIsMappedError {}| {
             unreachable!("IPv4 addresses must be non-mapped")
         })
+    }
+
+    /// Constructs a [`SocketIpAddr`] from the given [`Ipv4SourceAddr`].
+    ///
+    /// Returns `None` if the given address is unspecified.
+    pub fn new_from_ipv4_source(addr: Ipv4SourceAddr) -> Option<Self> {
+        match addr {
+            Ipv4SourceAddr::Unspecified => None,
+            Ipv4SourceAddr::Specified(addr) => Some(SocketIpAddr::new_ipv4_specified(addr.get())),
+        }
     }
 }
 

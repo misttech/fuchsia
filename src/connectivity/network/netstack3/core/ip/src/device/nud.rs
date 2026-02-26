@@ -2007,17 +2007,19 @@ pub trait NudIcmpIpExt: packet_formats::ip::IpExt {
 }
 
 impl NudIcmpIpExt for Ipv4 {
-    type Metadata = (usize, Ipv4FragmentType);
+    type Metadata = Ipv4FragmentType;
 
     fn extract_metadata<B: SplitByteSlice>(packet: &Ipv4Packet<B>) -> Self::Metadata {
-        (packet.header_len(), packet.fragment_type())
+        packet.fragment_type()
     }
 }
 
 impl NudIcmpIpExt for Ipv6 {
     type Metadata = ();
 
-    fn extract_metadata<B: SplitByteSlice>(_: &Ipv6Packet<B>) -> () {}
+    fn extract_metadata<B: SplitByteSlice>(_packet: &Ipv6Packet<B>) -> Self::Metadata {
+        ()
+    }
 }
 
 /// The execution context which allows sending ICMP destination unreachable
@@ -2036,6 +2038,8 @@ pub trait NudIcmpContext<I: NudIcmpIpExt, D: LinkDevice, BC>: DeviceIdContext<D>
         device_id: Option<&Self::DeviceId>,
         original_src_ip: SocketIpAddr<I::Addr>,
         original_dst_ip: SocketIpAddr<I::Addr>,
+        header_len: usize,
+        proto: I::Proto,
         metadata: I::Metadata,
     );
 }
@@ -2476,6 +2480,8 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                     continue;
                 };
                 let header_metadata = I::extract_metadata(&packet);
+                let header_len = packet.parse_metadata().header_len();
+                let proto = packet.proto();
                 let metadata = packet.parse_metadata();
                 core::mem::drop(packet);
                 frame.undo_parse(metadata);
@@ -2496,6 +2502,8 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                     original_src_ip.as_ref().must_have_zone().then_some(&device_id),
                     original_src_ip,
                     original_dst_ip,
+                    header_len,
+                    proto,
                     header_metadata,
                 );
             }
@@ -3079,7 +3087,9 @@ mod tests {
             _device_id: Option<&Self::DeviceId>,
             _original_src_ip: SocketIpAddr<I::Addr>,
             _original_dst_ip: SocketIpAddr<I::Addr>,
-            _header_len: I::Metadata,
+            _header_len: usize,
+            _proto: I::Proto,
+            _metadata: I::Metadata,
         ) {
             self.inner
                 .send_frame(bindings_ctx, FakeNudMessageMeta::IcmpDestUnreachable, frame)

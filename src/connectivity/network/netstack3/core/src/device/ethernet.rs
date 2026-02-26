@@ -31,7 +31,7 @@ use netstack3_device::{
     IpLinkDeviceState,
 };
 use netstack3_ip::IpDeviceEgressStateContext;
-use netstack3_ip::icmp::{self, NdpCounters};
+use netstack3_ip::icmp::{self, IcmpErrorHandler, Icmpv4Error, Icmpv6Error, NdpCounters};
 use netstack3_ip::nud::{
     DelegateNudContext, NudConfigContext, NudContext, NudIcmpContext, NudSenderContext, NudState,
     NudUserConfig, UseDelegateNudContext,
@@ -41,6 +41,7 @@ use packet_formats::ethernet::EtherType;
 use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::icmp::ndp::options::NdpOptionBuilder;
 use packet_formats::icmp::ndp::{NeighborSolicitation, OptionSequenceBuilder};
+use packet_formats::ip::{Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::Ipv4FragmentType;
 use packet_formats::utils::NonZeroDuration;
 
@@ -231,12 +232,14 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         device_id: Option<&Self::DeviceId>,
         original_src_ip: SocketIpAddr<Ipv6Addr>,
         original_dst_ip: SocketIpAddr<Ipv6Addr>,
-        _: (),
+        header_len: usize,
+        proto: Ipv6Proto,
+        _metadata: (),
     ) {
-        icmp::send_icmpv6_address_unreachable(
+        <Self as IcmpErrorHandler<Ipv6, BC>>::send_icmp_error_message(
             self,
             bindings_ctx,
-            device_id.map(|device_id| device_id.clone().into()).as_ref(),
+            device_id.map(|device_id| device_id.clone().into()).as_ref(), // This is Option<&CC::DeviceId>
             // NB: link layer address resolution only happens for packets destined for
             // a unicast address, so passing `None` as `FrameDestination` here is always
             // correct since there's never a need to not send the ICMP error due to
@@ -245,6 +248,9 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
             original_src_ip,
             original_dst_ip,
             frame,
+            Icmpv6Error::AddressUnreachable,
+            header_len,
+            proto,
             // TODO(https://fxbug.dev/400977853): The pending frame this ICMP message is
             // responding to can either be generated from ourselves or being forwarded.
             // In the former case, the marks are irrelevant because this message will end
@@ -416,15 +422,18 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         device_id: Option<&Self::DeviceId>,
         original_src_ip: SocketIpAddr<Ipv4Addr>,
         original_dst_ip: SocketIpAddr<Ipv4Addr>,
-        (header_len, fragment_type): (usize, Ipv4FragmentType),
+        header_len: usize,
+        proto: Ipv4Proto,
+        fragment_type: Ipv4FragmentType,
     ) {
         if fragment_type != Ipv4FragmentType::InitialFragment {
             return;
         }
-        icmp::send_icmpv4_host_unreachable(
+
+        <Self as IcmpErrorHandler<Ipv4, BC>>::send_icmp_error_message(
             self,
             bindings_ctx,
-            device_id.map(|device_id| device_id.clone().into()).as_ref(),
+            device_id.map(|device_id| device_id.clone().into()).as_ref(), // This is Option<&CC::DeviceId>
             // NB: link layer address resolution only happens for packets destined for
             // a unicast address, so passing `None` as `FrameDestination` here is always
             // correct since there's never a need to not send the ICMP error due to
@@ -433,7 +442,9 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
             original_src_ip,
             original_dst_ip,
             frame,
+            Icmpv4Error::HostUnreachable,
             header_len,
+            proto,
             // TODO(https://fxbug.dev/400977853): The pending frame this ICMP message is
             // responding to can either be generated from ourselves or being forwarded.
             // In the former case, the marks are irrelevant because this message will end

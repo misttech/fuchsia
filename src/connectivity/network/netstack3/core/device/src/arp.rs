@@ -685,6 +685,7 @@ mod tests {
     use alloc::vec::Vec;
     use core::iter;
     use net_types::ip::Ip;
+    use packet_formats::ip::Ipv4Proto;
 
     use assert_matches::assert_matches;
     use net_types::ethernet::Mac;
@@ -904,7 +905,9 @@ mod tests {
             _device_id: Option<&Self::DeviceId>,
             _original_src: SocketIpAddr<Ipv4Addr>,
             _original_dst: SocketIpAddr<Ipv4Addr>,
-            _metadata: (usize, Ipv4FragmentType),
+            _header_len: usize,
+            _proto: Ipv4Proto,
+            _metadata: Ipv4FragmentType,
         ) {
             panic!("send_icmp_dest_unreachable should not be called");
         }

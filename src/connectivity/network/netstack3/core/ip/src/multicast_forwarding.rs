@@ -296,8 +296,9 @@ mod testutil {
     use core::cell::RefCell;
     use derivative::Derivative;
     use net_declare::{net_ip_v4, net_ip_v6};
+    use net_types::MulticastAddr;
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mtu};
-    use net_types::{MulticastAddr, SpecifiedAddr};
+    use netstack3_base::socket::SocketIpAddr;
     use netstack3_base::testutil::{FakeStrongDeviceId, MultipleDevicesId};
     use netstack3_base::{
         CoreTimerContext, CounterContext, CtxPair, FrameDestination, Marks, ResourceCounterContext,
@@ -309,7 +310,7 @@ mod testutil {
 
     use crate::device::IpDeviceSendContext;
     use crate::internal::base::DeviceIpLayerMetadata;
-    use crate::internal::icmp::{IcmpErrorHandler, IcmpHandlerIpExt};
+    use crate::internal::icmp::IcmpErrorHandler;
     use crate::multicast_forwarding::{
         MulticastForwardingApi, MulticastForwardingEnabledState, MulticastForwardingPendingPackets,
         MulticastForwardingPendingPacketsContext, MulticastForwardingState, MulticastRouteTable,
@@ -565,10 +566,10 @@ mod testutil {
         fn send_icmp_error_message<B: BufferMut>(
             &mut self,
             _bindings_ctx: &mut FakeBindingsCtx<I, D>,
-            _device: &D,
+            _device: Option<&D>,
             _frame_dst: Option<FrameDestination>,
-            _src_ip: <I as IcmpHandlerIpExt>::SourceAddress,
-            _dst_ip: SpecifiedAddr<I::Addr>,
+            _src_ip: SocketIpAddr<I::Addr>,
+            _dst_ip: SocketIpAddr<I::Addr>,
             _original_packet: B,
             _error: I::IcmpError,
             _header_len: usize,
