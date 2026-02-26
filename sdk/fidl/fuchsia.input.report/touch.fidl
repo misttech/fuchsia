@@ -121,6 +121,22 @@ type ContactInputReport = table {
 type TouchButton = flexible enum : uint8 {
     /// Represents palm on touchscreen.
     PALM = 1;
+
+    /// Represents a swipe up gesture on the touchscreen.
+    @available(added=NEXT)
+    SWIPE_UP = 2;
+
+    /// Represents a swipe left gesture on the touchscreen.
+    @available(added=NEXT)
+    SWIPE_LEFT = 3;
+
+    /// Represents a swipe right gesture on the touchscreen.
+    @available(added=NEXT)
+    SWIPE_RIGHT = 4;
+
+    /// Represents a swipe down gesture on the touchscreen.
+    @available(added=NEXT)
+    SWIPE_DOWN = 5;
 };
 
 /// `TouchInputReport` describes the current contacts recorded by the touchscreen.

@@ -1043,6 +1043,26 @@
         "value": "1"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.input.report/TouchButton.SWIPE_DOWN",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input.report/TouchButton.SWIPE_LEFT",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input.report/TouchButton.SWIPE_RIGHT",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.input.report/TouchButton.SWIPE_UP",
+        "value": "2"
+    },
+    {
         "kind": "enum",
         "name": "fuchsia.input.report/TouchButton",
         "strictness": "flexible",

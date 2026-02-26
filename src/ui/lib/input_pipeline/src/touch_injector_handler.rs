@@ -605,6 +605,18 @@ impl TouchInjectorHandler {
                     .into_iter()
                     .map(|button| match button {
                         fidl_input_report::TouchButton::Palm => fidl_ui_input::TouchButton::Palm,
+                        fidl_input_report::TouchButton::SwipeUp => {
+                            fidl_ui_input::TouchButton::SwipeUp
+                        }
+                        fidl_input_report::TouchButton::SwipeLeft => {
+                            fidl_ui_input::TouchButton::SwipeLeft
+                        }
+                        fidl_input_report::TouchButton::SwipeRight => {
+                            fidl_ui_input::TouchButton::SwipeRight
+                        }
+                        fidl_input_report::TouchButton::SwipeDown => {
+                            fidl_ui_input::TouchButton::SwipeDown
+                        }
                         fidl_input_report::TouchButton::__SourceBreaking { unknown_ordinal: n } => {
                             fidl_ui_input::TouchButton::__SourceBreaking {
                                 unknown_ordinal: n as u32,

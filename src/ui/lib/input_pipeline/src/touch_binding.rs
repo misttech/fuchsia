@@ -870,6 +870,14 @@ fn process_single_touchpad_report(
     let buttons: HashSet<mouse_binding::MouseButton> = match &touch_report.pressed_buttons {
         Some(buttons) => HashSet::from_iter(buttons.iter().filter_map(|button| match button {
             fidl_fuchsia_input_report::TouchButton::Palm => Some(1),
+            fidl_fuchsia_input_report::TouchButton::SwipeUp
+            | fidl_fuchsia_input_report::TouchButton::SwipeLeft
+            | fidl_fuchsia_input_report::TouchButton::SwipeRight
+            | fidl_fuchsia_input_report::TouchButton::SwipeDown => {
+                // TODO(https://fxbug.dev/487728300): Support swipe buttons.
+                log::warn!("Swipe buttons {:?} are not supported", button);
+                None
+            }
             fidl_fuchsia_input_report::TouchButton::__SourceBreaking { unknown_ordinal } => {
                 log::warn!("unknown TouchButton ordinal {unknown_ordinal:?}");
                 None
