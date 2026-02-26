@@ -14,7 +14,7 @@ use crate::vfs::{
 };
 use bstr::ByteSlice;
 use ebpf::{
-    BPF_ABS, BPF_LD, BPF_ST, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId, NoMap,
+    BPF_ABS, BPF_IND, BPF_LD, BPF_ST, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId, NoMap,
     ProgramArgument, Type, bpf_addressing_mode, bpf_class, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
@@ -101,12 +101,18 @@ impl SeccompFilter {
         maybe_unique_id: u64,
         should_log: bool,
     ) -> Result<Self, Errno> {
-        // If an instruction loads from / stores to an absolute address, that address has to be
-        // 32-bit aligned and inside the struct seccomp_data passed in.
         for insn in code {
+            // If an instruction loads from / stores to an absolute address, that address has to be
+            // 32-bit aligned and inside the struct seccomp_data passed in.
             if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST)
                 && (bpf_addressing_mode(insn) == BPF_ABS)
                 && (insn.k & 0x3 != 0 || std::mem::size_of::<seccomp_data>() < insn.k as usize)
+            {
+                return error!(EINVAL);
+            }
+            // Indirect loads (BPF_IND) are strictly forbidden.
+            if (bpf_class(insn) == BPF_LD || bpf_class(insn) == BPF_ST)
+                && bpf_addressing_mode(insn) == BPF_IND
             {
                 return error!(EINVAL);
             }
