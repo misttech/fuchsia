@@ -21,7 +21,6 @@ core_tests = [
   "c11-mutex",
   "c11-thread",
   "channel-call-etc",
-  "channel-call-mutex",
   "channel-iovec",
   "channel-write-etc",
   "clock",
@@ -120,6 +119,7 @@ bootfs_only = [
 unified_only = [
   "bad-syscall",
   "bti",
+  "channel-call-mutex",
   "default-exception-handler",  # needs job tree w/o exception handler.
   "debuglog:unified-only",
   "hotplug",

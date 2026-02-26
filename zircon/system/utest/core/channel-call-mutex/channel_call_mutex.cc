@@ -2,15 +2,46 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/standalone-test/standalone.h>
 #include <lib/sync/mutex.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/profile.h>
+#include <lib/zx/resource.h>
+#include <lib/zx/result.h>
+#include <lib/zx/thread.h>
 #include <lib/zx/time.h>
+#include <zircon/syscalls/resource.h>
 
 #include <thread>
 
 #include <zxtest/zxtest.h>
 
 namespace {
+
+zx::result<> SetDeadlineProfile() {
+  zx::resource resource;
+  zx_status_t status = zx::resource::create(*standalone::GetSystemResource(), ZX_RSRC_KIND_SYSTEM,
+                                            ZX_RSRC_SYSTEM_PROFILE_BASE, 1, nullptr, 0, &resource);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  zx_profile_info_t info = {};
+  info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
+  info.deadline_params = {
+      .capacity = ZX_MSEC(8),
+      .relative_deadline = ZX_MSEC(16),
+      .period = ZX_MSEC(16),
+  };
+  zx::profile profile;
+  status = zx::profile::create(resource, 0, &info, &profile);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  status = zx::thread::self()->set_profile(profile, 0);
+  return zx::make_result(status);
+}
 
 TEST(ChannelCallMutexTest, MutexHeldAcrossCallChain) {
   sync_mutex_t mutex;
@@ -23,8 +54,11 @@ TEST(ChannelCallMutexTest, MutexHeldAcrossCallChain) {
   ASSERT_OK(zx::channel::create(0, &client1, &server1));
   ASSERT_OK(zx::channel::create(0, &client2, &server2));
 
-  // Thread 1: Locks a mutex, then makes a zx::channel::call to the second thread.
+  // Thread 1: Sets a deadline profile on the thread, then Locks a mutex, and makes a
+  // zx::channel::call to the second thread.
   std::thread t1([&] {
+    ASSERT_OK(SetDeadlineProfile());
+
     sync_mutex_lock(&mutex);
 
     // Make a call to Thread 2.
