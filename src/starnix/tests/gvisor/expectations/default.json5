@@ -1241,6 +1241,10 @@
                 "MsgqueueTest.MsgOpReceiveMax",
                 "TruncateTest.TruncateNonWriteable",
                 "XattrTest.TrustedNamespaceWithCapSysAdminInNewUserns",
+
+                // TODO(https://fxbug.dev/487789159): Crashing somewhere in the forked process logic.
+                "GetSockOptRequiresCapNetAdminTests/GetSockOptRequiresCapNetAdminTest.*",
+                "SetSockOpt/SetSockOptRequiresCapNetAdminTest.*",
             ],
         },
     ],
