@@ -780,8 +780,6 @@ pub(crate) enum IncomingResponseToRequestError {
     NotDhcpAckOrNak(dhcp_protocol::MessageType),
     #[error("yiaddr was the unspecified address")]
     UnspecifiedYiaddr,
-    #[error("no IP address lease time")]
-    NoLeaseTime,
     #[error("no server identifier")]
     NoServerIdentifier,
     #[error("missing required option: {0:?}")]
@@ -798,8 +796,6 @@ pub(crate) struct IncomingResponseToRequestErrorCounters {
     pub(crate) not_dhcp_ack_or_nak: Counter,
     /// The message had yiaddr set to the unspecified address.
     pub(crate) unspecified_yiaddr: Counter,
-    /// The message had no IP address lease time.
-    pub(crate) no_lease_time: Counter,
     /// The message had no server identifier.
     pub(crate) no_server_identifier: Counter,
     /// The message was missing a required option.
@@ -813,14 +809,12 @@ impl IncomingResponseToRequestErrorCounters {
             common,
             not_dhcp_ack_or_nak,
             unspecified_yiaddr,
-            no_lease_time,
             no_server_identifier,
             missing_required_option,
         } = self;
         common.record(inspector);
         inspector.record_usize("NotDhcpAckOrNak", not_dhcp_ack_or_nak.load());
         inspector.record_usize("UnspecifiedYiaddr", unspecified_yiaddr.load());
-        inspector.record_usize("NoLeaseTime", no_lease_time.load());
         inspector.record_usize("NoServerIdentifier", no_server_identifier.load());
         inspector.record_usize("MissingRequiredOption", missing_required_option.load());
     }
@@ -831,7 +825,6 @@ impl IncomingResponseToRequestErrorCounters {
             common,
             not_dhcp_ack_or_nak,
             unspecified_yiaddr,
-            no_lease_time,
             no_server_identifier,
             missing_required_option,
         } = self;
@@ -841,7 +834,6 @@ impl IncomingResponseToRequestErrorCounters {
             }
             IncomingResponseToRequestError::NotDhcpAckOrNak(_) => not_dhcp_ack_or_nak.increment(),
             IncomingResponseToRequestError::UnspecifiedYiaddr => unspecified_yiaddr.increment(),
-            IncomingResponseToRequestError::NoLeaseTime => no_lease_time.increment(),
             IncomingResponseToRequestError::NoServerIdentifier => no_server_identifier.increment(),
             IncomingResponseToRequestError::MissingRequiredOption(_) => {
                 missing_required_option.increment()
@@ -854,7 +846,11 @@ impl IncomingResponseToRequestErrorCounters {
 pub(crate) struct FieldsToRetainFromAck<ServerIdentifier> {
     pub(crate) yiaddr: net_types::SpecifiedAddr<net_types::ip::Ipv4Addr>,
     pub(crate) server_identifier: ServerIdentifier,
-    pub(crate) ip_address_lease_time_secs: NonZeroU32,
+    // Strictly according to RFC 2131, the IP Address Lease Time MUST be
+    // included in the DHCPACK. However, we've observed DHCP servers in the
+    // field that fail to set the lease time (https://fxbug.dev/486403240).
+    // Thus, we treat IP Address Lease Time as optional for DHCPACK.
+    pub(crate) ip_address_lease_time_secs: Option<NonZeroU32>,
     pub(crate) renewal_time_value_secs: Option<u32>,
     pub(crate) rebinding_time_value_secs: Option<u32>,
     // Note: Options with list semantics may be repeated.
@@ -939,8 +935,7 @@ pub(crate) fn fields_to_retain_from_response_to_request(
             Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
                 yiaddr: yiaddr.ok_or(IncomingResponseToRequestError::UnspecifiedYiaddr)?,
                 server_identifier,
-                ip_address_lease_time_secs: ip_address_lease_time_secs
-                    .ok_or(IncomingResponseToRequestError::NoLeaseTime)?,
+                ip_address_lease_time_secs: ip_address_lease_time_secs,
                 renewal_time_value_secs,
                 rebinding_time_value_secs,
                 parameters,
@@ -1321,7 +1316,7 @@ mod test {
                     .try_into()
                     .expect("should be specified"),
             ),
-            ip_address_lease_time_secs: LEASE_LENGTH_SECS_NONZERO,
+            ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
             parameters: vec![
                 dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
                 dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
@@ -1345,7 +1340,7 @@ mod test {
             .try_into()
             .expect("should be specified"),
         server_identifier: None,
-        ip_address_lease_time_secs: LEASE_LENGTH_SECS_NONZERO,
+        ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
         parameters: vec![
             dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
             dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
@@ -1373,7 +1368,7 @@ mod test {
                 .try_into()
                 .expect("should be specified"),
         ),
-        ip_address_lease_time_secs: LEASE_LENGTH_SECS_NONZERO,
+        ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
         parameters: vec![
             dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
             dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
@@ -1406,11 +1401,23 @@ mod test {
         server_identifier: Some(SERVER_IP),
         subnet_mask: Some(TEST_SUBNET_MASK),
         lease_length_secs: None,
-        renewal_time_secs: Some(RENEWAL_TIME_SECS),
-        rebinding_time_secs: Some(REBINDING_TIME_SECS),
+        renewal_time_secs: None,
+        rebinding_time_secs: None,
         message: None,
         include_duplicate_option: false,
-    } =>  Err(IncomingResponseToRequestError::NoLeaseTime); "rejects DHCPACK with no lease time")]
+    } => Ok(IncomingResponseToRequest::Ack(FieldsToRetainFromAck {
+        yiaddr: net_types::ip::Ipv4Addr::from(YIADDR).try_into().expect("should be specified"),
+        server_identifier: Some(
+            net_types::ip::Ipv4Addr::from(SERVER_IP).try_into().expect("should be specified")
+        ),
+        ip_address_lease_time_secs: None,
+        parameters: vec![
+            dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
+            dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())
+        ],
+        renewal_time_value_secs: None,
+        rebinding_time_value_secs: None,
+    })); "accepts DHCPACK with no lease time")]
     #[test_case(
         VaryingReplyToRequestFields {
             op: dhcp_protocol::OpCode::BOOTREPLY,
@@ -1540,7 +1547,7 @@ mod test {
                     .try_into()
                     .expect("should be specified"),
             ),
-            ip_address_lease_time_secs: LEASE_LENGTH_SECS_NONZERO,
+            ip_address_lease_time_secs: Some(LEASE_LENGTH_SECS_NONZERO),
             parameters: vec![
                 dhcp_protocol::DhcpOption::SubnetMask(TEST_SUBNET_MASK),
                 dhcp_protocol::DhcpOption::DomainName(DOMAIN_NAME.to_owned())

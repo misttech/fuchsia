@@ -65,6 +65,9 @@ pub(crate) struct MessagingRelatedCounters {
     /// A counter for each time the client received a UDPv4 packet on the
     /// dhcp-client port that did not parse as a DHCP message.
     pub(crate) recv_failed_dhcp_parse: Counter,
+    /// A counter for each time the client received a DHCPACK that omitted the
+    /// IP Address Lease Time option.
+    pub(crate) recv_ack_no_addr_lease_time: Counter,
 }
 
 impl MessagingRelatedCounters {
@@ -78,6 +81,7 @@ impl MessagingRelatedCounters {
             recv_wrong_xid,
             recv_wrong_chaddr,
             recv_failed_dhcp_parse,
+            recv_ack_no_addr_lease_time,
         } = self;
         inspector.record_inspectable_value("SendMessage", send_message);
         inspector.record_inspectable_value("RecvMessage", recv_message);
@@ -93,6 +97,7 @@ impl MessagingRelatedCounters {
         inspector.record_inspectable_value("RecvWrongXid", recv_wrong_xid);
         inspector.record_inspectable_value("RecvWrongChaddr", recv_wrong_chaddr);
         inspector.record_inspectable_value("RecvFailedDhcpParse", recv_failed_dhcp_parse);
+        inspector.record_inspectable_value("NoLeaseTime", recv_ack_no_addr_lease_time);
     }
 }
 
@@ -181,7 +186,7 @@ pub(crate) struct RenewingCounters {
     /// Counters relating to sending and receiving messages.
     pub(crate) messaging: MessagingRelatedCounters,
     /// Counters for each error that could cause a client to reject a message
-    /// while receiving in the Requesting state.
+    /// while receiving in the Renewing state.
     pub(crate) recv_error: IncomingResponseToRequestErrorCounters,
     /// Counter for each time the client received a NAK message while in the
     /// Renewing state.

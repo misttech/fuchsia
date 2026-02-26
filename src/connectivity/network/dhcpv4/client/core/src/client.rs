@@ -1347,6 +1347,32 @@ pub struct Requesting<I> {
 // 60 seconds, before restarting the initialization procedure".
 const NUM_REQUEST_RETRANSMITS: usize = 4;
 
+/// The default lease time of an IP Address if none was present in the DHCPACK.
+///
+/// RFC 2131 section 4.3.1 states that DHCP Servers MUST explicitly provide the
+/// "IP address lease time" option when sending a DHCPACK in response to a
+/// DHCPREQUEST:
+///
+///   Option                    DHCPOFFER    DHCPACK            DHCPNAK
+///   ------                    ---------    -------            -------
+///   ...
+///   IP address lease time     MUST         MUST (DHCPREQUEST) MUST NOT
+///
+/// However, we've observed DHCP servers in the field that fail to set the lease
+/// time (https://fxbug.dev/486403240).
+///
+/// The RFC does not specify how a client should handle a DHCPACK that omits the
+/// lease time. After sampling several DHCP Client implementations it's clear
+/// that the community is split on the best approach.
+/// * ISC's dhclient chooses to reject the ACK and restart the client.
+/// * FreeBSD's dhclient chooses to fill in a default lease time (12 hours).
+/// * Netstack2's DHCP client (this implementations predecessor) choose to fill
+///   in a default lease time (12 hours).
+///
+/// For the sake of compatibility with such servers, we've chosen to fill in a
+/// default lease time.
+const DEFAULT_LEASE_TIME: Duration = Duration::from_hours(12);
+
 impl<I: deps::Instant> Requesting<I> {
     /// Executes the Requesting state.
     ///
@@ -1488,14 +1514,45 @@ impl<I: deps::Instant> Requesting<I> {
                         with differing server_identifier = {server_identifier}"
                     );
                 }
+
+                let ip_address_lease_time = match ip_address_lease_time_secs {
+                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
+                    None => {
+                        // The DHCP Server did not provide an IP Address Lease
+                        // Time in the DHCPACK. This is in violation of the RFC,
+                        // but we accept the ACK regardless for compatibility.
+                        //
+                        // Prefer the lease length from the offer, if one was
+                        // included, otherwise fall back to the default.
+                        messaging.recv_ack_no_addr_lease_time.increment();
+                        match fields_from_offer_to_use_in_request.ip_address_lease_time_secs {
+                            Some(lease_time) => {
+                                let lease_time = Duration::from_secs(lease_time.get().into());
+                                log::warn!(
+                                    "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
+                                    not provide an IP Address Lease Time. Falling back to the \
+                                    lease time from the DHCPOFFER: {lease_time:?}."
+                                );
+                                lease_time
+                            }
+                            None => {
+                                log::warn!(
+                                    "{debug_log_prefix} accepting DHCPACK from {src_addr} that did \
+                                    not provide an IP Address Lease Time. Falling back to the \
+                                    default: {DEFAULT_LEASE_TIME:?}."
+                                );
+                                DEFAULT_LEASE_TIME
+                            }
+                        }
+                    }
+                };
+
                 Ok(RequestingOutcome::Bound(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr,
                         server_identifier,
-                        ip_address_lease_time: Duration::from_secs(
-                            ip_address_lease_time_secs.get().into(),
-                        ),
+                        ip_address_lease_time,
                         renewal_time: renewal_time_value_secs
                             .map(u64::from)
                             .map(Duration::from_secs),
@@ -2034,7 +2091,7 @@ impl<I: deps::Instant> Renewing<I> {
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
                     log::debug!(
-                        "{debug_log_prefix} renewed with new lease time: {}",
+                        "{debug_log_prefix} renewed with new lease time: {:?}",
                         ip_address_lease_time_secs
                     );
                     RenewingOutcome::Renewed
@@ -2045,14 +2102,31 @@ impl<I: deps::Instant> Renewing<I> {
                     );
                     RenewingOutcome::NewAddress
                 };
+
+                let ip_address_lease_time = match ip_address_lease_time_secs {
+                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
+                    None => {
+                        // The DHCP Server did not provide an IP Address Lease
+                        // Time in the DHCPACK. This is in violation of the RFC,
+                        // but we accept the ACK regardless for compatibility.
+                        //
+                        // Reuse the previously established lease length.
+                        messaging.recv_ack_no_addr_lease_time.increment();
+                        log::warn!(
+                            "{debug_log_prefix} accepting DHCPACK from that did not provide an \
+                            IP Address Lease Time. Falling back to the original lease time: \
+                            {ip_address_lease_time:?}."
+                        );
+                        *ip_address_lease_time
+                    }
+                };
+
                 Ok(variant(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr: new_yiaddr,
                         server_identifier: *server_identifier,
-                        ip_address_lease_time: Duration::from_secs(
-                            ip_address_lease_time_secs.get().into(),
-                        ),
+                        ip_address_lease_time,
                         renewal_time: renewal_time_value_secs
                             .map(u64::from)
                             .map(Duration::from_secs),
@@ -2305,7 +2379,7 @@ impl<I: deps::Instant> Rebinding<I> {
                 } = ack;
                 let variant = if new_yiaddr == *yiaddr {
                     log::debug!(
-                        "{debug_log_prefix} rebound with new lease time: {}",
+                        "{debug_log_prefix} rebound with new lease time: {:?}",
                         ip_address_lease_time_secs
                     );
                     RebindingOutcome::Renewed
@@ -2316,14 +2390,31 @@ impl<I: deps::Instant> Rebinding<I> {
                     );
                     RebindingOutcome::NewAddress
                 };
+
+                let ip_address_lease_time = match ip_address_lease_time_secs {
+                    Some(lease_time) => Duration::from_secs(lease_time.get().into()),
+                    None => {
+                        // The DHCP Server did not provide an IP Address Lease
+                        // Time in the DHCPACK. This is in violation of the RFC,
+                        // but we accept the ACK regardless for compatibility.
+                        //
+                        // Reuse the previously established lease length.
+                        messaging.recv_ack_no_addr_lease_time.increment();
+                        log::warn!(
+                            "{debug_log_prefix} accepting DHCPACK from that did not provide an \
+                            IP Address Lease Time. Falling back to the original lease time: \
+                            {ip_address_lease_time:?}."
+                        );
+                        *ip_address_lease_time
+                    }
+                };
+
                 Ok(variant(
                     LeaseState {
                         discover_options: discover_options.clone(),
                         yiaddr: new_yiaddr,
                         server_identifier,
-                        ip_address_lease_time: Duration::from_secs(
-                            ip_address_lease_time_secs.get().into(),
-                        ),
+                        ip_address_lease_time,
                         renewal_time: renewal_time_value_secs
                             .map(u64::from)
                             .map(Duration::from_secs),
@@ -3166,7 +3257,9 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into()),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
             renewal_time: None,
             rebinding_time: None,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
@@ -3177,6 +3270,39 @@ mod test {
             ..Default::default()
         }
      } ; "transitions to Bound after receiving DHCPACK")]
+    #[test_case(VaryingIncomingMessageFields {
+        yiaddr: YIADDR,
+        options: [
+            dhcp_protocol::DhcpOption::DhcpMessageType(
+                dhcp_protocol::MessageType::DHCPACK,
+            ),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+        ]
+        .into_iter()
+        .chain(test_parameter_values())
+        .collect(),
+    } => RequestingTestResult {
+        outcome: RequestingOutcome::Bound(LeaseState {
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
+            renewal_time: None,
+            rebinding_time: None,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
+        counters: RequestingTestCounters {
+            send_message: 1,
+            recv_message: 1,
+            ..Default::default()
+        }
+     } ; "transitions to Bound after receiving DHCPACK without lease time")]
     #[test_case(VaryingIncomingMessageFields {
         yiaddr: YIADDR,
         options: [
@@ -4043,7 +4169,9 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into()),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
             renewal_time: None,
             rebinding_time: None,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
@@ -4054,6 +4182,39 @@ mod test {
             ..Default::default()
         }
     }; "successfully renews after receiving DHCPACK")]
+    #[test_case(VaryingIncomingMessageFields {
+        yiaddr: YIADDR,
+        options: [
+            dhcp_protocol::DhcpOption::DhcpMessageType(
+                dhcp_protocol::MessageType::DHCPACK,
+            ),
+            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+        ]
+        .into_iter()
+        .chain(test_parameter_values())
+        .collect(),
+    } => RenewingTestResult {
+        outcome: RenewingOutcome::Renewed(LeaseState {
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
+            renewal_time: None,
+            rebinding_time: None,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
+        counters: RenewingTestCounters {
+            send_message: 1,
+            recv_message: 1,
+            ..Default::default()
+        }
+    }; "successfully renews after receiving DHCPACK without lease time")]
     #[test_case(VaryingIncomingMessageFields {
         yiaddr: OTHER_ADDR,
         options: [
@@ -4416,7 +4577,9 @@ mod test {
             server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
                 .try_into()
                 .expect("should be specified"),
-            ip_address_lease_time: std::time::Duration::from_secs(DEFAULT_LEASE_LENGTH_SECONDS.into()),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
             renewal_time: None,
             rebinding_time: None,
             start_time: TestInstant(std::time::Duration::from_secs(0)),
@@ -4426,7 +4589,40 @@ mod test {
             recv_message: 1,
             ..Default::default()
         }
-    }; "successfully renews after receiving DHCPACK")]
+    }; "successfully rebinds after receiving DHCPACK")]
+    #[test_case(VaryingIncomingMessageFields {
+        yiaddr: YIADDR,
+        options: [
+            dhcp_protocol::DhcpOption::DhcpMessageType(
+                dhcp_protocol::MessageType::DHCPACK,
+            ),
+            dhcp_protocol::DhcpOption::ServerIdentifier(OTHER_SERVER_IP),
+        ]
+        .into_iter()
+        .chain(test_parameter_values())
+        .collect(),
+    } => RebindingTestResult {
+        outcome: RebindingOutcome::Renewed(LeaseState {
+            discover_options: TEST_DISCOVER_OPTIONS,
+            yiaddr: net_types::ip::Ipv4Addr::from(YIADDR)
+                .try_into()
+                .expect("should be specified"),
+            server_identifier: net_types::ip::Ipv4Addr::from(OTHER_SERVER_IP)
+                .try_into()
+                .expect("should be specified"),
+            ip_address_lease_time: std::time::Duration::from_secs(
+                DEFAULT_LEASE_LENGTH_SECONDS.into()
+            ),
+            renewal_time: None,
+            rebinding_time: None,
+            start_time: TestInstant(std::time::Duration::from_secs(0)),
+        }, test_parameter_values().into_iter().collect()),
+        counters: RebindingTestCounters {
+            send_message: 1,
+            recv_message: 1,
+            ..Default::default()
+        }
+    }; "successfully rebinds after receiving DHCPACK without lease time")]
     #[test_case(VaryingIncomingMessageFields {
         yiaddr: OTHER_ADDR,
         options: [

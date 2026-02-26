@@ -1099,6 +1099,7 @@ async fn inspect_with_lease_acquired() {
                         Entered: 1u64,
                         IllegallyIncludedOption: 0u64,
                         MissingRequiredOption: 0u64,
+                        NoLeaseTime: 0u64,
                         NoServerIdentifier: 0u64,
                         NotBootReply: 0u64,
                         NotDhcpOffer: 0u64,
