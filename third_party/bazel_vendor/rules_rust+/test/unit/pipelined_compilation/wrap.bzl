@@ -67,9 +67,9 @@ def _wrap_impl(ctx):
             name = crate_name,
             type = crate_type,
             root = rs_file,
-            srcs = depset([rs_file]),
-            deps = depset(deps),
-            proc_macro_deps = depset([]),
+            srcs = [rs_file],
+            deps = deps,
+            proc_macro_deps = [],
             aliases = {},
             output = rust_lib,
             metadata = rust_metadata,
@@ -104,6 +104,9 @@ wrap = rule(
             cfg = "exec",
         ),
     },
-    toolchains = ["@rules_rust//rust:toolchain", "@bazel_tools//tools/cpp:toolchain_type"],
+    toolchains = [
+        "@rules_rust//rust:toolchain",
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
+    ],
     fragments = ["cpp"],
 )

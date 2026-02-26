@@ -3,10 +3,9 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
-load("@rules_cc//cc:find_cc_toolchain.bzl", find_cpp_toolchain = "find_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("//rust:defs.bzl", "rust_common")
-load("//rust:rust_common.bzl", "BuildInfo")
+load("//rust:rust_common.bzl", "BuildInfo", "CrateGroupInfo", "DepInfo")
 
 # buildifier: disable=bzl-visibility
 load(
@@ -19,6 +18,7 @@ load(
 load(
     "//rust/private:utils.bzl",
     "dedent",
+    "deduplicate",
     "expand_dict_value_locations",
     "find_cc_toolchain",
     "find_toolchain",
@@ -129,9 +129,9 @@ def get_cc_compile_args_and_env(cc_toolchain, feature_configuration):
 
     Returns:
         tuple: A tuple of the following items:
-            - (sequence): A flattened C command line flags for given action.
-            - (sequence): A flattened CXX command line flags for given action.
-            - (dict): C environment variables to be set for given action.
+            - (sequence): A flattened list of C command line flags.
+            - (sequence): A flattened list of CXX command line flags.
+            - (dict): C environment variables to be set for this configuration.
     """
     compile_variables = cc_common.create_compile_variables(
         feature_configuration = feature_configuration,
@@ -366,9 +366,7 @@ def _cargo_build_script_impl(ctx):
 
     toolchain_tools = [toolchain.all_files]
 
-    cc_toolchain = find_cpp_toolchain(ctx)
-
-    env = dict({})
+    env = {}
 
     if ctx.attr.use_default_shell_env == -1:
         use_default_shell_env = ctx.attr._default_use_default_shell_env[BuildSettingInfo].value
@@ -383,9 +381,7 @@ def _cargo_build_script_impl(ctx):
         env.update(ctx.configuration.default_shell_env)
 
     if toolchain.cargo:
-        env.update({
-            "CARGO": "${{pwd}}/{}".format(toolchain.cargo.path),
-        })
+        env["CARGO"] = "${pwd}/%s" % toolchain.cargo.path
 
     env.update({
         "CARGO_CRATE_NAME": name_to_crate_name(pkg_name),
@@ -395,6 +391,7 @@ def _cargo_build_script_impl(ctx):
         "NUM_JOBS": "1",
         "OPT_LEVEL": compilation_mode_opt_level,
         "RUSTC": toolchain.rustc.path,
+        "RUSTDOC": toolchain.rust_doc.path,
         "TARGET": toolchain.target_flag_value,
         # OUT_DIR is set by the runner itself, rather than on the action.
     })
@@ -417,18 +414,36 @@ def _cargo_build_script_impl(ctx):
     # Pull in env vars which may be required for the cc_toolchain to work (e.g. on OSX, the SDK version).
     # We hope that the linker env is sufficient for the whole cc_toolchain.
     cc_toolchain, feature_configuration = find_cc_toolchain(ctx)
-    linker, link_args, linker_env = get_linker_and_args(ctx, "bin", cc_toolchain, feature_configuration, None)
+    linker, _, link_args, linker_env = get_linker_and_args(ctx, "bin", toolchain, cc_toolchain, feature_configuration, None)
     env.update(**linker_env)
     env["LD"] = linker
     env["LDFLAGS"] = " ".join(_pwd_flags(link_args))
 
-    # MSVC requires INCLUDE to be set
-    cc_c_args, cc_cxx_args, cc_env = get_cc_compile_args_and_env(cc_toolchain, feature_configuration)
-    include = cc_env.get("INCLUDE")
-    if include:
-        env["INCLUDE"] = include
+    # Defaults for cxx flags.
+    env["ARFLAGS"] = ""
+    env["CFLAGS"] = ""
+    env["CXXFLAGS"] = ""
+    fallback_tools = []
+    if not cc_toolchain:
+        fallbacks = {
+            "AR": "_fallback_ar",
+            "CC": "_fallback_cc",
+            "CXX": "_fallback_cxx",
+        }
+        for key, attr in fallbacks.items():
+            tool = getattr(ctx.executable, attr)
+            if not tool:
+                fail("cargo_build_script without a cc toolchain requires %s" % attr)
+            fallback_tools.append(tool)
+            env[key] = "${{pwd}}/{}".format(tool.path)
 
     if cc_toolchain:
+        # MSVC requires INCLUDE to be set
+        cc_c_args, cc_cxx_args, cc_env = get_cc_compile_args_and_env(cc_toolchain, feature_configuration)
+        include = cc_env.get("INCLUDE")
+        if include:
+            env["INCLUDE"] = include
+
         toolchain_tools.append(cc_toolchain.all_files)
 
         env["CC"] = cc_common.get_tool_for_action(
@@ -444,11 +459,19 @@ def _cargo_build_script_impl(ctx):
             action_name = ACTION_NAMES.cpp_link_static_library,
         )
 
+        # Many C/C++ toolchains are missing an action_config for AR because
+        # one was never included in the unix_cc_toolchain_config.
+        if not env["AR"]:
+            env["AR"] = cc_toolchain.ar_executable
+
         # Populate CFLAGS and CXXFLAGS that cc-rs relies on when building from source, in particular
         # to determine the deployment target when building for apple platforms (`macosx-version-min`
         # for example, itself derived from the `macos_minimum_os` Bazel argument).
         env["CFLAGS"] = " ".join(_pwd_flags(cc_c_args))
         env["CXXFLAGS"] = " ".join(_pwd_flags(cc_cxx_args))
+        # It may be tempting to forward ARFLAGS, but cc-rs is opinionated enough
+        # that doing so is more likely to hurt than help. If you need to change
+        # ARFLAGS, make changes to cc-rs.
 
     # Inform build scripts of rustc flags
     # https://github.com/rust-lang/cargo/issues/9600
@@ -485,22 +508,25 @@ def _cargo_build_script_impl(ctx):
             variables = getattr(target[platform_common.TemplateVariableInfo], "variables", depset([]))
             known_variables.update(variables)
 
-    _merge_env_dict(env, expand_dict_value_locations(
-        ctx,
-        ctx.attr.build_script_env,
-        getattr(ctx.attr, "data", []) +
-        getattr(ctx.attr, "compile_data", []) +
-        getattr(ctx.attr, "tools", []) +
-        script_info.data +
-        script_info.tools,
-        known_variables,
-    ))
+    if ctx.attr.build_script_env:
+        _merge_env_dict(env, expand_dict_value_locations(
+            ctx,
+            ctx.attr.build_script_env,
+            deduplicate(
+                getattr(ctx.attr, "data", []) +
+                getattr(ctx.attr, "compile_data", []) +
+                getattr(ctx.attr, "tools", []) +
+                script_info.data +
+                script_info.tools,
+            ),
+            known_variables,
+        ))
 
     tools = depset(
         direct = [
             script,
             ctx.executable._cargo_build_script_runner,
-        ] + ([toolchain.target_json] if toolchain.target_json else []),
+        ] + fallback_tools + ([toolchain.target_json] if toolchain.target_json else []),
         transitive = script_data + script_tools + toolchain_tools,
     )
 
@@ -536,6 +562,9 @@ def _cargo_build_script_impl(ctx):
 
     build_script_inputs = []
 
+    build_script_inputs.extend(ctx.files.build_script_env_files)
+    args.add_all(ctx.files.build_script_env_files, format_each = "--input_dep_env_path=%s")
+
     for dep in ctx.attr.link_deps:
         if rust_common.dep_info in dep and dep[rust_common.dep_info].dep_env:
             dep_env_file = dep[rust_common.dep_info].dep_env
@@ -545,8 +574,19 @@ def _cargo_build_script_impl(ctx):
                 build_script_inputs.append(dep_build_info.out_dir)
 
     for dep in ctx.attr.deps:
-        for dep_build_info in dep[rust_common.dep_info].transitive_build_infos.to_list():
-            build_script_inputs.append(dep_build_info.out_dir)
+        dep_infos = []
+        if DepInfo in dep:
+            dep_infos = [dep[DepInfo]]
+        else:
+            dep_infos = [
+                dep_variant_info.dep_info
+                for dep_variant_info in dep[CrateGroupInfo].dep_variant_infos.to_list()
+                if dep_variant_info.dep_info
+            ]
+
+        for dep_info in dep_infos:
+            for dep_build_info in dep_info.transitive_build_infos.to_list():
+                build_script_inputs.append(dep_build_info.out_dir)
 
     experimental_symlink_execroot = ctx.attr._experimental_symlink_execroot[BuildSettingInfo].value or \
                                     _feature_enabled(ctx, "symlink-exec-root")
@@ -603,12 +643,31 @@ cargo_build_script = rule(
         "build_script_env": attr.string_dict(
             doc = "Environment variables for build scripts.",
         ),
+        "build_script_env_files": attr.label_list(
+            doc = dedent("""\
+                Files containing additional environment variables to set for rustc.
+
+                These files should  contain a single variable per line, of format
+                `NAME=value`, and newlines may be included in a value by ending a
+                line with a trailing back-slash (`\\\\`).
+
+                The order that these files will be processed is unspecified, so
+                multiple definitions of a particular variable are discouraged.
+
+                Note that the variables here are subject to
+                [workspace status](https://docs.bazel.build/versions/main/user-manual.html#workspace_status)
+                stamping should the `stamp` attribute be enabled. Stamp variables
+                should be wrapped in brackets in order to be resolved. E.g.
+                `NAME={WORKSPACE_STATUS_VARIABLE}`.
+            """),
+            allow_files = True,
+        ),
         "crate_features": attr.string_list(
             doc = "The list of rust features that the build script should consider activated.",
         ),
         "deps": attr.label_list(
             doc = "The Rust build-dependencies of the crate",
-            providers = [rust_common.dep_info],
+            providers = [[DepInfo], [CrateGroupInfo]],
             cfg = "exec",
         ),
         "link_deps": attr.label_list(
@@ -617,7 +676,6 @@ cargo_build_script = rule(
                 have the links attribute and therefore provide environment
                 variables to this build script.
             """),
-            providers = [rust_common.dep_info],
         ),
         "links": attr.string(
             doc = "The name of the native library this crate links against.",
@@ -675,7 +733,7 @@ cargo_build_script = rule(
         "_cargo_build_script_runner": attr.label(
             executable = True,
             allow_files = True,
-            default = Label("//cargo/cargo_build_script_runner:runner"),
+            default = Label("//cargo/private/cargo_build_script_runner:runner"),
             cfg = "exec",
         ),
         "_cargo_manifest_dir_filename_suffixes_to_retain": attr.label(
@@ -690,6 +748,24 @@ cargo_build_script = rule(
         "_experimental_symlink_execroot": attr.label(
             default = Label("//cargo/settings:experimental_symlink_execroot"),
         ),
+        "_fallback_ar": attr.label(
+            cfg = "exec",
+            executable = True,
+            allow_files = True,
+            default = Label("//cargo/private:no_ar"),
+        ),
+        "_fallback_cc": attr.label(
+            cfg = "exec",
+            executable = True,
+            allow_files = True,
+            default = Label("//cargo/private:no_cc"),
+        ),
+        "_fallback_cxx": attr.label(
+            cfg = "exec",
+            executable = True,
+            allow_files = True,
+            default = Label("//cargo/private:no_cxx"),
+        ),
         "_incompatible_runfiles_cargo_manifest_dir": attr.label(
             default = Label("//cargo/settings:incompatible_runfiles_cargo_manifest_dir"),
         ),
@@ -697,7 +773,7 @@ cargo_build_script = rule(
     fragments = ["cpp"],
     toolchains = [
         str(Label("//rust:toolchain_type")),
-        "@bazel_tools//tools/cpp:toolchain_type",
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
     ],
 )
 

@@ -215,11 +215,9 @@ def _rust_proto_compile(protos, descriptor_sets, imports, crate_name, ctx, is_gr
         metadata_supports_pipelining = can_use_metadata_for_pipelining(toolchain, "rlib")
 
     # Gather all dependencies for compilation
-    compile_action_deps = depset(
-        transform_deps(
-            compile_deps +
-            proto_toolchain.grpc_compile_deps if is_grpc else proto_toolchain.proto_compile_deps,
-        ),
+    compile_action_deps = transform_deps(
+        compile_deps +
+        proto_toolchain.grpc_compile_deps if is_grpc else proto_toolchain.proto_compile_deps,
     )
 
     providers = rustc_compile_action(
@@ -230,9 +228,9 @@ def _rust_proto_compile(protos, descriptor_sets, imports, crate_name, ctx, is_gr
             name = crate_name,
             type = "rlib",
             root = lib_rs,
-            srcs = depset(srcs),
+            srcs = srcs,
             deps = compile_action_deps,
-            proc_macro_deps = depset([]),
+            proc_macro_deps = [],
             aliases = {},
             output = rust_lib,
             metadata = rust_metadata,
@@ -345,7 +343,7 @@ rust_proto_library = rule(
     toolchains = [
         str(Label("//:toolchain_type")),
         str(Label("@rules_rust//rust:toolchain_type")),
-        "@bazel_tools//tools/cpp:toolchain_type",
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
     ],
     doc = """\
 Builds a Rust library crate from a set of `proto_library`s.
@@ -437,7 +435,7 @@ rust_grpc_library = rule(
     toolchains = [
         str(Label("//:toolchain_type")),
         str(Label("@rules_rust//rust:toolchain_type")),
-        "@bazel_tools//tools/cpp:toolchain_type",
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
     ],
     doc = """\
 Builds a Rust library crate from a set of `proto_library`s suitable for gRPC.

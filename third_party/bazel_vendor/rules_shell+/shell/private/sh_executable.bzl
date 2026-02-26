@@ -18,33 +18,68 @@ visibility(["//shell"])
 
 _SH_TOOLCHAIN_TYPE = Label("//shell:toolchain_type")
 
+def _to_rlocation_path(ctx, file):
+    if file.short_path.startswith("../"):
+        return file.short_path[3:]
+    else:
+        return ctx.workspace_name + "/" + file.short_path
+
 def _sh_executable_impl(ctx):
     if len(ctx.files.srcs) != 1:
         fail("you must specify exactly one file in 'srcs'", attr = "srcs")
-
-    symlink = ctx.actions.declare_file(ctx.label.name)
     src = ctx.files.srcs[0]
 
-    ctx.actions.symlink(
-        output = symlink,
-        target_file = src,
-        is_executable = True,
-        progress_message = "Symlinking %{label}",
-    )
+    direct_files = [src]
+    transitive_files = []
+    runfiles = ctx.runfiles(collect_default = True)
 
-    direct_files = [src, symlink]
+    entrypoint = ctx.actions.declare_file(ctx.label.name)
+    if ctx.attr.use_bash_launcher:
+        ctx.actions.write(
+            entrypoint,
+            content = """#!{shell}
+
+# --- begin runfiles.bash initialization v3 ---
+set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
+# shellcheck disable=SC1090
+source "${{RUNFILES_DIR:-/dev/null}}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${{RUNFILES_MANIFEST_FILE:-/dev/null}}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  {{ echo>&2 "ERROR: cannot find $f"; exit 1; }}; f=; set -e
+# --- end runfiles.bash initialization v3 ---
+
+runfiles_export_envvars
+
+exec "$(rlocation "{src}")" "$@"
+""".format(
+                shell = ctx.toolchains[_SH_TOOLCHAIN_TYPE].path,
+                src = _to_rlocation_path(ctx, src),
+            ),
+            is_executable = True,
+        )
+        runfiles = runfiles.merge(ctx.attr._runfiles_dep[DefaultInfo].default_runfiles)
+    else:
+        ctx.actions.symlink(
+            output = entrypoint,
+            target_file = src,
+            is_executable = True,
+        )
+
+    direct_files.append(entrypoint)
 
     # TODO: Consider extracting this logic into a function provided by
     # sh_toolchain to allow users to inject launcher creation logic for
     # non-Windows platforms.
     if ctx.target_platform_has_constraint(ctx.attr._windows_constraint[platform_common.ConstraintValueInfo]):
-        main_executable = _launcher_for_windows(ctx, symlink, src)
+        main_executable = _launcher_for_windows(ctx, entrypoint, src)
         direct_files.append(main_executable)
     else:
-        main_executable = symlink
+        main_executable = entrypoint
 
-    files = depset(direct = direct_files)
-    runfiles = ctx.runfiles(transitive_files = files, collect_default = True)
+    files = depset(direct = direct_files, transitive = transitive_files)
+    runfiles = runfiles.merge(ctx.runfiles(transitive_files = files))
     default_info = DefaultInfo(
         executable = main_executable,
         files = files,
@@ -54,7 +89,7 @@ def _sh_executable_impl(ctx):
     instrumented_files_info = coverage_common.instrumented_files_info(
         ctx,
         source_attributes = ["srcs"],
-        dependency_attributes = ["deps", "data"],
+        dependency_attributes = ["deps", "_runfiles_dep", "data"],
     )
 
     run_environment_info = RunEnvironmentInfo(
@@ -134,39 +169,20 @@ def _launcher_for_windows(ctx, primary_output, main_file):
 
     return _create_windows_exe_launcher(ctx, sh_toolchain, primary_output)
 
-def make_sh_executable_rule(extra_attrs = {}, **kwargs):
+def make_sh_executable_rule(doc, extra_attrs = {}, **kwargs):
     return rule(
         _sh_executable_impl,
-        doc = """
-<p>
-  The <code>sh_binary</code> rule is used to declare executable shell scripts.
-  (<code>sh_binary</code> is a misnomer: its outputs aren't necessarily binaries.) This rule ensures
-  that all dependencies are built, and appear in the <code>runfiles</code> area at execution time.
-  We recommend that you name your <code>sh_binary()</code> rules after the name of the script minus
-  the extension (e.g. <code>.sh</code>); the rule name and the file name must be distinct.
-  <code>sh_binary</code> respects shebangs, so any available interpreter may be used (eg.
-  <code>#!/bin/zsh</code>)
-</p>
-<h4 id="sh_binary_examples">Example</h4>
-<p>For a simple shell script with no dependencies and some data files:
-</p>
-<pre class="code">
-sh_binary(
-    name = "foo",
-    srcs = ["foo.sh"],
-    data = glob(["datafiles/*.txt"]),
-)
-</pre>
-""",
+        doc = doc,
         attrs = {
             "srcs": attr.label_list(
                 allow_files = True,
                 doc = """
-The list of input files.
+The file containing the shell script.
 <p>
-  This attribute should be used to list shell script source files that belong to
-  this library. Scripts can load other scripts using the shell's <code>source</code>
-  or <code>.</code> command.
+  This attribute must be a singleton list, whose element is the shell script.
+  This script must be executable, and may be a source file or a generated file.
+  All other files required at runtime (whether scripts or data) belong in the
+  <code>data</code> attribute.
 </p>
 """,
             ),
@@ -188,8 +204,14 @@ most build rules</a>.
 </p>
 """,
             ),
+            "_runfiles_dep": attr.label(
+                default = Label("//shell/runfiles"),
+            ),
             "env": attr.string_dict(),
             "env_inherit": attr.string_list(),
+            "use_bash_launcher": attr.bool(
+                doc = "Use a bash launcher initializing the runfiles library",
+            ),
             "_windows_constraint": attr.label(
                 default = "@platforms//os:windows",
             ),

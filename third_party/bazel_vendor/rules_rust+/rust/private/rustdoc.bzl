@@ -98,8 +98,8 @@ def rustdoc_compile_action(
     cc_toolchain, feature_configuration = find_cc_toolchain(ctx)
 
     dep_info, build_info, _ = collect_deps(
-        deps = crate_info.deps,
-        proc_macro_deps = crate_info.proc_macro_deps,
+        deps = crate_info.deps.to_list(),
+        proc_macro_deps = crate_info.proc_macro_deps.to_list(),
         aliases = crate_info.aliases,
     )
 
@@ -254,6 +254,7 @@ def _rust_doc_impl(ctx):
         env = action.env,
         arguments = action.arguments,
         tools = action.tools,
+        toolchain = Label("//rust:toolchain_type"),
     )
 
     # This rule does nothing without a single-file output, though the directory should've sufficed.
@@ -384,6 +385,6 @@ rust_doc = rule(
     },
     toolchains = [
         str(Label("//rust:toolchain_type")),
-        "@bazel_tools//tools/cpp:toolchain_type",
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
     ],
 )

@@ -386,6 +386,9 @@ impl Renderer {
                 build_script_attrs
                     .rustc_env_files
                     .insert(":cargo_toml_env_vars".to_owned(), None);
+                build_script_attrs
+                    .build_script_env_files
+                    .insert(":cargo_toml_env_vars".to_owned(), None);
             }
         }
 
@@ -569,6 +572,12 @@ impl Renderer {
                 attrs
                     .map(|attrs| attrs.compile_data.clone())
                     .unwrap_or_default(),
+            ),
+            exec_properties: SelectDict::new(
+                attrs
+                    .map(|attrs| attrs.exec_properties.clone())
+                    .unwrap_or_default(),
+                platforms,
             ),
             crate_features: SelectSet::new(krate.common_attrs.crate_features.clone(), platforms),
             crate_name: utils::sanitize_module_name(&target.crate_name),
@@ -860,9 +869,15 @@ impl Renderer {
         extra_deps: Select<BTreeSet<Label>>,
     ) -> Select<BTreeSet<Label>> {
         Select::merge(
-            deps.map(|dep| match dep.local_path {
-                Some(path) => Label::from_str(&format!("//{}:{}", path, &dep.target)).unwrap(),
-                _ => self.crate_label(&dep.id.name, &dep.id.version.to_string(), &dep.target),
+            deps.map(|dep| {
+                match (dep.local_path, self.config.vendor_mode) {
+                    // In local vendor mode, we use paths within the the repo.
+                    (Some(path), Some(VendorMode::Local)) => {
+                        Label::from_str(&format!("//{}:{}", path, &dep.target)).unwrap()
+                    }
+                    // If we're not vendoring source, or don't have a path for the dep, construct the label we expect.
+                    _ => self.crate_label(&dep.id.name, &dep.id.version.to_string(), &dep.target),
+                }
             }),
             extra_deps,
         )
@@ -1234,6 +1249,10 @@ mod test {
 
         let attrs = BuildScriptAttributes {
             use_default_shell_env: Some(1),
+            exec_properties: Select::from_value(BTreeMap::from([
+                ("OSFamily".to_owned(), "Linux".to_owned()),
+                ("container-image".to_owned(), "docker://my-image".to_owned()),
+            ])),
             ..BuildScriptAttributes::default()
         };
 
@@ -1293,6 +1312,21 @@ mod test {
         );
         assert!(
             build_file_content.contains("use_default_shell_env = 1"),
+            "```\n{}```\n",
+            build_file_content
+        );
+        assert!(
+            build_file_content.contains("exec_properties = {"),
+            "```\n{}```\n",
+            build_file_content
+        );
+        assert!(
+            build_file_content.contains("\"OSFamily\": \"Linux\""),
+            "```\n{}```\n",
+            build_file_content
+        );
+        assert!(
+            build_file_content.contains("\"container-image\": \"docker://my-image\""),
             "```\n{}```\n",
             build_file_content
         );

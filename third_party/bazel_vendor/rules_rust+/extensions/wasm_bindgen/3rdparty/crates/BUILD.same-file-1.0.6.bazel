@@ -61,6 +61,7 @@ rust_library(
         "@rules_rust//rust/platform:aarch64-unknown-nto-qnx710": [],
         "@rules_rust//rust/platform:aarch64-unknown-uefi": [],
         "@rules_rust//rust/platform:arm-unknown-linux-gnueabi": [],
+        "@rules_rust//rust/platform:arm-unknown-linux-musleabi": [],
         "@rules_rust//rust/platform:armv7-linux-androideabi": [],
         "@rules_rust//rust/platform:armv7-unknown-linux-gnueabi": [],
         "@rules_rust//rust/platform:i686-apple-darwin": [],
@@ -70,6 +71,7 @@ rust_library(
         "@rules_rust//rust/platform:i686-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:powerpc-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:riscv32imc-unknown-none-elf": [],
+        "@rules_rust//rust/platform:riscv64gc-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:riscv64gc-unknown-none-elf": [],
         "@rules_rust//rust/platform:s390x-unknown-linux-gnu": [],
         "@rules_rust//rust/platform:thumbv7em-none-eabi": [],
@@ -94,13 +96,13 @@ rust_library(
     version = "1.0.6",
     deps = select({
         "@rules_rust//rust/platform:aarch64-pc-windows-msvc": [
-            "@rrwbd__winapi-util-0.1.9//:winapi_util",  # cfg(windows)
+            "@rrwbd__winapi-util-0.1.11//:winapi_util",  # cfg(windows)
         ],
         "@rules_rust//rust/platform:i686-pc-windows-msvc": [
-            "@rrwbd__winapi-util-0.1.9//:winapi_util",  # cfg(windows)
+            "@rrwbd__winapi-util-0.1.11//:winapi_util",  # cfg(windows)
         ],
         "@rules_rust//rust/platform:x86_64-pc-windows-msvc": [
-            "@rrwbd__winapi-util-0.1.9//:winapi_util",  # cfg(windows)
+            "@rrwbd__winapi-util-0.1.11//:winapi_util",  # cfg(windows)
         ],
         "//conditions:default": [],
     }),

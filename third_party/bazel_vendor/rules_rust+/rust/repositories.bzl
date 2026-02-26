@@ -25,6 +25,7 @@ load(
     "load_cargo",
     "load_clippy",
     "load_llvm_tools",
+    "load_rust_analyzer",
     "load_rust_compiler",
     "load_rust_src",
     "load_rust_stdlib",
@@ -34,6 +35,7 @@ load(
     "toolchain_repository_hub",
     _load_arbitrary_tool = "load_arbitrary_tool",
 )
+load("//rust/private:semver.bzl", "semver")
 
 # Re-export `load_arbitrary_tool` as it's historically been used in external repositories.
 load_arbitrary_tool = _load_arbitrary_tool
@@ -356,8 +358,7 @@ def rust_repositories(**kwargs):
 
 _RUST_TOOLCHAIN_REPOSITORY_ATTRS = {
     "allocator_library": attr.string(
-        doc = "Target that provides allocator functions when rust_library targets are embedded in a cc_binary.",
-        default = "@rules_rust//ffi/cc/allocator_library",
+        doc = "Target that provides allocator functions when `rust_library` targets are embedded in a `cc_binary`.",
     ),
     "auth": attr.string_dict(
         doc = (
@@ -389,8 +390,7 @@ _RUST_TOOLCHAIN_REPOSITORY_ATTRS = {
         doc = "Extra flags to pass to rustc in non-exec configuration",
     ),
     "global_allocator_library": attr.string(
-        doc = "Target that provides allocator functions when a global allocator is used with cc_common.link.",
-        default = "@rules_rust//ffi/cc/global_allocator_library",
+        doc = "Target that provides allocator functions when a global allocator is used with [`cc_common.link`](https://bazel.build/rules/lib/toplevel/cc_common#link).",
     ),
     "netrc": attr.string(
         doc = ".netrc file to use for authentication; mirrors the eponymous attribute from http_archive",
@@ -421,6 +421,19 @@ _RUST_TOOLCHAIN_REPOSITORY_ATTRS = {
     ),
 }
 
+def _include_llvm_tools(version, iso_date):
+    """Rust 1.45.0 and nightly builds after 2020-05-22 need the llvm-tools gzip to get the libLLVM dylib"""
+    if version in ("nightly", "beta"):
+        if iso_date > "2020-05-22":
+            return True
+        return False
+
+    version_semver = semver(version)
+    if version_semver.major >= 1 and version_semver.minor >= 45:
+        return True
+
+    return False
+
 def _rust_toolchain_tools_repository_impl(ctx):
     """The implementation of the rust toolchain tools repository rule."""
     sha256s = dict(ctx.attr.sha256s)
@@ -435,11 +448,14 @@ def _rust_toolchain_tools_repository_impl(ctx):
 
     exec_triple = triple(ctx.attr.exec_triple)
 
+    include_linker = True
+
     rustc_content, rustc_sha256 = load_rust_compiler(
         ctx = ctx,
         iso_date = iso_date,
         target_triple = exec_triple,
         version = version,
+        include_linker = include_linker,
     )
     clippy_content, clippy_sha256 = load_clippy(
         ctx = ctx,
@@ -482,8 +498,7 @@ def _rust_toolchain_tools_repository_impl(ctx):
         build_components.append(rustfmt_content)
         sha256s.update(rustfmt_sha256)
 
-    # Rust 1.45.0 and nightly builds after 2020-05-22 need the llvm-tools gzip to get the libLLVM dylib
-    include_llvm_tools = version >= "1.45.0" or (version == "nightly" and iso_date > "2020-05-22")
+    include_llvm_tools = _include_llvm_tools(version, iso_date)
     if include_llvm_tools:
         llvm_tools_content, llvm_tools_sha256 = load_llvm_tools(
             ctx = ctx,
@@ -518,6 +533,7 @@ def _rust_toolchain_tools_repository_impl(ctx):
         default_edition = ctx.attr.edition,
         include_rustfmt = not (not ctx.attr.rustfmt_version),
         include_llvm_tools = include_llvm_tools,
+        include_linker = include_linker,
         extra_rustc_flags = ctx.attr.extra_rustc_flags,
         extra_exec_rustc_flags = ctx.attr.extra_exec_rustc_flags,
         opt_level = ctx.attr.opt_level if ctx.attr.opt_level else None,
@@ -548,7 +564,15 @@ def _rust_toolchain_tools_repository_impl(ctx):
         repro[key] = getattr(ctx.attr, key)
     repro["sha256s"] = sha256s
 
-    return repro
+    # Bazel <8.3.0 lacks ctx.repo_metadata
+    if not hasattr(ctx, "repo_metadata"):
+        return repro
+
+    reproducible = sha256s == dict(ctx.attr.sha256s)
+    return ctx.repo_metadata(
+        reproducible = reproducible,
+        attrs_for_reproducibility = {} if reproducible else repro,
+    )
 
 rust_toolchain_tools_repository = repository_rule(
     doc = (
@@ -652,7 +676,11 @@ def rust_toolchain_repository(
         dev_components (bool, optional): Whether to download the rustc-dev components.
             Requires version to be "nightly". Defaults to False.
         extra_rustc_flags (list, optional): Extra flags to pass to rustc in non-exec configuration.
+            Subject to Make variable expansion with respect to RUST_SYSROOT,
+            RUST_SYSROOT_SHORT, RUSTC, etc.
         extra_exec_rustc_flags (list, optional): Extra flags to pass to rustc in exec configuration.
+            Subject to Make variable expansion with respect to RUST_SYSROOT,
+            RUST_SYSROOT_SHORT, RUSTC, etc.
         opt_level (dict, optional): Optimization level config for this toolchain.
         strip_level (dict, optional): Strip level config for this toolchain.
         sha256s (str, optional): A dict associating tool subdirectories to sha256 hashes. See
@@ -748,6 +776,7 @@ _RUST_ANALYZER_TOOLCHAIN_TOOLS_REPOSITORY_ATTRS = {
 
 def _rust_analyzer_toolchain_tools_repository_impl(repository_ctx):
     sha256s = dict(repository_ctx.attr.sha256s)
+    include_linker = True
 
     iso_date = None
     version = repository_ctx.attr.version
@@ -772,6 +801,7 @@ def _rust_analyzer_toolchain_tools_repository_impl(repository_ctx):
         iso_date = iso_date,
         target_triple = host_triple,
         version = version,
+        include_linker = include_linker,
     )
     build_contents = [rustc_content]
     sha256s.update(rustc_sha256)
@@ -782,10 +812,24 @@ def _rust_analyzer_toolchain_tools_repository_impl(repository_ctx):
         build_contents.append(BUILD_for_rust_analyzer_proc_macro_srv(host_triple))
         proc_macro_srv = "//:rust_analyzer_proc_macro_srv"
 
+    # Load rust-analyzer binary from official Rust distribution
+    rust_analyzer = None
+    rust_analyzer_content, rust_analyzer_sha256 = load_rust_analyzer(
+        ctx = repository_ctx,
+        target_triple = host_triple,
+        version = version,
+        iso_date = iso_date,
+    )
+    if rust_analyzer_content:
+        build_contents.append(rust_analyzer_content)
+        sha256s.update(rust_analyzer_sha256)
+        rust_analyzer = "//:rust_analyzer"
+
     build_contents.append(BUILD_for_rust_analyzer_toolchain(
         name = "rust_analyzer_toolchain",
         rustc = rustc,
         proc_macro_srv = proc_macro_srv,
+        rust_analyzer = rust_analyzer,
     ))
 
     repository_ctx.file("BUILD.bazel", "\n".join(build_contents))
@@ -798,7 +842,15 @@ def _rust_analyzer_toolchain_tools_repository_impl(repository_ctx):
         repro[key] = getattr(repository_ctx.attr, key)
     repro["sha256s"] = sha256s
 
-    return repro
+    # Bazel <8.3.0 lacks ctx.repo_metadata
+    if not hasattr(repository_ctx, "repo_metadata"):
+        return repro
+
+    reproducible = sha256s == dict(repository_ctx.attr.sha256s)
+    return repository_ctx.repo_metadata(
+        reproducible = reproducible,
+        attrs_for_reproducibility = {} if reproducible else repro,
+    )
 
 rust_analyzer_toolchain_tools_repository = repository_rule(
     doc = "A repository rule for defining a rust_analyzer_toolchain with a `rust-src` artifact.",
@@ -892,6 +944,8 @@ def _rustfmt_toolchain_tools_repository_impl(repository_ctx):
         repository_ctx.name,
     ))
 
+    include_linker = True
+
     iso_date = None
     version = repository_ctx.attr.version
     version_array = version.split("/")
@@ -910,6 +964,7 @@ def _rustfmt_toolchain_tools_repository_impl(repository_ctx):
         iso_date = iso_date,
         target_triple = exec_triple,
         version = version,
+        include_linker = include_linker,
     )
     rustfmt_content, rustfmt_sha256 = load_rustfmt(
         ctx = repository_ctx,
@@ -940,7 +995,15 @@ def _rustfmt_toolchain_tools_repository_impl(repository_ctx):
         repro[key] = getattr(repository_ctx.attr, key)
     repro["sha256s"] = sha256s
 
-    return repro
+    # Bazel <8.3.0 lacks ctx.repo_metadata
+    if not hasattr(repository_ctx, "repo_metadata"):
+        return repro
+
+    reproducible = sha256s == dict(repository_ctx.attr.sha256s)
+    return repository_ctx.repo_metadata(
+        reproducible = reproducible,
+        attrs_for_reproducibility = {} if reproducible else repro,
+    )
 
 rustfmt_toolchain_tools_repository = repository_rule(
     doc = "A repository rule for defining a rustfmt_toolchain.",
@@ -1115,6 +1178,17 @@ def _get_toolchain_repositories(
 
     return toolchain_repos.values()
 
+def _get_flags_for_triple(name, flags, target_triple):
+    """Infer toolchain-specific flags depending on the type (list, dict, optional)."""
+    if flags == None:
+        return None
+    elif type(flags) == "list":
+        return flags
+    elif type(flags) == "dict":
+        return flags.get(target_triple)
+    else:
+        fail(name + " should be a list or a dict")
+
 def rust_repository_set(
         *,
         name,
@@ -1162,7 +1236,7 @@ def rust_repository_set(
         dev_components (bool, optional): Whether to download the rustc-dev components.
             Requires version to be "nightly".
         extra_rustc_flags (dict, list, optional): Dictionary of target triples to list of extra flags to pass to rustc in non-exec configuration.
-        extra_exec_rustc_flags (list, optional): Extra flags to pass to rustc in exec configuration.
+        extra_exec_rustc_flags (dict, list, optional): Dictionary of target triples to list of extra flags to pass to rustc in exec configuration.
         opt_level (dict, dict, optional): Dictionary of target triples to optimization config.
         strip_level (dict, dict, optional): Dictionary of target triples to strip config.
         sha256s (str, optional): A dict associating tool subdirectories to sha256 hashes. See
@@ -1196,15 +1270,16 @@ def rust_repository_set(
         aliases = aliases,
         compact_windows_names = compact_windows_names,
     ):
-        # Infer toolchain-specific rustc flags depending on the type (list, dict, optional) of extra_rustc_flags
-        if extra_rustc_flags == None:
-            toolchain_extra_rustc_flags = []
-        elif type(extra_rustc_flags) == "list":
-            toolchain_extra_rustc_flags = extra_rustc_flags
-        elif type(extra_rustc_flags) == "dict":
-            toolchain_extra_rustc_flags = extra_rustc_flags.get(toolchain.target_triple)
-        else:
-            fail("extra_rustc_flags should be a list or a dict")
+        toolchain_extra_exec_rustc_flags = _get_flags_for_triple(
+            "extra_exec_rustc_flags",
+            extra_exec_rustc_flags,
+            toolchain.target_triple,
+        )
+        toolchain_extra_rustc_flags = _get_flags_for_triple(
+            "extra_rustc_flags",
+            extra_rustc_flags,
+            toolchain.target_triple,
+        )
 
         toolchain_info = rust_toolchain_repository(
             name = toolchain.name,
@@ -1217,7 +1292,7 @@ def rust_repository_set(
             dev_components = dev_components,
             edition = edition,
             exec_triple = exec_triple,
-            extra_exec_rustc_flags = extra_exec_rustc_flags,
+            extra_exec_rustc_flags = toolchain_extra_exec_rustc_flags,
             extra_rustc_flags = toolchain_extra_rustc_flags,
             opt_level = opt_level.get(toolchain.target_triple) if opt_level != None else None,
             strip_level = strip_level.get(toolchain.target_triple) if strip_level != None else None,

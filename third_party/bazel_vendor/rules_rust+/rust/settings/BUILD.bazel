@@ -9,6 +9,8 @@ load(
     "clippy_output_diagnostics",
     "clippy_toml",
     "codegen_units",
+    "collect_cfgs",
+    "default_allocator_library",
     "error_format",
     "experimental_link_std_dylib",
     "experimental_per_crate_rustc_flag",
@@ -30,10 +32,12 @@ load(
     "no_std",
     "pipelined_compilation",
     "rename_first_party_crates",
+    "require_explicit_unstable_features",
     "rustc_output_diagnostics",
     "rustfmt_toml",
     "third_party_dir",
     "toolchain_generated_sysroot",
+    "toolchain_linker_preference",
     "unpretty",
     "use_real_import_macro",
 )
@@ -70,6 +74,10 @@ clippy_toml()
 
 codegen_units()
 
+collect_cfgs()
+
+default_allocator_library()
+
 error_format()
 
 clippy_error_format()
@@ -84,9 +92,7 @@ experimental_use_coverage_metadata_files()
 
 experimental_use_global_allocator()
 
-experimental_use_allocator_libraries_with_mangled_symbols(
-    name = "experimental_use_allocator_libraries_with_mangled_symbols",
-)
+experimental_use_allocator_libraries_with_mangled_symbols()
 
 experimental_use_sh_toolchain_for_bootstrap_process_wrapper()
 
@@ -116,6 +122,8 @@ pipelined_compilation()
 
 rename_first_party_crates()
 
+require_explicit_unstable_features()
+
 rustc_output_diagnostics()
 
 rustfmt_toml()
@@ -123,6 +131,8 @@ rustfmt_toml()
 third_party_dir()
 
 toolchain_generated_sysroot()
+
+toolchain_linker_preference()
 
 unpretty()
 
