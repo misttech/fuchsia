@@ -970,7 +970,6 @@ zx_status_t VmObjectPaged::CommitRangeInternal(uint64_t offset, uint64_t len, bo
   uint64_t to_dirty_len = 0;
   while (len > 0) {
     zx_status_t status = ZX_OK;
-    ;
     uint64_t committed_len = 0;
     if (to_dirty_len > 0) {
       Guard<CriticalMutex> guard{AssertOrderedLock, lock(), cow_pages_->lock_order()};
