@@ -304,11 +304,6 @@ bool Session::ReadFifoMessage() {
     case TRACE_PROVIDER_BUFFER_SAVED: {
       auto wrapped_count = packet.data32;
       auto durable_data_end = packet.data64;
-#if 0  // TODO(https://fxbug.dev/42096910): Don't delete this, save for conversion to syslog.
-        fprintf(stderr, "Session: Received buffer_saved message"
-                ", wrapped_count=%u, durable_data_end=0x%" PRIx64 "\n",
-                wrapped_count, durable_data_end);
-#endif
       status = MarkBufferSaved(wrapped_count, durable_data_end);
       if (status == ZX_ERR_BAD_STATE) {
         // This happens when tracing has stopped. Ignore it.

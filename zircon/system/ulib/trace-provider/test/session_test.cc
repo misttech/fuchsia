@@ -29,7 +29,7 @@ class DummyProvider : public fidl::Server<fuchsia_tracing_provider::ProviderV2> 
   void NotifyBufferSaved(NotifyBufferSavedRequest& request,
                          NotifyBufferSavedCompleter::Sync& completer) override {}
   void Terminate(TerminateCompleter::Sync& completer) override {}
-  void Flush(FlushCompleter::Sync& completer) override {}
+  void Flush(FlushCompleter::Sync& completer) override { trace_engine_flush_buffer(); }
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_tracing_provider::ProviderV2> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
@@ -133,6 +133,66 @@ TEST(SessionTest, AlertSent) {
   TRACE_ALERT("other_category", kAlertName.c_str());
   loop.RunUntilIdle();
   ASSERT_FALSE(event_handler.alert_received_);
+
+  loop.Shutdown();
+}
+
+// Tests that flush are send over fidl.
+TEST(SessionTest, FlushSent) {
+  async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  DummyProvider provider;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::ProviderV2>::Create();
+  auto binding = fidl::BindServer(loop.dispatcher(), std::move(server_end), &provider);
+  zx::vmo buffer;
+  zx_status_t status = zx::vmo::create(kBufferSize, 0, &buffer);
+  ASSERT_EQ(ZX_OK, status);
+
+  std::vector<std::string> categories = {"test"};
+
+  internal::Session::InitializeEngine(loop.dispatcher(), TRACE_BUFFERING_MODE_STREAMING,
+                                      std::move(buffer), categories, std::move(binding));
+  // Create a client to listen for events.
+
+  class EventHandler : public fidl::AsyncEventHandler<fuchsia_tracing_provider::ProviderV2> {
+   public:
+    void OnAlert(fidl::Event<fuchsia_tracing_provider::ProviderV2::OnAlert>& event) override {}
+    // Let's check if we need to implement OnSaveBuffer.
+    void OnSaveBuffer(
+        fidl::Event<fuchsia_tracing_provider::ProviderV2::OnSaveBuffer>& event) override {
+      buffer_saved_ = true;
+    }
+
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_tracing_provider::ProviderV2> metadata) override {}
+
+    bool buffer_saved_ = false;
+  };
+
+  EventHandler event_handler;
+  fidl::Client<fuchsia_tracing_provider::ProviderV2> client(std::move(client_end),
+                                                            loop.dispatcher(), &event_handler);
+
+  loop.RunUntilIdle();
+
+  internal::Session::StartEngine(TRACE_START_CLEAR_ENTIRE_BUFFER, []() {});
+  loop.RunUntilIdle();
+
+  TRACE_INSTANT("test", "event", TRACE_SCOPE_THREAD);
+
+  // Send a flush
+  ASSERT_TRUE(client->Flush().is_ok());
+  loop.RunUntilIdle();
+  // Now we should get a buffer save request.
+  ASSERT_TRUE(event_handler.buffer_saved_);
+  event_handler.buffer_saved_ = false;
+
+  // But if we flush again with no additional data written
+  // Send a flush
+  ASSERT_TRUE(client->Flush().is_ok());
+  loop.RunUntilIdle();
+
+  // We shouldn't receive any notification
+  ASSERT_FALSE(event_handler.buffer_saved_);
 
   loop.Shutdown();
 }
