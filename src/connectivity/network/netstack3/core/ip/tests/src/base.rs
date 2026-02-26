@@ -15,7 +15,9 @@ use net_types::ip::{
     AddrSubnet, GenericOverIp, Ip, IpAddr, IpAddress, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6,
     Ipv6Addr, Mtu, Subnet,
 };
-use net_types::{MulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr};
+use net_types::{
+    MulticastAddr, NonMappedAddr, SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr,
+};
 use packet::{
     Buf, InnerPacketBuilder, PacketBuilder as _, ParseBuffer, ParseMetadata, Serializer as _,
 };
@@ -2025,11 +2027,15 @@ fn test_receive_ip_packet_action() {
     }
     assert_eq!(
         receive_ip_packet_action::<Ipv4>(&mut ctx, &v4_dev, *v4_config.remote_ip),
-        ReceivePacketAction::SendNoRouteToDest { dst: v4_config.remote_ip }
+        ReceivePacketAction::SendNoRouteToDest {
+            dst: NonMappedAddr::new(v4_config.remote_ip).expect("non-mapped ip")
+        }
     );
     assert_eq!(
         receive_ip_packet_action::<Ipv6>(&mut ctx, &v6_dev, *v6_config.remote_ip),
-        ReceivePacketAction::SendNoRouteToDest { dst: v6_config.remote_ip }
+        ReceivePacketAction::SendNoRouteToDest {
+            dst: NonMappedAddr::new(v6_config.remote_ip).expect("non-mapped ip")
+        }
     );
 
     // Cleanup all device references.
@@ -2782,4 +2788,29 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
         [packet] => assert_eq!(packet, HELLO)
     );
     ctx.test_api().clear_routes_and_remove_device(loopback);
+}
+
+#[test]
+fn test_receive_ipv6_mapped_dst() {
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(TEST_ADDRS_V6).build();
+    let device: DeviceId<_> = device_ids[0].clone().into();
+
+    ctx.test_api().set_unicast_forwarding_enabled::<Ipv6>(&device, true);
+
+    let src = TEST_ADDRS_V6.remote_ip;
+    let dst = net_ip_v6!("::ffff:192.0.2.1");
+
+    let builder = Ipv6PacketBuilder::new(src.get(), dst, 1, IpProto::Udp.into());
+
+    let buffer =
+        builder.wrap_body(Buf::new(vec![0u8; 10], ..)).serialize_vec_outer().unwrap().unwrap_b();
+
+    ctx.test_api().receive_ip_packet::<Ipv6, _>(
+        &device,
+        Some(FrameDestination::Individual { local: true }),
+        buffer,
+    );
+
+    // The packet should be dropped due to invalid destination address.
+    assert_matches!(ctx.bindings_ctx.take_ethernet_frames()[..], []);
 }

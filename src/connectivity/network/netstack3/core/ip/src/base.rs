@@ -4179,7 +4179,7 @@ pub fn receive_ipv6_packet<
                 device,
                 frame_dst,
                 *src_ip,
-                dst_ip,
+                dst_ip.into(),
                 buffer,
                 Icmpv6Error::NetUnreachable,
                 meta.header_len(),
@@ -4244,7 +4244,7 @@ pub enum ReceivePacketAction<I: BroadcastIpExt + IpLayerIpExt, DeviceId: StrongD
     /// route to destination".
     SendNoRouteToDest {
         /// The destination IP Address to which there was no route.
-        dst: SpecifiedAddr<I::Addr>,
+        dst: NonMappedAddr<SpecifiedAddr<I::Addr>>,
     },
 
     /// Silently drop the packet.
@@ -4284,6 +4284,8 @@ pub enum DropReason {
     Tentative,
     /// Remote packet destined to the unspecified address.
     UnspecifiedDestination,
+    /// Remote packet with an invalid destination address.
+    InvalidDestination,
     /// Cannot forward a packet with unspecified source address.
     ForwardUnspecifiedSource,
     /// Cannot forward a packet with link-local source or destination address.
@@ -4578,6 +4580,11 @@ fn receive_ip_packet_action_common<
         );
     }
 
+    // Don't allow mapped IPv6 addresses.
+    let Some(dst_ip) = NonMappedAddr::new(dst_ip) else {
+        return ReceivePacketAction::Drop { reason: DropReason::InvalidDestination };
+    };
+
     // The packet is not destined locally, so we attempt to forward it.
     if !core_ctx.is_device_unicast_forwarding_enabled(device_id) {
         // Forwarding is disabled; we are operating only as a host.
@@ -4611,7 +4618,7 @@ fn receive_ip_packet_action_common<
     // This enables a weak host model when the Netstack is configured as a
     // router. Conceptually, the netstack is forwarding the packet from the
     // input device, to the destination IP's device.
-    if let Some(dst_ip) = NonMappedAddr::new(dst_ip).and_then(NonMulticastAddr::new) {
+    if let Some(dst_ip) = NonMulticastAddr::new(dst_ip) {
         if let Some((outbound_device, address_status)) =
             get_device_with_assigned_address(core_ctx, IpDeviceAddr::new_from_witness(dst_ip))
         {
@@ -4646,7 +4653,7 @@ fn receive_ip_packet_action_common<
 
     match lookup_route_table(
         core_ctx,
-        *dst_ip,
+        dst_ip.get(),
         RuleInput {
             packet_origin: PacketOrigin::NonLocal { source_address, incoming_device: device_id },
             marks,
@@ -4654,7 +4661,7 @@ fn receive_ip_packet_action_common<
     ) {
         Some(dst) => {
             core_ctx.increment_both(device_id, |c| &c.forward);
-            ReceivePacketAction::Forward { original_dst: dst_ip, dst }
+            ReceivePacketAction::Forward { original_dst: *dst_ip, dst }
         }
         None => {
             core_ctx.increment_both(device_id, |c| &c.no_route_to_host);
