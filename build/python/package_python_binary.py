@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 """Creates a Python zip archive for the input main source and
-    optionally type check for all the sources."""
+optionally type check for all the sources."""
 
 import argparse
 import json
@@ -13,8 +13,6 @@ import shutil
 import sys
 import zipapp
 from pathlib import Path
-
-import mypy_checker
 
 
 def main() -> int:
@@ -67,11 +65,6 @@ def main() -> int:
         help="Path to the depfile to generate",
         type=argparse.FileType("w"),
         required=True,
-    )
-    parser.add_argument(
-        "--enable_mypy",
-        action="store_true",
-        help="Name of the build target",
     )
     parser.add_argument(
         "--unbuffered",
@@ -152,20 +145,9 @@ else:
             compressed=True,
         )
 
-        # Type check for Python binary sources and their library sources that have "mypy_enable = True"
-        mypy_ret_code = 0
-        if args.enable_mypy:
-            mypy_ret_code = mypy_checker.run_mypy_on_binary_target(
-                target_name=args.target_name,
-                gen_dir=args.gen_dir,
-                src_files=args.sources,
-                data_package_name=args.data_package_name,
-                data_sources=args.data_sources,
-                lib_infos=infos,
-            )
     finally:
         remove_dir(app_dir)
-    return mypy_ret_code
+    return 0
 
 
 def copy_binary_sources(

@@ -2,21 +2,33 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-""" This script checks python type checking for the input sources.
-"""
+"""This script checks python type checking for the input sources."""
 import argparse
 import json
 import os
 import re
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 
 import package_python_binary
 
 
+class TargetType(str, Enum):
+    LIBRARY = "library"
+    BINARY = "binary"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target_type",
+        type=TargetType,
+        choices=[TargetType.LIBRARY, TargetType.BINARY],
+        default=TargetType.LIBRARY,
+        help="Whether the target is a binary or a library.",
+    )
     parser.add_argument(
         "--target_name",
         help="Name of the build target",
@@ -27,6 +39,20 @@ def main() -> int:
         help="Path to the library infos JSON file",
         type=argparse.FileType("r"),
         required=True,
+    )
+    parser.add_argument(
+        "--sources",
+        help="The list of python source files for binaries",
+        nargs="+",
+    )
+    parser.add_argument(
+        "--data_sources",
+        help="The list of data source file paths for binaries.",
+        nargs="*",
+    )
+    parser.add_argument(
+        "--data_package_name",
+        help="Name of the Python package to store data sources in.",
     )
     parser.add_argument(
         "--gen_dir",
@@ -43,20 +69,59 @@ def main() -> int:
     parser.add_argument(
         "--output",
         help="Path to output file",
+        required=True,
     )
 
     args = parser.parse_args()
 
-    # To satisfy GN action requirements, creating a necessary empty output file
-    Path(args.output).touch()
+    if args.target_type == TargetType.LIBRARY:
+        # These options only apply to binaries, as libraries get all their
+        # needed info from the library_infos
+        if args.sources:
+            parser.error(
+                "'--sources' can only be used with '--target_type binary'"
+            )
+        if args.data_sources:
+            parser.error(
+                "'--data_sources' can only be used with '--target_type binary'"
+            )
+        if args.data_package_name:
+            parser.error(
+                "'--data_package_name' can only be used with '--target_type binary'"
+            )
 
     lib_infos = json.load(args.library_infos)
-    return run_mypy_on_library_target(
-        args.target_name,
-        args.gen_dir,
-        lib_infos,
-        args.depfile,
-    )
+
+    match args.target_type:
+        case TargetType.LIBRARY:
+            retval = run_mypy_on_library_target(
+                args.target_name,
+                args.gen_dir,
+                lib_infos,
+                args.output,
+                args.depfile,
+            )
+        case TargetType.BINARY:
+            retval = run_mypy_on_binary_target(
+                args.target_name,
+                args.gen_dir,
+                args.sources,
+                args.data_sources,
+                args.data_package_name,
+                lib_infos,
+                args.output,
+                args.depfile,
+            )
+        case default:
+            # Here so that type checking knows that all code paths either
+            # set 'retval' or raise an error.
+            parser.error(f"unknown target type: {args.target_type}")
+
+    if retval == 0:
+        # To satisfy GN action requirements, creating a necessary empty output file on success.
+        Path(args.output).touch()
+
+    return retval
 
 
 def run_mypy_on_binary_target(
@@ -66,6 +131,8 @@ def run_mypy_on_binary_target(
     data_sources: list[str],
     data_package_name: str | None,
     lib_infos: list[dict[str, object]],
+    output_file: Path,
+    depfile: Path,
 ) -> int:
     """
     Runs `mypy` type checking on the sources of a binary target, as well as the
@@ -82,10 +149,10 @@ def run_mypy_on_binary_target(
     Returns:
         The exit code of the Mypy invocation.
     """
+    # Temporary directory to stage the source tree for Mypy checks,
+    # including sources of itself and all the libraries it imports.
+    tmp_dir: str = os.path.join(gen_dir, target_name + "_bin_mypy")
     try:
-        # Temporary directory to stage the source tree for Mypy checks,
-        # including sources of itself and all the libraries it imports.
-        tmp_dir: str = os.path.join(gen_dir, target_name + "_bin_mypy")
         if os.path.exists(tmp_dir):
             package_python_binary.remove_dir(tmp_dir)
         os.makedirs(tmp_dir)
@@ -110,6 +177,12 @@ def run_mypy_on_binary_target(
             [info for info in lib_infos if info["mypy_support"]],
             src_map,
         )
+
+        # Write the depfile
+        depfile.write_text(
+            "{}: {}\n".format(output_file, " ".join(list(src_map.values())))
+        )
+
         ret = run_mypy_checks(tmp_dir, src_map)
     finally:
         package_python_binary.remove_dir(tmp_dir)
@@ -120,6 +193,7 @@ def run_mypy_on_library_target(
     target_name: str,
     gen_dir: Path,
     lib_infos: list[dict[str, object]],
+    output_file: Path,
     depfile: Path,
 ) -> int:
     """
@@ -150,7 +224,7 @@ def run_mypy_on_library_target(
 
     # Write the depfile
     depfile.write_text(
-        "{}: {}\n".format(tmp_dir, " ".join(list(src_map.values())))
+        "{}: {}\n".format(output_file, " ".join(list(src_map.values())))
     )
 
     try:

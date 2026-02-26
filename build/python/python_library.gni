@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import("//build/group_with_inputs.gni")
+import("//build/python/python_validator.gni")
 
 # Defines a python library
 #
@@ -74,9 +75,10 @@ template("python_library") {
   assert(defined(invoker.sources), "sources is required")
 
   _labels = {
+    main_target = target_name
     input_group = "${target_name}_input_group"
     mypy_checker = "${target_name}_mypy_checker"
-    library_infos = "${target_name}_library_infos"
+    library_infos = "${target_name}.library_infos"
   }
 
   _files = {
@@ -179,41 +181,22 @@ template("python_library") {
     walk_keys = [ "library_info_barrier" ]
   }
 
-  action(_labels.mypy_checker) {
+  validate_python_library(_labels.mypy_checker) {
     forward_variables_from(invoker,
                            [
                              "assert_no_deps",
                              "testonly",
-                             "visibility",
                            ])
-    inputs = [
-               "//pyproject.toml",
-               "//build/python/package_python_binary.py",
-               _files.library_infos,
-             ] + _full_source_paths
-    script = "//build/python/mypy_checker.py"
-    outputs = [ "${target_out_dir}/${target_name}.mypy_checked" ]
-    depfile = "${target_out_dir}/${target_name}.d"
-    mnemonic = "MYPY"
-    args =
+    visibility = [ ":${_labels.main_target}" ]
+
+    library_infos = ":${_labels.library_infos}"
+
     # This source list includes only direct library sources, excluding
     # any dependencies.
-    [
-      "--target_name",
-      target_name,
-      "--library_infos",
-      rebase_path(_files.library_infos, root_build_dir),
-      "--gen_dir",
-      rebase_path(target_gen_dir, root_build_dir),
-      "--depfile",
-      rebase_path(depfile, root_build_dir),
-      "--output",
-      rebase_path(outputs[0], root_build_dir),
-    ]
-    deps = [ ":${_labels.library_infos}" ]
+    sources = _full_source_paths
 
     # Required for generated sources like C extension wrappers.
-    deps += library_deps
+    deps = library_deps
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }

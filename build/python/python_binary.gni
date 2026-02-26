@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_validator.gni")
+
 # Defines a Python binary.
 #
 # Example
@@ -77,8 +79,13 @@
 template("python_binary") {
   assert(defined(invoker.main_source), "main_source is required")
 
-  _library_infos_target = "${target_name}_library_infos"
-  _library_infos_json = "${target_gen_dir}/${target_name}_library_infos.json"
+  # Enable mypy checks by default
+  if (!(defined(invoker.enable_mypy) && !invoker.enable_mypy)) {
+    mypy_checker = "${target_name}_mypy_checker"
+  }
+
+  _library_infos_target = "${target_name}.library_infos"
+  _library_infos_json = "${target_gen_dir}/${target_name}.library_infos.json"
   generated_file(_library_infos_target) {
     forward_variables_from(invoker, [ "testonly" ])
     visibility = [ ":*" ]
@@ -101,6 +108,11 @@ template("python_binary") {
     _data_sources = invoker.data_sources
   }
 
+  _all_sources = [ invoker.main_source ]
+  if (defined(invoker.sources)) {
+    _all_sources += invoker.sources
+  }
+
   action(target_name) {
     forward_variables_from(invoker,
                            [
@@ -108,10 +120,7 @@ template("python_binary") {
                              "visibility",
                            ])
 
-    sources = [ invoker.main_source ]
-    if (defined(invoker.sources)) {
-      sources += invoker.sources
-    }
+    sources = _all_sources
     inputs = [ _library_infos_json ] + _data_sources
 
     # Note that this inherits invoker.deps, which is important for the case
@@ -169,11 +178,31 @@ template("python_binary") {
         invoker.data_package_name,
       ]
     }
-    if (!(defined(invoker.enable_mypy) && !invoker.enable_mypy)) {
-      args += [ "--enable_mypy" ]
-    }
     if (defined(invoker.unbuffered_output) && invoker.unbuffered_output) {
       args += [ "--unbuffered" ]
+    }
+    if (defined(mypy_checker)) {
+      validations = [ ":${mypy_checker}" ]
+    }
+  }
+
+  if (defined(mypy_checker)) {
+    _main_target = target_name
+
+    validate_python_binary(mypy_checker) {
+      forward_variables_from(invoker,
+                             [
+                               "assert_no_deps",
+                               "data_package_name",
+                               "deps",
+                               "testonly",
+                             ])
+      visibility = [ ":${_main_target}" ]
+
+      sources = _all_sources
+      library_infos = ":${_library_infos_target}"
+
+      data_sources = _data_sources
     }
   }
 }
