@@ -987,6 +987,70 @@ bool continuous_attribution_tracker_release_owned_parent() {
   END_TEST;
 }
 
+// Test that TakePages decrements the populated slots count in response to content it removes from
+// the page list.
+bool continuous_attribution_tracker_take_pages() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &vmo));
+  fbl::RefPtr<VmCowPages> vmo_cow = vmo->DebugGetCowPages();
+
+  ASSERT_OK(vmo->CommitRange(0, 3 * kPageSize));
+
+  EXPECT_EQ(3u, vmo_cow->DebugGetPopulatedSlotsCount());
+
+  VmPageSpliceList page_list;
+  ASSERT_OK(vmo->TakePages(0, 3 * kPageSize, &page_list));
+
+  EXPECT_EQ(0u, vmo_cow->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
+// Test that TakePages decrements the populated slots count in response to content it removes from
+// the page list if there is a parent.
+bool continuous_attribution_tracker_take_pages_parent() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  // This is a separate test from continuous_attribution_tracker_take_pages because it triggers an
+  // independent branch in VmCowPages::TakePages.
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> a;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 3 * kPageSize, &a));
+
+  ASSERT_OK(a->CommitRange(0, 3 * kPageSize));
+
+  fbl::RefPtr<VmObject> b;
+  ASSERT_OK(a->CreateClone(Resizability::NonResizable, SnapshotType::Full, /*offset=*/0,
+                           /*size=*/3 * kPageSize, /*copy_name=*/false, &b));
+
+  ASSERT_OK(a->CommitRange(0, 3 * kPageSize));
+
+  fbl::RefPtr<VmCowPages> a_cow = a->DebugGetCowPages();
+
+  EXPECT_EQ(3u, a_cow->DebugGetPopulatedSlotsCount());
+
+  VmPageSpliceList page_list;
+  ASSERT_OK(a->TakePages(0, 3 * kPageSize, &page_list));
+
+  EXPECT_EQ(0u, a_cow->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -1013,6 +1077,8 @@ VM_UNITTEST(continuous_attribution_tracker_merge_spurious_parent_content)
 VM_UNITTEST(continuous_attribution_tracker_merge_into_child)
 VM_UNITTEST(continuous_attribution_tracker_release_owned_self)
 VM_UNITTEST(continuous_attribution_tracker_release_owned_parent)
+VM_UNITTEST(continuous_attribution_tracker_take_pages)
+VM_UNITTEST(continuous_attribution_tracker_take_pages_parent)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 

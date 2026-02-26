@@ -5705,9 +5705,21 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
     // sure we're not inside an interval; checking a single offset for membership should suffice.
     ASSERT(found_page || !page_list_.IsOffsetInZeroInterval(range.offset));
 
+    uint32_t populated_slots_removed = 0;
     zx_status_t status = pages->AddPagesFrom(
-        [](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) { *dst = ktl::move(*src); },
+        [&](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) {
+          AssertHeld(lock_ref());
+          if (src->IsPageOrRef() || src->IsParentContent()) {
+            ++populated_slots_removed;
+          }
+
+          *dst = ktl::move(*src);
+        },
         page_list_, range.offset);
+
+    if (populated_slots_removed > 0) {
+      continuous_attribution_tracker_.Decrement(populated_slots_removed);
+    }
     if (status != ZX_OK) {
       DEBUG_ASSERT(status == ZX_ERR_NO_MEMORY);
       return status;
@@ -5725,6 +5737,13 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
   // the operation, potentially repeatedly if there are multiple gaps in the overall range.
   uint64_t processed = 0;
   do {
+    uint32_t populated_slots_removed = 0;
+    auto do_record = fit::defer([&]() {
+      if (populated_slots_removed > 0) {
+        AssertHeld(lock_ref());
+        continuous_attribution_tracker_.Decrement(populated_slots_removed);
+      }
+    });
     // Helper method that is compatible with being given to VmPageList::RemovePages that moves
     // contents into the splice list, and replaces it with zero content. On error sets *taken_len
     // with the current offset.
@@ -5766,6 +5785,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
       }
       // Take the content and place it in the splice list.
       DEBUG_ASSERT(slot->IsPageOrRef());
+      ++populated_slots_removed;
       zx_status_t status = pages->Insert(offset - range.offset + splice_offset, ktl::move(*slot));
       if (status != ZX_OK) {
         ASSERT(status == ZX_ERR_NO_MEMORY);
