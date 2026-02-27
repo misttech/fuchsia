@@ -4,6 +4,8 @@
 import asyncio
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
+import fuchsia_async_extension
+
 _Params = ParamSpec("_Params")
 _Yield = TypeVar("_Yield")
 _Send = TypeVar("_Send")
@@ -61,7 +63,7 @@ class AsyncAdapter:
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._async_adapter_loop = asyncio.new_event_loop()
+        self._async_adapter_loop = fuchsia_async_extension.get_loop()
         self._async_adapter_loop._name = self.__class__.__qualname__  # type: ignore[attr-defined]
 
     def loop(self) -> asyncio.AbstractEventLoop:

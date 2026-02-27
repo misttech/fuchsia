@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
+import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel
 
@@ -105,7 +106,7 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
         self._reboot_affordance.register_for_on_device_boot(fn=self.sys_init)
 
         self.sys_init()
-        self.loop = asyncio.new_event_loop()
+        self.loop = fuchsia_async_extension.get_loop()
 
     def reset_state(self) -> None:
         """Resets internal state tracking variables to correspond to an inactive

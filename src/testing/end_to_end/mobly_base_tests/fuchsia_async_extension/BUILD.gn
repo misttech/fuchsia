@@ -4,8 +4,6 @@
 
 import("//build/python/python_library.gni")
 
-assert(is_host, "fuchsia_async_extension only supported on a host toolchain")
-
 python_library("fuchsia_async_extension") {
   sources = [ "__init__.py" ]
 }

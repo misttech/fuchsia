@@ -102,13 +102,13 @@ class FfxCmd(fx_cmd.ExecutableCommand):
         return await self._inner.start(*self.command_line(*args))
 
     # overrides base class
-    def sync(
+    async def sync(
         self,
         *args: str,
         stdout_callback: Callable[[StdoutEvent], None] | None = None,
         stderr_callback: Callable[[StderrEvent], None] | None = None,
     ) -> CommandOutput:
-        return self._inner.sync(
+        return await self._inner.sync(
             *self.command_line(*args),
             stdout_callback=stdout_callback,
             stderr_callback=stderr_callback,

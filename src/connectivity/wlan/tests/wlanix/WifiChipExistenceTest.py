@@ -5,9 +5,8 @@
 Test that the device has at least one WifiChip.
 """
 
-import asyncio
-
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel
 from mobly import test_runner
 from mobly.asserts import assert_greater, assert_is_not
@@ -20,7 +19,11 @@ class WifiChipExistenceTest(base_test.WlanixBaseTestClass):
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
-        response = asyncio.run(wifi_proxy.get_chip_ids()).unwrap()
+        response = (
+            fuchsia_async_extension.get_loop()
+            .run_until_complete(wifi_proxy.get_chip_ids())
+            .unwrap()
+        )
         assert_is_not(
             response.chip_ids,
             None,

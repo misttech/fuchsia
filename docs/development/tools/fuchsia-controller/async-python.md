@@ -137,7 +137,7 @@ iterate over these and collect the results by checking the `result()` function.
 
 At the time of writing, most of Fuchsia Controller code is being called from
 synchronous code. To ensure tasks can run in the background, it may make sense
-to keep an instance of a loop via `asyncio.new_event_loop()`.
+to keep an instance of a loop via `fuchsia_async_extension.get_loop()`.
 
 The reason for this is that `asyncio` tasks must remain on a single loop. This
 is also the case for synchronization objects like `asyncio.Queue`.
@@ -146,7 +146,7 @@ If the code you interact with is sufficiently simple (running a single FIDL
 method at a time), you can do this using:
 
 ```py {:.devsite-disable-click-to-copy}
-asyncio.run_until_complete(...)
+fuchsia_async_extension.get_loop().run_until_complete(...)
 ```
 
 But if you need to run tasks or handle synchronization, you'll want to
@@ -158,7 +158,7 @@ for example:
 class FidlHandlingClass():
 
     def __init__(self):
-        self._loop = asyncio.new_event_loop()
+        self._loop = fuchsia_async_extension.get_loop()
         # Can launch tasks here.
         self._important_task = self._loop.create_task(foo())
 
@@ -177,7 +177,7 @@ from functools import wraps
 class FidlInstance():
 
     def __init__(self, proxy_channel):
-        self._loop = asyncio.new_event_loop()
+        self._loop = fuchsia_async_extension.get_loop()
         self.echo_proxy = fidl_fuchsia_developer_ffx.EchoClient(proxy_channel)
 
     def __del__(self):
