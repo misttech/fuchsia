@@ -1,0 +1,22 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+#### CATEGORY=Run, inspect and debug
+### Emulate a device and interact with it (forwarded to ffx emu).
+
+## usage: fx emu [args]
+##
+## Forwards all arguments to `ffx emu`.
+## `fx emu` is no longer preferred; please use `ffx emu` directly.
+
+set -o pipefail
+
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+
+fx-warn "fx emu [args] is no longer preferred. Call ffx emu [args] instead."
+fx-info "Executing fx emu ${@}"
+
+fx-command-run ffx emu "$@"

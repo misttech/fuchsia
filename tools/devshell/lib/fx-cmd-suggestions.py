@@ -20,9 +20,7 @@ or paths to commands that fx will exec.
 # This dictionary contains a list of known suggestions that have been moved or
 # migrated to different tools. The key is the command that the user provided and
 # the value is what the user will see instead.
-WELL_KNOWN_SUGGESTIONS = {
-    "emu": "'fx emu' is no longer valid, use 'ffx emu' instead"
-}
+WELL_KNOWN_SUGGESTIONS = {}
 
 
 def calculate_dl_edit_distance(first: str, second: str) -> int:
