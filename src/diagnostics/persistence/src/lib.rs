@@ -382,6 +382,8 @@ enum IncomingRequest {
 
 pub async fn main(_args: CommandLine) -> Result<(), Error> {
     info!("Starting Diagnostics Persistence service");
+    // initialize to 5MiB
+    component::init_inspector_with_size(1024 * 1024 * 5);
     let scope = fasync::Scope::new();
     let store = sandbox::CapabilityStore::connect()?;
     let state = ComponentState::load(scope.to_handle(), &store)
