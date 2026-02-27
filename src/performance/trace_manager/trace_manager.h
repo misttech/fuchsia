@@ -55,9 +55,7 @@ class TraceController : public fidl::Server<fuchsia_tracing_controller::Session>
   void SendSessionStateEvent(fuchsia_tracing_controller::SessionState state);
   static fuchsia_tracing_controller::SessionState TranslateSessionState(TraceSession::State state);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  void FlushBuffers(FlushBuffersCompleter::Sync& completer) override;
-#endif
+ private:
   TraceManagerApp* const app_;
 
   // We only set this to false when aborting.

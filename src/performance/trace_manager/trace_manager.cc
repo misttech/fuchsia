@@ -534,33 +534,6 @@ void TraceManager::RegisterV2Synchronously(RegisterV2SynchronouslyRequest& reque
   completer.Reply(fit::ok(already_started));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-void TraceController::FlushBuffers(FlushBuffersCompleter::Sync& completer) {
-  FX_LOGS(DEBUG) << "FlushBuffers";
-  if (!session_) {
-    FX_LOGS(ERROR) << "Ignoring flush request, trace must be initialized first";
-    completer.Reply(fit::error(fuchsia_tracing_controller::FlushError::kNotInitialized));
-    return;
-  }
-  switch (session()->state()) {
-    case TraceSession::State::kReady:
-    case TraceSession::State::kInitialized:
-    case TraceSession::State::kStarting:
-      completer.Reply(fit::error(fuchsia_tracing_controller::FlushError::kNotStarted));
-      return;
-    case TraceSession::State::kStopping:
-    case TraceSession::State::kStopped:
-    case TraceSession::State::kTerminating:
-      completer.Reply(fit::error(fuchsia_tracing_controller::FlushError::kAborted));
-      return;
-    case TraceSession::State::kStarted:
-      break;
-  }
-  session_->FlushProviders();
-  completer.Reply(fit::ok());
-}
-#endif
-
 // Deprecated, but we need to support the old apis until all supported api levels drop support for
 // the api.
 void TraceManager::RegisterProvider(RegisterProviderRequest& request,

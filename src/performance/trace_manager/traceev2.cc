@@ -193,14 +193,6 @@ void TraceeV2::Stop(fit::closure cb) {
   TransitionToState(State::kStopping);
 }
 
-zx::result<> TraceeV2::RequestFlush() {
-  fit::result res = connection_->provider->Flush();
-  if (res.is_error()) {
-    return zx::error(res.error_value().status());
-  }
-  return zx::ok();
-}
-
 void TraceeV2::TransitionToState(State new_state) {
   FX_LOGS(DEBUG) << std::format("{}: Transitioning from ", *connection_) << state_ << " to "
                  << new_state;
