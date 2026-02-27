@@ -45,8 +45,6 @@ impl DispatcherBuilder {
     pub(crate) const UNSYNCHRONIZED: u32 = fdf_sys::FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
     /// See `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS` in the C API
     pub(crate) const ALLOW_THREAD_BLOCKING: u32 = fdf_sys::FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
-    /// See `FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION` in the C API
-    pub(crate) const NO_THREAD_MIGRATION: u32 = fdf_sys::FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION;
 
     /// Creates a new [`DispatcherBuilder`] that can be used to configure a new dispatcher.
     /// For more information on the threading-related flags for the dispatcher, see
@@ -91,22 +89,6 @@ impl DispatcherBuilder {
     /// Whether or not this dispatcher allows synchronous calls
     pub fn allows_thread_blocking(&self) -> bool {
         (self.options & Self::ALLOW_THREAD_BLOCKING) == Self::ALLOW_THREAD_BLOCKING
-    }
-
-    /// This dispatcher may not run on more than one thread. This can only be set if the
-    /// dispatcher is being run on a scheduler role that does not allow sync calls on
-    /// any of its dispatchers.
-    ///
-    /// See https://fuchsia.dev/fuchsia-src/concepts/drivers/driver-dispatcher-and-threads
-    /// for more information on the threading model of driver dispatchers.
-    pub fn no_thread_migration(mut self) -> Self {
-        self.options |= Self::NO_THREAD_MIGRATION;
-        self
-    }
-
-    /// Whether or not this dispatcher is allowed to run on multiple threads
-    pub fn allows_thread_migration(&self) -> bool {
-        (self.options & Self::NO_THREAD_MIGRATION) == 0
     }
 
     /// A descriptive name for this dispatcher that is used in debug output and process
@@ -207,12 +189,6 @@ impl Dispatcher {
     /// Whether this dispatcher is allowed to call blocking functions or not
     pub fn allows_thread_blocking(&self) -> bool {
         (self.get_raw_flags() & DispatcherBuilder::ALLOW_THREAD_BLOCKING) != 0
-    }
-
-    /// Whether this dispatcher is allowed to migrate threads, in which case it can't
-    /// be used for non-[`Send`] tasks.
-    pub fn allows_thread_migration(&self) -> bool {
-        (self.get_raw_flags() & DispatcherBuilder::NO_THREAD_MIGRATION) == 0
     }
 
     /// Whether this is the dispatcher the current thread is running on
@@ -343,8 +319,6 @@ impl OnDispatcher for WeakDispatcher {
     }
 }
 
-impl OnDriverDispatcher for WeakDispatcher {}
-
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
 /// [`Dispatcher::release`]. When this object goes out of scope it won't shut down the dispatcher,
 /// leaving that up to the driver runtime or another owner.
@@ -387,100 +361,6 @@ impl<'a> DispatcherRef<'a> {
     }
 }
 
-/// Used to wrap a non-send future as send when we've dynamically checked that the dispatcher
-/// we're going to spawn it on is non-[`Send`]-safe.
-///
-/// This should only ever be used after validating that the dispatcher is the currently running
-/// one and that the dispatcher does not migrate threads.
-///
-/// This is an internal implementation detail and should never be made public.
-struct AddSendFuture<T>(T);
-
-impl<T: Future> Future for AddSendFuture<T> {
-    type Output = T::Output;
-
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        // SAFETY: self.0 is pinned if self is.
-        let fut = unsafe { self.map_unchecked_mut(|fut| &mut fut.0) };
-        fut.poll(cx)
-    }
-}
-
-// SAFETY: We are forcing this future to be [`Send`] even though the inner future is not because
-// we validate at runtime before spawning the task that the dispatcher is correctly configured to
-// do the right thing with it.
-unsafe impl<T> Send for AddSendFuture<T> {}
-
-/// Makes available additional functionality available on driver dispatchers on top of what's
-/// available on [`OnDispatcher`].
-pub trait OnDriverDispatcher: OnDispatcher {
-    /// Spawn an asynchronous local task on this dispatcher. If this returns [`Ok`] then the task
-    /// has successfully been scheduled and will run or be cancelled and dropped when the dispatcher
-    /// shuts down. The returned future's result will be [`Ok`] if the future completed
-    /// successfully, or an [`Err`] if the task did not complete for some reason (like the
-    /// dispatcher shut down).
-    ///
-    /// Unlike [`OnDispatcher::spawn`], this will accept a future that does not implement [`Send`]. If
-    /// called from a thread other than the one the dispatcher is running on or the dispatcher
-    /// is not guaranteed to always poll from the same thread, this will return
-    /// [`Status::BAD_STATE`].
-    ///
-    /// Returns a [`JoinHandle`] that will detach the future when dropped.
-    fn spawn_local(
-        &self,
-        future: impl Future<Output = ()> + 'static,
-    ) -> Result<JoinHandle<()>, Status>
-    where
-        Self: 'static,
-    {
-        self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
-            if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
-                OnDispatcher::spawn(self, AddSendFuture(future))
-            } else {
-                Err(Status::BAD_STATE)
-            }
-        })
-    }
-
-    /// Spawn a local asynchronous task that outputs type 'T' on this dispatcher. The returned future's
-    /// result will be [`Ok`] if the task was started and completed successfully, or an [`Err`] if
-    /// the task couldn't be started or failed to complete (for example because the dispatcher was
-    /// shutting down).
-    ///
-    /// Returns a [`Task`] that will cancel the future when dropped.
-    ///
-    /// Unlike [`OnDispatcher::compute`], this will accept a future that does not implement [`Send`]. If
-    /// called from a thread other than the one the dispatcher is running on or the dispatcher
-    /// is not guaranteed to always poll from the same thread, this will return
-    /// [`Status::BAD_STATE`].
-    ///
-    /// TODO(470088116): This may be the cause of some flakes, so care should be used with it
-    /// in critical paths for now.
-    fn compute_local<T: Send + 'static>(
-        &self,
-        future: impl Future<Output = T> + 'static,
-    ) -> Result<Task<T>, Status>
-    where
-        Self: 'static,
-    {
-        self.on_maybe_dispatcher(|dispatcher| {
-            let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
-            if dispatcher.0.is_current_dispatcher() && !dispatcher.0.allows_thread_migration() {
-                Ok(OnDispatcher::compute(self, AddSendFuture(future)))
-            } else {
-                Err(Status::BAD_STATE)
-            }
-        })
-    }
-}
-
-impl OnDriverDispatcher for Arc<Dispatcher> {}
-impl OnDriverDispatcher for Weak<Dispatcher> {}
-
 impl<'a> AsyncDispatcher for DispatcherRef<'a> {
     fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
         self.0.as_async_dispatcher_ref()
@@ -512,8 +392,6 @@ impl<'a> OnDispatcher for DispatcherRef<'a> {
     }
 }
 
-impl<'a> OnDriverDispatcher for DispatcherRef<'a> {}
-
 /// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
 /// access it when needed.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -543,8 +421,6 @@ impl OnDispatcher for CurrentDispatcher {
     }
 }
 
-impl OnDriverDispatcher for CurrentDispatcher {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,7 +435,6 @@ mod tests {
     use core::ptr::null_mut;
 
     static GLOBAL_DRIVER_ENV: Once = Once::new();
-    const NO_SYNC_CALLS_ROLE: &str = "no sync calls role";
 
     pub fn ensure_driver_env() {
         GLOBAL_DRIVER_ENV.call_once(|| {
@@ -567,25 +442,16 @@ mod tests {
             // concerns for rust code, and this is only used in tests.
             unsafe {
                 assert_eq!(fdf_env_start(0), ZX_OK);
-                assert_eq!(
-                    fdf_env_set_scheduler_role_opts(
-                        NO_SYNC_CALLS_ROLE.as_ptr() as *const c_char,
-                        NO_SYNC_CALLS_ROLE.len(),
-                        FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS
-                    ),
-                    ZX_OK
-                );
             }
         });
     }
     pub fn with_raw_dispatcher<T>(name: &str, p: impl for<'a> FnOnce(Weak<Dispatcher>) -> T) -> T {
-        with_raw_dispatcher_flags(name, DispatcherBuilder::ALLOW_THREAD_BLOCKING, "", p)
+        with_raw_dispatcher_flags(name, DispatcherBuilder::ALLOW_THREAD_BLOCKING, p)
     }
 
     pub(crate) fn with_raw_dispatcher_flags<T>(
         name: &str,
         flags: u32,
-        scheduler_role: &str,
         p: impl for<'a> FnOnce(Weak<Dispatcher>) -> T,
     ) -> T {
         ensure_driver_env();
@@ -610,8 +476,8 @@ mod tests {
                 flags,
                 name.as_ptr() as *const c_char,
                 name.len(),
-                scheduler_role.as_ptr() as *const c_char,
-                scheduler_role.len(),
+                "".as_ptr() as *const c_char,
+                0_usize,
                 observer,
                 &mut dispatcher,
             )
@@ -694,82 +560,6 @@ mod tests {
             inner_rx.recv().unwrap();
         });
         assert_eq!(shutdown_rx.recv().unwrap(), 1);
-    }
-
-    #[test]
-    fn spawn_local_fails_on_normal_dispatcher() {
-        let (shutdown_tx, shutdown_rx) = mpsc::channel();
-        with_raw_dispatcher("spawn local failures", move |dispatcher| {
-            let inside_dispatcher = dispatcher.clone();
-            dispatcher
-                .spawn(async move {
-                    assert_eq!(
-                        inside_dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
-                        Status::BAD_STATE
-                    );
-                    assert_eq!(
-                        inside_dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
-                        Status::BAD_STATE
-                    );
-                    shutdown_tx.send(()).unwrap();
-                })
-                .unwrap();
-            shutdown_rx.recv().unwrap();
-        });
-    }
-
-    #[test]
-    fn spawn_local_succeeds_on_no_thread_migration_dispatcher() {
-        let (tx, rx) = mpsc::channel();
-        with_raw_dispatcher_flags(
-            "spawn local success",
-            FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION,
-            NO_SYNC_CALLS_ROLE,
-            move |dispatcher| {
-                let inside_dispatcher = dispatcher.clone();
-                dispatcher
-                    .spawn(async move {
-                        let tx_clone = tx.clone();
-                        inside_dispatcher
-                            .spawn_local(async move {
-                                tx_clone.send(()).unwrap();
-                            })
-                            .unwrap();
-                        inside_dispatcher
-                            .compute_local(async move {
-                                tx.send(()).unwrap();
-                            })
-                            .unwrap()
-                            .await
-                            .unwrap();
-                    })
-                    .unwrap();
-                // one empty object received each for spawn and compute _local.
-                rx.recv().unwrap();
-                rx.recv().unwrap();
-            },
-        );
-    }
-
-    #[test]
-    fn spawn_local_fails_on_no_thread_migration_dispatcher_from_different_thread() {
-        with_raw_dispatcher_flags(
-            "spawn local success",
-            FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION,
-            NO_SYNC_CALLS_ROLE,
-            move |dispatcher| {
-                // we are not currently running in any dispatcher here, so this is a context
-                // where the 'current dispatcher' is definitely not the one in question.
-                assert_eq!(
-                    dispatcher.spawn_local(futures::future::ready(())).unwrap_err(),
-                    Status::BAD_STATE
-                );
-                assert_eq!(
-                    dispatcher.compute_local(futures::future::ready(())).unwrap_err(),
-                    Status::BAD_STATE
-                );
-            },
-        );
     }
 
     async fn ping(mut tx: async_mpsc::Sender<u8>, mut rx: async_mpsc::Receiver<u8>) {
