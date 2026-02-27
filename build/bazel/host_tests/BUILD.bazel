@@ -6,6 +6,7 @@ test_suite(
     name = "host_tests",
     tests = [
         "//build/bazel/host_tests/cc_tests",
+        "//build/bazel/host_tests/go_tests",
         "//build/bazel/host_tests/py_tests",
         "//build/tools/json_validator/test:tests",
     ],
