@@ -173,7 +173,11 @@ impl<'a> BisectionController<'a> {
     /// and return the results.
     fn prompt_for_manual_test(&mut self, product_bundle_path: &Utf8PathBuf) -> Result<bool> {
         self.print("")?;
-        let shortened_pb_path = shorten_path(product_bundle_path);
+        let shortened_pb_path = std::env::home_dir()
+            .and_then(|home| camino::Utf8PathBuf::from_path_buf(home).ok())
+            .and_then(|home_utf8| product_bundle_path.strip_prefix(&home_utf8).ok())
+            .map(|stripped| format!("~/{}", stripped))
+            .unwrap_or_else(|| product_bundle_path.to_string());
         self.print(
             "Flash this pb to a local device by opening another terminal window and running:\n",
         )?;
