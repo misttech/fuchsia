@@ -79,12 +79,7 @@ zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
   // Call through to SYSTEM_RESET2 with a vendor specific reset type (bit 31 set).
   // TODO(drewry, travisg): figure out if the reboot flags above can be combined to
   // influence this at all.
-  psci_system_reset2_raw(0x80000000, 0);
-  for (;;) {
-    __wfi();
-  }
-
-  return ZX_ERR_NOT_SUPPORTED;
+  return psci_system_reset2_raw(0x80000000, 0);
 }
 
 zx_status_t moonflower_power_shutdown() {
