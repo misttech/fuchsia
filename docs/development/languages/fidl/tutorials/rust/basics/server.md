@@ -144,9 +144,8 @@ It returns a future that completes once the client channel is closed.
    ```
 
 Note: The `rustdoc` for all Fuchsia crates can be found at
-[https://fuchsia-docs.firebaseapp.com/rust/](https://fuchsia-docs.firebaseapp.com/rust/). You can
-refer to this as necessary for documentation on the crates mentioned in this and following
-tutorials.
+<https://fuchsia.dev/go/rustdoc/> You can refer to this as necessary for
+documentation on the crates mentioned in this and following tutorials.
 
 ### Define `run_echo_server`:
 

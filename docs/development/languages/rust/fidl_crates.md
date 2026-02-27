@@ -62,7 +62,7 @@ fx rustdoc //src/tictactoe:games.tictactoe_rust --open
 ```
 
 FIDL crates in the public Fuchsia source tree are published in the
-[Fuchsia Rust API reference](https://fuchsia-docs.firebaseapp.com/rust/).
+[Fuchsia Rust API reference](https://fuchsia.dev/go/rustdoc/).
 
 ## Generated Rust Code {#code}
 

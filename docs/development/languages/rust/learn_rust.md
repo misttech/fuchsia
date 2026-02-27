@@ -44,7 +44,7 @@ Many of the following resources are also available offline in
 
 - [Standard Library documentation](https://doc.rust-lang.org/std/index.html)
 - [Fuchsia Rust crates
-  documentation](https://fuchsia-docs.firebaseapp.com/rust/)
+  documentation](https://fuchsia/dev/go/rustdoc/)
 
 ## Miscellaneous
 
