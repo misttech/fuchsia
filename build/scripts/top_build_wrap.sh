@@ -42,6 +42,7 @@ usage: $SCRIPT_NAME [options] -- build-command...
 options:
   -h | --help : print help and exit
   -v | --verbose : run verbosely
+  --dry-run : print the final command instead of running it
 
   --build-dir DIR : (required) build output dir (depth=2, e.g. "out/foo")
       When building with ninja, the -C argument is interpreted as the build dir.
@@ -66,6 +67,7 @@ EOF
 
 ### Defaults.
 collect_system_profile=0  # fx build-profile
+dry_run=0
 enable_resultstore=0
 needs_reproxy_rbe=0
 
@@ -107,6 +109,7 @@ do
   case "$opt" in
     -h | --help) usage; exit ;;
     -v | --verbose) verbose=1 ;;
+    --dry-run) dry_run=1 ;;
 
     --build-dir=*) build_dir="$optarg" ;;
     --build-dir) prev_opt=build_dir ;;
@@ -201,6 +204,10 @@ done
 
 if [[ "$is_build" == 0 ]]; then
   debug "Bypassing wrapper orchestration for non-build command: ${build_tool_args[*]}"
+  if [[ "$dry_run" == 1 ]]; then
+    echo "${build_tool_args[@]}"
+    exit 0
+  fi
   exec "${build_tool_args[@]}"
 fi
 
@@ -332,5 +339,9 @@ readonly full_cmd=(
 )
 
 debug "full command: ${full_cmd[*]}"
-exec "${full_cmd[@]}"
+if [[ "$dry_run" == 1 ]]; then
+  echo "${full_cmd[@]}"
+else
+  exec "${full_cmd[@]}"
+fi
 
