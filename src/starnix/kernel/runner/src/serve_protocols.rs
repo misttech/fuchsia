@@ -503,17 +503,29 @@ pub async fn serve_lutex_controller(
                         kernel
                             .shared_futexes
                             .external_wait(&mut unlocked, vmo.into(), offset, value, mask)
-                            .map(|receiver| (deadline, receiver))
+                            .map(|(event, receiver)| (deadline, event, receiver))
                     })();
                     let result = match deadline_and_receiver {
-                        Ok((deadline, receiver)) => {
-                            let receiver = receiver.map_err(|_| errno!(EINTR));
-                            if let Some(deadline) = deadline {
-                                let timer = fasync::Timer::new(deadline).map(|_| error!(ETIMEDOUT));
-                                select_first(timer, receiver).await
-                            } else {
-                                receiver.await
-                            }
+                        Ok((deadline, event, receiver)) => {
+                            // We construct a specific `wait_fut` to explicitly bind the lifecycle
+                            // of the `event` to the duration of this wait operation. If the FIDL
+                            // client disconnects (or the future is otherwise dropped/cancelled),
+                            // the `event` is immediately dropped. This zeros the strong reference
+                            // count on the `InterruptibleEvent`, signaling to the `FutexTable`
+                            // that this external waiter is now stale and should be garbage
+                            // collected on its next cleanup pass.
+                            let wait_fut = async move {
+                                let _event = event;
+                                let receiver = receiver.map_err(|_| errno!(EINTR));
+                                if let Some(deadline) = deadline {
+                                    let timer =
+                                        fasync::Timer::new(deadline).map(|_| error!(ETIMEDOUT));
+                                    select_first(timer, receiver).await
+                                } else {
+                                    receiver.await
+                                }
+                            };
+                            wait_fut.await
                         }
                         Err(e) => Err(e),
                     };

@@ -73,12 +73,17 @@ impl<Key: FutexKey> FutexTable<Key> {
         timer
             .set(deadline, timer_slack)
             .expect("timer set cannot fail with valid handles and slack");
-        state.get_waiters_or_default(key).add(FutexWaiter {
+        state.get_waiters_or_default(key.clone()).add(FutexWaiter {
             mask,
             notifiable: FutexNotifiable::new_internal_boot(Arc::downgrade(&waiter)),
         });
         std::mem::drop(state);
-        waiter.wait(locked, current_task)
+        waiter.wait(locked, current_task).inspect_err(|_| {
+            // If wait returned an error (e.g., ETIMEDOUT, EINTR), we must explicitly
+            // remove our waiter from the queue to prevent a memory leak.
+            // If it succeeded, the waker has already removed us from the queue.
+            self.state.lock(locked).remove_boot_waiter_from_queue(key, &waiter);
+        })
     }
 
     /// Wait on the futex at the given address.
@@ -110,13 +115,18 @@ impl<Key: FutexKey> FutexTable<Key> {
         let key = Key::get(current_task, addr)?;
         let event = InterruptibleEvent::new();
         let guard = event.begin_wait();
-        state.get_waiters_or_default(key).add(FutexWaiter {
+        state.get_waiters_or_default(key.clone()).add(FutexWaiter {
             mask,
             notifiable: FutexNotifiable::new_internal(Arc::downgrade(&event)),
         });
         std::mem::drop(state);
 
-        current_task.block_until(guard, deadline)
+        current_task.block_until(guard, deadline).inspect_err(|_| {
+            // If block_until returned an error (e.g., ETIMEDOUT, EINTR), we must explicitly
+            // remove our waiter from the queue to prevent a memory leak.
+            // If it succeeded, the waker has already removed us from the queue.
+            self.state.lock(locked).remove_waiter_from_queue(key, &event);
+        })
     }
 
     /// Wake the given number of waiters on futex at the given address. Returns the number of
@@ -262,19 +272,28 @@ impl<Key: FutexKey> FutexTable<Key> {
         let event = InterruptibleEvent::new();
         let guard = event.begin_wait();
         let notifiable = FutexNotifiable::new_internal(Arc::downgrade(&event));
-        state.get_rt_mutex_waiters_or_default(key).push_back(RtMutexWaiter { tid, notifiable });
+        state
+            .get_rt_mutex_waiters_or_default(key.clone())
+            .push_back(RtMutexWaiter { tid, notifiable });
         std::mem::drop(state);
 
         // ESRCH  (FUTEX_LOCK_PI, FUTEX_LOCK_PI2, FUTEX_TRYLOCK_PI,
         //        FUTEX_CMP_REQUEUE_PI) The thread ID in the futex word at
         //        uaddr does not exist.
-        let new_owner = current_task
+        current_task
             .get_task(new_owner_tid as i32)
             .upgrade()
-            .map(|o| o.thread.read().as_ref().map(Arc::clone))
-            .flatten()
-            .ok_or_else(|| errno!(ESRCH))?;
-        current_task.block_with_owner_until(guard, &new_owner, deadline)
+            .and_then(|o| o.thread.read().as_ref().map(Arc::clone))
+            .map_or_else(
+                || error!(ESRCH),
+                |owner| current_task.block_with_owner_until(guard, &owner, deadline),
+            )
+            .inspect_err(|_| {
+                // If block_with_owner_until returned an error (e.g., ETIMEDOUT), or if we
+                // failed to find the new owner (ESRCH), we must explicitly remove our waiter
+                // from the PI-mutex queue to prevent a memory leak.
+                self.state.lock(locked).remove_rt_mutex_waiter_from_queue(key, &event);
+            })
     }
 
     /// Unlock the futex at the given address.
@@ -351,6 +370,12 @@ impl<Key: FutexKey> FutexTable<Key> {
 impl FutexTable<SharedFutexKey> {
     /// Wait on the futex at the given offset in the memory.
     ///
+    /// Returns a receiver that will be signaled when the futex is woken, and an
+    /// `Arc<()>` token that must be kept alive by the caller for the duration of the
+    /// wait. If the caller drops the token (e.g., if the external client
+    /// disconnects), the waiter is marked as stale and will be garbage-collected by the
+    /// next futex operation on this table.
+    ///
     /// See FUTEX_WAIT.
     pub fn external_wait<L>(
         &self,
@@ -359,7 +384,7 @@ impl FutexTable<SharedFutexKey> {
         offset: u64,
         value: u32,
         mask: u32,
-    ) -> Result<oneshot::Receiver<()>, Errno>
+    ) -> Result<(Arc<()>, oneshot::Receiver<()>), Errno>
     where
         L: LockBefore<TerminalLock>,
     {
@@ -368,11 +393,13 @@ impl FutexTable<SharedFutexKey> {
         // As the state is locked, no wake can happen before the waiter is registered.
         Self::external_check_futex_value(&memory, offset, value)?;
 
+        let token = Arc::new(());
         let (sender, receiver) = oneshot::channel::<()>();
-        state
-            .get_waiters_or_default(key)
-            .add(FutexWaiter { mask, notifiable: FutexNotifiable::new_external(sender) });
-        Ok(receiver)
+        state.get_waiters_or_default(key).add(FutexWaiter {
+            mask,
+            notifiable: FutexNotifiable::new_external(Arc::downgrade(&token), sender),
+        });
+        Ok((token, receiver))
     }
 
     /// Wake the given number of waiters on futex at the given offset in the memory. Returns the
@@ -499,17 +526,110 @@ impl<Key: FutexKey> FutexTableState<Key> {
         match entry {
             Entry::Vacant(_) => None,
             Entry::Occupied(mut entry) => {
-                if let Some(mut waiter) = entry.get_mut().pop_front() {
-                    if entry.get().is_empty() {
-                        entry.remove();
-                    } else {
-                        waiter.tid |= FUTEX_WAITERS;
-                    }
-                    Some(waiter)
-                } else {
-                    None
+                let mut waiter = entry.get_mut().pop_front();
+                // Clean up the hash map entry if the queue is empty. We do this
+                // regardless of whether `pop_front` returned a waiter or `None`,
+                // effectively garbage collecting erroneously empty map entries.
+                if entry.get().is_empty() {
+                    entry.remove();
+                } else if let Some(waiter) = &mut waiter {
+                    waiter.tid |= FUTEX_WAITERS;
                 }
+                waiter
             }
+        }
+    }
+
+    /// Removes a standard `FUTEX_WAIT` waiter from the queue.
+    ///
+    /// This uses a two-step approach:
+    /// 1. O(1) Fast path: Check the `key` where the waiter originally went to sleep.
+    /// 2. O(N) Fallback: If not found (e.g. moved via `FUTEX_REQUEUE`), scan all futexes.
+    fn remove_waiter_from_queue(&mut self, key: Key, event: &Arc<InterruptibleEvent>) {
+        if let Entry::Occupied(mut entry) = self.waiters.entry(key) {
+            if entry.get_mut().remove_waiter(event) {
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+                return;
+            }
+        }
+
+        let mut key_to_remove = None;
+        for (key, waiters) in self.waiters.iter_mut() {
+            if waiters.remove_waiter(event) {
+                if waiters.is_empty() {
+                    key_to_remove = Some(key.clone());
+                }
+                break;
+            }
+        }
+        if let Some(key) = key_to_remove {
+            self.waiters.remove(&key);
+        }
+    }
+
+    /// Removes a `FUTEX_WAIT_BITSET` waiter (with `FUTEX_CLOCK_REALTIME`).
+    ///
+    /// Like `remove_waiter_from_queue`, it tries the fast O(1) lookup on the original `key` first,
+    /// and falls back to an O(N) scan across all queues in case of a requeue.
+    fn remove_boot_waiter_from_queue(&mut self, key: Key, waiter: &Arc<Waiter>) {
+        if let Entry::Occupied(mut entry) = self.waiters.entry(key) {
+            if entry.get_mut().remove_boot_waiter(waiter) {
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+                return;
+            }
+        }
+
+        let mut key_to_remove = None;
+        for (key, waiters) in self.waiters.iter_mut() {
+            if waiters.remove_boot_waiter(waiter) {
+                if waiters.is_empty() {
+                    key_to_remove = Some(key.clone());
+                }
+                break;
+            }
+        }
+        if let Some(key) = key_to_remove {
+            self.waiters.remove(&key);
+        }
+    }
+
+    /// Removes a PI-mutex (`FUTEX_LOCK_PI`) waiter.
+    ///
+    /// Operates on the separate `rt_mutex_waiters` map using the same two-step
+    /// O(1)/O(N) algorithm as the other removal methods to handle edge cases where
+    /// PI-mutexes might be requeued (e.g. if `FUTEX_CMP_REQUEUE_PI` is used).
+    fn remove_rt_mutex_waiter_from_queue(&mut self, key: Key, event: &Arc<InterruptibleEvent>) {
+        let predicate =
+            |w: &RtMutexWaiter| !w.notifiable.matches_event(event) && !w.notifiable.is_stale();
+
+        if let Entry::Occupied(mut entry) = self.rt_mutex_waiters.entry(key) {
+            let len_before = entry.get().len();
+            entry.get_mut().retain(predicate);
+            if entry.get().len() < len_before {
+                if entry.get().is_empty() {
+                    entry.remove();
+                }
+                return;
+            }
+        }
+
+        let mut key_to_remove = None;
+        for (key, waiters) in self.rt_mutex_waiters.iter_mut() {
+            let len_before = waiters.len();
+            waiters.retain(predicate);
+            if waiters.len() < len_before {
+                if waiters.is_empty() {
+                    key_to_remove = Some(key.clone());
+                }
+                break;
+            }
+        }
+        if let Some(key) = key_to_remove {
+            self.rt_mutex_waiters.remove(&key);
         }
     }
 }
@@ -523,7 +643,7 @@ enum FutexNotifiable {
     /// An external process waiting on a Futex.
     // The sender needs to be an option so that one can send the notification while only holding a
     // mut reference on the ExternalWaiter.
-    External(Option<oneshot::Sender<()>>),
+    External(Weak<()>, Option<oneshot::Sender<()>>),
 }
 
 impl FutexNotifiable {
@@ -535,8 +655,8 @@ impl FutexNotifiable {
         Self::InternalBoot(waiter)
     }
 
-    fn new_external(sender: oneshot::Sender<()>) -> Self {
-        Self::External(Some(sender))
+    fn new_external(token: Weak<()>, sender: oneshot::Sender<()>) -> Self {
+        Self::External(token, Some(sender))
     }
 
     /// Tries to notify the process. Returns `true` is the process have been notified. Returns
@@ -559,13 +679,47 @@ impl FutexNotifiable {
                     false
                 }
             }
-            Self::External(sender) => {
+            Self::External(_, sender) => {
                 if let Some(sender) = sender.take() {
                     sender.send(()).is_ok()
                 } else {
                     false
                 }
             }
+        }
+    }
+
+    fn matches_event(&self, event: &Arc<InterruptibleEvent>) -> bool {
+        match self {
+            Self::Internal(weak) => {
+                if let Some(strong) = weak.upgrade() {
+                    Arc::ptr_eq(&strong, event)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn matches_waiter(&self, waiter: &Arc<Waiter>) -> bool {
+        match self {
+            Self::InternalBoot(weak) => {
+                if let Some(strong) = weak.upgrade() {
+                    Arc::ptr_eq(&strong, waiter)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    fn is_stale(&self) -> bool {
+        match self {
+            Self::Internal(weak) => weak.strong_count() == 0,
+            Self::External(weak, _) => weak.strong_count() == 0,
+            Self::InternalBoot(weak) => weak.strong_count() == 0,
         }
     }
 }
@@ -607,6 +761,18 @@ impl FutexWaiters {
         self.0.is_empty()
     }
 
+    fn remove_waiter(&mut self, event: &Arc<InterruptibleEvent>) -> bool {
+        let initial_len = self.0.len();
+        self.0.retain(|w| !w.notifiable.matches_event(event) && !w.notifiable.is_stale());
+        self.0.len() < initial_len
+    }
+
+    fn remove_boot_waiter(&mut self, waiter: &Arc<Waiter>) -> bool {
+        let initial_len = self.0.len();
+        self.0.retain(|w| !w.notifiable.matches_waiter(waiter) && !w.notifiable.is_stale());
+        self.0.len() < initial_len
+    }
+
     fn split_for_requeue(&mut self, max_count: usize) -> Self {
         let pos = if max_count >= self.0.len() { 0 } else { self.0.len() - max_count };
         FutexWaiters(self.0.split_off(pos))
@@ -618,4 +784,109 @@ struct RtMutexWaiter {
     tid: u32,
 
     notifiable: FutexNotifiable,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_sync::InterruptibleEvent;
+    use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_BASE;
+    use starnix_uapi::user_address::UserAddress;
+
+    #[fuchsia::test]
+    fn test_remove_waiter_simple() {
+        let mut state = FutexTableState::<PrivateFutexKey>::default();
+        let key = PrivateFutexKey {
+            addr: FutexAddress::try_from(UserAddress::from(
+                (RESTRICTED_ASPACE_BASE + 0x1000) as u64,
+            ))
+            .unwrap(),
+        };
+        let event = Arc::new(InterruptibleEvent::new());
+
+        state.get_waiters_or_default(key.clone()).add(FutexWaiter {
+            mask: u32::MAX,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&event)),
+        });
+
+        assert_eq!(state.waiters.len(), 1);
+        state.remove_waiter_from_queue(key, &event);
+        assert_eq!(state.waiters.len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_remove_waiter_requeued() {
+        let mut state = FutexTableState::<PrivateFutexKey>::default();
+        let key1 = PrivateFutexKey {
+            addr: FutexAddress::try_from(UserAddress::from(
+                (RESTRICTED_ASPACE_BASE + 0x1000) as u64,
+            ))
+            .unwrap(),
+        };
+        let key2 = PrivateFutexKey {
+            addr: FutexAddress::try_from(UserAddress::from(
+                (RESTRICTED_ASPACE_BASE + 0x2000) as u64,
+            ))
+            .unwrap(),
+        };
+        let event = Arc::new(InterruptibleEvent::new());
+
+        state.get_waiters_or_default(key2.clone()).add(FutexWaiter {
+            mask: u32::MAX,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&event)),
+        });
+
+        assert_eq!(state.waiters.len(), 1);
+        state.remove_waiter_from_queue(key1, &event);
+        assert_eq!(state.waiters.len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_remove_rt_mutex_waiter() {
+        let mut state = FutexTableState::<PrivateFutexKey>::default();
+        let key = PrivateFutexKey {
+            addr: FutexAddress::try_from(UserAddress::from(
+                (RESTRICTED_ASPACE_BASE + 0x1000) as u64,
+            ))
+            .unwrap(),
+        };
+        let event = Arc::new(InterruptibleEvent::new());
+
+        state.get_rt_mutex_waiters_or_default(key.clone()).push_back(RtMutexWaiter {
+            tid: 1,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&event)),
+        });
+
+        assert_eq!(state.rt_mutex_waiters.len(), 1);
+        state.remove_rt_mutex_waiter_from_queue(key, &event);
+        assert_eq!(state.rt_mutex_waiters.len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_stale_external_waiter_cleanup() {
+        let mut state = FutexTableState::<PrivateFutexKey>::default();
+        let key = PrivateFutexKey {
+            addr: FutexAddress::try_from(UserAddress::from(
+                (RESTRICTED_ASPACE_BASE + 0x1000) as u64,
+            ))
+            .unwrap(),
+        };
+
+        {
+            let token = Arc::new(());
+            let (sender, _receiver) = oneshot::channel::<()>();
+            state.get_waiters_or_default(key.clone()).add(FutexWaiter {
+                mask: u32::MAX,
+                notifiable: FutexNotifiable::new_external(Arc::downgrade(&token), sender),
+            });
+        } // token is dropped here, so it becomes stale
+
+        assert_eq!(state.waiters.len(), 1);
+
+        // Trigger a cleanup with a placeholder event
+        let dummy_event = Arc::new(InterruptibleEvent::new());
+        state.remove_waiter_from_queue(key, &dummy_event);
+
+        assert_eq!(state.waiters.len(), 0, "Stale external waiter should be removed");
+    }
 }
