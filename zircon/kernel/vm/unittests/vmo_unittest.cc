@@ -464,6 +464,7 @@ bool vmo_reference_attribution_commit_test() {
 
   EXPECT_TRUE((vm::AttributionCounts{}) == vmo_reference->GetAttributedMemory(),
               "vmo_reference attribution\n");
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo_reference, alloc_size));
 
   EXPECT_TRUE(make_private_attribution_counts(alloc_size, 0) ==
                   vmo_reference->GetAttributedMemoryInReferenceOwner(),
@@ -1844,6 +1845,7 @@ bool vmo_eviction_hints_clone_test() {
   uint64_t data = 0xff;
   clone->Write(&data, 0, sizeof(data));
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == clone->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone, kPageSize));
 
   // The write will have moved the page to the first page queue, because the page is still accessed
   // in order to perform the fork. So hint using the parent again to move to the Isolate queue.
@@ -1928,8 +1930,10 @@ bool vmo_eviction_test() {
 
   // Eviction should actually drop the number of committed pages.
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == vmo2->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo2, kPageSize));
   ASSERT_EQ(reclaim_page(vmo2, page2, 0, VmCowPages::EvictionAction::FollowHint, nullptr), 1u);
   EXPECT_TRUE((vm::AttributionCounts{}) == vmo2->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo2, 0));
   EXPECT_GT(vmo2->ReclamationEventCount(), 0u);
 
   // Pinned pages should not be evictable.
@@ -2187,15 +2191,21 @@ bool vmo_attribution_ops_contiguous_test() {
     VmObject::AttributionCounts expected_attribution_counts;
     expected_attribution_counts = make_private_attribution_counts(4ul * kPageSize, 0);
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     status = vmo->CommitRange(0, 4 * kPageSize);
     ASSERT_EQ(ZX_OK, status);
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     // Committing the same range again will be a no-op.
     status = vmo->CommitRange(0, 4 * kPageSize);
     ASSERT_EQ(ZX_OK, status);
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     status = vmo->DecommitRange(0, 4 * kPageSize);
     if (!is_ppb_enabled) {
@@ -2207,6 +2217,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(0, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     status = vmo->CommitRange(0, 4 * kPageSize);
     ASSERT_EQ(ZX_OK, status);
@@ -2217,6 +2229,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(4ul * kPageSize, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     status = vmo->DecommitRange(0, 4 * kPageSize);
     if (!is_ppb_enabled) {
@@ -2228,6 +2242,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(0, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     fbl::AllocChecker ac;
     fbl::Vector<uint8_t> buf;
@@ -2244,6 +2260,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(2ul * kPageSize, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     // Write the last two pages, committing them.
     status = vmo->Write(buf.data(), 2 * kPageSize, 2 * kPageSize);
@@ -2255,6 +2273,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(4ul * kPageSize, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     // Zero'ing the range will decommit pages. In the case of contiguous VMOs, we don't decommit
     // pages (so far).
@@ -2262,6 +2282,8 @@ bool vmo_attribution_ops_contiguous_test() {
     ASSERT_EQ(ZX_OK, status);
     // Zeroing doesn't decommit pages of contiguous VMOs (nor does it commit pages).
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     status = vmo->DecommitRange(0, 2 * kPageSize);
     if (!is_ppb_enabled) {
@@ -2273,6 +2295,8 @@ bool vmo_attribution_ops_contiguous_test() {
       expected_attribution_counts = make_private_attribution_counts(2ul * kPageSize, 0);
     }
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
 
     // Zero'ing a decommitted range (if is_ppb_enabled is true) should not commit any new pages.
     // Empty slots in a decommitted contiguous VMO are zero by default, as the physical page
@@ -2281,6 +2305,8 @@ bool vmo_attribution_ops_contiguous_test() {
     ASSERT_EQ(ZX_OK, status);
     // The attribution counts should remain unchanged.
     EXPECT_TRUE(vmo->GetAttributedMemory() == expected_attribution_counts);
+    EXPECT_TRUE(
+        verify_continuous_attribution_bytes(*vmo, expected_attribution_counts.total_bytes()));
   }
 
   END_TEST;
@@ -2303,6 +2329,7 @@ bool vmo_attribution_pager_test() {
   vmo->set_user_id(0xff);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   // Create an aux VMO to transfer pages into the pager-backed vmo.
   fbl::RefPtr<VmObjectPaged> aux_vmo;
@@ -2311,22 +2338,28 @@ bool vmo_attribution_pager_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(aux_vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*aux_vmo, 0));
 
   status = aux_vmo->CommitRange(0, alloc_size);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(aux_vmo->GetAttributedMemory() ==
               make_private_attribution_counts(2ul * kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*aux_vmo, 2ul * kPageSize));
 
   VmPageSpliceList page_list;
   status = aux_vmo->TakePages(0, kPageSize, &page_list);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(aux_vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*aux_vmo, kPageSize));
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   status = vmo->SupplyPages(0, kPageSize, &page_list, SupplyOptions::PagerSupply);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
   EXPECT_TRUE(aux_vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*aux_vmo, kPageSize));
 
   aux_vmo.reset();
 
@@ -2338,15 +2371,20 @@ bool vmo_attribution_pager_test() {
   clone->set_user_id(0xfc);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
   EXPECT_TRUE(clone->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone, 0));
 
   status = clone->CommitRange(0, kPageSize);
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
   EXPECT_TRUE(clone->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone, kPageSize));
 
   clone.reset();
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   END_TEST;
 }
@@ -2364,9 +2402,11 @@ bool vmo_attribution_evict_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   ASSERT_EQ(reclaim_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint, nullptr), 1u);
   EXPECT_TRUE(vmo->GetAttributedMemory() == AttributionCounts{});
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   END_TEST;
 }
@@ -3780,6 +3820,7 @@ bool vmo_dedup_dirty_test() {
 
   // No committed pages remaining.
   EXPECT_TRUE((vm::AttributionCounts{}) == vmo->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
 
   // Write to the page making it dirty.
   uint8_t data = 0xff;
@@ -3793,6 +3834,7 @@ bool vmo_dedup_dirty_test() {
   // We should not be able to dedup the page.
   EXPECT_FALSE(vmo->DebugGetCowPages()->DedupZeroPage(page, 0));
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == vmo->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kPageSize));
 
   END_TEST;
 }
@@ -3903,8 +3945,11 @@ bool vmo_snapshot_modified_test() {
   // Ensures all pages are attributed to the root VMO, and not the clones, as the root VMO is not a
   // hidden node.
   EXPECT_TRUE(make_private_attribution_counts(alloc_size, 0) == vmo->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, alloc_size));
   EXPECT_TRUE((vm::AttributionCounts{}) == clone->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone, 0));
   EXPECT_TRUE((vm::AttributionCounts{}) == clone2->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone2, 0));
 
   // COW page into clone & check that it is attributed.
   uint8_t data = 0xff;
@@ -3912,6 +3957,7 @@ bool vmo_snapshot_modified_test() {
   ASSERT_EQ(ZX_OK, status);
 
   EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == clone->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*clone, kPageSize));
 
   // Try to COW a page into clone2 that it doesn't see.
   status = clone2->Write(&data, kPageSize, sizeof(data));
