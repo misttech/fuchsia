@@ -129,23 +129,22 @@ impl SearchSpace {
             let current = artifacts.current_artifact;
 
             let mut visual = String::from("[");
-            for j in 0..max_artifacts_len {
-                if j < artifacts.versions.len() {
-                    let is_culprit = culprit.map_or(false, |c| c == &artifacts.versions[j]);
-                    if is_culprit {
-                        visual.push_str("*");
-                    } else if j == current && culprit.is_none() {
-                        visual.push_str("\x1b[32mO\x1b[0m"); // Green
-                    } else if range.contains(&j) {
-                        visual.push_str("o");
-                    } else {
-                        visual.push_str("x");
-                    }
+            for j in 0..artifacts.versions.len() {
+                let is_culprit = culprit.map_or(false, |c| c == &artifacts.versions[j]);
+                if is_culprit {
+                    visual.push_str("*");
+                } else if j == current && culprit.is_none() {
+                    visual.push_str("\x1b[32mO\x1b[0m"); // Green
+                } else if range.contains(&j) {
+                    visual.push_str("o");
                 } else {
-                    visual.push_str("-");
+                    visual.push_str("x");
                 }
             }
             visual.push(']');
+
+            let padding_len = max_artifacts_len.saturating_sub(artifacts.versions.len());
+            visual.push_str(&" ".repeat(padding_len));
 
             output.push_str(&format!(
                 "  {}: {} ({} remaining)\n",
