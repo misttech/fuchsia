@@ -539,6 +539,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:               syslogType,
 			SkipAllPassedTests: true,
 		},
+		// TODO(https://fxbug.dev/447188730): Remove once cause of driver crash is resolved.
+		&stringInLogCheck{
+			String:      "cc != ((void*)0)",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
