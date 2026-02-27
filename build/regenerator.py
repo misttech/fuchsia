@@ -304,7 +304,15 @@ def main() -> int:
 
         ret = run_cmd(gn_cmd_args, cwd=args.fuchsia_dir)
         if ret.returncode != 0:
-            # Don't print anything here, assume GN already wrote something to the user.
+            # Print something if GN was stopped by a signal,
+            # otherwise assume it already wrote something to the user.
+            if ret.returncode == 245:
+                print("ERROR: GN crahsed!!", file=sys.stderr)
+            elif ret.returncode > 127:
+                print(
+                    f"ERROR: GN stopped unexpected with exit_code={ret.returncode}",
+                    file=sys.stderr,
+                )
             return ret.returncode
 
         # Patch build.ninja to ensure Ninja calls this script instead of `gn gen`
