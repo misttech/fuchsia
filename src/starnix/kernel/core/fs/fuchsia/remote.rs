@@ -413,8 +413,8 @@ struct BaseNode {
     /// The underlying I/O object for this remote node.
     io: RemoteIo,
 
-    /// The number of active dirty operations on this node and whether the node info is in sync (the
-    /// top bit is used for this).  See the `will_dirty` function for semantics.
+    /// The number of active dirty operations on this node and whether the node info is in sync.
+    /// See the `will_dirty` function for semantics.
     info_state: InfoState,
 }
 
@@ -1252,7 +1252,10 @@ impl FsNodeOps for RemoteNode {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.node.io.close_and_update_access_time();
+            self.node
+                .io
+                .attr_get(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE)
+                .map_err(|status| from_status_like_fdio!(status))?;
         }
         Ok(())
     }
@@ -1870,7 +1873,10 @@ impl FsNodeOps for RemoteSymlink {
     ) -> Result<(), Errno> {
         // Before forgetting this node, update atime if we need to.
         if info.pending_time_access_update {
-            self.node.io.close_and_update_access_time();
+            self.node
+                .io
+                .attr_get(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE)
+                .map_err(|status| from_status_like_fdio!(status))?;
         }
         Ok(())
     }

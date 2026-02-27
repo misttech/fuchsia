@@ -490,7 +490,7 @@ impl vfs::node::Node for FxFile {
         if requested_attributes.contains(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE) {
             self.handle
                 .store()
-                .update_access_time(self.handle.object_id(), &mut props)
+                .update_access_time(self.handle.object_id(), &mut props, || true)
                 .await
                 .map_err(map_to_status)?;
         }

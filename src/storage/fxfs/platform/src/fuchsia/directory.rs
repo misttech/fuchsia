@@ -848,7 +848,7 @@ impl vfs::node::Node for FxDirectory {
 
         if requested_attributes.contains(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE) {
             self.store()
-                .update_access_time(self.directory.object_id(), &mut props)
+                .update_access_time(self.directory.object_id(), &mut props, || !self.is_deleted())
                 .await
                 .map_err(map_to_status)?;
         }
@@ -5082,6 +5082,36 @@ mod tests {
         )
         .await
         .expect_err("Create unexpectedly succeeded");
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_update_access_time_on_deleted_directory() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let dir = open_dir_checked(
+            &root,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            fio::Options::default(),
+        )
+        .await;
+
+        root.unlink("foo", &fio::UnlinkOptions::default())
+            .await
+            .expect("FIDL call failed")
+            .expect("unlink failed");
+
+        // Requesting PENDING_ACCESS_TIME_UPDATE should not fail even if the directory is deleted.
+        dir.get_attributes(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE)
+            .await
+            .expect("FIDL call failed")
+            .expect("get_attributes failed");
 
         fixture.close().await;
     }
