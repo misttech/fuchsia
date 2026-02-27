@@ -16,3 +16,5 @@ toc:
   path: /docs/concepts/starnix/containers.md
 - title: "Starnix Virtual File System (VFS)"
   path: /docs/concepts/starnix/vfs.md
+- title: "Signal translation in Starnix"
+  path: /docs/concepts/starnix/signals.md
