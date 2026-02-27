@@ -790,6 +790,9 @@ void UsbCdcFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
     complete_txn(tx_txn, ZX_ERR_PEER_CLOSED);
   }
 
+  // Unregister from stack.
+  function_.SetInterface(nullptr, nullptr);
+
   dispatcher_.ShutdownAsync();
   dispatcher_.release();
   completer(zx::ok());
