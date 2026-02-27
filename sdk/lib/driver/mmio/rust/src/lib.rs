@@ -218,6 +218,10 @@ mod arch;
 mod memory;
 mod mmio;
 pub mod region;
+mod register;
 pub mod vmo;
 
+#[doc(hidden)]
+pub use bitfield;
 pub use mmio::*;
+pub use register::*;

@@ -1,6 +1,9 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::register::{
+    ReadableIndexedRegister, ReadableRegister, WritableIndexedRegister, WritableRegister,
+};
 use core::fmt::{Debug, Display};
 use core::ops::{BitAnd, BitOr, Not};
 
@@ -508,6 +511,51 @@ pub trait MmioExt: Mmio {
     fn masked_modify<T: MmioOperand>(&mut self, offset: usize, mask: T, value: T) {
         self.try_masked_modify(offset, mask, value).unwrap()
     }
+
+    /// Reads a [`ReadableRegister`] from the MMIO region.
+    fn read_reg<R: ReadableRegister>(&self) -> R {
+        R::read(self)
+    }
+
+    /// Writes a [`WritableRegister`] to the MMIO region.
+    fn write_reg<R: WritableRegister>(&mut self, reg: R) {
+        reg.write(self)
+    }
+
+    /// Reads a [`Register`] from the MMIO region, updates it with the given function, and writes it
+    /// back.
+    fn update_reg<R: ReadableRegister + WritableRegister, F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut R),
+    {
+        let mut reg = self.read_reg::<R>();
+        f(&mut reg);
+        self.write_reg(reg);
+    }
+
+    /// Reads a [`ReadableIndexedRegister`] from the MMIO region at the given index.
+    fn read_index_reg<R: ReadableIndexedRegister>(&self, index: usize) -> R {
+        R::read_index(self, index)
+    }
+
+    /// Writes a [`WritableIndexedRegister`] to the MMIO region at the given index.
+    fn write_index_reg<R: WritableIndexedRegister>(&mut self, index: usize, reg: R) {
+        reg.write_index(self, index)
+    }
+
+    /// Reads an [`IndexedRegister`] from the MMIO region at the given index, updates it with the
+    /// given function, and writes it back.
+    fn update_index_reg<R: ReadableIndexedRegister + WritableIndexedRegister, F>(
+        &mut self,
+        index: usize,
+        f: F,
+    ) where
+        F: FnOnce(&mut R),
+    {
+        let mut reg = self.read_index_reg::<R>(index);
+        f(&mut reg);
+        self.write_index_reg(index, reg);
+    }
 }
 
-impl<M: Mmio> MmioExt for M {}
+impl<M: Mmio + ?Sized> MmioExt for M {}
