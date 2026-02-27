@@ -2327,7 +2327,6 @@ bool vmo_attribution_pager_test() {
   ASSERT_EQ(ZX_OK, status);
   EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
   EXPECT_TRUE(aux_vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
-  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(kPageSize, 0));
 
   aux_vmo.reset();
 
