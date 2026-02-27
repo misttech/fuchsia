@@ -5,7 +5,6 @@
 use crate::arch::vdso::VDSO_SIGRETURN_NAME;
 use crate::mm::memory::MemoryObject;
 use fidl_fuchsia_io as fio;
-use process_builder::elf_parse;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::sync::{Arc, LazyLock};

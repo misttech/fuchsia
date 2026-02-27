@@ -11,7 +11,7 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
 use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
-use process_builder::{elf_load, elf_parse};
+use process_builder::elf_load;
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{Locked, Unlocked};
 use starnix_types::arch::ArchWidth;
@@ -304,9 +304,7 @@ fn load_elf(
                     .ptr(),
             }
         }
-        Ok(elf_parse::ElfType::Executable) => {
-            elf_info.low
-        }
+        Ok(elf_parse::ElfType::Executable) => elf_info.low,
         _ => return error!(EINVAL),
     };
     // TODO(https://fxbug.dev/380427153): I think we need to do a 32-bit wrap here and then

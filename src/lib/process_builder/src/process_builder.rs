@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{elf_load, elf_parse, process_args, util};
+use crate::{elf_load, process_args, util};
 use anyhow::{Context, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy};
 use fuchsia_async::{self as fasync, TimeoutExt};

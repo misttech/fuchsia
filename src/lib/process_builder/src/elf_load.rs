@@ -4,7 +4,7 @@
 
 //! Utilities for loading ELF files into an existing address space.
 
-use crate::{elf_parse as elf, util};
+use crate::util;
 use thiserror::Error;
 
 /// Possible errors that can occur during ELF loading.
@@ -57,16 +57,16 @@ pub struct LoadedElfInfo {
     pub high: usize,
 
     /// Union of all address space permissions required to load the ELF.
-    pub max_perm: elf::SegmentFlags,
+    pub max_perm: elf_parse::SegmentFlags,
 }
 
 /// Returns the address space requirements to load this ELF. Attempting to load it into a VMAR with
 /// permissions less than max_perm, or at a base such that the range [base+low, base+high] is not
 /// entirely valid, will fail.
-pub fn loaded_elf_info(headers: &elf::Elf64Headers) -> LoadedElfInfo {
+pub fn loaded_elf_info(headers: &elf_parse::Elf64Headers) -> LoadedElfInfo {
     let (mut first, mut low, mut high) = (true, 0, 0);
-    let mut max_perm = elf::SegmentFlags::empty();
-    for hdr in headers.program_headers_with_type(elf::SegmentType::Load) {
+    let mut max_perm = elf_parse::SegmentFlags::empty();
+    for hdr in headers.program_headers_with_type(elf_parse::SegmentType::Load) {
         // elf_parse already checked that segments are ordered by vaddr and do not overlap.
         if first {
             low = util::page_start(hdr.vaddr);
@@ -122,7 +122,7 @@ impl Mapper for zx::Vmar {
 /// Load an ELF into a new sub-VMAR of the specified root.
 pub fn load_elf(
     vmo: &zx::Vmo,
-    headers: &elf::Elf64Headers,
+    headers: &elf_parse::Elf64Headers,
     root_vmar: &zx::Vmar,
 ) -> Result<LoadedElf, ElfLoadError> {
     let info = loaded_elf_info(headers);
@@ -149,7 +149,7 @@ pub fn load_elf(
 /// Map the segments of an ELF into an existing VMAR.
 pub fn map_elf_segments(
     vmo: &zx::Vmo,
-    headers: &elf::Elf64Headers,
+    headers: &elf_parse::Elf64Headers,
     mapper: &dyn Mapper,
     mapper_base: usize,
     vaddr_bias: usize,
@@ -165,7 +165,7 @@ pub fn map_elf_segments(
     // mapping.
     let mapper_relative_bias = vaddr_bias.wrapping_sub(mapper_base);
     let vmo_name = vmo.get_name().map_err(|s| ElfLoadError::GetVmoName(s))?;
-    for hdr in headers.program_headers_with_type(elf::SegmentType::Load) {
+    for hdr in headers.program_headers_with_type(elf_parse::SegmentType::Load) {
         // Shift the start of the mapping down to the nearest page.
         let adjust = util::page_offset(hdr.offset);
         let mut file_offset = hdr.offset - adjust;
@@ -187,7 +187,7 @@ pub fn map_elf_segments(
         // a writeable clone of the VMO. Otherwise use the potentially read-only VMO passed in.
         let vmo_to_map: &zx::Vmo;
         let writeable_vmo: zx::Vmo;
-        if must_write || (file_size > 0 && hdr.flags().contains(elf::SegmentFlags::WRITE)) {
+        if must_write || (file_size > 0 && hdr.flags().contains(elf_parse::SegmentFlags::WRITE)) {
             writeable_vmo = vmo
                 .create_child(
                     zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE,
@@ -270,29 +270,29 @@ fn vmo_name_with_prefix(name: &zx::Name, prefix: &str) -> zx::Name {
     }
 }
 
-fn elf_to_vmar_can_map_flags(elf_flags: &elf::SegmentFlags) -> zx::VmarFlags {
+fn elf_to_vmar_can_map_flags(elf_flags: &elf_parse::SegmentFlags) -> zx::VmarFlags {
     let mut flags = zx::VmarFlags::empty();
-    if elf_flags.contains(elf::SegmentFlags::READ) {
+    if elf_flags.contains(elf_parse::SegmentFlags::READ) {
         flags |= zx::VmarFlags::CAN_MAP_READ;
     }
-    if elf_flags.contains(elf::SegmentFlags::WRITE) {
+    if elf_flags.contains(elf_parse::SegmentFlags::WRITE) {
         flags |= zx::VmarFlags::CAN_MAP_WRITE;
     }
-    if elf_flags.contains(elf::SegmentFlags::EXECUTE) {
+    if elf_flags.contains(elf_parse::SegmentFlags::EXECUTE) {
         flags |= zx::VmarFlags::CAN_MAP_EXECUTE | zx::VmarFlags::CAN_MAP_READ;
     }
     flags
 }
 
-fn elf_to_vmar_perm_flags(elf_flags: &elf::SegmentFlags) -> zx::VmarFlags {
+fn elf_to_vmar_perm_flags(elf_flags: &elf_parse::SegmentFlags) -> zx::VmarFlags {
     let mut flags = zx::VmarFlags::empty();
-    if elf_flags.contains(elf::SegmentFlags::READ) {
+    if elf_flags.contains(elf_parse::SegmentFlags::READ) {
         flags |= zx::VmarFlags::PERM_READ;
     }
-    if elf_flags.contains(elf::SegmentFlags::WRITE) {
+    if elf_flags.contains(elf_parse::SegmentFlags::WRITE) {
         flags |= zx::VmarFlags::PERM_WRITE;
     }
-    if elf_flags.contains(elf::SegmentFlags::EXECUTE) {
+    if elf_flags.contains(elf_parse::SegmentFlags::EXECUTE) {
         flags |= zx::VmarFlags::PERM_EXECUTE | zx::VmarFlags::PERM_READ_IF_XOM_UNSUPPORTED;
     }
     flags
@@ -301,7 +301,6 @@ fn elf_to_vmar_perm_flags(elf_flags: &elf::SegmentFlags) -> zx::VmarFlags {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::elf_parse;
     use assert_matches::assert_matches;
     use fidl::HandleBased;
     use std::cell::RefCell;

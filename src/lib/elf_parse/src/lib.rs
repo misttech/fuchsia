@@ -897,7 +897,7 @@ impl Elf64Headers {
     }
 
     /// Creates an instance of Elf64Headers from in-memory representations of the ELF headers.
-    #[cfg(test)]
+
     pub fn new_for_test(
         file_header: &Elf64FileHeader,
         program_headers: Option<&[Elf64ProgramHeader]>,
@@ -1053,7 +1053,7 @@ mod tests {
     fn test_parse_program_headers() -> Result<(), Error> {
         // Let's try to parse ourselves!
         // Ideally we'd use std::env::current_exe but that doesn't seem to be implemented (yet?)
-        let file = File::open("/pkg/bin/process_builder_lib_test")?;
+        let file = File::open("/pkg/bin/elf_parse_lib_test")?;
         let vmo = fdio::get_vmo_copy_from_file(&file)?;
 
         let headers = Elf64Headers::from_vmo(&vmo)?;
@@ -1066,7 +1066,7 @@ mod tests {
 
     #[test]
     fn test_parse_dynamic_section() -> Result<(), Error> {
-        let file = File::open("/pkg/bin/process_builder_lib_test")?;
+        let file = File::open("/pkg/bin/elf_parse_lib_test")?;
         let vmo = fdio::get_vmo_copy_from_file(&file)?;
 
         let dynamic_section = Elf64DynSection::from_vmo(&vmo)?;

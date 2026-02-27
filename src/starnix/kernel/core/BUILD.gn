@@ -273,6 +273,7 @@ _starnix_core_deps = [
   "//src/lib/diagnostics/data/rust",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/diagnostics/log/message/rust",
+  "//src/lib/elf_parse",
   "//src/lib/fdio/rust:fdio",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia-async",

@@ -59,7 +59,6 @@ pub use self::process_args::*;
 pub use self::process_builder::*;
 
 pub mod elf_load;
-pub mod elf_parse;
 
 mod process_args;
 mod process_builder;

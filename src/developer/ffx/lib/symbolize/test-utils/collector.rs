@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::{Mapping, Module};
-use process_builder::elf_parse::{Elf64FileHeader, SegmentFlags};
+use elf_parse::{Elf64FileHeader, SegmentFlags};
 use zerocopy::{FromBytes, Immutable, Unalign};
 
 /// Collect a list of linked code objects from the dynamic linker.

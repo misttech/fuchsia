@@ -17,14 +17,12 @@ rustc_library("process_builder") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
     "//sdk/rust/zx",
+    "//src/lib/elf_parse",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:num-derive",
-    "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
@@ -39,17 +37,10 @@ rustc_library("process_builder") {
 
   sources = [
     "src/elf_load.rs",
-    "src/elf_parse.rs",
     "src/lib.rs",
     "src/process_args.rs",
     "src/process_builder.rs",
     "src/util.rs",
-  ]
-
-  inputs = [
-    "test-utils/elf_aarch64_file-header.bin",
-    "test-utils/elf_x86-64_file-header.bin",
-    "test-utils/elf_riscv64_file-header.bin",
   ]
 }
 
@@ -79,27 +70,12 @@ rustc_binary("test_util") {
   sources = [ "test-utils/test_util.rs" ]
 }
 
-cc_test_executable("static_pie_test_util") {
-  visibility = [ ":*" ]
-  testonly = true
-
-  sources = [ "test-utils/static_pie_test_util.cc" ]
-
-  configs -= [ "//build/config/fuchsia:fdio_config" ]
-  configs += [ "//build/config:standalone" ]
-  ldflags = [ "-Wl,-z,stack-size=0x40000" ]
-  deps = [ "//sdk/lib/c:static" ]
-
-  # The static libc.a doesn't handle the setup needed for things like ASan.
-  exclude_toolchain_tags = [ "uses-shadow" ]
-}
-
 fuchsia_unittest_package("process-builder-tests") {
   manifest = "meta/process_builder_tests.cml"
   deps = [
     ":process_builder_test",
-    ":static_pie_test_util",
     ":test_util",
+    "//src/lib/elf_parse:static_pie_test_util",
     "//src/sys/testing/elftest",
   ]
 
