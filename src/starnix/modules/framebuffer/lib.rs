@@ -39,9 +39,19 @@ use {
 fn get_display_size() -> Result<fmath::SizeU, Errno> {
     let singleton_display_info =
         connect_to_protocol_sync::<fuidisplay::InfoMarker>().map_err(|_| errno!(ENOENT))?;
-    let metrics = singleton_display_info
-        .get_metrics(zx::MonotonicInstant::INFINITE)
-        .map_err(|_| errno!(EINVAL))?;
+    // TODO(https://fxbug.dev/482131734): Remove the timeout after 60 days. Only there for
+    //                                    diagnostic of the issue.
+    let metrics = match singleton_display_info
+        .get_metrics(zx::MonotonicInstant::get() + zx::Duration::from_seconds(30))
+    {
+        Ok(metrics) => metrics,
+        Err(fidl::Error::ClientChannelClosed { status: zx::Status::TIMED_OUT, .. }) => {
+            panic!("https://fxbug.dev/482131734 Unable to get the display information in 30 secs");
+        }
+        Err(_) => {
+            return error!(EINVAL);
+        }
+    };
     let extent_in_px =
         metrics.extent_in_px.ok_or("Failed to get extent_in_px").map_err(|_| errno!(EINVAL))?;
     Ok(extent_in_px)
