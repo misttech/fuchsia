@@ -84,6 +84,7 @@ test_scripts = [
   "tests/fx-internal/reentry_test",
   "tests/fx-internal/vars_test",
   "tests/fx-internal/verify_default_keys_test",
+  "tests/subcommands/fx_build_test",
   "tests/subcommands/fx_cp_test",
   "tests/subcommands/fx_flash_fuchsia_test",
   "tests/subcommands/fx_format_code_test",
@@ -130,6 +131,8 @@ host_script_test_data("fx_bash_tests") {
         "//scripts/fx-env.sh",
         "//scripts/fx-help.awk",
         "//scripts/fx-reentry",
+        "//scripts/fuchsia-vendored-python3.11",
+        "//scripts/hermetic-env",
       ]
     },
     {
@@ -155,6 +158,18 @@ host_script_test_data("fx_bash_tests") {
       ]
     },
     {
+      source_base_dir = "//build"
+      target_base_dir = "build"
+      files = [
+        "//build/api/client",
+        "//build/regenerator",
+        "//build/scripts/top_build_wrap.sh",
+        "//build/profile/profile_wrap.sh",
+        "//build/rbe/fuchsia-reproxy-wrap.sh",
+        "//build/resultstore/fuchsia-rsproxy-wrap.sh",
+      ]
+    },
+    {
       source_base_dir = "//tools/devshell"
       target_base_dir = "tools/devshell"
 
@@ -162,6 +177,8 @@ host_script_test_data("fx_bash_tests") {
       # find tools/devshell/tests -name "*_test" -type f | xargs cat | awk '/^[ ]*BT_FILE_DEPS=/{flag=1;next}/[ ]*\)/{flag=0}flag'  | grep "tools/devshell" | sort -u | sed 's/[ ]*"\(.*\)".*/  "\/\/\1",/'
 
       files = [
+        # Essential tools and libraries for fx build and its tests
+        "//tools/devshell/build",
         "//tools/devshell/build-metrics",
         "//tools/devshell/contrib/ffx",
         "//tools/devshell/contrib/lint",
@@ -180,7 +197,9 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/host-tool",
         "//tools/devshell/jq.fx",
         "//tools/devshell/klog",
+        "//tools/devshell/lib/bazel_utils.sh",
         "//tools/devshell/lib/get_fuchsia_subdir_git_revision.sh",
+        "//tools/devshell/lib/build_api_client.sh",
         "//tools/devshell/lib/disktools.sh",
         "//tools/devshell/lib/fvm.sh",
         "//tools/devshell/lib/fx-cmd-locator.sh",

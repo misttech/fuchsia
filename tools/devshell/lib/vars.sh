@@ -1302,6 +1302,13 @@ EOF
     done
   fi
 
+  # Allow for high-fidelity verification of the final build command construction
+  # without actually executing the build tools.
+  # This is used by fx shell script tests.
+  if [[ "${FX_BUILD_DRY_RUN}" == "1" ]]; then
+    top_build_command+=( --dry-run )
+  fi
+
   local full_cmdline=(
     env -i "${envs[@]}"
     "${top_build_command[@]}"
