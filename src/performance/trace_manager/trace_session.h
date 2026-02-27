@@ -133,6 +133,8 @@ class TraceSession {
   void RemoveDeadProvider(TraceProviderBundle* bundle);
   void RemoveDeadV2Provider(ProviderConnection* connection);
 
+  void FlushProviders();
+
  private:
   friend std::ostream& operator<<(std::ostream& out, TraceSession::State state);
 

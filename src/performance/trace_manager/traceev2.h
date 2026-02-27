@@ -53,6 +53,10 @@ class TraceeV2 {
   bool results_written() const { return results_written_; }
   std::optional<fuchsia_tracing_controller::ProviderStats> GetStats() const;
   void NotifyBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
+
+  // Request the provider prepare to flush its buffer.
+  zx::result<> RequestFlush();
+
   void Abort();
   fxl::WeakPtr<TraceeV2> GetWeakPtr() { return weak_ptr_factory_.GetWeakPtr(); }
 
