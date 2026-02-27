@@ -9,9 +9,9 @@ import tempfile
 
 import fidl_fuchsia_tracing as tracing
 import fidl_fuchsia_tracing_controller as tracing_controller
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel, Socket
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
-from mobly import asserts, base_test, test_runner
+from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
 from fidl import AsyncSocket
@@ -19,15 +19,14 @@ from fidl import AsyncSocket
 TRACE2JSON = "tracing_runtime_deps/trace2json"
 
 
-class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
-    def setup_class(self) -> None:
+class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
+    async def setup_class(self) -> None:
         self.fuchsia_devices: list[
             fuchsia_device.FuchsiaDevice
-        ] = self.register_controller(fuchsia_device)
+        ] = await self.register_controller(fuchsia_device)
         self.device = self.fuchsia_devices[0]
         self.device.set_ctx(self)
 
-    @asyncmethod
     async def test_fuchsia_device_get_known_categories(self) -> None:
         """Verifies that kernel:vm is an existing category for tracing on the device."""
         if self.device.ctx is None:
@@ -52,7 +51,6 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
             msg="Was not able to find 'kernel.vm' category in known output",
         )
 
-    @asyncmethod
     async def test_fuchsia_device_tracing_start_stop(self) -> None:
         """Does a simple start and stop of tracing on a device."""
         if self.device.ctx is None:
@@ -82,7 +80,7 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
         controller = tracing_controller.SessionClient(client_end)
 
         await controller.start_tracing()
-        socket_task = asyncio.get_running_loop().create_task(client.read_all())
+        socket_task = asyncio.create_task(client.read_all())
         await asyncio.sleep(10)
         try:
             stop_tracing_response = (
