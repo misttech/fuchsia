@@ -321,6 +321,12 @@ pub enum Icmpv4Error {
     PortUnreachable,
     /// Host is unreachable.
     HostUnreachable,
+    /// Network administratively prohibited.
+    NetworkProhibited,
+    /// Host administratively prohibited.
+    HostProhibited,
+    /// Communication administratively prohibited.
+    AdminProhibited,
 }
 
 impl IcmpError for Icmpv4Error {
@@ -385,6 +391,21 @@ impl Icmpv4Error {
                     .dest_unreachable
                     .increment_code(Icmpv4DestUnreachableCode::DestHostUnreachable);
             }
+            Icmpv4Error::NetworkProhibited => {
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::NetworkAdministrativelyProhibited);
+            }
+            Icmpv4Error::HostProhibited => {
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::HostAdministrativelyProhibited);
+            }
+            Icmpv4Error::AdminProhibited => {
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv4DestUnreachableCode::CommAdministrativelyProhibited);
+            }
         }
     }
 
@@ -416,6 +437,18 @@ impl Icmpv4Error {
                 message: IcmpDestUnreachable::default(),
                 code: Icmpv4DestUnreachableCode::DestHostUnreachable,
             },
+            Icmpv4Error::NetworkProhibited => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::NetworkAdministrativelyProhibited,
+            },
+            Icmpv4Error::HostProhibited => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::HostAdministrativelyProhibited,
+            },
+            Icmpv4Error::AdminProhibited => Icmpv4ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv4DestUnreachableCode::CommAdministrativelyProhibited,
+            },
         }
     }
 }
@@ -445,6 +478,12 @@ pub enum Icmpv6Error {
     PortUnreachable,
     /// Address is unreachable.
     AddressUnreachable,
+    /// Reject route to destination.
+    RejectRoute,
+    /// Source address failed ingress/egress policy.
+    SourceAddressPolicyFailed,
+    /// Communication with destination administratively prohibited.
+    AdminProhibited,
 }
 
 impl IcmpError for Icmpv6Error {
@@ -508,6 +547,19 @@ impl Icmpv6Error {
                     .dest_unreachable
                     .increment_code(Icmpv6DestUnreachableCode::AddrUnreachable);
             }
+            Icmpv6Error::RejectRoute => {
+                counters.dest_unreachable.increment_code(Icmpv6DestUnreachableCode::RejectRoute);
+            }
+            Icmpv6Error::SourceAddressPolicyFailed => {
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv6DestUnreachableCode::SrcAddrFailedPolicy);
+            }
+            Icmpv6Error::AdminProhibited => {
+                counters
+                    .dest_unreachable
+                    .increment_code(Icmpv6DestUnreachableCode::CommAdministrativelyProhibited);
+            }
         }
     }
 
@@ -538,6 +590,18 @@ impl Icmpv6Error {
             Icmpv6Error::AddressUnreachable => Icmpv6ErrorMessage::DestUnreachable {
                 message: IcmpDestUnreachable::default(),
                 code: Icmpv6DestUnreachableCode::AddrUnreachable,
+            },
+            Icmpv6Error::RejectRoute => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::RejectRoute,
+            },
+            Icmpv6Error::SourceAddressPolicyFailed => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::SrcAddrFailedPolicy,
+            },
+            Icmpv6Error::AdminProhibited => Icmpv6ErrorMessage::DestUnreachable {
+                message: IcmpDestUnreachable::default(),
+                code: Icmpv6DestUnreachableCode::CommAdministrativelyProhibited,
             },
         }
     }

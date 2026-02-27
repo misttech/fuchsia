@@ -40,7 +40,7 @@ use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
     FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IpPacket, MarkAction,
-    MaybeTransportPacket as _, TransportPacketSerializer, Tuple, WeakConnectionError,
+    MaybeTransportPacket as _, RejectType, TransportPacketSerializer, Tuple, WeakConnectionError,
     WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
@@ -2513,6 +2513,34 @@ impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
     }
 }
 
+fn reject_type_to_icmpv4_error(reject_type: RejectType) -> Option<Icmpv4Error> {
+    let error = match reject_type {
+        RejectType::NetUnreachable => Icmpv4Error::NetUnreachable,
+        RejectType::ProtoUnreachable => Icmpv4Error::ProtocolUnreachable,
+        RejectType::PortUnreachable => Icmpv4Error::PortUnreachable,
+        RejectType::HostUnreachable => Icmpv4Error::HostUnreachable,
+        RejectType::RoutePolicyFail => Icmpv4Error::NetworkProhibited,
+        RejectType::RejectRoute => Icmpv4Error::HostProhibited,
+        RejectType::AdminProhibited => Icmpv4Error::AdminProhibited,
+        // TODO(https://fxbug.dev/488116504): Implement RejectType::TcpReset.
+        RejectType::TcpReset => return None,
+    };
+    Some(error)
+}
+
+fn reject_type_to_icmpv6_error(reject_type: RejectType) -> Option<Icmpv6Error> {
+    let error = match reject_type {
+        RejectType::NetUnreachable => Icmpv6Error::NetUnreachable,
+        RejectType::PortUnreachable => Icmpv6Error::PortUnreachable,
+        RejectType::HostUnreachable => Icmpv6Error::AddressUnreachable,
+        RejectType::AdminProhibited => Icmpv6Error::AdminProhibited,
+        RejectType::RoutePolicyFail => Icmpv6Error::SourceAddressPolicyFailed,
+        RejectType::RejectRoute => Icmpv6Error::RejectRoute,
+        // TODO(https://fxbug.dev/488116504): Implement ProtoUnreachable and TcpReset.
+        RejectType::TcpReset | RejectType::ProtoUnreachable => return None,
+    };
+    Some(error)
+}
 // TODO(joshlf): Once we support multiple extension headers in IPv6, we will
 // need to verify that the callers of this function are still sound. In
 // particular, they may accidentally pass a parse_metadata argument which
@@ -2581,27 +2609,38 @@ fn dispatch_receive_ipv4_packet<
             early_demux_result
         });
 
-    let proto = packet.proto();
-
-    match core_ctx.filter_handler().local_ingress_hook(
+    let filter_verdict = core_ctx.filter_handler().local_ingress_hook(
         bindings_ctx,
         &mut packet,
         device,
         &mut packet_metadata,
-    ) {
-        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
-            packet_metadata.acknowledge_drop();
-            return Ok(());
-        }
-        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
-            // TODO(https://fxbug.dev/466098884): Send reject packet.
-            packet_metadata.acknowledge_drop();
-            return Ok(());
-        }
-        filter::Verdict::Proceed(filter::Accept) => {}
-    }
+    );
+
     let marks = packet_metadata.marks;
     packet_metadata.acknowledge_drop();
+
+    match filter_verdict {
+        filter::Verdict::Stop(filter::DropOrReject::Drop) => {
+            return Ok(());
+        }
+        filter::Verdict::Stop(filter::DropOrReject::Reject(reject_type)) => {
+            return match reject_type_to_icmpv4_error(reject_type) {
+                Some(icmp_error) => {
+                    match IcmpErrorSender::new(
+                        core_ctx, icmp_error, &packet, frame_dst, device, marks,
+                    ) {
+                        Some(icmp_sender) => Err(icmp_sender),
+                        None => Ok(()),
+                    }
+                }
+                None => {
+                    debug!("Unsupported reject type: {:?}", reject_type);
+                    return Ok(());
+                }
+            };
+        }
+        filter::Verdict::Proceed(filter::Accept) => (),
+    };
 
     // These invariants are validated by the caller of this function, but it's
     // possible for the LOCAL_INGRESS hook to rewrite the packet, so we have to
@@ -2629,6 +2668,7 @@ fn dispatch_receive_ipv4_packet<
     // Check if the early demux result is still valid.
     let early_demux_socket = early_demux_result.and_then(|result| result.take_socket(&packet));
 
+    let proto = packet.proto();
     let (prefix, options, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv4HeaderInfo { prefix, options: options.as_ref() };
@@ -2711,22 +2751,35 @@ fn dispatch_receive_ipv6_packet<
             early_demux_result
         });
 
-    let proto = packet.proto();
-
-    match core_ctx.filter_handler().local_ingress_hook(
+    let filter_verdict = core_ctx.filter_handler().local_ingress_hook(
         bindings_ctx,
         &mut packet,
         device,
         &mut packet_metadata,
-    ) {
+    );
+
+    let marks = packet_metadata.marks;
+    packet_metadata.acknowledge_drop();
+
+    match filter_verdict {
         filter::Verdict::Stop(filter::DropOrReject::Drop) => {
-            packet_metadata.acknowledge_drop();
             return Ok(());
         }
-        filter::Verdict::Stop(filter::DropOrReject::Reject(_reject_type)) => {
-            // TODO(https://fxbug.dev/466098884): Send reject packet.
-            packet_metadata.acknowledge_drop();
-            return Ok(());
+        filter::Verdict::Stop(filter::DropOrReject::Reject(reject_type)) => {
+            return match reject_type_to_icmpv6_error(reject_type) {
+                Some(icmp_error) => {
+                    match IcmpErrorSender::new(
+                        core_ctx, icmp_error, &packet, frame_dst, device, marks,
+                    ) {
+                        Some(icmp_sender) => Err(icmp_sender),
+                        None => Ok(()),
+                    }
+                }
+                None => {
+                    debug!("Unsupported reject type: {:?}", reject_type);
+                    return Ok(());
+                }
+            };
         }
         filter::Verdict::Proceed(filter::Accept) => {}
     }
@@ -2758,12 +2811,13 @@ fn dispatch_receive_ipv6_packet<
     // Check if the early demux result is still valid.
     let early_demux_socket = early_demux_result.and_then(|result| result.take_socket(&packet));
 
+    let proto = packet.proto();
     let (fixed, extension, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv6HeaderInfo { fixed, extension };
-    let receive_info = LocalDeliveryPacketInfo { meta, header_info, marks: packet_metadata.marks };
+    let receive_info = LocalDeliveryPacketInfo { meta, header_info, marks };
 
-    let result = core_ctx
+    core_ctx
         .dispatch_receive_ip_packet(
             bindings_ctx,
             device,
@@ -2780,9 +2834,7 @@ fn dispatch_receive_ipv6_packet<
                 Some(icmp_sender) => Err(icmp_sender),
                 None => Ok(()),
             }
-        });
-    packet_metadata.acknowledge_drop();
-    result
+        })
 }
 
 /// The metadata required to forward an IP Packet.

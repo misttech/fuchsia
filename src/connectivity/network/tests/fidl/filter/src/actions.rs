@@ -1,0 +1,180 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+//! Tests for filter actions.
+
+use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter_ext::{Action, IpHook, RejectType};
+use fuchsia_async::TimeoutExt as _;
+use net_types::ip::{Ip, IpAddress, IpVersion};
+use netstack_testing_common::ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT;
+use netstack_testing_macros::netstack_test;
+use packet::ParsablePacket as _;
+use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
+use packet_formats::icmp::{
+    IcmpParseArgs, Icmpv4DestUnreachableCode, Icmpv4Packet, Icmpv6DestUnreachableCode, Icmpv6Packet,
+};
+use packet_formats::ip::{IpPacket as _, Ipv4Proto, Ipv6Proto};
+use test_case::test_case;
+
+use crate::ip_hooks::{ExpectedConnectivity, LOW_RULE_PRIORITY, TestIpExt, TestNet, UdpSocket};
+use crate::matchers::Udp;
+
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(RejectType::PortUnreachable; "port_unreachable")]
+#[test_case(RejectType::NetUnreachable; "net_unreachable")]
+#[test_case(RejectType::HostUnreachable; "host_unreachable")]
+#[test_case(RejectType::ProtoUnreachable; "proto_unreachable")]
+#[test_case(RejectType::RoutePolicyFail; "route_policy_fail")]
+#[test_case(RejectType::RejectRoute; "reject_route")]
+#[test_case(RejectType::AdminProhibited; "admin_prohibited")]
+async fn reject_incoming<I: TestIpExt>(name: &str, reject_type: RejectType) {
+    // TODO(https://fxbug.dev/488116504): Implement ProtoUnreachable for IPv6.
+    if I::VERSION == IpVersion::V6 && reject_type == RejectType::ProtoUnreachable {
+        return;
+    }
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let network = sandbox.create_network("net").await.expect("create network");
+    let _packet_capture = network.start_capture(&name).await.expect("starting packet capture");
+
+    let mut net = TestNet::new::<I>(
+        &sandbox,
+        &network,
+        &name,
+        Some(IpHook::LocalIngress),
+        None, /* nat_hook */
+    )
+    .await;
+
+    let fake_endpoint = network.create_fake_endpoint().expect("create fake endpoint");
+
+    // Install a rule that rejects all traffic.
+    let (_server_matcher, _sockets) = {
+        let matcher = Udp;
+        net.run_test_with::<I, UdpSocket, _, _>(
+            ExpectedConnectivity::None,
+            |TestNet { client: _, server }, addrs, ()| {
+                Box::pin(async move {
+                    server
+                        .install_rule_for_incoming_traffic::<I, _>(
+                            LOW_RULE_PRIORITY,
+                            &matcher,
+                            addrs.client_ports(),
+                            Action::Reject(reject_type),
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    };
+
+    fn ip_addr_to_fnet_ip_address<A: IpAddress>(ip: A) -> fnet::IpAddress {
+        A::Version::map_ip_in(
+            ip,
+            |v4_addr| fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: v4_addr.ipv4_bytes() }),
+            |v6_addr| fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr: v6_addr.ipv6_bytes() }),
+        )
+    }
+
+    fn expected_icmpv4_code(reject_type: RejectType) -> Icmpv4DestUnreachableCode {
+        match reject_type {
+            RejectType::PortUnreachable => Icmpv4DestUnreachableCode::DestPortUnreachable,
+            RejectType::NetUnreachable => Icmpv4DestUnreachableCode::DestNetworkUnreachable,
+            RejectType::HostUnreachable => Icmpv4DestUnreachableCode::DestHostUnreachable,
+            RejectType::ProtoUnreachable => Icmpv4DestUnreachableCode::DestProtocolUnreachable,
+            RejectType::RoutePolicyFail => {
+                Icmpv4DestUnreachableCode::NetworkAdministrativelyProhibited
+            }
+            RejectType::RejectRoute => Icmpv4DestUnreachableCode::HostAdministrativelyProhibited,
+            RejectType::AdminProhibited => {
+                Icmpv4DestUnreachableCode::CommAdministrativelyProhibited
+            }
+            RejectType::TcpReset => unreachable!(),
+        }
+    }
+
+    fn expected_icmpv6_code(reject_type: RejectType) -> Icmpv6DestUnreachableCode {
+        match reject_type {
+            RejectType::PortUnreachable => Icmpv6DestUnreachableCode::PortUnreachable,
+            RejectType::NetUnreachable => Icmpv6DestUnreachableCode::NoRoute,
+            RejectType::HostUnreachable => Icmpv6DestUnreachableCode::AddrUnreachable,
+            RejectType::RoutePolicyFail => Icmpv6DestUnreachableCode::SrcAddrFailedPolicy,
+            RejectType::RejectRoute => Icmpv6DestUnreachableCode::RejectRoute,
+            RejectType::AdminProhibited => {
+                Icmpv6DestUnreachableCode::CommAdministrativelyProhibited
+            }
+            RejectType::ProtoUnreachable => unreachable!(),
+            RejectType::TcpReset => unreachable!(),
+        }
+    }
+
+    let fake_ep_loop = async move {
+        loop {
+            let (buf, dropped_frames): (Vec<u8>, u64) =
+                fake_endpoint.read().await.expect("failed to read from endpoint");
+            assert_eq!(dropped_frames, 0);
+            let eth = EthernetFrame::parse(&mut &buf[..], EthernetFrameLengthCheck::NoCheck)
+                .expect("valid ethernet frame");
+            let Ok(packet) = I::Packet::parse(&mut eth.body(), ()) else {
+                continue;
+            };
+            eprintln!(
+                "proto: {:?}, src: {:?}, dst: {:?}",
+                packet.proto(),
+                packet.src_ip(),
+                packet.dst_ip()
+            );
+            let is_icmp = I::map_ip_in(
+                packet.proto(),
+                |v4_proto| v4_proto == Ipv4Proto::Icmp,
+                |v6_proto| v6_proto == Ipv6Proto::Icmpv6,
+            );
+            if !is_icmp {
+                return;
+            }
+
+            if ip_addr_to_fnet_ip_address(packet.src_ip()) != I::SERVER_ADDR_WITH_PREFIX.addr
+                || ip_addr_to_fnet_ip_address(packet.dst_ip()) != I::CLIENT_ADDR_WITH_PREFIX.addr
+            {
+                return;
+            }
+
+            I::map_ip_in(
+                packet,
+                |v4_packet| {
+                    let icmp_packet = Icmpv4Packet::parse(
+                        &mut v4_packet.body(),
+                        IcmpParseArgs::new(v4_packet.src_ip(), v4_packet.dst_ip()),
+                    )
+                    .expect("valid icmp packet");
+                    assert_matches!(icmp_packet, Icmpv4Packet::DestUnreachable (p) => {
+                        assert_eq!(p.code(), expected_icmpv4_code(reject_type));
+                    });
+                },
+                |v6_packet| {
+                    let icmp_packet = Icmpv6Packet::parse(
+                        &mut v6_packet.body(),
+                        IcmpParseArgs::new(v6_packet.src_ip(), v6_packet.dst_ip()),
+                    )
+                    .expect("valid icmp packet");
+                    assert_matches!(icmp_packet, Icmpv6Packet::DestUnreachable (p) => {
+                        assert_eq!(p.code(), expected_icmpv6_code(reject_type));
+                    });
+                },
+            );
+
+            return;
+        }
+    };
+
+    let () = fake_ep_loop
+        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, || {
+            panic!("timed out waiting for ICMP error")
+        })
+        .await;
+}

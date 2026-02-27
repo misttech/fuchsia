@@ -4,6 +4,7 @@
 
 #![cfg(test)]
 
+mod actions;
 mod ip_hooks;
 mod matchers;
 mod nat;
@@ -1912,6 +1913,10 @@ const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(8080).unwrap();
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Forwarding, priority: 0})),
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::LocalEgress, priority: 0})),
         RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Egress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Ingress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalIngress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalEgress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Egress, priority: 0})),
     ];
     "TPROXY valid in IP INGRESS"
 )]
@@ -1948,6 +1953,23 @@ const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(8080).unwrap();
         RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalEgress, priority: 0})),
     ];
     "masquerade valid in NAT EGRESS"
+)]
+#[test_case(
+    Action::Reject(fnet_filter_ext::RejectType::HostUnreachable),
+    &[
+        RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::LocalIngress, priority: 0})),
+        RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Forwarding, priority: 0})),
+        RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::LocalEgress, priority: 0})),
+    ],
+    &[
+        RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Ingress, priority: 0})),
+        RoutineType::Ip(Some(InstalledIpRoutine { hook: IpHook::Egress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Ingress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalIngress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::LocalEgress, priority: 0})),
+        RoutineType::Nat(Some(InstalledNatRoutine { hook: NatHook::Egress, priority: 0})),
+    ];
+    "reject valid in IP LOCAL_INGRESS, FORWARDING, LOCAL_EGRESS"
 )]
 async fn invalid_action_for_hook(
     name: &str,

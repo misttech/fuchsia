@@ -940,8 +940,7 @@ pub(crate) struct Ports {
     pub src: u16,
     pub dst: u16,
 }
-
-pub(crate) trait TestIpExt: ping::FuchsiaIpExt {
+pub(crate) trait TestIpExt: ping::FuchsiaIpExt + packet_formats::ip::IpExt {
     /// The client netstack's IP address and subnet prefix. The client and server
     /// are on the same subnet.
     const CLIENT_ADDR_WITH_PREFIX: fnet::Subnet;
@@ -1187,7 +1186,7 @@ impl<'a> TestRealm<'a> {
         matcher.state
     }
 
-    async fn install_rule_for_incoming_traffic<I, M>(
+    pub async fn install_rule_for_incoming_traffic<I, M>(
         &mut self,
         index: u32,
         matcher: &M,

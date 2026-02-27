@@ -45,6 +45,7 @@ rustc_test("filter") {
     "//third_party/rust_crates:test-case",
   ]
   sources = [
+    "src/actions.rs",
     "src/ip_hooks.rs",
     "src/lib.rs",
     "src/matchers.rs",
