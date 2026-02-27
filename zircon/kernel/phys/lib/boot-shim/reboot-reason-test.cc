@@ -163,9 +163,6 @@ TEST(RebootReasonItemTest, ParsingAtMultiplePositions) {
       "androidboot.bootreason=watchdog",
       "androidboot.bootreason=watchdog ",
       " androidboot.bootreason=watchdog",
-      " androidboot.bootreason=watchdog,subreason",
-      " androidboot.bootreason=watchdog,subreason,detail1,detail2",
-      " androidboot.bootreason=watchdog,subreason,detail",
   };
 
   std::array<std::byte, 512> image_buffer;

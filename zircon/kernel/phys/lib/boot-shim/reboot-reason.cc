@@ -48,18 +48,14 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
     return;
   }
 
-  std::string_view option = cmdline.substr(boot_arg + kBootArg.size());
-  option = option.substr(0, option.find_first_of(' '));
+  std::string_view reboot_reason = cmdline.substr(boot_arg + kBootArg.size());
+  reboot_reason = reboot_reason.substr(0, reboot_reason.find_first_of(' '));
 
-  if (option.empty()) {
+  if (reboot_reason.empty()) {
     fprintf(log, "%s: ERROR %.*s was empty, no reboot reason.\n", shim_name,
             static_cast<int>(kBootArg.size() - 1), kBootArg.data());
     return;
   }
-
-  // options format: reason,sub-reason*,detail0*,...,detailN* with the following fields being
-  // optional.
-  std::string_view reboot_reason = option.substr(0, option.find_first_of(','));
 
   for (auto [reason, value] : kRebootReasons) {
     if (reboot_reason == reason) {
@@ -69,8 +65,8 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
   }
 
   fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.\n", shim_name,
-          static_cast<int>(kBootArg.size() - 1), kBootArg.data(), static_cast<int>(option.size()),
-          option.data());
+          static_cast<int>(kBootArg.size() - 1), kBootArg.data(),
+          static_cast<int>(reboot_reason.size()), reboot_reason.data());
 }
 
 }  // namespace boot_shim
