@@ -8,7 +8,10 @@ use thiserror::Error;
 use std::fmt::Display;
 use std::str::FromStr;
 
-/// A feature that can be specified in a starnix kernel or container's configuration.
+/// Features are a way to enable or disable specific starnix behaviors.
+///
+/// These are specified in the component manifest of the starnix container,
+/// or explicitly provided to the kernel constructor in tests.
 #[derive(Debug, Clone, Copy, PartialEq, EnumString, strum_macros::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum Feature {
@@ -46,6 +49,8 @@ pub enum Feature {
     AdditionalMounts,
     WakeupTest,
     MmcblkStub,
+    // TODO(https://fxbug.dev/485370648) remove when unnecessary
+    FakeIon,
 }
 
 /// Error returned when a feature is not recognized.
@@ -140,6 +145,8 @@ mod test {
             (Feature::AdditionalMounts, "additional_mounts"),
             (Feature::WakeupTest, "wakeup_test"),
             (Feature::MmcblkStub, "mmcblk_stub"),
+            // TODO(https://fxbug.dev/485370648) remove when unnecessary
+            (Feature::FakeIon, "fake_ion"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);

@@ -1043,6 +1043,30 @@ pub fn sys_fstat(
 
 type StatPtr = MultiArchUserRef<uapi::stat, uapi::arch32::stat64>;
 
+// TODO(https://fxbug.dev/485370648) remove when unnecessary
+fn get_fake_ion_stat() -> uapi::stat {
+    uapi::stat {
+        st_mode: uapi::S_IFCHR | 0o666,
+        st_rdev: DeviceType::new(10, 59).bits(),
+        st_nlink: 1,
+        st_blksize: 4096,
+        ..Default::default()
+    }
+}
+
+// TODO(https://fxbug.dev/485370648) remove when unnecessary
+fn get_fake_ion_statx() -> statx {
+    statx {
+        stx_mask: uapi::STATX_BASIC_STATS,
+        stx_mode: (uapi::S_IFCHR | 0o666) as u16,
+        stx_rdev_major: 10,
+        stx_rdev_minor: 59,
+        stx_nlink: 1,
+        stx_blksize: 4096,
+        ..Default::default()
+    }
+}
+
 pub fn sys_fstatat64(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -1051,10 +1075,21 @@ pub fn sys_fstatat64(
     buffer: StatPtr,
     flags: u32,
 ) -> Result<(), Errno> {
-    let flags =
+    let lookup_flags =
         LookupFlags::from_bits(flags, AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT)?;
-    let name = lookup_at(locked, current_task, dir_fd, user_path, flags)?;
-    let result = name.entry.node.stat(locked, current_task)?;
+    let result = match lookup_at(locked, current_task, dir_fd, user_path, lookup_flags) {
+        Ok(name) => name.entry.node.stat(locked, current_task)?,
+        // TODO(https://fxbug.dev/485370648) remove when unnecessary
+        Err(e) if e == errno!(ENOENT) && current_task.kernel().features.fake_ion => {
+            let path = current_task.read_path(user_path)?;
+            if path == b"/dev/ion" {
+                get_fake_ion_stat()
+            } else {
+                return Err(e);
+            }
+        }
+        Err(e) => return Err(e),
+    };
     current_task.write_multi_arch_object(buffer, result)?;
     Ok(())
 }
@@ -1070,15 +1105,27 @@ pub fn sys_statx(
     mask: u32,
     statxbuf: UserRef<statx>,
 ) -> Result<(), Errno> {
-    let flags = StatxFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
-    if flags & (StatxFlags::AT_STATX_FORCE_SYNC | StatxFlags::AT_STATX_DONT_SYNC)
+    let statx_flags = StatxFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
+    if statx_flags & (StatxFlags::AT_STATX_FORCE_SYNC | StatxFlags::AT_STATX_DONT_SYNC)
         == (StatxFlags::AT_STATX_FORCE_SYNC | StatxFlags::AT_STATX_DONT_SYNC)
     {
         return error!(EINVAL);
     }
 
-    let name = lookup_at(locked, current_task, dir_fd, user_path, LookupFlags::from(flags))?;
-    let result = name.entry.node.statx(locked, current_task, flags, mask)?;
+    let result =
+        match lookup_at(locked, current_task, dir_fd, user_path, LookupFlags::from(statx_flags)) {
+            Ok(name) => name.entry.node.statx(locked, current_task, statx_flags, mask)?,
+            // TODO(https://fxbug.dev/485370648) remove when unnecessary
+            Err(e) if e == errno!(ENOENT) && current_task.kernel().features.fake_ion => {
+                let path = current_task.read_path(user_path)?;
+                if path == b"/dev/ion" {
+                    get_fake_ion_statx()
+                } else {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        };
     current_task.write_object(statxbuf, &result)?;
     Ok(())
 }
@@ -3858,6 +3905,7 @@ pub use arch32::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::KernelFeatures;
     use crate::testing::*;
     use starnix_types::vfs::default_statfs;
     use starnix_uapi::{O_RDONLY, SEEK_CUR, SEEK_END, SEEK_SET};
@@ -4124,5 +4172,74 @@ mod tests {
             Ok(())
         })
         .await
+    }
+
+    // TODO(https://fxbug.dev/485370648) remove when unnecessary
+    #[::fuchsia::test]
+    async fn test_fake_ion_stat() {
+        // Test with fake_ion disabled (default).
+        spawn_kernel_and_run(async |locked, current_task| {
+            let ion_path = b"/dev/ion\0";
+            let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(path_addr, ion_path).expect("failed to write path");
+            let user_path = UserCString::new(current_task, path_addr);
+
+            let stat_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+            let stat_ptr = StatPtr::new(current_task, stat_addr);
+
+            let error =
+                sys_fstatat64(locked, current_task, FdNumber::AT_FDCWD, user_path, stat_ptr, 0)
+                    .unwrap_err();
+            assert_eq!(error, errno!(ENOENT));
+        })
+        .await;
+
+        // Test with fake_ion enabled.
+        let mut features = KernelFeatures::default();
+        features.fake_ion = true;
+        spawn_kernel_with_features_and_run(
+            async |locked, current_task| {
+                let ion_path = b"/dev/ion\0";
+                let path_addr =
+                    map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+                current_task.write_memory(path_addr, ion_path).expect("failed to write path");
+                let user_path = UserCString::new(current_task, path_addr);
+
+                let stat_addr =
+                    map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+                let stat_ptr = StatPtr::new(current_task, stat_addr);
+
+                sys_fstatat64(locked, current_task, FdNumber::AT_FDCWD, user_path, stat_ptr, 0)
+                    .expect("sys_fstatat64 should succeed with fake_ion");
+
+                let stat_result: uapi::stat =
+                    current_task.read_object(stat_addr.into()).expect("failed to read stat");
+                assert_eq!(stat_result.st_mode, uapi::S_IFCHR | 0o666);
+                assert_eq!(stat_result.st_rdev, DeviceType::new(10, 59).bits());
+
+                // Test statx as well.
+                let statx_addr =
+                    map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
+                let statx_ptr = UserRef::new(statx_addr);
+                sys_statx(
+                    locked,
+                    current_task,
+                    FdNumber::AT_FDCWD,
+                    user_path,
+                    0,
+                    uapi::STATX_BASIC_STATS,
+                    statx_ptr,
+                )
+                .expect("sys_statx should succeed with fake_ion");
+
+                let statx_result: statx =
+                    current_task.read_object(statx_ptr).expect("failed to read statx");
+                assert_eq!(statx_result.stx_mode, (uapi::S_IFCHR | 0o666) as u16);
+                assert_eq!(statx_result.stx_rdev_major, 10);
+                assert_eq!(statx_result.stx_rdev_minor, 59);
+            },
+            features,
+        )
+        .await;
     }
 }

@@ -74,7 +74,19 @@ where
     F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
-    spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs)
+    spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs, KernelFeatures::default())
+}
+
+/// Create and run a kernel with non-default feature settings.
+pub fn spawn_kernel_with_features_and_run<F, R>(
+    callback: F,
+    features: KernelFeatures,
+) -> impl Future<Output = R>
+where
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    R: Send + Sync + 'static,
+{
+    spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs, features)
 }
 
 /// Create a Kernel object and run the given synchronous callback in the init process for that kernel.
@@ -86,7 +98,7 @@ where
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
-    spawn_kernel_and_run_internal_sync(callback, None, TmpFs::new_fs)
+    spawn_kernel_and_run_internal_sync(callback, None, TmpFs::new_fs, KernelFeatures::default())
 }
 
 /// Create a Kernel object and run the given callback in the init process for that kernel.
@@ -99,7 +111,7 @@ where
     F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
-    spawn_kernel_and_run_internal(callback, None, create_pkgfs)
+    spawn_kernel_and_run_internal(callback, None, create_pkgfs, KernelFeatures::default())
 }
 
 /// Variant of `spawn_kernel_and_run()` that configures the kernel with SELinux enabled.
@@ -127,6 +139,7 @@ where
         },
         Some(security_server),
         TmpFs::new_fs,
+        KernelFeatures::default(),
     )
     .await
 }
@@ -137,6 +150,7 @@ fn spawn_kernel_and_run_internal<F, FS, R>(
     callback: F,
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,
+    features: KernelFeatures,
 ) -> impl Future<Output = R>
 where
     R: Send + Sync + 'static,
@@ -149,6 +163,7 @@ where
         },
         security_server,
         fs_factory,
+        features,
     )
 }
 
@@ -158,6 +173,7 @@ fn spawn_kernel_and_run_internal_sync<F, FS, R>(
     callback: F,
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,
+    features: KernelFeatures,
 ) -> impl Future<Output = R>
 where
     R: Send + Sync + 'static,
@@ -169,7 +185,7 @@ where
         reason = "Force documented unsafe blocks in Starnix"
     )]
     let locked = unsafe { Unlocked::new() };
-    let kernel = create_test_kernel(locked, security_server);
+    let kernel = create_test_kernel(locked, security_server, features);
     let fs = create_test_fs_context(locked, &kernel, fs_factory);
     let init_task = create_test_init_task(locked, &kernel, fs);
     fasync::unblock(move || {
@@ -202,10 +218,11 @@ pub fn create_kernel_task_and_unlocked()
 fn create_test_kernel(
     _locked: &mut Locked<Unlocked>,
     security_server: Option<Arc<SecurityServer>>,
+    features: KernelFeatures,
 ) -> Arc<Kernel> {
     Kernel::new(
         b"".into(),
-        KernelFeatures::default(),
+        features,
         SystemLimits::default(),
         ContainerNamespace::new(),
         SchedulerManager::empty_for_tests(),
@@ -268,7 +285,7 @@ fn create_kernel_task_and_unlocked_with_fs(
         reason = "Force documented unsafe blocks in Starnix"
     )]
     let locked = unsafe { Unlocked::new() };
-    let kernel = create_test_kernel(locked, None);
+    let kernel = create_test_kernel(locked, None, KernelFeatures::default());
     let fs = create_fs(locked, &kernel);
     let fs_context = create_test_fs_context(locked, &kernel, |_, _| fs.clone());
     let init_task = create_test_init_task(locked, &kernel, fs_context);

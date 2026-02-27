@@ -64,6 +64,8 @@ use {
     fuchsia_async as fasync,
 };
 
+/// Kernel features are specified in the component manifest of the starnix container
+/// or explicitly provided to the kernel constructor in tests.
 #[derive(Debug, Default, Clone)]
 pub struct KernelFeatures {
     pub bpf_v2: bool,
@@ -124,6 +126,10 @@ pub struct KernelFeatures {
 
     /// The size of the Dirent LRU cache.
     pub dirent_cache_size: u32,
+
+    /// Whether to expose a stub '/dev/ion' node, as a temporary workaround for compatibility.
+    // TODO(https://fxbug.dev/485370648) remove when unnecessary
+    pub fake_ion: bool,
 }
 
 impl KernelFeatures {

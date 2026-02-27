@@ -165,6 +165,7 @@ impl Features {
                         wifi,
                         cached_zx_map_info_bytes,
                         dirent_cache_size,
+                        fake_ion,
                     },
                 system_limits,
                 selinux,
@@ -286,6 +287,7 @@ impl Features {
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
                     inspect_node.record_bool("wakeup_test", *wakeup_test);
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
+                    inspect_node.record_bool("fake_ion", *fake_ion);
                 });
             }
         });
@@ -439,6 +441,7 @@ pub fn parse_features(
             }
             (Feature::WakeupTest, _) => features.wakeup_test = true,
             (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
+            (Feature::FakeIon, _) => features.kernel.fake_ion = true,
         };
     }
 
