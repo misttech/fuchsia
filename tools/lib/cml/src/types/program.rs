@@ -3,13 +3,12 @@
 // found in the LICENSE file.
 
 use crate::types::common::*;
-use crate::{ContextSpanned, Error, Origin, byte_index_to_location};
+use crate::{ContextSpanned, Error};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
 };
-use json_spanned_value::Spanned;
-use serde::{Deserialize, Serialize, de};
+use serde::{Serialize, de};
 use serde_json::Value;
 
 use std::fmt;
@@ -90,23 +89,11 @@ impl<'de> de::Deserialize<'de> for Program {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-pub struct ParsedProgram {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub runner: Option<Spanned<String>>,
-    #[serde(flatten)]
-    pub info: IndexMap<String, serde_json::Value>,
-}
-
-impl Hydrate for ParsedProgram {
+impl Hydrate for Program {
     type Output = ContextProgram;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
-        let runner = self.runner.map(|spanned_string| {
-
-            let span = spanned_string.span();
-            let raw_name = spanned_string.into_inner();
-            let location = byte_index_to_location(buffer, span.0);
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+        let runner = self.runner.map(|raw_name| {
             let validated_name = Name::new(raw_name.clone()).map_err(|e| {
                     let msg = match e {
                     ParseError::InvalidValue => format!(
@@ -121,11 +108,11 @@ impl Hydrate for ParsedProgram {
                     }
                 };
 
-                Error::merge(msg, Some(Origin { file: file.clone(), location: location.clone() }))
+                Error::merge(msg, Some(file.clone()))
             })?;
             Ok::<ContextSpanned<BoundedName<255>>, Error>(ContextSpanned {
                 value: validated_name,
-                origin: Origin { file: file.clone(), location },
+                origin: file.clone(),
             })
         }).transpose()?;
 

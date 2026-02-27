@@ -6,7 +6,6 @@ use crate::Error;
 use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{Name, OnTerminate, StartupMode, Url};
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -72,22 +71,16 @@ pub struct Child {
     pub environment: Option<EnvironmentRef>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedChild {
-    pub name: Spanned<Name>,
-    pub url: Spanned<Url>,
-    pub startup: Option<Spanned<StartupMode>>,
-    pub on_terminate: Option<Spanned<OnTerminate>>,
-    pub environment: Option<Spanned<EnvironmentRef>>,
+fn is_lazy_spanned(mode: &ContextSpanned<StartupMode>) -> bool {
+    mode.value.is_lazy()
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextChild {
     pub name: ContextSpanned<Name>,
     pub url: ContextSpanned<Url>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub startup: Option<ContextSpanned<StartupMode>>,
+    #[serde(skip_serializing_if = "is_lazy_spanned")]
+    pub startup: ContextSpanned<StartupMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_terminate: Option<ContextSpanned<OnTerminate>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,16 +94,16 @@ impl PartialEq for ContextChild {
 }
 impl Eq for ContextChild {}
 
-impl Hydrate for ParsedChild {
+impl Hydrate for Child {
     type Output = ContextChild;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
         Ok(ContextChild {
-            name: hydrate_simple(self.name, file, buffer),
-            url: hydrate_simple(self.url, file, buffer),
-            startup: hydrate_opt_simple(self.startup, file, buffer),
-            on_terminate: hydrate_opt_simple(self.on_terminate, file, buffer),
-            environment: hydrate_opt_simple(self.environment, file, buffer),
+            name: hydrate_simple(self.name, file),
+            url: hydrate_simple(self.url, file),
+            startup: hydrate_simple(self.startup, file),
+            on_terminate: hydrate_opt_simple(self.on_terminate, file),
+            environment: hydrate_opt_simple(self.environment, file),
         })
     }
 }

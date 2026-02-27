@@ -15,7 +15,6 @@ pub use cm_types::{
     RelativePath, StartupMode, Url,
 };
 use cml_macro::Reference;
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -395,44 +394,10 @@ impl FromClause for Use {
     }
 }
 
-#[derive(Deserialize, Debug, Default, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedUse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service: Option<Spanned<OneOrMany<Name>>>,
-    pub protocol: Option<Spanned<OneOrMany<Name>>>,
-    pub directory: Option<Spanned<Name>>,
-    pub storage: Option<Spanned<Name>>,
-    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
-    pub runner: Option<Spanned<Name>>,
-    pub config: Option<Spanned<Name>>,
-    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
-    pub from: Option<Spanned<UseFromRef>>,
-    pub path: Option<Spanned<Path>>,
-    pub numbered_handle: Option<Spanned<HandleType>>,
-    pub rights: Option<Spanned<Rights>>,
-    pub subdir: Option<Spanned<RelativePath>>,
-    pub scope: Option<Spanned<OneOrMany<EventScope>>>,
-    pub filter: Option<Spanned<Map<String, Value>>>,
-    pub dependency: Option<Spanned<DependencyType>>,
-    pub availability: Option<Spanned<Availability>>,
-    pub key: Option<Spanned<Name>>,
-    #[serde(rename = "type", default)]
-    pub config_type: Option<Spanned<ConfigType>>,
-    #[serde(rename = "max_size", default)]
-    pub config_max_size: Option<Spanned<NonZeroU32>>,
-    #[serde(rename = "max_count", default)]
-    pub config_max_count: Option<Spanned<NonZeroU32>>,
-    #[serde(rename = "element", default)]
-    pub config_element_type: Option<Spanned<ConfigNestedValueType>>,
-    #[serde(rename = "default", default)]
-    pub config_default: Option<Spanned<serde_json::Value>>,
-}
-
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ContextUse {
     #[serde(skip)]
-    pub origin: Origin,
+    pub origin: Arc<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -564,13 +529,8 @@ impl ContextCapabilityClause for ContextUse {
         self.config = always_one_context(o);
     }
 
-    fn origin(&self) -> &Origin {
+    fn origin(&self) -> &Arc<PathBuf> {
         &self.origin
-    }
-
-    /// Helper to get the file path from the origin.
-    fn file_path(&self) -> PathBuf {
-        (*self.origin.file).clone()
     }
 
     fn availability(&self) -> Option<ContextSpanned<Availability>> {
@@ -669,35 +629,35 @@ impl ContextPathClause for ContextUse {
     }
 }
 
-impl Hydrate for ParsedUse {
+impl Hydrate for Use {
     type Output = ContextUse;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
         Ok(ContextUse {
-            origin: Origin::synthetic(file.clone().to_path_buf()),
-            service: hydrate_opt_simple(self.service, file, buffer),
-            protocol: hydrate_opt_simple(self.protocol, file, buffer),
-            directory: hydrate_opt_simple(self.directory, file, buffer),
-            storage: hydrate_opt_simple(self.storage, file, buffer),
-            event_stream: hydrate_opt_simple(self.event_stream, file, buffer),
-            runner: hydrate_opt_simple(self.runner, file, buffer),
-            config: hydrate_opt_simple(self.config, file, buffer),
-            dictionary: hydrate_opt_simple(self.dictionary, file, buffer),
-            from: hydrate_opt_simple(self.from, file, buffer),
-            path: hydrate_opt_simple(self.path, file, buffer),
-            numbered_handle: hydrate_opt_simple(self.numbered_handle, file, buffer),
-            rights: hydrate_opt_simple(self.rights, file, buffer),
-            subdir: hydrate_opt_simple(self.subdir, file, buffer),
-            scope: hydrate_opt_simple(self.scope, file, buffer),
-            filter: hydrate_opt_simple(self.filter, file, buffer),
-            dependency: hydrate_opt_simple(self.dependency, file, buffer),
-            availability: hydrate_opt_simple(self.availability, file, buffer),
-            key: hydrate_opt_simple(self.key, file, buffer),
-            config_type: hydrate_opt_simple(self.config_type, file, buffer),
-            config_max_size: hydrate_opt_simple(self.config_max_size, file, buffer),
-            config_max_count: hydrate_opt_simple(self.config_max_count, file, buffer),
-            config_element_type: hydrate_opt_simple(self.config_element_type, file, buffer),
-            config_default: hydrate_opt_simple(self.config_default, file, buffer),
+            origin: file.clone(),
+            service: hydrate_opt_simple(self.service, file),
+            protocol: hydrate_opt_simple(self.protocol, file),
+            directory: hydrate_opt_simple(self.directory, file),
+            storage: hydrate_opt_simple(self.storage, file),
+            event_stream: hydrate_opt_simple(self.event_stream, file),
+            runner: hydrate_opt_simple(self.runner, file),
+            config: hydrate_opt_simple(self.config, file),
+            dictionary: hydrate_opt_simple(self.dictionary, file),
+            from: hydrate_opt_simple(self.from, file),
+            path: hydrate_opt_simple(self.path, file),
+            numbered_handle: hydrate_opt_simple(self.numbered_handle, file),
+            rights: hydrate_opt_simple(self.rights, file),
+            subdir: hydrate_opt_simple(self.subdir, file),
+            scope: hydrate_opt_simple(self.scope, file),
+            filter: hydrate_opt_simple(self.filter, file),
+            dependency: hydrate_opt_simple(self.dependency, file),
+            availability: hydrate_opt_simple(self.availability, file),
+            key: hydrate_opt_simple(self.key, file),
+            config_type: hydrate_opt_simple(self.config_type, file),
+            config_max_size: hydrate_opt_simple(self.config_max_size, file),
+            config_max_count: hydrate_opt_simple(self.config_max_count, file),
+            config_element_type: hydrate_opt_simple(self.config_element_type, file),
+            config_default: hydrate_opt_simple(self.config_default, file),
         })
     }
 }

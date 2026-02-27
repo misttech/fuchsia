@@ -6,7 +6,6 @@ use crate::Error;
 use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{AllowedOffers, Durability, Name};
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -62,17 +61,6 @@ pub struct Collection {
     pub persistent_storage: Option<bool>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedCollection {
-    pub name: Spanned<Name>,
-    pub durability: Spanned<Durability>,
-    pub environment: Option<Spanned<EnvironmentRef>>,
-    pub allowed_offers: Option<Spanned<AllowedOffers>>,
-    pub allow_long_names: Option<Spanned<bool>>,
-    pub persistent_storage: Option<Spanned<bool>>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextCollection {
     pub name: ContextSpanned<Name>,
@@ -106,17 +94,17 @@ impl PartialEq for ContextCollection {
 
 impl Eq for ContextCollection {}
 
-impl Hydrate for ParsedCollection {
+impl Hydrate for Collection {
     type Output = ContextCollection;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
         Ok(ContextCollection {
-            name: hydrate_simple(self.name, file, buffer),
-            durability: hydrate_simple(self.durability, file, buffer),
-            environment: hydrate_opt_simple(self.environment, file, buffer),
-            allowed_offers: hydrate_opt_simple(self.allowed_offers, file, buffer),
-            allow_long_names: hydrate_opt_simple(self.allow_long_names, file, buffer),
-            persistent_storage: hydrate_opt_simple(self.persistent_storage, file, buffer),
+            name: hydrate_simple(self.name, file),
+            durability: hydrate_simple(self.durability, file),
+            environment: hydrate_opt_simple(self.environment, file),
+            allowed_offers: hydrate_opt_simple(self.allowed_offers, file),
+            allow_long_names: hydrate_opt_simple(self.allow_long_names, file),
+            persistent_storage: hydrate_opt_simple(self.persistent_storage, file),
         })
     }
 }

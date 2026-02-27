@@ -13,7 +13,6 @@ pub use cm_types::{
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
 };
 use cml_macro::Reference;
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize, de};
 
@@ -226,23 +225,15 @@ pub struct RunnerRegistration {
     pub r#as: Option<Name>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedRunnerRegistration {
-    pub runner: Spanned<Name>,
-    pub from: Spanned<RegistrationRef>,
-    pub r#as: Option<Spanned<Name>>,
-}
-
-impl Hydrate for ParsedRunnerRegistration {
+impl Hydrate for RunnerRegistration {
     type Output = ContextRunnerRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
-        let runner = hydrate_simple(self.runner, file, buffer);
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+        let runner = hydrate_simple(self.runner, file);
 
-        let r#as = hydrate_opt_simple(self.r#as, file, buffer);
+        let r#as = hydrate_opt_simple(self.r#as, file);
 
-        let from = hydrate_simple(self.from, file, buffer);
+        let from = hydrate_simple(self.from, file);
 
         Ok(ContextRunnerRegistration { runner, r#as, from })
     }
@@ -291,22 +282,14 @@ pub struct ResolverRegistration {
     pub scheme: cm_types::UrlScheme,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedResolverRegistration {
-    pub resolver: Spanned<Name>,
-    pub from: Spanned<RegistrationRef>,
-    pub scheme: Spanned<cm_types::UrlScheme>,
-}
-
-impl Hydrate for ParsedResolverRegistration {
+impl Hydrate for ResolverRegistration {
     type Output = ContextResolverRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
-        let resolver = hydrate_simple(self.resolver, file, buffer);
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+        let resolver = hydrate_simple(self.resolver, file);
 
-        let from = hydrate_simple(self.from, file, buffer);
-        let scheme = hydrate_simple(self.scheme, file, buffer);
+        let from = hydrate_simple(self.from, file);
+        let scheme = hydrate_simple(self.scheme, file);
 
         Ok(ContextResolverRegistration { resolver, from, scheme })
     }
@@ -354,21 +337,14 @@ pub struct DebugRegistration {
     pub r#as: Option<Name>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq)]
-pub struct ParsedDebugRegistration {
-    pub protocol: Option<Spanned<OneOrMany<Name>>>,
-    pub from: Spanned<OfferFromRef>,
-    pub r#as: Option<Spanned<Name>>,
-}
-
-impl Hydrate for ParsedDebugRegistration {
+impl Hydrate for DebugRegistration {
     type Output = ContextDebugRegistration;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
-        let origin = Origin::synthetic(file.clone().to_path_buf());
-        let protocol = hydrate_opt_simple(self.protocol, file, buffer);
-        let from = hydrate_simple(self.from, file, buffer);
-        let r#as = hydrate_opt_simple(self.r#as, file, buffer);
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+        let origin = file.clone();
+        let protocol = hydrate_opt_simple(self.protocol, file);
+        let from = hydrate_simple(self.from, file);
+        let r#as = hydrate_opt_simple(self.r#as, file);
 
         Ok(ContextDebugRegistration { origin, protocol, from, r#as })
     }
@@ -377,7 +353,7 @@ impl Hydrate for ParsedDebugRegistration {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ContextDebugRegistration {
     #[serde(skip)]
-    pub origin: Origin,
+    pub origin: Arc<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
     pub from: ContextSpanned<OfferFromRef>,
@@ -460,12 +436,8 @@ impl ContextCapabilityClause for ContextDebugRegistration {
     fn set_dictionary(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
     fn set_config(&mut self, _o: Option<ContextSpanned<OneOrMany<Name>>>) {}
 
-    fn origin(&self) -> &Origin {
+    fn origin(&self) -> &Arc<PathBuf> {
         &self.origin
-    }
-
-    fn file_path(&self) -> PathBuf {
-        (*self.origin.file).clone()
     }
 
     fn availability(&self) -> Option<ContextSpanned<Availability>> {
@@ -549,30 +521,18 @@ impl CapabilityClause for DebugRegistration {
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedEnvironment {
-    pub name: Spanned<Name>,
-    pub extends: Option<Spanned<EnvironmentExtends>>,
-    pub runners: Option<Spanned<Vec<Spanned<ParsedRunnerRegistration>>>>,
-    pub resolvers: Option<Spanned<Vec<Spanned<ParsedResolverRegistration>>>>,
-    pub debug: Option<Spanned<Vec<Spanned<ParsedDebugRegistration>>>>,
-    #[serde(rename = "__stop_timeout_ms")]
-    pub stop_timeout_ms: Option<Spanned<StopTimeoutMs>>,
-}
-
-impl Hydrate for ParsedEnvironment {
+impl Hydrate for Environment {
     type Output = ContextEnvironment;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
-        let name = hydrate_simple(self.name, file, buffer);
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
+        let name = hydrate_simple(self.name, file);
 
-        let extends = hydrate_opt_simple(self.extends, file, buffer);
-        let stop_timeout_ms = hydrate_opt_simple(self.stop_timeout_ms, file, buffer);
+        let extends = hydrate_opt_simple(self.extends, file);
+        let stop_timeout_ms = hydrate_opt_simple(self.stop_timeout_ms, file);
 
-        let runners = hydrate_list(self.runners, file, buffer)?;
-        let resolvers = hydrate_list(self.resolvers, file, buffer)?;
-        let debug = hydrate_list(self.debug, file, buffer)?;
+        let runners = hydrate_list(self.runners, file)?;
+        let resolvers = hydrate_list(self.resolvers, file)?;
+        let debug = hydrate_list(self.debug, file)?;
 
         Ok(ContextEnvironment { name, extends, runners, resolvers, debug, stop_timeout_ms })
     }

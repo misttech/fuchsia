@@ -227,7 +227,7 @@ mod tests {
             }
         }
 
-        assert_eq!(caps[0].origin.file.as_ref(), &shard_path);
+        assert_eq!(caps[0].origin.as_ref(), &shard_path);
     }
 
     #[test]
@@ -272,7 +272,7 @@ mod tests {
         let caps = doc.capabilities.as_ref().unwrap();
         assert_eq!(caps.len(), 1);
 
-        assert_eq!(caps[0].origin.file.as_ref(), &logger_path);
+        assert_eq!(caps[0].origin.as_ref(), &logger_path);
     }
 
     #[test]

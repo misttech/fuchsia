@@ -27,6 +27,7 @@ use serde_json::{Map, Value};
 use std::fmt;
 use std::hash::Hash;
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -34,8 +35,8 @@ pub use crate::types::capability::{Capability, CapabilityFromRef, ContextCapabil
 pub use crate::types::capability_id::CapabilityId;
 pub use crate::types::child::Child;
 pub use crate::types::collection::Collection;
-use crate::types::common::{ContextCapabilityClause, ContextPathClause, ContextSpanned, Origin};
-pub use crate::types::document::{Document, DocumentContext, ParsedDocument, parse_and_hydrate};
+use crate::types::common::{ContextCapabilityClause, ContextPathClause, ContextSpanned};
+pub use crate::types::document::{Document, DocumentContext, parse_and_hydrate};
 pub use crate::types::environment::{Environment, ResolverRegistration};
 pub use crate::types::expose::{ContextExpose, Expose};
 pub use crate::types::offer::{
@@ -86,26 +87,6 @@ pub fn parse_many_documents(
         }
         Ok(docs) => Ok(docs),
     }
-}
-
-pub fn byte_index_to_location(source: &String, index: usize) -> Location {
-    let mut line = 1usize;
-    let mut column = 1usize;
-
-    for (i, ch) in source.char_indices() {
-        if i == index {
-            break;
-        }
-
-        if ch == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-    }
-
-    return Location { line, column };
 }
 
 /// Generates deserializer for `OneOrMany<Name>`.
@@ -910,7 +891,7 @@ pub fn alias_or_name<'a>(
 pub fn alias_or_name_context<'a>(
     alias: Option<ContextSpanned<&'a BorrowedName>>,
     name: &'a BorrowedName,
-    origin: Origin,
+    origin: Arc<PathBuf>,
 ) -> ContextSpanned<&'a BorrowedName> {
     alias.unwrap_or(ContextSpanned { value: name, origin })
 }

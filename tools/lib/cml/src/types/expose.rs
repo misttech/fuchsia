@@ -18,7 +18,6 @@ pub use cm_types::{
     ParseError, Path, RelativePath, StartupMode, Url,
 };
 use cml_macro::{OneOrMany, Reference};
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -365,32 +364,10 @@ pub enum ExposeToRef {
     Framework,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedExpose {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service: Option<Spanned<OneOrMany<Name>>>,
-    pub protocol: Option<Spanned<OneOrMany<Name>>>,
-    pub directory: Option<Spanned<OneOrMany<Name>>>,
-    pub runner: Option<Spanned<OneOrMany<Name>>>,
-    pub resolver: Option<Spanned<OneOrMany<Name>>>,
-    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
-    pub config: Option<Spanned<OneOrMany<Name>>>,
-    pub from: Spanned<OneOrMany<ExposeFromRef>>,
-    pub to: Option<Spanned<ExposeToRef>>,
-    pub r#as: Option<Spanned<Name>>,
-    pub rights: Option<Spanned<Rights>>,
-    pub subdir: Option<Spanned<RelativePath>>,
-    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
-    pub scope: Option<Spanned<OneOrMany<EventScope>>>,
-    pub availability: Option<Spanned<Availability>>,
-    pub source_availability: Option<Spanned<SourceAvailability>>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextExpose {
     #[serde(skip)]
-    pub origin: Origin,
+    pub origin: Arc<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -508,13 +485,8 @@ impl ContextCapabilityClause for ContextExpose {
         self.config = o;
     }
 
-    fn origin(&self) -> &Origin {
+    fn origin(&self) -> &Arc<PathBuf> {
         &self.origin
-    }
-
-    /// Helper to get the file path from the origin.
-    fn file_path(&self) -> PathBuf {
-        (*self.origin.file).clone()
     }
 
     fn availability(&self) -> Option<ContextSpanned<Availability>> {
@@ -600,28 +572,28 @@ impl FromClauseContext for ContextExpose {
     }
 }
 
-impl Hydrate for ParsedExpose {
+impl Hydrate for Expose {
     type Output = ContextExpose;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
         Ok(ContextExpose {
-            origin: Origin::synthetic(file.clone().to_path_buf()),
-            service: hydrate_opt_simple(self.service, file, buffer),
-            protocol: hydrate_opt_simple(self.protocol, file, buffer),
-            directory: hydrate_opt_simple(self.directory, file, buffer),
-            runner: hydrate_opt_simple(self.runner, file, buffer),
-            resolver: hydrate_opt_simple(self.resolver, file, buffer),
-            dictionary: hydrate_opt_simple(self.dictionary, file, buffer),
-            config: hydrate_opt_simple(self.config, file, buffer),
-            from: hydrate_simple(self.from, file, buffer),
-            to: hydrate_opt_simple(self.to, file, buffer),
-            r#as: hydrate_opt_simple(self.r#as, file, buffer),
-            rights: hydrate_opt_simple(self.rights, file, buffer),
-            subdir: hydrate_opt_simple(self.subdir, file, buffer),
-            event_stream: hydrate_opt_simple(self.event_stream, file, buffer),
-            scope: hydrate_opt_simple(self.scope, file, buffer),
-            availability: hydrate_opt_simple(self.availability, file, buffer),
-            source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
+            origin: file.clone(),
+            service: hydrate_opt_simple(self.service, file),
+            protocol: hydrate_opt_simple(self.protocol, file),
+            directory: hydrate_opt_simple(self.directory, file),
+            runner: hydrate_opt_simple(self.runner, file),
+            resolver: hydrate_opt_simple(self.resolver, file),
+            dictionary: hydrate_opt_simple(self.dictionary, file),
+            config: hydrate_opt_simple(self.config, file),
+            from: hydrate_simple(self.from, file),
+            to: hydrate_opt_simple(self.to, file),
+            r#as: hydrate_opt_simple(self.r#as, file),
+            rights: hydrate_opt_simple(self.rights, file),
+            subdir: hydrate_opt_simple(self.subdir, file),
+            event_stream: hydrate_opt_simple(self.event_stream, file),
+            scope: hydrate_opt_simple(self.scope, file),
+            availability: hydrate_opt_simple(self.availability, file),
+            source_availability: hydrate_opt_simple(self.source_availability, file),
         })
     }
 }

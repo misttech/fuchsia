@@ -21,14 +21,16 @@ use crate::types::r#use::{ContextUse, Use, UseFromRef};
 use crate::{
     AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType,
     ContextCapabilityClause, ContextSpanned, DependencyType, DictionaryRef, Error, EventScope,
-    FromClause, FromClauseContext, OneOrMany, Origin, Program, RootDictionaryRef,
-    SourceAvailability,
+    FromClause, FromClauseContext, OneOrMany, Program, RootDictionaryRef, SourceAvailability,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::path::Path;
 use std::{fmt, iter};
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Default, Clone)]
 pub struct CapabilityRequirements<'a> {
@@ -107,7 +109,7 @@ fn offer_dependency(offer: &ContextOffer) -> DependencyType {
     }
 }
 
-type ConflictInfo<'a> = (CapabilityId<'a>, Origin);
+type ConflictInfo<'a> = (CapabilityId<'a>, Arc<PathBuf>);
 
 struct ValidationContextV2<'a> {
     document: &'a DocumentContext,
@@ -356,7 +358,7 @@ which is almost certainly a mistake: {}",
     fn validate_capability(
         &mut self,
         capability_wrapper: &'a ContextSpanned<ContextCapability>,
-        used_ids: &mut HashMap<String, Origin>,
+        used_ids: &mut HashMap<String, Arc<PathBuf>>,
     ) -> Result<(), Error> {
         let capability = &capability_wrapper.value;
 
@@ -468,7 +470,7 @@ which is almost certainly a mistake: {}",
     fn validate_use(
         &mut self,
         use_wrapper: &'a ContextSpanned<ContextUse>,
-        used_ids: &mut HashMap<String, (CapabilityId<'a>, Origin)>,
+        used_ids: &mut HashMap<String, (CapabilityId<'a>, Arc<PathBuf>)>,
     ) -> Result<(), Error> {
         use_wrapper.capability_type(Some(use_wrapper.origin.clone()))?;
         let use_ = &use_wrapper.value;
@@ -741,8 +743,8 @@ which is almost certainly a mistake: {}",
     fn validate_expose(
         &self,
         expose_wrapper: &'a ContextSpanned<ContextExpose>,
-        used_ids: &mut HashMap<String, Origin>,
-        exposed_to_framework_ids: &mut HashMap<String, Origin>,
+        used_ids: &mut HashMap<String, Arc<PathBuf>>,
+        exposed_to_framework_ids: &mut HashMap<String, Arc<PathBuf>>,
     ) -> Result<(), Error> {
         let expose = &expose_wrapper.value;
 
@@ -893,7 +895,7 @@ which is almost certainly a mistake: {}",
     fn validate_offer(
         &mut self,
         offer_wrapper: &'a ContextSpanned<ContextOffer>,
-        used_ids: &mut HashMap<Name, HashMap<String, Origin>>,
+        used_ids: &mut HashMap<Name, HashMap<String, Arc<PathBuf>>>,
         protocols_offered_to_all: &[&'a ContextSpanned<ContextOffer>],
     ) -> Result<(), Error> {
         let offer = &offer_wrapper.value;
@@ -999,7 +1001,7 @@ which is almost certainly a mistake: {}",
                         offer_to_all_would_duplicate_context(
                             offer_to_all,
                             offer_wrapper,
-                            to_target,
+                            &to_target,
                         )?;
                     }
 
@@ -1043,7 +1045,7 @@ which is almost certainly a mistake: {}",
                                 if let Some(CapabilityFromRef::Named(source)) =
                                     self.all_storages.get::<BorrowedName>(storage.as_ref())
                                 {
-                                    if to_target == source {
+                                    if *to_target == *source {
                                         return Err(Error::validate_context(
                                             format!(
                                                 "Storage offer target \"{}\" is same as source",
@@ -1427,7 +1429,7 @@ which is almost certainly a mistake: {}",
     fn validate_directory_rights(
         &self,
         rights_clause: &Rights,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
     ) -> Result<(), Error> {
         let mut rights = HashSet::new();
         for right_token in rights_clause.0.iter() {
@@ -1467,7 +1469,7 @@ which is almost certainly a mistake: {}",
         cap: &T,
         source_availability: &Option<SourceAvailability>,
         availability: &Option<Availability>,
-        origin: Origin,
+        origin: Arc<PathBuf>,
     ) -> Result<(), Error>
     where
         T: ContextCapabilityClause + FromClauseContext,
@@ -1571,7 +1573,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         component_ref: &AnyRef<'_>,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
     ) -> Result<(), Error> {
         match component_ref {
             AnyRef::Named(name) => {
@@ -1602,7 +1604,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         component_ref: &AnyRef<'_>,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
     ) -> Result<(), Error> {
         match component_ref {
             AnyRef::Named(name) => {
@@ -1633,7 +1635,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         capability_ref: &AnyRef<'_>,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
     ) -> Result<(), Error> {
         match capability_ref {
             AnyRef::Named(name) => {
@@ -1662,7 +1664,7 @@ which is almost certainly a mistake: {}",
         &self,
         reference_description: &str,
         ref_: &AnyRef<'_>,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
     ) -> Result<(), Error> {
         if self.validate_component_child_ref(reference_description, ref_, origin).is_err()
             && self.validate_component_capability_ref(reference_description, ref_, origin).is_err()
@@ -3672,7 +3674,6 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use serde_json::json;
-    use std::sync::Arc;
 
     macro_rules! test_validate_cml {
         (
@@ -4879,12 +4880,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml" &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 5, column: 32}
-                })
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml"),
 
         test_cml_allow_long_names_without_feature(
             json!({
@@ -4908,11 +4904,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin}) if &err == "\"path\" should be present with \"directory\"" &&
-                origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 38}
-            })
+            Err(Error::ValidateContext { err, ..}) if &err == "\"path\" should be present with \"directory\""
         ),
         test_cml_directory_missing_rights(
             r##"{
@@ -4923,12 +4915,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"rights\" should be present with \"directory\"" &&
-                origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 38}
-            })
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"rights\" should be present with \"directory\""),
 
         test_cml_storage_missing_from(
                 r##"{
@@ -4940,12 +4927,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should be present with \"storage\"" &&
-                                origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 36}
-            })
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from\" should be present with \"storage\""),
 
 
         test_cml_storage_path(
@@ -4957,11 +4939,7 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker"
                     } ]
                 }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\"" &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 5, column: 33}
-                })        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\""),
 
         test_cml_storage_missing_path_or_backing_dir(
             r##"{
@@ -4971,11 +4949,7 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker"
                     } ]
                 }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"backing_dir\" should be present with \"storage\"" &&
-                                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 3, column: 36}
-                })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"backing_dir\" should be present with \"storage\""
         ),
 
         test_cml_storage_missing_storage_id(
@@ -4986,11 +4960,7 @@ mod tests {
                         "backing_dir": "storage"
                     } ]
                 }"##,
-            Err(Error::ValidateContext{ err, origin }) if &err == "\"storage_id\" should be present with \"storage\"" &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 3, column: 36}
-                })        ),
+            Err(Error::ValidateContext{ err, .. }) if &err == "\"storage_id\" should be present with \"storage\""),
 
         test_cml_capabilities_extraneous_resolver_from(
             r##"{
@@ -5002,12 +4972,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should not be present with \"resolver\"" &&
-               origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 6, column: 33}
-                })
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from\" should not be present with \"resolver\""),
 
         test_cml_resolver_missing_path(
             r##"{
@@ -5017,12 +4982,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" should be present with \"resolver\"" &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 4, column: 37}
-                })
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"path\" should be present with \"resolver\""),
 
         test_cml_runner_missing_path(
             r##"{
@@ -5032,11 +4992,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" should be present with \"runner\"" &&
-                                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 4, column: 35}
-                })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"path\" should be present with \"runner\""
         ),
 
         test_cml_runner_extraneous_from(
@@ -5049,11 +5005,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should not be present with \"runner\"" &&
-                                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 6, column: 33}
-                })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from\" should not be present with \"runner\""
         ),
 
         test_cml_service_multi_invalid_path(
@@ -5065,11 +5017,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext{ err, origin }) if &err == "\"path\" can only be specified when one `service` is supplied." &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 5, column: 33}
-            })
+            Err(Error::ValidateContext{ err, .. }) if &err == "\"path\" can only be specified when one `service` is supplied."
         ),
 
         test_cml_protocol_multi_invalid_path(
@@ -5081,13 +5029,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" can only be specified when one `protocol` is supplied." &&
-                        origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 5, column: 33}
-            })
-
-        ),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied."),
 
         test_cml_use_bad_duplicate_target_names(
             r##"{
@@ -5096,14 +5038,7 @@ mod tests {
                   { "protocol": "fuchsia.component.Realm" }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 33}}, Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 33}
-            }]
-        ),
+            Err(Error::ValidateContexts { err, .. }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol"),
 
         test_cml_use_disallows_nested_dirs_directory(
             r##"{
@@ -5112,11 +5047,7 @@ mod tests {
                     { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\"" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 21}
-            }]
+            Err(Error::ValidateContexts { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\""
         ),
         test_cml_use_disallows_nested_dirs_storage(
             r##"{
@@ -5125,11 +5056,7 @@ mod tests {
                     { "storage": "foobarbaz", "path": "/foo/bar/baz" }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\"" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 21}
-            }]
+            Err(Error::ValidateContexts { err, .. }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
         ),
         test_cml_use_disallows_nested_dirs_directory_and_storage(
             r##"{
@@ -5138,11 +5065,7 @@ mod tests {
                     { "storage": "foobarbaz", "path": "/foo/bar/baz" }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\"" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 21}
-            }]
+            Err(Error::ValidateContexts { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
         ),
          test_cml_use_disallows_common_prefixes_service(
              r##"{
@@ -5151,11 +5074,7 @@ mod tests {
                      { "protocol": "fuchsia", "path": "/foo/bar/fuchsia" }
                  ]
              }"##,
-             Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\"" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 22}
-            }]
+             Err(Error::ValidateContexts { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\""
         ),
         test_cml_use_disallows_common_prefixes_protocol(
             r##"{
@@ -5164,11 +5083,7 @@ mod tests {
                     { "protocol": "fuchsia", "path": "/foo/bar/fuchsia.2" }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\"" &&
-            origins == vec![Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 3, column: 21}
-            }]
+            Err(Error::ValidateContexts { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\""
         ),
 
 
@@ -5188,11 +5103,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "only \"protocol\" supports source from \"debug\"" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 5, column: 33}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
         ),
 
         test_cml_availability_not_supported_for_event_streams(
@@ -5205,11 +5116,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"availability\" cannot be used with \"event_stream\"" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 6, column: 41}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"availability\" cannot be used with \"event_stream\""
         ),
 
         test_cml_use_disallows_filter_on_non_events(
@@ -5238,11 +5145,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"availability\" cannot be used with \"runner\"" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 6, column: 41}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"availability\" cannot be used with \"runner\""
         ),
 
         test_cml_use_event_stream_self_ref(
@@ -5255,11 +5158,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"from: self\" cannot be used with \"event_stream\"" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 6, column: 33}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from: self\" cannot be used with \"event_stream\""
         ),
 
         test_cml_use_runner_self_ref(
@@ -5271,11 +5170,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"from: self\" cannot be used with \"runner\""  &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 5, column: 33}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from: self\" cannot be used with \"runner\""
         ),
 
         test_cml_use_invalid_availability(
@@ -5287,11 +5182,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"   &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 5, column: 41}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"
         ),
 
         test_cml_use_config_bad_string(
@@ -5304,12 +5195,8 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin })
-            if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 35}
-            })
+            Err(Error::ValidateContext { err, .. })
+            if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'"
         ),
 
         test_config_required_with_default(
@@ -5321,12 +5208,8 @@ mod tests {
                     "default": "true"
                 }
             ]}"##,
-            Err(Error::ValidateContext {err, origin})
-            if &err == "Config 'fuchsia.config.MyConfig' is required and has a default value" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 6, column: 32}
-            })
+            Err(Error::ValidateContext {err, ..})
+            if &err == "Config 'fuchsia.config.MyConfig' is required and has a default value"
         ),
 
         test_cml_use_numbered_handle_and_path(
@@ -5378,11 +5261,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin}) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead." &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 14, column: 35}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead."
         ),
         test_cml_expose_event_stream_multiple_as(
             r##"{
@@ -5394,11 +5273,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "as cannot be used with multiple event streams" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 6, column: 31}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "as cannot be used with multiple event streams"
         ),
 
         test_cml_expose_event_stream_to_framework(
@@ -5411,11 +5286,7 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin }) if &err == "cannot expose an event_stream to framework" &&
-            origin == Some(Origin {
-                file:  Arc::new("test.cml".into()),
-                location: Location {line: 4, column: 41}
-            })
+            Err(Error::ValidateContext { err, .. }) if &err == "cannot expose an event_stream to framework"
         ),
 
         test_cml_expose_event_stream_from_self(
@@ -5446,11 +5317,7 @@ mod tests {
                   }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin  }) if &err == "\"x*\" is duplicated in the rights clause." &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 6, column: 31}
-                })
+            Err(Error::ValidateContext { err, ..  }) if &err == "\"x*\" is duplicated in the rights clause."
         ),
 
         test_cml_rights_alias_star_expansion_with_longform_collision(
@@ -5463,12 +5330,7 @@ mod tests {
                   }
                 ]
             }"##,
-            Err(Error::ValidateContext { err, origin}) if &err == "\"read_bytes\" is duplicated in the rights clause." &&
-                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 6, column: 31}
-                })
-
+            Err(Error::ValidateContext { err, ..}) if &err == "\"read_bytes\" is duplicated in the rights clause."
         ),
 
         test_cml_rights_use_invalid(
@@ -5495,12 +5357,8 @@ mod tests {
                 }
             ]
         }"##,
-            Err(Error::ValidateContext {err, origin, ..})
-            if &err == "use declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
-                                origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 2, column: 17}
-                })
+            Err(Error::ValidateContext {err, ..})
+            if &err == "use declaration has multiple capability types defined: [\"service\", \"protocol\"]"
             ),
     test_cml_expose_two_types_bad(
         r##"{"expose": [
@@ -5511,12 +5369,8 @@ mod tests {
             }
         ]
     }"##,
-        Err(Error::ValidateContext {err, origin})
-        if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
-                                        origin == Some(Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 2, column: 13}
-                })
+        Err(Error::ValidateContext {err, ..})
+        if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]"
         ),
 
         test_cml_expose_from_self(
@@ -5935,11 +5789,7 @@ mod tests {
                         }
                     ]
                 }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
-                                            origins == vec![Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 4, column: 40}}]
-
+            Err(Error::ValidateContexts { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
         ),
 
         test_cml_offer_storage_from_collection_invalid(
@@ -5956,10 +5806,7 @@ mod tests {
                     { "storage": "cache", "from": "#coll", "to": [ "#echo_server" ] }
                 ]
             }"##,
-            Err(Error::ValidateContexts { err, origins }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
-                origins == vec![Origin {
-                    file:  Arc::new("test.cml".into()),
-                    location: Location {line: 11, column: 34}}]
+            Err(Error::ValidateContexts { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
         ),
 
         test_cml_children_bad_environment(

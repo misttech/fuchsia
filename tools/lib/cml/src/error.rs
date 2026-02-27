@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Origin;
 use cm_fidl_validator::error::ErrorList;
 use cm_types::ParseError;
 use fidl_fuchsia_component_decl as fdecl;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
+use std::sync::Arc;
 use std::{error, fmt, io};
 
 /// The location in the file where an error was detected.
@@ -29,7 +29,7 @@ pub enum Error {
     FidlEncoding(fidl::Error),
     Merge {
         err: String,
-        origin: Option<Origin>,
+        origin: Option<Arc<PathBuf>>,
     },
     MissingRights(String),
     Parse {
@@ -43,11 +43,11 @@ pub enum Error {
     },
     ValidateContext {
         err: String,
-        origin: Option<Origin>,
+        origin: Option<Arc<PathBuf>>,
     },
     ValidateContexts {
         err: String,
-        origins: Vec<Origin>,
+        origins: Vec<Arc<PathBuf>>,
     },
     FidlValidator {
         errs: ErrorList,
@@ -77,7 +77,7 @@ impl Error {
         }
     }
 
-    pub fn merge(err: impl fmt::Display, origin: Option<Origin>) -> Self {
+    pub fn merge(err: impl fmt::Display, origin: Option<Arc<PathBuf>>) -> Self {
         Self::Merge { err: err.to_string(), origin }
     }
 
@@ -85,10 +85,10 @@ impl Error {
         Self::Validate { err: err.to_string(), filename: None }
     }
 
-    pub fn validate_context(err: impl fmt::Display, origin: Option<Origin>) -> Self {
+    pub fn validate_context(err: impl fmt::Display, origin: Option<Arc<PathBuf>>) -> Self {
         Self::ValidateContext { err: err.to_string(), origin }
     }
-    pub fn validate_contexts(err: impl fmt::Display, origins: Vec<Origin>) -> Self {
+    pub fn validate_contexts(err: impl fmt::Display, origins: Vec<Arc<PathBuf>>) -> Self {
         Self::ValidateContexts { err: err.to_string(), origins }
     }
 
@@ -132,7 +132,7 @@ impl Error {
         }
     }
 
-    pub fn with_origin(self, origin: Origin) -> Self {
+    pub fn with_origin(self, origin: Arc<PathBuf>) -> Self {
         match self {
             Error::ValidateContext { err, .. } => {
                 Error::ValidateContext { err, origin: Some(origin) }
@@ -153,9 +153,7 @@ impl fmt::Display for Error {
                 let mut prefix = String::new();
 
                 if let Some(origin) = origin {
-                    prefix.push_str(&format!("{:?}:", origin.file));
-                    prefix
-                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
+                    prefix.push_str(&format!("{:?}:", origin));
                 }
 
                 if !prefix.is_empty() {
@@ -202,9 +200,7 @@ impl fmt::Display for Error {
                 let mut prefix = String::new();
 
                 if let Some(origin) = origin {
-                    prefix.push_str(&format!("{:?}:", origin.file));
-                    prefix
-                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
+                    prefix.push_str(&format!("{:?}:", origin));
                 }
 
                 if !prefix.is_empty() {
@@ -221,9 +217,7 @@ impl fmt::Display for Error {
                         prefix.push_str(", and ");
                     }
 
-                    prefix.push_str(&format!("{:?}:", origin.file));
-                    prefix
-                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
+                    prefix.push_str(&format!("{:?}:", origin));
                 }
 
                 if !prefix.is_empty() {

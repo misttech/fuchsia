@@ -26,7 +26,7 @@ use crate::{
     AnyRef, AsClause, AsClauseContext, Availability, Capability, CapabilityClause, ConfigKey,
     ConfigNestedValueType, ConfigRuntimeSource, ConfigType, ConfigValueType, ContextCapability,
     ContextPathClause, ContextSpanned, DictionaryRef, EventScope, FromClause, FromClauseContext,
-    OneOrMany, Origin, Path, PathClause, Program, ResolverRegistration, RootDictionaryRef,
+    OneOrMany, Path, PathClause, Program, ResolverRegistration, RootDictionaryRef,
     SourceAvailability, validate,
 };
 use cm_rust::NativeIntoFidl;
@@ -39,6 +39,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::{Into, TryInto};
 use std::path::PathBuf;
+use std::sync::Arc;
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 /// Options for CML compilation. Uses the builder pattern.
@@ -313,7 +314,7 @@ fn value_to_dictionary_value_deprecated(
 
 fn value_to_dictionary_value(
     value: Value,
-    origin: &Origin,
+    origin: &Arc<PathBuf>,
 ) -> Result<Option<Box<fdata::DictionaryValue>>, Error> {
     match value {
         Value::Null => Ok(None),
@@ -2336,13 +2337,7 @@ fn translate_children(children_in: &Vec<ContextSpanned<ContextChild>>) -> Vec<fd
         out_children.push(fdecl::Child {
             name: Some(child.name.value.clone().into()),
             url: Some(child.url.value.clone().into()),
-            startup: Some(
-                child
-                    .startup
-                    .as_ref()
-                    .map(|r| r.value.clone().into())
-                    .unwrap_or_else(|| StartupMode::Lazy.into()),
-            ),
+            startup: Some(child.startup.value.clone().into()),
             environment: extract_environment_ref(child.environment.as_ref()).map(|e| e.into()),
             on_terminate: child.on_terminate.as_ref().map(|r| r.value.clone().into()),
             ..Default::default()

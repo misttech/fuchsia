@@ -21,7 +21,6 @@ rustc_library("cml") {
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:indexmap",
     "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:json-spanned-value",
     "//third_party/rust_crates:json5format",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:serde",

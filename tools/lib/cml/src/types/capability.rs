@@ -15,7 +15,6 @@ pub use cm_types::{
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
 };
 use cml_macro::Reference;
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -335,42 +334,10 @@ pub enum CapabilityFromRef {
     Self_,
 }
 
-#[derive(Deserialize, Default, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedCapability {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service: Option<Spanned<OneOrMany<Name>>>,
-    pub protocol: Option<Spanned<OneOrMany<Name>>>,
-    pub directory: Option<Spanned<Name>>,
-    pub storage: Option<Spanned<Name>>,
-    pub runner: Option<Spanned<Name>>,
-    pub resolver: Option<Spanned<Name>>,
-    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
-    pub dictionary: Option<Spanned<Name>>,
-    pub config: Option<Spanned<Name>>,
-    pub path: Option<Spanned<Path>>,
-    pub rights: Option<Spanned<Rights>>,
-    pub from: Option<Spanned<CapabilityFromRef>>,
-    pub backing_dir: Option<Spanned<Name>>,
-    pub subdir: Option<Spanned<RelativePath>>,
-    pub storage_id: Option<Spanned<StorageId>>,
-
-    #[serde(rename = "type", default)]
-    pub config_type: Option<Spanned<ConfigType>>,
-    #[serde(rename = "max_size", default)]
-    pub config_max_size: Option<Spanned<NonZeroU32>>,
-    #[serde(rename = "max_count", default)]
-    pub config_max_count: Option<Spanned<NonZeroU32>>,
-    #[serde(rename = "element", default)]
-    pub config_element_type: Option<Spanned<ConfigNestedValueType>>,
-    pub value: Option<Spanned<serde_json::Value>>,
-    pub delivery: Option<Spanned<DeliveryType>>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextCapability {
     #[serde(skip)]
-    pub origin: Origin,
+    pub origin: Arc<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -540,13 +507,8 @@ impl ContextCapabilityClause for ContextCapability {
     }
 
     /// Returns the origin of this capability.
-    fn origin(&self) -> &Origin {
+    fn origin(&self) -> &Arc<PathBuf> {
         &self.origin
-    }
-
-    /// Helper to get the file path from the origin.
-    fn file_path(&self) -> PathBuf {
-        (*self.origin.file).clone()
     }
 
     fn availability(&self) -> Option<ContextSpanned<Availability>> {
@@ -605,33 +567,33 @@ impl AsClauseContext for ContextCapability {
     }
 }
 
-impl Hydrate for ParsedCapability {
+impl Hydrate for Capability {
     type Output = ContextCapability;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error> {
         Ok(ContextCapability {
-            origin: Origin::synthetic(file.clone().to_path_buf()),
-            service: hydrate_opt_simple(self.service, file, buffer),
-            protocol: hydrate_opt_simple(self.protocol, file, buffer),
-            directory: hydrate_opt_simple(self.directory, file, buffer),
-            storage: hydrate_opt_simple(self.storage, file, buffer),
-            runner: hydrate_opt_simple(self.runner, file, buffer),
-            resolver: hydrate_opt_simple(self.resolver, file, buffer),
-            dictionary: hydrate_opt_simple(self.dictionary, file, buffer),
-            config: hydrate_opt_simple(self.config, file, buffer),
-            path: hydrate_opt_simple(self.path, file, buffer),
-            rights: hydrate_opt_simple(self.rights, file, buffer),
-            from: hydrate_opt_simple(self.from, file, buffer),
-            event_stream: hydrate_opt_simple(self.event_stream, file, buffer),
-            backing_dir: hydrate_opt_simple(self.backing_dir, file, buffer),
-            subdir: hydrate_opt_simple(self.subdir, file, buffer),
-            storage_id: hydrate_opt_simple(self.storage_id, file, buffer),
-            config_type: hydrate_opt_simple(self.config_type, file, buffer),
-            config_max_size: hydrate_opt_simple(self.config_max_size, file, buffer),
-            config_max_count: hydrate_opt_simple(self.config_max_count, file, buffer),
-            config_element_type: hydrate_opt_simple(self.config_element_type, file, buffer),
-            value: hydrate_opt_simple(self.value, file, buffer),
-            delivery: hydrate_opt_simple(self.delivery, file, buffer),
+            origin: file.clone(),
+            service: hydrate_opt_simple(self.service, file),
+            protocol: hydrate_opt_simple(self.protocol, file),
+            directory: hydrate_opt_simple(self.directory, file),
+            storage: hydrate_opt_simple(self.storage, file),
+            runner: hydrate_opt_simple(self.runner, file),
+            resolver: hydrate_opt_simple(self.resolver, file),
+            dictionary: hydrate_opt_simple(self.dictionary, file),
+            config: hydrate_opt_simple(self.config, file),
+            path: hydrate_opt_simple(self.path, file),
+            rights: hydrate_opt_simple(self.rights, file),
+            from: hydrate_opt_simple(self.from, file),
+            event_stream: hydrate_opt_simple(self.event_stream, file),
+            backing_dir: hydrate_opt_simple(self.backing_dir, file),
+            subdir: hydrate_opt_simple(self.subdir, file),
+            storage_id: hydrate_opt_simple(self.storage_id, file),
+            config_type: hydrate_opt_simple(self.config_type, file),
+            config_max_size: hydrate_opt_simple(self.config_max_size, file),
+            config_max_count: hydrate_opt_simple(self.config_max_count, file),
+            config_element_type: hydrate_opt_simple(self.config_element_type, file),
+            value: hydrate_opt_simple(self.value, file),
+            delivery: hydrate_opt_simple(self.delivery, file),
         })
     }
 }

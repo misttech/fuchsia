@@ -6,25 +6,12 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::{Path, byte_index_to_location};
-use json_spanned_value::Spanned;
+use crate::Path;
 
-use crate::error::{Error, Location};
+use crate::error::Error;
 use crate::{CanonicalizeContext, OneOrMany};
 use cm_types::{Availability, BorrowedName, Name};
 use serde::Serialize;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct Origin {
-    pub file: Arc<PathBuf>,
-    pub location: Location,
-}
-
-impl Origin {
-    pub fn synthetic(file: PathBuf) -> Self {
-        Self { file: Arc::new(file), location: Location::default() }
-    }
-}
 
 #[derive(Debug, Clone, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
@@ -32,7 +19,7 @@ pub struct ContextSpanned<T> {
     pub value: T,
 
     #[serde(skip)]
-    pub origin: Origin,
+    pub origin: Arc<PathBuf>,
 }
 
 impl<T: PartialEq> PartialEq for ContextSpanned<T> {
@@ -58,7 +45,7 @@ impl<T> ContextSpanned<T> {
     }
 
     pub fn new_synthetic(value: T, file: PathBuf) -> Self {
-        Self { value, origin: Origin::synthetic(file) }
+        Self { value, origin: Arc::new(file) }
     }
 
     pub fn maybe_synthetic(val: Option<T>, file: PathBuf) -> Option<Self> {
@@ -78,7 +65,7 @@ impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
     }
 }
 
-/// Hydrate is used to translate a json_spanned::Spanned type to a
+/// Hydrate is used to translate a type to a
 /// Result<ContextSpanned> type. The ContextSpanned type is used by validation.
 ///
 /// It is possible to error when merging if a field is defined as multiple,
@@ -86,32 +73,23 @@ impl<T: ContextPathClause> ContextPathClause for ContextSpanned<T> {
 pub trait Hydrate {
     type Output;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error>;
+    fn hydrate(self, file: &Arc<PathBuf>) -> Result<Self::Output, Error>;
 }
 
 pub fn hydrate_list<P, C>(
-    raw_list: Option<Spanned<Vec<Spanned<P>>>>,
+    raw_list: Option<Vec<P>>,
     file: &Arc<PathBuf>,
-    buffer: &String,
 ) -> Result<Option<Vec<ContextSpanned<C>>>, Error>
 where
     P: Hydrate<Output = C>,
 {
     raw_list
-        .map(|spanned_vec| {
-            spanned_vec
-                .into_inner()
-                .into_iter()
-                .map(|spanned_item| {
-                    let span = spanned_item.span();
-                    let location = byte_index_to_location(buffer, span.0);
-                    let parsed_item = spanned_item.into_inner();
-
-                    let context_item_result = parsed_item.hydrate(file, buffer);
-                    context_item_result.map(|c_value| ContextSpanned {
-                        value: c_value,
-                        origin: Origin { file: file.clone(), location },
-                    })
+        .map(|vec| {
+            vec.into_iter()
+                .map(|item| {
+                    let context_item_result = item.hydrate(file);
+                    context_item_result
+                        .map(|c_value| ContextSpanned { value: c_value, origin: file.clone() })
                 })
                 .collect::<Result<Vec<ContextSpanned<C>>, Error>>()
         })
@@ -119,49 +97,36 @@ where
 }
 
 pub fn hydrate_required<P, C>(
-    spanned: Spanned<P>,
+    parsed_value: P,
     file: &Arc<PathBuf>,
-    buffer: &String,
 ) -> Result<ContextSpanned<C>, Error>
 where
     P: Hydrate<Output = C>,
 {
-    let span = spanned.span();
-    let location = byte_index_to_location(buffer, span.0);
-    let parsed_value = spanned.into_inner();
+    let context_value = parsed_value.hydrate(file)?;
 
-    let context_value = parsed_value.hydrate(file, buffer)?;
-
-    Ok(ContextSpanned { value: context_value, origin: Origin { file: file.clone(), location } })
+    Ok(ContextSpanned { value: context_value, origin: file.clone() })
 }
 
-pub fn hydrate_simple<T>(
-    spanned: Spanned<T>,
-    file: &Arc<PathBuf>,
-    buffer: &String,
-) -> ContextSpanned<T> {
-    let span = spanned.span();
-    let location = byte_index_to_location(buffer, span.0);
-    ContextSpanned { value: spanned.into_inner(), origin: Origin { file: file.clone(), location } }
+pub fn hydrate_simple<T>(value: T, file: &Arc<PathBuf>) -> ContextSpanned<T> {
+    ContextSpanned { value, origin: file.clone() }
 }
 
 pub fn hydrate_opt<P, C>(
-    opt_spanned: Option<Spanned<P>>,
+    opt: Option<P>,
     file: &Arc<PathBuf>,
-    buffer: &String,
 ) -> Result<Option<ContextSpanned<C>>, Error>
 where
     P: Hydrate<Output = C>,
 {
-    opt_spanned.map(|s| hydrate_required(s, file, buffer)).transpose()
+    opt.map(|s| hydrate_required(s, file)).transpose()
 }
 
 pub fn hydrate_opt_simple<T>(
-    opt_spanned: Option<Spanned<T>>,
+    opt_spanned: Option<T>,
     file: &Arc<PathBuf>,
-    buffer: &String,
 ) -> Option<ContextSpanned<T>> {
-    opt_spanned.map(|s| hydrate_simple(s, file, buffer))
+    opt_spanned.map(|s| hydrate_simple(s, file))
 }
 
 pub fn option_one_or_many_as_ref_context<T, S: ?Sized>(
@@ -195,13 +160,10 @@ pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
     fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
     fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>>;
-
-    fn origin(&self) -> &Origin;
-    fn file_path(&self) -> PathBuf;
-
+    fn origin(&self) -> &Arc<PathBuf>;
     fn availability(&self) -> Option<ContextSpanned<Availability>>;
-    fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>);
 
+    fn set_availability(&mut self, a: Option<ContextSpanned<Availability>>);
     fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
     fn set_protocol(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
     fn set_directory(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>);
@@ -216,7 +178,7 @@ pub trait ContextCapabilityClause: Clone + PartialEq + std::fmt::Debug {
     // /// If `service()` returns `Some`, the capability name must be "service", etc.
     // ///
     // /// Returns an error if the capability name is not set, or if there is more than one.
-    fn capability_type(&self, origin: Option<Origin>) -> Result<&'static str, Error> {
+    fn capability_type(&self, origin: Option<Arc<PathBuf>>) -> Result<&'static str, Error> {
         let mut types = Vec::new();
         if self.service().is_some() {
             types.push("service");
@@ -384,12 +346,8 @@ impl<T: ContextCapabilityClause> ContextCapabilityClause for ContextSpanned<T> {
         self.value.event_stream()
     }
 
-    fn origin(&self) -> &Origin {
+    fn origin(&self) -> &Arc<PathBuf> {
         &self.origin
-    }
-
-    fn file_path(&self) -> PathBuf {
-        self.origin.file.to_path_buf()
     }
 
     fn set_service(&mut self, o: Option<ContextSpanned<OneOrMany<Name>>>) {

@@ -5,15 +5,15 @@
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::types::capability::{ContextCapability, ParsedCapability};
-use crate::types::child::{ContextChild, ParsedChild};
-use crate::types::collection::{ContextCollection, ParsedCollection};
+use crate::types::capability::ContextCapability;
+use crate::types::child::ContextChild;
+use crate::types::collection::ContextCollection;
 use crate::types::common::*;
-use crate::types::environment::{ContextEnvironment, ParsedEnvironment};
-use crate::types::expose::{ContextExpose, ParsedExpose};
-use crate::types::offer::{ContextOffer, ParsedOffer};
-use crate::types::program::{ContextProgram, ParsedProgram};
-use crate::types::r#use::{ContextUse, ParsedUse};
+use crate::types::environment::ContextEnvironment;
+use crate::types::expose::ContextExpose;
+use crate::types::offer::ContextOffer;
+use crate::types::program::ContextProgram;
+use crate::types::r#use::ContextUse;
 use crate::{
     Canonicalize, CanonicalizeContext, Capability, CapabilityClause, CapabilityFromRef, Child,
     Collection, ConfigKey, ConfigValueType, Environment, Error, Expose, Location, Offer, Program,
@@ -24,7 +24,6 @@ pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
 };
-use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -1134,25 +1133,6 @@ impl ValueMap for IndexMap<String, Value> {
     }
 }
 
-/// # Component manifest (`.cml`) reference
-///
-/// A `.cml` file contains a single spanned json5 object literal with the keys below.
-#[derive(Deserialize, Debug, Default, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedDocument {
-    pub include: Option<Vec<Spanned<String>>>,
-    pub program: Option<Spanned<ParsedProgram>>,
-    pub children: Option<Spanned<Vec<Spanned<ParsedChild>>>>,
-    pub collections: Option<Spanned<Vec<Spanned<ParsedCollection>>>>,
-    pub environments: Option<Spanned<Vec<Spanned<ParsedEnvironment>>>>,
-    pub capabilities: Option<Spanned<Vec<Spanned<ParsedCapability>>>>,
-    pub r#use: Option<Spanned<Vec<Spanned<ParsedUse>>>>,
-    pub expose: Option<Spanned<Vec<Spanned<ParsedExpose>>>>,
-    pub offer: Option<Spanned<Vec<Spanned<ParsedOffer>>>>,
-    pub facets: Option<IndexMap<String, Spanned<Value>>>,
-    pub config: Option<BTreeMap<ConfigKey, Spanned<ConfigValueType>>>,
-}
-
 #[derive(Debug, Default, Serialize, PartialEq)]
 pub struct DocumentContext {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1483,7 +1463,7 @@ impl DocumentContext {
         include_map: Source,
         outer_key: &str,
         include_path: &path::Path,
-        origin: Option<&Origin>,
+        origin: Option<&Arc<PathBuf>>,
         allow_array_concatenation_keys: Option<&Vec<&str>>,
     ) -> Result<(), Error>
     where
@@ -1553,42 +1533,43 @@ pub fn parse_and_hydrate(
     file_arc: Arc<PathBuf>,
     buffer: &String,
 ) -> Result<DocumentContext, Error> {
-    let parsed_doc: ParsedDocument = json_spanned_value::from_str(buffer).map_err(|e| {
-        let location = Location { line: e.line(), column: e.column() };
-        Error::parse(e, Some(location), Some(&(*file_arc).clone()))
+    let parsed_doc: Document = serde_json5::from_str(buffer).map_err(|e| {
+        let serde_json5::Error::Message { location, msg } = e;
+        let location = location.map(|l| Location { line: l.line, column: l.column });
+        Error::parse(msg, location, Some(&(*file_arc).clone()))
     })?;
 
     let include = parsed_doc.include.map(|raw_includes| {
         raw_includes
             .into_iter()
-            .map(|spanned_path| hydrate_simple(spanned_path, &file_arc, buffer))
+            .map(|path| hydrate_simple(path, &file_arc))
             .collect::<Vec<ContextSpanned<String>>>()
     });
 
     let facets = parsed_doc.facets.map(|raw_facets| {
         raw_facets
             .into_iter()
-            .map(|(key, spanned_val)| (key, hydrate_simple(spanned_val, &file_arc, buffer)))
+            .map(|(key, val)| (key, hydrate_simple(val, &file_arc)))
             .collect::<IndexMap<String, ContextSpanned<serde_json::Value>>>()
     });
 
     let config = parsed_doc.config.map(|raw_config| {
         raw_config
             .into_iter()
-            .map(|(key, spanned_val)| (key, hydrate_simple(spanned_val, &file_arc, buffer)))
+            .map(|(key, val)| (key, hydrate_simple(val, &file_arc)))
             .collect::<BTreeMap<ConfigKey, ContextSpanned<ConfigValueType>>>()
     });
 
     Ok(DocumentContext {
         include,
-        program: hydrate_opt(parsed_doc.program, &file_arc, buffer)?,
-        children: hydrate_list(parsed_doc.children, &file_arc, buffer)?,
-        collections: hydrate_list(parsed_doc.collections, &file_arc, buffer)?,
-        environments: hydrate_list(parsed_doc.environments, &file_arc, buffer)?,
-        capabilities: hydrate_list(parsed_doc.capabilities, &file_arc, buffer)?,
-        r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer)?,
-        expose: hydrate_list(parsed_doc.expose, &file_arc, buffer)?,
-        offer: hydrate_list(parsed_doc.offer, &file_arc, buffer)?,
+        program: hydrate_opt(parsed_doc.program, &file_arc)?,
+        children: hydrate_list(parsed_doc.children, &file_arc)?,
+        collections: hydrate_list(parsed_doc.collections, &file_arc)?,
+        environments: hydrate_list(parsed_doc.environments, &file_arc)?,
+        capabilities: hydrate_list(parsed_doc.capabilities, &file_arc)?,
+        r#use: hydrate_list(parsed_doc.r#use, &file_arc)?,
+        expose: hydrate_list(parsed_doc.expose, &file_arc)?,
+        offer: hydrate_list(parsed_doc.offer, &file_arc)?,
         facets,
         config,
     })
