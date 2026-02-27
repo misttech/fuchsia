@@ -93,3 +93,52 @@ impl ShutdownWatcherClient {
         self.shutdown_options_receiver.next().await.expect("Failed to wait for shutdown options")
     }
 }
+
+/// Convenience type for interacting with the Power Manager's TerminalStateWatcher service.
+pub struct TerminalStateWatcherClient {
+    _watcher_task: fasync::Task<()>,
+    terminal_state_transition_started_receiver: mpsc::Receiver<()>,
+}
+
+impl TerminalStateWatcherClient {
+    pub async fn new(realm: &RealmInstance) -> Self {
+        let (
+            mut terminal_state_transition_started_sender,
+            terminal_state_transition_started_receiver,
+        ) = mpsc::channel(1);
+
+        // Create a new watcher proxy/stream and register the proxy end with shutdown-shim.
+        let watcher_register_proxy: fpower::ShutdownWatcherRegisterProxy = realm
+            .root
+            .connect_to_protocol_at_exposed_dir()
+            .expect("Should be able to connect the proxy correctly");
+        let (watcher_client, mut watcher_request_stream) =
+            fidl::endpoints::create_request_stream::<fpower::TerminalStateWatcherMarker>();
+        watcher_register_proxy
+            .register_terminal_state_watcher(watcher_client)
+            .await
+            .expect("Failed to register terminal state watcher");
+
+        let _watcher_task = fasync::Task::local(async move {
+            while let Some(
+                fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { responder },
+            ) = watcher_request_stream.try_next().await.unwrap()
+            {
+                info!("Received terminal state transition started");
+                let _ = responder.send();
+                terminal_state_transition_started_sender
+                    .try_send(())
+                    .expect("Failed to notify terminal state transition started");
+            }
+        });
+
+        Self { _watcher_task, terminal_state_transition_started_receiver }
+    }
+
+    pub async fn wait_for_terminal_state_transition_started(&mut self) {
+        self.terminal_state_transition_started_receiver
+            .next()
+            .await
+            .expect("Failed to wait for terminal state transition started");
+    }
+}

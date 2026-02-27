@@ -40,7 +40,7 @@ pub fn serve_shutdown_server(
                     proxy_sender.send(watcher.into_proxy()).await.unwrap();
                     responder.send().unwrap();
                 }
-                reboot::ShutdownWatcherRegisterRequest::_UnknownMethod { .. } => {
+                _ => {
                     unimplemented!();
                 }
             }

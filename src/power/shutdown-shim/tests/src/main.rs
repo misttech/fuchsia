@@ -20,7 +20,9 @@ use {
     fidl_fuchsia_system_state as fdevicemanager, fuchsia_async as fasync,
 };
 
-use crate::reboot_watcher_client::{RebootWatcherClient, ShutdownWatcherClient};
+use crate::reboot_watcher_client::{
+    RebootWatcherClient, ShutdownWatcherClient, TerminalStateWatcherClient,
+};
 
 mod reboot_watcher_client;
 mod shutdown_mocks;
@@ -300,6 +302,42 @@ async fn test_shutdown_request_shutdown_watchers(
         .await
 }
 
+#[test_matrix(
+    [true, false],
+    [ShutdownAction::Reboot, ShutdownAction::RebootToBootloader, ShutdownAction::RebootToRecovery, ShutdownAction::Poweroff])]
+#[fuchsia::test]
+async fn test_shutdown_request_terminal_state_watchers(
+    is_power_framework_available: bool,
+    action: ShutdownAction,
+) -> Result<(), Error> {
+    let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
+
+    let mut terminal_watcher = TerminalStateWatcherClient::new(&realm_instance).await;
+
+    let shim_statecontrol: fstatecontrol::AdminProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    fasync::Task::spawn(async move {
+        shim_statecontrol
+            .shutdown(&ShutdownOptions {
+                action: Some(action),
+                reasons: Some(vec![ShutdownReason::SystemUpdate]),
+                __source_breaking: SourceBreaking,
+            })
+            .await
+            .expect_err(
+                "the shutdown shim should close the channel when manual shutdown driving is complete",
+            );
+    })
+    .detach();
+
+    // Verify shutdown-shim notifies the watcher client.
+    terminal_watcher.wait_for_terminal_state_transition_started().await;
+
+    verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
+        .await
+}
+
 #[test_case(true; "with_power_framework")]
 #[test_case(false; "without_power_framework")]
 #[fuchsia::test]
@@ -356,6 +394,39 @@ async fn test_shutdown_request_reboot_watchers(
         fstatecontrol::RebootOptions{ reasons: Some(reasons), ..} => reasons
     );
     assert_eq!(&reasons[..], [RebootReason2::SystemUpdate]);
+
+    verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
+        .await
+}
+
+#[test_case(true; "with_power_framework")]
+#[test_case(false; "without_power_framework")]
+#[fuchsia::test]
+async fn test_reboot_request_terminal_state_watchers(
+    is_power_framework_available: bool,
+) -> Result<(), Error> {
+    let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
+
+    let mut terminal_watcher = TerminalStateWatcherClient::new(&realm_instance).await;
+
+    let shim_statecontrol: fstatecontrol::AdminProxy =
+        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    fasync::Task::spawn(async move {
+        shim_statecontrol
+            .perform_reboot(&fstatecontrol::RebootOptions {
+                reasons: Some(vec![RebootReason2::SystemUpdate]),
+                ..Default::default()
+            })
+            .await
+            .expect_err(
+                "the shutdown shim should close the channel when manual shutdown driving is complete",
+            );
+    })
+    .detach();
+
+    // Verify shutdown-shim notifies the watcher client.
+    terminal_watcher.wait_for_terminal_state_transition_started().await;
 
     verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
         .await

@@ -332,9 +332,7 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
             *shutdown_pending = true;
         }
 
-        if let Some(options) = options {
-            self.shutdown_watcher.handle_system_shutdown_message(options).await;
-        }
+        self.shutdown_watcher.handle_system_shutdown_message(options).await;
 
         self.drive_shutdown_manually().await;
 

@@ -25,10 +25,10 @@ use zx::sys::zx_handle_t;
 ///     - fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister and
 ///       RebootMethodsWatcherRegister: the server provides a Register API that other components in
 ///       the system can use to receive notifications about system shutdown events and reasons
-///     - fuchsia.hardware.power.statecontrol.ShutdownWatcher and RebootMethodsWatcher: the server
-///       receives an instance of this protocol over the ShutdownWatcherRegister and
-///       RebootMethodsWatcherRegister channels, and uses this channel to send shutdown
-///       notifications
+///     - fuchsia.hardware.power.statecontrol.ShutdownWatcher, TerminalStateWatcher, and
+///       RebootMethodsWatcher: the server receives an instance of this protocol over the
+///       ShutdownWatcherRegister and RebootMethodsWatcherRegister channels, and uses this channel
+///       to send shutdown notifications.
 //
 // TODO(https://fxbug.dev/414413282): Remove everything related to RebootMethodsWatcherRegister once
 // only F28+ is supported.
@@ -39,6 +39,9 @@ pub struct ShutdownWatcher {
     /// Contains all the registered ShutdownWatcher channels to be notified when a shutdown request
     /// is received.
     shutdown_watchers: Arc<Mutex<HashMap<zx_handle_t, fpower::ShutdownWatcherProxy>>>,
+    /// Contains all the registered TerminalStateWatcher channels to be notified when a transition
+    /// to a terminal state begins.
+    terminal_state_watchers: Arc<Mutex<HashMap<zx_handle_t, fpower::TerminalStateWatcherProxy>>>,
     inspect: Arc<Mutex<InspectData>>,
 }
 
@@ -53,6 +56,11 @@ impl ShutdownWatcher {
             fpower::MAX_REBOOT_WATCHER_RESPONSE_TIME_SECONDS as i64,
         );
 
+    const NOTIFY_TERMINAL_STATE_RESPONSE_TIMEOUT: zx::MonotonicDuration =
+        zx::MonotonicDuration::from_seconds(
+            fpower::MAX_TERMINAL_STATE_WATCHER_RESPONSE_TIME_SECONDS as i64,
+        );
+
     #[cfg(test)]
     fn new() -> Arc<Self> {
         let inspector = inspect::Inspector::new(fuchsia_inspect::InspectorConfig::default());
@@ -63,6 +71,7 @@ impl ShutdownWatcher {
         Arc::new(Self {
             reboot_watchers: Arc::new(Mutex::new(HashMap::new())),
             shutdown_watchers: Arc::new(Mutex::new(HashMap::new())),
+            terminal_state_watchers: Arc::new(Mutex::new(HashMap::new())),
             inspect: Arc::new(Mutex::new(InspectData::new(
                 inspector.root(),
                 "ShutdownWatcher".to_string(),
@@ -97,6 +106,13 @@ impl ShutdownWatcher {
             match req {
                 fpower::ShutdownWatcherRegisterRequest::RegisterWatcher { watcher, responder } => {
                     self.add_shutdown_watcher(watcher.into_proxy()).await;
+                    let _ = responder.send();
+                }
+                fpower::ShutdownWatcherRegisterRequest::RegisterTerminalStateWatcher {
+                    watcher,
+                    responder,
+                } => {
+                    self.add_terminal_state_watcher(watcher.into_proxy()).await;
                     let _ = responder.send();
                 }
                 fpower::ShutdownWatcherRegisterRequest::_UnknownMethod { ordinal, .. } => {
@@ -166,20 +182,61 @@ impl ShutdownWatcher {
         self.inspect.lock().await.add_reboot_watcher();
     }
 
+    /// Adds a new TerminalStateWatcher channel to the list of registered watchers.
+    async fn add_terminal_state_watcher(&self, watcher: fpower::TerminalStateWatcherProxy) {
+        fuchsia_trace::duration!(
+            c"shutdown-shim",
+            c"ShutdownWatcher::add_terminal_state_watcher",
+            "watcher" => watcher.as_channel().as_handle_ref().raw_handle()
+        );
+
+        // If the client closes the watcher channel, remove it from our `terminal_state_watchers` map
+        println!("[shutdown-shim] Adding a terminal state watcher");
+        let key = watcher.as_channel().as_handle_ref().raw_handle();
+        let proxy = watcher.clone();
+        let terminal_state_watchers = self.terminal_state_watchers.clone();
+        let inspect = self.inspect.clone();
+        fasync::Task::spawn(async move {
+            let _ = proxy.on_closed().await;
+            {
+                terminal_state_watchers.lock().await.remove(&key);
+            }
+            inspect.lock().await.remove_terminal_state_watcher();
+        })
+        .detach();
+
+        {
+            let mut watchers_mut = self.terminal_state_watchers.lock().await;
+            watchers_mut.insert(key, watcher);
+        }
+        self.inspect.lock().await.add_terminal_state_watcher();
+    }
+
     /// Handles the SystemShutdown message by notifying the appropriate registered watchers.
-    pub async fn handle_system_shutdown_message(&self, options: ShutdownOptionsWrapper) {
+    pub async fn handle_system_shutdown_message(&self, options: Option<ShutdownOptionsWrapper>) {
+        let terminal_state_fut =
+            self.notify_terminal_state_watchers(Self::NOTIFY_TERMINAL_STATE_RESPONSE_TIMEOUT);
+
+        let Some(options) = options else {
+            terminal_state_fut.await;
+            return;
+        };
+
         if options.action == ShutdownAction::Reboot && !options.reasons.is_empty() {
             futures::join!(
                 self.notify_shutdown_watchers(
                     options.clone(),
                     Self::NOTIFY_SHUTDOWN_RESPONSE_TIMEOUT
                 ),
-                self.notify_reboot_watchers(options, Self::NOTIFY_REBOOT_RESPONSE_TIMEOUT)
+                self.notify_reboot_watchers(options, Self::NOTIFY_REBOOT_RESPONSE_TIMEOUT),
+                terminal_state_fut
             );
-            return;
+        } else {
+            futures::join!(
+                self.notify_shutdown_watchers(options, Self::NOTIFY_SHUTDOWN_RESPONSE_TIMEOUT),
+                terminal_state_fut
+            );
         }
-
-        self.notify_shutdown_watchers(options, Self::NOTIFY_SHUTDOWN_RESPONSE_TIMEOUT).await;
     }
 
     async fn notify_reboot_watchers(
@@ -291,11 +348,54 @@ impl ShutdownWatcher {
             "options" => format!("{:?}", options).as_str()
         );
     }
+
+    async fn notify_terminal_state_watchers(&self, timeout: zx::MonotonicDuration) {
+        fuchsia_trace::duration!(
+            c"shutdown-shim",
+            c"ShutdownWatcher::notify_terminal_state_watchers",
+        );
+
+        // Create a future for each watcher that calls the watcher's
+        // `on_terminal_state_transition_started` method and returns the watcher proxy if the
+        // response was received within the timeout, or None otherwise. We take this approach so
+        // that watchers that timed out have their channel dropped (https://fxbug.dev/42131208).
+        let watcher_futures = {
+            // Take the current watchers out of `terminal_state_watchers` because we'll be modifying
+            // the vector.
+            let watchers = self.terminal_state_watchers.lock().await;
+            println!("[shutdown-shim] notifying {:?} watchers of terminal state", watchers.len());
+            watchers.clone().into_iter().map(|(key, watcher_proxy)| async move {
+                let deadline = timeout.after_now();
+                let result = watcher_proxy
+                    .on_terminal_state_transition_started()
+                    .map_err(|_| ())
+                    .on_timeout(deadline, || Err(()))
+                    .await;
+
+                match result {
+                    Ok(()) => Some((key, watcher_proxy)),
+                    Err(()) => None,
+                }
+            })
+        };
+
+        // Run all of the futures, collecting the successful watcher proxies into a vector
+        let new_watchers = futures::future::join_all(watcher_futures)
+            .await
+            .into_iter()
+            .filter_map(|watcher_opt| watcher_opt) // Unwrap the Options while filtering out None
+            .collect();
+
+        // Repopulate the successful watcher proxies back into `terminal_state_watchers`
+        *self.terminal_state_watchers.lock().await = new_watchers;
+    }
 }
 
 struct InspectData {
     reboot_watcher_current_connections: inspect::UintProperty,
     reboot_watcher_total_connections: inspect::UintProperty,
+    terminal_state_watcher_current_connections: inspect::UintProperty,
+    terminal_state_watcher_total_connections: inspect::UintProperty,
 }
 
 // TODO(https://fxbug.dev/414413282): rename nodes to shutdown_watcher_*. This will require also
@@ -309,11 +409,20 @@ impl InspectData {
             root.create_uint("reboot_watcher_current_connections", 0);
         let reboot_watcher_total_connections =
             root.create_uint("reboot_watcher_total_connections", 0);
+        let terminal_state_watcher_current_connections =
+            root.create_uint("terminal_state_watcher_current_connections", 0);
+        let terminal_state_watcher_total_connections =
+            root.create_uint("terminal_state_watcher_total_connections", 0);
 
         // Pass ownership of the new node to the parent node, otherwise it'll be dropped
         parent.record(root);
 
-        InspectData { reboot_watcher_current_connections, reboot_watcher_total_connections }
+        InspectData {
+            reboot_watcher_current_connections,
+            reboot_watcher_total_connections,
+            terminal_state_watcher_current_connections,
+            terminal_state_watcher_total_connections,
+        }
     }
 
     fn add_reboot_watcher(&self) {
@@ -323,6 +432,15 @@ impl InspectData {
 
     fn remove_reboot_watcher(&self) {
         self.reboot_watcher_current_connections.subtract(1);
+    }
+
+    fn add_terminal_state_watcher(&self) {
+        self.terminal_state_watcher_current_connections.add(1);
+        self.terminal_state_watcher_total_connections.add(1);
+    }
+
+    fn remove_terminal_state_watcher(&self) {
+        self.terminal_state_watcher_current_connections.subtract(1);
     }
 }
 
@@ -350,7 +468,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 0u64,
-                    reboot_watcher_total_connections: 0u64
+                    reboot_watcher_total_connections: 0u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -363,7 +483,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 1u64,
-                    reboot_watcher_total_connections: 1u64
+                    reboot_watcher_total_connections: 1u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -377,7 +499,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 0u64,
-                    reboot_watcher_total_connections: 1u64
+                    reboot_watcher_total_connections: 1u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -391,7 +515,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 1u64,
-                    reboot_watcher_total_connections: 2u64
+                    reboot_watcher_total_connections: 2u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -404,7 +530,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 0u64,
-                    reboot_watcher_total_connections: 2u64
+                    reboot_watcher_total_connections: 2u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -418,7 +546,9 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 1u64,
-                    reboot_watcher_total_connections: 3u64
+                    reboot_watcher_total_connections: 3u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
                 }
             }
         );
@@ -431,7 +561,41 @@ mod tests {
             root: {
                 ShutdownWatcher: {
                     reboot_watcher_current_connections: 0u64,
-                    reboot_watcher_total_connections: 3u64
+                    reboot_watcher_total_connections: 3u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 0u64,
+                }
+            }
+        );
+
+        let (watcher_proxy, s) =
+            fidl::endpoints::create_proxy::<fpower::TerminalStateWatcherMarker>();
+        registrar.add_terminal_state_watcher(watcher_proxy.clone()).await;
+
+        assert_data_tree!(
+            @retry 10,
+            inspector,
+            root: {
+                ShutdownWatcher: {
+                    reboot_watcher_current_connections: 0u64,
+                    reboot_watcher_total_connections: 3u64,
+                    terminal_state_watcher_current_connections: 1u64,
+                    terminal_state_watcher_total_connections: 1u64,
+                }
+            }
+        );
+        drop(s);
+        watcher_proxy.on_closed().await.expect("closed");
+
+        assert_data_tree!(
+            @retry 10,
+            inspector,
+            root: {
+                ShutdownWatcher: {
+                    reboot_watcher_current_connections: 0u64,
+                    reboot_watcher_total_connections: 3u64,
+                    terminal_state_watcher_current_connections: 0u64,
+                    terminal_state_watcher_total_connections: 1u64,
                 }
             }
         );
@@ -524,6 +688,44 @@ mod tests {
         );
         assert_eq!(action, ShutdownAction::Poweroff);
         assert_eq!(&reasons[..], [ShutdownReason::UserRequest]);
+    }
+
+    /// Tests that a client can successfully register a terminal state watcher, and the registered
+    /// watcher receives the expected notification.
+    #[fasync::run_singlethreaded(test)]
+    async fn test_add_terminal_state_watcher() {
+        let registrar = ShutdownWatcher::new();
+
+        // Create the proxy/stream to register the watcher
+        let (register_proxy, register_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::ShutdownWatcherRegisterMarker>();
+
+        // Start the ShutdownWatcherRegister server that will handle Register calls from
+        // register_proxy.
+        let registrar_clone = registrar.clone();
+        fasync::Task::local(async move {
+            registrar_clone.handle_shutdown_register_request(register_stream).await;
+        })
+        .detach();
+
+        // Create the watcher proxy/stream to receive terminal state notifications
+        let (watcher_client, mut watcher_stream) =
+            fidl::endpoints::create_request_stream::<fpower::TerminalStateWatcherMarker>();
+
+        // Call the Register API, passing in the watcher_client end
+        assert_matches!(
+            register_proxy.register_terminal_state_watcher(watcher_client).await,
+            Ok(())
+        );
+
+        // Signal the watchers
+        registrar.notify_terminal_state_watchers(seconds(0.0)).await;
+
+        // Verify the watcher_stream gets the correct notification
+        assert_matches!(
+            watcher_stream.try_next().await.unwrap().unwrap(),
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { .. }
+        );
     }
 
     /// Tests that a reboot watcher is delivered the correct reboot reason
@@ -715,34 +917,34 @@ mod tests {
         registrar.add_reboot_watcher(watcher_proxy).await;
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::Poweroff,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         assert!(futures::poll!(watcher_stream.try_next()).is_pending());
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::RebootToBootloader,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         assert!(futures::poll!(watcher_stream.try_next()).is_pending());
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::RebootToRecovery,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         assert!(futures::poll!(watcher_stream.try_next()).is_pending());
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::Reboot,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         match watcher_stream.try_next().await {
             Ok(Some(fpower::RebootWatcherRequest::OnReboot {
@@ -755,10 +957,11 @@ mod tests {
         };
     }
 
-    /// Tests that both shutdown and reboot watchers are notified of reboots. Only shutdown watchers
-    /// are notified of other shutdown actions.
+    /// Tests that shutdown, terminal state, and reboot watchers are notified of reboots.
+    /// Shutdown watchers are notified of other shutdown actions.
+    /// Terminal state watchers are notified of all reboot or shutdown actions.
     #[fasync::run_singlethreaded(test)]
-    async fn shutdown_and_reboot_watchers_notified() {
+    async fn shutdown_terminal_state_and_reboot_watchers_notified() {
         let registrar = ShutdownWatcher::new();
 
         let (shutdown_watcher_proxy, mut shutdown_watcher_stream) =
@@ -769,11 +972,15 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<fpower::RebootWatcherMarker>();
         registrar.add_reboot_watcher(reboot_watcher_proxy).await;
 
+        let (terminal_state_watcher_proxy, mut terminal_state_watcher_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        registrar.add_terminal_state_watcher(terminal_state_watcher_proxy).await;
+
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::Reboot,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
 
         let (action, reasons) = assert_matches!(
@@ -795,6 +1002,11 @@ mod tests {
             }
             e => panic!("Unexpected watcher_stream result: {:?}", e),
         };
+
+        assert_matches!(
+            terminal_state_watcher_stream.try_next().await.unwrap().unwrap(),
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { .. }
+        );
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -806,10 +1018,10 @@ mod tests {
         registrar.add_shutdown_watcher(watcher_proxy).await;
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::Poweroff,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         let (action, reasons) = assert_matches!(
             watcher_stream.try_next().await.unwrap().unwrap(),
@@ -831,10 +1043,10 @@ mod tests {
         registrar.add_shutdown_watcher(watcher_proxy).await;
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::RebootToBootloader,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         let (action, reasons) = assert_matches!(
             watcher_stream.try_next().await.unwrap().unwrap(),
@@ -856,10 +1068,10 @@ mod tests {
         registrar.add_shutdown_watcher(watcher_proxy).await;
 
         registrar
-            .handle_system_shutdown_message(ShutdownOptionsWrapper::new(
+            .handle_system_shutdown_message(Some(ShutdownOptionsWrapper::new(
                 ShutdownAction::RebootToRecovery,
                 ShutdownReason::HighTemperature,
-            ))
+            )))
             .await;
         let (action, reasons) = assert_matches!(
             watcher_stream.try_next().await.unwrap().unwrap(),
@@ -1078,5 +1290,120 @@ mod tests {
 
         // Verify the ShutdownWatcherRegister channel is closed
         assert_matches!(register_proxy.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
+    }
+
+    /// Tests that if there are multiple currently registered terminal state watchers, each one will
+    /// receive the expected notification.
+    #[fasync::run_singlethreaded(test)]
+    async fn test_multiple_terminal_state_watchers() {
+        let registrar = ShutdownWatcher::new();
+
+        // Create three separate terminal state watchers
+        let (watcher_proxy1, mut watcher_stream1) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        registrar.add_terminal_state_watcher(watcher_proxy1).await;
+
+        let (watcher_proxy2, mut watcher_stream2) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        registrar.add_terminal_state_watcher(watcher_proxy2).await;
+
+        let (watcher_proxy3, mut watcher_stream3) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        registrar.add_terminal_state_watcher(watcher_proxy3).await;
+
+        // Signal the watchers
+        registrar.notify_terminal_state_watchers(seconds(0.0)).await;
+
+        // Verify each watcher stream gets the correct notification
+        assert_matches!(
+            watcher_stream1.try_next().await.unwrap().unwrap(),
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { .. }
+        );
+        assert_matches!(
+            watcher_stream2.try_next().await.unwrap().unwrap(),
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { .. }
+        );
+        assert_matches!(
+            watcher_stream3.try_next().await.unwrap().unwrap(),
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted { .. }
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_terminal_state_watcher_response_delay() {
+        let mut exec = fasync::TestExecutor::new();
+        let registrar = ShutdownWatcher::new();
+
+        // Register the terminal state watcher
+        let (watcher_proxy, mut watcher_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        let fut = async {
+            registrar.add_terminal_state_watcher(watcher_proxy).await;
+            assert_eq!(registrar.terminal_state_watchers.lock().await.len(), 1);
+        };
+        exec.run_singlethreaded(fut);
+
+        // Set up the notify future
+        let notify_future = registrar.notify_terminal_state_watchers(seconds(1.0));
+        futures::pin_mut!(notify_future);
+
+        // Verify that the notify future can't complete on the first attempt (because the watcher
+        // will not have responded)
+        assert!(exec.run_until_stalled(&mut notify_future).is_pending());
+
+        // Ack the notification, allowing the shutdown flow to continue
+        match exec.run_singlethreaded(&mut watcher_stream.try_next()).unwrap().unwrap() {
+            fpower::TerminalStateWatcherRequest::OnTerminalStateTransitionStarted {
+                responder,
+                ..
+            } => {
+                assert_matches!(responder.send(), Ok(()));
+            }
+            fpower::TerminalStateWatcherRequest::_UnknownMethod { .. } => unimplemented!(),
+        }
+
+        // Verify the notify future can now complete
+        assert!(exec.run_until_stalled(&mut notify_future).is_ready());
+    }
+
+    /// Tests that a terminal state watcher is able to delay the shutdown but will time out after the
+    /// expected duration. The test also verifies that when a watcher times out, it is removed
+    /// from the list of registered terminal state watchers.
+    #[fuchsia::test]
+    fn test_terminal_state_watcher_response_timeout() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let registrar = ShutdownWatcher::new();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        // Register the terminal state watcher
+        let (watcher_proxy, _watcher_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::TerminalStateWatcherMarker>();
+        let fut = async {
+            registrar.add_terminal_state_watcher(watcher_proxy).await;
+            assert_eq!(registrar.terminal_state_watchers.lock().await.len(), 1);
+        };
+        futures::pin_mut!(fut);
+        exec.run_until_stalled(&mut fut).is_ready();
+
+        // Set up the notify future
+        let notify_future = registrar.notify_terminal_state_watchers(seconds(1.0));
+        futures::pin_mut!(notify_future);
+
+        // Verify that the notify future can't complete on the first attempt (because the watcher
+        // will not have responded)
+        assert!(exec.run_until_stalled(&mut notify_future).is_pending());
+
+        // Wake the timer that causes the watcher timeout to fire
+        assert_eq!(exec.wake_next_timer(), Some(fasync::MonotonicInstant::from_nanos(1e9 as i64)));
+
+        // Verify the notify future can now complete
+        assert!(exec.run_until_stalled(&mut notify_future).is_ready());
+
+        // Since the watcher timed out, verify it is removed from `terminal_state_watchers`
+        let fut = async {
+            assert_eq!(registrar.terminal_state_watchers.lock().await.len(), 0);
+        };
+        futures::pin_mut!(fut);
+        exec.run_until_stalled(&mut fut).is_ready();
     }
 }
