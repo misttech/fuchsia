@@ -15,10 +15,7 @@ group("tests") {
       ":starnix_gvisor_tests",
     ]
     if (data_filesystem_format == "fxfs") {
-      deps += [
-        ":starnix_gvisor_tests_on_fxfs",
-        ":starnix_gvisor_tests_uncached",
-      ]
+      deps += [ ":starnix_gvisor_tests_on_fxfs" ]
     }
   }
 }
@@ -139,18 +136,8 @@ gvisor_tests_group("starnix_gvisor_tests") {
 # GVisor tests with persistent storage on fxfs.
 gvisor_tests_group("starnix_gvisor_tests_on_fxfs") {
   expectations = "expectations/using_fxfs_test.json5"
-  storage = "fxfs"
+  use_persistent_storage = true
   suffix = "_on_fxfs"
-}
-
-gvisor_tests_group("starnix_gvisor_tests_uncached") {
-  tests = gvisor_tests_uncached
-  run_as_root_tests = []
-  custom_manifest_tests = []
-  container_config_tests = []
-  expectations = "expectations/using_fxfs_test.json5"
-  storage = "uncached"
-  suffix = "_uncached"
 }
 
 group("benchmarks") {
@@ -158,9 +145,4 @@ group("benchmarks") {
   if (!is_asan) {
     deps = all_benchmark_targets
   }
-}
-
-fuchsia_component("uncached_config") {
-  manifest = "meta/uncached_config.cml"
-  testonly = true
 }

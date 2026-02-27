@@ -249,8 +249,6 @@ async fn handle_starnix_volume_provider_requests(
 async fn main() -> Result<(), Error> {
     let config = Config::take_from_startup_handle();
 
-    log::info!("test-fxfs started: {config:?}");
-
     // Android's bionic unit tests will fail with a smaller disk.
     // TODO(https://fxbug.dev/378744012): Make the size of VmoBackedServer configurable.
     let block_server = Arc::new(
