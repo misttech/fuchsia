@@ -45,8 +45,6 @@ pub struct TraceTask {
     read_socket: AsyncSocket,
     /// The compression algorithm to use.
     compression: trace::CompressionType,
-    /// True when the task was cancelled (aborted).
-    cancelled: Arc<AtomicBool>,
 }
 
 // This is just implemented for convenience so the wrapper is await-able.
@@ -90,11 +88,8 @@ impl TraceTask {
         let triggers_watcher =
             TriggersWatcher::new(controller, triggers.clone(), shutdown_receiver);
         let terminating = Arc::new(AtomicBool::new(false));
-        let cancelled = Arc::new(AtomicBool::new(false));
         let terminating_clone = terminating.clone();
-        let cancelled_clone = cancelled.clone();
         let terminate_result_clone = terminate_result.clone();
-
         let shutdown_fut = {
             let logging_prefix = logging_prefix_og.clone();
             async move {
@@ -108,8 +103,7 @@ impl TraceTask {
                     .is_ok()
                 {
                     log::info!("{logging_prefix} Running shutdown future.");
-                    let is_cancelled = cancelled_clone.load(std::sync::atomic::Ordering::Relaxed);
-                    let result = trace_shutdown(&shutdown_controller, is_cancelled).await;
+                    let result = trace_shutdown(&shutdown_controller).await;
 
                     let mut done = terminate_result_clone.lock().await;
                     if done.is_none() {
@@ -132,14 +126,6 @@ impl TraceTask {
             }
         };
 
-        let task = Self::make_task(
-            task_id,
-            debug_tag,
-            duration,
-            shutdown_fut,
-            triggers_watcher,
-            terminate_result,
-        );
         Ok(Self {
             task_id,
             debug_tag: logging_prefix_og,
@@ -152,8 +138,14 @@ impl TraceTask {
             shutdown_sender,
             read_socket: socket_to_async(client),
             compression,
-            task,
-            cancelled,
+            task: Self::make_task(
+                task_id,
+                debug_tag,
+                duration,
+                shutdown_fut,
+                triggers_watcher,
+                terminate_result,
+            ),
         })
     }
 
@@ -174,29 +166,6 @@ impl TraceTask {
         self.await
             .map(|r| Ok(r))
             .unwrap_or_else(|| Err(TracingError::RecordingStop("Error awaiting".into())))
-    }
-
-    /// Abort the tracing task without writing results.
-    pub async fn abort(mut self) -> Result<trace::StopResult, TracingError> {
-        if !self.terminating.load(std::sync::atomic::Ordering::SeqCst) {
-            log::info!("{} Sending cancel message for task", self.debug_tag);
-            self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
-            if self.shutdown_sender.send(()).await.is_err() {
-                log::warn!(
-                    "{} Shutdown channel was closed. Task may have already completed.",
-                    self.debug_tag
-                );
-            }
-        } else {
-            log::debug!("{} Shutdown already in progress.", self.debug_tag);
-        }
-
-        // Close the socket without reading.
-        let res = self.read_socket.close().await;
-        if res.is_err() {
-            log::warn!("{} Failed to close socket: {:?}", self.debug_tag, res);
-        }
-        self.shutdown().await
     }
 
     fn make_task(
@@ -397,7 +366,6 @@ mod tests {
     fn setup_fake_provisioner_proxy(
         start_error: Option<StartError>,
         trigger_name: Option<&'static str>,
-        expected_write_results: bool,
     ) -> trace::ProvisionerProxy {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<trace::ProvisionerMarker>();
@@ -421,10 +389,7 @@ mod tests {
                                             .send(Err(trace::StopError::NotStarted))
                                             .expect("Failed to stop")
                                     } else {
-                                        assert_eq!(
-                                            payload.write_results.unwrap(),
-                                            expected_write_results
-                                        );
+                                        assert_eq!(payload.write_results.unwrap(), true);
                                         assert_eq!(
                                             FAKE_CONTROLLER_TRACE_OUTPUT.len(),
                                             output
@@ -458,7 +423,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_trace_task_start_stop_write_check_with_vec() {
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy(None, None);
 
         let trace_task = TraceTask::new(
             "test_trace_start_stop_write_check".into(),
@@ -485,7 +450,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
 
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy(None, None);
         let writer = async_fs::File::create(&output).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -511,8 +476,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_trace_error_handling_already_started() {
-        let provisioner =
-            setup_fake_provisioner_proxy(Some(StartError::AlreadyStarted), None, true);
+        let provisioner = setup_fake_provisioner_proxy(Some(StartError::AlreadyStarted), None);
 
         let trace_task_result = TraceTask::new(
             "test_trace_error_handling_already_started".into(),
@@ -535,7 +499,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
 
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy(None, None);
         let writer = async_fs::File::create(&output).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -569,7 +533,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
         let alert_name = "some_alert";
-        let provisioner = setup_fake_provisioner_proxy(None, Some(alert_name.into()), true);
+        let provisioner = setup_fake_provisioner_proxy(None, Some(alert_name.into()));
         let writer = async_fs::File::create(output.clone()).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -590,28 +554,5 @@ mod tests {
         trace_task.await_completion_and_receive_data(writer).await.unwrap();
         let res = async_fs::read_to_string(&output).await.unwrap();
         assert_eq!(res, FAKE_CONTROLLER_TRACE_OUTPUT.to_string());
-    }
-
-    #[fuchsia::test]
-    async fn test_trace_task_abort() {
-        let provisioner = setup_fake_provisioner_proxy(None, None, false);
-
-        let trace_task = TraceTask::new(
-            "test_trace_task_abort".into(),
-            trace::TraceConfig::default(),
-            None,
-            vec![],
-            None,
-            trace::CompressionType::None,
-            provisioner,
-        )
-        .await
-        .expect("tracing task started");
-
-        let shutdown_result = trace_task.abort().await.expect("tracing abort");
-        assert_eq!(
-            shutdown_result,
-            trace::StopResult { provider_stats: Some(vec![]), ..Default::default() }
-        );
     }
 }

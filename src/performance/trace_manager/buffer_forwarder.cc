@@ -145,7 +145,7 @@ TransferStatus BufferForwarder::WriteBuffer(cpp20::span<const uint8_t> data) con
         if (zx_status_t status = destination_.wait_one(ZX_SOCKET_WRITABLE | ZX_SOCKET_PEER_CLOSED,
                                                        zx::time::infinite(), &pending);
             status != ZX_OK) {
-          FX_PLOGS(ERROR, status) << "Wait on socket failed";
+          FX_PLOGS(ERROR, status) << "Wait on socket failed: " << status;
           return TransferStatus::kWriteError;
         }
 
@@ -159,12 +159,6 @@ TransferStatus BufferForwarder::WriteBuffer(cpp20::span<const uint8_t> data) con
         }
       }
 
-      if (status == ZX_ERR_PEER_CLOSED) {
-        FX_PLOGS(ERROR, status) << "Peer closed while writing to socket";
-        return TransferStatus::kReceiverDead;
-      }
-
-      FX_PLOGS(ERROR, status) << "Write returned";
       return TransferStatus::kWriteError;
     }
     data = data.subspan(actual);

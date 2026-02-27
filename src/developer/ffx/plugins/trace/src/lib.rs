@@ -517,14 +517,13 @@ impl TraceTool {
                 no_symbolize: opts.no_symbolize,
                 no_verify_trace: opts.no_verify_trace,
                 retain_raw_fidl: opts.retain_raw_fidl,
-                abort: false,
             },
             writer,
         )?;
         Ok(())
     }
 
-    async fn trace_stop(self, opts: &Stop, mut writer: Writer) -> fho::Result<()> {
+    async fn trace_stop(self, opts: &Stop, writer: Writer) -> fho::Result<()> {
         let context = self.context.clone();
         let trace_proxy = self.get_trace_proxy().await?;
         let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
@@ -536,16 +535,9 @@ impl TraceTool {
                 );
             }
             SessionManagerProxyType::SessionManager(_) => {
-                if opts.abort {
-                    direct::abort_tracing(&context, None, trace_proxy).await?;
-                    writer.line("Trace aborted.")?;
-                    return Ok(());
-                } else {
-                    direct::stop_tracing(&context, None, trace_proxy, &output).await?
-                }
+                direct::stop_tracing(&context, None, trace_proxy, &output).await?
             }
         };
-
         finalize_trace(&context, trace_data, opts, writer).map_err(Into::into)
     }
 
@@ -761,8 +753,7 @@ https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces"
         }
         RecordingError::RecordingAlreadyStarted => {
             format!(
-                "Trace already started for target {}.\n\
-                If you want to stop the trace and discard the data, run `ffx trace stop --abort`.",
+                "Trace already started for target {}",
                 target_spec.unwrap_or_else(|| "".to_owned())
             )
         }
@@ -955,12 +946,6 @@ mod tests {
                 responder
                     .send(Ok((&TraceOptions { ..Default::default() }, &_generate_stop_result())))
                     .expect("should respond");
-            }
-            tracing_controller::SessionManagerRequest::AbortTraceSession {
-                task_id: _,
-                responder,
-            } => {
-                responder.send(Ok(())).expect("should respond");
             }
             tracing_controller::SessionManagerRequest::Status { responder } => {
                 responder
@@ -1403,7 +1388,6 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             retain_raw_fidl: false,
-            abort: false,
         };
 
         let tool = TraceTool {
@@ -1419,45 +1403,6 @@ Triggers:
             "Results written to /([^/]+/)+?foo.txt\nUpload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
-    }
-
-    #[fuchsia::test]
-    async fn test_stop_abort() {
-        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
-        let env = ffx_config::test_init().unwrap();
-        let test_buffers = TestBuffers::default();
-        let writer = Writer::new_test(None, &test_buffers);
-
-        // Custom mock to verify write_results
-        let session_manager =
-            Deferred::from_output(Ok(fake_proxy(client.clone(), |req| match req {
-                tracing_controller::SessionManagerRequest::AbortTraceSession {
-                    task_id: _,
-                    responder,
-                } => {
-                    responder.send(Ok(())).expect("should respond");
-                }
-                _ => panic!("unsupported req"),
-            })));
-
-        let stop_opts = Stop {
-            output: Some("foo.txt".to_string()),
-            verbose: false,
-            abort: true,
-            no_symbolize: false,
-            no_verify_trace: true,
-            retain_raw_fidl: false,
-        };
-        let tool = TraceTool {
-            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager,
-            context: env.context.clone(),
-            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
-        };
-
-        tool.trace_stop(&stop_opts, writer).await.unwrap();
-        let output = test_buffers.into_stdout_str();
-        assert!(output.contains("Trace aborted."));
     }
 
     #[fuchsia::test]
@@ -1478,7 +1423,6 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             retain_raw_fidl: false,
-            abort: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1554,7 +1498,6 @@ Triggers:
             no_symbolize: false,
             no_verify_trace: true,
             retain_raw_fidl: false,
-            abort: false,
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),

@@ -87,10 +87,9 @@ impl PartialEq for TracingError {
 
 pub(crate) async fn trace_shutdown(
     proxy: &trace::SessionProxy,
-    cancel: bool,
 ) -> Result<trace::StopResult, TracingError> {
     let res = proxy
-        .stop_tracing(&trace::StopOptions { write_results: Some(!cancel), ..Default::default() })
+        .stop_tracing(&trace::StopOptions { write_results: Some(true), ..Default::default() })
         .await
         .map_err(|e| {
             log::warn!("stopping tracing: {:?}", e);

@@ -291,16 +291,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.tracing.controller/SessionManager.AbortTraceSession",
-        "strictness": "flexible",
-        "ordinal": "693912029154229372",
-        "direction": "two_way",
-        "request": "fuchsia.tracing.controller/SessionManagerAbortTraceSessionRequest",
-        "response": "fuchsia.tracing.controller/SessionManager_AbortTraceSession_Response",
-        "error": "fuchsia.tracing.controller/RecordingError"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.tracing.controller/SessionManager.EndTraceSession",
         "strictness": "flexible",
         "ordinal": "8275024019136738679",
@@ -359,16 +349,6 @@
         "name": "fuchsia.tracing.controller/SessionManager",
         "openness": "open",
         "transport": "channel"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.tracing.controller/SessionManagerAbortTraceSessionRequest.task_id",
-        "ordinal": "1",
-        "type": "uint64"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.tracing.controller/SessionManagerAbortTraceSessionRequest"
     },
     {
         "kind": "struct/member",

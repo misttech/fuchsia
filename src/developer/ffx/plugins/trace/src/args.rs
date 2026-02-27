@@ -129,10 +129,6 @@ pub struct Stop {
     /// retain raw FIDL-related trace arguments after symbolization. Defaults to false.
     #[argh(switch)]
     pub retain_raw_fidl: bool,
-
-    /// stop the currently running background trace session. Discard the trace data. Defaults to false.
-    #[argh(switch)]
-    pub abort: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
