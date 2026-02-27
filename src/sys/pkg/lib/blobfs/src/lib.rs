@@ -65,9 +65,6 @@ pub enum BlobfsError {
     #[error("while setting the VmexResource")]
     InitVmexResource(#[source] anyhow::Error),
 
-    #[error("directory operation requested but blobfs directory was not configured")]
-    DirectoryNotConfigured,
-
     #[error("while checking NeedsOverwrite for blob status")]
     BlobStatus(BlobStatusError),
 }
@@ -122,7 +119,6 @@ pub struct ClientBuilder {
     readable: bool,
     writable: bool,
     executable: bool,
-    creator: bool,
 }
 
 impl ClientBuilder {
@@ -140,13 +136,7 @@ impl ClientBuilder {
         if self.executable {
             flags |= fio::PERM_EXECUTABLE
         }
-
-        let dir = if !flags.is_empty() {
-            Some(fuchsia_fs::directory::open_in_namespace("/blob", flags)?)
-        } else {
-            None
-        };
-
+        let dir = fuchsia_fs::directory::open_in_namespace("/blob", flags)?;
         if let Ok(client) = fuchsia_component::client::connect_to_protocol::<
             fidl_fuchsia_kernel::VmexResourceMarker,
         >() && let Ok(vmex) = client.get().await
@@ -156,7 +146,7 @@ impl ClientBuilder {
         }
         let reader = fuchsia_component::client::connect_to_protocol::<ffxfs::BlobReaderMarker>()
             .map_err(BlobfsError::ConnectToBlobReader)?;
-        let creator = if self.writable || self.creator {
+        let creator = if self.writable {
             Some(
                 fuchsia_component::client::connect_to_protocol::<ffxfs::BlobCreatorMarker>()
                     .map_err(BlobfsError::ConnectToBlobCreator)?,
@@ -186,12 +176,6 @@ impl ClientBuilder {
     pub fn executable(self) -> Self {
         Self { executable: true, ..self }
     }
-
-    /// If set, [`Client`] will connect to and use fuchsia.fxfs/BlobCreator for writes.
-    /// This is independent of requiring writable directory access to `/blob`.
-    pub fn creator(self) -> Self {
-        Self { creator: true, ..self }
-    }
 }
 
 impl Client {
@@ -203,7 +187,7 @@ impl Client {
 /// Blobfs client
 #[derive(Debug, Clone)]
 pub struct Client {
-    dir: Option<fio::DirectoryProxy>,
+    dir: fio::DirectoryProxy,
     creator: Option<ffxfs::BlobCreatorProxy>,
     reader: ffxfs::BlobReaderProxy,
 }
@@ -221,7 +205,7 @@ impl Client {
         if let Some(vmex) = vmex {
             vmo_blob::init_vmex_resource(vmex)?;
         }
-        Ok(Self { dir: Some(dir), creator, reader })
+        Ok(Self { dir, creator, reader })
     }
 
     /// Creates a new client backed by the returned request stream. This constructor should not be
@@ -242,12 +226,7 @@ impl Client {
         let (creator, creator_stream) =
             fidl::endpoints::create_proxy_and_stream::<ffxfs::BlobCreatorMarker>();
 
-        (
-            Self { dir: Some(dir), creator: Some(creator), reader },
-            dir_stream,
-            reader_stream,
-            creator_stream,
-        )
+        (Self { dir, creator: Some(creator), reader }, dir_stream, reader_stream, creator_stream)
     }
 
     /// Creates a new client backed by the returned mock. This constructor should not be used
@@ -264,7 +243,7 @@ impl Client {
             fidl::endpoints::create_proxy_and_stream::<ffxfs::BlobCreatorMarker>();
 
         (
-            Self { dir: Some(dir), creator: Some(creator), reader },
+            Self { dir, creator: Some(creator), reader },
             mock::Mock { stream, reader_stream, creator_stream },
         )
     }
@@ -306,8 +285,7 @@ impl Client {
         // from concurrent calls to list_known_blobs on this object, or on clones of this object,
         // or other clones of the DirectoryProxy this object was made from), create a new
         // connection which will have its own index.
-        let dir = self.dir.as_ref().ok_or(BlobfsError::DirectoryNotConfigured)?;
-        let private_connection = fuchsia_fs::directory::clone(dir)?;
+        let private_connection = fuchsia_fs::directory::clone(&self.dir)?;
         fuchsia_fs::directory::readdir(&private_connection)
             .await
             .map_err(BlobfsError::ReadDir)?
@@ -319,8 +297,8 @@ impl Client {
 
     /// Delete the blob with the given merkle hash.
     pub async fn delete_blob(&self, blob: &Hash) -> Result<(), BlobfsError> {
-        let dir = self.dir.as_ref().ok_or(BlobfsError::DirectoryNotConfigured)?;
-        dir.unlink(&blob.to_string(), &fio::UnlinkOptions::default())
+        self.dir
+            .unlink(&blob.to_string(), &fio::UnlinkOptions::default())
             .await?
             .map_err(|s| BlobfsError::Unlink(Status::from_raw(s)))
     }
@@ -397,8 +375,7 @@ impl Client {
 
     /// Call fuchsia.io/Node.Sync on the blobfs directory.
     pub async fn sync(&self) -> Result<(), BlobfsError> {
-        let dir = self.dir.as_ref().ok_or(BlobfsError::DirectoryNotConfigured)?;
-        dir.sync().await?.map_err(zx::Status::from_raw).map_err(BlobfsError::Sync)
+        self.dir.sync().await?.map_err(zx::Status::from_raw).map_err(BlobfsError::Sync)
     }
 }
 

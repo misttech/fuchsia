@@ -16,7 +16,6 @@
     use: [
         {
             protocol: [
-                "fuchsia.fxfs.BlobCreator",
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.metrics.MetricEventLoggerFactory",
@@ -39,6 +38,11 @@
             directory: "build-info",
             rights: [ "r*" ],
             path: "/config/build-info",
+        },
+        {
+            directory: "blob",
+            rights: [ "r*" ],
+            path: "/blob",
         },
         {
             // The list of public Ed25519 keys used to verify manifest signature for packageless

@@ -1179,7 +1179,7 @@ impl PackagelessAttempt<'_> {
             };
 
         let blobfs = blobfs::Client::builder()
-            .creator()
+            .readable()
             .build()
             .await
             .map_err(|e| AttemptError::Prepare(PrepareError::OpenBlobfs(e)))?;
@@ -1495,9 +1495,14 @@ impl PackagelessAttempt<'_> {
             error!("unable to gc blobs during Fetch state: {:#}", anyhow!(e));
         }
 
+        let existing_blobs = blobfs.list_known_blobs().await.unwrap_or_else(|e| {
+            error!("unable to list known blobs, assuming empty: {:#}", anyhow!(e));
+            HashSet::new()
+        });
+
         let mut stream = futures::stream::iter(manifest.blobs.iter())
             .map(async |blob| {
-                if blobfs.blob_present_and_up_to_date(&blob.fuchsia_merkle_root).await {
+                if existing_blobs.contains(&blob.fuchsia_merkle_root) {
                     if self.verify_existing_blobs
                         && let Err(e) =
                             verify_blob(blobfs, &blob.fuchsia_merkle_root, blob.uncompressed_size)
@@ -1515,9 +1520,7 @@ impl PackagelessAttempt<'_> {
                 let () = self
                     .env
                     .ota_downloader
-                    // Setting `overwrite_existing` to true to skip the `NeedsOverwrite` check in
-                    // pkg-cache because we already checked it.
-                    .fetch_blob(&blob_id, blob_base_url.as_ref(), true)
+                    .fetch_blob(&blob_id, blob_base_url.as_ref(), self.verify_existing_blobs)
                     .await
                     .map_err(FetchError::Fidl)?
                     .map_err(|e| FetchError::FetchBlob(e.into()))?;

@@ -18,7 +18,6 @@
         },
         {
             protocol: [
-                "fuchsia.fxfs.BlobCreator",
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
@@ -43,6 +42,7 @@
         },
         {
             directory: [
+                "blob",
                 "build-info",
                 "system",
             ],
