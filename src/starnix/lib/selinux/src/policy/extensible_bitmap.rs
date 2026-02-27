@@ -45,7 +45,7 @@ impl ExtensibleBitmap {
     }
 
     /// Returns an iterator that yields the indices of this [`ExtensibleBitmap`]'s set bits.
-    pub fn indices_of_set_bits<'a>(&'a self) -> impl Iterator<Item = u32> {
+    pub fn indices_of_set_bits<'a>(&'a self) -> impl Iterator<Item = u32> + Clone {
         ExtensibleBitmapSpansIterator::<'a> { bitmap: self, map_item: 0, next_bit: 0 }
             .flat_map(|span| span.low..=span.high)
     }
@@ -84,6 +84,7 @@ pub(super) struct ExtensibleBitmapSpan {
 }
 
 /// Iterator returned by `ExtensibleBitmap::spans()`.
+#[derive(Clone)]
 pub(super) struct ExtensibleBitmapSpansIterator<'a> {
     bitmap: &'a ExtensibleBitmap,
     map_item: usize, // Zero-based `Vec<MapItem>` index.

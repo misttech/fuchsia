@@ -32,6 +32,7 @@ use super::{
 use crate::{NullessByteStr, PolicyCap};
 
 use anyhow::Context as _;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -167,38 +168,39 @@ impl ParsedPolicy {
         let target_attribute_bitmap =
             self.reparse_attribute_map(self.attribute_maps[(target_type.0.get() - 1) as usize]);
 
-        for source_bit_index in source_attribute_bitmap.indices_of_set_bits() {
+        for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
+            source_attribute_bitmap.indices_of_set_bits(),
+            target_attribute_bitmap.indices_of_set_bits(),
+        ) {
             let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
-            for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
-                let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
+            let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-                if let Some(allow_rule) = self.access_vector_rules_find(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_ALLOW,
-                ) {
-                    // `access_vector` has bits set for each permission allowed by this rule.
-                    computed_access_vector |= allow_rule.access_vector().unwrap();
-                }
-                if let Some(auditallow_rule) = self.access_vector_rules_find(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
-                ) {
-                    // `access_vector` has bits set for each permission to audit when allowed.
-                    computed_audit_allow |= auditallow_rule.access_vector().unwrap();
-                }
-                if let Some(dontaudit_rule) = self.access_vector_rules_find(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_DONTAUDIT,
-                ) {
-                    // `access_vector` has bits cleared for each permission not to audit on denial.
-                    computed_audit_deny &= dontaudit_rule.access_vector().unwrap();
-                }
+            if let Some(allow_rule) = self.access_vector_rules_find(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_ALLOW,
+            ) {
+                // `access_vector` has bits set for each permission allowed by this rule.
+                computed_access_vector |= allow_rule.access_vector().unwrap();
+            }
+            if let Some(auditallow_rule) = self.access_vector_rules_find(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
+            ) {
+                // `access_vector` has bits set for each permission to audit when allowed.
+                computed_audit_allow |= auditallow_rule.access_vector().unwrap();
+            }
+            if let Some(dontaudit_rule) = self.access_vector_rules_find(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_DONTAUDIT,
+            ) {
+                // `access_vector` has bits cleared for each permission not to audit on denial.
+                computed_audit_deny &= dontaudit_rule.access_vector().unwrap();
             }
         }
 
@@ -283,56 +285,54 @@ impl ParsedPolicy {
             self.attribute_maps[(target_context.type_().0.get() - 1) as usize],
         );
 
-        for source_bit_index in source_attribute_bitmap.indices_of_set_bits() {
+        for (source_bit_index, target_bit_index) in Itertools::cartesian_product(
+            source_attribute_bitmap.indices_of_set_bits(),
+            target_attribute_bitmap.indices_of_set_bits(),
+        ) {
             let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
-            for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
-                let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
+            let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-                for xperms_allow_rule in self.access_vector_rules_find_all(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
-                ) {
-                    let xperms = xperms_allow_rule.extended_permissions().unwrap();
+            for xperms_allow_rule in self.access_vector_rules_find_all(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
+            ) {
+                let xperms = xperms_allow_rule.extended_permissions().unwrap();
 
-                    // Only filter xperms if there is at least one `allowxperm` rule for the relevant
-                    // kind of extended permission. If this condition is not satisfied by any
-                    // access vector rule, then all xperms of the relevant type are allowed.
-                    if xperms_types.contains(&xperms.xperms_type) {
-                        explicit_allow.get_or_insert(XpermsBitmap::NONE);
-                    }
-
-                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
-                    {
-                        (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
-                    }
+                // Only filter xperms if there is at least one `allowxperm` rule for the relevant
+                // kind of extended permission. If this condition is not satisfied by any
+                // access vector rule, then all xperms of the relevant type are allowed.
+                if xperms_types.contains(&xperms.xperms_type) {
+                    explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
 
-                for xperms_auditallow_rule in self.access_vector_rules_find_all(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
-                ) {
-                    let xperms = xperms_auditallow_rule.extended_permissions().unwrap();
-                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
-                    {
-                        auditallow |= xperms_bitmap;
-                    }
+                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                    (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
                 }
+            }
 
-                for xperms_dontaudit_rule in self.access_vector_rules_find_all(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                    ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM,
-                ) {
-                    let xperms = xperms_dontaudit_rule.extended_permissions().unwrap();
-                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
-                    {
-                        auditdeny -= xperms_bitmap;
-                    }
+            for xperms_auditallow_rule in self.access_vector_rules_find_all(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
+            ) {
+                let xperms = xperms_auditallow_rule.extended_permissions().unwrap();
+                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                    auditallow |= xperms_bitmap;
+                }
+            }
+
+            for xperms_dontaudit_rule in self.access_vector_rules_find_all(
+                source_id,
+                target_id,
+                target_class_id,
+                ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM,
+            ) {
+                let xperms = xperms_dontaudit_rule.extended_permissions().unwrap();
+                if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                    auditdeny -= xperms_bitmap;
                 }
             }
         }
