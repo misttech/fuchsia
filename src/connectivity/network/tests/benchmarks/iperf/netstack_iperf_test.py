@@ -16,7 +16,6 @@ from enum import Enum
 from importlib.resources import as_file, files
 from typing import Any, Callable
 
-import fuchsia_async_extension
 import honeydew
 import test_data
 from fuchsia_base_test import fuchsia_base_test
@@ -277,9 +276,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         results: list[dict[str, Any]] = []
         MESSAGE_SIZES = [64, 1024, 1400]
         if self._direction != Direction.LOOPBACK:
-            server = fuchsia_async_extension.get_loop().run_until_complete(
-                self._start_iperf3_server()
-            )
+            server = asyncio.run(self._start_iperf3_server())
             try:
                 for message_size in MESSAGE_SIZES:
                     results += self._run_iperf_client_test_case(
@@ -383,7 +380,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
     ) -> list[str]:
         asserts.assert_equal(flows, 1)
         return [
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 self._execute_iperf3_commands(
                     # NOTE(https://fxbug.dev/42124566): Currently, we are using the link used for
                     # ssh to also inject data traffic. This is prone to interference to ssh and to

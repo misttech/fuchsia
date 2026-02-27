@@ -25,7 +25,7 @@ from ._fidl_common import (
     parse_ordinal,
     parse_txid,
 )
-from ._ipc import GlobalHandleWaker
+from ._ipc import EventWrapper, GlobalHandleWaker
 
 TXID: TXID_Type = 0
 # Simple client ID. Monotonically increasing for each client.
@@ -56,7 +56,7 @@ class FidlClient(metaclass=FidlMeta):
         self.pending_txids: Set[TXID_Type] = set({})
         self.staged_messages: Dict[TXID_Type, asyncio.Queue[FidlMessage]] = {}
         self.epitaph_received: EpitaphError | None = None
-        self.epitaph_event = asyncio.Event()
+        self.epitaph_event = EventWrapper()
         caller = getframeinfo(stack()[1][0])
         _LOGGER.debug(
             f"{self} instantiated from {caller.filename}:{caller.lineno}"

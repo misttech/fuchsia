@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """FuchsiaDevice abstract base class implementation."""
 
+import asyncio
 import dataclasses
 import ipaddress
 import json
@@ -20,7 +21,6 @@ import fidl_fuchsia_feedback as f_feedback
 import fidl_fuchsia_hardware_power_statecontrol as fhp_statecontrol
 import fidl_fuchsia_hwinfo as f_hwinfo
 import fidl_fuchsia_io as f_io
-import fuchsia_async_extension
 import fuchsia_controller_py as fcp
 import fuchsia_inspect
 
@@ -1222,10 +1222,8 @@ class FuchsiaDeviceImpl(
                     _FC_PROXIES["BuildInfo"]
                 )
             )
-            build_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    buildinfo_provider_proxy.get_build_info()
-                )
+            build_info_resp = asyncio.run(
+                buildinfo_provider_proxy.get_build_info()
             )
             return build_info_resp.build_info
         except fcp.ZxStatus as status:
@@ -1249,11 +1247,7 @@ class FuchsiaDeviceImpl(
                     _FC_PROXIES["DeviceInfo"]
                 )
             )
-            device_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    hwinfo_device_proxy.get_info()
-                )
-            )
+            device_info_resp = asyncio.run(hwinfo_device_proxy.get_info())
             return device_info_resp.info
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
@@ -1276,11 +1270,7 @@ class FuchsiaDeviceImpl(
                     _FC_PROXIES["ProductInfo"]
                 )
             )
-            product_info_resp = (
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    hwinfo_product_proxy.get_info()
-                )
-            )
+            product_info_resp = asyncio.run(hwinfo_product_proxy.get_info())
             return product_info_resp.info
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
@@ -1304,9 +1294,7 @@ class FuchsiaDeviceImpl(
                     _FC_PROXIES["LastRebootInfo"]
                 )
             )
-            resp = fuchsia_async_extension.get_loop().run_until_complete(
-                proxy.get()
-            )
+            resp = asyncio.run(proxy.get())
             return resp.last_reboot
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
@@ -1338,7 +1326,7 @@ class FuchsiaDeviceImpl(
             rcs_proxy = fd_remotecontrol.RemoteControlClient(
                 self.fuchsia_controller.ctx.connect_remote_control_proxy()
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 rcs_proxy.log_message(
                     tag=tag, message=message, severity=_LOG_SEVERITIES[level]
                 )
@@ -1360,7 +1348,7 @@ class FuchsiaDeviceImpl(
                     _FC_PROXIES["PowerAdmin"]
                 )
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 power_proxy.shutdown(
                     options=fhp_statecontrol.ShutdownOptions(
                         action=fhp_statecontrol.ShutdownAction.REBOOT,
@@ -1399,15 +1387,11 @@ class FuchsiaDeviceImpl(
 
         # Get file size for verification later.
         try:
-            attr_resp: f_io.NodeAttributes2 = (
-                fuchsia_async_extension.get_loop()
-                .run_until_complete(
-                    file_proxy.get_attributes(
-                        query=f_io.NodeAttributesQuery.CONTENT_SIZE
-                    )
+            attr_resp: f_io.NodeAttributes2 = asyncio.run(
+                file_proxy.get_attributes(
+                    query=f_io.NodeAttributesQuery.CONTENT_SIZE
                 )
-                .unwrap()
-            )
+            ).unwrap()
         except (AssertionError, fcp.ZxStatus) as e:
             raise fc_errors.FuchsiaControllerError(
                 "get_attributes() failed"
@@ -1422,11 +1406,9 @@ class FuchsiaDeviceImpl(
         ret: bytearray = bytearray()
         try:
             while True:
-                response = (
-                    fuchsia_async_extension.get_loop()
-                    .run_until_complete(file_proxy.read(count=f_io.MAX_BUF))
-                    .unwrap()
-                )
+                response = asyncio.run(
+                    file_proxy.read(count=f_io.MAX_BUF)
+                ).unwrap()
                 if not response.data:
                     break
                 ret.extend(response.data)
@@ -1467,9 +1449,7 @@ class FuchsiaDeviceImpl(
             )
             # The data channel isn't populated until get_snapshot() returns so
             # there's no need to drain the channel in parallel.
-            fuchsia_async_extension.get_loop().run_until_complete(
-                feedback_proxy.get_snapshot(params=params)
-            )
+            asyncio.run(feedback_proxy.get_snapshot(params=params))
         except fcp.ZxStatus as status:
             raise fc_errors.FuchsiaControllerError(
                 "get_snapshot() failed"

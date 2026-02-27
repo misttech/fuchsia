@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 """Unit tests for bluetooth_common_using_fc.py"""
 
+import asyncio
 import unittest
 from collections.abc import Callable
 from typing import Any
@@ -77,7 +78,7 @@ def _custom_test_name_func(
     return f"{test_func_name}_{test_label}"
 
 
-class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
+class BluetoothCommonFCTests(unittest.TestCase):
     """Unit tests for bluetooth_common_using_fc.py."""
 
     def setUp(self) -> None:
@@ -159,14 +160,14 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         )
         self.bluetooth_common_fc_obj.loop.run_until_complete.assert_called()
 
-    async def test_async_accept_pairing(self) -> None:
+    def test_async_accept_pairing(self) -> None:
         """Test for BluetoothGap._accept_pairing() async method."""
         self.bluetooth_common_fc_obj._pairing_controller_proxy = (
             mock.MagicMock()
         )
         self.bluetooth_common_fc_obj.loop = mock.MagicMock()
-        (
-            await self.bluetooth_common_fc_obj._accept_pairing(
+        asyncio.run(
+            self.bluetooth_common_fc_obj._accept_pairing(
                 BluetoothAcceptPairing.DEFAULT_INPUT_MODE,
                 BluetoothAcceptPairing.DEFAULT_OUTPUT_MODE,
             )
@@ -236,7 +237,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dummy_address, "1")
 
     @unittest.skip("Skipping due to unresolved TypeError")
-    async def test_async_get_active_adapter_address(self) -> None:
+    def test_async_get_active_adapter_address(self) -> None:
         """Test for BluetoothGap.get_active_adapter_address() async method."""
         self.bluetooth_common_fc_obj._host_watcher_controller_proxy = (
             mock.MagicMock()
@@ -255,7 +256,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         self.bluetooth_common_fc_obj._host_watcher_controller_proxy.watch = (
             mock.MagicMock(return_value=test)
         )
-        res = await self.bluetooth_common_fc_obj._get_active_address()
+        res = asyncio.run(self.bluetooth_common_fc_obj._get_active_address())
         self.assertEqual(res, [88, 111, 107, 249, 15, 248])
 
     def test_get_known_remote_devices(self) -> None:

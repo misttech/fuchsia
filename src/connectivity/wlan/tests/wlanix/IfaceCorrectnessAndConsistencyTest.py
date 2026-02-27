@@ -5,10 +5,10 @@
 Tests of various (sometimes hardcoded) properties of ifaces.
 """
 
+import asyncio
 import struct
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-import fuchsia_async_extension
 from mobly import test_runner
 from mobly.asserts import assert_equal
 from wlanix_testing import base_test
@@ -18,11 +18,7 @@ class IfaceCorrectnessAndConsistencyTest(base_test.IfaceBaseTestClass):
     # TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
     # the same iface name, even when an iface is recreated.
     def test_iface_name_hardcoded_as_wlan(self) -> None:
-        response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(self.wifi_sta_iface_proxy.get_name())
-            .unwrap()
-        )
+        response = asyncio.run(self.wifi_sta_iface_proxy.get_name()).unwrap()
         assert_equal(
             response.iface_name,
             "wlan",
@@ -30,11 +26,9 @@ class IfaceCorrectnessAndConsistencyTest(base_test.IfaceBaseTestClass):
         )
 
     def test_iface_name_consistency(self) -> None:
-        get_sta_iface_names_response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
-            .unwrap()
-        )
+        get_sta_iface_names_response = asyncio.run(
+            self.wifi_chip_proxy.get_sta_iface_names()
+        ).unwrap()
         assert get_sta_iface_names_response.iface_names is not None
         assert_equal(
             len(get_sta_iface_names_response.iface_names),
@@ -43,11 +37,9 @@ class IfaceCorrectnessAndConsistencyTest(base_test.IfaceBaseTestClass):
         )
 
         iface_name = get_sta_iface_names_response.iface_names[0]
-        get_name_response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(self.wifi_sta_iface_proxy.get_name())
-            .unwrap()
-        )
+        get_name_response = asyncio.run(
+            self.wifi_sta_iface_proxy.get_name()
+        ).unwrap()
         assert_equal(
             iface_name,
             get_name_response.iface_name,
@@ -68,13 +60,9 @@ class IfaceCorrectnessAndConsistencyTest(base_test.IfaceBaseTestClass):
                 # fmt: on
             )
         )
-        message_response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(
-                self.nl80211_proxy.message(message=get_interface_message)
-            )
-            .unwrap()
-        )
+        message_response = asyncio.run(
+            self.nl80211_proxy.message(message=get_interface_message)
+        ).unwrap()
         assert message_response.responses is not None
         attrs = base_test.verify_new_interface_response(
             list(message_response.responses)

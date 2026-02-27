@@ -14,7 +14,7 @@ import main
 import statusinfo
 
 
-class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
+class TestSystemStatus(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.inspect_data = fuchsia_inspect.InspectDataCollection(
@@ -32,13 +32,7 @@ class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
 
         # This mock simply returns self.inspect_data whenever ffx_cmd.inspect().sync is called.
         mock_command = mock.Mock()
-
-        async def mock_sync(
-            *args: typing.Any, **kwargs: typing.Any
-        ) -> fuchsia_inspect.InspectDataCollection:
-            return self.inspect_data
-
-        mock_command.sync = mock.Mock(side_effect=mock_sync)
+        mock_command.sync = mock.Mock(side_effect=lambda: self.inspect_data)
         mock_inspect = mock.Mock(
             return_value=mock_command,
         )
@@ -61,12 +55,12 @@ class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-    async def test_command_no_style(self) -> None:
+    def test_command_no_style(self) -> None:
         """test basic invocation of the command without style"""
 
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            await main.main(["--no-style"])
+            main.main(["--no-style"])
 
         self.assertEqual(
             stdout.getvalue(),
@@ -79,12 +73,12 @@ class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-    async def test_command_style(self) -> None:
+    def test_command_style(self) -> None:
         """test invocation of the command with style"""
 
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            await main.main(["--style"])
+            main.main(["--style"])
 
         self.assertEqual(
             stdout.getvalue(),
@@ -97,17 +91,17 @@ class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-    async def test_no_contents(self) -> None:
+    def test_no_contents(self) -> None:
         """test command when there is no component found"""
 
         self.inspect_data = fuchsia_inspect.InspectDataCollection(data=[])
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            await main.main(["--no-style"])
+            main.main(["--no-style"])
 
         self.assertEqual(stdout.getvalue(), "No component health info found\n")
 
-    async def test_multiple_components(self) -> None:
+    def test_multiple_components(self) -> None:
         """test with multiple components in output"""
 
         first = self.inspect_data.data[0]
@@ -126,7 +120,7 @@ class TestSystemStatus(unittest.IsolatedAsyncioTestCase):
         )
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
-            await main.main(["--style"])
+            main.main(["--style"])
 
         self.assertEqual(
             stdout.getvalue(),

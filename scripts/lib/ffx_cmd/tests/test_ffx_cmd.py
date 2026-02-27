@@ -9,7 +9,7 @@ import ffx_cmd
 import fx_cmd
 
 
-class TestFfxCmd(unittest.IsolatedAsyncioTestCase):
+class TestFfxCmd(unittest.TestCase):
     def test_command_line(self) -> None:
         """command lines respect output format flag"""
 
@@ -27,8 +27,8 @@ class TestFfxCmd(unittest.IsolatedAsyncioTestCase):
         ).command_line("foo")
         self.assertEqual(actual, ["ffx", "--machine", "json-pretty", "foo"])
 
-    async def test_try_run(self) -> None:
-        version = await ffx_cmd.version(
+    def test_try_run(self) -> None:
+        version = ffx_cmd.version(
             inner=ffx_cmd.FfxCmd.create_test_inner("host-tools/ffx")
         ).sync()
         self.assertGreater(version.api_level, 0)

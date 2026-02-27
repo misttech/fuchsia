@@ -3,12 +3,12 @@
 # found in the LICENSE file.
 """Mobly test for Audio affordance."""
 
+import asyncio
 import logging
 import os
 import time
 from datetime import timedelta
 
-import fuchsia_async_extension
 from fuchsia_base_test import fuchsia_base_test
 from mobly import test_runner
 
@@ -41,15 +41,11 @@ class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         responseAudio = self.device.virtual_audio.capture()
         inputResponse = self.device.virtual_audio.inject(_AUDIO_FILE_INPUT)
 
-        fuchsia_async_extension.get_loop().run_until_complete(
-            inputResponse.wait_until_injection_is_done()
-        )
+        asyncio.run(inputResponse.wait_until_injection_is_done())
 
         time.sleep(5)
 
-        data = fuchsia_async_extension.get_loop().run_until_complete(
-            responseAudio.stop_and_extract_response()
-        )
+        data = asyncio.run(responseAudio.stop_and_extract_response())
         output_path = os.path.join(
             os.getenv("FUCHSIA_TEST_OUTDIR") or "", "response.wav"
         )
@@ -75,9 +71,7 @@ class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             optional_quiet_time_before_stopping_capture=timedelta(seconds=1),
         )
         inputResponse = self.device.virtual_audio.inject(_AUDIO_FILE_INPUT)
-        fuchsia_async_extension.get_loop().run_until_complete(
-            inputResponse.wait_until_injection_is_done()
-        )
+        asyncio.run(inputResponse.wait_until_injection_is_done())
 
         capture_result = self.device.virtual_audio.wait_for_triggered_capture()
         data = b""

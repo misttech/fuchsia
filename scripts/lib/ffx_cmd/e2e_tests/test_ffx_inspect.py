@@ -5,7 +5,6 @@
 import logging
 
 import ffx_cmd
-import fuchsia_async_extension
 import fuchsia_inspect
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -26,11 +25,9 @@ class TestFfxInspect(fuchsia_base_test.FuchsiaBaseTest):
         )
         _LOGGER.info("Selecting inspect data")
 
-        ret: fuchsia_inspect.InspectDataCollection = (
-            fuchsia_async_extension.get_loop().run_until_complete(
-                ffx_cmd.inspect(inner=inner).sync()
-            )
-        )
+        ret: fuchsia_inspect.InspectDataCollection = ffx_cmd.inspect(
+            inner=inner
+        ).sync()
 
         asserts.assert_greater(len(ret.data), 1)
 

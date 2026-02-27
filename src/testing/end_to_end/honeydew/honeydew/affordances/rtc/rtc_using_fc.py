@@ -3,10 +3,10 @@
 # found in the LICENSE file.
 """Real time clock (RTC) affordance using the FuchsiaController."""
 
+import asyncio
 import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
-import fuchsia_async_extension
 from fuchsia_controller_py import ZxStatus
 
 from honeydew import affordances_capable
@@ -84,11 +84,7 @@ class RtcUsingFc(rtc.Rtc):
     def get(self) -> datetime.datetime:
         """See base class."""
         try:
-            response = (
-                fuchsia_async_extension.get_loop()
-                .run_until_complete(self._proxy.get())
-                .unwrap()
-            )
+            response = asyncio.run(self._proxy.get()).unwrap()
         except (AssertionError, ZxStatus) as e:
             msg = f"Device.Get() error {e}"
             raise HoneydewRtcError(msg) from e
@@ -109,9 +105,7 @@ class RtcUsingFc(rtc.Rtc):
             time.second, time.minute, time.hour, time.day, time.month, time.year
         )
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._proxy.set2(rtc=ftime)
-            ).unwrap()
+            asyncio.run(self._proxy.set2(rtc=ftime)).unwrap()
         except (AssertionError, ZxStatus) as e:
             msg = f"Device.Set2() error {e}"
             raise HoneydewRtcError(msg) from e

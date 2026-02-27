@@ -27,7 +27,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         proxy.pending_txids.add(1)
         proxy.pending_txids.add(2)
         proxy._channel_waker.handle_ready_queues = {}
-        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()
+        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()  # type: ignore[assignment]
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
         proxy._decode = Mock()  # type: ignore[method-assign]
         proxy._decode.return_value = (bytearray([1, 2, 3]), [])
@@ -49,7 +49,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         proxy = ffx.EchoClient(channel)
         proxy.pending_txids.add(1)
         proxy._channel_waker.handle_ready_queues = {}
-        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()
+        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()  # type: ignore[assignment]
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
@@ -68,7 +68,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         proxy = ffx.EchoClient(channel)
         proxy.pending_txids.add(1)
         proxy._channel_waker.handle_ready_queues = {}
-        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()
+        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()  # type: ignore[assignment]
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
         proxy.staged_messages[1] = asyncio.Queue(1)
         proxy.staged_messages[1].put_nowait((bytearray([1, 0, 0, 0]), []))
@@ -83,7 +83,7 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         channel.read.side_effect = [(bytearray([1, 0, 0, 0]), ())]
         proxy = ffx.EchoClient(channel)
         proxy._channel_waker.handle_ready_queues = {}
-        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()
+        proxy._channel_waker.handle_ready_queues[0] = asyncio.Queue()  # type: ignore[assignment]
         proxy._channel_waker.handle_ready_queues[0].put_nowait(0)
         with self.assertRaises(RuntimeError):
             await proxy._read_and_decode(10)

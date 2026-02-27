@@ -3,13 +3,13 @@
 # found in the LICENSE file.
 """UserInput affordance implementation using FuchsiaController."""
 
+import asyncio
 import json
 import time
 
 import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
-import fuchsia_async_extension
 import fuchsia_controller_py as fcp
 
 from honeydew import errors
@@ -57,7 +57,7 @@ class TouchDevice(user_input.TouchDevice):
                     _FcProxies.INPUT_REGISTRY
                 )
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 input_registry_proxy.register_touch_screen(
                     device=channel_server.take(),
                     coordinate_unit=f_test_input.CoordinateUnit.PHYSICAL_PIXELS,
@@ -107,7 +107,7 @@ class TouchDevice(user_input.TouchDevice):
             interval: float = duration_ms / tap_event_count
 
             for _ in range(tap_event_count):
-                fuchsia_async_extension.get_loop().run_until_complete(
+                asyncio.run(
                     self._touch_screen_proxy.simulate_touch_event(
                         report=f_input_report.TouchInputReport(
                             contacts=[
@@ -123,7 +123,7 @@ class TouchDevice(user_input.TouchDevice):
 
                 time.sleep(duration_of_one_tap_ms / 1000)
 
-                fuchsia_async_extension.get_loop().run_until_complete(
+                asyncio.run(
                     self._touch_screen_proxy.simulate_touch_event(
                         report=f_input_report.TouchInputReport(
                             contacts=[],
@@ -166,7 +166,7 @@ class TouchDevice(user_input.TouchDevice):
         """
 
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 self._touch_screen_proxy.simulate_swipe(
                     start_location=f_math.Vec(
                         x=start_location.x, y=start_location.y
@@ -208,7 +208,7 @@ class KeyboardDevice(user_input.KeyboardDevice):
                     _FcProxies.INPUT_REGISTRY
                 )
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 input_registry_proxy.register_keyboard(
                     device=channel_server.take(),
                 )
@@ -233,7 +233,7 @@ class KeyboardDevice(user_input.KeyboardDevice):
             UserInputError: if failed key press operation.
         """
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 self._keyboard_proxy.simulate_key_press(key_code=key_code)
             )
         except fcp.ZxStatus as status:

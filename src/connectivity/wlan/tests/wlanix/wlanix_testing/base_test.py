@@ -5,11 +5,11 @@
 Testing utilities for antlion tests of wlanix.
 """
 
+import asyncio
 import struct
 from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-import fuchsia_async_extension
 from antlion import controllers
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib import hostapd_constants
@@ -140,11 +140,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
-        response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(wifi_proxy.get_chip_ids())
-            .unwrap()
-        )
+        response = asyncio.run(wifi_proxy.get_chip_ids()).unwrap()
         assert (
             response.chip_ids is not None
         ), "Wifi.GetChipIds() response is missing a chip_ids value"
@@ -156,18 +152,16 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
 
         self.chip_id = response.chip_ids[0]
         proxy, server = Channel.create()
-        fuchsia_async_extension.get_loop().run_until_complete(
+        asyncio.run(
             wifi_proxy.get_chip(chip_id=self.chip_id, chip=server.take())
         ).unwrap()
         self.wifi_chip_proxy = fidl_wlanix.WifiChipClient(proxy)
 
     def teardown_test(self) -> None:
         if not self.allow_ifaces_between_tests:
-            response = (
-                fuchsia_async_extension.get_loop()
-                .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
-                .unwrap()
-            )
+            response = asyncio.run(
+                self.wifi_chip_proxy.get_sta_iface_names()
+            ).unwrap()
             assert (
                 response.iface_names is not None
             ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
@@ -190,11 +184,9 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
     def setup_class(self) -> None:
         super().setup_class()
 
-        get_sta_iface_names_response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(self.wifi_chip_proxy.get_sta_iface_names())
-            .unwrap()
-        )
+        get_sta_iface_names_response = asyncio.run(
+            self.wifi_chip_proxy.get_sta_iface_names()
+        ).unwrap()
         assert (
             get_sta_iface_names_response.iface_names is not None
         ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
@@ -205,16 +197,14 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         )
 
         proxy, server = Channel.create()
-        fuchsia_async_extension.get_loop().run_until_complete(
+        asyncio.run(
             self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()
         self.wifi_sta_iface_proxy = fidl_wlanix.WifiStaIfaceClient(proxy)
 
-        get_name_response = (
-            fuchsia_async_extension.get_loop()
-            .run_until_complete(self.wifi_sta_iface_proxy.get_name())
-            .unwrap()
-        )
+        get_name_response = asyncio.run(
+            self.wifi_sta_iface_proxy.get_name()
+        ).unwrap()
         assert (
             get_name_response.iface_name is not None
         ), "WifiStaIface.GetName() response is missing an iface_name value"
@@ -257,7 +247,7 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
                 "WifiChip should no longer contain the iface just removed",
             )
 
-        fuchsia_async_extension.get_loop().run_until_complete(destroy_iface())
+        asyncio.run(destroy_iface())
         super().teardown_class()
 
 
@@ -330,9 +320,7 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         self.access_point().download_ap_logs(self.log_path)
         self.access_point().stop_all_aps()
         # Ensure that our supplicant is fully disconnected.
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self.supplicant_sta_iface_proxy.disconnect()
-        )
+        asyncio.run(self.supplicant_sta_iface_proxy.disconnect())
         super().teardown_test()
 
     def on_fail(self, record: TestResultRecord) -> None:

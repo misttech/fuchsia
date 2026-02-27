@@ -6,16 +6,13 @@ import("//build/python/python_mobly_test.gni")
 
 assert(is_host && is_linux)
 
-_common_test_libraries = [
-  "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
-  "//src/testing/end_to_end/honeydew",
-  "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
-  "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
-]
-
 python_mobly_test("blackout_integration_test_no_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -34,7 +31,11 @@ python_mobly_test("blackout_integration_test_no_reboot") {
 
 python_mobly_test("blackout_integration_test_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -53,7 +54,11 @@ python_mobly_test("blackout_integration_test_reboot") {
 
 python_mobly_test("blackout_integration_test_fail") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -71,7 +76,11 @@ python_mobly_test("blackout_integration_test_fail") {
 
 python_mobly_test("blackout_fxfs_tree_soft_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -96,7 +105,11 @@ python_mobly_test("blackout_fxfs_tree_soft_reboot") {
 
 python_mobly_test("blackout_minfs_tree_soft_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -121,7 +134,11 @@ python_mobly_test("blackout_minfs_tree_soft_reboot") {
 
 python_mobly_test("blackout_fxfs_tree_hard_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -146,7 +163,11 @@ python_mobly_test("blackout_fxfs_tree_hard_reboot") {
 
 python_mobly_test("blackout_minfs_tree_hard_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -171,7 +192,11 @@ python_mobly_test("blackout_minfs_tree_hard_reboot") {
 
 python_mobly_test("blackout_fxfs_allocate_soft_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -197,7 +222,11 @@ python_mobly_test("blackout_fxfs_allocate_soft_reboot") {
 
 python_mobly_test("blackout_fxfs_allocate_hard_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -223,7 +252,11 @@ python_mobly_test("blackout_fxfs_allocate_hard_reboot") {
 
 python_mobly_test("blackout_fxfs_barriers_soft_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -249,7 +282,11 @@ python_mobly_test("blackout_fxfs_barriers_soft_reboot") {
 
 python_mobly_test("blackout_fxfs_barriers_hard_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -275,7 +312,11 @@ python_mobly_test("blackout_fxfs_barriers_hard_reboot") {
 
 python_mobly_test("blackout_fvm_minfs_soft_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"
@@ -300,7 +341,11 @@ python_mobly_test("blackout_fvm_minfs_soft_reboot") {
 
 python_mobly_test("blackout_fvm_minfs_hard_reboot") {
   main_source = "blackout.py"
-  libraries = _common_test_libraries
+  libraries = [
+    "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
+  ]
   params = {
     # Blackout args
     component_name = "/core/testing/storage-tests:blackout-target"

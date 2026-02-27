@@ -11,11 +11,11 @@ build target should specify what component it's running, what collection it shou
 the block device label (and optionally path) to run on.
 """
 
+import asyncio
 import logging
 import random
 
 import fidl_fuchsia_blackout_test as blackout
-import fuchsia_async_extension
 import honeydew.utils.common
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx.errors import FfxCommandError
@@ -72,7 +72,7 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
         super().setup_test()
         _LOGGER.info("Blackout: Setting up test filesystem")
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 self.blackout_proxy.setup(
                     device_label=self.device_label,
                     device_path=self.device_path,
@@ -83,7 +83,7 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
             asserts.fail(f"Failed to run setup: {e}")
         _LOGGER.info("Blackout: Running filesystem load")
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
+            asyncio.run(
                 self.blackout_proxy.test(
                     device_label=self.device_label,
                     device_path=self.device_path,
@@ -130,7 +130,7 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
     def _test_do_verification(self) -> None:
         self.create_blackout_component()
         _LOGGER.info("Blackout: Running device verification")
-        res = fuchsia_async_extension.get_loop().run_until_complete(
+        res = asyncio.run(
             self.blackout_proxy.verify(
                 device_label=self.device_label,
                 device_path=self.device_path,

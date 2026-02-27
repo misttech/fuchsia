@@ -15,7 +15,7 @@ class Options(argparse.Namespace):
         self.style: bool | None = None
 
 
-async def main(arg_override: typing.Sequence[str] | None = None) -> None:
+def main(arg_override: typing.Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Check whole system status")
     parser.add_argument(
         "--style",
@@ -28,7 +28,7 @@ async def main(arg_override: typing.Sequence[str] | None = None) -> None:
 
     style = args.style if args.style is not None else termout.is_valid()
 
-    output = await ffx_cmd.inspect("**:root/fuchsia.inspect.Health:*").sync()
+    output = ffx_cmd.inspect("**:root/fuchsia.inspect.Health:*").sync()
 
     if not output.data:
         print(statusinfo.warning("No component health info found", style=style))
