@@ -773,9 +773,11 @@ impl FutexWaiters {
         self.0.len() < initial_len
     }
 
-    fn split_for_requeue(&mut self, max_count: usize) -> Self {
-        let pos = if max_count >= self.0.len() { 0 } else { self.0.len() - max_count };
-        FutexWaiters(self.0.split_off(pos))
+    fn split_for_requeue(&mut self, count: usize) -> Self {
+        let count = std::cmp::min(count, self.0.len());
+        let tail = self.0.split_off(count);
+        let head = std::mem::replace(&mut self.0, tail);
+        FutexWaiters(head)
     }
 }
 
@@ -860,6 +862,36 @@ mod tests {
         assert_eq!(state.rt_mutex_waiters.len(), 1);
         state.remove_rt_mutex_waiter_from_queue(key, &event);
         assert_eq!(state.rt_mutex_waiters.len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_split_for_requeue_fairness() {
+        let mut waiters = FutexWaiters::default();
+        let e1 = Arc::new(InterruptibleEvent::new());
+        let e2 = Arc::new(InterruptibleEvent::new());
+        let e3 = Arc::new(InterruptibleEvent::new());
+
+        waiters.add(FutexWaiter {
+            mask: 1,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&e1)),
+        });
+        waiters.add(FutexWaiter {
+            mask: 2,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&e2)),
+        });
+        waiters.add(FutexWaiter {
+            mask: 3,
+            notifiable: FutexNotifiable::new_internal(Arc::downgrade(&e3)),
+        });
+
+        let split = waiters.split_for_requeue(2);
+
+        assert_eq!(split.0.len(), 2);
+        assert_eq!(split.0[0].mask, 1);
+        assert_eq!(split.0[1].mask, 2);
+
+        assert_eq!(waiters.0.len(), 1);
+        assert_eq!(waiters.0[0].mask, 3);
     }
 
     #[fuchsia::test]
