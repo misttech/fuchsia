@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use update_package::manifest::OtaManifest;
+use update_package::manifest::OtaManifestV1;
 use {
     fidl_fuchsia_mem as fmem, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
     fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
@@ -1184,13 +1184,8 @@ impl PackagelessAttempt<'_> {
             .await
             .map_err(|e| AttemptError::Prepare(PrepareError::OpenBlobfs(e)))?;
 
-        let total_blob_sizes = manifest
-            .images
-            .iter()
-            .map(|image| &image.blob)
-            .chain(&manifest.blobs)
-            .map(|blob| blob.uncompressed_size)
-            .sum::<u64>();
+        let total_blob_sizes = manifest.images.iter().map(|image| image.size).sum::<u64>()
+            + manifest.blobs.iter().map(|blob| blob.uncompressed_size).sum::<u64>();
 
         // Write images
         let mut state = state
@@ -1253,7 +1248,7 @@ impl PackagelessAttempt<'_> {
     async fn prepare(
         &mut self,
         target_version: &mut history::Version,
-    ) -> Result<(paver::CurrentConfiguration, OtaManifest, url::Url), PrepareError> {
+    ) -> Result<(paver::CurrentConfiguration, OtaManifestV1, url::Url), PrepareError> {
         // Ensure that the partition boot metadata is ready for the update to begin. Specifically:
         // - the current configuration must be Healthy and Active, and
         // - the non-current configuration must be Unbootable.
@@ -1311,7 +1306,7 @@ impl PackagelessAttempt<'_> {
             image.slot == zbi_slot
                 && image.image_type
                     == update_package::manifest::ImageType::Asset(
-                        update_package::manifest::AssetType::Zbi,
+                        update_package::images::AssetType::Zbi,
                     )
         }) {
             return Err(PrepareError::VerifyImages(update_package::VerifyError::MissingZbi));
@@ -1332,7 +1327,7 @@ impl PackagelessAttempt<'_> {
         co: &mut async_generator::Yield<fupdate_installer_ext::State>,
         state: &mut state::Stage,
         current_configuration: paver::CurrentConfiguration,
-        manifest: &OtaManifest,
+        manifest: &OtaManifestV1,
         blob_base_url: &url::Url,
         blobfs: &blobfs::Client,
     ) -> Result<(), StageError> {
@@ -1345,7 +1340,7 @@ impl PackagelessAttempt<'_> {
             manifest
                 .images
                 .iter()
-                .map(|image| image.blob.fuchsia_merkle_root)
+                .map(|image| image.fuchsia_merkle_root)
                 .chain(manifest.blobs.iter().map(|blob| blob.fuchsia_merkle_root)),
             &self.env.retained_blobs,
         )
@@ -1372,7 +1367,7 @@ impl PackagelessAttempt<'_> {
                 if !self.config.should_write_recovery
                     && image.slot == update_package::manifest::Slot::R
                 {
-                    return Ok(image.blob.uncompressed_size);
+                    return Ok(image.size);
                 }
                 let target_config = if image.slot == update_package::manifest::Slot::R {
                     paver::TargetConfiguration::Single(fpaver::Configuration::Recovery)
@@ -1382,7 +1377,7 @@ impl PackagelessAttempt<'_> {
                 let image_type = (&image.image_type).into();
                 if should_write_image(
                     image.sha256,
-                    image.blob.uncompressed_size,
+                    image.size,
                     current_configuration,
                     target_config,
                     &self.env.data_sink,
@@ -1390,7 +1385,7 @@ impl PackagelessAttempt<'_> {
                 )
                 .await
                 {
-                    let blob_id = fpkg_ext::BlobId::from(image.blob.fuchsia_merkle_root).into();
+                    let blob_id = fpkg_ext::BlobId::from(image.fuchsia_merkle_root).into();
                     match self
                         .env
                         .ota_downloader
@@ -1401,7 +1396,7 @@ impl PackagelessAttempt<'_> {
                         Ok(()) => {}
                         Err(fpkg::ResolveError::NoSpace) => {
                             let () = replace_retained_blobs(
-                                manifest.images.iter().map(|image| image.blob.fuchsia_merkle_root),
+                                manifest.images.iter().map(|image| image.fuchsia_merkle_root),
                                 &self.env.retained_blobs,
                             )
                             .await
@@ -1432,7 +1427,7 @@ impl PackagelessAttempt<'_> {
                         }
                     }
                     let vmo = blobfs
-                        .get_blob_vmo(&image.blob.fuchsia_merkle_root)
+                        .get_blob_vmo(&image.fuchsia_merkle_root)
                         .await
                         .map_err(StageError::GetBlobVmo)?;
                     // The paver service requires VMOs that are resizable, and blobfs does not give
@@ -1443,23 +1438,23 @@ impl PackagelessAttempt<'_> {
                             zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE
                                 | zx::VmoChildOptions::RESIZABLE,
                             0,
-                            image.blob.uncompressed_size,
+                            image.size,
                         )
                         .map_err(|status| {
                             StageError::OpenImageError(
                                 update_package::OpenImageError::CloneBuffer {
-                                    path: image.blob.fuchsia_merkle_root.to_string(),
+                                    path: image.fuchsia_merkle_root.to_string(),
                                     status,
                                 },
                             )
                         })?;
-                    let buffer = fmem::Buffer { vmo, size: image.blob.uncompressed_size };
+                    let buffer = fmem::Buffer { vmo, size: image.size };
 
                     paver::write_image(&self.env.data_sink, buffer, target_config, image_type)
                         .await
                         .map_err(StageError::Write)?;
                 }
-                Ok(image.blob.uncompressed_size)
+                Ok(image.size)
             })
             .buffer_unordered(self.concurrent_blob_fetches);
 
@@ -1477,7 +1472,7 @@ impl PackagelessAttempt<'_> {
         &mut self,
         co: &mut async_generator::Yield<fupdate_installer_ext::State>,
         state: &mut state::Fetch,
-        manifest: &OtaManifest,
+        manifest: &OtaManifestV1,
         blob_base_url: &url::Url,
         blobfs: &blobfs::Client,
     ) -> Result<(), FetchError> {
@@ -1642,8 +1637,8 @@ impl<'a> From<&'a update_package::manifest::ImageType> for ImageType<'a> {
     fn from(image_type: &'a update_package::manifest::ImageType) -> Self {
         match image_type {
             update_package::manifest::ImageType::Asset(asset) => ImageType::Asset(match asset {
-                update_package::manifest::AssetType::Zbi => fpaver::Asset::Kernel,
-                update_package::manifest::AssetType::Vbmeta => fpaver::Asset::VerifiedBootMetadata,
+                update_package::images::AssetType::Zbi => fpaver::Asset::Kernel,
+                update_package::images::AssetType::Vbmeta => fpaver::Asset::VerifiedBootMetadata,
             }),
             update_package::manifest::ImageType::Firmware(type_) => ImageType::Firmware { type_ },
         }
@@ -1834,7 +1829,7 @@ where
     Ok(())
 }
 
-async fn verify_board_in_manifest<B>(build_info: &B, manifest: &OtaManifest) -> Result<(), Error>
+async fn verify_board_in_manifest<B>(build_info: &B, manifest: &OtaManifestV1) -> Result<(), Error>
 where
     B: BuildInfo,
 {

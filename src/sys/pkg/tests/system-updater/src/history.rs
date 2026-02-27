@@ -171,20 +171,24 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
     let vbmeta_content = b"vbmeta contents";
     let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
-    let manifest = OtaManifest {
-        build_info_version: "0.2".parse().unwrap(),
+    let manifest = OtaManifestV1 {
+        build_version: "0.2".parse().unwrap(),
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: zbi_hash,
+                sha256: sha256(6),
+                size: 8,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(6),
-                blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: vbmeta_hash,
+                sha256: sha256(3),
+                size: 6,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(3),
-                blob: manifest::Blob { uncompressed_size: 6, fuchsia_merkle_root: vbmeta_hash },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])
@@ -373,20 +377,24 @@ async fn increments_attempts_counter_on_retry(
     let vbmeta_content = b"vbmeta contents";
     let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
-    let manifest = OtaManifest {
-        build_info_version: "".parse().unwrap(),
+    let manifest = OtaManifestV1 {
+        build_version: "".parse().unwrap(),
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: zbi_hash,
+                sha256: sha256(6),
+                size: 8,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(6),
-                blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: vbmeta_hash,
+                sha256: sha256(3),
+                size: 6,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(3),
-                blob: manifest::Blob { uncompressed_size: 6, fuchsia_merkle_root: vbmeta_hash },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])

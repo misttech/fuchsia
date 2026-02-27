@@ -116,15 +116,14 @@ async fn fails_on_image_write_error() {
 async fn fails_on_image_write_error_packageless() {
     let zbi_content = b"zbi zbi";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(8),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(8),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -248,15 +247,14 @@ async fn writes_to_both_configs_if_abr_not_supported() {
 async fn writes_to_both_configs_if_abr_not_supported_packageless() {
     let zbi_content = b"zbi zbi";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(8),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(8),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -500,15 +498,14 @@ async fn assert_writes_for_current_and_target_packageless(
 ) {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(2),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -717,18 +714,18 @@ async fn retry_image_blob_fetch_once_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(2),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([manifest::Blob {
             uncompressed_size: content_blob.len() as u64,
+            delivery_blob_type: 1,
             fuchsia_merkle_root: content_blob_hash,
         }])
     };
@@ -880,18 +877,18 @@ async fn retry_image_blob_fetch_twice_fails_update_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(2),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([manifest::Blob {
             uncompressed_size: content_blob.len() as u64,
+            delivery_blob_type: 1,
             fuchsia_merkle_root: content_blob_hash,
         }])
     };
@@ -1040,15 +1037,14 @@ async fn writes_fuchsia() {
 async fn writes_fuchsia_packageless() {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: sha256(2),
+            size: zbi_content.len() as u64,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: sha256(2),
-            blob: manifest::Blob {
-                uncompressed_size: zbi_content.len() as u64,
-                fuchsia_merkle_root: zbi_hash,
-            },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1189,25 +1185,23 @@ async fn writes_fuchsia_vbmeta_packageless() {
     let vbmeta_content = b"vbmeta contents";
     let vbmeta_hash = fuchsia_merkle::root_from_slice(vbmeta_content);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: zbi_hash,
+                sha256: sha256(2),
+                size: zbi_content.len() as u64,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
-                blob: manifest::Blob {
-                    uncompressed_size: zbi_content.len() as u64,
-                    fuchsia_merkle_root: zbi_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: vbmeta_hash,
+                sha256: sha256(1),
+                size: vbmeta_content.len() as u64,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(1),
-                blob: manifest::Blob {
-                    uncompressed_size: vbmeta_content.len() as u64,
-                    fuchsia_merkle_root: vbmeta_hash,
-                },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])
@@ -1315,12 +1309,14 @@ async fn zbi_match_in_desired_config() {
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_desired_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: MATCHING_SHA256.parse().unwrap(),
+            size: 8,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1417,12 +1413,14 @@ async fn zbi_match_in_active_config() {
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_active_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: MATCHING_SHA256.parse().unwrap(),
+            size: 8,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1532,12 +1530,14 @@ async fn zbi_match_in_active_config_error_in_desired_config() {
 #[fasync::run_singlethreaded(test)]
 async fn zbi_match_in_active_config_error_in_desired_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: MATCHING_SHA256.parse().unwrap(),
+            size: 8,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1666,12 +1666,14 @@ async fn asset_comparing_respects_fuchsia_mem_buffer_size() {
 async fn asset_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     let zbi_content = b"matching";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: MATCHING_SHA256.parse().unwrap(),
+            size: 8,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1791,12 +1793,14 @@ async fn asset_copying_sets_fuchsia_mem_buffer_size() {
 #[fasync::run_singlethreaded(test)]
 async fn asset_copying_sets_fuchsia_mem_buffer_size_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![manifest::Image {
+            fuchsia_merkle_root: zbi_hash,
+            sha256: MATCHING_SHA256.parse().unwrap(),
+            size: 8,
             slot: manifest::Slot::AB,
             image_type: manifest::ImageType::Asset(AssetType::Zbi),
-            sha256: MATCHING_SHA256.parse().unwrap(),
-            blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: zbi_hash },
+            delivery_blob_type: 1,
         }],
         ..make_manifest([])
     };
@@ -1921,19 +1925,23 @@ async fn recovery_already_present() {
 #[fasync::run_singlethreaded(test)]
 async fn recovery_already_present_packageless() {
     let rzbi_hash = fuchsia_merkle::root_from_slice(b"matching");
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: hash(9),
+                sha256: EMPTY_SHA256.parse().unwrap(),
+                size: 0,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: rzbi_hash,
+                sha256: MATCHING_SHA256.parse().unwrap(),
+                size: 8,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: MATCHING_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 8, fuchsia_merkle_root: rzbi_hash },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])
@@ -2056,22 +2064,23 @@ async fn writes_recovery_packageless() {
     let rzbi_content = b"recovery zbi";
     let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: hash(9),
+                sha256: EMPTY_SHA256.parse().unwrap(),
+                size: 0,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: rzbi_hash,
+                sha256: sha256(2),
+                size: rzbi_content.len() as u64,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
-                blob: manifest::Blob {
-                    uncompressed_size: rzbi_content.len() as u64,
-                    fuchsia_merkle_root: rzbi_hash,
-                },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])
@@ -2209,31 +2218,31 @@ async fn writes_recovery_vbmeta_packageless() {
     let rvbmeta_content = b"rvbmeta";
     let rvbmeta_hash = fuchsia_merkle::root_from_slice(rvbmeta_content);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: hash(9),
+                sha256: EMPTY_SHA256.parse().unwrap(),
+                size: 0,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: EMPTY_SHA256.parse().unwrap(),
-                blob: manifest::Blob { uncompressed_size: 0, fuchsia_merkle_root: hash(9) },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: rzbi_hash,
+                sha256: sha256(2),
+                size: rzbi_content.len() as u64,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
-                blob: manifest::Blob {
-                    uncompressed_size: rzbi_content.len() as u64,
-                    fuchsia_merkle_root: rzbi_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: rvbmeta_hash,
+                sha256: sha256(1),
+                size: rvbmeta_content.len() as u64,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(1),
-                blob: manifest::Blob {
-                    uncompressed_size: rvbmeta_content.len() as u64,
-                    fuchsia_merkle_root: rvbmeta_hash,
-                },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])
@@ -2374,25 +2383,23 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
     let rzbi_content = b"rzbi_content";
     let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
+                fuchsia_merkle_root: zbi_hash,
+                sha256: sha256(1),
+                size: zbi_content.len() as u64,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(1),
-                blob: manifest::Blob {
-                    uncompressed_size: zbi_content.len() as u64,
-                    fuchsia_merkle_root: zbi_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: rzbi_hash,
+                sha256: sha256(2),
+                size: rzbi_content.len() as u64,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(2),
-                blob: manifest::Blob {
-                    uncompressed_size: rzbi_content.len() as u64,
-                    fuchsia_merkle_root: rzbi_hash,
-                },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])

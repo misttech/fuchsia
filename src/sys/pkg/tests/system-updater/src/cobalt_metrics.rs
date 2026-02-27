@@ -55,6 +55,7 @@ async fn test_resolve_error_maps_to_cobalt_status_code(
     let env = TestEnv::builder()
         .ota_manifest(make_manifest([manifest::Blob {
             uncompressed_size: 1,
+            delivery_blob_type: 1,
             fuchsia_merkle_root: hash(0),
         }]))
         .build()

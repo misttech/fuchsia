@@ -156,14 +156,14 @@ async fn fails_on_malformed_images_manifest_update_package() {
 #[fasync::run_singlethreaded(test)]
 async fn fails_on_malformed_ota_manifest_packageless() {
     let env_with_bad_manifest_json =
-        TestEnv::builder().ota_manifest_raw("fake manifest").build().await;
+        TestEnv::builder().ota_manifest_json("fake manifest").build().await;
 
     assert!(
         env_with_bad_manifest_json.run_packageless_update().await.is_err(),
         "system updater succeeded when it should fail"
     );
 
-    let env_no_manifest_json = TestEnv::builder().ota_manifest_raw("").build().await;
+    let env_no_manifest_json = TestEnv::builder().ota_manifest_json("").build().await;
 
     assert!(
         env_no_manifest_json.run_packageless_update().await.is_err(),
@@ -522,61 +522,57 @@ async fn fully_populated_images_manifest_packageless() {
     let firmware_bl2_content = b"bl2bl2";
     let firmware_bl2_hash = fuchsia_merkle::root_from_slice(firmware_bl2_content);
 
-    let manifest = OtaManifest {
+    let manifest = OtaManifestV1 {
         images: vec![
             manifest::Image {
-                slot: manifest::Slot::R,
-                image_type: manifest::ImageType::Asset(AssetType::Zbi),
+                fuchsia_merkle_root: recovery_zbi_hash,
                 sha256: sha256(1),
-                blob: manifest::Blob {
-                    uncompressed_size: recovery_zbi_content.len() as u64,
-                    fuchsia_merkle_root: recovery_zbi_hash,
-                },
+                size: recovery_zbi_content.len() as u64,
+                slot: manifest::Slot::R,
+                image_type: manifest::ImageType::Asset(AssetType::Zbi),
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: recovery_vbmeta_hash,
+                sha256: sha256(2),
+                size: recovery_vbmeta_content.len() as u64,
                 slot: manifest::Slot::R,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(2),
-                blob: manifest::Blob {
-                    uncompressed_size: recovery_vbmeta_content.len() as u64,
-                    fuchsia_merkle_root: recovery_vbmeta_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: zbi_hash,
+                sha256: sha256(3),
+                size: zbi_content.len() as u64,
+
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Zbi),
-                sha256: sha256(3),
-                blob: manifest::Blob {
-                    uncompressed_size: zbi_content.len() as u64,
-                    fuchsia_merkle_root: zbi_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: vbmeta_hash,
+                sha256: sha256(4),
+                size: vbmeta_content.len() as u64,
+
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Asset(AssetType::Vbmeta),
-                sha256: sha256(4),
-                blob: manifest::Blob {
-                    uncompressed_size: vbmeta_content.len() as u64,
-                    fuchsia_merkle_root: vbmeta_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: firmware_hash,
+                sha256: sha256(5),
+                size: firmware_content.len() as u64,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("".to_string()),
-                sha256: sha256(5),
-                blob: manifest::Blob {
-                    uncompressed_size: firmware_content.len() as u64,
-                    fuchsia_merkle_root: firmware_hash,
-                },
+                delivery_blob_type: 1,
             },
             manifest::Image {
+                fuchsia_merkle_root: firmware_bl2_hash,
+                sha256: sha256(6),
+                size: firmware_bl2_content.len() as u64,
                 slot: manifest::Slot::AB,
                 image_type: manifest::ImageType::Firmware("bl2".to_string()),
-                sha256: sha256(6),
-                blob: manifest::Blob {
-                    uncompressed_size: firmware_bl2_content.len() as u64,
-                    fuchsia_merkle_root: firmware_bl2_hash,
-                },
+                delivery_blob_type: 1,
             },
         ],
         ..make_manifest([])

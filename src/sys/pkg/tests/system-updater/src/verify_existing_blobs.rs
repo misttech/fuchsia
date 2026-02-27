@@ -11,6 +11,7 @@ async fn verifies_existing_blobs_if_enabled() {
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
     let blob = manifest::Blob {
         uncompressed_size: blob_content.len() as u64,
+        delivery_blob_type: 1,
         fuchsia_merkle_root: blob_hash,
     };
 
@@ -70,6 +71,7 @@ async fn re_fetches_corrupt_blob() {
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
     let blob = manifest::Blob {
         uncompressed_size: blob_content.len() as u64,
+        delivery_blob_type: 1,
         fuchsia_merkle_root: blob_hash,
     };
 
