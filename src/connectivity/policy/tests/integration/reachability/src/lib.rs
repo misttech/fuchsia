@@ -139,9 +139,7 @@ fn reply_if_echo_request(
                     .unwrap_b()
             });
         }
-        Err(packet_formats::error::IpParseError::Parse {
-            error: packet_formats::error::ParseError::NotExpected,
-        }) => {}
+        Err(packet_formats::error::ParseError::NotExpected) => {}
         Err(e) => {
             panic!("parse packet as ICMPv4 error: {}\n{:02x?}", e, frame);
         }
@@ -191,7 +189,7 @@ fn reply_if_echo_request(
                     .unwrap_b()
             });
         }
-        Err(packet_formats::error::IpParseError::Parse {
+        Err(packet_formats::error::Ipv6ParseError::Parse {
             error: packet_formats::error::ParseError::NotExpected,
         }) => {}
         Err(e) => {

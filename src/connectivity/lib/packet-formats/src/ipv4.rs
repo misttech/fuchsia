@@ -30,7 +30,7 @@ use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, SplitByteSliceMut, Unaligned,
 };
 
-use crate::error::{IpParseError, IpParseResult, ParseError};
+use crate::error::ParseError;
 use crate::ip::{
     DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto, Nat64Error,
     Nat64TranslationResult,
@@ -276,33 +276,33 @@ impl<B: SplitByteSlice> PartialSerializer for Ipv4Packet<B> {
 }
 
 impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv4Packet<B> {
-    type Error = IpParseError<Ipv4>;
+    type Error = ParseError;
 
     fn parse_metadata(&self) -> ParseMetadata {
         ParseMetadata::from_packet(self.header_len(), self.body.len(), 0)
     }
 
-    fn parse<BV: BufferView<B>>(buffer: BV, _args: ()) -> IpParseResult<Ipv4, Self> {
+    fn parse<BV: BufferView<B>>(buffer: BV, _args: ()) -> Result<Self, ParseError> {
         Ipv4PacketRaw::<B>::parse(buffer, ()).and_then(Ipv4Packet::try_from_raw)
     }
 }
 
 impl<B: SplitByteSlice> FromRaw<Ipv4PacketRaw<B>, ()> for Ipv4Packet<B> {
-    type Error = IpParseError<Ipv4>;
+    type Error = ParseError;
 
     fn try_from_raw_with(raw: Ipv4PacketRaw<B>, _args: ()) -> Result<Self, Self::Error> {
         // TODO(https://fxbug.dev/42157630): Some of the errors below should return an
-        // `IpParseError::ParameterProblem` instead of a `ParseError`.
+        // `ParameterProblem` error instead of a `ParseError`.
         let hdr_prefix = raw.hdr_prefix;
         let hdr_bytes = (hdr_prefix.ihl() * 4) as usize;
 
         if hdr_bytes < HDR_PREFIX_LEN {
-            return debug_err!(Err(ParseError::Format.into()), "invalid IHL: {}", hdr_prefix.ihl());
+            return debug_err!(Err(ParseError::Format), "invalid IHL: {}", hdr_prefix.ihl());
         }
 
         let options = match raw.options {
             MaybeParsed::Incomplete(_) => {
-                return debug_err!(Err(ParseError::Format.into()), "Incomplete options");
+                return debug_err!(Err(ParseError::Format), "Incomplete options");
             }
             MaybeParsed::Complete(unchecked) => Options::try_from_raw(unchecked)
                 .map_err(|e| debug_err!(e, "malformed options: {:?}", e))?,
@@ -310,7 +310,7 @@ impl<B: SplitByteSlice> FromRaw<Ipv4PacketRaw<B>, ()> for Ipv4Packet<B> {
 
         if hdr_prefix.version() != 4 {
             return debug_err!(
-                Err(ParseError::Format.into()),
+                Err(ParseError::Format),
                 "unexpected IP version: {}",
                 hdr_prefix.version()
             );
@@ -320,11 +320,11 @@ impl<B: SplitByteSlice> FromRaw<Ipv4PacketRaw<B>, ()> for Ipv4Packet<B> {
             MaybeParsed::Incomplete(_) => {
                 if hdr_prefix.mf_flag() {
                     return debug_err!(
-                        Err(ParseError::NotSupported.into()),
+                        Err(ParseError::NotSupported),
                         "fragmentation not supported"
                     );
                 } else {
-                    return debug_err!(Err(ParseError::Format.into()), "Incomplete body");
+                    return debug_err!(Err(ParseError::Format), "Incomplete body");
                 }
             }
             MaybeParsed::Complete(bytes) => bytes,
@@ -332,7 +332,7 @@ impl<B: SplitByteSlice> FromRaw<Ipv4PacketRaw<B>, ()> for Ipv4Packet<B> {
 
         let packet = Ipv4Packet { hdr_prefix, options, body };
         if packet.compute_header_checksum() != [0, 0] {
-            return debug_err!(Err(ParseError::Checksum.into()), "invalid checksum");
+            return debug_err!(Err(ParseError::Checksum), "invalid checksum");
         }
         Ok(packet)
     }
@@ -679,14 +679,14 @@ impl<B: SplitByteSlice> Ipv4Header for Ipv4PacketRaw<B> {
 }
 
 impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv4PacketRaw<B> {
-    type Error = IpParseError<Ipv4>;
+    type Error = ParseError;
 
     fn parse_metadata(&self) -> ParseMetadata {
         let header_len = Ref::bytes(&self.hdr_prefix).len() + self.options.len();
         ParseMetadata::from_packet(header_len, self.body.len(), 0)
     }
 
-    fn parse<BV: BufferView<B>>(mut buffer: BV, _args: ()) -> IpParseResult<Ipv4, Self> {
+    fn parse<BV: BufferView<B>>(mut buffer: BV, _args: ()) -> Result<Self, ParseError> {
         let hdr_prefix = buffer
             .take_obj_front::<HeaderPrefix>()
             .ok_or_else(debug_err_fn!(ParseError::Format, "too few bytes for header"))?;
@@ -1120,7 +1120,7 @@ pub(crate) fn reassemble_fragmented_packet<
     mut buffer: BV,
     header: Vec<u8>,
     body_fragments: I,
-) -> IpParseResult<Ipv4, ()> {
+) -> Result<(), ParseError> {
     let bytes = buffer.as_mut();
 
     // First, copy over the header data.
@@ -1139,7 +1139,7 @@ pub(crate) fn reassemble_fragmented_packet<
     // possible IPv4 packet length.
     if byte_count > usize::from(core::u16::MAX) {
         return debug_err!(
-            Err(ParseError::Format.into()),
+            Err(ParseError::Format),
             "fragmented packet length of {} bytes is too large",
             byte_count
         );

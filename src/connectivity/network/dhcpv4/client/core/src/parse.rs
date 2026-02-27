@@ -16,7 +16,7 @@ use crate::inspect::Counter;
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum ParseError {
     #[error("parsing IPv4 packet: {0}")]
-    Ipv4(packet_formats::error::IpParseError<net_types::ip::Ipv4>),
+    Ipv4(packet_formats::error::ParseError),
     #[error("IPv4 packet protocol was not UDP")]
     NotUdp,
     #[error("parsing UDP datagram: {0}")]
@@ -1014,7 +1014,7 @@ mod test {
                 NonZeroU16::new(1).unwrap()
             ),
             Err(ParseError::Ipv4(parse_error)) => {
-                assert_eq!(parse_error, packet_formats::error::IpParseError::Parse { error: packet_formats::error::ParseError::Format })
+                assert_eq!(parse_error, packet_formats::error::ParseError::Format)
             }
         )
     }

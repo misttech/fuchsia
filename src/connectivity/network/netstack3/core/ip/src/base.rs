@@ -49,7 +49,7 @@ use packet::{
     ParsablePacket as _, ParseBuffer, ParseBufferMut, ParseMetadata, SerializeError,
     Serializer as _,
 };
-use packet_formats::error::IpParseError;
+use packet_formats::error::{Ipv6ParseError, ParseError};
 use packet_formats::ip::{DscpAndEcn, IpPacket as _, IpPacketBuilder as _};
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Packet};
 use packet_formats::ipv6::{Ipv6Packet, Ipv6PacketRaw};
@@ -3453,15 +3453,10 @@ pub fn receive_ipv4_packet<
 
     let packet: Ipv4Packet<_> = match try_parse_ip_packet!(buffer) {
         Ok(packet) => packet,
-        Err(IpParseError::ParameterProblem { .. }) => {
-            // TODO(https://fxbug.dev/42157630): Currently IPv4 packet parser
-            // does not generate ParameterProblem error. When it does, we
-            // should send an ICMP error message.
-            debug_assert!(false);
-            core_ctx.increment_both(device, |c| &c.unparsable_packet);
-            return;
-        }
-        Err(IpParseError::Parse { .. }) => {
+        Err(ParseError::Format)
+        | Err(ParseError::Checksum)
+        | Err(ParseError::NotSupported)
+        | Err(ParseError::NotExpected) => {
             core_ctx.increment_both(device, |c| &c.unparsable_packet);
             return;
         }
@@ -3731,7 +3726,7 @@ fn handle_ipv6_parse_error<BC, B, CC>(
     frame_dst: Option<FrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
     mut buffer: B,
-    error: IpParseError<Ipv6>,
+    error: Ipv6ParseError,
 ) where
     BC: IpLayerBindingsContext<Ipv6, CC::DeviceId>,
     B: BufferMut,
@@ -3742,15 +3737,8 @@ fn handle_ipv6_parse_error<BC, B, CC>(
     // send back an ICMP response as it can be used as an attack vector for
     // DDoS attacks. We only send back an ICMP response if the RFC requires
     // that we MUST send one, as noted by `must_send_icmp` and `action`.
-    let IpParseError::ParameterProblem {
-        src_ip,
-        dst_ip,
-        code,
-        pointer,
-        must_send_icmp,
-        header_len: (),
-        action,
-    } = error
+    let Ipv6ParseError::ParameterProblem { src_ip, dst_ip, code, pointer, must_send_icmp, action } =
+        error
     else {
         core_ctx.increment_both(device, |c| &c.unparsable_packet);
         debug!("receive_ipv6_packet: Failed to parse IPv6 packet: {:?}", error);

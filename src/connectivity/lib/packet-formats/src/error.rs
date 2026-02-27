@@ -6,19 +6,18 @@
 
 use core::convert::Infallible as Never;
 
+use crate::icmp::Icmpv6ParameterProblemCode;
 use net_types::MulticastAddress;
-use net_types::ip::IpAddress;
+use net_types::ip::{IpAddress, Ipv6Addr};
 use packet::records::TooFewRecordsErr;
 use packet::records::options::OptionParseErr;
 use thiserror::Error;
 
-use crate::icmp::IcmpIpExt;
-
-/// Results returned from parsing functions in the netstack.
+/// Result returned from packet parsing functions.
 pub type ParseResult<T> = core::result::Result<T, ParseError>;
 
 /// Results returned from IP packet parsing functions in the netstack.
-pub type IpParseResult<I, T> = core::result::Result<T, IpParseError<I>>;
+pub type IpParseResult<I, T> = core::result::Result<T, <I as crate::ip::IpExt>::PacketParseError>;
 
 /// Error type for packet parsing.
 #[derive(Copy, Clone, Error, Debug, PartialEq)]
@@ -114,8 +113,9 @@ impl IpParseErrorAction {
 
 /// Error type for IP packet parsing.
 #[allow(missing_docs)]
-#[derive(Error, Debug, PartialEq)]
-pub enum IpParseError<I: IcmpIpExt> {
+/// Error when parsing an IPv6 packet.
+#[derive(Debug, Error, PartialEq, Clone)]
+pub enum Ipv6ParseError {
     #[error("Parsing Error: {error:?}")]
     Parse {
         #[from]
@@ -126,29 +126,25 @@ pub enum IpParseError<I: IcmpIpExt> {
     #[error("Parameter Problem")]
     ParameterProblem {
         /// The packet's source IP address.
-        src_ip: I::Addr,
+        src_ip: Ipv6Addr,
 
         /// The packet's destination IP address.
-        dst_ip: I::Addr,
+        dst_ip: Ipv6Addr,
 
-        /// The ICMPv4 or ICMPv6 parameter problem code that provides more
+        /// The ICMPv6 parameter problem code that provides more
         /// granular information about the parameter problem encountered.
-        code: I::ParameterProblemCode,
+        code: Icmpv6ParameterProblemCode,
 
         /// The offset of the erroneous value within the IP packet.
-        pointer: I::ParameterProblemPointer,
+        pointer: u32,
 
         /// Whether an IP node MUST send an ICMP response if [`action`]
         /// specifies it.
         ///
         /// See [`action`] for more details.
         ///
-        /// [`action`]: crate::error::IpParseError::ParameterProblem::action
+        /// [`action`]: crate::error::Ipv6ParseError::ParameterProblem::action
         must_send_icmp: bool,
-
-        /// The length of the header up to the point of the parameter problem
-        /// error.
-        header_len: I::HeaderLen,
 
         /// The action IP nodes should take upon encountering this error.
         ///
@@ -156,17 +152,14 @@ pub enum IpParseError<I: IcmpIpExt> {
         /// if `action` specifies it. Otherwise, the node MAY choose to discard
         /// the packet and do nothing further.
         ///
-        /// If the packet was an IPv4 non-initial fragment, `action` will be
-        /// [`IpParseErrorAction::DiscardPacket`].
-        ///
-        /// [`must_send_icmp`]: crate::error::IpParseError::ParameterProblem::must_send_icmp
+        /// [`must_send_icmp`]: crate::error::Ipv6ParseError::ParameterProblem::must_send_icmp
         action: IpParseErrorAction,
     },
 }
 
-impl<I: IcmpIpExt> From<OptionParseErr> for IpParseError<I> {
+impl From<OptionParseErr> for Ipv6ParseError {
     fn from(error: OptionParseErr) -> Self {
-        IpParseError::Parse { error: error.into() }
+        Ipv6ParseError::Parse { error: error.into() }
     }
 }
 

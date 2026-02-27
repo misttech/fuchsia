@@ -576,9 +576,7 @@ async fn dhcpv4_client_started<N: Netstack>(name: &str) {
                             Err(e) => panic!("failed to parse UDP packet: {}", e),
                         }
                     }
-                    Err(packet_formats::error::IpParseError::Parse {
-                        error: packet_formats::error::ParseError::NotExpected,
-                    }) => None,
+                    Err(packet_formats::error::ParseError::NotExpected) => None,
                     Err(e) => {
                         panic!("failed to parse IPv4 packet: {}", e);
                     }

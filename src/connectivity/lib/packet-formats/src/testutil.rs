@@ -238,7 +238,10 @@ pub fn parse_ip_packet<I: IpExt>(
 ) -> IpParseResult<I, (&[u8], I::Addr, I::Addr, I::Proto, u8)> {
     use crate::ip::IpPacket;
 
-    let packet = (&mut buf).parse::<I::Packet<_>>()?;
+    let packet = (&mut buf).parse::<I::Packet<_>>().map_err(|e| {
+        let e: I::PacketParseError = e;
+        e
+    })?;
     let src_ip = packet.src_ip();
     let dst_ip = packet.dst_ip();
     let proto = packet.proto();

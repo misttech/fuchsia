@@ -19,7 +19,7 @@ use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, SplitByteSlice, SplitByteSliceMut, Unaligned,
 };
 
-use crate::error::{IpParseError, IpParseResult};
+use crate::error::{IpParseResult, Ipv6ParseError, ParseError};
 use crate::ethernet::EthernetIpExt;
 use crate::icmp::IcmpIpExt;
 use crate::ipv4::{IPV4_MIN_HDR_LEN, Ipv4Header, Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketRaw};
@@ -58,6 +58,9 @@ impl IpProtoExt for Ipv6 {
 /// An extension trait to the `Ip` trait adding associated types relevant for
 /// packet parsing and serialization.
 pub trait IpExt: EthernetIpExt + IcmpIpExt {
+    /// The error type returned when parsing a packet of this IP version fails.
+    type PacketParseError: From<ParseError> + Debug + PartialEq + Send + Sync;
+
     /// An IP packet type for this IP version.
     type Packet<B: SplitByteSlice>: IpPacket<B, Self, Builder = Self::PacketBuilder>
         + GenericOverIp<Self, Type = Self::Packet<B>>
@@ -75,6 +78,7 @@ pub trait IpExt: EthernetIpExt + IcmpIpExt {
 }
 
 impl IpExt for Ipv4 {
+    type PacketParseError = ParseError;
     type Packet<B: SplitByteSlice> = Ipv4Packet<B>;
     type PacketRaw<B: SplitByteSlice> = Ipv4PacketRaw<B>;
     type PacketBuilder = Ipv4PacketBuilder;
@@ -83,6 +87,7 @@ impl IpExt for Ipv4 {
 }
 
 impl IpExt for Ipv6 {
+    type PacketParseError = Ipv6ParseError;
     type Packet<B: SplitByteSlice> = Ipv6Packet<B>;
     type PacketRaw<B: SplitByteSlice> = Ipv6PacketRaw<B>;
     type PacketBuilder = Ipv6PacketBuilder;
@@ -182,7 +187,7 @@ impl From<u8> for DscpAndEcn {
 ///
 /// `IpPacket` is implemented by `Ipv4Packet` and `Ipv6Packet`.
 pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
-    Sized + Debug + ParsablePacket<B, (), Error = IpParseError<I>>
+    Sized + Debug + ParsablePacket<B, (), Error = I::PacketParseError>
 {
     /// A builder for this packet type.
     type Builder: IpPacketBuilder<I>;
@@ -351,7 +356,7 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
 ///
 /// `IpPacketRaw` is implemented by `Ipv4PacketRaw` and `Ipv6PacketRaw`.
 pub trait IpPacketRaw<B: SplitByteSlice, I: IpExt>:
-    Sized + ParsablePacket<B, (), Error = IpParseError<I>>
+    Sized + ParsablePacket<B, (), Error = I::PacketParseError>
 {
 }
 

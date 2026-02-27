@@ -119,11 +119,6 @@ pub trait IcmpIpExt: IpProtoExt {
     /// For `Ipv4`, this is `u8`, and for `Ipv6` this is `u32`.
     type ParameterProblemPointer: PartialEq + Send + Sync + Debug;
 
-    /// The type of an ICMP parameter header length.
-    ///
-    /// For `Ipv4`, this is `usize`, and for `Ipv6` this is `()`.
-    type HeaderLen: PartialEq + Send + Sync + Debug;
-
     /// The identifier for this ICMP version.
     ///
     /// This value will be found in an IPv4 packet's Protocol field (for ICMPv4
@@ -151,7 +146,6 @@ impl IcmpIpExt for Ipv4 {
     type IcmpMessageType = Icmpv4MessageType;
     type ParameterProblemCode = Icmpv4ParameterProblemCode;
     type ParameterProblemPointer = u8;
-    type HeaderLen = usize;
 
     const ICMP_IP_PROTO: Ipv4Proto = Ipv4Proto::Icmp;
 
@@ -172,7 +166,6 @@ impl IcmpIpExt for Ipv6 {
     type IcmpMessageType = Icmpv6MessageType;
     type ParameterProblemCode = Icmpv6ParameterProblemCode;
     type ParameterProblemPointer = u32;
-    type HeaderLen = ();
 
     const ICMP_IP_PROTO: Ipv6Proto = Ipv6Proto::Icmpv6;
 

@@ -30,7 +30,7 @@ use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, SplitByteSliceMut, Unaligned,
 };
 
-use crate::error::{IpParseError, IpParseErrorAction, IpParseResult, ParseError};
+use crate::error::{IpParseErrorAction, IpParseResult, Ipv6ParseError, ParseError};
 use crate::icmp::Icmpv6ParameterProblemCode;
 use crate::ip::{
     DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6ExtHdrType,
@@ -72,7 +72,7 @@ const IPV6_MAX_PAYLOAD_LENGTH: usize = core::u16::MAX as usize;
 
 /// Convert an extension header parsing error to an IP packet
 /// parsing error.
-fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> IpParseError<Ipv6> {
+fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ipv6ParseError {
     // Below, we set parameter problem data's `pointer` to `IPV6_FIXED_HDR_LEN` + `pointer`
     // since the the `pointer` we get from an `Ipv6ExtensionHeaderParsingError` is calculated
     // from the start of the extension headers. Within an IPv6 packet, extension headers
@@ -104,13 +104,12 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                 Some(p) => (p, IpParseErrorAction::DiscardPacketSendIcmpNoMulticast),
             };
 
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: hdr.src_ip,
                 dst_ip: hdr.dst_ip,
                 code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
                 pointer,
                 must_send_icmp,
-                header_len: (),
                 action,
             }
         }
@@ -120,13 +119,12 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                 Some(p) => (p, IpParseErrorAction::DiscardPacketSendIcmpNoMulticast),
             };
 
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: hdr.src_ip,
                 dst_ip: hdr.dst_ip,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer,
                 must_send_icmp,
-                header_len: (),
                 action,
             }
         }
@@ -153,13 +151,12 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                 }
             };
 
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: hdr.src_ip,
                 dst_ip: hdr.dst_ip,
                 code: Icmpv6ParameterProblemCode::UnrecognizedIpv6Option,
                 pointer,
                 must_send_icmp,
-                header_len: (),
                 action,
             }
         }
@@ -167,7 +164,7 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
         | Ipv6ExtensionHeaderParsingError::MalformedData => {
             // Unexpectedly running out of a buffer or encountering malformed
             // data when parsing is a formatting error.
-            IpParseError::Parse { error: ParseError::Format }
+            Ipv6ParseError::Parse { error: ParseError::Format }
         }
     }
 }
@@ -296,20 +293,20 @@ impl<B: SplitByteSlice> Ipv6Header for Ipv6Packet<B> {
 }
 
 impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv6Packet<B> {
-    type Error = IpParseError<Ipv6>;
+    type Error = Ipv6ParseError;
 
     fn parse_metadata(&self) -> ParseMetadata {
         let header_len = Ref::bytes(&self.fixed_hdr).len() + self.extension_hdrs.bytes().len();
         ParseMetadata::from_packet(header_len, self.body.len(), 0)
     }
 
-    fn parse<BV: BufferView<B>>(buffer: BV, _args: ()) -> IpParseResult<Ipv6, Self> {
+    fn parse<BV: BufferView<B>>(buffer: BV, _args: ()) -> Result<Self, Ipv6ParseError> {
         Ipv6PacketRaw::parse(buffer, ()).and_then(Ipv6Packet::try_from_raw)
     }
 }
 
 impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
-    type Error = IpParseError<Ipv6>;
+    type Error = Ipv6ParseError;
 
     fn try_from_raw_with(raw: Ipv6PacketRaw<B>, _args: ()) -> Result<Self, Self::Error> {
         let fixed_hdr = raw.fixed_hdr;
@@ -318,13 +315,12 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
         // validating extension headers.
         if !is_valid_next_header(fixed_hdr.next_hdr, true) {
             return debug_err!(
-                Err(IpParseError::ParameterProblem {
+                Err(Ipv6ParseError::ParameterProblem {
                     src_ip: fixed_hdr.src_ip,
                     dst_ip: fixed_hdr.dst_ip,
                     code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                     pointer: u32::from(NEXT_HEADER_OFFSET),
                     must_send_icmp: false,
-                    header_len: (),
                     action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
                 }),
                 "Unrecognized next header value"
@@ -931,7 +927,7 @@ impl<B: SplitByteSlice> Ipv6Header for Ipv6PacketRaw<B> {
 }
 
 impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv6PacketRaw<B> {
-    type Error = IpParseError<Ipv6>;
+    type Error = Ipv6ParseError;
 
     fn parse<BV: BufferView<B>>(mut buffer: BV, _args: ()) -> Result<Self, Self::Error> {
         let fixed_hdr = buffer
@@ -1840,13 +1836,12 @@ mod tests {
         fixed_hdr.next_hdr = 255;
         assert_eq!(
             (&fixed_hdr_to_bytes(fixed_hdr)[..]).parse::<Ipv6Packet<_>>().unwrap_err(),
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: DEFAULT_SRC_IP,
                 dst_ip: DEFAULT_DST_IP,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer: u32::from(NEXT_HEADER_OFFSET),
                 must_send_icmp: false,
-                header_len: (),
                 action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         );
@@ -1856,13 +1851,12 @@ mod tests {
         fixed_hdr.next_hdr = Ipv4Proto::Icmp.into();
         assert_eq!(
             (&fixed_hdr_to_bytes(fixed_hdr)[..]).parse::<Ipv6Packet<_>>().unwrap_err(),
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: DEFAULT_SRC_IP,
                 dst_ip: DEFAULT_DST_IP,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer: u32::from(NEXT_HEADER_OFFSET),
                 must_send_icmp: false,
-                header_len: (),
                 action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         );
@@ -1902,13 +1896,12 @@ mod tests {
         let mut buf = &buf[..];
         assert_eq!(
             buf.parse::<Ipv6Packet<_>>().unwrap_err(),
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: DEFAULT_SRC_IP,
                 dst_ip: DEFAULT_DST_IP,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer: IPV6_FIXED_HDR_LEN as u32,
                 must_send_icmp: false,
-                header_len: (),
                 action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         );
@@ -1941,13 +1934,12 @@ mod tests {
         let mut buf = &buf[..];
         assert_eq!(
             buf.parse::<Ipv6Packet<_>>().unwrap_err(),
-            IpParseError::ParameterProblem {
+            Ipv6ParseError::ParameterProblem {
                 src_ip: DEFAULT_SRC_IP,
                 dst_ip: DEFAULT_DST_IP,
                 code: Icmpv6ParameterProblemCode::ErroneousHeaderField,
                 pointer: (IPV6_FIXED_HDR_LEN as u32) + 2,
                 must_send_icmp: true,
-                header_len: (),
                 action: IpParseErrorAction::DiscardPacketSendIcmpNoMulticast,
             }
         );
@@ -1975,13 +1967,12 @@ mod tests {
         // produces the error we expect.
         assert_matches!(
             (&buf[..]).parse::<Ipv6Packet<_>>(),
-            Err(IpParseError::ParameterProblem {
+            Err(Ipv6ParseError::ParameterProblem {
                 src_ip: _,
                 dst_ip: _,
                 code: Icmpv6ParameterProblemCode::UnrecognizedNextHeaderType,
                 pointer: 0,
                 must_send_icmp: false,
-                header_len: (),
                 action: IpParseErrorAction::DiscardPacket,
             })
         );
