@@ -43,42 +43,13 @@ void moonflower_configure_hw_for_shutdown() {
     dprintf(INFO, "POWER: Failed to configure moonflower for shutdown/reboot: %" PRId64 "\n", r);
 }
 
-// Reboot modes, as understood by the moonflower bootloader
-// These need to be written to spmi-sdam nvmem cell restart_reason
-enum class MOONFLOWER_REBOOT_MODE : uint8_t {
-  NORMAL = 0,
-  RECOVERY = 1,
-  FASTBOOT = 2,
-  RTC = 3,
-  DMV_CORRUPT = 4,
-  DMV_ENFORCING = 5,
-  KEYS_CLEAR = 6,
-  SHIP_MODE = 32,
-};
-
 zx_status_t moonflower_power_reboot(power_reboot_flags flags) {
+  // Reboot reason is written to spmi-sdam nvmem cell inside the qcom-reboot-reason driver
+  // (nothing to do here)
   LTRACEF("flags %#x\n", static_cast<uint32_t>(flags));
-
-  // Set the moonflower bootloader recovery mode
-  [[maybe_unused]] MOONFLOWER_REBOOT_MODE mode = MOONFLOWER_REBOOT_MODE::NORMAL;
-  switch (flags) {
-    case power_reboot_flags::REBOOT_NORMAL:
-      mode = MOONFLOWER_REBOOT_MODE::NORMAL;
-      break;
-    case power_reboot_flags::REBOOT_BOOTLOADER:
-      mode = MOONFLOWER_REBOOT_MODE::FASTBOOT;
-      break;
-    case power_reboot_flags::REBOOT_RECOVERY:
-      mode = MOONFLOWER_REBOOT_MODE::RECOVERY;
-      break;
-  }
-
-  // TODO(https://fxbug.dev//383788491): Set reboot reason in the populate nvmem here.
 
   // Hit the reboot switch
   // Call through to SYSTEM_RESET2 with a vendor specific reset type (bit 31 set).
-  // TODO(drewry, travisg): figure out if the reboot flags above can be combined to
-  // influence this at all.
   return psci_system_reset2_raw(0x80000000, 0);
 }
 
