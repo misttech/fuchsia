@@ -19,6 +19,7 @@ use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
+use storage_trace::{self as trace, TraceFutureExt};
 use zx_status::Status;
 
 pub trait Symlink: Node {
@@ -83,18 +84,28 @@ impl<T: Symlink> Connection<T> {
                 );
             }
             fio::SymlinkRequest::Clone { request, control_handle: _ } => {
-                self.handle_clone(ServerEnd::new(request.into_channel())).await;
+                self.handle_clone(ServerEnd::new(request.into_channel()))
+                    .trace(trace::trace_future_args!("storage", "Symlink::Clone"))
+                    .await
             }
             fio::SymlinkRequest::Close { responder } => {
+                trace::duration!("storage", "Symlink::Close");
                 responder.send(Ok(()))?;
                 return Ok(true);
             }
             fio::SymlinkRequest::LinkInto { dst_parent_token, dst, responder } => {
-                responder.send(
-                    self.handle_link_into(dst_parent_token, dst).await.map_err(|s| s.into_raw()),
-                )?;
+                async move {
+                    responder.send(
+                        self.handle_link_into(dst_parent_token, dst)
+                            .await
+                            .map_err(|s| s.into_raw()),
+                    )
+                }
+                .trace(trace::trace_future_args!("storage", "Symlink::LinkInto"))
+                .await?;
             }
             fio::SymlinkRequest::Sync { responder } => {
+                trace::duration!("storage", "Symlink::Sync");
                 responder.send(Ok(()))?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
@@ -126,49 +137,77 @@ impl<T: Symlink> Connection<T> {
                 responder.send(Status::ACCESS_DENIED.into_raw())?;
             }
             fio::SymlinkRequest::GetAttributes { query, responder } => {
-                // TODO(https://fxbug.dev/293947862): Restrict GET_ATTRIBUTES.
-                let attrs = self.symlink.get_attributes(query).await;
-                responder.send(
-                    attrs
-                        .as_ref()
-                        .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                        .map_err(|status| status.into_raw()),
-                )?;
+                async move {
+                    // TODO(https://fxbug.dev/293947862): Restrict GET_ATTRIBUTES.
+                    let attrs = self.symlink.get_attributes(query).await;
+                    responder.send(
+                        attrs
+                            .as_ref()
+                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
+                            .map_err(|status| status.into_raw()),
+                    )
+                }
+                .trace(trace::trace_future_args!("storage", "Symlink::GetAttributes"))
+                .await?;
             }
             fio::SymlinkRequest::UpdateAttributes { payload: _, responder } => {
+                trace::duration!("storage", "Symlink::UpdateAttributes");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::SymlinkRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
-                self.handle_list_extended_attribute(iterator).await;
+                self.handle_list_extended_attribute(iterator)
+                    .trace(trace::trace_future_args!("storage", "Symlink::ListExtendedAttributes"))
+                    .await;
             }
             fio::SymlinkRequest::GetExtendedAttribute { responder, name } => {
-                let res = self.handle_get_extended_attribute(name).await.map_err(|s| s.into_raw());
-                responder.send(res)?;
+                async move {
+                    let res = self.handle_get_extended_attribute(name).await;
+                    responder.send(res.map_err(Status::into_raw))
+                }
+                .trace(trace::trace_future_args!("storage", "Symlink::GetExtendedAttribute"))
+                .await?;
             }
             fio::SymlinkRequest::SetExtendedAttribute { responder, name, value, mode } => {
-                let res = self
-                    .handle_set_extended_attribute(name, value, mode)
-                    .await
-                    .map_err(|s| s.into_raw());
-                responder.send(res)?;
+                async move {
+                    let res = self.handle_set_extended_attribute(name, value, mode).await;
+                    responder.send(res.map_err(Status::into_raw))
+                }
+                .trace(trace::trace_future_args!("storage", "Symlink::SetExtendedAttribute"))
+                .await?;
             }
             fio::SymlinkRequest::RemoveExtendedAttribute { responder, name } => {
-                let res =
-                    self.handle_remove_extended_attribute(name).await.map_err(|s| s.into_raw());
-                responder.send(res)?;
-            }
-            fio::SymlinkRequest::Describe { responder } => match self.symlink.read_target().await {
-                Ok(target) => responder
-                    .send(&fio::SymlinkInfo { target: Some(target), ..Default::default() })?,
-                Err(status) => {
-                    responder.control_handle().shutdown_with_epitaph(status);
-                    return Ok(true);
+                async move {
+                    let res = self.handle_remove_extended_attribute(name).await;
+                    responder.send(res.map_err(Status::into_raw))
                 }
-            },
+                .trace(trace::trace_future_args!("storage", "Symlink::RemoveExtendedAttribute"))
+                .await?;
+            }
+            fio::SymlinkRequest::Describe { responder } => {
+                return async move {
+                    match self.symlink.read_target().await {
+                        Ok(target) => {
+                            responder.send(&fio::SymlinkInfo {
+                                target: Some(target),
+                                ..Default::default()
+                            })?;
+                            Ok(false)
+                        }
+                        Err(status) => {
+                            responder.control_handle().shutdown_with_epitaph(status);
+                            Ok(true)
+                        }
+                    }
+                }
+                .trace(trace::trace_future_args!("storage", "Symlink::Describe"))
+                .await;
+            }
             fio::SymlinkRequest::GetFlags { responder } => {
+                trace::duration!("storage", "Symlink::GetFlags");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::SymlinkRequest::SetFlags { flags: _, responder } => {
+                trace::duration!("storage", "Symlink::SetFlags");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::SymlinkRequest::DeprecatedGetFlags { responder } => {
@@ -178,9 +217,11 @@ impl<T: Symlink> Connection<T> {
                 responder.send(Status::ACCESS_DENIED.into_raw())?;
             }
             fio::SymlinkRequest::Query { responder } => {
+                trace::duration!("storage", "Symlink::Query");
                 responder.send(fio::SymlinkMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::SymlinkRequest::QueryFilesystem { responder } => {
+                trace::duration!("storage", "Symlink::QueryFilesystem");
                 match self.symlink.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
                     Ok(info) => responder.send(0, Some(&info))?,

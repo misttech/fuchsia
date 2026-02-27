@@ -60,10 +60,15 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
     ) -> Result<ConnectionState, Error> {
         match request {
             fio::DirectoryRequest::Unlink { name, options, responder } => {
-                let result = this.handle_unlink(name, options).await;
-                responder.send(result.map_err(Status::into_raw))?;
+                async move {
+                    let result = this.handle_unlink(name, options).await;
+                    responder.send(result.map_err(Status::into_raw))
+                }
+                .trace(trace::trace_future_args!("storage", "Directory::Unlink"))
+                .await?;
             }
             fio::DirectoryRequest::GetToken { responder } => {
+                trace::duration!("storage", "Directory::GetToken");
                 let (status, token) = match Self::handle_get_token(this.into_ref()) {
                     Ok(token) => (Status::OK, Some(token)),
                     Err(status) => (status, None),
@@ -71,9 +76,13 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 responder.send(status.into_raw(), token)?;
             }
             fio::DirectoryRequest::Rename { src, dst_parent_token, dst, responder } => {
-                let result =
-                    this.handle_rename(src, NullableHandle::from(dst_parent_token), dst).await;
-                responder.send(result.map_err(Status::into_raw))?;
+                async move {
+                    let result =
+                        this.handle_rename(src, NullableHandle::from(dst_parent_token), dst).await;
+                    responder.send(result.map_err(Status::into_raw))
+                }
+                .trace(trace::trace_future_args!("storage", "Directory::Rename"))
+                .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fio::DirectoryRequest::DeprecatedSetAttr { flags, attributes, responder } => {
@@ -98,24 +107,32 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 responder.send(status.into_raw())?;
             }
             fio::DirectoryRequest::Sync { responder } => {
-                responder.send(this.base.directory.sync().await.map_err(Status::into_raw))?;
+                async move {
+                    responder.send(this.base.directory.sync().await.map_err(Status::into_raw))
+                }
+                .trace(trace::trace_future_args!("storage", "Directory::Sync"))
+                .await?;
             }
             fio::DirectoryRequest::CreateSymlink {
                 responder, name, target, connection, ..
             } => {
-                if !this.base.options.rights.contains(fio::Operations::MODIFY_DIRECTORY) {
-                    responder.send(Err(Status::ACCESS_DENIED.into_raw()))?;
-                } else if validate_name(&name).is_err() {
-                    responder.send(Err(Status::INVALID_ARGS.into_raw()))?;
-                } else {
-                    responder.send(
-                        this.base
-                            .directory
-                            .create_symlink(name, target, connection)
-                            .await
-                            .map_err(Status::into_raw),
-                    )?;
+                async move {
+                    if !this.base.options.rights.contains(fio::Operations::MODIFY_DIRECTORY) {
+                        responder.send(Err(Status::ACCESS_DENIED.into_raw()))
+                    } else if validate_name(&name).is_err() {
+                        responder.send(Err(Status::INVALID_ARGS.into_raw()))
+                    } else {
+                        responder.send(
+                            this.base
+                                .directory
+                                .create_symlink(name, target, connection)
+                                .await
+                                .map_err(Status::into_raw),
+                        )
+                    }
                 }
+                .trace(trace::trace_future_args!("storage", "Directory::CreateSymlink"))
+                .await?;
             }
             fio::DirectoryRequest::UpdateAttributes { payload, responder } => {
                 async move {

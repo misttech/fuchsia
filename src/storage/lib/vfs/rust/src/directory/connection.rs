@@ -252,6 +252,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 responder.send(status.into_raw())?;
             }
             fio::DirectoryRequest::Query { responder } => {
+                trace::duration!("storage", "Directory::Query");
                 let () = responder.send(fio::DirectoryMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::DirectoryRequest::QueryFilesystem { responder } => {
