@@ -42,9 +42,14 @@ fuchsia_component("dns_lib_test") {
   deps = [ ":lib_test" ]
 }
 
-fuchsia_test_package("dns-tests") {
+fuchsia_test_package("dns-tests-ns2") {
   test_components = [ ":dns_lib_test" ]
   deps = [ "//src/connectivity/network/netstack:component-debug" ]
+}
+
+fuchsia_test_package("dns-tests-ns3") {
+  test_components = [ ":dns_lib_test" ]
+  deps = [ "//src/connectivity/network/netstack3:component-debug-dropin" ]
 }
 
 bin_base = {
@@ -136,6 +141,7 @@ group("tests") {
   testonly = true
   deps = [
     ":dns-resolver-tests",
-    ":dns-tests",
+    ":dns-tests-ns2",
+    ":dns-tests-ns3",
   ]
 }
