@@ -23,6 +23,7 @@ rustc_library("mmio") {
     "//sdk/rust/zx-status",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:paste",
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [

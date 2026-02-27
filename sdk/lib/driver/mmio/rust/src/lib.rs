@@ -223,5 +223,7 @@ pub mod vmo;
 
 #[doc(hidden)]
 pub use bitfield;
+#[doc(hidden)]
+pub use paste;
 pub use mmio::*;
 pub use register::*;

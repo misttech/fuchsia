@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::register::{
-    ReadableIndexedRegister, ReadableRegister, WritableIndexedRegister, WritableRegister,
+    IndexedRegister, IndexedRegisterProxy, IndexedRegisterProxyMut, ReadableIndexedRegister,
+    ReadableRegister, Register, RegisterProxy, RegisterProxyMut, WritableIndexedRegister,
+    WritableRegister,
 };
 use core::fmt::{Debug, Display};
 use core::ops::{BitAnd, BitOr, Not};
@@ -555,6 +557,26 @@ pub trait MmioExt: Mmio {
         let mut reg = self.read_index_reg::<R>(index);
         f(&mut reg);
         self.write_index_reg(index, reg);
+    }
+
+    /// Returns a [`RegisterProxy`] to ergonomically read a single `Register`.
+    fn reg<R: Register>(&self) -> RegisterProxy<'_, Self, R> {
+        RegisterProxy::new(self)
+    }
+
+    /// Returns a [`RegisterProxyMut`] to ergonomically mutate a single `Register`.
+    fn reg_mut<R: Register>(&mut self) -> RegisterProxyMut<'_, Self, R> {
+        RegisterProxyMut::new(self)
+    }
+
+    /// Returns an [`IndexedRegisterProxy`] to ergonomically read a single `IndexedRegister`.
+    fn indexed_reg<R: IndexedRegister>(&self) -> IndexedRegisterProxy<'_, Self, R> {
+        IndexedRegisterProxy::new(self)
+    }
+
+    /// Returns an [`IndexedRegisterProxyMut`] to ergonomically mutate a single `IndexedRegister`.
+    fn indexed_reg_mut<R: IndexedRegister>(&mut self) -> IndexedRegisterProxyMut<'_, Self, R> {
+        IndexedRegisterProxyMut::new(self)
     }
 }
 
