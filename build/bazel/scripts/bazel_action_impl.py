@@ -92,6 +92,14 @@ class BazelActionOutputs(object):
     packages: list[bazel_action_utils.PackageOutput]
     final_symlinks: list[bazel_action_utils.FinalSymlinkOutput]
 
+    def __len__(self) -> int:
+        return (
+            len(self.files)
+            + len(self.directories)
+            + len(self.packages)
+            + len(self.final_symlinks)
+        )
+
 
 @dataclasses.dataclass
 class BazelExtraOutputs(object):
@@ -359,6 +367,12 @@ class BazelActionRunner(object):
                     "read_genquery_outputs",
                     "Read the results from the genqueries",
                 )
+
+                if not self.global_args.quiet:
+                    print(
+                        f"Gathering input paths from {len(targets)} targets for ninja depfile generation..."
+                    )
+
                 input_files = self._parse_buildfiles_genquery_results_and_query_source_files(
                     input_files_genqueries,
                     configured_args,
@@ -382,6 +396,8 @@ class BazelActionRunner(object):
         # Now copy all the outputs.  This is a separate function to help break up the run()
         # functionality for better clarity.
         output_copier = _BazelOutputCopier(self.paths)
+        if not self.global_args.quiet:
+            print(f"Copying {len(outputs)} outputs from Bazel...")
         all_output_files = output_copier.copy(outputs, time_profile)
 
         # Perform the merging of debug symbols data, and optionally copy
