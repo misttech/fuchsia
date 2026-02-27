@@ -23,7 +23,7 @@ rustc_binary(
         "//third_party/rust_crates/vendor:assert_matches",
         "//third_party/rust_crates/vendor:tempfile",
     ],
-    with_unit_tests = True,
+    with_host_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:argh",

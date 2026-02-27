@@ -11,6 +11,6 @@ rustc_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     version = "0.1.0",
-    with_unit_tests = True,
+    with_host_unit_tests = True,
     deps = ["//sdk/rust/zx-types"],
 )

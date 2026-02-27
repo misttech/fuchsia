@@ -8,6 +8,7 @@ test_suite(
         "//build/bazel/host_tests/cc_tests",
         "//build/bazel/host_tests/go_tests",
         "//build/bazel/host_tests/py_tests",
+        "//build/bazel/host_tests/rust_tests",
         "//build/tools/json_validator/test:tests",
     ],
     visibility = ["//visibility:public"],

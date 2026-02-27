@@ -11,7 +11,7 @@ rustc_binary(
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     target_compatible_with = HOST_CONSTRAINTS,
-    with_unit_tests = True,
+    with_host_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:clap",

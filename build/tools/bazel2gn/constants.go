@@ -134,8 +134,9 @@ var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 // rustCommonAttrMap maps from attribute names common in Bazel Rust rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var rustCommonAttrMap = map[string]string{
-	"compile_data":   "inputs",
-	"crate_features": "features",
+	"compile_data":         "inputs",
+	"crate_features":       "features",
+	"with_host_unit_tests": "with_unit_tests",
 }
 
 // rustBinMap maps from attribute name in Bazel Rust binary rules to GN parameter names.

@@ -16,5 +16,5 @@ rustc_binary(
     srcs = ["main.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
-    with_unit_tests = True,
+    with_host_unit_tests = True,
 )

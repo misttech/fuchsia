@@ -5,10 +5,10 @@
 """A macro for defining a Rust library with optional unit tests."""
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
-load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
-def _rustc_library_impl(name, with_unit_tests, test_deps, lint_config, rustc_flags, **kwargs):
+def _rustc_library_impl(name, with_host_unit_tests, test_deps, lint_config, rustc_flags, **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_production"
 
@@ -21,8 +21,8 @@ def _rustc_library_impl(name, with_unit_tests, test_deps, lint_config, rustc_fla
         **kwargs
     )
 
-    if with_unit_tests:
-        rustc_test(
+    if with_host_unit_tests:
+        host_rustc_test(
             name = "{}_test".format(name),
             crate = ":{}".format(name),
             rustc_flags = rustc_flags,
@@ -39,8 +39,8 @@ Bazel and GN targets. See details in http://fxbug.dev/407441714.
     implementation = _rustc_library_impl,
     inherit_attrs = rust_library,
     attrs = {
-        "with_unit_tests": attr.bool(
-            doc = "If true, a `rust_test` target will be created.",
+        "with_host_unit_tests": attr.bool(
+            doc = "If true, a `host_rustc_test` target will be created.",
             default = False,
             configurable = False,
         ),

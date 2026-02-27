@@ -36,7 +36,7 @@ rustc_library(
     crate_name = "fidl_ir",
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
-    with_unit_tests = True,
+    with_host_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:bitflags",
         "//third_party/rust_crates/vendor:serde",
