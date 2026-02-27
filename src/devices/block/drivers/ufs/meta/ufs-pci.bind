@@ -1,0 +1,21 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+composite ufs_pci;
+
+using fuchsia.acpi;
+using fuchsia.hardware.pci;
+using fuchsia.pci;
+using fuchsia.pci.massstorage;
+
+primary node "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_CLASS == fuchsia.pci.BIND_PCI_CLASS.MASS_STORAGE;
+  fuchsia.BIND_PCI_SUBCLASS == fuchsia.pci.massstorage.BIND_PCI_SUBCLASS.UFS;
+  fuchsia.BIND_PCI_INTERFACE == 1;
+}
+
+optional node "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+}

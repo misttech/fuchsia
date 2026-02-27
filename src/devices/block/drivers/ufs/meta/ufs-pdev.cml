@@ -1,0 +1,42 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        "driver_component/driver.shard.cml",
+        "inspect/client.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+    program: {
+        runner: "driver",
+        binary: "driver/ufs-pdev.so",
+        bind: "meta/bind/ufs-pdev-bind.bindbc",
+        colocate: "false",
+        default_dispatcher_opts: [ "allow_sync_calls" ],
+        fallback: "false",
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.ufs.Service" },
+    ],
+    use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+        },
+        { service: "fuchsia.hardware.platform.device.Service" },
+        { protocol: "fuchsia.power.broker.Topology" },
+        {
+            protocol: [
+                "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.power.system.CpuElementManager",
+            ],
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.ufs.Service",
+            from: "self",
+        },
+    ],
+}

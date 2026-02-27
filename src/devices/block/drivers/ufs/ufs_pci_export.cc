@@ -1,9 +1,9 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <lib/driver/component/cpp/driver_export.h>
 
-#include "ufs.h"
+#include "src/devices/block/drivers/ufs/ufs_pci.h"
 
-FUCHSIA_DRIVER_EXPORT(ufs::Ufs);
+FUCHSIA_DRIVER_EXPORT(ufs::UfsPci);

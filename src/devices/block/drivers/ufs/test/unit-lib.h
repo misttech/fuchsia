@@ -17,6 +17,7 @@
 
 #include "mock-device/ufs-mock-device.h"
 #include "src/devices/block/drivers/ufs/ufs.h"
+#include "src/devices/block/drivers/ufs/ufs_pci.h"
 #include "src/devices/pci/testing/pci_protocol_fake.h"
 #include "src/lib/testing/predicates/status.h"
 
@@ -267,10 +268,10 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
   std::vector<PowerElement> servers_;
 };
 
-class TestUfs : public Ufs {
+class TestUfs : public UfsPci {
  public:
   TestUfs(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Ufs(std::move(start_args), std::move(dispatcher)) {}
+      : UfsPci(std::move(start_args), std::move(dispatcher)) {}
   ~TestUfs() override = default;
 
   inspect::ComponentInspector& GetInspector() { return inspector(); }
@@ -297,7 +298,7 @@ class Environment : public fdf_testing::Environment {
 
     // Serve (fake) pci_server_
     auto result = to_driver_vfs.AddService<fuchsia_hardware_pci::Service>(
-        pci_server_.GetInstanceHandler(), "pdev");
+        pci_server_.GetInstanceHandler(), "pci");
     EXPECT_EQ(ZX_OK, result.status_value());
 
     // Serve (fake) cpu_element_manager.

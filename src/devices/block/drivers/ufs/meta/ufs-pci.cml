@@ -1,4 +1,4 @@
-// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -9,8 +9,8 @@
     ],
     program: {
         runner: "driver",
-        binary: "driver/ufs.so",
-        bind: "meta/bind/ufs-bind.bindbc",
+        binary: "driver/ufs-pci.so",
+        bind: "meta/bind/ufs-pci-bind.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "false",
@@ -25,8 +25,6 @@
             type: "bool",
         },
         { protocol: "fuchsia.power.broker.Topology" },
-
-        // Used by //sdk/lib/driver/power/cpp
         {
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",

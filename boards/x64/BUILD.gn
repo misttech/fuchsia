@@ -43,7 +43,7 @@ common_board_configuration = {
     "fuchsia::wlan_softmac",
     "fuchsia::xhci",
     "fuchsia::sdhci",
-    "fuchsia::ufs",
+    "fuchsia::ufs_pci",
     "fuchsia::input",
   ]
 

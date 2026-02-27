@@ -10,7 +10,7 @@ group("pci") {
     "//src/devices/block/drivers/ahci",
     "//src/devices/block/drivers/nvme",
     "//src/devices/block/drivers/pci-sdhci",
-    "//src/devices/block/drivers/ufs",
+    "//src/devices/block/drivers/ufs:ufs-pci-package",
     "//src/devices/block/drivers/virtio:virtio_block",
     "//src/devices/i2c/drivers/intel-i2c",
     "//src/devices/misc/drivers/virtio-rng:virtio_rng",

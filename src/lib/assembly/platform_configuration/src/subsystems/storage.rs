@@ -321,14 +321,23 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             builder.platform_bundle("sdhci_driver")?;
         }
 
-        // Include UFS driver through a platform AIB.
-        if context.board_config.provides_feature("fuchsia::ufs") {
-            builder.platform_bundle("ufs_driver")?;
-            // In engineering builds, include the ufsutil CLI tool when UFS device
-            // support is enabled.
-            if context.build_type == &BuildType::Eng {
-                builder.platform_bundle("ufsutil")?;
-            }
+        // Include UFS PCI driver through a platform AIB.
+        if context.board_config.provides_feature("fuchsia::ufs_pci") {
+            builder.platform_bundle("ufs_pci_driver")?;
+        }
+
+        // Include UFS PDev driver through a platform AIB.
+        if context.board_config.provides_feature("fuchsia::ufs_pdev") {
+            builder.platform_bundle("ufs_pdev_driver")?;
+        }
+
+        // In engineering builds, include the ufsutil CLI tool when UFS device
+        // support is enabled.
+        if (context.board_config.provides_feature("fuchsia::ufs_pci")
+            || context.board_config.provides_feature("fuchsia::ufs_pdev"))
+            && context.build_type == &BuildType::Eng
+        {
+            builder.platform_bundle("ufsutil")?;
         }
 
         Ok(())

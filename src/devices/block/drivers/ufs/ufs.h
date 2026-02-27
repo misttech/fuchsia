@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_UFS_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_UFS_H_
 
-#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
+#include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
@@ -148,6 +148,10 @@ struct InspectProperties {
 
 using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t data)>;
 
+// Base class for UFS drivers.
+//
+// This class is the parent class for both UfsPci and UfsPdev drivers, which bind the UFS
+// controller via PCI and PDev respectively.
 class Ufs : public fdf::DriverBase, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "ufs";
@@ -269,14 +273,26 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   // Interrupt service routine. Check that the request is complete.
   zx::result<> Isr();
 
-  zx::result<> ConnectToPciService();
-  zx::result<> ConfigResources();
+  // Initialize the UFS controller and bind the logical units.
+  virtual zx::result<> InitResources() = 0;
+
+  // Release the resources acquired in InitResources().
+  virtual zx_status_t StopResources() { return ZX_OK; }
+  // Perform any quirks required for the UFS controller.
+  //
+  // For example, Red Hat QEMU UFS host controller requires the device to be reset after
+  // initialization.
+  virtual zx::result<> InitQuirk() { return zx::ok(); }
+
+  // Perform work required after an interrupt is received.
+  //
+  // For example, legacy PCI devices require the interrupt to be acknowledged.
+  virtual void OnIrqComplete() {}
 
   void PopulateVersionInspect(inspect::Node *inspect_node);
   void PopulateCapabilitiesInspect(inspect::Node *inspect_node);
 
   zx::result<> InitMmioBuffer();
-  zx::result<> InitQuirk();
   zx::result<> InitController();
   zx::result<> InitDeviceInterface(inspect::Node &controller_node);
   zx::result<> GetControllerDescriptor();
@@ -320,15 +336,15 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server_end);
 
-  fidl::WireSyncClient<fuchsia_hardware_pci::Device> pci_;
-  zx::vmo mmio_buffer_vmo_;
-  uint64_t mmio_buffer_size_ = 0;
   std::optional<fdf::MmioBuffer> mmio_;
-  fuchsia_hardware_pci::InterruptMode irq_mode_;
-  zx::interrupt irq_;
-  zx::bti bti_;
 
   inspect::Node inspect_node_;
+
+ protected:
+  zx::vmo mmio_buffer_vmo_;
+  uint64_t mmio_buffer_size_ = 0;
+  zx::interrupt irq_;
+  zx::bti bti_;
 
   std::mutex commands_lock_;
   // The pending list consists of commands that have been received via QueueIoCommand() and are

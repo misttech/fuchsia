@@ -7,24 +7,32 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-driver_bind_rules("ufs-bind") {
-  rules = "meta/ufs.bind"
-  tests = "meta/bind_tests.json"
+driver_bind_rules("ufs-pci-bind") {
+  rules = "meta/ufs-pci.bind"
+  tests = "meta/bind_tests_pci.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
     "//src/devices/bind/fuchsia.acpi",
-    "//src/devices/bind/fuchsia.devicetree",
-    "//src/devices/bind/fuchsia.gpio",
     "//src/devices/bind/fuchsia.pci",
     "//src/devices/bind/fuchsia.pci.massstorage",
+  ]
+}
+
+driver_bind_rules("ufs-pdev-bind") {
+  rules = "meta/ufs-pdev.bind"
+  tests = "meta/bind_tests_pdev.json"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//src/devices/bind/fuchsia.devicetree",
+    "//src/devices/bind/fuchsia.gpio",
   ]
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":ufs-bind_test",
+    ":ufs-pci-bind_test",
+    ":ufs-pdev-bind_test",
     ":ufs-tests",
   ]
 }
@@ -35,10 +43,10 @@ group("e2e_tests") {
 }
 
 _common_deps = [
-  ":ufs-bind",
   ":ufs-config",
   "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
   "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+  "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
   "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
   "//sdk/fidl/fuchsia.hardware.scsi:fuchsia.hardware.scsi_cpp",
   "//sdk/fidl/fuchsia.hardware.ufs:fuchsia.hardware.ufs_cpp",
@@ -47,6 +55,7 @@ _common_deps = [
   "//sdk/lib/driver/compat/cpp",
   "//sdk/lib/driver/component/cpp",
   "//sdk/lib/driver/mmio/cpp",
+  "//sdk/lib/driver/platform-device/cpp/",
   "//sdk/lib/driver/power/cpp",
   "//sdk/lib/driver/runtime:driver_runtime_cpp",
   "//src/devices/block/lib/common",
@@ -63,8 +72,7 @@ _common_deps = [
   "//zircon/third_party/ulib/safemath",
 ]
 
-fuchsia_cc_driver("ufs-driver") {
-  output_name = "ufs"
+source_set("ufs-common") {
   configs += [ "//build/config:all_source" ]
   sources = [
     "device_manager.cc",
@@ -73,41 +81,99 @@ fuchsia_cc_driver("ufs-driver") {
     "server.cc",
     "task_management_request_processor.cc",
     "transfer_request_processor.cc",
-    "ufs-export.cc",
     "ufs.cc",
     "uic/uic_commands.cc",
   ]
-  deps = _common_deps
+  public_deps = _common_deps
 }
 
-fuchsia_component_manifest("ufs-manifest") {
-  component_name = "ufs"
-  manifest = "meta/ufs.cml"
+fuchsia_cc_driver("ufs-pci-driver") {
+  output_name = "ufs-pci"
+  configs += [ "//build/config:all_source" ]
+  sources = [
+    "ufs_pci.cc",
+    "ufs_pci_export.cc",
+  ]
+  deps = [
+    ":ufs-common",
+    ":ufs-pci-bind",
+  ]
 }
 
-fuchsia_driver_component("ufs") {
-  component_name = "ufs"
-  cm_label = ":ufs-manifest"
-  deps = [ ":ufs-driver" ]
+fuchsia_cc_driver("ufs-pdev-driver") {
+  output_name = "ufs-pdev"
+  configs += [ "//build/config:all_source" ]
+  sources = [
+    "ufs_pdev.cc",
+    "ufs_pdev_export.cc",
+  ]
+  deps = [
+    ":ufs-common",
+    ":ufs-pdev-bind",
+  ]
+}
+
+fuchsia_component_manifest("ufs-pci-manifest") {
+  component_name = "ufs-pci"
+  manifest = "meta/ufs-pci.cml"
+}
+
+fuchsia_component_manifest("ufs-pdev-manifest") {
+  component_name = "ufs-pdev"
+  manifest = "meta/ufs-pdev.cml"
+}
+
+fuchsia_driver_component("ufs-pci") {
+  component_name = "ufs-pci"
+  cm_label = ":ufs-pci-manifest"
+  deps = [ ":ufs-pci-driver" ]
+  info = "meta/ufs-info.json"
+}
+
+fuchsia_driver_component("ufs-pdev") {
+  component_name = "ufs-pdev"
+  cm_label = ":ufs-pdev-manifest"
+  deps = [ ":ufs-pdev-driver" ]
   info = "meta/ufs-info.json"
 }
 
 fuchsia_structured_config_cpp_elf_lib("ufs-config") {
-  cm_label = ":ufs-manifest"
+  cm_label = ":ufs-pci-manifest"
 }
 
-fuchsia_structured_config_values("sc-values") {
-  cm_label = ":ufs-manifest"
+fuchsia_structured_config_values("sc-pci-values") {
+  cm_label = ":ufs-pci-manifest"
   values = {
     enable_suspend = false
   }
 }
 
-fuchsia_driver_package("package") {
-  package_name = "ufs"
-  driver_components = [ ":ufs" ]
-  deps = [ ":sc-values" ]
+fuchsia_structured_config_values("sc-pdev-values") {
+  cm_label = ":ufs-pdev-manifest"
+  values = {
+    enable_suspend = false
+  }
+}
+
+fuchsia_driver_package("ufs-pci-package") {
+  package_name = "ufs-pci"
+  driver_components = [ ":ufs-pci" ]
+  deps = [ ":sc-pci-values" ]
   export_to_bazel = true
+}
+
+fuchsia_driver_package("ufs-pdev-package") {
+  package_name = "ufs-pdev"
+  driver_components = [ ":ufs-pdev" ]
+  deps = [ ":sc-pdev-values" ]
+  export_to_bazel = true
+}
+
+group("ufs") {
+  deps = [
+    ":ufs-pci-package",
+    ":ufs-pdev-package",
+  ]
 }
 
 _test_deps = [
@@ -128,11 +194,6 @@ test("ufs-unit-tests-bin") {
   output_name = "ufs-unit-tests"
   configs += [ "//build/config:all_source" ]
   sources = [
-    "device_manager.cc",
-    "request_list.cc",
-    "request_processor.cc",
-    "server.cc",
-    "task_management_request_processor.cc",
     "test/block-op-test.cc",
     "test/init-test.cc",
     "test/mock-device/fake-dma-handler.cc",
@@ -153,11 +214,12 @@ test("ufs-unit-tests-bin") {
     "test/timeout-test.cc",
     "test/uic-test.cc",
     "test/unit-lib.cc",
-    "transfer_request_processor.cc",
-    "ufs.cc",
-    "uic/uic_commands.cc",
+    "ufs_pci.cc",
   ]
-  deps = _common_deps + _test_deps
+  deps = [
+           ":ufs-common",
+           ":ufs-pci-bind",
+         ] + _test_deps
 }
 
 fuchsia_unittest_component("ufs-unit-tests") {

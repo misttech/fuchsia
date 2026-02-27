@@ -739,13 +739,24 @@ assembly_input_bundle("sdhci_driver") {
 }
 
 # AIB for the ufs driver
-assembly_input_bundle("ufs_driver") {
+assembly_input_bundle("ufs_pci_driver") {
   allowed_in = [ "eng" ]
   drivers = [
     {
       set = "bootfs"
-      package_target = "//src/devices/block/drivers/ufs:package"
-      driver_components = [ "meta/ufs.cm" ]
+      package_target = "//src/devices/block/drivers/ufs:ufs-pci-package"
+      driver_components = [ "meta/ufs-pci.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("ufs_pdev_driver") {
+  allowed_in = [ "eng" ]
+  drivers = [
+    {
+      set = "bootfs"
+      package_target = "//src/devices/block/drivers/ufs:ufs-pdev-package"
+      driver_components = [ "meta/ufs-pdev.cm" ]
     },
   ]
 }
