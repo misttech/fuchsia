@@ -246,6 +246,52 @@ class BuildCommandExecutionTest(unittest.TestCase):
                 )
                 mock_unlink.assert_called_once_with(missing_ok=True)
 
+    @mock.patch("main_build.BuildLock")
+    @mock.patch("subprocess.call", return_value=0)
+    def test_run_dry_run(self, mock_call, mock_lock):
+        config = main_build.FuchsiaBuildConfig(
+            rbe=False,
+            resultstore=False,
+            profile=False,
+            verbose=False,
+            dry_run=True,
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/out"),
+            build_dir=pathlib.Path("/tmp/out/default"),
+            env={},
+            config=config,
+        )
+        with mock.patch.object(
+            main_build.BuildInvocation,
+            "build_uuid",
+            new_callable=mock.PropertyMock,
+            return_value="uuid-123",
+        ):
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "timestamp",
+                new_callable=mock.PropertyMock,
+                return_value="ts",
+            ):
+                with mock.patch("main_build.mkdir"):
+                    with mock.patch("main_build.write_text"):
+                        invocation = main_build.BuildInvocation(context)
+
+        exec_info = main_build.BuildCommandExecution(
+            full_command=["cmd", "arg"],
+            env={"VAR": "VAL"},
+            invocation=invocation,
+            cleanup_files=[],
+        )
+
+        result = exec_info.run()
+        self.assertEqual(result.return_code, 0)
+        # Even in dry_run mode, we should call the subprocess because
+        # we forwarded --dry-run to the wrapper.
+        mock_call.assert_called_once_with(["cmd", "arg"], env={"VAR": "VAL"})
+
 
 class BuildLockTest(unittest.TestCase):
     @mock.patch("main_build.check_shell_command", return_value=True)
@@ -342,6 +388,14 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
             )
             self.assertIn("--build-dir", prefix)
             self.assertNotIn("--rbe", prefix)
+            self.assertNotIn("--dry-run", prefix)
+
+    def test_dry_run_forwarding(self):
+        context = self.create_context(dry_run=True)
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = main_build.top_build_command_prefix(invocation)
+            self.assertIn("--dry-run", prefix)
 
     def test_rbe_resultstore(self):
         context = self.create_context(rbe=True, resultstore=True)

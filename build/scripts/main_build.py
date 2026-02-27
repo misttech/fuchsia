@@ -474,8 +474,10 @@ class BuildCommandExecution(object):
             print(
                 f"Running: {env_str} {' '.join(shlex.quote(c) for c in self.full_command)}"
             )
-        if config.dry_run:
-            return BuildResult(return_code=0)
+        # Note: when config.dry_run is set, we still execute the command,
+        # but we have forwarded --dry-run to the top_build_wrapper, which
+        # will skip the actual build execution. This allows for high-fidelity
+        # verification of the entire wrapper orchestration stack.
 
         rc = subprocess.call(self.full_command, env=self.env)
         return BuildResult(return_code=rc)
@@ -502,6 +504,9 @@ def top_build_command_prefix(
     # top_build_wrapper is a wrapper orchestrator whose purpose is to
     # auto-start/stop processes around the build.
     top_cmd = [str(context.top_build_wrapper)]
+
+    if context.config.dry_run:
+        top_cmd.append("--dry-run")
 
     if context.rbe_enabled:
         top_cmd.append("--rbe")
