@@ -32,9 +32,9 @@ function main {
   command_path="$(commands vendor "${vendor_name}" "${command_name}")"
 
   # expand metadata if it's a "*.fx" file
-  command_path="$(find_exec_from_path "${command_path}")"
+  command_path=( $(find_exec_from_path "${command_path}") )
 
-  if [[ ! -x "${command_path}" ]]; then
+  if [[ ! -x "${command_path[0]}" ]]; then
     echo >&2 "command ${command_name} not found on vendor ${vendor_name}!"
     return 1
   fi
@@ -42,7 +42,7 @@ function main {
   shift
   shift
 
-  exec "${command_path}" "$@"
+  exec "${command_path[@]}" "$@"
 }
 
 main "$@"
