@@ -23,6 +23,7 @@ use crate::{AsyncDispatcher, OnDispatcher};
 /// The future returned by [`OnDispatcher::compute`] or [`OnDispatcher::try_compute`]. If this is
 /// dropped, the task will be cancelled.
 #[must_use]
+#[derive(Debug)]
 pub struct Task<T> {
     state: Arc<TaskFutureState>,
     result_receiver: mpsc::Receiver<Result<T, Status>>,
@@ -111,6 +112,7 @@ impl<T> Drop for Task<T> {
     }
 }
 
+#[derive(Debug)]
 struct TaskFutureState {
     waker: AtomicWaker,
     aborted: AtomicBool,
@@ -131,6 +133,7 @@ impl<T> Future for Task<T> {
 }
 
 /// A handle for a task that will detach on drop. Returned by [`OnDispatcher::spawn`].
+#[derive(Debug)]
 pub struct JoinHandle<T>(Task<T>);
 
 impl<T> JoinHandle<T> {
