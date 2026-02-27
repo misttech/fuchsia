@@ -155,9 +155,9 @@ impl RegisteredNetworks {
         match update {
             PropertyUpdate::LoseDefaultNetwork => self.handle_default_network_update(None),
             PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
-                NetworkChange::Change(event) => self.handle_changed_network(network_id, event),
-                NetworkChange::Remove => UpdateApplied::NetworkRemoved(network_id),
-                NetworkChange::MakeDefault => self.handle_default_network_update(Some(network_id)),
+                NetworkUpdate::Properties(event) => self.handle_changed_network(network_id, event),
+                NetworkUpdate::Remove => UpdateApplied::NetworkRemoved(network_id),
+                NetworkUpdate::MakeDefault => self.handle_default_network_update(Some(network_id)),
             },
             PropertyUpdate::UpdateDns(dns_servers) => {
                 if self.dns_servers != dns_servers {
@@ -189,16 +189,16 @@ impl RegisteredNetworks {
         return UpdateApplied::DefaultNetworkChanged(old_default_network);
     }
 
-    // Handle the `PropertyChangeEvent` in a `PropertyUpdate`, determining
+    // Handle the `NetworkPropertiesChange` in a `PropertyUpdate`, determining
     // whether network properties changed as a result of the update.
     //
     // Returns an `UpdateApplied::NetworkChanged` event if this is a valid change.
     fn handle_changed_network(
         &mut self,
         network_id: NetworkId,
-        event: PropertyChangeEvent,
+        event: NetworkPropertiesChange,
     ) -> UpdateApplied {
-        let PropertyChangeEvent { added, marks: socket_marks } = event;
+        let NetworkPropertiesChange { added, marks: socket_marks } = event;
         let entry = self.networks.entry(network_id);
         let result = match (added, &entry, network_id, socket_marks) {
             (true, Entry::Occupied(_), _, _) => Err("add already added network"),
@@ -364,10 +364,9 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
     }
 }
 
-// TODO(https://fxbug.dev/483165646): Improve naming in this module.
 /// An event representing the properties that changed for a network.
 #[derive(Debug)]
-pub struct PropertyChangeEvent {
+pub struct NetworkPropertiesChange {
     /// When true, this is a new network being added. Otherwise, this is an
     /// update to an existing network.
     pub added: bool,
@@ -376,9 +375,9 @@ pub struct PropertyChangeEvent {
 }
 
 #[derive(Debug)]
-pub enum NetworkChange {
+pub enum NetworkUpdate {
     /// Change a network's properties.
-    Change(PropertyChangeEvent),
+    Properties(NetworkPropertiesChange),
     Remove,
     MakeDefault,
 }
@@ -404,7 +403,7 @@ enum UpdateApplied {
 #[derive(Debug)]
 pub enum PropertyUpdate {
     LoseDefaultNetwork,
-    ChangeNetwork(NetworkId, NetworkChange),
+    ChangeNetwork(NetworkId, NetworkUpdate),
     UpdateDns(Vec<fnet_name::DnsServer_>),
 }
 
@@ -587,7 +586,7 @@ impl NetpolNetworksService {
                                 InterfaceId::try_from(interface_id)
                                     .map_err(|_| NetworkRegistrySetDefaultError::NotFound)?,
                             ),
-                            NetworkChange::MakeDefault,
+                            NetworkUpdate::MakeDefault,
                         ))
                         .await;
                         Ok(())
@@ -619,7 +618,7 @@ impl NetpolNetworksService {
                     // rather than relying on DnsServerWatcher provided by socket-proxy.
                     self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        NetworkChange::Change(PropertyChangeEvent {
+                        NetworkUpdate::Properties(NetworkPropertiesChange {
                             added: true,
                             marks: Some(marks),
                         }),
@@ -646,7 +645,7 @@ impl NetpolNetworksService {
                     marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
                     self.update(PropertyUpdate::ChangeNetwork(
                         network_id,
-                        NetworkChange::Change(PropertyChangeEvent {
+                        NetworkUpdate::Properties(NetworkPropertiesChange {
                             added: false,
                             marks: Some(marks),
                         }),
@@ -666,7 +665,7 @@ impl NetpolNetworksService {
                             InterfaceId::try_from(network_id)
                                 .map_err(|_| NetworkRegistryRemoveError::NotFound)?,
                         ),
-                        NetworkChange::Remove,
+                        NetworkUpdate::Remove,
                     ))
                     .await;
                     Ok(())

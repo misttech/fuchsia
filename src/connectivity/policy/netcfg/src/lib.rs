@@ -2304,7 +2304,7 @@ impl<'a> NetCfg<'a> {
                 netpol_networks_service
                     .update(network::PropertyUpdate::ChangeNetwork(
                         network_id,
-                        network::NetworkChange::Remove,
+                        network::NetworkUpdate::Remove,
                     ))
                     .await;
                 netpol_networks_service.remove_network(network_id).await;
@@ -2801,7 +2801,7 @@ impl<'a> NetCfg<'a> {
             self.netpol_networks_service
                 .update(PropertyUpdate::ChangeNetwork(
                     network::NetworkId::fuchsia(interface_id),
-                    network::NetworkChange::Change(network::PropertyChangeEvent {
+                    network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                         added: true,
                         marks: None,
                     }),
@@ -2860,7 +2860,7 @@ impl<'a> NetCfg<'a> {
                     self.netpol_networks_service
                         .update(PropertyUpdate::ChangeNetwork(
                             network::NetworkId::fuchsia(interface_id),
-                            network::NetworkChange::Change(network::PropertyChangeEvent {
+                            network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                                 added: true,
                                 marks: None,
                             }),
