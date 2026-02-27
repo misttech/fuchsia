@@ -30,15 +30,16 @@ def get_change_id():
         sys.exit(1)
 
 
-def get_change_details(change_id):
+def get_change_details(base_url, change_id, use_gob_curl):
     """Queries Gerrit for the change details using the Change-Id."""
-    base_url = "https://fuchsia-review.googlesource.com"
     query_url = f"{base_url}/changes/?q=change:{change_id}&o=DETAILED_ACCOUNTS"
+
+    curl_cmd = ["gob-curl"] if use_gob_curl else ["curl"]
 
     try:
         # Use simple curl. If you need authentication (for internal changes),
         # ensure your .netrc is configured or use gob-curl if available.
-        cmd = ["curl", "-L", "-s", query_url]
+        cmd = curl_cmd + ["-s", query_url]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         content = result.stdout
@@ -48,22 +49,60 @@ def get_change_details(change_id):
 
         data = json.loads(content)
         if not data:
-            return None, None
+            return None
 
         # Return the first match.
         # Data is a list of changes.
         change = data[0]
-        return base_url, change
+        return change
     except Exception as e:
         print(f"Error fetching change details: {e}")
         sys.exit(1)
 
 
-def get_comments(base_url, change_number):
+def get_remote_url():
+    """Gets the git remote origin URL."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def parse_remote_url(remote_url):
+    """Parses the remote URL to determine the Gerrit base URL and curl command.
+
+    Returns:
+        (base_url, use_gob_curl)
+    """
+    if remote_url.startswith("sso://"):
+        # e.g. sso://fuchsia/fuchsia -> https://fuchsia-review.googlesource.com
+        # e.g. sso://user/repo -> https://user-review.googlesource.com
+        parts = remote_url[6:].split("/")
+        if parts:
+            host = parts[0]
+            return f"https://{host}-review.googlesource.com", True
+    elif remote_url.startswith("https://"):
+        # e.g. https://fuchsia.googlesource.com/fuchsia -> https://fuchsia-review.googlesource.com
+        if ".googlesource.com" in remote_url:
+            base = remote_url.split(".googlesource.com")[0]
+            # e.g. base is https://fuchsia
+            return f"{base}-review.googlesource.com", False
+
+    return None, False
+
+
+def get_comments(base_url, change_number, use_gob_curl):
     """Fetches comments for the specific change number."""
     url = f"{base_url}/changes/{change_number}/comments"
+    curl_cmd = ["gob-curl"] if use_gob_curl else ["curl"]
     try:
-        cmd = ["curl", "-L", "-s", url]
+        cmd = curl_cmd + ["-s", url]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         content = result.stdout
@@ -147,9 +186,26 @@ def main():
         sys.exit(1)
 
     print(f"Found Change-Id: {change_id_str}")
-    print("Fetching change details...")
 
-    base_url, change_info = get_change_details(change_id_str)
+    print("Checking git remote...")
+    remote_url = get_remote_url()
+    if not remote_url:
+        print("Error: Could not determine git remote URL.")
+        sys.exit(1)
+
+    print(f"Found Remote: {remote_url}")
+    base_url, use_gob_curl = parse_remote_url(remote_url)
+    if not base_url:
+        print(
+            f"Error: Could not determine Gerrit host from remote: {remote_url}"
+        )
+        sys.exit(1)
+
+    print(f"Using Gerrit host: {base_url}")
+    if use_gob_curl:
+        print("Using gob-curl for authentication.")
+
+    change_info = get_change_details(base_url, change_id_str, use_gob_curl)
     if not change_info:
         print(f"Error: Change {change_id_str} not found on Gerrit.")
         sys.exit(1)
@@ -158,7 +214,7 @@ def main():
     print(f"Found Change {change_number} ({base_url}/c/{change_number})")
 
     print("Fetching comments...")
-    comments_data = get_comments(base_url, change_number)
+    comments_data = get_comments(base_url, change_number, use_gob_curl)
 
     print_comments(comments_data)
 
