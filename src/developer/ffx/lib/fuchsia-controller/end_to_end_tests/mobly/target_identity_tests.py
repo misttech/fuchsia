@@ -10,21 +10,20 @@ import fidl_fuchsia_device as device
 import fidl_fuchsia_feedback as feedback
 import fidl_fuchsia_hwinfo as hwinfo
 import fidl_fuchsia_io as io
+import fuchsia_async_extension
 from fuchsia_controller_py import Channel
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
-from mobly import asserts, base_test, test_runner
+from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
 
-class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
-    def setup_class(self) -> None:
+class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
+    async def setup_class(self) -> None:
         self.fuchsia_devices: List[
             fuchsia_device.FuchsiaDevice
-        ] = self.register_controller(fuchsia_device)
+        ] = await self.register_controller(fuchsia_device)
         self.device = self.fuchsia_devices[0]
         self.device.set_ctx(self)
 
-    @asyncmethod
     async def test_get_device_info(self) -> None:
         """Gets target device info, compares to internal fuchsia_device config.
 
@@ -41,7 +40,6 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
         name = (await device_proxy.get_device_name()).unwrap().name
         asserts.assert_equal(name, self.device.config["name"])
 
-    @asyncmethod
     async def test_get_device_info_and_hwinfo(self) -> None:
         """Gets two different component infos in parallel.
 
@@ -60,10 +58,9 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
                 "/core/hwinfo", hwinfo.ProductMarker
             )
         )
-        loop = asyncio.get_running_loop()
         tasks = [
-            loop.create_task(device_proxy.get_device_name()),
-            loop.create_task(product_proxy.get_info()),
+            asyncio.create_task(device_proxy.get_device_name()),
+            asyncio.create_task(product_proxy.get_info()),
         ]
         results: deque[Any] = deque([])
         # The tasks will still happen in parallel as the await
@@ -89,7 +86,6 @@ class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
             extras=str(product_res),
         )
 
-    @asyncmethod
     async def test_get_fuchsia_snapshot(self) -> None:
         """Gets Fuchsia Snapshot info.
 

@@ -12,20 +12,19 @@ import asyncio
 import typing
 
 import fidl_fuchsia_developer_remotecontrol as remotecontrol
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
-from mobly import asserts, base_test, test_runner
+import fuchsia_async_extension
+from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
 
-class FuchsiaControllerTests(AsyncAdapter, base_test.BaseTestClass):
-    def setup_class(self) -> None:
+class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
+    async def setup_class(self) -> None:
         self.fuchsia_devices: typing.List[
             fuchsia_device.FuchsiaDevice
-        ] = self.register_controller(fuchsia_device)
+        ] = await self.register_controller(fuchsia_device)
         self.device = self.fuchsia_devices[0]
         self.device.set_ctx(self)
 
-    @asyncmethod
     async def test_remote_control_echo_100x_parallel(self) -> None:
         """Runs remote control proxy's "echo" method 100x in parallel."""
         if self.device.ctx is None:
