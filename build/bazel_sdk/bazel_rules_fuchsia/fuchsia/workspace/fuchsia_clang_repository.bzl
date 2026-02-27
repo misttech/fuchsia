@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Defines a WORKSPACE rule for loading a version of clang."""
+"""Defines module extensions for instantiating the `@fuchsia_clang` repository."""
 
 load(
     "//common:repository_utils.bzl",
@@ -18,7 +18,6 @@ load(
     "fetch_cipd_contents",
     "normalize_arch",
     "normalize_os",
-    "workspace_path",
 )
 
 # Base URL for Fuchsia clang archives.
@@ -151,7 +150,7 @@ def _fuchsia_clang_repository_impl(ctx):
             sha256 = sha256,
         )
         prepare_clang_repository(ctx, str(ctx.path(".")), needs_symlinks = False)
-    elif ctx.attr.cipd_bin and ctx.attr.cipd_ensure_file:
+    elif ctx.attr.cipd_ensure_file:
         fetch_cipd_contents(ctx, ctx.attr.cipd_bin, ctx.attr.cipd_ensure_file)
         prepare_clang_repository(ctx, str(ctx.path(".")), needs_symlinks = False)
     else:
@@ -275,10 +274,6 @@ archive file.
             doc = "Optional path to a workspace-relative path to a version file for this clang installation.",
             allow_single_file = True,
         ),
-        "sdk_root_label": attr.label(
-            doc = "DEPRECATED - The fuchsia sdk root label. eg: @fuchsia_sdk",
-            default = "@fuchsia_sdk",
-        ),
         "sysroot_paths": attr.string_dict(
             doc = "sysroot paths by Bazel arch, relative to execroot",
             default = {
@@ -313,76 +308,88 @@ archive file.
                   "using a different Fuchsia-specific toolchain that cannot rely on SDK sysroots.",
             default = [],
         ),
-        "rules_fuchsia_root_label": attr.label(
-            doc = "The fuchsia workspace rules root label. eg: @fuchsia_sdk",
-            default = "@fuchsia_sdk",
-        ),
         "cipd_ensure_file": attr.label(
             doc = "A cipd ensure file to use to download clang.",
         ),
         "cipd_bin": attr.label(
-            doc = "The cipd binary that will be used to download the sdk",
+            doc = "The cipd binary that will be used to fetch the `cipd_ensure_file`.",
         ),
     },
 )
 
 def _fuchsia_clang_repository_ext(ctx):
+    cipd_bin = None
+    cipd_ensure_file = None
     cipd_tag = None
     sha256 = None
     local_archive = None
     local_path = None
-    sdk_root_label = None
-    rules_fuchsia_root_label = None
     local_version_file = None
     extra_target_compatible_with = []
 
     for mod in ctx.modules:
-        # only the root module can set tags
-        if mod.is_root:
-            if mod.tags.labels:
-                labels = mod.tags.labels[0]
-                sdk_root_label = labels.sdk_root_label
-                rules_fuchsia_root_label = labels.rules_fuchsia_root_label
-            if mod.tags.cipd:
-                cipd = mod.tags.cipd[0]
-                cipd_tag = cipd.cipd_tag
-                sha256 = cipd.sha256
-            if mod.tags.archive:
-                local_archive = mod.tags.archive[0].local_archive
-            if mod.tags.local:
-                local_path = mod.tags.local[0].local_path
-                local_version_file = mod.tags.local[0].local_version_file
-                extra_target_compatible_with = mod.tags.local[0].extra_target_compatible_with
+        if mod.tags.local:
+            local_path = mod.tags.local[0].local_path
+            local_version_file = mod.tags.local[0].local_version_file
+            extra_target_compatible_with = mod.tags.local[0].extra_target_compatible_with
+        elif mod.tags.archive:
+            local_archive = mod.tags.archive[0].local_archive
+        elif mod.tags.cipd_ensure:
+            cipd = mod.tags.cipd_ensure[0]
+            cipd_bin = cipd.cipd_bin
+            cipd_ensure_file = cipd.ensure_file
+        elif mod.tags.cipd_tag:
+            cipd = mod.tags.cipd_tag[0]
+            cipd_tag = cipd.cipd_tag
+            sha256 = cipd.sha256
+        else:
+            # If `use_repo(fuchsia_clang_ext, "fuchsia_clang")` is called in a repo without a
+            # `fuchsia_clang_ext.<tag>` declaration.
+            continue
+
+        module_declarations = mod.tags.local + mod.tags.archive + mod.tags.cipd_ensure + mod.tags.cipd_tag
+
+        if len(module_declarations) > 1:
+            # buildifier: disable=print
+            print(
+                "WARN: Found multiple `fuchsia_clang_ext` declarations within %s. " % (
+                    "`@%s`" % mod.name if mod.name else "the root module"
+                ) + "The highest-precedence declaration will be used.",
+            )
+
+        # Ignore all other lower-precedence declarations.
+        break
 
     fuchsia_clang_repository(
         name = "fuchsia_clang",
+        cipd_bin = cipd_bin,
+        cipd_ensure_file = cipd_ensure_file,
         cipd_tag = cipd_tag,
         sha256 = sha256,
         local_archive = local_archive,
         local_path = local_path,
         local_version_file = local_version_file,
-        sdk_root_label = sdk_root_label,
-        rules_fuchsia_root_label = rules_fuchsia_root_label,
         extra_target_compatible_with = extra_target_compatible_with,
     )
 
-_labels_tag = tag_class(
+_cipd_ensure_tag = tag_class(
     attrs = {
-        "sdk_root_label": attr.label(
-            doc = "The fuchsia sdk root label. eg: @fuchsia_sdk",
-            default = "@fuchsia_sdk",
+        "cipd_bin": attr.label(
+            doc = "The cipd binary that will be used to fetch clang distribution.",
+            default = "@cipd_tool//:cipd",
         ),
-        "rules_fuchsia_root_label": attr.label(
-            doc = "The fuchsia workspace rules root label. eg: @fuchsia_sdk",
-            default = "@fuchsia_sdk",
+        "ensure_file": attr.label(
+            doc = "A cipd ensure file to use to download clang.",
+            mandatory = True,
         ),
     },
 )
 
-_cipd_tag = tag_class(
+_cipd_tag_tag = tag_class(
     attrs = {
         "cipd_tag": attr.string(
             doc = "CIPD tag for the version to load.",
+            mandatory = True,
         ),
         "sha256": attr.string_dict(
             doc = "Optional SHA-256 hash of the clang archive. Valid keys are mac and linux",
@@ -394,6 +401,7 @@ _archive_tag = tag_class(
     attrs = {
         "local_archive": attr.string(
             doc = "local clang archive file.",
+            mandatory = True,
         ),
     },
 )
@@ -402,6 +410,7 @@ _local_tag = tag_class(
     attrs = {
         "local_path": attr.string(
             doc = "local clang installation path, a full label, or relative to workspace dir",
+            mandatory = True,
         ),
         "local_version_file": attr.label(
             doc = "Optional path to a workspace-relative path to a version file for this clang installation.",
@@ -416,10 +425,26 @@ _local_tag = tag_class(
 
 fuchsia_clang_ext = module_extension(
     implementation = _fuchsia_clang_repository_ext,
+    doc = """Instantiates `@fuchsia_clang` using a local path, local archive, or CIPD.
+
+    Root module `@fuchsia_clang` instantiations via `fuchsia_clang_ext` take precedence, followed by
+    dependency BFS order.
+
+    If there happen to be multiple tag declarations within the highest-precedence module
+    `fuchsia_clang_ext` will pick the first declaration amongst the following (in order of
+    precedence):
+    1. `fuchsia_clang_ext.local(...)`
+    2. `fuchsia_clang_ext.archive(...)`
+    3. `fuchsia_clang_ext.cipd_ensure(...)`
+    4. `fuchsia_clang_ext.cipd_tag(...)`
+
+    The highest precedence declaration within the highest precedence module wins and all other
+    declarations are ignored.
+    """,
     tag_classes = {
-        "labels": _labels_tag,
-        "cipd": _cipd_tag,
-        "archive": _archive_tag,
         "local": _local_tag,
+        "archive": _archive_tag,
+        "cipd_ensure": _cipd_ensure_tag,
+        "cipd_tag": _cipd_tag_tag,
     },
 )
