@@ -102,8 +102,10 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
             fnet_neighbor::EntryState::Static => NeighbourState::Permanent,
             fnet_neighbor::EntryState::Unreachable => NeighbourState::Failed,
         };
-        // TODO(https://fxbug.dev/285127384): Can this sometimes be inferred from `addr`?
-        header.kind = RouteType::Unspec;
+        // Unlike Linux, Netstack3 only keeps unicast addresses in its neighbor
+        // tables so there's no need to derive this from the address and/or
+        // interface properties.
+        header.kind = RouteType::Unicast;
 
         let mut attributes = vec![];
         attributes.push(NeighbourAttribute::Destination(match addr {
@@ -113,8 +115,8 @@ impl TryFrom<fnet_neighbor_ext::Entry> for NetlinkNeighborMessage {
         if let Some(mac) = neighbor.mac {
             attributes.push(NeighbourAttribute::LinkLocalAddress(mac.octets.into()));
         }
-        // TODO(https://fxbug.dev/285127384): Determine whether it's necessary
-        // to populate `CacheInfo`.
+        // TODO(https://fxbug.dev/488135156): Include the `CacheInfo` attribute
+        // with the last update time set.
 
         let mut msg = NeighbourMessage::default();
         msg.header = header;
@@ -839,7 +841,7 @@ mod tests {
             family: AddressFamily::Inet,
             state: NeighbourState::Reachable,
             flags: NeighbourFlags::empty(),
-            kind: RouteType::Unspec,
+            kind: RouteType::Unicast,
         };
         expected_message.attributes =
             vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())];
