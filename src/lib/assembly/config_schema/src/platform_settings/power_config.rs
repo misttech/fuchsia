@@ -18,6 +18,7 @@ pub struct PowerConfig {
     /// Whether storage power management is supported.
     /// This will only work on |suspend_enabled| is also true.
     /// TODO(https://fxbug.dev/383772372): Remove when no longer needed.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
     pub storage_power_management_enabled: bool,
 
     /// Whether to include the power framework components that are needed
