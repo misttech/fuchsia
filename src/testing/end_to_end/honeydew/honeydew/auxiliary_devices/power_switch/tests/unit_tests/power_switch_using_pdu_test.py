@@ -76,7 +76,7 @@ class PowerSwitchUsingPduTests(unittest.TestCase):
         ]
     )
     @mock.patch.object(
-        power_switch_using_pdu.PowerSwitchUsingPdu, "_run", autospec=True
+        power_switch_using_pdu.PowerSwitchUsingPdu, "run", autospec=True
     )
     def test_power_on_off_success(
         self,
@@ -126,7 +126,7 @@ class PowerSwitchUsingPduTests(unittest.TestCase):
     def test_run_error(self, mock_host_shell_run: mock.Mock) -> None:
         """Test case for PowerSwitchUsingPdu._run() failure case, wrapping HostCmdError."""
         with self.assertRaises(power_switch_using_pdu.PowerSwitchPduError):
-            self.pdu_obj._run(
+            self.pdu_obj.run(
                 command=["ssh", "fail-command"]
             )  # pylint: disable=protected-access
         mock_host_shell_run.assert_called_once()

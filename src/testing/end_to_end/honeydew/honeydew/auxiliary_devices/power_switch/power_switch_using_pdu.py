@@ -84,7 +84,7 @@ class PowerSwitchUsingPdu(power_switch.PowerSwitch):
         command = self._generate_pdu_ssh_cmd(
             outlet=outlet, power_state=PowerStatePdu.OFF
         )
-        self._run(command=command)
+        self.run(command=command)
         _LOGGER.info(
             "Successfully powered off outlet %d on %s.", outlet, self._host
         )
@@ -110,7 +110,7 @@ class PowerSwitchUsingPdu(power_switch.PowerSwitch):
         command = self._generate_pdu_ssh_cmd(
             outlet=outlet, power_state=PowerStatePdu.ON
         )
-        self._run(command=command)
+        self.run(command=command)
         _LOGGER.info(
             "Successfully powered on outlet %d on %s.", outlet, self._host
         )
@@ -136,7 +136,7 @@ class PowerSwitchUsingPdu(power_switch.PowerSwitch):
 
         return shlex.split(ssh_command)
 
-    def _run(self, command: list[str]) -> None:
+    def run(self, command: list[str]) -> None:
         """Helper method to run a command and returns the output using host_shell.run.
 
         Args:

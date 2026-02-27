@@ -76,7 +76,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
         def pixel_changed_condition() -> bool:
             current_screenshot = self._take_and_save_screenshot(
-                f"after", self.screenshot_attempt_count
+                "after", self.screenshot_attempt_count
             )
             self.screenshot_attempt_count += 1
             return before.data[0:4] != current_screenshot.data[0:4]
@@ -108,7 +108,7 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
         def pixel_changed_condition() -> bool:
             current_screenshot = self._take_and_save_screenshot(
-                f"after", self.screenshot_attempt_count
+                "after", self.screenshot_attempt_count
             )
             self.screenshot_attempt_count += 1
             return before.data[0:4] != current_screenshot.data[0:4]

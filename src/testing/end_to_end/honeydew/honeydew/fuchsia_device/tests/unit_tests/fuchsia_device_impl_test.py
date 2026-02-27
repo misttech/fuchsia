@@ -703,6 +703,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         wlan_policy_using_fc_init: mock.Mock,
         # pylint: disable-next=unused-argument
         mock_ffx_run: mock.Mock,
+        # pylint: disable-next=unused-argument
         location_using_fc_init: mock.Mock,
     ) -> None:
         """Test case to make sure fuchsia_device supports Fuchsia-Controller based wlan_policy

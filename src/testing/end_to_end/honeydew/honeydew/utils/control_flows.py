@@ -125,10 +125,8 @@ def retry_until_deadline(
             signals.TestAbortSignal,
         ):
             raise
-        except Exception as e:
-            if deadline.is_due():
-                raise e
-            elif deadline.remaining_duration() < retry_delay:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            if deadline.is_due() or deadline.remaining_duration() < retry_delay:
                 raise e
             else:
                 _LOGGER.info(
@@ -180,7 +178,7 @@ def retry(
             signals.TestAbortSignal,
         ):
             raise
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             attempts += 1
             limit = str(max_tries)
             if max_tries is None:
