@@ -43,6 +43,8 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
 
   // No reboot reason.
   if (boot_arg == std::string_view::npos) {
+    fprintf(log, "%s: ERROR %.*s was missing, no reboot reason.\n", shim_name,
+            static_cast<int>(kBootArg.size() - 1), kBootArg.data());
     return;
   }
 
