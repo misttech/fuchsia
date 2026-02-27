@@ -407,10 +407,7 @@ func (t *genericFuchsiaTarget) SSHClient() (*sshutil.Client, error) {
 }
 
 func (t *genericFuchsiaTarget) SSHControlMasterPath() string {
-	if t.sshControlMasterRunning {
-		return t.sshControlMasterPath
-	}
-	return ""
+	return t.sshControlMasterPath
 }
 
 func (t *genericFuchsiaTarget) SSHControlMasterRunning() bool {
@@ -420,12 +417,14 @@ func (t *genericFuchsiaTarget) SSHControlMasterRunning() bool {
 func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey, addr string) (func(), error) {
 	cleanup := func() {}
 	runner := subprocess.Runner{}
-	socketPath := CreateSocketPath("ssh")
-	absSocketPath, err := filepath.Abs(socketPath)
-	if err != nil {
-		return cleanup, err
+	if t.sshControlMasterPath == "" {
+		socketPath := CreateSocketPath("ssh")
+		absSocketPath, err := filepath.Abs(socketPath)
+		if err != nil {
+			return cleanup, err
+		}
+		t.sshControlMasterPath = absSocketPath
 	}
-	t.sshControlMasterPath = absSocketPath
 	// ssh is added to $PATH in //tools/integration/testsharder/task_requests.go.
 	cmd := []string{
 		"ssh",

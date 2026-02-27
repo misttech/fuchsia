@@ -170,6 +170,7 @@ var ffxInstance = func(
 	ctx context.Context,
 	ffxInstance *ffxutil.FFXInstance,
 	experiments botanist.Experiments,
+	t targets.FuchsiaTarget,
 ) (FFXInstance, error) {
 	ffx, err := func() (FFXInstance, error) {
 		if ffxInstance == nil {
@@ -178,6 +179,16 @@ var ffxInstance = func(
 			// a nil value. In the latter case, checking ffx == nil will
 			// return false.
 			return nil, nil
+		}
+		// Create a copy of the ffx instance to use for testing
+		// so that we can set some config settings only when running
+		// ffx test.
+		ffxInstance = ffxutil.FFXWithTarget(ffxInstance, ffxInstance.GetTarget())
+		if err := ffxInstance.ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
+			return ffxInstance, err
+		}
+		if err := ffxInstance.ConfigSet(ctx, "ssh.controlmaster.path", t.SSHControlMasterPath()); err != nil {
+			return ffxInstance, err
 		}
 		if experiments.Contains(botanist.UseFFXTestParallel) {
 			if err := ffxInstance.ConfigSet(ctx, "test.enable_experimental_parallel_execution", "true"); err != nil {
@@ -227,7 +238,7 @@ func execute(
 	}
 
 	if !opts.UseSerial && sshKeyFile != "" {
-		ffx, err := ffxInstance(ctx, opts.FFX, opts.Experiments)
+		ffx, err := ffxInstance(ctx, opts.FFX, opts.Experiments, opts.FuchsiaTarget)
 		if err != nil {
 			return err
 		}

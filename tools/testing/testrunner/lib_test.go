@@ -1189,7 +1189,7 @@ func TestExecute(t *testing.T) {
 				return fuchsiaTester, nil
 			}
 			ffx := &ffxutil.MockFFXInstance{}
-			ffxInstance = func(_ context.Context, _ *ffxutil.FFXInstance, _ botanist.Experiments) (FFXInstance, error) {
+			ffxInstance = func(_ context.Context, _ *ffxutil.FFXInstance, _ botanist.Experiments, _ targets.FuchsiaTarget) (FFXInstance, error) {
 				if c.useFFX {
 					return ffx, nil
 				}

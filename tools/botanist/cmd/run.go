@@ -402,12 +402,6 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 						return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
 					}
 					defer cleanupControlMaster()
-					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
-						return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
-					}
-					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", t.SSHControlMasterPath()); err != nil {
-						return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", t.SSHControlMasterPath(), err)
-					}
 				}
 				if r.syslogDir != "" {
 					if _, err := os.Stat(r.syslogDir); errors.Is(err, os.ErrNotExist) {
