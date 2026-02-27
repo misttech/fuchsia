@@ -61,6 +61,14 @@ pub(crate) async fn trace(
             let r = session_manager_proxy.start_trace_session(&trace_config, &options).await?;
             match r {
                 Ok(_task_id) => None,
+                Err(
+                    fdomain_fuchsia_tracing_controller::RecordingError::RecordingAlreadyStarted,
+                ) => {
+                    return Err(anyhow::anyhow!(
+                        "Trace already started for target.\n\
+                        If you want to stop the trace and discard the data, run `ffx trace stop --abort`."
+                    ));
+                }
                 Err(e) => {
                     return Err(anyhow::anyhow!("Error starting trace: {e:?}"));
                 }
@@ -111,9 +119,10 @@ pub(crate) async fn stop_tracing(
             let join_result = futures::try_join!(download_trace(client, output_file), async {
                 log::info!("Calling end_session.");
                 // Always pass 0 for the session id, multiple sessions are not supported (yet).
-                let r = session_mgr_proxy.end_trace_session(0, server).await.map_err(Into::into);
+                let r = session_mgr_proxy.end_trace_session(0, server).await;
+                let r = r.map_err(|e| anyhow::anyhow!("FIDL error mapping: {:?}", e))?;
                 log::debug!("Done.");
-                r
+                Ok(r)
             });
             match join_result {
                 Ok((copy_res, end_res)) => {
@@ -138,6 +147,32 @@ pub(crate) async fn stop_tracing(
             }
         } else {
             return_bug!("Unexpected state with no TraceTask, and no SessionManager?");
+        }
+    }
+}
+
+pub(crate) async fn abort_tracing(
+    context: &EnvironmentContext,
+    trace_task: Option<TraceTask>,
+    trace_proxy: SessionManagerProxyType,
+) -> fho::Result<()> {
+    if let Some(task) = trace_task {
+        match task.abort().await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow::anyhow!("Error stopping trace: {e:?}").into()),
+        }
+    } else {
+        if let SessionManagerProxyType::SessionManager(session_mgr_proxy) = trace_proxy {
+            let r = session_mgr_proxy.abort_trace_session(0).await;
+            let r = r.map_err(|e| anyhow::anyhow!("FIDL error mapping: {:?}", e))?;
+            match r {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    return_bug!(crate::handle_recording_error(context, e, "").await)
+                }
+            }
+        } else {
+            return_bug!("Unexpected state with no TraceTask, and no SessionManager?")
         }
     }
 }

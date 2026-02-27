@@ -472,6 +472,8 @@ void TraceSession::OnProviderStopped(TraceProviderBundle* bundle, bool write_res
       auto& tracee = std::get<std::unique_ptr<Tracee>>(*it);
       if (!tracee->results_written()) {
         if (!WriteProviderData(tracee.get())) {
+          FX_LOGS(INFO) << "Aborting in OnProviderStopped due to WriteProviderData failed for "
+                        << *tracee->bundle();
           Abort();
           return;
         }
@@ -566,6 +568,8 @@ void TraceSession::CheckAllProvidersStopped() {
 }
 
 void TraceSession::NotifyStopped() {
+  FX_DCHECK(state_ == State::kStopped);
+
   if (stop_callback_) {
     FX_LOGS(DEBUG) << "Marking session as having stopped";
     session_stop_timeout_.Cancel();
