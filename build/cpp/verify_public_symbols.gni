@@ -9,7 +9,6 @@ import("//build/toolchain/zircon/gcc.gni")
 
 # Verifies the list of public symbols from a prebuilt library to be added to
 # the SDK against a golden file.
-# Additionally, checks that none of the symbols is a C++ symbol.
 #
 # Parameters
 #
