@@ -2980,6 +2980,151 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
 }
 
 #[fuchsia::test]
+async fn test_activity_governor_cleans_up_suspend_blocker_on_channel_drop() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let (suspend_blocker_client_end, suspend_blocker_stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+
+    let blocker_name = "test_blocker".to_string();
+
+    activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(suspend_blocker_client_end),
+            name: Some(blocker_name.clone()),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Verify the suspend blocker was actively added to the list in inspect
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
+        }
+    );
+
+    // Drop the server side of the channel, simulating the client disconnecting or dying
+    drop(suspend_blocker_stream);
+
+    // Verify the suspend blocker is automatically pruned from the lists without a suspend cycle
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            "suspend_blockers": {
+                "names": Vec::<String>::new(),
+            },
+        }
+    );
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_cleans_up_suspend_blocker_on_channel_drop_after_resume()
+-> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let (suspend_blocker_client_end, mut suspend_blocker_stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+
+    let blocker_name = "test_blocker".to_string();
+
+    activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(suspend_blocker_client_end),
+            name: Some(blocker_name.clone()),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (after_resume_tx, mut after_resume_rx) = mpsc::channel(1);
+
+    fasync::Task::local(async move {
+        let mut after_resume_tx = after_resume_tx;
+
+        while let Some(Ok(req)) = suspend_blocker_stream.next().await {
+            match req {
+                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
+                    responder.send().unwrap();
+                }
+                fsystem::SuspendBlockerRequest::AfterResume { responder } => {
+                    after_resume_tx.try_send(suspend_blocker_stream).unwrap();
+                    responder.send().unwrap();
+                    break;
+                }
+                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
+                    panic!("Unexpected method: {}", ordinal);
+                }
+            }
+        }
+    })
+    .detach();
+
+    // Trigger a suspend cycle.
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
+    suspend_device
+        .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+            suspend_duration: Some(2i64),
+            suspend_overhead: Some(1i64),
+            ..Default::default()
+        }))
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Acquire a wake lease after resume is allowed to prevent extra suspend cycles.
+    let _wake_lease = activity_governor.acquire_wake_lease("test_wake_lease").await?;
+
+    // Wait for the cycle to complete and AfterResume to be called.
+    // The task will send us the stream back over the channel so we hold it, keeping it alive.
+    let suspend_blocker_stream = after_resume_rx.next().await.unwrap();
+
+    // Verify the suspend blocker is still in the inspect node (it was moved to the active list
+    // during the suspend cycle but is still alive).
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
+        }
+    );
+
+    // Drop the server side of the channel, simulating the client disconnecting or dying.
+    drop(suspend_blocker_stream);
+
+    // Verify the suspend blocker is automatically pruned from the lists.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            "suspend_blockers": {
+                "names": Vec::<String>::new(),
+            },
+        }
+    );
+
+    Ok(())
+}
+
+#[fuchsia::test]
 async fn test_activity_governor_blocks_for_before_suspend() -> Result<()> {
     let (realm, _) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;

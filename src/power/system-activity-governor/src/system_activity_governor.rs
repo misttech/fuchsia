@@ -26,6 +26,7 @@ use futures::stream::StreamExt;
 use power_broker_client::{LeaseHelper, PowerElementContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use zx::HandleBased;
 use {
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_observability as fobs,
@@ -428,7 +429,23 @@ impl LeaseManager {
     }
 }
 
-type SuspendBlockerVector = Vec<(fsystem::SuspendBlockerProxy, String)>;
+type SuspendBlockerVector = Vec<(u64, fsystem::SuspendBlockerProxy, String)>;
+
+pub struct SuspendBlockerIdGenerator {
+    next_id: AtomicU64,
+}
+
+impl Default for SuspendBlockerIdGenerator {
+    fn default() -> Self {
+        Self { next_id: AtomicU64::new(0) }
+    }
+}
+
+impl SuspendBlockerIdGenerator {
+    pub fn next_id(&self) -> u64 {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+}
 
 /// SystemActivityGovernor runs the server for fuchsia.power.suspend and fuchsia.power.system FIDL
 /// APIs.
@@ -482,6 +499,7 @@ pub struct SystemActivityGovernor {
     /// elements.
     execution_state_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
     application_activity_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
+    suspend_blocker_id_generator: Rc<SuspendBlockerIdGenerator>,
     _suspend_blockers_node: LazyNode,
 }
 
@@ -623,7 +641,7 @@ impl SystemActivityGovernor {
                 let mut names: Vec<_> = suspend_blockers
                     .iter()
                     .chain(pending_suspend_blockers.iter())
-                    .map(|(_, name)| name.as_str())
+                    .map(|(_, _, name)| name.as_str())
                     .collect();
                 names.sort();
 
@@ -656,6 +674,7 @@ impl SystemActivityGovernor {
             sag_event_logger,
             execution_state_runner: Rc::new(RefCell::new(Some(execution_state_runner))),
             application_activity_runner: Rc::new(RefCell::new(Some(application_activity_runner))),
+            suspend_blocker_id_generator: Rc::new(SuspendBlockerIdGenerator::default()),
             _suspend_blockers_node: suspend_blockers_node,
         }))
     }
@@ -993,7 +1012,20 @@ impl SystemActivityGovernor {
                     })
                     .and_then(|client_token| {
                         let proxy = suspend_blocker.into_proxy();
-                        self.pending_suspend_blockers.borrow_mut().push((proxy, name));
+                        let id = self.suspend_blocker_id_generator.next_id();
+                        self.pending_suspend_blockers.borrow_mut().push((id, proxy.clone(), name));
+
+                        let suspend_blockers = self.suspend_blockers.clone();
+                        let pending_suspend_blockers = self.pending_suspend_blockers.clone();
+                        fasync::Task::local(async move {
+                            let _ = proxy.on_closed().await;
+                            suspend_blockers.borrow_mut().retain(|(_, p, _)| !p.is_closed());
+                            pending_suspend_blockers
+                                .borrow_mut()
+                                .retain(|(_, p, _)| !p.is_closed());
+                        })
+                        .detach();
+
                         Ok(client_token)
                     })
                     .or_else(|error| {
@@ -1128,7 +1160,7 @@ impl SystemActivityGovernor {
 
         futures::stream::iter(suspend_blockers)
             .enumerate()
-            .for_each_concurrent(None, |(i, (suspend_blocker, name))| {
+            .for_each_concurrent(None, |(i, (id, suspend_blocker, name))| {
             let dead_blocker_ids = dead_blocker_ids.clone();
 
             async move {
@@ -1150,24 +1182,23 @@ impl SystemActivityGovernor {
                         log::warn!(
                             "Failed to call BeforeSuspend on SuspendBlocker '{name}' ({i}): {e:?}"
                         );
-                        dead_blocker_ids.borrow_mut().push(i);
+                        dead_blocker_ids.borrow_mut().push(id);
                     }
                 } else {
                     if let Err(e) = suspend_blocker.after_resume().await {
                         log::warn!(
                             "Failed to call AfterResume on SuspendBlocker '{name}' ({i}):  {e:?}"
                         );
-                        dead_blocker_ids.borrow_mut().push(i);
+                        dead_blocker_ids.borrow_mut().push(id);
                     }
                 }
             }})
             .await;
 
-        // Remove suspend blockers that failed, starting from the highest index.
-        dead_blocker_ids.borrow_mut().sort();
-        dead_blocker_ids.borrow_mut().reverse();
-        for i in dead_blocker_ids.borrow().iter() {
-            self.suspend_blockers.borrow_mut().remove(*i);
+        // Remove suspend blockers that failed.
+        let dead_ids = dead_blocker_ids.borrow();
+        if !dead_ids.is_empty() {
+            self.suspend_blockers.borrow_mut().retain(|(id, _, _)| !dead_ids.contains(id));
         }
     }
 }
