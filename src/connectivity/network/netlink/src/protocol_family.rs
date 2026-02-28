@@ -1630,7 +1630,6 @@ mod test {
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use futures::SinkExt;
     use futures::channel::mpsc;
     use futures::future::FutureExt as _;
@@ -1647,7 +1646,8 @@ mod test {
         AddrSubnetEither, GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
     };
     use net_types::{SpecifiedAddr, Witness as _};
-    use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
+    use netlink_packet_core::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
+    use {fidl_fuchsia_net as fnet, fuchsia_async as fasync};
 
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
@@ -5140,12 +5140,49 @@ mod test {
             expected_sent_messages(expected_response, nl_header),
         )
     }
+
     #[test_case(
         0,
         NeighbourHeader { family: AddressFamily::Inet, ifindex: 1, ..Default::default() },
         vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
         None,
         Some(ExpectedResponse::Error(Errno::ENOTSUP)); "missing flags")]
+    #[test_case(
+        NLM_F_CREATE | NLM_F_REPLACE,
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ifindex: 1,
+            state: NeighbourState::Permanent,
+            ..Default::default()
+        },
+        vec![
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+            NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
+        ],
+        Some(neighbors::NeighborRequestArgs::New(neighbors::NewNeighborArgs::CreateStatic {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+            mac: fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] },
+        })),
+        None; "create static ipv4")]
+    #[test_case(
+        NLM_F_CREATE | NLM_F_REPLACE,
+        NeighbourHeader {
+            family: AddressFamily::Inet6,
+            ifindex: 1,
+            state: NeighbourState::Permanent,
+            ..Default::default()
+        },
+        vec![
+            NeighbourAttribute::Destination(std_ip_v6!("fe80::1").into()),
+            NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
+        ],
+        Some(neighbors::NeighborRequestArgs::New(neighbors::NewNeighborArgs::CreateStatic {
+            ip: fidl_ip!("fe80::1"),
+            interface: NonZeroU64::new(1).unwrap(),
+            mac: fnet::MacAddress { octets: [0, 1, 2, 3, 4, 5] },
+        })),
+        None; "create static ipv6")]
     #[test_case(
         NLM_F_REPLACE,
         NeighbourHeader {
@@ -5169,7 +5206,21 @@ mod test {
         None,
         Some(ExpectedResponse::Error(Errno::EAFNOSUPPORT)); "invalid family")]
     #[test_case(
-        NLM_F_REPLACE,
+        NLM_F_CREATE | NLM_F_REPLACE,
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ifindex: 1,
+            state: NeighbourState::Probe,
+            ..Default::default()
+        },
+        vec![
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+            NeighbourAttribute::LinkLocalAddress(vec![0, 1, 2, 3, 4, 5]),
+        ],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "invalid state for create static")]
+    #[test_case(
+        NLM_F_CREATE | NLM_F_REPLACE,
         NeighbourHeader {
             family: AddressFamily::Inet,
             ifindex: 1,
@@ -5181,6 +5232,17 @@ mod test {
         ],
         None,
         Some(ExpectedResponse::Error(Errno::EINVAL)); "invalid state for probe")]
+    #[test_case(
+        NLM_F_CREATE | NLM_F_REPLACE,
+        NeighbourHeader {
+            family: AddressFamily::Inet,
+            ifindex: 1,
+            state: NeighbourState::Permanent,
+            ..Default::default()
+        },
+        vec![NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into())],
+        None,
+        Some(ExpectedResponse::Error(Errno::EINVAL)); "create static missing mac")]
     #[fuchsia::test]
     async fn new_neighbor_with_faked_response(
         flags: u16,
