@@ -414,6 +414,10 @@ template("rust_auxiliary") {
         rebase_path(crate_root, root_build_dir),
         "-Zunstable-options",
 
+        # TODO(https://fxbug.dev/441377312): This flag currently does not work
+        # to generate an index page. Proactively request it anyway.
+        "--enable-index-page",
+
         # Do not attempt to append to existing files in the documentation destination.
         "--merge=none",
 

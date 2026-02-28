@@ -211,6 +211,9 @@ def generate_target_action(
         "--edition=2021",
         "-Zunstable-options",
         "--merge=finalize",
+        # TODO(https://fxbug.dev/441377312): This flag currently does not work
+        # to generate an index page. Proactively request it anyway.
+        "--enable-index-page",
         *include_parts_dir_args,
         *extra_rustdoc_args,
         target_crate_root,
