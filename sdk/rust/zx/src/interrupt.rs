@@ -45,6 +45,17 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
         ok(status)
     }
 
+    /// Synchronously wait for the interrupt to be triggered.
+    ///
+    /// Wraps [zx_interrupt_wait](https://fuchsia.dev/reference/syscalls/interrupt_wait).
+    pub fn wait(&self) -> Result<Instant<T>, Status> {
+        let mut timestamp = 0;
+        // SAFETY: We're sure that `timestamp` has a valid address.
+        let status = unsafe { sys::zx_interrupt_wait(self.raw_handle(), &mut timestamp) };
+        ok(status)?;
+        Ok(Instant::from_nanos(timestamp))
+    }
+
     /// Acknowledge the interrupt.
     ///
     /// Wraps [zx_interrupt_ack](https://fuchsia.dev/reference/syscalls/interrupt_ack).
@@ -160,5 +171,24 @@ mod tests {
             Interrupt::<VirtualInterruptKind, MonotonicTimeline>::create_virtual().unwrap();
         let result = interrupt.trigger(MonotonicInstant::from_nanos(10));
         assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn wait() {
+        let interrupt = VirtualInterrupt::create_virtual().unwrap();
+        let result = interrupt.trigger(BootInstant::from_nanos(10));
+        assert_eq!(result, Ok(()));
+        let instant = interrupt.wait().expect("wait failed");
+        assert_eq!(instant.into_nanos(), 10);
+    }
+
+    #[test]
+    fn wait_monotimeline() {
+        let interrupt =
+            Interrupt::<VirtualInterruptKind, MonotonicTimeline>::create_virtual().unwrap();
+        let result = interrupt.trigger(MonotonicInstant::from_nanos(10));
+        assert_eq!(result, Ok(()));
+        let instant = interrupt.wait().expect("wait failed");
+        assert_eq!(instant.into_nanos(), 10);
     }
 }
