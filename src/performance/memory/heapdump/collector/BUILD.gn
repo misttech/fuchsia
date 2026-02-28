@@ -6,11 +6,6 @@ import("//build/components.gni")
 import("//build/packages/sdk_fuchsia_package.gni")
 import("//build/rust/rustc_binary.gni")
 
-shared_library("elf-search-wrapper") {
-  sources = [ "src/elf-search.cc" ]
-  deps = [ "//src/lib/elf-search" ]
-}
-
 rustc_binary("bin") {
   output_name = "heapdump-collector"
   with_unit_tests = true
@@ -26,12 +21,13 @@ rustc_binary("bin") {
   ]
 
   deps = [
-    ":elf-search-wrapper",
     "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client_rust",
     "//sdk/fidl/fuchsia.memory.heapdump.process:fuchsia.memory.heapdump.process_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/elf-search/rust:lib",
+    "//src/lib/elf_parse",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

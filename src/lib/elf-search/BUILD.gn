@@ -25,5 +25,8 @@ static_library("elf-search") {
 
 group("tests") {
   testonly = true
-  deps = [ "test" ]
+  deps = [
+    "rust:tests",
+    "test",
+  ]
 }
