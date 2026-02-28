@@ -20,7 +20,9 @@ use derivative::Derivative;
 use futures::StreamExt as _;
 use futures::channel::oneshot;
 use net_types::ip::IpVersion;
-use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
+use netlink_packet_core::{
+    NLM_F_APPEND, NLM_F_CREATE, NLM_F_EXCL, NLM_F_MULTIPART, NLM_F_REPLACE, NetlinkMessage,
+};
 use netlink_packet_route::neighbour::{
     NeighbourAddress, NeighbourAttribute, NeighbourFlags, NeighbourHeader, NeighbourMessage,
     NeighbourState,
@@ -162,10 +164,10 @@ impl GetNeighborArgs {
     ) -> Result<Self, RequestError> {
         if is_dump {
             Self::dump_request_from_rtnl_neighbor(message)
-                .inspect_err(|e| log_warn!("{e} in dump neighbors request"))
+                .inspect_err(|e| log_debug!("{e} in dump neighbors request"))
         } else {
             Self::get_request_from_rtnl_neighbor(message)
-                .inspect_err(|e| log_warn!("{e} in get neighbors request"))
+                .inspect_err(|e| log_debug!("{e} in get neighbors request"))
         }
     }
 
@@ -174,6 +176,7 @@ impl GetNeighborArgs {
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
             // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
+            log_warn!("unsupported Proxy flag in dump neighbors request");
             return Err(RequestError::UnsupportedFlags(*flags));
         }
         // TODO(https://fxbug.dev/456508664): Support strict validation of dump
@@ -205,7 +208,10 @@ impl GetNeighborArgs {
     fn get_request_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
         let NeighbourHeader { ifindex, family, state, flags, kind } = &message.header;
         if *state != NeighbourState::None {
-            return Err(RequestError::InvalidState(*state));
+            return Err(RequestError::InvalidState {
+                actual: *state,
+                expected: NeighbourState::None,
+            });
         }
         if *kind != RouteType::Unspec {
             return Err(RequestError::InvalidKind(*kind));
@@ -216,6 +222,7 @@ impl GetNeighborArgs {
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
             // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
+            log_warn!("unsupported Proxy flag in get neighbor request");
             return Err(RequestError::UnsupportedFlags(*flags));
         }
 
@@ -254,6 +261,75 @@ impl GetNeighborArgs {
     }
 }
 
+/// Arguments for an RTM_NEWNEIGH [`Request`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NewNeighborArgs {
+    ProbeExisting { ip: fnet::IpAddress, interface: NonZeroU64 },
+}
+
+impl NewNeighborArgs {
+    // Attempts to convert a netlink_packet_route `NeighbourMessage` into
+    // `NewNeighborArgs`.
+    pub(crate) fn try_from_rtnl_neighbor(
+        message: &NeighbourMessage,
+        netlink_flags: u16,
+    ) -> Result<Self, RequestError> {
+        Self::try_from_rtnl_neighbor_internal(message, netlink_flags)
+            .inspect_err(|e| log_debug!("{e} in new neighbor request"))
+    }
+
+    fn try_from_rtnl_neighbor_internal(
+        message: &NeighbourMessage,
+        netlink_flags: u16,
+    ) -> Result<Self, RequestError> {
+        let NeighbourHeader { ifindex, family, flags, state, .. } = &message.header;
+        if flags.contains(NeighbourFlags::Proxy) {
+            // Netstack3 does not support ARP/NDP proxying.
+            // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
+            log_warn!("unsupported Proxy flag in new neighbor request");
+            return Err(RequestError::UnsupportedFlags(*flags));
+        }
+
+        // Read common attributes required for identifying the neighbor.
+
+        let (ip_addr, ll_addr) =
+            message.attributes.iter().fold((None, None), |acc @ (ip, ll), attr| match attr {
+                // Note: In the event an attribute is provided multiple times,
+                // keep the first value.
+                NeighbourAttribute::Destination(addr) => (ip.or(Some(addr)), ll),
+                NeighbourAttribute::LinkLocalAddress(addr) => (ip, ll.or(Some(addr))),
+                _ => acc,
+            });
+        let ip = neighbor_fidl_ip(*family, ip_addr)?;
+        let interface =
+            u64::from(*ifindex).try_into().map_err(|_| RequestError::MissingInterface)?;
+
+        // Determine the specific operation and check operation-specific
+        // attributes.
+
+        let new_neighbor_flags = NLM_F_CREATE | NLM_F_REPLACE | NLM_F_EXCL | NLM_F_APPEND;
+        let set_flags = netlink_flags & new_neighbor_flags;
+        if set_flags == NLM_F_REPLACE {
+            // If the caller only specified `NLM_F_REPLACE`, the only case
+            // Netstack3 supports is triggering an immediate neighbor probe.
+            if *state != NeighbourState::Probe {
+                return Err(RequestError::InvalidState {
+                    actual: *state,
+                    expected: NeighbourState::Probe,
+                });
+            }
+            // Setting the link address while triggering a neighbor probe is
+            // unsupported.
+            if ll_addr.is_some() {
+                return Err(RequestError::InvalidAttribute);
+            }
+            Ok(NewNeighborArgs::ProbeExisting { interface, ip })
+        } else {
+            Err(RequestError::UnsupportedOperation)
+        }
+    }
+}
+
 /// Arguments for an RTM_DELNEIGH [`Request`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DelNeighborArgs {
@@ -266,7 +342,7 @@ impl DelNeighborArgs {
     // `DelNeighborArgs`.
     pub(crate) fn try_from_rtnl_neighbor(message: &NeighbourMessage) -> Result<Self, RequestError> {
         Self::try_from_rtnl_neighbor_internal(message)
-            .inspect_err(|e| log_warn!("{e} in del neighbor request"))
+            .inspect_err(|e| log_debug!("{e} in del neighbor request"))
     }
 
     fn try_from_rtnl_neighbor_internal(message: &NeighbourMessage) -> Result<Self, RequestError> {
@@ -274,6 +350,7 @@ impl DelNeighborArgs {
         if flags.contains(NeighbourFlags::Proxy) {
             // Netstack3 does not support ARP/NDP proxying.
             // TODO(https://fxbug.dev/42111873): Support ARP/NDP proxying.
+            log_warn!("unsupported Proxy flag in del neighbor request");
             return Err(RequestError::UnsupportedFlags(*flags));
         }
 
@@ -293,6 +370,8 @@ impl DelNeighborArgs {
 pub(crate) enum NeighborRequestArgs {
     /// RTM_GETNEIGH
     Get(GetNeighborArgs),
+    /// RTM_NEWNEIGH
+    New(NewNeighborArgs),
     /// RTM_DELNEIGH
     Del(DelNeighborArgs),
 }
@@ -301,8 +380,8 @@ pub(crate) enum NeighborRequestArgs {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
 pub(crate) enum RequestError {
     /// Invalid state in neighbor header.
-    #[error("invalid state: {0:?}")]
-    InvalidState(NeighbourState),
+    #[error("invalid state; expected={expected:?}, actual={actual:?}")]
+    InvalidState { actual: NeighbourState, expected: NeighbourState },
     /// Invalid kind in neighbor header.
     #[error("invalid kind: {0:?}")]
     InvalidKind(RouteType),
@@ -349,12 +428,15 @@ pub(crate) enum RequestError {
     /// Neighbor link address unknown.
     #[error("link address unknown")]
     LinkAddressUnknown,
+    /// Operation not supported.
+    #[error("unsupported operation")]
+    UnsupportedOperation,
 }
 
 impl From<RequestError> for Errno {
     fn from(value: RequestError) -> Self {
         match value {
-            RequestError::InvalidState(_) => Errno::EINVAL,
+            RequestError::InvalidState { .. } => Errno::EINVAL,
             RequestError::InvalidKind(_) => Errno::EINVAL,
             RequestError::InvalidFlags(_) => Errno::EINVAL,
             RequestError::UnsupportedFlags(_) => Errno::ENOTSUP,
@@ -369,6 +451,7 @@ impl From<RequestError> for Errno {
             RequestError::InvalidMacAddress => Errno::EINVAL,
             RequestError::InterfaceUnsupported => Errno::ENOTSUP,
             RequestError::LinkAddressUnknown => Errno::EINVAL,
+            RequestError::UnsupportedOperation => Errno::ENOTSUP,
         }
     }
 }
@@ -430,6 +513,8 @@ pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>
 /// A subset of `NeighborRequestArgs`, containing only `Request` types that can be pending.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum PendingNeighborRequestArgs {
+    /// RTM_NEWNEIGH
+    New(NewNeighborArgs),
     /// RTM_DELNEIGH
     Del(DelNeighborArgs),
 }
@@ -603,6 +688,19 @@ impl NeighborsWorker {
                     }
                 }
             },
+            NeighborRequestArgs::New(args) => match args {
+                args @ NewNeighborArgs::ProbeExisting { ip, interface } => {
+                    let response = self
+                        .neighbors_controller
+                        .probe_entry(interface.get(), &ip)
+                        .await
+                        .expect("sent neighbor controller request");
+                    match response {
+                        Ok(_) => HandleResult::Pending(PendingNeighborRequestArgs::New(args)),
+                        Err(e) => HandleResult::Done(Err(e.into())),
+                    }
+                }
+            },
             NeighborRequestArgs::Del(args @ DelNeighborArgs { interface, ip }) => {
                 let response = self
                     .neighbors_controller
@@ -629,9 +727,12 @@ impl NeighborsWorker {
         }
     }
 
-    /// Checks whether a `PendingRequest` can be marked completed given the current state of the
-    /// worker. If so, notifies the request's completer and returns `None`. If not, returns
-    /// the `PendingRequest` as `Some`.
+    /// Checks whether a `PendingRequest` can be marked completed given the
+    /// current state of the worker. If so, notifies the request's completer and
+    /// returns `None`. If not, returns the `PendingRequest` as `Some`.
+    ///
+    /// TODO(https://fxbug.dev/488124265): Use synchronization primitives to
+    /// more robustly match requests to their corresponding watch events.
     pub(crate) fn handle_pending_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &self,
         pending_neighbor_request: PendingNeighborRequest<S>,
@@ -640,6 +741,38 @@ impl NeighborsWorker {
             &pending_neighbor_request;
 
         let done = match request_args {
+            PendingNeighborRequestArgs::New(NewNeighborArgs::ProbeExisting { ip, interface }) => {
+                // Assuming the `ProbeEntry` call succeeds, this is guaranteed
+                // to complete eventually, despite the fact that Netstack does
+                // not generate a `Changed` event if the neighbor is already in
+                // the expected state.
+                //
+                // If the neighbor was not in the expected state when Netstack
+                // processed the request, then a `Changed` event is generated,
+                // and since this method is called after each event that Netlink
+                // processes, this condition must eventually be true.
+                //
+                // If the neighbor *was* in the expected state when Netstack
+                // processed the request, then no `Changed` event is generated,
+                // but it's necessarily true that the immediately preceding
+                // `Added` or `Changed` event for the neighbor must contain the
+                // expected state.
+                //
+                // Here there are two cases to consider: Netlink has either
+                // already processed that event, or not.
+                //
+                // In the former case, the fact that there cannot have been
+                // intervening events means that this check will succeed on the
+                // call to this method that immediately follows the Controller
+                // request in the event loop.
+                //
+                // In the latter case, the event will be processed in a later
+                // iteration of the event loop, at which point this condition
+                // will become true.
+                self.neighbor_table
+                    .get(&NeighborKey { interface: *interface, neighbor: *ip })
+                    .map_or(false, |entry| entry.state == fnet_neighbor::EntryState::Probe)
+            }
             PendingNeighborRequestArgs::Del(DelNeighborArgs { ip, interface }) => !self
                 .neighbor_table
                 .contains_key(&NeighborKey { interface: *interface, neighbor: *ip }),
@@ -1555,6 +1688,150 @@ mod tests {
         assert_matches!(result, Some(Ok(())));
     }
 
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_probe_request_controller_error() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, completer_rcv) = oneshot::channel();
+        let args = NewNeighborArgs::ProbeExisting {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        };
+        let request =
+            Request { args: NeighborRequestArgs::New(args), sequence_number: 1, client, completer };
+
+        let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+            fnet_neighbor_ext::testutil::EventSpec::Idle,
+        ]);
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(vec![events]));
+        let (controller, mut controller_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let interfaces = BTreeMap::new();
+        let handle_request_fut = worker.handle_request(request, &interfaces);
+        let controller_fut = async {
+            match controller_request_stream
+                .next()
+                .await
+                .expect("controller stream should not be closed")
+                .expect("failed to receive controller request")
+            {
+                fnet_neighbor::ControllerRequest::ProbeEntry {
+                    interface: _,
+                    neighbor: _,
+                    responder,
+                } => {
+                    responder
+                        .send(Err(fnet_neighbor::ControllerError::InterfaceNotFound))
+                        .expect("failed to send error response");
+                }
+                _ => panic!("unexpected controller request"),
+            }
+        };
+
+        let (handle_result, ()) = futures::join!(handle_request_fut, controller_fut);
+        assert_matches!(handle_result, None);
+
+        let result = completer_rcv.await.expect("completer channel should not be closed");
+        assert_matches!(result, Err(RequestError::InterfaceNotFound));
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_probe_request_success() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, _completer_rcv) = oneshot::channel();
+        let args = NewNeighborArgs::ProbeExisting {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        };
+        let request =
+            Request { args: NeighborRequestArgs::New(args), sequence_number: 1, client, completer };
+
+        let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+            fnet_neighbor_ext::testutil::EventSpec::Idle,
+        ]);
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(vec![events]));
+        let (controller, mut controller_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let interfaces = BTreeMap::new();
+        let handle_request_fut = worker.handle_request(request, &interfaces);
+        let controller_fut = async {
+            match controller_request_stream
+                .next()
+                .await
+                .expect("controller stream should not be closed")
+                .expect("failed to receive controller request")
+            {
+                fnet_neighbor::ControllerRequest::ProbeEntry {
+                    interface: _,
+                    neighbor: _,
+                    responder,
+                } => {
+                    responder.send(Ok(())).expect("failed to send success response");
+                }
+                _ => panic!("unexpected controller request"),
+            }
+        };
+
+        let (handle_result, ()) = futures::join!(handle_request_fut, controller_fut);
+        let pending = handle_result.expect("expected pending request");
+        assert_eq!(pending.request_args, PendingNeighborRequestArgs::New(args));
+    }
+
+    #[fuchsia::test]
+    async fn neighbors_worker_handle_pending_probe_request() {
+        let (_sender_sink, client, _async_work_drain_task) = new_fake_client(CLIENT_ID_1, vec![]);
+        let (completer, mut completer_rcv) = oneshot::channel();
+        let neighbor = valid_neighbor_entry();
+        let args =
+            NewNeighborArgs::ProbeExisting { ip: neighbor.neighbor, interface: neighbor.interface };
+        let pending = PendingNeighborRequest {
+            request_args: PendingNeighborRequestArgs::New(args),
+            client,
+            completer,
+        };
+
+        let events = fnet_neighbor_ext::testutil::generate_events_from_spec(&[
+            fnet_neighbor_ext::testutil::EventSpec::Idle,
+        ]);
+        let (view, server_fut) =
+            fnet_neighbor_ext::testutil::create_fake_view(futures::stream::iter(vec![events]));
+        let (controller, _controller_server_end) =
+            fidl::endpoints::create_proxy::<fnet_neighbor::ControllerMarker>();
+        let worker_fut = NeighborsWorker::create(&view, controller);
+        let ((), (mut worker, _event_stream)) = futures::join!(server_fut, worker_fut);
+
+        let key = NeighborKey { interface: neighbor.interface, neighbor: neighbor.neighbor };
+
+        // Not present, should remain pending.
+        let pending = worker.handle_pending_request(pending).expect("expected pending");
+        assert_matches!(completer_rcv.try_recv(), Ok(None));
+
+        // Insert with wrong state, should remain pending.
+        let _ = worker.neighbor_table.insert(
+            key,
+            fnet_neighbor_ext::Entry { state: fnet_neighbor::EntryState::Reachable, ..neighbor },
+        );
+        let pending = worker.handle_pending_request(pending).expect("expected pending");
+        assert_matches!(completer_rcv.try_recv(), Ok(None));
+
+        // Insert correct entry, should complete.
+        let _ = worker.neighbor_table.insert(
+            key,
+            fnet_neighbor_ext::Entry { state: fnet_neighbor::EntryState::Probe, ..neighbor },
+        );
+        assert_matches!(worker.handle_pending_request(pending), None);
+
+        let result = completer_rcv.try_recv().expect("completer channel should not be closed");
+        assert_matches!(result, Some(Ok(())));
+    }
+
     #[test_case(
         false,
         NeighbourHeader {
@@ -1595,7 +1872,9 @@ mod tests {
         },
         &[
             NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
-        ] => Err(RequestError::InvalidState(NeighbourState::Reachable));
+        ] => Err(RequestError::InvalidState {
+            actual: NeighbourState::Reachable, expected: NeighbourState::None
+        });
         "get invalid request state"
     )]
     #[test_case(
@@ -1850,7 +2129,94 @@ mod tests {
     }
 
     #[test_case(
-        RequestError::InvalidState(NeighbourState::Reachable) => Errno::EINVAL;
+        NLM_F_REPLACE,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            state: NeighbourState::Probe,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Ok(NewNeighborArgs::ProbeExisting {
+            ip: fidl_ip!("192.168.0.1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "probe existing ipv4 success"
+    )]
+    #[test_case(
+        NLM_F_REPLACE,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet6,
+            state: NeighbourState::Probe,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v6!("fe80::1").into()),
+        ] => Ok(NewNeighborArgs::ProbeExisting {
+            ip: fidl_ip!("fe80::1"),
+            interface: NonZeroU64::new(1).unwrap(),
+        });
+        "probe existing ipv6 success"
+    )]
+    #[test_case(
+        NLM_F_REPLACE,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            flags: NeighbourFlags::Proxy,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::UnsupportedFlags(NeighbourFlags::Proxy));
+        "unsupported proxy flag"
+    )]
+    #[test_case(
+        NLM_F_REPLACE,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            state: NeighbourState::Permanent,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::InvalidState {
+            actual: NeighbourState::Permanent,
+            expected: NeighbourState::Probe,
+        });
+        "probe invalid state"
+    )]
+    #[test_case(
+        NLM_F_EXCL,
+        NeighbourHeader {
+            ifindex: 1,
+            family: AddressFamily::Inet,
+            ..Default::default()
+        },
+        &[
+            NeighbourAttribute::Destination(std_ip_v4!("192.168.0.1").into()),
+        ] => Err(RequestError::UnsupportedOperation);
+        "unsupported operation flags"
+    )]
+    #[fuchsia::test]
+    fn new_neighbor_args_try_from_rtnl_neighbor(
+        netlink_flags: u16,
+        header: NeighbourHeader,
+        attrs: &[NeighbourAttribute],
+    ) -> Result<NewNeighborArgs, RequestError> {
+        let mut message = NeighbourMessage::default();
+        message.header = header;
+        message.attributes = attrs.to_vec();
+        NewNeighborArgs::try_from_rtnl_neighbor(&message, netlink_flags)
+    }
+
+    #[test_case(
+        RequestError::InvalidState {
+            actual: NeighbourState::Reachable, expected:NeighbourState::None
+        } => Errno::EINVAL;
         "invalid state"
     )]
     #[test_case(RequestError::InvalidKind(RouteType::Broadcast) => Errno::EINVAL; "invalid kind")]
@@ -2193,6 +2559,215 @@ mod tests {
 
         event_loop.run_one_step_in_tests().await;
         assert_matches!(waiter.await.expect("waiter channel should not be closed"), Ok(()));
+        // The event loop & worker aren't responsible for the final response to
+        // the client (either none, or ACK if requested), so there's nothing
+        // more to check here.
+
+        neighbor_event_sink.close_channel();
+        interface_event_sink.close_channel();
+        drop(neighbor_client);
+        scope.join().await;
+    }
+
+    #[fuchsia::test]
+    async fn event_loop_with_watch_events_probe_neighbor() {
+        let scope = fuchsia_async::Scope::new();
+        let neighbor_events = vec![fnet_neighbor_ext::testutil::EventSpec::Idle];
+        let EventLoopSetup {
+            mut event_loop,
+            mut request_sink,
+            neighbors_controller_request_stream,
+            neighbor_event_sink,
+            interface_event_sink,
+        } = build_event_loop(&scope, &neighbor_events).await;
+
+        let (mut response_sink, neighbor_client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<NetlinkRoute>(
+                crate::client::testutil::CLIENT_ID_1,
+                [],
+            );
+        let _join_handle = scope.spawn(async_work_drain_task);
+
+        // Report existing entry not in `Probe` state.
+
+        let (event, entry) = {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            let mut added = fnet_neighbor_ext::testutil::generate_event_from_spec(&Added(1));
+            let fnet_neighbor::EntryIteratorItem::Added(to_add) = &mut added else {
+                panic!("unexpected event")
+            };
+            to_add.state = Some(fnet_neighbor::EntryState::Reachable);
+            let entry: fnet_neighbor_ext::Entry =
+                to_add.clone().try_into().expect("extension conversion failed");
+            (added, entry)
+        };
+        neighbor_event_sink.unbounded_send(vec![event]).expect("failed to send event");
+        event_loop.run_one_step_in_tests().await;
+
+        // Send an RTM_NEWNEIGH request to probe the existing neighbor.
+
+        let (completer, waiter) = oneshot::channel();
+        let waiter = waiter.fuse();
+        pin_mut!(waiter);
+
+        let probe_request: UnifiedRequest<FakeSender<RouteNetlinkMessage>> =
+            UnifiedRequest::NeighborsRequest(Request {
+                args: NeighborRequestArgs::New(NewNeighborArgs::ProbeExisting {
+                    ip: entry.neighbor,
+                    interface: entry.interface,
+                }),
+                sequence_number: TEST_SEQUENCE_NUMBER,
+                client: neighbor_client.clone(),
+                completer,
+            });
+        request_sink.send(probe_request).await.expect("failed to send create request");
+
+        // Handle the expected Controller.ProbeEntry request and verify that the
+        // RTM_NEWNEIGH request is still pending.
+
+        let controller_req_fut = neighbors_controller_request_stream
+            .into_future()
+            .then(async move |(req, _rest)| {
+                match req
+                    .expect("Controller request stream unexpectedly ended")
+                    .expect("failed to receive `Controller` request")
+                {
+                    fnet_neighbor::ControllerRequest::ProbeEntry {
+                        interface,
+                        neighbor,
+                        responder,
+                    } => {
+                        assert_eq!(interface, entry.interface.get());
+                        assert_eq!(neighbor, entry.neighbor);
+                        responder.send(Ok(())).expect("failed to respond to ProbeEntry");
+                    }
+                    _ => panic!("unexpected controller request"),
+                }
+            })
+            .fuse();
+        let _join_handle = scope.spawn(controller_req_fut);
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.as_mut().now_or_never(), None);
+        assert_eq!(response_sink.take_messages().len(), 0);
+
+        // Send an unrelated neighbor watch event and verify that the request is
+        // still pending.
+
+        {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            neighbor_event_sink
+                .unbounded_send(fnet_neighbor_ext::testutil::generate_events_from_spec(&[Added(3)]))
+                .expect("failed to send event");
+        }
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.as_mut().now_or_never(), None);
+        assert_eq!(response_sink.take_messages().len(), 0);
+
+        // Send a neighbor watch event indicating successful transition to
+        // `Probe` and verify that the request is completed.
+
+        {
+            let mut changed = entry.clone();
+            changed.state = fnet_neighbor::EntryState::Probe;
+            let changed_event = fnet_neighbor::EntryIteratorItem::Changed(changed.into());
+            neighbor_event_sink.unbounded_send(vec![changed_event]).expect("failed to send event");
+        }
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.await.expect("waiter channel should not be closed"), Ok(()));
+        // The event loop & worker aren't responsible for the final response to
+        // the client (either none, or ACK if requested), so there's nothing
+        // more to check here.
+
+        neighbor_event_sink.close_channel();
+        interface_event_sink.close_channel();
+        drop(neighbor_client);
+        scope.join().await;
+    }
+
+    #[fuchsia::test]
+    async fn event_loop_with_watch_events_probe_already_probing_succeeds_without_event() {
+        let scope = fuchsia_async::Scope::new();
+        let neighbor_events = vec![fnet_neighbor_ext::testutil::EventSpec::Idle];
+        let EventLoopSetup {
+            mut event_loop,
+            mut request_sink,
+            neighbors_controller_request_stream,
+            neighbor_event_sink,
+            interface_event_sink,
+        } = build_event_loop(&scope, &neighbor_events).await;
+
+        let (mut response_sink, neighbor_client, async_work_drain_task) =
+            crate::client::testutil::new_fake_client::<NetlinkRoute>(
+                crate::client::testutil::CLIENT_ID_1,
+                [],
+            );
+        let _join_handle = scope.spawn(async_work_drain_task);
+
+        // Report existing `Probe` entry.
+
+        let (event, entry) = {
+            use fnet_neighbor_ext::testutil::EventSpec::*;
+            let mut added = fnet_neighbor_ext::testutil::generate_event_from_spec(&Added(1));
+            let fnet_neighbor::EntryIteratorItem::Added(to_add) = &mut added else {
+                panic!("unexpected event")
+            };
+            to_add.state = Some(fnet_neighbor::EntryState::Probe);
+            let entry: fnet_neighbor_ext::Entry =
+                to_add.clone().try_into().expect("extension conversion failed");
+            (added, entry)
+        };
+        neighbor_event_sink.unbounded_send(vec![event]).expect("failed to send event");
+        event_loop.run_one_step_in_tests().await;
+
+        // Send an RTM_NEWNEIGH request for the neighbor in `Probe` state.
+
+        let (completer, waiter) = oneshot::channel();
+        let waiter = waiter.fuse();
+        pin_mut!(waiter);
+
+        let probe_request: UnifiedRequest<FakeSender<RouteNetlinkMessage>> =
+            UnifiedRequest::NeighborsRequest(Request {
+                args: NeighborRequestArgs::New(NewNeighborArgs::ProbeExisting {
+                    ip: entry.neighbor,
+                    interface: entry.interface,
+                }),
+                sequence_number: TEST_SEQUENCE_NUMBER,
+                client: neighbor_client.clone(),
+                completer,
+            });
+        request_sink.send(probe_request).await.expect("failed to send create request");
+
+        // Handle the expected Controller.ProbeEntry request and verify that the
+        // RTM_NEWNEIGH request is not pending.
+
+        let controller_req_fut = neighbors_controller_request_stream
+            .into_future()
+            .then(async move |(req, _rest)| {
+                match req
+                    .expect("Controller request stream unexpectedly ended")
+                    .expect("failed to receive `Controller` request")
+                {
+                    fnet_neighbor::ControllerRequest::ProbeEntry {
+                        interface,
+                        neighbor,
+                        responder,
+                    } => {
+                        assert_eq!(interface, entry.interface.get());
+                        assert_eq!(neighbor, entry.neighbor);
+                        responder.send(Ok(())).expect("failed to respond to ProbeEntry");
+                    }
+                    _ => panic!("unexpected controller request"),
+                }
+            })
+            .fuse();
+        let _join_handle = scope.spawn(controller_req_fut);
+
+        event_loop.run_one_step_in_tests().await;
+        assert_matches!(waiter.await.expect("waiter channel should not be closed"), Ok(()));
+        assert_eq!(response_sink.take_messages().len(), 0);
         // The event loop & worker aren't responsible for the final response to
         // the client (either none, or ACK if requested), so there's nothing
         // more to check here.

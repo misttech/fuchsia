@@ -698,6 +698,9 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
     /// Checks whether a `PendingRequest` can be marked completed given the current state of the
     /// worker. If so, notifies the request's completer and returns `None`. If not, returns
     /// the `PendingRequest` as `Some`.
+    ///
+    /// TODO(https://fxbug.dev/488124265): Use synchronization primitives to
+    /// more robustly match requests to their corresponding watch events.
     pub(crate) fn handle_pending_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &self,
         route_tables: &mut RouteTableMap<I>,
