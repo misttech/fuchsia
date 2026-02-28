@@ -8007,81 +8007,99 @@ TEST(Sysmem, PageForPadForBlockSizeIsProvided) {
 }
 
 TEST(Sysmem, PageForPadBeyondImageSizeBytesIsProvided) {
-  constexpr uint32_t kWidth = 450;
-  constexpr uint32_t kHeight = 450;
-  constexpr uint32_t kBytesPerPixel = 4;
-  constexpr uint32_t kBytesPerRowDivisor = 64;
-  fuchsia_sysmem2::ImageFormatConstraints image_constraints;
-  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
-  image_constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
-  image_constraints.min_size() = {kWidth, kHeight};
-  image_constraints.max_size() = {kWidth, kHeight};
-  image_constraints.bytes_per_row_divisor() = kBytesPerRowDivisor;
-  // PaddedSizeFromBlockSize can assert these are already set.
-  image_constraints.size_alignment() = {1, 1};
-  image_constraints.max_bytes_per_row() = 0xFFFFFFFF;
+  for (uint32_t is_weak = 0; is_weak < 2; ++is_weak) {
+    constexpr uint32_t kWidth = 450;
+    constexpr uint32_t kHeight = 450;
+    constexpr uint32_t kBytesPerPixel = 4;
+    constexpr uint32_t kBytesPerRowDivisor = 64;
+    fuchsia_sysmem2::ImageFormatConstraints image_constraints;
+    image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+    image_constraints.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+    image_constraints.min_size() = {kWidth, kHeight};
+    image_constraints.max_size() = {kWidth, kHeight};
+    image_constraints.bytes_per_row_divisor() = kBytesPerRowDivisor;
+    // PaddedSizeFromBlockSize can assert these are already set.
+    image_constraints.size_alignment() = {1, 1};
+    image_constraints.max_bytes_per_row() = 0xFFFFFFFF;
 
-  auto image_format_result = ImageConstraintsToFormat(image_constraints, kWidth, kHeight);
-  ZX_DEBUG_ASSERT(image_format_result.is_ok());
-  auto& image_format = image_format_result.value();
+    auto image_format_result = ImageConstraintsToFormat(image_constraints, kWidth, kHeight);
+    ZX_DEBUG_ASSERT(image_format_result.is_ok());
+    auto& image_format = image_format_result.value();
 
-  // Given constraints above, this is what goes into BufferMemorySettings.size_bytes.
-  uint64_t without_padding_bytes = ImageFormatImageSize(image_format);
-  constexpr uint64_t kExpectedWithoutBlocksBytes =
-      fbl::round_up(kBytesPerPixel * kWidth, kBytesPerRowDivisor) * kHeight;
-  ASSERT_EQ(kExpectedWithoutBlocksBytes, without_padding_bytes);
+    // Given constraints above, this is what goes into BufferMemorySettings.size_bytes.
+    uint64_t without_padding_bytes = ImageFormatImageSize(image_format);
+    constexpr uint64_t kExpectedWithoutBlocksBytes =
+        fbl::round_up(kBytesPerPixel * kWidth, kBytesPerRowDivisor) * kHeight;
+    ASSERT_EQ(kExpectedWithoutBlocksBytes, without_padding_bytes);
 
-  image_constraints.pad_beyond_image_size_bytes() = zx_system_get_page_size();
+    image_constraints.pad_beyond_image_size_bytes() = zx_system_get_page_size();
 
-  auto collection = make_single_participant_collection_v2();
-  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints;
-  auto& buffer_collection_constraints = set_constraints.constraints().emplace();
-  buffer_collection_constraints.usage().emplace().cpu() = fuchsia_sysmem2::kCpuUsageRead;
-  buffer_collection_constraints.min_buffer_count() = 1;
-  buffer_collection_constraints.image_format_constraints().emplace();
-  // intentional copy/clone; test needs image_constraints further down
-  buffer_collection_constraints.image_format_constraints()->emplace_back(image_constraints);
-  buffer_collection_constraints.image_format_constraints()
-      ->at(0)
-      .color_spaces()
-      .emplace()
-      .emplace_back(fuchsia_images2::ColorSpace::kPassthrough);
-  auto set_constraints_result = collection->SetConstraints(std::move(set_constraints));
-  ASSERT_TRUE(set_constraints_result.is_ok());
-  auto wait_result = collection->WaitForAllBuffersAllocated();
-  ASSERT_TRUE(wait_result.is_ok());
-  auto& buffer_collection_info = *wait_result.value().buffer_collection_info();
-  // This is large enough to store allocate_width, allocate_height (and possibly various other
-  // sizes including sizes with greater width but smaller height and vice versa).
-  uint64_t buffer_settings_size_bytes =
-      *buffer_collection_info.settings()->buffer_settings()->size_bytes();
-  ASSERT_EQ(without_padding_bytes, buffer_settings_size_bytes);
+    auto parent_token = create_initial_token_v2();
+    auto child_token = create_token_under_token_v2(parent_token);
+    if (is_weak) {
+      auto set_weak_result = child_token->SetWeak();
+      ASSERT_TRUE(set_weak_result.is_ok());
+    }
+    auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+    auto child_collection = convert_token_to_collection_v2(std::move(child_token));
 
-  uint64_t with_padding_bytes = 0;
-  zx_status_t get_size_status =
-      buffer_collection_info.buffers()->at(0).vmo()->get_size(&with_padding_bytes);
-  ZX_ASSERT_MSG(get_size_status == ZX_OK, " get_size_status: %s",
-                zx_status_get_string(get_size_status));
-  ZX_ASSERT(with_padding_bytes != 0);
-  ASSERT_EQ(with_padding_bytes,
-            *buffer_collection_info.settings()->buffer_settings()->raw_vmo_size());
+    auto make_constraints = [&] {
+      fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints;
+      auto& buffer_collection_constraints = set_constraints.constraints().emplace();
+      buffer_collection_constraints.usage().emplace().cpu() = fuchsia_sysmem2::kCpuUsageRead;
+      buffer_collection_constraints.min_buffer_count() = 1;
+      buffer_collection_constraints.image_format_constraints().emplace();
+      // intentional copy/clone; test needs image_constraints further down
+      buffer_collection_constraints.image_format_constraints()->emplace_back(image_constraints);
+      buffer_collection_constraints.image_format_constraints()
+          ->at(0)
+          .color_spaces()
+          .emplace()
+          .emplace_back(fuchsia_images2::ColorSpace::kPassthrough);
+      return set_constraints;
+    };
 
-  uint64_t pages_without_padding =
-      fbl::round_up(without_padding_bytes, zx_system_get_page_size()) / zx_system_get_page_size();
-  uint64_t pages_with_padding =
-      fbl::round_up(with_padding_bytes, zx_system_get_page_size()) / zx_system_get_page_size();
+    auto set_parent_constraints_result = parent_collection->SetConstraints(make_constraints());
+    ASSERT_TRUE(set_parent_constraints_result.is_ok());
 
-  // If this assert fails due to non-4KiB page size, please update this test to dynamically find a
-  // case which will have more pages when the blocks are taken into account than when they're not.
-  ZX_ASSERT(zx_system_get_page_size() == 4 * 1024);
+    auto set_child_constraints_result = child_collection->SetConstraints(make_constraints());
+    ASSERT_TRUE(set_child_constraints_result.is_ok());
 
-  ASSERT_EQ(204u, pages_without_padding);
-  ASSERT_EQ(204u, fbl::round_up(buffer_settings_size_bytes, zx_system_get_page_size()) /
-                      zx_system_get_page_size());
-  // While PaddedSizeFromBlockSize in general is only guaranteed to be an upper bound, when
-  // min_size == max_size, it's an exact answer, at least given the specific constraints set above
-  // and no future-added constraints set.
-  ASSERT_EQ(205u, pages_with_padding);
+    auto wait_result = child_collection->WaitForAllBuffersAllocated();
+    ASSERT_TRUE(wait_result.is_ok());
+    auto& buffer_collection_info = *wait_result.value().buffer_collection_info();
+    // This is large enough to store allocate_width, allocate_height (and possibly various other
+    // sizes including sizes with greater width but smaller height and vice versa).
+    uint64_t buffer_settings_size_bytes =
+        *buffer_collection_info.settings()->buffer_settings()->size_bytes();
+    ASSERT_EQ(without_padding_bytes, buffer_settings_size_bytes);
+
+    uint64_t with_padding_bytes = 0;
+    zx_status_t get_size_status =
+        buffer_collection_info.buffers()->at(0).vmo()->get_size(&with_padding_bytes);
+    ZX_ASSERT_MSG(get_size_status == ZX_OK, " get_size_status: %s",
+                  zx_status_get_string(get_size_status));
+    ZX_ASSERT(with_padding_bytes != 0);
+    ASSERT_EQ(with_padding_bytes,
+              *buffer_collection_info.settings()->buffer_settings()->raw_vmo_size());
+
+    uint64_t pages_without_padding =
+        fbl::round_up(without_padding_bytes, zx_system_get_page_size()) / zx_system_get_page_size();
+    uint64_t pages_with_padding =
+        fbl::round_up(with_padding_bytes, zx_system_get_page_size()) / zx_system_get_page_size();
+
+    // If this assert fails due to non-4KiB page size, please update this test to dynamically find a
+    // case which will have more pages when the blocks are taken into account than when they're not.
+    ZX_ASSERT(zx_system_get_page_size() == 4 * 1024);
+
+    ASSERT_EQ(204u, pages_without_padding);
+    ASSERT_EQ(204u, fbl::round_up(buffer_settings_size_bytes, zx_system_get_page_size()) /
+                        zx_system_get_page_size());
+    // While PaddedSizeFromBlockSize in general is only guaranteed to be an upper bound, when
+    // min_size == max_size, it's an exact answer, at least given the specific constraints set above
+    // and no future-added constraints set.
+    ASSERT_EQ(205u, pages_with_padding);
+  }
 }
 
 TEST(Sysmem, PadForBlockSizeMiniStress) {

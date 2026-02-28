@@ -448,6 +448,8 @@ class Node : public fbl::RefCounted<Node> {
       return;
     }
     node_properties().SetWeak();
+    // SetWeak() implies SetWeakOk(), but only for this Node, not on behalf of any child Node(s).
+    node_properties().SetWeakOk(false);
     // done
   }
 

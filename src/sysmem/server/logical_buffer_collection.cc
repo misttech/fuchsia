@@ -5701,7 +5701,7 @@ zx_status_t LogicalBuffer::error() {
 fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
     const ClientDebugInfo& client_debug_info) {
   if (!strong_parent_vmo_) {
-    // succdess, but no VMO
+    // success, but no VMO
     return fit::ok(std::nullopt);
   }
   ZX_DEBUG_ASSERT(strong_parent_vmo_->vmo().is_valid());
@@ -5714,14 +5714,13 @@ fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
   // If strong_parent_vmo_ still exists, then we know parent_vmo_ also still exists.
   ZX_DEBUG_ASSERT(parent_vmo_);
   ZX_DEBUG_ASSERT(logical_buffer_collection_->allocation_result_info_.has_value());
-  size_t rounded_size_bytes =
-      fbl::round_up(*logical_buffer_collection_->allocation_result_info_->settings()
-                         ->buffer_settings()
-                         ->size_bytes(),
-                    zx_system_get_page_size());
+  size_t raw_size_bytes = *logical_buffer_collection_->allocation_result_info_->settings()
+                               ->buffer_settings()
+                               ->raw_vmo_size();
+  ZX_DEBUG_ASSERT(raw_size_bytes % zx_system_get_page_size() == 0);
   zx::vmo per_sent_weak_parent;
-  zx_status_t status = parent_vmo_->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, rounded_size_bytes,
-                                                       &per_sent_weak_parent);
+  zx_status_t status =
+      parent_vmo_->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, raw_size_bytes, &per_sent_weak_parent);
   if (status != ZX_OK) {
     logical_buffer_collection_->LogError(FROM_HERE, "create_child() failed: %d", status);
     return fit::error(status);
@@ -5745,8 +5744,8 @@ fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
   tracked_sent_weak_parent_vmo->set_client_debug_info(client_debug_info);
 
   zx::vmo child_same_rights;
-  status = tracked_sent_weak_parent_vmo->vmo().create_child(ZX_VMO_CHILD_SLICE, 0,
-                                                            rounded_size_bytes, &child_same_rights);
+  status = tracked_sent_weak_parent_vmo->vmo().create_child(ZX_VMO_CHILD_SLICE, 0, raw_size_bytes,
+                                                            &child_same_rights);
   if (status != ZX_OK) {
     logical_buffer_collection_->LogError(FROM_HERE, "create_child() (2) failed: %d", status);
     return fit::error(status);

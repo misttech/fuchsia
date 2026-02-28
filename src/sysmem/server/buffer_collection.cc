@@ -549,8 +549,6 @@ void BufferCollection::V2::GetBufferCollectionId(GetBufferCollectionIdCompleter:
 
 void BufferCollection::V2::SetWeak(SetWeakCompleter::Sync& completer) {
   parent_.SetWeakImplV2(completer);
-  // SetWeak() implies SetWeakOk(), but only for this Node, not on behalf of any child Node(s).
-  parent_.node_properties().SetWeakOk(false);
 }
 
 void BufferCollection::V2::AttachNodeTracking(AttachNodeTrackingRequest& request,
