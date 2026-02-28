@@ -42,14 +42,14 @@ int main(int argc, char* argv[]) {
   if (!trace::TraceProviderWithFdio::CreateSynchronously(dispatcher, "provider1", &provider1,
                                                          &already_started)) {
     FX_LOGS(ERROR) << "Failed to create provider1";
-    return 42;
+    return EXIT_FAILURE;
   }
 
   std::unique_ptr<trace::TraceProviderWithFdio> provider2;
   if (!trace::TraceProviderWithFdio::CreateSynchronously(dispatcher, "provider2", &provider2,
                                                          &already_started)) {
     FX_LOGS(ERROR) << "Failed to create provider2";
-    return 43;
+    return EXIT_FAILURE;
   }
 
   // Notify the harness that we're up and running.
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
   auto status = event.signal_peer(0u, ZX_EVENTPAIR_SIGNALED);
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Signaling event pair failed: " << zx_status_get_string(status);
-    return 44;
+    return EXIT_FAILURE;
   }
 
   // The test harness will signal us it's done by closing its side
@@ -71,16 +71,7 @@ int main(int argc, char* argv[]) {
                      }
                    }};
   wait.Begin(dispatcher);
-  zx_status_t loop_status = loop.Run();
-
-  loop.Quit();
-  loop.JoinThreads();
-
-  if (loop_status != ZX_OK && loop_status != ZX_ERR_CANCELED) {
-    FX_LOGS(ERROR) << "Loop exited with status: " << zx_status_get_string(loop_status);
-  } else {
-    FX_LOGS(INFO) << "two_providers_one_engine loop exited cleanly";
-  }
+  loop.Run();
 
   return EXIT_SUCCESS;
 }
