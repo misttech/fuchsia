@@ -54,12 +54,15 @@ use fidl_fuchsia_data as fdata;
 
 ## Generated Documentation {#documentation}
 
-Documentation in HTML format can be automatically
-generated for a FIDL crate using the `fx rustdoc` command. For example:
+Documentation in HTML format can be automatically generated for a FIDL crate
+using the `fx rustdoc-link` command. Generate the documentation with:
 
 ```bash
-fx rustdoc //src/tictactoe:games.tictactoe_rust --open
+fx rustdoc-link //src/tictactoe:games.tictactoe_rust
 ```
+
+Open the docs/rust/doc directory (found in your root build directory) using
+your browser. See `fx rustdoc-link --help` for more.
 
 FIDL crates in the public Fuchsia source tree are published in the
 [Fuchsia Rust API reference](https://fuchsia.dev/go/rustdoc/).

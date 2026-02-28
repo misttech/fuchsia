@@ -161,9 +161,8 @@ following files:
 ### Rust
 
 Documentation for all Rust crates used in Fuchsia, included Rust bindings of
-FIDL libraries, is hosted online at
-[fuchsia-docs.firebaseapp.com](https://fuchsia-docs.firebaseapp.com/rust).
-You can generate offline documentation with [`fx rustdoc`][rustdoc].
+FIDL libraries, is hosted online at <https://fuchsia.dev/go/rustdoc>. You can
+generate offline documentation with [`fx rustdoc-link`][rustdoc].
 
 <!-- xrefs -->
 [bindings-ref]: /docs/reference/fidl/bindings/overview.md

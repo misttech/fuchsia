@@ -9,10 +9,9 @@
 # Every edit to this file should be followed by:
 # - fx update-rustc-third-party
 #
-# Always request non-default features you use. This can sometimes get
-# missed if another third-party crate in our build requests the same
-# feature you use: your builds will usually work, but `fx rustdoc` will
-# fail.
+# Always request non-default features you use. This can sometimes get missed if
+# another third-party crate in our build requests the same feature you use:
+# your builds will usually work, but `fx rustdoc-link` will fail.
 #
 # More information is available in
 # https://fuchsia.dev/fuchsia-src/development/languages/rust/external_crates .

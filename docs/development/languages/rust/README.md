@@ -33,7 +33,7 @@ Once you have a Cargo.toml for your target you can generate and browse HTML
 documentation for your target and its dependencies by running:
 
 ```sh
-fx rustdoc path/from/fuchsia/root/to/target:label --open
+fx rustdoc-link path/from/fuchsia/root/to/target:label
 ```
 
 ## Tests
