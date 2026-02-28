@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package testparser
+package mobly_test_parser
 
 import (
 	"bytes"
@@ -57,13 +57,22 @@ func matchYAMLHeader(lines [][]byte) [][]byte {
 	return nil
 }
 
+// Parse takes stdout from a mobly test program and returns structured results.
+// If no structured results were identified, an empty slice is returned.
+func Parse(stdout []byte) []runtests.TestCaseResult {
+	lines := bytes.Split(stdout, []byte{'\n'})
+	cases := parseMoblyTest(lines)
+
+	// Ensure that an empty set of cases is serialized to JSON as an empty
+	// array, not as null.
+	if cases == nil {
+		cases = []runtests.TestCaseResult{}
+	}
+	return cases
+}
+
 func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 	var res []runtests.TestCaseResult
-
-	if len(lines) < 1 {
-		fmt.Fprintf(os.Stderr, "Unexpected Mobly stdout, preamble line missing: %s\n", moblyTestPreamblePatternStr)
-		return res
-	}
 
 	// Find YAML header and decode YAML document.
 	yamlLines := matchYAMLHeader(lines)

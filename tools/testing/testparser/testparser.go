@@ -48,7 +48,7 @@ func Parse(stdout []byte) ([]runtests.TestCaseResult, error) {
 	var cases []runtests.TestCaseResult
 	switch match {
 	case moblyTestPreamblePattern:
-		cases = parseMoblyTest(remainingLines)
+		return nil, fmt.Errorf("this test did not parse its own test cases")
 	case ctsTestPreamblePattern:
 		cases = parseVulkanCtsTest(remainingLines)
 	case dartSystemTestPreamblePattern:

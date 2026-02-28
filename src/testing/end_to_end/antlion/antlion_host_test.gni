@@ -128,6 +128,17 @@ template("antlion_host_test") {
   }
 
   #
+  # Define antlion-runner host_test_data().
+  #
+  _host_test_data_antlion_runner = "${target_name}_test_data_antlion_runner"
+  host_test_data(_host_test_data_antlion_runner) {
+    testonly = true
+    visibility = [ ":*" ]
+    sources = [ "${root_out_dir}/antlion-runner" ]
+    deps = [ "//src/testing/end_to_end/antlion/runner" ]
+  }
+
+  #
   # Define the antlion host_test() using antlion-runner.
   #
   host_test(target_name) {
@@ -140,9 +151,11 @@ template("antlion_host_test") {
                              "timeout_secs",
                            ])
 
-    binary_path = "${root_out_dir}/antlion-runner"
+    binary_path = get_label_info("//tools/mobly_test_parser", "root_out_dir") +
+                  "/mobly_test_parser"
 
     args = [
+      rebase_path("${root_out_dir}/antlion-runner", root_build_dir),
       "--python-bin",
       rebase_path(python_exe_src, root_build_dir),
       "--antlion-pyz",
@@ -164,12 +177,13 @@ template("antlion_host_test") {
     data_deps = [ "//src/developer/ffx:suite_test_data" ]
 
     deps = [
+      ":${_host_test_data_antlion_runner}",
       ":${_host_test_data_ffx}",
       ":${_host_test_data_ssh}",
       ":${_host_test_data_target}",
       "//build/python:interpreter",
-      "//src/testing/end_to_end/antlion/runner",
       "//src/testing/end_to_end/honeydew",
+      "//tools/mobly_test_parser",
     ]
 
     if (defined(invoker.test_params)) {
