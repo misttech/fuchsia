@@ -32,6 +32,13 @@ python_host_test("screenshot_test") {
   ]
 }
 
+python_host_test("deadline_test") {
+  main_source = "deadline_test.py"
+  libraries = [ "//src/testing/end_to_end/honeydew" ]
+  main_callable = "unittest.main"
+  extra_args = [ "-v" ]
+}
+
 python_host_test("control_flows_test") {
   main_source = "control_flows_test.py"
   libraries = [
@@ -45,6 +52,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":control_flows_test",
+    ":deadline_test",
     ":inspect_test",
     ":power_test",
     ":screenshot_test",

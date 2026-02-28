@@ -7,10 +7,12 @@
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from mobly import signals
+
+from honeydew.utils.deadline import Deadline
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -26,57 +28,6 @@ _GLOBAL_TASK_TIMEOUT = timedelta(seconds=900)
 # this timeout is normally set for 6 minutes. Periodically we'll emit logs even
 # when suspended. Make sure to keep this well below any I/O timeouts.
 _IDLE_LOGGING_PERIOD = timedelta(seconds=60)
-
-
-class Deadline:
-    """Holds a deadline timestamp."""
-
-    start: datetime
-    deadline: datetime
-
-    def __init__(self, start_time: datetime, deadline: datetime) -> None:
-        """Creates a Deadline specifying start_time and deadline manually."""
-        self.start = start_time
-        self.deadline = deadline
-
-    @staticmethod
-    def from_duration(duration: timedelta) -> "Deadline":
-        """Creates a Deadline instance based on a duration and the current timestamp"""
-        now = datetime.now()
-        return Deadline(now, now + duration)
-
-    @staticmethod
-    def from_datetime(deadline: datetime) -> "Deadline":
-        """Creates a Deadline instance based on a deadline and the current timestamp"""
-        return Deadline(datetime.now(), deadline)
-
-    def subdeadline_from_duration(self, duration: timedelta) -> "Deadline":
-        """Creates a new deadline that expires no later than `self`."""
-        now = datetime.now()
-        return Deadline(now, min(self.deadline, now + duration))
-
-    def subdeadline_from_datetime(self, deadline: datetime) -> "Deadline":
-        """Creates a new deadline that expires no later than `self`."""
-        return Deadline(datetime.now(), min(self.deadline, deadline))
-
-    def total_duration(self) -> timedelta:
-        """Returns the total duration assigned to this deadline."""
-        return self.deadline - self.start
-
-    def is_due(self) -> bool:
-        """Returns True if the deadline has passed, False otherwise."""
-        return datetime.now() >= self.deadline
-
-    def elapsed_duration(self) -> timedelta:
-        """Returns the duration that has elapsed since the start time."""
-        return datetime.now() - self.start
-
-    def remaining_duration(self) -> timedelta:
-        """Returns the duration remaining until the deadline."""
-        return max(timedelta(seconds=0), self.deadline - datetime.now())
-
-    def __str__(self) -> str:
-        return f"Deadline(duration={self.total_duration()}, remaining={self.remaining_duration()})"
 
 
 class RetryAbortingError(Exception):

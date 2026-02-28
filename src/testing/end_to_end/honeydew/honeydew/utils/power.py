@@ -13,6 +13,7 @@ from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows
+from honeydew.utils.deadline import Deadline
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def get_sag_suspend_stats(
 
 def suspend_resume(
     device: fuchsia_device.FuchsiaDevice,
-    deadline: control_flows.Deadline | None = None,
+    deadline: Deadline | None = None,
 ) -> None:
     """Disconnects USB, idles, reconnects.
 
@@ -100,9 +101,7 @@ def suspend_resume(
         deadline: this will idle for increasing durations, up to this deadline.
     """
     if deadline is None:
-        deadline = control_flows.Deadline.from_duration(
-            SUSPEND_RESUME_DEFAULT_TIMEOUT
-        )
+        deadline = Deadline.from_duration(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
     try:
         device.ffx.run(

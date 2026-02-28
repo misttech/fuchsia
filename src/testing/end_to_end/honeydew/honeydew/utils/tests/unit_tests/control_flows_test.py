@@ -11,57 +11,12 @@ from mobly import signals
 from parameterized import param, parameterized
 
 from honeydew.utils.control_flows import (
-    Deadline,
     RetryAbortingError,
     repeat_until_deadline,
     retry,
     retry_until_deadline,
 )
-
-
-class DeadlineTest(unittest.TestCase):
-    def setUp(self) -> None:
-        return super().setUp()
-
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
-    def test_deadline(self, mock_datetime: mock.Mock) -> None:
-        start = datetime(2024, 7, 10)
-        mock_datetime.now.return_value = start
-        deadline = Deadline.from_duration(timedelta(seconds=100))
-
-        # Initial conditions
-        self.assertFalse(deadline.is_due())
-        self.assertEqual(deadline.elapsed_duration(), timedelta(seconds=0))
-        self.assertEqual(deadline.remaining_duration(), timedelta(seconds=100))
-        self.assertEqual(deadline.total_duration(), timedelta(seconds=100))
-
-        # During the deadline
-        mock_datetime.now.return_value = start + timedelta(seconds=40)
-        self.assertFalse(deadline.is_due())
-        self.assertEqual(deadline.elapsed_duration(), timedelta(seconds=40))
-        self.assertEqual(deadline.remaining_duration(), timedelta(seconds=60))
-        self.assertEqual(deadline.total_duration(), timedelta(seconds=100))
-
-        # Almost at the deadline
-        mock_datetime.now.return_value = start + timedelta(seconds=99)
-        self.assertFalse(deadline.is_due())
-        self.assertEqual(deadline.elapsed_duration(), timedelta(seconds=99))
-        self.assertEqual(deadline.remaining_duration(), timedelta(seconds=1))
-        self.assertEqual(deadline.total_duration(), timedelta(seconds=100))
-
-        # At the deadline
-        mock_datetime.now.return_value = start + timedelta(seconds=100)
-        self.assertTrue(deadline.is_due())
-        self.assertEqual(deadline.elapsed_duration(), timedelta(seconds=100))
-        self.assertEqual(deadline.remaining_duration(), timedelta(seconds=0))
-        self.assertEqual(deadline.total_duration(), timedelta(seconds=100))
-
-        # Right after the deadline has passed
-        mock_datetime.now.return_value = start + timedelta(seconds=101)
-        self.assertTrue(deadline.is_due())
-        self.assertEqual(deadline.elapsed_duration(), timedelta(seconds=101))
-        self.assertEqual(deadline.remaining_duration(), timedelta(seconds=0))
-        self.assertEqual(deadline.total_duration(), timedelta(seconds=100))
+from honeydew.utils.deadline import Deadline
 
 
 class _RetryAbortingErrorSubClass(RetryAbortingError):
@@ -129,7 +84,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_sleep_for_duration.call_count, 2)
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -155,7 +110,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep.assert_has_calls([mock.call(1), mock.call(1)])
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_never_succeeds_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -184,7 +139,7 @@ class RetryTest(unittest.TestCase):
         )
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_deadline_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -276,7 +231,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_sleep.call_count, 2)
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_sleep(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -304,7 +259,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep.assert_called_once_with(expected_sleep_duration)
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -336,7 +291,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep.assert_has_calls(expected_sleep_calls)
 
     @mock.patch("time.sleep")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_hits_backoff_cap(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -378,7 +333,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep.assert_has_calls(expected_sleep_calls)
 
     @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_retry_until_deadline_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -409,7 +364,7 @@ class RetryTest(unittest.TestCase):
 
 class RepeatTest(unittest.TestCase):
     @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_repeat_until_deadline(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
@@ -448,7 +403,7 @@ class RepeatTest(unittest.TestCase):
         mock_sleep.assert_not_called()
 
     @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
-    @mock.patch("honeydew.utils.control_flows.datetime", wraps=datetime)
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_repeat_until_deadline_raises_exception(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:

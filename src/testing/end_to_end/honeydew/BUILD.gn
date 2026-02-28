@@ -152,6 +152,7 @@ python_library("honeydew_no_testonly") {
     "utils/__init__.py",
     "utils/common.py",
     "utils/control_flows.py",
+    "utils/deadline.py",
     "utils/decorators.py",
     "utils/host_shell.py",
     "utils/http_utils.py",

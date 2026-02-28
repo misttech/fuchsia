@@ -16,6 +16,7 @@ from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows, power
+from honeydew.utils.deadline import Deadline
 
 
 class PowerTests(unittest.TestCase):
@@ -113,7 +114,7 @@ class PowerTests(unittest.TestCase):
         ):
             power.get_sag_suspend_stats(self.mock_device)
 
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_exception_during_suspend(
@@ -125,7 +126,7 @@ class PowerTests(unittest.TestCase):
         """Test case for suspend_resume() when suspend fails."""
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_datetime.now.return_value = t0
-        deadline = control_flows.Deadline.from_duration(timedelta(seconds=5))
+        deadline = Deadline.from_duration(timedelta(seconds=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -147,7 +148,7 @@ class PowerTests(unittest.TestCase):
             machine=ffx_types.MachineFormat.DISABLE,
         )
 
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_success(
@@ -159,7 +160,7 @@ class PowerTests(unittest.TestCase):
         """Test case for suspend_resume() success."""
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_datetime.now.return_value = t0
-        deadline = control_flows.Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_duration(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -184,7 +185,7 @@ class PowerTests(unittest.TestCase):
         self.mock_device.resume.assert_called_once()
         self.assertEqual(mock_get_stats.call_count, 2)
 
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_retry_success(
@@ -196,7 +197,7 @@ class PowerTests(unittest.TestCase):
         """Test case for suspend_resume() with a retry."""
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_datetime.now.return_value = t0
-        deadline = control_flows.Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_duration(timedelta(minutes=5))
 
         stats_before_1 = power.SagSuspendStats(
             success_count=10,
@@ -237,7 +238,7 @@ class PowerTests(unittest.TestCase):
         self.assertEqual(self.mock_device.resume.call_count, 2)
         self.assertEqual(mock_get_stats.call_count, 4)
 
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_timeout(
@@ -256,7 +257,7 @@ class PowerTests(unittest.TestCase):
             return t0
 
         mock_datetime.now.side_effect = mock_now
-        deadline = control_flows.Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_duration(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -286,7 +287,7 @@ class PowerTests(unittest.TestCase):
 
     # TODO(https://fxbug.dev/485577846): This will need updating once we have
     # a way to drop the power lease even if it's already missing.
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_ffx_error_handled(
@@ -299,7 +300,7 @@ class PowerTests(unittest.TestCase):
         self.mock_device.ffx.run.side_effect = RuntimeError("ffx failed")
         t0 = datetime.datetime(2025, 1, 1, 12, 0, 0)
         mock_datetime.now.return_value = t0
-        deadline = control_flows.Deadline.from_duration(timedelta(minutes=5))
+        deadline = Deadline.from_duration(timedelta(minutes=5))
 
         stats_before = power.SagSuspendStats(
             success_count=10,
@@ -323,7 +324,7 @@ class PowerTests(unittest.TestCase):
         mock_sleep.assert_called_once()
         self.mock_device.resume.assert_called_once()
 
-    @mock.patch.object(control_flows, "datetime")
+    @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "sleep_for_duration")
     @mock.patch.object(power, "get_sag_suspend_stats")
     def test_suspend_resume_no_deadline(
