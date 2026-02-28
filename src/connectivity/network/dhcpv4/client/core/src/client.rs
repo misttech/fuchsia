@@ -1036,16 +1036,29 @@ fn build_outgoing_message(
         chaddr: *client_hardware_address,
         sname: String::new(),
         file: String::new(),
+        // NB: The DHCP Options RFC (RFC 2132) does not impose any requirements
+        // on the order of options.  However, there is an industry norm to place
+        // the DHCP Message Type first.
+        //
+        // For the sake of maximum compliance with DHCP Servers in the wild,
+        // we write our options in the same order as Netstack2 did:
+        // * Message Type,
+        // * Requested Parameters,
+        // * Server Identifier,
+        // * Requested IP Address,
+        //
+        // Note, NS2 didn't support any other options, so we tag all remaining
+        // options on the end of the list.
         options: [
-            requested_ip_address.map(|ip| DhcpOption::RequestedIpAddress(ip.get().into())),
-            ip_address_lease_time_secs.map(|time| DhcpOption::IpAddressLeaseTime(time.get())),
             Some(DhcpOption::DhcpMessageType(message_type)),
-            client_identifier.clone().map(DhcpOption::ClientIdentifier),
-            server_identifier.map(|ip| DhcpOption::ServerIdentifier(ip.get().into())),
             include_parameter_request_list
                 .then(|| requested_parameters.try_to_parameter_request_list())
                 .flatten()
                 .map(DhcpOption::ParameterRequestList),
+            server_identifier.map(|ip| DhcpOption::ServerIdentifier(ip.get().into())),
+            requested_ip_address.map(|ip| DhcpOption::RequestedIpAddress(ip.get().into())),
+            ip_address_lease_time_secs.map(|time| DhcpOption::IpAddressLeaseTime(time.get())),
+            client_identifier.clone().map(DhcpOption::ClientIdentifier),
         ]
         .into_iter()
         .flatten()
@@ -3120,61 +3133,62 @@ mod test {
         const EXPECTED_RANGES: [(u64, u64); NUM_REQUEST_RETRANSMITS + 1] =
             [(0, 0), (3, 5), (7, 9), (15, 17), (31, 33)];
 
-        let receive_fut =
-            pin!(
-                async {
-                    let mut previous_time = std::time::Duration::from_secs(0);
+        let receive_fut = pin!(
+            async {
+                let mut previous_time = std::time::Duration::from_secs(0);
 
-                    for (start, end) in EXPECTED_RANGES {
-                        let mut recv_buf = [0u8; BUFFER_SIZE];
-                        let DatagramInfo { length, address } = server_end
-                            .recv_from(&mut recv_buf)
-                            .await
-                            .expect("recv_from on test socket should succeed");
+                for (start, end) in EXPECTED_RANGES {
+                    let mut recv_buf = [0u8; BUFFER_SIZE];
+                    let DatagramInfo { length, address } = server_end
+                        .recv_from(&mut recv_buf)
+                        .await
+                        .expect("recv_from on test socket should succeed");
 
-                        assert_eq!(address, Mac::BROADCAST);
+                    assert_eq!(address, Mac::BROADCAST);
 
-                        let (_src_addr, msg) = crate::parse::parse_dhcp_message_from_ip_packet(
-                            &recv_buf[..length],
-                            dhcp_protocol::SERVER_PORT,
-                        )
-                        .expect("received packet should parse as DHCP message");
+                    let (_src_addr, msg) = crate::parse::parse_dhcp_message_from_ip_packet(
+                        &recv_buf[..length],
+                        dhcp_protocol::SERVER_PORT,
+                    )
+                    .expect("received packet should parse as DHCP message");
 
-                        assert_outgoing_message_when_not_assigned_address(
-                            &msg,
-                            VaryingOutgoingMessageFields {
-                                xid: msg.xid,
-                                options: vec![
-                            dhcp_protocol::DhcpOption::RequestedIpAddress(YIADDR),
-                            dhcp_protocol::DhcpOption::IpAddressLeaseTime(
-                                DEFAULT_LEASE_LENGTH_SECONDS,
-                            ),
-                            dhcp_protocol::DhcpOption::DhcpMessageType(
-                                dhcp_protocol::MessageType::DHCPREQUEST,
-                            ),
-                            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
-                            dhcp_protocol::DhcpOption::ParameterRequestList(
-                                test_requested_parameters()
-                                    .iter_keys()
-                                    .collect::<Vec<_>>()
-                                    .try_into()
-                                    .expect("should fit parameter request list size constraints"),
-                            ),
-                        ],
-                            },
-                        );
+                    assert_outgoing_message_when_not_assigned_address(
+                        &msg,
+                        VaryingOutgoingMessageFields {
+                            xid: msg.xid,
+                            options: vec![
+                                dhcp_protocol::DhcpOption::DhcpMessageType(
+                                    dhcp_protocol::MessageType::DHCPREQUEST,
+                                ),
+                                dhcp_protocol::DhcpOption::ParameterRequestList(
+                                    test_requested_parameters()
+                                        .iter_keys()
+                                        .collect::<Vec<_>>()
+                                        .try_into()
+                                        .expect(
+                                            "should fit parameter request list size constraints",
+                                        ),
+                                ),
+                                dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+                                dhcp_protocol::DhcpOption::RequestedIpAddress(YIADDR),
+                                dhcp_protocol::DhcpOption::IpAddressLeaseTime(
+                                    DEFAULT_LEASE_LENGTH_SECONDS,
+                                ),
+                            ],
+                        },
+                    );
 
-                        let TestInstant(received_time) = time.now();
+                    let TestInstant(received_time) = time.now();
 
-                        let duration_range = std::time::Duration::from_secs(start)
-                            ..=std::time::Duration::from_secs(end);
-                        assert!(duration_range.contains(&(received_time - previous_time)));
+                    let duration_range =
+                        std::time::Duration::from_secs(start)..=std::time::Duration::from_secs(end);
+                    assert!(duration_range.contains(&(received_time - previous_time)));
 
-                        previous_time = received_time;
-                    }
+                    previous_time = received_time;
                 }
-                .fuse()
-            );
+            }
+            .fuse()
+        );
 
         let main_future = async { join!(requesting_fut, receive_fut) };
         let mut main_future = pin!(main_future);
@@ -3406,20 +3420,20 @@ mod test {
                     VaryingOutgoingMessageFields {
                         xid: msg.xid,
                         options: vec![
-                            dhcp_protocol::DhcpOption::RequestedIpAddress(YIADDR),
-                            dhcp_protocol::DhcpOption::IpAddressLeaseTime(
-                                DEFAULT_LEASE_LENGTH_SECONDS,
-                            ),
                             dhcp_protocol::DhcpOption::DhcpMessageType(
                                 dhcp_protocol::MessageType::DHCPREQUEST,
                             ),
-                            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
                             dhcp_protocol::DhcpOption::ParameterRequestList(
                                 test_requested_parameters()
                                     .iter_keys()
                                     .collect::<Vec<_>>()
                                     .try_into()
                                     .expect("should fit parameter request list size constraints"),
+                            ),
+                            dhcp_protocol::DhcpOption::ServerIdentifier(SERVER_IP),
+                            dhcp_protocol::DhcpOption::RequestedIpAddress(YIADDR),
+                            dhcp_protocol::DhcpOption::IpAddressLeaseTime(
+                                DEFAULT_LEASE_LENGTH_SECONDS,
                             ),
                         ],
                     },
@@ -3666,9 +3680,9 @@ mod test {
                     VaryingOutgoingMessageFields {
                         xid: message.xid,
                         options: vec![
-                            DhcpOption::RequestedIpAddress(YIADDR),
                             DhcpOption::DhcpMessageType(dhcp_protocol::MessageType::DHCPDECLINE),
                             DhcpOption::ServerIdentifier(SERVER_IP),
+                            DhcpOption::RequestedIpAddress(YIADDR),
                         ],
                     },
                 );
