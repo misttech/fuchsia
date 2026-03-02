@@ -13,12 +13,12 @@ This script does three things:
    directories
 2. Runs rustdoc to render files that depend on multiple crates
    (e.g. the search index)
-3. Merges all documentation to $FUCHSIA_BUILD_DIR/docs/rust/doc/
+3. Merges all documentation to a doc/ directory
 
-You can skip 1. by passing `--no-build`. You can skip 1., 2., and 3.
-by passing `--dry-run`, which instead saves a documentation plan to
-$FUCHSIA_BUILD_DIR/docs/rust/actions.json. When you provide both `--no-build`
-and `--dry-run`, we will exclude build actions from that documentation plan.
+You can skip 1. by passing `--no-build`. You can skip 1., 2., and 3. by passing
+`--dry-run`, which instead saves a documentation plan to an actions.json file.
+When you provide both `--no-build` and `--dry-run`, we will exclude build
+actions from that documentation plan.
 
 Use `--verbose` and `--quiet` to control this script's stderr.
 
@@ -463,8 +463,8 @@ def make_output_directories(args: Namespace) -> None:
     we are running outside of that we have to do it manually.
     """
     if args.dry_run:
-        # We plan to write {args.build_dir}/docs/rust/actions.json, so ensure
-        # that the directory exists.
+        # We plan to write an actions.json file. Ensure its containing
+        # directory exists.
         Path(args.build_dir, "docs", "rust").mkdir(parents=True, exist_ok=True)
     else:
         # remove the destination to ensure that we always document into a fresh
@@ -641,7 +641,7 @@ def _main_arg_parser() -> ArgumentParser:
         "--dry-run",
         default=False,
         action=BooleanOptionalAction,
-        help="do not build, copy, run rustdoc, or zip anything. creates $BUILD_DIR/docs/rust/actions.json instead",
+        help="do not build, copy, run rustdoc, or zip anything. creates an actions.json file instead",
     )
     parser.add_argument(
         "build_labels",
@@ -679,7 +679,7 @@ def _main_arg_parser() -> ArgumentParser:
     parser.add_argument(
         "--output-base",
         type=Path,
-        help="Base output directory for writing merged doc and an optional zip, defaults to arg.build_dir.",
+        help="Base output directory for writing merged doc and an optional zip, defaults to arg.build_dir/docs/rust.",
     )
     parser.add_argument(
         "--zip-to",
@@ -703,7 +703,7 @@ def _main_arg_parser() -> ArgumentParser:
         action="append",
         help=help_debug_only,
     )
-    # generates the documentation plan relative to this location
+    # generates the actions.json documentation plan at this location
     parser.add_argument(
         "--save-actions-to",
         type=Path,
