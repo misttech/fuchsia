@@ -50,8 +50,17 @@ Resulting product is not supported and may misbehave!
     // Parse the input configs.
     let platform_artifacts = Some(PlatformArtifacts::from_dir_with_path(&input_bundles_dir)?)
         .context("Reading platform artifacts")?;
-    let product_config =
+
+    #[allow(unused_mut)]
+    let mut product_config =
         ProductConfig::from_dir(&product).context("Reading product configuration")?;
+
+    #[cfg(feature = "assembly_heapdump")]
+    {
+        product_config.platform.development_support.heapdump.component_manager = true;
+        product_config.platform.development_support.heapdump.monikers = vec!["/**".to_string()];
+    }
+
     let board_config =
         BoardConfig::from_dir(&board_config).context("Reading board configuration")?;
     let developer_overrides = if let Some(overrides_path) = developer_overrides {

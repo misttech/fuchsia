@@ -7,9 +7,20 @@ import("//build/rust/rustc_binary.gni")
 
 assert(is_host, "Assembly libraries are host-only")
 
+declare_args() {
+  # If true, enables heapdump for the entire system (including component_manager
+  # and all other monikers) during assembly.
+  enable_assembly_heapdump = false
+}
+
 rustc_binary("assembly") {
   with_unit_tests = true
   edition = "2024"
+
+  features = []
+  if (enable_assembly_heapdump) {
+    features += [ "assembly_heapdump" ]
+  }
 
   deps = [
     "//src/lib/assembly/assembled_system",
