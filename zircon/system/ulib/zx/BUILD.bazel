@@ -8,44 +8,13 @@ load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
 
 idk_cc_source_library_zx(
     name = "zx",
-    # TODO(https://fxbug.dev/417305295): Only include these when building Fuchsia.
+    hdrs = ["include/lib/zx/result.h"],
+    api_area = "Kernel",
+    api_file_path = "//sdk/lib/zx:zx.api",
+    category = "partner",
     # TODO(https://fxbug.dev/456186319): When adding support for building
-    # Zircon, only include the following when `!is_kernel`.
-    srcs = [
-        "bti.cc",
-        "channel.cc",
-        "counter.cc",
-        "debuglog.cc",
-        "event.cc",
-        "eventpair.cc",
-        "fifo.cc",
-        "guest.cc",
-        "interrupt.cc",
-        "iob.cc",
-        "iommu.cc",
-        "job.cc",
-        "msi.cc",
-        "pager.cc",
-        "port.cc",
-        "process.cc",
-        "profile.cc",
-        "resource.cc",
-        "socket.cc",
-        "status_string.cc",
-        "stream.cc",
-        "thread.cc",
-        "time.cc",
-        "timer.cc",
-        "vcpu.cc",
-        "vmar.cc",
-        "vmo.cc",
-    ],
-    hdrs = [
-        "include/lib/zx/result.h",
-
-        # TODO(https://fxbug.dev/417305295): Only include these when building Fuchsia.
-        # TODO(https://fxbug.dev/456186319): When adding support for building
-        # Zircon, only include the following when `!is_kernel`.
+    # the kernel, only include the following when `!is_kernel`.
+    fuchsia_hdrs = [
         "include/lib/zx/bti.h",
         "include/lib/zx/channel.h",
         "include/lib/zx/clock.h",
@@ -81,9 +50,37 @@ idk_cc_source_library_zx(
         "include/lib/zx/vmar.h",
         "include/lib/zx/vmo.h",
     ],
-    api_area = "Kernel",
-    api_file_path = "//sdk/lib/zx:zx.api",
-    category = "partner",
+    # TODO(https://fxbug.dev/456186319): When adding support for building
+    # the kernel, only include the following when `!is_kernel`.
+    fuchsia_srcs = [
+        "bti.cc",
+        "channel.cc",
+        "counter.cc",
+        "debuglog.cc",
+        "event.cc",
+        "eventpair.cc",
+        "fifo.cc",
+        "guest.cc",
+        "interrupt.cc",
+        "iob.cc",
+        "iommu.cc",
+        "job.cc",
+        "msi.cc",
+        "pager.cc",
+        "port.cc",
+        "process.cc",
+        "profile.cc",
+        "resource.cc",
+        "socket.cc",
+        "status_string.cc",
+        "stream.cc",
+        "thread.cc",
+        "time.cc",
+        "timer.cc",
+        "vcpu.cc",
+        "vmar.cc",
+        "vmo.cc",
+    ],
     idk_name = "zx",
     implementation_deps = [
         # TODO(https://fxbug.dev/456186321): Explain why this .as-needed target
@@ -91,11 +88,6 @@ idk_cc_source_library_zx(
         "//src/zircon/lib/zircon:zircon.as-needed",
     ],
     stable = True,
-
-    # The current definition contains headers and sources only applicable to Fuchsia.
-    # TODO(https://fxbug.dev/417305295): Remove this once Fuchsia-only headers
-    # and sources are supported and this implementation is updated.
-    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/lib/fit",

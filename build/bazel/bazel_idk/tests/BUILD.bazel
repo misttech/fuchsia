@@ -881,9 +881,7 @@ genrule(
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
-        # TODO(https://fxbug.dev/417305295): Uncomment when Fuchsia-only headers
-        # are supported and this library can be built for host.
-        # "//zircon/system/ulib/zx",
+        "//zircon/system/ulib/zx",
     ],
 )
 
