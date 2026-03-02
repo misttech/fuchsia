@@ -149,7 +149,7 @@ pub(super) const TYPE_PROPERTIES_TYPE: u32 = 1;
 pub(super) const TYPE_PROPERTIES_ALIAS: u32 = 0;
 
 /// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux attribute.
-pub(super) const TYPE_PROPERTIES_ATTRIBUTE: u32 = 0;
+pub(super) const TYPE_PROPERTIES_ATTRIBUTE: u32 = 3;
 
 /// [`SymbolList`] is an [`Array`] of items with the count of items determined by [`Metadata`] as
 /// [`Counted`].
