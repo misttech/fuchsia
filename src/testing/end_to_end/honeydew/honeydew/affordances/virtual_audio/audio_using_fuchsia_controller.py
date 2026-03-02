@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Audio recording affordance."""
-import asyncio
 import json
 import logging
 import os
@@ -10,6 +9,7 @@ import time
 from datetime import timedelta
 
 import fidl_fuchsia_test_audio as fta
+import fuchsia_async_extension
 from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
 
@@ -162,7 +162,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                     f"Failed to start audio {err}"
                 )
 
-        asyncio.run(_inject())
+        fuchsia_async_extension.get_loop().run_until_complete(_inject())
         return types.AudioInputWaiter(self._injection_client)
 
     def capture(self) -> types.AudioResponse:
@@ -184,7 +184,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                     f"Failed to start output capture audio {err}"
                 )
 
-        asyncio.run(_capture())
+        fuchsia_async_extension.get_loop().run_until_complete(_capture())
 
         return types.AudioResponse(self._capture_client)
 
@@ -235,7 +235,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                     f"Unknown response value: {res.response}. Possible version mismatch between host and target."
                 )
 
-        return asyncio.run(_run())
+        return fuchsia_async_extension.get_loop().run_until_complete(_run())
 
     def queue_triggered_capture(
         self,
@@ -269,7 +269,7 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                     f"Failed to queue triggered capture: {capture_res.err}"
                 )
 
-        asyncio.run(_run())
+        fuchsia_async_extension.get_loop().run_until_complete(_run())
 
     def wait_for_triggered_capture(self) -> types.TriggeredCaptureResult:
         async def _run() -> types.TriggeredCaptureResult:
@@ -330,4 +330,4 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
                 status=status, audio_data=bytes(data)
             )
 
-        return asyncio.run(_run())
+        return fuchsia_async_extension.get_loop().run_until_complete(_run())

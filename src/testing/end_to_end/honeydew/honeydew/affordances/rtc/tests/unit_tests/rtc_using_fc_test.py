@@ -3,12 +3,12 @@
 # found in the LICENSE file.
 """Unit tests for honeydew.affordances.fuchsia_controller.rtc.py."""
 
-import asyncio
 import datetime
 import unittest
 from unittest import mock
 
 import fidl_fuchsia_hardware_rtc as frtc
+import fuchsia_async_extension
 import fuchsia_controller_py
 
 from honeydew import affordances_capable
@@ -25,7 +25,9 @@ class RtcFcTests(unittest.TestCase):
     """Unit tests for the rtc_using_fc.RtcUsingFc class."""
 
     def setUp(self) -> None:
-        self.m_run = self.enterContext(mock.patch.object(asyncio, "run"))
+        self.m_run = self.enterContext(
+            mock.patch.object(fuchsia_async_extension, "get_loop")
+        ).return_value.run_until_complete
         self.m_proxy = self.enterContext(
             mock.patch.object(frtc, "DeviceClient")
         ).return_value

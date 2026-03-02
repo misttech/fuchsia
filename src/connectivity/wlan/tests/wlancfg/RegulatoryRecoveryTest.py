@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import asyncio
 import logging
+
+import fuchsia_async_extension
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,10 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 )
             )
         )
-        get_region_update_response = asyncio.run(
-            regulatory_region_watcher.get_region_update()
+        get_region_update_response = (
+            fuchsia_async_extension.get_loop().run_until_complete(
+                regulatory_region_watcher.get_region_update()
+            )
         )
 
         # If no region was set before this test runs, then the result could be None.

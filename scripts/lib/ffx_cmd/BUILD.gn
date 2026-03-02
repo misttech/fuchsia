@@ -30,6 +30,7 @@ if (is_host) {
       "//scripts/lib/async_utils",
       "//scripts/lib/fx_cmd",
       "//src/lib/diagnostics/python/fuchsia_inspect",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     ]
   }
 

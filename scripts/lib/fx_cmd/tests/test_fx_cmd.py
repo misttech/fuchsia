@@ -20,7 +20,7 @@ from async_utils.command import (
 real_subprocess_exec = asyncio.create_subprocess_exec
 
 
-class TestFxCmd(unittest.TestCase):
+class TestFxCmd(unittest.IsolatedAsyncioTestCase):
     @mock.patch.dict(
         "os.environ", {"FUCHSIA_BUILD_DIR_FROM_FX": "/tmp/fuchsia/global"}
     )
@@ -47,7 +47,7 @@ class TestFxCmd(unittest.TestCase):
             ),
         ),
     )
-    def test_sync_stdout(self) -> None:
+    async def test_sync_stdout(self) -> None:
         """sync execution returns stdout"""
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td)
@@ -61,7 +61,7 @@ class TestFxCmd(unittest.TestCase):
             def callback(x: StdoutEvent) -> None:
                 lines.append(x.text.decode(errors="ignore").strip())
 
-            result = fx_cmd.FxCmd(build_directory=path).sync(
+            result = await fx_cmd.FxCmd(build_directory=path).sync(
                 "build", stdout_callback=callback
             )
             self.assertEqual(result.return_code, 0)
@@ -83,16 +83,16 @@ class TestFxCmd(unittest.TestCase):
             ),
         ),
     )
-    def test_sync_stderr(self) -> None:
+    async def test_sync_stderr(self) -> None:
         """sync execution returns stderr"""
         lines: list[str] = []
 
         def callback(x: StderrEvent) -> None:
             lines.append(x.text.decode(errors="ignore").strip())
 
-        result = fx_cmd.FxCmd(build_directory=pathlib.Path("/missing")).sync(
-            "build", stderr_callback=callback
-        )
+        result = await fx_cmd.FxCmd(
+            build_directory=pathlib.Path("/missing")
+        ).sync("build", stderr_callback=callback)
         self.assertNotEqual(result.return_code, 0)
 
         self.assertNotEqual(lines, [])
@@ -119,7 +119,7 @@ class TestCommandTransformers(unittest.TestCase):
             ),
         ),
     )
-    def test_counting_transformer(self) -> None:
+    async def test_counting_transformer(self) -> None:
         """A basic transformer works correctly"""
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td)
@@ -130,7 +130,7 @@ class TestCommandTransformers(unittest.TestCase):
 
             lines: list[str] = []
 
-            result = self.OutputCountTransformer(
+            result = await self.OutputCountTransformer(
                 "ignored", inner=fx_cmd.FxCmd(build_directory=path)
             ).sync(event_callback=lambda x: lines.append(x))
             self.assertEqual(result, 2)
@@ -138,13 +138,11 @@ class TestCommandTransformers(unittest.TestCase):
             self.assertSetEqual(set(lines), {"bar.txt", "foo.txt"})
 
             # Test that we get an error reading a directory that doesn't exist.
-            self.assertRaises(
-                fx_cmd.CommandFailed,
-                lambda: self.OutputCountTransformer(
+            with self.assertRaises(fx_cmd.CommandFailed):
+                await self.OutputCountTransformer(
                     "ignored",
                     inner=fx_cmd.FxCmd(build_directory=path / "does-not-exist"),
-                ).sync(),
-            )
+                ).sync()
 
     class FailingOutputTransformer(fx_cmd.CommandTransformer[None, int]):
         def _to_output(self, output: CommandOutput) -> int:
@@ -169,21 +167,17 @@ class TestCommandTransformers(unittest.TestCase):
             ),
         ),
     )
-    def test_transformer_errors(self) -> None:
+    async def test_transformer_errors(self) -> None:
         """Exceptions in the transformer are caught"""
-        self.assertRaises(
-            fx_cmd.CommandTransformFailed,
-            lambda: self.FailingOutputTransformer(
+        with self.assertRaises(fx_cmd.CommandTransformFailed):
+            await self.FailingOutputTransformer(
                 "ignored", inner=fx_cmd.FxCmd(build_directory="/fuchsia")
-            ).sync(),
-        )
+            ).sync()
 
-        self.assertRaises(
-            fx_cmd.CommandTransformFailed,
-            lambda: self.FailingEventTransformer(
+        with self.assertRaises(fx_cmd.CommandTransformFailed):
+            await self.FailingEventTransformer(
                 "ignored", inner=fx_cmd.FxCmd(build_directory="/fuchsia")
-            ).sync(),
-        )
+            ).sync()
 
     @mock.patch(
         "asyncio.subprocess.create_subprocess_exec",
@@ -193,12 +187,10 @@ class TestCommandTransformers(unittest.TestCase):
             ),
         ),
     )
-    def test_transformer_timeout(self) -> None:
+    async def test_transformer_timeout(self) -> None:
         """Timeouts are caught in the transformer"""
-        self.assertRaises(
-            fx_cmd.CommandTimeout,
-            lambda: self.OutputCountTransformer(
+        with self.assertRaises(fx_cmd.CommandTimeout):
+            await self.OutputCountTransformer(
                 "ignored",
                 inner=fx_cmd.FxCmd(build_directory="/fuchsia", timeout=0.1),
-            ).sync(),
-        )
+            ).sync()

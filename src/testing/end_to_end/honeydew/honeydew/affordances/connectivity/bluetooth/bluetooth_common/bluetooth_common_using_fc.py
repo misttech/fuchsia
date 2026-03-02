@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
+import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fuchsia_controller_py import Channel
 
@@ -85,7 +86,6 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
         self.discovery_token: fc.Channel | None = None
         self._pairing_delegate_server: asyncio.Task[None] | None = None
         self.known_devices: dict[str, Any]
-        self.loop = None
         self._peer_update_task: asyncio.Task[None] | None = None
         self._peer_update_queue: (
             asyncio.Queue[f_btsys_controller.Peer] | None
@@ -105,7 +105,7 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
         self._reboot_affordance.register_for_on_device_boot(fn=self.sys_init)
 
         self.sys_init()
-        self.loop = asyncio.new_event_loop()
+        self.loop = fuchsia_async_extension.get_loop()
 
     def reset_state(self) -> None:
         """Resets internal state tracking variables to correspond to an inactive
@@ -120,11 +120,8 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
                 "Cancelling Pairing Delegate Server and setting to None"
             )
             self._pairing_delegate_server.cancel()
+            self.loop.run_until_complete(self._pairing_delegate_server)
             self._pairing_delegate_server = None
-        if self.loop is not None:
-            self.loop.stop()
-            self.loop.run_forever()
-            self.loop.close()
 
     def is_session_initialized(self) -> bool:
         """Checks if the BT session is initialized or not.

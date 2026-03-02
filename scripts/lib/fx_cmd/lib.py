@@ -29,7 +29,7 @@ class ExecutableCommand(ABC):
             AsyncCommand: Wrapper for the started command.
         """
 
-    def sync(
+    async def sync(
         self,
         *args: str,
         stdout_callback: typing.Callable[[StdoutEvent], None] | None = None,
@@ -51,13 +51,8 @@ class ExecutableCommand(ABC):
             elif stderr_callback is not None and isinstance(event, StderrEvent):
                 stderr_callback(event)
 
-        async def operation() -> CommandOutput:
-            running_command = await self.start(*args)
-            return await running_command.run_to_completion(
-                callback=local_callback
-            )
-
-        return asyncio.run(operation())
+        running_command = await self.start(*args)
+        return await running_command.run_to_completion(callback=local_callback)
 
 
 class FxCmd(ExecutableCommand):
@@ -219,7 +214,7 @@ class CommandTransformer(typing.Generic[EventType, ReturnType], ABC):
         t = asyncio.create_task(task())
         return RunningCommand(cmd, t, events)
 
-    def sync(
+    async def sync(
         self, event_callback: typing.Callable[[EventType], None] | None = None
     ) -> ReturnType:
         """Run the command to completion synchronously.
@@ -236,26 +231,21 @@ class CommandTransformer(typing.Generic[EventType, ReturnType], ABC):
             ReturnType: The return value for the wrapped command.
         """
 
-        async def task() -> ReturnType:
-            running_command = await self.start()
+        running_command = await self.start()
 
-            async def drain_events() -> None:
-                while event := await running_command.events.get():
-                    if isinstance(event, QueueFinished):
-                        return
+        async def drain_events() -> None:
+            while event := await running_command.events.get():
+                if isinstance(event, QueueFinished):
+                    return
 
-                    if event_callback is not None:
-                        event_callback(event)
+                if event_callback is not None:
+                    event_callback(event)
 
-            results = await asyncio.gather(
-                running_command.result, drain_events()
-            )
-            result = results[0]
-            if isinstance(result, CommandFailed):
-                raise result
-            return result
-
-        return asyncio.run(task())
+        results = await asyncio.gather(running_command.result, drain_events())
+        result = results[0]
+        if isinstance(result, CommandFailed):
+            raise result
+        return result
 
     def _handle_event(
         self, event: CommandEvent, callback: typing.Callable[[EventType], None]

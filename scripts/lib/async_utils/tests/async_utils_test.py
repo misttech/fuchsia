@@ -306,12 +306,10 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.return_code, -15)
         self.assertTrue(out.was_timeout)
 
-    def test_invalid_program(self) -> None:
+    async def test_invalid_program(self) -> None:
         """Test running a program that doesn't exist, and expect an error."""
-        self.assertRaises(
-            command.AsyncCommandError,
-            lambda: asyncio.run(command.AsyncCommand.create("..........")),
-        )
+        with self.assertRaises(command.AsyncCommandError):
+            await command.AsyncCommand.create("..........")
 
 
 class TestSignals(unittest.TestCase):

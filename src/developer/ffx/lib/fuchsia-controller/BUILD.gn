@@ -66,6 +66,7 @@ python_library("fuchsia_controller_py") {
   library_deps = [
     "cpp:fidl_codec",
     "cpp:fuchsia_controller_internal",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
   ]
   sources = [
     "__init__.py",
@@ -132,7 +133,6 @@ group("tests") {
     ":lib_test",
     "tests:fuchsia_controller_encode_test",
     "tests:fuchsia_controller_ir_test",
-    "//src/developer/ffx/lib/fuchsia-controller/python/fidl/tests",
   ]
 
   # TODO(https://fxbug.dev/42078138): These tests fail on mac builders. This is most likely
