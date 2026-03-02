@@ -11,7 +11,7 @@ use fidl::endpoints::create_endpoints;
 use fuchsia_inspect::Node as INode;
 use futures::StreamExt;
 use futures::future::LocalBoxFuture;
-use power_broker_client::{LeaseDependency, LeaseHelper, PowerElementContext};
+use power_broker_client::PowerElementContext;
 use std::rc::Rc;
 use zx::{HandleBased, Rights};
 use {
@@ -91,19 +91,23 @@ where
         cpu_manager.run(element_runner, &power_elements_node2);
 
         log::info!("Leasing CPU power element");
-        let cpu_lease = LeaseHelper::new(
-            &topology,
-            "cpu_boot_control",
-            vec![LeaseDependency {
-                requires_token: cpu.assertive_dependency_token().expect("token not available"),
-                requires_level_by_preference: vec![fsystem::CpuLevel::Active.into_primitive()],
-            }],
-        )
-        .await
-        .expect("failed to create lease helper CPU element during startup")
-        .create_lease_and_wait_until_satisfied()
-        .await
-        .expect("failed to lease CPU element during startup");
+        let (server_token, cpu_lease) = fbroker::LeaseToken::create();
+        topology
+            .lease(fbroker::LeaseSchema {
+                lease_token: Some(server_token),
+                lease_name: Some("cpu_boot_control".into()),
+                dependencies: Some(vec![fbroker::LeaseDependency {
+                    requires_token: Some(
+                        cpu.assertive_dependency_token().expect("token not available"),
+                    ),
+                    requires_level: Some(fsystem::CpuLevel::Active.into_primitive()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+            .await
+            .expect("failed to reach topology during startup")
+            .expect("failed to lease CPU element during startup");
         log::info!("Leased CPU power element at 'Active'.");
 
         let sag = Rc::new(OnceCell::<Rc<SystemActivityGovernor>>::new());

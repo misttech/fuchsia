@@ -23,7 +23,7 @@ use futures::future::FutureExt;
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
-use power_broker_client::{LeaseHelper, PowerElementContext};
+use power_broker_client::PowerElementContext;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -217,35 +217,37 @@ impl LeaseManager {
     async fn create_application_activity_lease(&self, name: String) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
 
-        let lease_helper = LeaseHelper::new(
-            &self.topology,
-            &name,
-            vec![power_broker_client::LeaseDependency {
-                requires_token: self
-                    .application_activity_assertive_dependency_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)?,
-                requires_level_by_preference: vec![
-                    ApplicationActivityLevel::Active.into_primitive(),
-                ],
-            }],
-        )
-        .await?;
+        let lease_token = server_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+
         log::debug!("Acquiring lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
         sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone() });
-        let lease = match lease_helper.create_lease_and_wait_until_satisfied().await {
-            Ok(lease) => {
-                sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
-                lease
-            }
-            Err(e) => {
+
+        self.topology
+            .lease(fbroker::LeaseSchema {
+                lease_token: Some(lease_token),
+                lease_name: Some(name.clone()),
+                dependencies: Some(vec![fbroker::LeaseDependency {
+                    requires_token: Some(
+                        self.application_activity_assertive_dependency_token
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)?,
+                    ),
+                    requires_level: Some(ApplicationActivityLevel::Active.into_primitive()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("FIDL error while leasing application activity: {e}"))?
+            .map_err(|e| {
                 sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
                     name: name.clone(),
-                    error: e.to_string(),
+                    error: format!("{e:?}"),
                 });
-                return Err(e);
-            }
-        };
+                anyhow::anyhow!("Lease error while leasing application activity: {e:?}")
+            })?;
+
+        sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone() });
 
         let token_info = server_token.basic_info()?;
         let inspect_lease_node =
@@ -271,7 +273,6 @@ impl LeaseManager {
             log::debug!("Dropping lease for '{}'", name);
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
             drop(inspect_lease_node);
-            drop(lease);
         })
         .detach();
 

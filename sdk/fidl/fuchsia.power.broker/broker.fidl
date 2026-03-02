@@ -157,7 +157,8 @@ type LeaseDependency = resource table {
 /// dropped to indicate the lease should be closed. This handle may be
 /// duplicated if the lease will be shared; the lease will remain open
 /// until the last handle is dropped.
-alias LeaseToken = zx.Handle:EVENTPAIR;
+alias LeaseToken
+        = zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT | zx.Rights.SIGNAL_PEER>;
 
 /// Signal sent by Power Broker on the LeaseToken when the lease is satisfied.
 const LEASE_SIGNAL_SATISFIED zx.Signals = 0x01000000; // Maps to ZX_USER_SIGNAL_0
