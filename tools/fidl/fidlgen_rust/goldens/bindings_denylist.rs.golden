@@ -53,8 +53,7 @@ impl fidl::endpoints::SynchronousProxy for AllowedSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl AllowedSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <AllowedMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -67,7 +66,7 @@ impl AllowedSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<AllowedEvent, fidl::Error> {
-        AllowedEvent::decode(self.client.wait_for_event(deadline)?)
+        AllowedEvent::decode(self.client.wait_for_event::<AllowedMarker>(deadline)?)
     }
 }
 
@@ -375,8 +374,7 @@ impl fidl::endpoints::SynchronousProxy for DenyEachBindingSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl DenyEachBindingSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <DenyEachBindingMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -389,7 +387,7 @@ impl DenyEachBindingSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<DenyEachBindingEvent, fidl::Error> {
-        DenyEachBindingEvent::decode(self.client.wait_for_event(deadline)?)
+        DenyEachBindingEvent::decode(self.client.wait_for_event::<DenyEachBindingMarker>(deadline)?)
     }
 
     pub fn r#only_deny_cpp(
@@ -400,6 +398,7 @@ impl DenyEachBindingSynchronousProxy {
         let _response = self.client.send_query::<
             DenyEachBindingOnlyDenyCppRequest,
             fidl::encoding::ResultType<DenyEachBindingOnlyDenyCppResponse, u32>,
+            DenyEachBindingMarker,
         >(
             (a,),
             0x290bad96051b1b92,
@@ -417,6 +416,7 @@ impl DenyEachBindingSynchronousProxy {
         let _response = self.client.send_query::<
             DenyEachBindingOnlyDenyDartRequest,
             fidl::encoding::ResultType<DenyEachBindingOnlyDenyDartResponse, u32>,
+            DenyEachBindingMarker,
         >(
             (a,),
             0x75384066a26d87d7,
@@ -434,6 +434,7 @@ impl DenyEachBindingSynchronousProxy {
         let _response = self.client.send_query::<
             DenyEachBindingOnlyDenyGoRequest,
             fidl::encoding::ResultType<DenyEachBindingOnlyDenyGoResponse, u32>,
+            DenyEachBindingMarker,
         >(
             (a,),
             0x657655b981478d99,
@@ -451,6 +452,7 @@ impl DenyEachBindingSynchronousProxy {
         let _response = self.client.send_query::<
             DenyEachBindingOnlyDenyPythonRequest,
             fidl::encoding::ResultType<DenyEachBindingOnlyDenyPythonResponse, u32>,
+            DenyEachBindingMarker,
         >(
             (a,),
             0x29c852a00c5a1982,
@@ -468,6 +470,7 @@ impl DenyEachBindingSynchronousProxy {
         let _response = self.client.send_query::<
             DenyEachBindingOnlyDenySyzkallerRequest,
             fidl::encoding::ResultType<DenyEachBindingOnlyDenySyzkallerResponse, u32>,
+            DenyEachBindingMarker,
         >(
             (a,),
             0x202ee614a749e98a,
@@ -1422,9 +1425,7 @@ impl fidl::endpoints::SynchronousProxy for ImportsSameNameContextSynchronousProx
 #[cfg(target_os = "fuchsia")]
 impl ImportsSameNameContextSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name =
-            <ImportsSameNameContextMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -1437,7 +1438,9 @@ impl ImportsSameNameContextSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ImportsSameNameContextEvent, fidl::Error> {
-        ImportsSameNameContextEvent::decode(self.client.wait_for_event(deadline)?)
+        ImportsSameNameContextEvent::decode(
+            self.client.wait_for_event::<ImportsSameNameContextMarker>(deadline)?,
+        )
     }
 
     pub fn r#unattributed(&self) -> Result<(), fidl::Error> {

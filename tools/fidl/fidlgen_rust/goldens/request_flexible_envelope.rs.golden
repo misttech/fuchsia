@@ -66,8 +66,7 @@ impl fidl::endpoints::SynchronousProxy for ProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl ProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <ProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -80,7 +79,7 @@ impl ProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolEvent, fidl::Error> {
-        ProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
     pub fn r#request_strict_response_flexible(
@@ -91,6 +90,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             ProtocolRequestStrictResponseFlexibleRequest,
             ProtocolRequestStrictResponseFlexibleResponse,
+            ProtocolMarker,
         >(
             (s,),
             0x9b8c7d3d118df13,
@@ -108,6 +108,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             ProtocolRequestFlexibleResponseStrictRequest,
             ProtocolRequestFlexibleResponseStrictResponse,
+            ProtocolMarker,
         >(
             (s,),
             0x480c77690533acb7,

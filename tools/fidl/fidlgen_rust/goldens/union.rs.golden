@@ -64,8 +64,7 @@ impl fidl::endpoints::SynchronousProxy for TestProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl TestProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <TestProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -78,7 +77,7 @@ impl TestProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<TestProtocolEvent, fidl::Error> {
-        TestProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        TestProtocolEvent::decode(self.client.wait_for_event::<TestProtocolMarker>(deadline)?)
     }
 
     pub fn r#strict_union_hence_response_may_be_stack_allocated(
@@ -88,6 +87,7 @@ impl TestProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
+            TestProtocolMarker,
         >(
             (),
             0x5bfca9479251b9c3,
@@ -104,6 +104,7 @@ impl TestProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
+            TestProtocolMarker,
         >(
             (),
             0x694fede3b8829ce2,

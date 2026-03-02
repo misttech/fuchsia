@@ -86,8 +86,7 @@ impl fidl::endpoints::SynchronousProxy for MainProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl MainProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <MainProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -100,7 +99,7 @@ impl MainProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<MainProtocolEvent, fidl::Error> {
-        MainProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        MainProtocolEvent::decode(self.client.wait_for_event::<MainProtocolMarker>(deadline)?)
     }
 
     pub fn r#one_way_composed(&self, mut a: i32) -> Result<(), fidl::Error> {
@@ -119,6 +118,7 @@ impl MainProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl_test_protocolpayloads_imported::ImportStructPayload,
             fidl_test_protocolpayloads_imported::ImportStructPayload,
+            MainProtocolMarker,
         >(
             (a,),
             0x2348a1331ca4cfb0,
@@ -139,6 +139,7 @@ impl MainProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl_test_protocolpayloads_imported::ImportStructPayload,
             fidl::encoding::ResultType<fidl_test_protocolpayloads_imported::ImportStructPayload, u32>,
+            MainProtocolMarker,
         >(
             (a,),
             0x6a9be48b574d1557,
@@ -162,12 +163,13 @@ impl MainProtocolSynchronousProxy {
         mut b: u32,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<(u32, u32), fidl::Error> {
-        let _response = self.client.send_query::<LocalStructPayload, LocalStructPayload>(
-            (a, b),
-            0x743776548de3af0f,
-            fidl::encoding::DynamicFlags::empty(),
-            ___deadline,
-        )?;
+        let _response =
+            self.client.send_query::<LocalStructPayload, LocalStructPayload, MainProtocolMarker>(
+                (a, b),
+                0x743776548de3af0f,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
+            )?;
         Ok((_response.a, _response.b))
     }
 
@@ -177,14 +179,16 @@ impl MainProtocolSynchronousProxy {
         mut b: u32,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<MainProtocolTwoWayLocalWithErrorResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<LocalStructPayload, fidl::encoding::ResultType<LocalStructPayload, u32>>(
-                (a, b),
-                0x2839c029915cb8fc,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            LocalStructPayload,
+            fidl::encoding::ResultType<LocalStructPayload, u32>,
+            MainProtocolMarker,
+        >(
+            (a, b,),
+            0x2839c029915cb8fc,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response.map(|x| (x.a, x.b)))
     }
 
@@ -204,6 +208,7 @@ impl MainProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl_test_protocolpayloads_imported::ImportStructPayload,
             fidl_test_protocolpayloads_imported::ImportStructPayload,
+            MainProtocolMarker,
         >(
             (a,),
             0x20f4a8f65ff69473,
@@ -221,6 +226,7 @@ impl MainProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl_test_protocolpayloads_imported::ImportStructPayload,
             fidl::encoding::ResultType<fidl_test_protocolpayloads_imported::ImportStructPayload, u32>,
+            MainProtocolMarker,
         >(
             (a,),
             0x3b7b706d42eb9bbd,
@@ -244,14 +250,16 @@ impl MainProtocolSynchronousProxy {
         mut b: u32,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<(u32, u32), fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<MainProtocolTwoWayAnonRequest, MainProtocolTwoWayAnonResponse>(
-                (a, b),
-                0x8bdc969ff7dd759,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            MainProtocolTwoWayAnonRequest,
+            MainProtocolTwoWayAnonResponse,
+            MainProtocolMarker,
+        >(
+            (a, b,),
+            0x8bdc969ff7dd759,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok((_response.a, _response.b))
     }
 
@@ -264,6 +272,7 @@ impl MainProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             MainProtocolTwoWayAnonWithErrorRequest,
             fidl::encoding::ResultType<MainProtocolTwoWayAnonWithErrorResponse, u32>,
+            MainProtocolMarker,
         >(
             (a, b,),
             0x5862bf8170c87a36,

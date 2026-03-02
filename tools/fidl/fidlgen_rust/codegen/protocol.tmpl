@@ -91,8 +91,7 @@ impl fidl::endpoints::SynchronousProxy for {{ $protocol.SynchronousProxy }} {
 #[cfg(target_os = "fuchsia")]
 impl {{ $protocol.SynchronousProxy }} {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <{{ $protocol.Marker }} as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -102,7 +101,7 @@ impl {{ $protocol.SynchronousProxy }} {
     /// Waits until an event arrives and returns it. It is safe for other
     /// threads to make concurrent requests while waiting for an event.
     pub fn wait_for_event(&self, deadline: zx::MonotonicInstant) -> Result<{{ $protocol.Event }}, fidl::Error> {
-        {{ $protocol.Event }}::decode(self.client.wait_for_event(deadline)?)
+        {{ $protocol.Event }}::decode(self.client.wait_for_event::<{{ $protocol.Marker }}>(deadline)?)
     }
 
     {{- range $method := $protocol.Methods }}
@@ -124,6 +123,7 @@ impl {{ $protocol.SynchronousProxy }} {
         let _response = self.client.send_query::<
             {{ $method.Request.FidlType ResourceDialect }},
             {{ $method.Response.FidlType ResourceDialect }},
+            {{ $protocol.Marker }},
         >(
             {{ $method.Request.EncodeExpr }},
             {{ $method.Ordinal | printf "%#x" }},

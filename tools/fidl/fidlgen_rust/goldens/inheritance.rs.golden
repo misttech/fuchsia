@@ -56,8 +56,7 @@ impl fidl::endpoints::SynchronousProxy for SubSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl SubSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <SubMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -67,7 +66,7 @@ impl SubSynchronousProxy {
     /// Waits until an event arrives and returns it. It is safe for other
     /// threads to make concurrent requests while waiting for an event.
     pub fn wait_for_event(&self, deadline: zx::MonotonicInstant) -> Result<SubEvent, fidl::Error> {
-        SubEvent::decode(self.client.wait_for_event(deadline)?)
+        SubEvent::decode(self.client.wait_for_event::<SubMarker>(deadline)?)
     }
 
     pub fn r#foo(
@@ -75,7 +74,7 @@ impl SubSynchronousProxy {
         mut s: &str,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<i64, fidl::Error> {
-        let _response = self.client.send_query::<SuperFooRequest, SuperFooResponse>(
+        let _response = self.client.send_query::<SuperFooRequest, SuperFooResponse, SubMarker>(
             (s,),
             0x68a61c2a230db8b8,
             fidl::encoding::DynamicFlags::empty(),
@@ -487,8 +486,7 @@ impl fidl::endpoints::SynchronousProxy for Super_SynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl Super_SynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <Super_Marker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -501,7 +499,7 @@ impl Super_SynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<Super_Event, fidl::Error> {
-        Super_Event::decode(self.client.wait_for_event(deadline)?)
+        Super_Event::decode(self.client.wait_for_event::<Super_Marker>(deadline)?)
     }
 
     pub fn r#foo(
@@ -509,7 +507,7 @@ impl Super_SynchronousProxy {
         mut s: &str,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<i64, fidl::Error> {
-        let _response = self.client.send_query::<SuperFooRequest, SuperFooResponse>(
+        let _response = self.client.send_query::<SuperFooRequest, SuperFooResponse, Super_Marker>(
             (s,),
             0x68a61c2a230db8b8,
             fidl::encoding::DynamicFlags::empty(),

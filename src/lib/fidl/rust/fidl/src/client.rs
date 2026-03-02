@@ -864,6 +864,7 @@ pub mod sync {
     //! Synchronous FIDL Client
 
     use super::*;
+    use crate::endpoints::ProtocolMarker;
     use std::mem::MaybeUninit;
     use zx::MessageBufEtc;
 
@@ -872,15 +873,12 @@ pub mod sync {
     pub struct Client {
         // Underlying channel
         channel: zx::Channel,
-
-        // The `ProtocolMarker::DEBUG_NAME` for the service this client connects to.
-        protocol_name: &'static str,
     }
 
     impl Client {
         /// Create a new synchronous FIDL client.
-        pub fn new(channel: zx::Channel, protocol_name: &'static str) -> Self {
-            Client { channel, protocol_name }
+        pub fn new(channel: zx::Channel) -> Self {
+            Client { channel }
         }
 
         /// Return a reference to the underlying channel for the client.
@@ -918,7 +916,7 @@ pub mod sync {
         }
 
         /// Send a new message expecting a response.
-        pub fn send_query<Request: TypeMarker, Response: TypeMarker>(
+        pub fn send_query<Request: TypeMarker, Response: TypeMarker, P: ProtocolMarker>(
             &self,
             body: impl Encode<Request, DefaultFuchsiaResourceDialect>,
             ordinal: u64,
@@ -966,7 +964,7 @@ pub mod sync {
                     bytes_out.as_mut_slice(),
                     handles_out,
                 )
-                .map_err(|e| self.wrap_error(Error::ClientCall, e))?;
+                .map_err(|e| self.wrap_error::<P, _>(Error::ClientCall, e))?;
 
             let (header, body_bytes) = decode_transaction_header(bytes_out)?;
             if header.ordinal != ordinal {
@@ -983,7 +981,7 @@ pub mod sync {
         }
 
         /// Wait for an event to arrive on the underlying channel.
-        pub fn wait_for_event(
+        pub fn wait_for_event<P: ProtocolMarker>(
             &self,
             deadline: zx::MonotonicInstant,
         ) -> Result<MessageBufEtc, Error> {
@@ -997,7 +995,7 @@ pub mod sync {
                         zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
                         deadline,
                     )
-                    .map_err(|e| self.wrap_error(Error::ClientEvent, e))?;
+                    .map_err(|e| self.wrap_error::<P, _>(Error::ClientEvent, e))?;
                 match self.channel.read_etc(&mut buf) {
                     Ok(()) => {
                         // We succeeded in reading the message. Check that it is
@@ -1018,7 +1016,7 @@ pub mod sync {
                             )?;
                             return Err(Error::ClientChannelClosed {
                                 status: epitaph_body.error,
-                                protocol_name: self.protocol_name,
+                                protocol_name: P::DEBUG_NAME,
                                 epitaph: Some(epitaph_body.error.into_raw() as u32),
                             });
                         }
@@ -1032,7 +1030,7 @@ pub mod sync {
                         continue;
                     }
                     Err(e) => {
-                        return Err(self.wrap_error(|x| Error::ClientRead(x.into()), e));
+                        return Err(self.wrap_error::<P, _>(|x| Error::ClientRead(x.into()), e));
                     }
                 }
             }
@@ -1041,7 +1039,7 @@ pub mod sync {
         /// Wraps an error in the given `variant` of the `Error` enum, except
         /// for `zx_status::Status::PEER_CLOSED`, in which case it uses the
         /// `Error::ClientChannelClosed` variant.
-        fn wrap_error<T: Fn(zx_status::Status) -> Error>(
+        fn wrap_error<P: ProtocolMarker, T: Fn(zx_status::Status) -> Error>(
             &self,
             variant: T,
             err: zx_status::Status,
@@ -1049,7 +1047,7 @@ pub mod sync {
             if err == zx_status::Status::PEER_CLOSED {
                 Error::ClientChannelClosed {
                     status: zx_status::Status::PEER_CLOSED,
-                    protocol_name: self.protocol_name,
+                    protocol_name: P::DEBUG_NAME,
                     epitaph: None,
                 }
             } else {
@@ -1063,13 +1061,15 @@ pub mod sync {
 mod tests {
     use super::*;
     use crate::encoding::MAGIC_NUMBER_INITIAL;
+    use crate::endpoints::{ControlHandle, ProtocolMarker, Proxy, RequestStream, SynchronousProxy};
     use crate::epitaph::{self, ChannelEpitaphExt};
+    use crate::{Channel, OnSignalsRef, ServeInner};
     use anyhow::{Context as _, Error};
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fuchsia_async::{Channel as AsyncChannel, DurationExt, TimeoutExt};
     use futures::channel::oneshot;
-    use futures::stream::FuturesUnordered;
+    use futures::stream::{FuturesUnordered, Stream};
     use futures::{StreamExt, TryFutureExt, join};
     use futures_test::task::new_count_waker;
     use std::future::pending;
@@ -1082,6 +1082,91 @@ mod tests {
     const SEND_DATA: u8 = 55;
 
     const EVENT_ORDINAL: u64 = 854 << 23;
+
+    struct TestProtocolMarker;
+    impl ProtocolMarker for TestProtocolMarker {
+        type Proxy = TestProxy;
+        type SynchronousProxy = TestSynchronousProxy;
+        type RequestStream = TestRequestStream;
+        const DEBUG_NAME: &str = "test_protocol";
+    }
+
+    struct TestProxy;
+    impl Proxy for TestProxy {
+        type Protocol = TestProtocolMarker;
+        fn from_channel(_inner: AsyncChannel) -> Self {
+            unimplemented!();
+        }
+        fn into_channel(self) -> Result<AsyncChannel, Self> {
+            unimplemented!();
+        }
+        fn as_channel(&self) -> &AsyncChannel {
+            unimplemented!();
+        }
+    }
+
+    struct TestSynchronousProxy;
+    impl SynchronousProxy for TestSynchronousProxy {
+        type Proxy = TestProxy;
+        type Protocol = TestProtocolMarker;
+        fn from_channel(_inner: Channel) -> Self {
+            unimplemented!();
+        }
+        fn into_channel(self) -> Channel {
+            unimplemented!();
+        }
+        fn as_channel(&self) -> &Channel {
+            unimplemented!();
+        }
+    }
+
+    struct TestRequestStream;
+    impl RequestStream for TestRequestStream {
+        type Protocol = TestProtocolMarker;
+        type ControlHandle = TestControlHandle;
+        fn control_handle(&self) -> Self::ControlHandle {
+            unimplemented!();
+        }
+        fn from_channel(_inner: AsyncChannel) -> Self {
+            unimplemented!();
+        }
+        fn into_inner(self) -> (Arc<ServeInner>, bool) {
+            unimplemented!();
+        }
+
+        fn from_inner(_inner: Arc<ServeInner>, _is_terminated: bool) -> Self {
+            unimplemented!();
+        }
+    }
+    impl Stream for TestRequestStream {
+        type Item = Result<(), crate::Error>;
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            unimplemented!();
+        }
+    }
+
+    struct TestControlHandle;
+    impl ControlHandle for TestControlHandle {
+        fn shutdown(&self) {
+            unimplemented!();
+        }
+        fn shutdown_with_epitaph(&self, _status: zx_status::Status) {
+            unimplemented!();
+        }
+        fn is_closed(&self) -> bool {
+            unimplemented!();
+        }
+        fn on_closed(&self) -> OnSignalsRef<'_> {
+            unimplemented!();
+        }
+        fn signal_peer(
+            &self,
+            _clear_mask: zx::Signals,
+            _set_mask: zx::Signals,
+        ) -> Result<(), zx_status::Status> {
+            unimplemented!();
+        }
+    }
 
     #[rustfmt::skip]
     fn expected_sent_bytes(txid_index: u8, txid_generation: u8) -> [u8; 24] {
@@ -1121,7 +1206,7 @@ mod tests {
     #[test]
     fn sync_client() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         client.send::<u8>(SEND_DATA, SEND_ORDINAL, DynamicFlags::empty()).context("sending")?;
         let mut received = MessageBufEtc::new();
         server_end.read_etc(&mut received).context("reading")?;
@@ -1132,7 +1217,7 @@ mod tests {
     #[test]
     fn sync_client_with_response() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         thread::spawn(move || {
             // Server
             let mut received = MessageBufEtc::new();
@@ -1152,7 +1237,7 @@ mod tests {
             );
         });
         let response_data = client
-            .send_query::<u8, u8>(
+            .send_query::<u8, u8, TestProtocolMarker>(
                 SEND_DATA,
                 SEND_ORDINAL,
                 DynamicFlags::empty(),
@@ -1166,7 +1251,7 @@ mod tests {
     #[test]
     fn sync_client_with_event_and_response() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         thread::spawn(move || {
             // Server
             let mut received = MessageBufEtc::new();
@@ -1195,7 +1280,7 @@ mod tests {
             );
         });
         let response_data = client
-            .send_query::<u8, u8>(
+            .send_query::<u8, u8, TestProtocolMarker>(
                 SEND_DATA,
                 SEND_ORDINAL,
                 DynamicFlags::empty(),
@@ -1205,7 +1290,9 @@ mod tests {
         assert_eq!(SEND_DATA, response_data);
 
         let event_buf = client
-            .wait_for_event(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)))
+            .wait_for_event::<TestProtocolMarker>(zx::MonotonicInstant::after(
+                zx::MonotonicDuration::from_seconds(5),
+            ))
             .context("waiting for event")?;
         let (bytes, _handles) = event_buf.split();
         let (header, _body) = decode_transaction_header(&bytes).expect("event decode");
@@ -1217,18 +1304,18 @@ mod tests {
     #[test]
     fn sync_client_with_racing_events() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client1 = Arc::new(sync::Client::new(client_end, "test_protocol"));
+        let client1 = Arc::new(sync::Client::new(client_end));
         let client2 = client1.clone();
 
         let thread1 = thread::spawn(move || {
-            let result = client1.wait_for_event(zx::MonotonicInstant::after(
+            let result = client1.wait_for_event::<TestProtocolMarker>(zx::MonotonicInstant::after(
                 zx::MonotonicDuration::from_seconds(5),
             ));
             assert!(result.is_ok());
         });
 
         let thread2 = thread::spawn(move || {
-            let result = client2.wait_for_event(zx::MonotonicInstant::after(
+            let result = client2.wait_for_event::<TestProtocolMarker>(zx::MonotonicInstant::after(
                 zx::MonotonicDuration::from_seconds(5),
             ));
             assert!(result.is_ok());
@@ -1252,13 +1339,13 @@ mod tests {
     #[test]
     fn sync_client_wait_for_event_gets_method_response() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         send_transaction(
             TransactionHeader::new(3902304923, SEND_ORDINAL, DynamicFlags::empty()),
             &server_end,
         );
         assert_matches!(
-            client.wait_for_event(zx::MonotonicInstant::after(
+            client.wait_for_event::<TestProtocolMarker>(zx::MonotonicInstant::after(
                 zx::MonotonicDuration::from_seconds(5)
             )),
             Err(crate::Error::UnexpectedSyncResponse)
@@ -1269,7 +1356,7 @@ mod tests {
     #[test]
     fn sync_client_one_way_call_suceeds_after_peer_closed() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         drop(server_end);
         assert_matches!(client.send::<u8>(SEND_DATA, SEND_ORDINAL, DynamicFlags::empty()), Ok(()));
         Ok(())
@@ -1278,10 +1365,10 @@ mod tests {
     #[test]
     fn sync_client_two_way_call_fails_after_peer_closed() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         drop(server_end);
         assert_matches!(
-            client.send_query::<u8, u8>(
+            client.send_query::<u8, u8, TestProtocolMarker>(
                 SEND_DATA,
                 SEND_ORDINAL,
                 DynamicFlags::empty(),
@@ -1301,13 +1388,13 @@ mod tests {
     #[test]
     fn sync_client_send_does_not_receive_epitaphs() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         // Close the server channel with an epitaph.
         server_end
             .close_with_epitaph(zx_status::Status::UNAVAILABLE)
             .expect("failed to write epitaph");
         assert_matches!(
-            client.send_query::<u8, u8>(
+            client.send_query::<u8, u8, TestProtocolMarker>(
                 SEND_DATA,
                 SEND_ORDINAL,
                 DynamicFlags::empty(),
@@ -1325,13 +1412,13 @@ mod tests {
     #[test]
     fn sync_client_wait_for_events_does_receive_epitaphs() -> Result<(), Error> {
         let (client_end, server_end) = zx::Channel::create();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         // Close the server channel with an epitaph.
         server_end
             .close_with_epitaph(zx_status::Status::UNAVAILABLE)
             .expect("failed to write epitaph");
         assert_matches!(
-            client.wait_for_event(zx::MonotonicInstant::after(
+            client.wait_for_event::<TestProtocolMarker>(zx::MonotonicInstant::after(
                 zx::MonotonicDuration::from_seconds(5)
             )),
             Err(crate::Error::ClientChannelClosed {
@@ -1347,7 +1434,7 @@ mod tests {
     fn sync_client_into_channel() -> Result<(), Error> {
         let (client_end, _server_end) = zx::Channel::create();
         let client_end_raw = client_end.raw_handle();
-        let client = sync::Client::new(client_end, "test_protocol");
+        let client = sync::Client::new(client_end);
         assert_eq!(client.into_channel().raw_handle(), client_end_raw);
         Ok(())
     }

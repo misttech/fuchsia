@@ -55,8 +55,7 @@ impl fidl::endpoints::SynchronousProxy for InterfaceSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl InterfaceSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <InterfaceMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -69,7 +68,7 @@ impl InterfaceSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<InterfaceEvent, fidl::Error> {
-        InterfaceEvent::decode(self.client.wait_for_event(deadline)?)
+        InterfaceEvent::decode(self.client.wait_for_event::<InterfaceMarker>(deadline)?)
     }
 
     /// method comment #1

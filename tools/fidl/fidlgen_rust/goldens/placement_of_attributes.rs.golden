@@ -55,8 +55,7 @@ impl fidl::endpoints::SynchronousProxy for ExampleProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl ExampleProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <ExampleProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -69,7 +68,7 @@ impl ExampleProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ExampleProtocolEvent, fidl::Error> {
-        ExampleProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        ExampleProtocolEvent::decode(self.client.wait_for_event::<ExampleProtocolMarker>(deadline)?)
     }
 
     pub fn r#method(&self, mut arg: &fidl_test_exampleusing::Empty) -> Result<(), fidl::Error> {

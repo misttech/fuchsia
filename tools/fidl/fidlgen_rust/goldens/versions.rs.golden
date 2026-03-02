@@ -122,8 +122,7 @@ impl fidl::endpoints::SynchronousProxy for OtherProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl OtherProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <OtherProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -136,7 +135,7 @@ impl OtherProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<OtherProtocolEvent, fidl::Error> {
-        OtherProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        OtherProtocolEvent::decode(self.client.wait_for_event::<OtherProtocolMarker>(deadline)?)
     }
 }
 
@@ -425,8 +424,7 @@ impl fidl::endpoints::SynchronousProxy for ProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl ProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <ProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -439,7 +437,7 @@ impl ProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolEvent, fidl::Error> {
-        ProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
     pub fn r#foo(&self) -> Result<(), fidl::Error> {

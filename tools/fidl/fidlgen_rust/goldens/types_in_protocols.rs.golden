@@ -643,8 +643,7 @@ impl fidl::endpoints::SynchronousProxy for ProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl ProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <ProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -657,7 +656,7 @@ impl ProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolEvent, fidl::Error> {
-        ProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        ProtocolEvent::decode(self.client.wait_for_event::<ProtocolMarker>(deadline)?)
     }
 
     pub fn r#one_way_basic(
@@ -702,7 +701,7 @@ impl ProtocolSynchronousProxy {
         ___deadline: zx::MonotonicInstant,
     ) -> Result<(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, String, Option<String>), fidl::Error>
     {
-        let _response = self.client.send_query::<Basic, Basic>(
+        let _response = self.client.send_query::<Basic, Basic, ProtocolMarker>(
             (
                 uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64, string,
                 opt_string,
@@ -731,14 +730,16 @@ impl ProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolErrorBasicResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<Basic, u32>>(
-                (),
-                0x459eaa5d11b9ff93,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::ResultType<Basic, u32>,
+            ProtocolMarker,
+        >(
+            (),
+            0x459eaa5d11b9ff93,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response.map(|x| {
             (
                 x.uint8,
@@ -788,7 +789,7 @@ impl ProtocolSynchronousProxy {
         (Bits, Enum, Struct, Table, Union, Option<Box<Struct>>, Option<Box<Union>>),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<Compound, Compound>(
+        let _response = self.client.send_query::<Compound, Compound, ProtocolMarker>(
             (bits, enum_, struct_, table, union, opt_struct, opt_union),
             0x79f279c7201da131,
             fidl::encoding::DynamicFlags::empty(),
@@ -809,14 +810,16 @@ impl ProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolErrorCompoundResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<Compound, u32>>(
-                (),
-                0x29817d89a19ec77d,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::ResultType<Compound, u32>,
+            ProtocolMarker,
+        >(
+            (),
+            0x29817d89a19ec77d,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response
             .map(|x| (x.bits, x.enum_, x.struct_, x.table, x.union, x.opt_struct, x.opt_union)))
     }
@@ -888,7 +891,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<ArrayBasic, ArrayBasic>(
+        let _response = self.client.send_query::<ArrayBasic, ArrayBasic, ProtocolMarker>(
             (
                 array_uint8,
                 array_uint16,
@@ -930,6 +933,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<ArrayBasic, u32>,
+            ProtocolMarker,
         >(
             (),
             0xf0dbde9626fff79,
@@ -1001,7 +1005,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<ArrayCompound, ArrayCompound>(
+        let _response = self.client.send_query::<ArrayCompound, ArrayCompound, ProtocolMarker>(
             (
                 array_bits,
                 array_enum,
@@ -1033,6 +1037,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<ArrayCompound, u32>,
+            ProtocolMarker,
         >(
             (),
             0x52257f80e29c1a04,
@@ -1119,7 +1124,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<VectorBasic, VectorBasic>(
+        let _response = self.client.send_query::<VectorBasic, VectorBasic, ProtocolMarker>(
             (
                 vector_uint8,
                 vector_uint16,
@@ -1161,6 +1166,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<VectorBasic, u32>,
+            ProtocolMarker,
         >(
             (),
             0xc27f841d6313f72,
@@ -1232,7 +1238,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<VectorCompound, VectorCompound>(
+        let _response = self.client.send_query::<VectorCompound, VectorCompound, ProtocolMarker>(
             (
                 vector_bits,
                 vector_enum,
@@ -1264,6 +1270,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<VectorCompound, u32>,
+            ProtocolMarker,
         >(
             (),
             0x760e278628f7a985,
@@ -1313,7 +1320,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<VectorOptional, VectorOptional>(
+        let _response = self.client.send_query::<VectorOptional, VectorOptional, ProtocolMarker>(
             (opt_vector_uint8, opt_vector_string, opt_vector_struct, opt_vector_opt_struct),
             0xe4b620aaafd73f3,
             fidl::encoding::DynamicFlags::empty(),
@@ -1334,6 +1341,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<VectorOptional, u32>,
+            ProtocolMarker,
         >(
             (),
             0x58e75cf86e2d715e,
@@ -1367,12 +1375,13 @@ impl ProtocolSynchronousProxy {
         mut vector_vector_uint8: &[Vec<u8>],
         ___deadline: zx::MonotonicInstant,
     ) -> Result<([[u8; 5]; 5], [Vec<u8>; 5], Vec<[u8; 5]>, Vec<Vec<u8>>), fidl::Error> {
-        let _response = self.client.send_query::<ArrayVectorNested, ArrayVectorNested>(
-            (array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8),
-            0x4a438ce0948817dc,
-            fidl::encoding::DynamicFlags::empty(),
-            ___deadline,
-        )?;
+        let _response =
+            self.client.send_query::<ArrayVectorNested, ArrayVectorNested, ProtocolMarker>(
+                (array_array_uint8, array_vector_uint8, vector_array_uint8, vector_vector_uint8),
+                0x4a438ce0948817dc,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
+            )?;
         Ok((
             _response.array_array_uint8,
             _response.array_vector_uint8,
@@ -1388,6 +1397,7 @@ impl ProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<ArrayVectorNested, u32>,
+            ProtocolMarker,
         >(
             (),
             0x7e168d89e1dac8a7,
@@ -1526,7 +1536,7 @@ impl ProtocolSynchronousProxy {
         ),
         fidl::Error,
     > {
-        let _response = self.client.send_query::<Resource, Resource>(
+        let _response = self.client.send_query::<Resource, Resource, ProtocolMarker>(
             (
                 handle,
                 vmo,
@@ -1595,14 +1605,16 @@ impl ProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<ProtocolErrorResourceResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<Resource, u32>>(
-                (),
-                0x5b28634d603175b6,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::ResultType<Resource, u32>,
+            ProtocolMarker,
+        >(
+            (),
+            0x5b28634d603175b6,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response.map(|x| {
             (
                 x.handle,

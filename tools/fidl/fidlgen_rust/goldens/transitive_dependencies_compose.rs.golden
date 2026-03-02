@@ -57,8 +57,7 @@ impl fidl::endpoints::SynchronousProxy for TopSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl TopSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <TopMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -68,21 +67,23 @@ impl TopSynchronousProxy {
     /// Waits until an event arrives and returns it. It is safe for other
     /// threads to make concurrent requests while waiting for an event.
     pub fn wait_for_event(&self, deadline: zx::MonotonicInstant) -> Result<TopEvent, fidl::Error> {
-        TopEvent::decode(self.client.wait_for_event(deadline)?)
+        TopEvent::decode(self.client.wait_for_event::<TopMarker>(deadline)?)
     }
 
     pub fn r#get_foo(
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<fidl_test_bottom::Foo, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl_test_bottom::BottomGetFooResponse>(
-                (),
-                0x245770d9d719c667,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl_test_bottom::BottomGetFooResponse,
+            TopMarker,
+        >(
+            (),
+            0x245770d9d719c667,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response.foo)
     }
 }

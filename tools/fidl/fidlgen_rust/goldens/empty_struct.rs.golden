@@ -57,8 +57,7 @@ impl fidl::endpoints::SynchronousProxy for EmptyProtocolSynchronousProxy {
 #[cfg(target_os = "fuchsia")]
 impl EmptyProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <EmptyProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -71,7 +70,7 @@ impl EmptyProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<EmptyProtocolEvent, fidl::Error> {
-        EmptyProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        EmptyProtocolEvent::decode(self.client.wait_for_event::<EmptyProtocolMarker>(deadline)?)
     }
 
     pub fn r#send_(&self, mut e: &Empty) -> Result<(), fidl::Error> {
@@ -87,14 +86,16 @@ impl EmptyProtocolSynchronousProxy {
         mut e: &Empty,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<Empty, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<EmptyProtocolSendAndReceiveRequest, EmptyProtocolSendAndReceiveResponse>(
-                (e,),
-                0x76a931254962cea,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            EmptyProtocolSendAndReceiveRequest,
+            EmptyProtocolSendAndReceiveResponse,
+            EmptyProtocolMarker,
+        >(
+            (e,),
+            0x76a931254962cea,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response.e)
     }
 }

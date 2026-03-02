@@ -1052,9 +1052,7 @@ impl fidl::endpoints::SynchronousProxy for UnknownInteractionsAjarProtocolSynchr
 #[cfg(target_os = "fuchsia")]
 impl UnknownInteractionsAjarProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name =
-            <UnknownInteractionsAjarProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -1067,7 +1065,9 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsAjarProtocolEvent, fidl::Error> {
-        UnknownInteractionsAjarProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        UnknownInteractionsAjarProtocolEvent::decode(
+            self.client.wait_for_event::<UnknownInteractionsAjarProtocolMarker>(deadline)?,
+        )
     }
 
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
@@ -1087,13 +1087,16 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
     }
 
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
-        let _response =
-            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::EmptyPayload>(
-                (),
-                0x50e66d328336038,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::EmptyPayload,
+            UnknownInteractionsAjarProtocolMarker,
+        >(
+            (),
+            0x50e66d328336038,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response)
     }
 
@@ -1104,6 +1107,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
+            UnknownInteractionsAjarProtocolMarker,
         >(
             (),
             0x1947e36d61e4493a,
@@ -1120,6 +1124,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
+            UnknownInteractionsAjarProtocolMarker,
         >(
             (),
             0x5177371967e0e6d1,
@@ -1136,6 +1141,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsAjarProtocolStrictTwoWayTableResponse,
+            UnknownInteractionsAjarProtocolMarker,
         >(
             (),
             0x6f8f9343b34e2ed4,
@@ -1152,6 +1158,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>,
+            UnknownInteractionsAjarProtocolMarker,
         >(
             (),
             0x5b47637577c69006,
@@ -1165,13 +1172,15 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse,
                 i32,
-            >>(
-                (), 0x844ff7bb3f186d9, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsAjarProtocolMarker>(
+                (),
+                0x844ff7bb3f186d9,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x.some_field))
     }
@@ -1180,13 +1189,15 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse,
                 i32,
-            >>(
-                (), 0x2cbfd5a859d4ac95, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsAjarProtocolMarker>(
+                (),
+                0x2cbfd5a859d4ac95,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -1195,13 +1206,15 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsAjarProtocolStrictTwoWayTableErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsAjarProtocolStrictTwoWayTableErrResponse,
                 i32,
-            >>(
-                (), 0x30c9e1b3da57dc37, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsAjarProtocolMarker>(
+                (),
+                0x30c9e1b3da57dc37,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -3874,8 +3887,7 @@ impl fidl::endpoints::SynchronousProxy for UnknownInteractionsClosedProtocolSync
 #[cfg(target_os = "fuchsia")]
 impl UnknownInteractionsClosedProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name = <UnknownInteractionsClosedProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -3888,7 +3900,9 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsClosedProtocolEvent, fidl::Error> {
-        UnknownInteractionsClosedProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        UnknownInteractionsClosedProtocolEvent::decode(
+            self.client.wait_for_event::<UnknownInteractionsClosedProtocolMarker>(deadline)?,
+        )
     }
 
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
@@ -3900,13 +3914,16 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
     }
 
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
-        let _response =
-            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::EmptyPayload>(
-                (),
-                0x5eda305d6b22f1f7,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::EmptyPayload,
+            UnknownInteractionsClosedProtocolMarker,
+        >(
+            (),
+            0x5eda305d6b22f1f7,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response)
     }
 
@@ -3917,6 +3934,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+            UnknownInteractionsClosedProtocolMarker,
         >(
             (),
             0x1323afa3e0541253,
@@ -3933,6 +3951,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
+            UnknownInteractionsClosedProtocolMarker,
         >(
             (),
             0x68b32554eb0f6fa7,
@@ -3949,6 +3968,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsClosedProtocolStrictTwoWayTableResponse,
+            UnknownInteractionsClosedProtocolMarker,
         >(
             (),
             0x6e4a94d44b69e785,
@@ -3965,6 +3985,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>,
+            UnknownInteractionsClosedProtocolMarker,
         >(
             (),
             0x4fa35d5433db4d3a,
@@ -3978,13 +3999,15 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse,
                 i32,
-            >>(
-                (), 0xb22aebf23bb58fd, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsClosedProtocolMarker>(
+                (),
+                0xb22aebf23bb58fd,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x.some_field))
     }
@@ -3993,13 +4016,15 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse,
                 i32,
-            >>(
-                (), 0xcd65d4d29a43c80, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsClosedProtocolMarker>(
+                (),
+                0xcd65d4d29a43c80,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -4008,13 +4033,15 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsClosedProtocolStrictTwoWayTableErrResponse,
                 i32,
-            >>(
-                (), 0x117dde20b92f7b90, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsClosedProtocolMarker>(
+                (),
+                0x117dde20b92f7b90,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -7358,9 +7385,7 @@ impl fidl::endpoints::SynchronousProxy for UnknownInteractionsProtocolSynchronou
 #[cfg(target_os = "fuchsia")]
 impl UnknownInteractionsProtocolSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name =
-            <UnknownInteractionsProtocolMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -7373,7 +7398,9 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsProtocolEvent, fidl::Error> {
-        UnknownInteractionsProtocolEvent::decode(self.client.wait_for_event(deadline)?)
+        UnknownInteractionsProtocolEvent::decode(
+            self.client.wait_for_event::<UnknownInteractionsProtocolMarker>(deadline)?,
+        )
     }
 
     pub fn r#strict_one_way(&self) -> Result<(), fidl::Error> {
@@ -7393,13 +7420,16 @@ impl UnknownInteractionsProtocolSynchronousProxy {
     }
 
     pub fn r#strict_two_way(&self, ___deadline: zx::MonotonicInstant) -> Result<(), fidl::Error> {
-        let _response =
-            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::EmptyPayload>(
-                (),
-                0x734c996b0f37b942,
-                fidl::encoding::DynamicFlags::empty(),
-                ___deadline,
-            )?;
+        let _response = self.client.send_query::<
+            fidl::encoding::EmptyPayload,
+            fidl::encoding::EmptyPayload,
+            UnknownInteractionsProtocolMarker,
+        >(
+            (),
+            0x734c996b0f37b942,
+            fidl::encoding::DynamicFlags::empty(),
+            ___deadline,
+        )?;
         Ok(_response)
     }
 
@@ -7410,6 +7440,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x334f4e7fff460ae3,
@@ -7426,6 +7457,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsProtocolStrictTwoWayUnionResponse,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x2212805eca592cad,
@@ -7442,6 +7474,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             UnknownInteractionsProtocolStrictTwoWayTableResponse,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x746ebf8659ff23b7,
@@ -7458,6 +7491,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::ResultType<fidl::encoding::EmptyStruct, i32>,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x6d1c6002c51bb967,
@@ -7471,13 +7505,15 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsProtocolStrictTwoWayFieldsErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse,
                 i32,
-            >>(
-                (), 0x2182a49480e5bd2b, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0x2182a49480e5bd2b,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x.some_field))
     }
@@ -7486,13 +7522,15 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsProtocolStrictTwoWayUnionErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsProtocolStrictTwoWayUnionErrResponse,
                 i32,
-            >>(
-                (), 0x453af745d38b20ca, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0x453af745d38b20ca,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -7501,13 +7539,15 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         &self,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<UnknownInteractionsProtocolStrictTwoWayTableErrResult, fidl::Error> {
-        let _response = self
-            .client
-            .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
+        let _response =
+            self.client.send_query::<fidl::encoding::EmptyPayload, fidl::encoding::ResultType<
                 UnknownInteractionsProtocolStrictTwoWayTableErrResponse,
                 i32,
-            >>(
-                (), 0x4c26c7ab89cb68d8, fidl::encoding::DynamicFlags::empty(), ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0x4c26c7ab89cb68d8,
+                fidl::encoding::DynamicFlags::empty(),
+                ___deadline,
             )?;
         Ok(_response.map(|x| x))
     }
@@ -7516,6 +7556,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::FlexibleType<fidl::encoding::EmptyStruct>,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x4a5bb3397008b7c,
@@ -7534,8 +7575,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             self.client
                 .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleType<
                     UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse,
-                >>(
-                    (), 0x3b13f82f44813a32, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+                >, UnknownInteractionsProtocolMarker>(
+                    (),
+                    0x3b13f82f44813a32,
+                    fidl::encoding::DynamicFlags::FLEXIBLE,
+                    ___deadline,
                 )?
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_fields")?;
         Ok(_response.some_field)
@@ -7549,8 +7593,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             self.client
                 .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleType<
                     UnknownInteractionsProtocolFlexibleTwoWayUnionResponse,
-                >>(
-                    (), 0x44301e4e8d514fb6, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+                >, UnknownInteractionsProtocolMarker>(
+                    (),
+                    0x44301e4e8d514fb6,
+                    fidl::encoding::DynamicFlags::FLEXIBLE,
+                    ___deadline,
                 )?
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_union")?;
         Ok(_response)
@@ -7564,8 +7611,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             self.client
                 .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleType<
                     UnknownInteractionsProtocolFlexibleTwoWayTableResponse,
-                >>(
-                    (), 0x7f492934b6c76187, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+                >, UnknownInteractionsProtocolMarker>(
+                    (),
+                    0x7f492934b6c76187,
+                    fidl::encoding::DynamicFlags::FLEXIBLE,
+                    ___deadline,
                 )?
                 .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_table")?;
         Ok(_response)
@@ -7578,6 +7628,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
         let _response = self.client.send_query::<
             fidl::encoding::EmptyPayload,
             fidl::encoding::FlexibleResultType<fidl::encoding::EmptyStruct, i32>,
+            UnknownInteractionsProtocolMarker,
         >(
             (),
             0x61240f878cc37c07,
@@ -7597,8 +7648,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleResultType<
                 UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse,
                 i32,
-            >>(
-                (), 0xf2b9611a9089b05, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0xf2b9611a9089b05,
+                fidl::encoding::DynamicFlags::FLEXIBLE,
+                ___deadline,
             )?
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_fields_err")?;
         Ok(_response.map(|x| x.some_field))
@@ -7613,8 +7667,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleResultType<
                 UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse,
                 i32,
-            >>(
-                (), 0x2172940a75f107d7, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0x2172940a75f107d7,
+                fidl::encoding::DynamicFlags::FLEXIBLE,
+                ___deadline,
             )?
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_union_err")?;
         Ok(_response.map(|x| x))
@@ -7629,8 +7686,11 @@ impl UnknownInteractionsProtocolSynchronousProxy {
             .send_query::<fidl::encoding::EmptyPayload, fidl::encoding::FlexibleResultType<
                 UnknownInteractionsProtocolFlexibleTwoWayTableErrResponse,
                 i32,
-            >>(
-                (), 0x6d8aab48e1693bf2, fidl::encoding::DynamicFlags::FLEXIBLE, ___deadline
+            >, UnknownInteractionsProtocolMarker>(
+                (),
+                0x6d8aab48e1693bf2,
+                fidl::encoding::DynamicFlags::FLEXIBLE,
+                ___deadline,
             )?
             .into_result::<UnknownInteractionsProtocolMarker>("flexible_two_way_table_err")?;
         Ok(_response.map(|x| x))

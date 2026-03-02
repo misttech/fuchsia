@@ -66,9 +66,7 @@ impl fidl::endpoints::SynchronousProxy for ExampleUseOfErrorSyntaxSynchronousPro
 #[cfg(target_os = "fuchsia")]
 impl ExampleUseOfErrorSyntaxSynchronousProxy {
     pub fn new(channel: fidl::Channel) -> Self {
-        let protocol_name =
-            <ExampleUseOfErrorSyntaxMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME;
-        Self { client: fidl::client::sync::Client::new(channel, protocol_name) }
+        Self { client: fidl::client::sync::Client::new(channel) }
     }
 
     pub fn into_channel(self) -> fidl::Channel {
@@ -81,7 +79,9 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         &self,
         deadline: zx::MonotonicInstant,
     ) -> Result<ExampleUseOfErrorSyntaxEvent, fidl::Error> {
-        ExampleUseOfErrorSyntaxEvent::decode(self.client.wait_for_event(deadline)?)
+        ExampleUseOfErrorSyntaxEvent::decode(
+            self.client.wait_for_event::<ExampleUseOfErrorSyntaxMarker>(deadline)?,
+        )
     }
 
     pub fn r#composed_call_which_may_fail(
@@ -95,6 +95,7 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         let _response = self.client.send_query::<
             fidl_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailRequest,
             fidl::encoding::ResultType<fidl_test_errorsyntax_parent::ParentUsesErrorSyntaxComposedCallWhichMayFailResponse, u32>,
+            ExampleUseOfErrorSyntaxMarker,
         >(
             (s,),
             0x3179cf8f46814221,
@@ -112,6 +113,7 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
         let _response = self.client.send_query::<
             ExampleUseOfErrorSyntaxCallWhichMayFailRequest,
             fidl::encoding::ResultType<ExampleUseOfErrorSyntaxCallWhichMayFailResponse, u32>,
+            ExampleUseOfErrorSyntaxMarker,
         >(
             (s,),
             0x3424ff83ce3004a2,
