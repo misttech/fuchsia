@@ -146,13 +146,13 @@ pub(super) const CONSTRAINT_EXPR_OPERAND_TYPE_L2_H2: u32 = 0x400;
 pub(super) const CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK: u32 = 0x8;
 
 /// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux type.
-pub(super) const TYPE_PROPERTIES_TYPE: u32 = 1;
+const TYPE_PROPERTIES_TYPE: u32 = 1;
 
 /// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux alias.
-pub(super) const TYPE_PROPERTIES_ALIAS: u32 = 0;
+const TYPE_PROPERTIES_ALIAS: u32 = 0;
 
 /// Exact value of [`Type`] `properties` when the underlying data refers to an SELinux attribute.
-pub(super) const TYPE_PROPERTIES_ATTRIBUTE: u32 = 3;
+const TYPE_PROPERTIES_ATTRIBUTE: u32 = 3;
 
 /// [`SymbolList`] is an [`Array`] of items with the count of items determined by [`Metadata`] as
 /// [`Counted`].
@@ -1170,31 +1170,6 @@ impl Type {
     pub fn bounded_by(&self) -> Option<TypeId> {
         NonZeroU32::new(self.metadata.bounds.get()).map(|id| TypeId(id))
     }
-
-    /// Returns whether this type is from a `type [name];` policy statement.
-    ///
-    /// TODO: Eliminate `dead_code` guard.
-    #[allow(dead_code)]
-    pub fn is_type(&self) -> bool {
-        self.metadata.properties.get() == TYPE_PROPERTIES_TYPE
-    }
-
-    /// Returns whether this type is from a `typealias [typename] alias [aliasname];` policy
-    /// statement.
-    ///
-    /// TODO: Eliminate `dead_code` guard.
-    #[allow(dead_code)]
-    pub fn is_alias(&self) -> bool {
-        self.metadata.properties.get() == TYPE_PROPERTIES_ALIAS
-    }
-
-    /// Returns whether this type is from an `attribute [name];` policy statement.
-    ///
-    /// TODO: Eliminate `dead_code` guard.
-    #[allow(dead_code)]
-    pub fn is_attribute(&self) -> bool {
-        self.metadata.properties.get() == TYPE_PROPERTIES_ATTRIBUTE
-    }
 }
 
 impl ValidateArray<TypeMetadata, u8> for Type {
@@ -1249,7 +1224,11 @@ pub(super) struct TypeIndex {
     /// A mapping from [`TypeId`] (represented as position-in-the-array-plus-one) to
     /// the corresponding [`Type`] (represented as an offset into the policy bytes).
     /// If zero is the value at index `i` of this structure, that indicates that the
-    /// binary policy has no type with type ID `i + 1`.
+    /// binary policy has no type with type ID `i + 1`. Only types ([`Type`]s matching
+    /// `TYPE_PROPERTIES_TYPE`) and attributes ([`Type`]s matching
+    /// `TYPE_PROPERTIES_ATTRIBUTE`) are included in this structure; type aliases are
+    /// excluded (were we to want to include them, they would "claim" the ID properly
+    /// belonging to exactly one non-alias [`Type`]).
     //
     // TODO: https://fxbug.dev/479180246 - we currently allow for "holes" (integer type IDs
     // that do not correspond to any type) in this array, but do we need to? Will all the
@@ -1258,13 +1237,10 @@ pub(super) struct TypeIndex {
     offsets_by_id_minus_one: Box<[U24]>,
 
     /// A mapping from the string name of a [`Type`] to that type's location in the policy
-    /// bytes. This structure contains at least as many entries as
-    /// [`offsets_by_id_minus_one`] has elements, but contains even more entries if the
-    /// policy has type aliases (as aliases get entries in this table, but are not
-    /// represented in [`offsets_by_id_minus_one`]).
-    //
-    // TODO: https://fxbug.dev/479180246 - attributes (`TYPE_PROPERTIES_ATTRIBUTE`) don't
-    // ever get looked up by name, do they? Are we able to drop them from this table?
+    /// bytes. This structure contains entries for all types ([`Type`]s matching
+    /// `TYPE_PROPERTIES_TYPE`) and type aliases ([`Type`]s matching
+    /// `TYPE_PROPERTIES_ALIAS`) but not attributes ([`Type`]s matching
+    /// `TYPE_PROPERTIES_ATTRIBUTE`); attributes are never looked up by name.
     offsets_by_name: HashTable<U24>,
 }
 
@@ -1320,37 +1296,62 @@ impl Parse for TypeIndex {
         for _ in 0..type_count {
             let offset = U24::try_from(tail.offset()).unwrap();
             let (type_, next_tail) = Type::parse(tail)?;
-            let type_id_as_usize = type_.id().0.get() as usize;
-            let name_bytes = type_.name_bytes();
 
-            if offsets_by_id_minus_one.len() < type_id_as_usize {
-                offsets_by_id_minus_one.resize(type_id_as_usize, U24::try_from(0).unwrap());
+            let will_be_looked_up_by_id;
+            let will_be_looked_up_by_name;
+            match type_.metadata.properties.get() {
+                TYPE_PROPERTIES_TYPE => {
+                    will_be_looked_up_by_id = true;
+                    will_be_looked_up_by_name = true;
+                }
+                TYPE_PROPERTIES_ATTRIBUTE => {
+                    will_be_looked_up_by_id = true;
+                    will_be_looked_up_by_name = false;
+                }
+                TYPE_PROPERTIES_ALIAS => {
+                    will_be_looked_up_by_id = false;
+                    will_be_looked_up_by_name = true;
+                }
+                unrecognized => {
+                    return Err(anyhow!(
+                        "Can't parse \"type\" element with \"properties\" value {:?}",
+                        unrecognized
+                    ));
+                }
             }
-            if !type_.is_alias() {
+
+            if will_be_looked_up_by_id {
+                let type_id_as_usize = type_.id().0.get() as usize;
+                if offsets_by_id_minus_one.len() < type_id_as_usize {
+                    offsets_by_id_minus_one.resize(type_id_as_usize, U24::try_from(0).unwrap());
+                }
                 offsets_by_id_minus_one[type_id_as_usize - 1] = offset;
             }
 
-            offsets_by_name
-                .entry(
-                    name_hash(name_bytes),
-                    |&other_offset| {
-                        let (other_type, _) = Type::parse(PolicyCursor::new_at(
-                            &next_tail.data(),
-                            PolicyOffset::from(other_offset),
-                        ))
-                        .unwrap();
-                        type_.name_bytes() == other_type.name_bytes()
-                    },
-                    |&other_offset| {
-                        let (type_at_other_offset, _) = Type::parse(PolicyCursor::new_at(
-                            &next_tail.data(),
-                            PolicyOffset::from(other_offset),
-                        ))
-                        .unwrap();
-                        name_hash(type_at_other_offset.name_bytes())
-                    },
-                )
-                .insert(offset);
+            if will_be_looked_up_by_name {
+                let name_bytes = type_.name_bytes();
+                offsets_by_name
+                    .entry(
+                        name_hash(name_bytes),
+                        |&other_offset| {
+                            let (other_type, _) = Type::parse(PolicyCursor::new_at(
+                                &next_tail.data(),
+                                PolicyOffset::from(other_offset),
+                            ))
+                            .unwrap();
+                            type_.name_bytes() == other_type.name_bytes()
+                        },
+                        |&other_offset| {
+                            let (type_at_other_offset, _) = Type::parse(PolicyCursor::new_at(
+                                &next_tail.data(),
+                                PolicyOffset::from(other_offset),
+                            ))
+                            .unwrap();
+                            name_hash(type_at_other_offset.name_bytes())
+                        },
+                    )
+                    .insert(offset);
+            }
 
             tail = next_tail;
         }
