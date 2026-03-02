@@ -3,7 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/cpp/sdk_source_set.gni")
-import("//build/zircon/migrated_targets.gni")
+
+# TODO(https://fxbug.dev/454977301): Use bazel2gn.
+# LINT.IfChange
 
 config("include") {
   include_dirs = [ "include" ]
@@ -21,6 +23,7 @@ wavl_tree_headers = [
 sdk_source_set("wire") {
   category = "partner"
   sdk_name = "fidl_cpp_wire"
+  sdk_area = "FIDL"
 
   build_as_static = true
   stable = true
@@ -94,10 +97,11 @@ sdk_source_set("wire") {
       "include/lib/fidl/cpp/wire/internal/client_continuation.h",
       "include/lib/fidl/cpp/wire/internal/client_details.h",
       "include/lib/fidl/cpp/wire/internal/endpoints.h",
+      "include/lib/fidl/cpp/wire/internal/framework_err.h",
       "include/lib/fidl/cpp/wire/internal/make_response_context.h",
       "include/lib/fidl/cpp/wire/internal/server_details.h",
-      "include/lib/fidl/cpp/wire/internal/thenable.h",
       "include/lib/fidl/cpp/wire/internal/synchronization_checker.h",
+      "include/lib/fidl/cpp/wire/internal/thenable.h",
     ]
   }
   if (is_fuchsia) {
@@ -171,9 +175,6 @@ sdk_source_set("wire") {
       # <lib/fidl/cpp/wire/async_binding.h> has #include <lib/sync/completion.h>
       "//zircon/system/ulib/sync",
 
-      # <lib/fidl/cpp/wire/traits.h> has #include <lib/zx/object.h>.
-      "//zircon/system/ulib/zx",
-
       # <lib/fidl/cpp/wire/internal/transport_channel.h> has
       # #include <lib/fidl/epitaph.h>
       "//sdk/lib/fidl",
@@ -182,3 +183,4 @@ sdk_source_set("wire") {
 
   public_configs = [ ":include" ]
 }
+# LINT.ThenChange(BUILD.bazel)
