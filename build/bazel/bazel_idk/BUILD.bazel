@@ -18,6 +18,7 @@ filegroup(
         "//sdk/lib/async:__pkg__",
         "//sdk/lib/async-loop:__pkg__",
         "//sdk/lib/fidl:__pkg__",
+        "//sdk/lib/fidl/cpp:__pkg__",
         "//sdk/lib/fidl/cpp/wire:__pkg__",
         "//sdk/lib/fidl_base:__pkg__",
         "//sdk/lib/fit:__pkg__",

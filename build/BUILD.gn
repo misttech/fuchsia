@@ -61,6 +61,7 @@ if (is_host) {
       "//sdk/lib/async-default:verify_bazel2gn",
       "//sdk/lib/async-loop:verify_bazel2gn",
       "//sdk/lib/fidl:verify_bazel2gn",
+      "//sdk/lib/fidl/cpp:verify_bazel2gn",
       "//sdk/lib/fidl/cpp/wire:verify_bazel2gn",
       "//sdk/lib/fit:verify_bazel2gn",
       "//sdk/lib/fit-promise:verify_bazel2gn",
