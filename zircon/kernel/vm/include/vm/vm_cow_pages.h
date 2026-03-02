@@ -743,6 +743,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   bool DebugValidateHierarchyLocked() TA_REQ(lock());
   bool DebugValidateZeroIntervalsLocked() const TA_REQ(lock());
 
+  // Slow validation of the continuously tracked populated slots count.
+  //
+  // Returns true if the tracked populated slots count equals the number of pages, references, and
+  // parent content markers in the local page list.
+  //
+  // Panics if the populated slots feature is not enabled.
+  bool DebugValidateContinuousAttribution() const TA_REQ(lock());
+
   // Walks all the descendants in a preorder traversal. Stops if func returns anything other than
   // ZX_OK.
   zx_status_t DebugForEachDescendant(
