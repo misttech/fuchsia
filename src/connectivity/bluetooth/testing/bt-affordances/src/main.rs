@@ -5,7 +5,7 @@
 use anyhow::{Context, Error};
 use fidl_fuchsia_bluetooth_affordances::{
     HostControllerRequest, HostControllerRequestStream, PeerControllerRequest,
-    PeerControllerRequestStream,
+    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -48,6 +48,27 @@ async fn handle_peer_request(
                             }
                             Err(err) => {
                                 error!("Forget encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
+                    PeerControllerRequest::SetDiscovery { payload, responder } => {
+                        let PeerControllerSetDiscoveryRequest {
+                            discovery: Some(discovery), ..
+                        } = payload
+                        else {
+                            responder
+                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                            return Ok(());
+                        };
+                        match worker.set_discovery(discovery).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("SetDiscovery encountered error: {err}");
                                 responder.send(Err(
                                     fidl_fuchsia_bluetooth_affordances::Error::Internal,
                                 ))?;

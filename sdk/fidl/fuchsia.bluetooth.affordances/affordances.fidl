@@ -30,6 +30,14 @@ open protocol PeerController {
     flexible ForgetPeer(struct {
         id bt.PeerId;
     }) -> () error Error;
+
+    /// Set discovery state.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible SetDiscovery(table {
+        // Required. Set to true if starting discovery or false if stopping discovery.
+        1: discovery bool;
+    }) -> () error Error;
 };
 
 @discoverable

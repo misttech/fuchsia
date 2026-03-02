@@ -15,6 +15,7 @@ ffx_plugin("ffx_bluetooth") {
 
   plugin_deps = [
     "src/controller:ffx_bluetooth_controller",
+    "src/discovery:ffx_bluetooth_discovery",
     "src/pandora:ffx_bluetooth_pandora",
     "src/peer:ffx_bluetooth_peer",
   ]
