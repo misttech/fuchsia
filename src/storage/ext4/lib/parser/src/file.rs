@@ -245,12 +245,13 @@ impl FileIo for ExtFile {
     }
 
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
-        // TODO(https://fxbug.dev/479943428): This is a basic WIP implementation, we'll need to
-        // expand on this like adding an allocator and journalling.
+        // TODO(https://fxbug.dev/479943428): This only supports overwriting file contents. It is a
+        // a basic implementation - expanding the write support will require adding an allocator
+        // and journalling.
 
-        // We can only write to pre-allocated extents currently.
+        // We can only write to the pre-allocated file contents.
         if let Some(ref processor) = self.processor {
-            match processor.overwrite_extents(self.inode as u32, content, offset) {
+            match processor.overwrite_file_contents(self.inode as u32, content, offset) {
                 Ok(_) => {
                     self.vmo.write(content, offset)?;
                 }
@@ -538,15 +539,6 @@ mod tests {
             .expect("read error");
         assert_eq!(content.as_slice(), expected_content.as_bytes());
 
-        let write_content = b"Write some stuff";
-        let bytes_written = proxy
-            .write(write_content)
-            .await
-            .expect("write FIDL error")
-            .map_err(zx::Status::from_raw)
-            .expect("write error");
-        assert_eq!(bytes_written, write_content.len() as u64);
-
         proxy
             .close()
             .await
@@ -645,7 +637,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_writing_to_unallocated_extents_fails() {
+    async fn test_writing_past_eof_fails() {
         let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
         let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
         vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
@@ -691,6 +683,17 @@ mod tests {
             .expect("read FIDL error")
             .map_err(zx::Status::from_raw)
             .expect("read error");
+
+        // Append to the file (should still be within allocated region, but the implementation
+        // doesn't support writing past EOF).
+        let write_content = b"Write some stuff";
+        let error = proxy
+            .write(write_content)
+            .await
+            .expect("write FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect_err("write past EOF should fail");
+        assert_eq!(error, Status::NOT_SUPPORTED);
 
         // Write a really long content, past allocated extents of this file.
         let write_content = [1u8; 8192];

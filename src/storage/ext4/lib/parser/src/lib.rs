@@ -270,7 +270,7 @@ mod tests {
             .expect("failed to open file");
         let original_contents = "file1 contents.\n";
         assert_eq!(read_to_string(&file).await.expect("failed to read file"), original_contents);
-        let new_contents = "new contents.";
+        let new_contents = "NEW";
         let offset = 5;
         file.seek(fio::SeekOrigin::Start, offset)
             .await
@@ -307,8 +307,8 @@ mod tests {
         let file =
             open_file(&root, "file1", fio::PERM_READABLE).await.expect("failed to open file");
         let mut expected_bytes = original_contents.as_bytes().to_vec();
-        expected_bytes.resize(offset as usize + new_contents.len(), 0);
-        expected_bytes[offset as usize..].copy_from_slice(new_contents.as_bytes());
+        expected_bytes[offset as usize..offset as usize + new_contents.len()]
+            .copy_from_slice(new_contents.as_bytes());
         assert_eq!(
             read_to_string(&file).await.expect("failed to read file"),
             String::from_utf8(expected_bytes).unwrap()
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_writing_to_unallocated_region_fails() {
+    async fn test_writing_past_eof_fails() {
         let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
         let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
         vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
@@ -459,7 +459,7 @@ mod tests {
         let mut old_vmo_contents = vec![0u8; data.len()];
         vmo_clone.read(&mut old_vmo_contents, 0).expect("failed to read from vmo clone");
 
-        let new_contents = "new cached contents!";
+        let new_contents = "FILE1 CONTENTS!";
         file.seek(fio::SeekOrigin::Start, 0)
             .await
             .expect("failed FIDL seek")

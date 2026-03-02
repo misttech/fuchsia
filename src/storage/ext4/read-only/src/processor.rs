@@ -4,7 +4,7 @@
 
 use crate::parser::Parser;
 use crate::readers::ReaderWriter;
-use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParseToStruct, ParsingError};
+use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
 use std::sync::Arc;
 
 /// A processor that wraps an ext4 parser and adds write functionality if not in read-only mode.
@@ -36,7 +36,6 @@ impl Ext4Processor {
         if self.read_only {
             return Err(ParsingError::Incompatible("Cannot write to read-only Ext4".to_string()));
         }
-
         if block_number == 0 {
             return Err(ParsingError::InvalidAddress(
                 InvalidAddressErrorType::Lower,
@@ -44,6 +43,7 @@ impl Ext4Processor {
                 FIRST_BG_PADDING,
             ));
         }
+
         let block_size = self.block_size()?;
         if data.len() as u64 % block_size != 0 {
             return Err(ParsingError::Incompatible(format!(
@@ -62,16 +62,9 @@ impl Ext4Processor {
         Ok(())
     }
 
-    /// Overwrites existing extents of a file with new data. Partial writes of data are not
-    /// supported - if write requires allocating new extent, a NOT_SUPPORTED error is returned.
-    // TODO(https://fxbug.dev/479943428): This is not efficient and there is room for improvement,
-    // for example:
-    // * Something like a cached inode attribute struct to store information like file size and
-    //   timestamps. Only flush to disk when requested or when file is closed instead of updating
-    //   them for every `overwrite_extents`.
-    // * The entire extent tree is iterated each time this is called. Is it possible to traverse
-    //   only the branches that fall within the target range?
-    pub fn overwrite_extents(
+    /// Overwrites existing contents of a file with new data. This does not require any allocations.
+    /// Note that this does not update the journal with timestamps.
+    pub fn overwrite_file_contents(
         &self,
         inode_num: u32,
         data: impl AsRef<[u8]>,
@@ -81,16 +74,18 @@ impl Ext4Processor {
             return Err(ParsingError::Incompatible("Cannot write to read-only Ext4".to_string()));
         }
 
-        let mut inode = self.inode(inode_num)?;
+        let inode = self.inode(inode_num)?;
+        // We don't support allocation and also writing past EOF.
+        if offset + data.as_ref().len() as u64 > inode.size() {
+            return Err(ParsingError::NotSupported("writing past EOF".to_string()));
+        }
+        if data.as_ref().len() == 0 {
+            return Ok(());
+        }
+
         let root_extent_tree_node = inode.extent_tree_node()?;
         let request = offset..offset + data.as_ref().len() as u64;
         let block_size = self.block_size()?;
-        let mut node_size = inode.size();
-
-        // Stores the logical overlaps between the request and the allocated extents, and the
-        // corresponding physical block address.
-        let mut overlaps = Vec::new();
-        let mut allocated_bytes_in_request = 0;
 
         self.iterate_extents_in_tree(&root_extent_tree_node, &mut |extent| {
             let range = (extent.e_blk.get() as u64 * block_size)
@@ -102,19 +97,8 @@ impl Ext4Processor {
                 return Ok(());
             }
 
-            allocated_bytes_in_request += overlap.end - overlap.start;
-            let physical_block_cursor =
+            let mut physical_block_cursor =
                 extent.target_block_num() + ((overlap.start - range.start) / block_size);
-            overlaps.push((overlap, physical_block_cursor));
-            Ok(())
-        })?;
-
-        if allocated_bytes_in_request < data.as_ref().len() as u64 {
-            // Allocation not supported.
-            return Err(ParsingError::NotSupported("allocation".to_string()));
-        }
-
-        for (overlap, mut physical_block_cursor) in overlaps {
             let mut current_offset = overlap.start;
             while current_offset < overlap.end {
                 let write_buf_cursor = (current_offset - request.start) as usize;
@@ -148,19 +132,11 @@ impl Ext4Processor {
                     current_offset += write_len;
                 }
             }
+            Ok(())
+        })?;
 
-            node_size = std::cmp::max(node_size, overlap.end);
-        }
         // TODO(https://fxbug.dev/479943428): Update mtime, ctime, metadata checksum
 
-        // We allow the file to grow so long as the extent has blocks allocated to the file. This
-        // may occur when the original EOF is within the last allocated block of the allocated
-        // extents.
-        if node_size != inode.size() {
-            inode.update_size(node_size);
-            let inode_addr = self.inode_addr(inode_num)?;
-            inode.from_struct_to_writer(self.reader_writer.as_ref(), inode_addr)?;
-        }
         Ok(())
     }
 
@@ -174,7 +150,7 @@ impl Ext4Processor {
 mod tests {
     use super::*;
     use crate::readers::{BlockDeviceReader, VecReader};
-    use crate::structs::ParsingError;
+    use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
     use std::fs;
     use std::path::Path;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
@@ -182,7 +158,7 @@ mod tests {
     use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
-    fn test_processor_read_only_blocks_write() {
+    async fn test_processor_read_only_blocks_write() {
         let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
         let read_only_processor = Ext4Processor::new(Arc::new(VecReader::new(data)), true);
 
@@ -194,10 +170,10 @@ mod tests {
             _ => panic!("Expected read-only error"),
         }
 
-        // Test overwrite_extents
+        // Test overwrite_file_contents
         let error = read_only_processor
-            .overwrite_extents(2, &[0u8; 10], 0)
-            .expect_err("passed overwrite_extents unexpectedly");
+            .overwrite_file_contents(2, &[0u8; 10], 0)
+            .expect_err("passed overwrite_file_contents unexpectedly");
         match error {
             ParsingError::Incompatible(_) => {}
             _ => panic!("Expected read-only error"),
@@ -205,7 +181,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_processor_write_block_invalid_address() {
+    async fn test_processor_write_block_invalid_address() {
         let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
         let processor = Ext4Processor::new(Arc::new(VecReader::new(data)), false);
 
@@ -218,7 +194,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_processor_write_block_out_of_bounds() {
+    async fn test_processor_write_block_out_of_bounds() {
         let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
         let processor = Ext4Processor::new(Arc::new(VecReader::new(data)), false);
 
@@ -232,7 +208,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_processor_writeable_overwrite_extents() {
+    async fn test_processor_writeable_overwrite_extents() {
         let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
         let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
         vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
@@ -259,7 +235,7 @@ mod tests {
                 BlockDeviceReader::from_client_end(block_client_end1)
                     .expect("failed to create block device reader"),
             ),
-            /* read_only=*/ false,
+            false,
         ));
 
         let file_ino = rw_processor
@@ -277,7 +253,7 @@ mod tests {
         assert_eq!(original_size, expected.len() as u64);
 
         rw_processor
-            .overwrite_extents(file_ino, &[1u8; 1], 1)
+            .overwrite_file_contents(file_ino, &[1u8; 1], 1)
             .expect("failed to overwrite extents");
         expected[1] = 1;
 
@@ -286,71 +262,16 @@ mod tests {
 
         // Test writing to the allocated extent, extending past the original file size (still within
         // the allocated block).
-        rw_processor
-            .overwrite_extents(file_ino, &[1u8; 2], expected.len() as u64 + 2)
-            .expect("failed to overwrite extents");
-        expected.extend_from_slice(&[0, 0, 1, 1]);
-
-        let new_data = rw_processor.read_data(file_ino).expect("failed to read data");
-        assert_eq!(new_data, expected);
-
-        // Verify that the file size has updated.
-        let new_size = rw_processor.inode(file_ino).expect("failed to read inode").size();
-        assert_eq!(new_size, original_size + 4);
-    }
-
-    #[fuchsia::test]
-    fn test_processor_overwrite_with_unallocated_blocks_fails() {
-        let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
-
-        let server_clone = server.clone();
-        let (block_client_end1, block_server_end1) =
-            fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
-        std::thread::spawn(move || {
-            let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
-        });
-        let rw_processor = Arc::new(Ext4Processor::new(
-            Arc::new(
-                BlockDeviceReader::from_client_end(block_client_end1)
-                    .expect("failed to create block device reader"),
-            ),
-            /* read_only=*/ false,
-        ));
-
-        let file_ino = rw_processor
-            .entry_at_path(Path::new("file1"))
-            .expect("failed entry at path")
-            .e2d_ino
-            .get();
-
-        let original_contents = rw_processor.read_data(file_ino).expect("failed to read data");
-
-        let long_data = vec![2u8; 8192];
         let error = rw_processor
-            .overwrite_extents(file_ino, &long_data, 0)
-            .expect_err("overwrite extents passed unexpectedly");
+            .overwrite_file_contents(file_ino, &[1u8; 2], expected.len() as u64 + 2)
+            .expect_err("overwrite past EOF should fail");
         match error {
             ParsingError::NotSupported(_) => {}
             _ => panic!("Expected NotSupported error, got {:?}", error),
         }
 
-        // Make sure no data was written
-        assert_eq!(
-            rw_processor.read_data(file_ino).expect("failed to read data"),
-            original_contents
-        );
+        // Verify that the file size has not updated.
+        let new_size = rw_processor.inode(file_ino).expect("failed to read inode").size();
+        assert_eq!(new_size, original_size);
     }
 }
