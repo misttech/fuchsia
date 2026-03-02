@@ -186,12 +186,14 @@ pub fn serve_telemetry(
                             power_logger.handle_iface_disconnect(info.iface_id).await;
                         }
                         ClientConnectionsToggle { event } => {
+                            connect_disconnect.handle_client_connections_toggle(&event).await;
                             toggle_logger.handle_toggle_event(event).await;
                         }
                         ClientIfaceCreated { iface_id } => {
                             client_iface_counters_logger.handle_iface_created(iface_id).await;
                         }
                         ClientIfaceDestroyed { iface_id } => {
+                            connect_disconnect.handle_iface_destroyed().await;
                             client_iface_counters_logger.handle_iface_destroyed(iface_id).await;
                             power_logger.handle_iface_destroyed(iface_id).await;
                         }

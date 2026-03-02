@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 use crate::util::cobalt_logger::log_cobalt_batch;
 use derivative::Derivative;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
@@ -377,6 +378,16 @@ impl ConnectDisconnectLogger {
         }
 
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "handle_suspend_imminent");
+    }
+
+    pub async fn handle_iface_destroyed(&self) {
+        self.update_connection_state(ConnectionState::Idle(IdleState {}));
+    }
+
+    pub async fn handle_client_connections_toggle(&self, event: &ClientConnectionsToggleEvent) {
+        if event == &ClientConnectionsToggleEvent::Disabled {
+            self.update_connection_state(ConnectionState::Idle(IdleState {}));
+        }
     }
 }
 
@@ -1178,6 +1189,85 @@ mod tests {
         let metrics = test_helper.get_logged_metrics(metrics::DOWNTIME_POST_DISCONNECT_METRIC_ID);
         assert_eq!(metrics.len(), 1);
         assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(35_000));
+    }
+
+    #[fuchsia::test]
+    fn test_log_iface_destroyed() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Log connect event to move state to connected
+        let bss_description = random_bss_description!();
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Log iface destroyed event to move state to idle
+        let mut test_fut = pin!(logger.handle_iface_destroyed());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
+            &[
+                TimeMatrixCall::Fold(Timed::now(1 << 0)),
+                TimeMatrixCall::Fold(Timed::now(1 << 2)),
+                TimeMatrixCall::Fold(Timed::now(1 << 0))
+            ]
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_log_disable_client_connections() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Log connect event to move state to connected
+        let bss_description = random_bss_description!();
+        let mut test_fut = pin!(
+            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
+        );
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Disable client connections to move state to idle
+        let mut test_fut =
+            pin!(logger.handle_client_connections_toggle(&ClientConnectionsToggleEvent::Disabled));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
+            &[
+                TimeMatrixCall::Fold(Timed::now(1 << 0)),
+                TimeMatrixCall::Fold(Timed::now(1 << 2)),
+                TimeMatrixCall::Fold(Timed::now(1 << 0))
+            ]
+        );
     }
 
     fn fake_disconnect_info() -> DisconnectInfo {
