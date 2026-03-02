@@ -482,8 +482,7 @@ impl Policy {
     }
 
     pub fn is_bounded_by(&self, bounded_type: TypeId, parent_type: TypeId) -> bool {
-        let type_ = self.0.parsed_policy().type_(bounded_type);
-        type_.bounded_by() == Some(parent_type)
+        self.0.parsed_policy().type_(bounded_type).bounded_by() == Some(parent_type)
     }
 
     /// Returns true if the policy has the marked the type/domain for permissive checks.

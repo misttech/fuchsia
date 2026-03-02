@@ -21,7 +21,7 @@ use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::{Level, SecurityContext};
 use super::symbols::{
     Category, Class, Classes, CommonSymbol, CommonSymbols, ConditionalBoolean, MlsLevel, Role,
-    Sensitivity, SymbolList, Type, User,
+    Sensitivity, SymbolList, Type, TypeIndex, User,
 };
 use super::view::{HashedArrayView, U24};
 use super::{
@@ -69,7 +69,7 @@ pub struct ParsedPolicy {
     /// The set of roles referenced by this policy.
     roles: SymbolList<Role>,
     /// The set of types referenced by this policy.
-    types: SymbolList<Type>,
+    types: TypeIndex,
     /// The set of users referenced by this policy.
     users: SymbolList<User>,
     /// The set of dynamically adjustable booleans referenced by this policy.
@@ -371,13 +371,13 @@ impl ParsedPolicy {
 
     /// Returns the `Type` structure for the requested Id. Valid policies include definitions
     /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn type_(&self, id: TypeId) -> &Type {
-        self.types.data.iter().find(|x| x.id() == id).unwrap()
+    pub(super) fn type_(&self, id: TypeId) -> Type {
+        self.types.type_by_type_id(id, &self.data)
     }
 
     /// Returns the [`TypeId`] of the [`Type`] with the given name, if present in the policy.
     pub(super) fn type_id_by_name(&self, name: &str) -> Option<TypeId> {
-        self.types.data.iter().find(|x| x.name_bytes() == name.as_bytes()).map(|x| x.id())
+        self.types.type_id_by_name(name, &self.data)
     }
 
     /// Returns the extensible bitmap describing the set of types/domains for which permission
@@ -608,9 +608,8 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing roles")?;
 
-    let (types, tail) = SymbolList::<Type>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing types")?;
+    let (types, tail) =
+        TypeIndex::parse(tail).map_err(anyhow::Error::from).context("parsing types")?;
 
     let (users, tail) = SymbolList::<User>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
@@ -707,7 +706,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing range transitions")?;
 
-    let primary_names_count = types.metadata.primary_names_count();
+    let primary_names_count = types.primary_names_count();
     let mut attribute_maps = Vec::with_capacity(primary_names_count as usize);
     let mut tail = tail;
     for i in 0..primary_names_count {
@@ -900,7 +899,7 @@ impl ParsedPolicy {
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles.data.iter().map(|x| x.id()).collect();
         let class_ids: HashSet<ClassId> = self.classes.data.iter().map(|x| x.id()).collect();
-        let type_ids: HashSet<TypeId> = self.types.data.iter().map(|x| x.id()).collect();
+        let type_ids: HashSet<TypeId> = self.types.all_type_ids().collect();
         let sensitivity_ids: HashSet<SensitivityId> =
             self.sensitivities.data.iter().map(|x| x.id()).collect();
         let category_ids: HashSet<CategoryId> =

@@ -182,10 +182,11 @@ impl SecurityContext {
             levels.push(b'-');
             levels.extend(high_level.serialize(policy_index.parsed_policy()));
         }
+        let type_ = policy_index.parsed_policy().type_(self.type_);
         let parts: [&[u8]; 4] = [
             policy_index.parsed_policy().user(self.user).name_bytes(),
             policy_index.parsed_policy().role(self.role).name_bytes(),
-            policy_index.parsed_policy().type_(self.type_).name_bytes(),
+            type_.name_bytes(),
             levels.as_slice(),
         ];
         parts.join(b":".as_ref())
@@ -604,8 +605,8 @@ mod tests {
         std::str::from_utf8(policy.0.parsed_policy().role(id).name_bytes()).unwrap()
     }
 
-    fn type_name(policy: &TestPolicy, id: TypeId) -> &str {
-        std::str::from_utf8(policy.0.parsed_policy().type_(id).name_bytes()).unwrap()
+    fn type_name(policy: &TestPolicy, id: TypeId) -> String {
+        std::str::from_utf8(policy.0.parsed_policy().type_(id).name_bytes()).unwrap().into()
     }
 
     fn sensitivity_name(policy: &TestPolicy, id: SensitivityId) -> &str {
