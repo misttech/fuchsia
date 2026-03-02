@@ -41,6 +41,12 @@ use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const MEBIBYTE: u64 = 1024 * 1024;
 
+struct ProfileState {
+    task: fasync::Task<()>,
+    profile_name: String,
+    all_volumes: bool,
+}
+
 /// VolumesDirectory is a special pseudo-directory used to enumerate and operate on volumes.
 /// Volume creation happens via fuchsia.fs.startup.Volumes.Create, rather than open.
 ///
@@ -54,7 +60,7 @@ pub struct VolumesDirectory {
     mem_monitor: Option<MemoryPressureMonitor>,
     blob_resupplied_count: Arc<PageRefaultCounter>,
     // The state of profile recordings. Should be locked *after* mounted_volumes.
-    profiling_state: futures::lock::Mutex<Option<(String, fasync::Task<()>)>>,
+    profiling_state: futures::lock::Mutex<Option<ProfileState>>,
 
     /// A running estimate of the number of dirty bytes outstanding in all pager-backed VMOs across
     /// all volumes.
@@ -147,7 +153,9 @@ impl MountedVolumesGuard<'_> {
             .await?
         };
         // If there is an ongoing profile activity, we should apply it to the mounted volume.
-        if let Some((profile_name, _)) = &(*self.volumes_directory.profiling_state.lock().await) {
+        if let Some(ProfileState { profile_name, all_volumes: true, .. }) =
+            &(*self.volumes_directory.profiling_state.lock().await)
+        {
             if let Err(e) = volume
                 .volume()
                 .record_or_replay_profile(new_profile_state(as_blob), profile_name)
@@ -387,7 +395,7 @@ impl VolumesDirectory {
         // replaced moments later.
         if state.is_some() {
             warn!("Failing profile deletion while profile operations are in flight.");
-            return Err(zx::Status::UNAVAILABLE);
+            return Err(zx::Status::SHOULD_WAIT);
         }
         for (_, MountedVolume { name, volume, .. }) in &*volumes {
             if name == volume_name {
@@ -431,45 +439,82 @@ impl VolumesDirectory {
     }
 
     /// Record a named profile for a number of seconds, fails if there is an in flight recording or
-    /// replay.
+    /// replay. The given volume must be unloacked, if no volume is given then all volumes will be
+    /// affected and all volumes mounted during the process will also be affected.
     pub async fn record_or_replay_profile(
-        self: Arc<Self>,
+        self: &Arc<Self>,
+        volume_name: Option<String>,
         profile_name: String,
         duration_secs: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<(), zx::Status> {
         // Volumes lock is taken first to provide consistent lock ordering with mounting a volume.
-        let volumes = self.mounted_volumes.lock().await;
+        let volumes = self.lock().await;
         let mut state = self.profiling_state.lock().await;
-        if state.is_none() {
-            for (_, MountedVolume { name, volume, .. }) in &*volumes {
-                let is_blob = volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
-                // Just log the errors, don't stop half-way.
-                if let Err(error) = volume
-                    .volume()
-                    .record_or_replay_profile(new_profile_state(is_blob), &profile_name)
-                    .await
-                {
-                    error!(
-                        error:?,
-                        profile_name = profile_name.as_str(),
-                        volume_name = name.as_str();
-                        "Failed to record or replay profile",
-                    );
-                }
-            }
-            let this = self.clone();
-            let timer_task = fasync::Task::spawn(async move {
-                fasync::Timer::new(fasync::MonotonicDuration::from_seconds(duration_secs.into()))
-                    .await;
-                this.stop_profile_tasks().await;
-            });
-            *state = Some((profile_name, timer_task));
-            Ok(())
-        } else {
+        if state.is_some() {
             // Consistency in the recording and replaying cannot be ensured at the volume level
             // if more than one operation can be in flight at a time.
-            Err(anyhow!(FxfsError::AlreadyExists).context("Profile operation already in progress."))
+            return Err(zx::Status::SHOULD_WAIT);
         }
+        match volume_name.as_ref() {
+            Some(volume_name) => {
+                let (store_object_id, _, _) = volumes
+                    .volumes_directory
+                    .root_volume
+                    .volume_directory()
+                    .lookup(&volume_name)
+                    .await
+                    .map_err(|_| zx::Status::INTERNAL)?
+                    .ok_or(zx::Status::NOT_FOUND)?;
+                if let Some(MountedVolume { volume, .. }) =
+                    volumes.mounted_volumes.get(&store_object_id)
+                {
+                    let is_blob =
+                        volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
+                    if let Err(error) = volume
+                        .volume()
+                        .record_or_replay_profile(new_profile_state(is_blob), &profile_name)
+                        .await
+                    {
+                        error!(
+                            error:?,
+                            profile_name = profile_name.as_str(),
+                            volume_name = volume_name.as_str();
+                            "Failed to record or replay profile",
+                        );
+                        return Err(zx::Status::INTERNAL);
+                    }
+                } else {
+                    return Err(zx::Status::UNAVAILABLE);
+                }
+            }
+            None => {
+                for (_, MountedVolume { name, volume, .. }) in &*volumes.mounted_volumes {
+                    let is_blob =
+                        volume.root().clone().into_any().downcast::<BlobDirectory>().is_ok();
+                    // Just log the errors, don't stop half-way.
+                    if let Err(error) = volume
+                        .volume()
+                        .record_or_replay_profile(new_profile_state(is_blob), &profile_name)
+                        .await
+                    {
+                        error!(
+                            error:?,
+                            profile_name = profile_name.as_str(),
+                            volume_name = name.as_str();
+                            "Failed to record or replay profile",
+                        );
+                    }
+                }
+            }
+        }
+
+        let this = self.clone();
+        let task = fasync::Task::spawn(async move {
+            fasync::Timer::new(fasync::MonotonicDuration::from_seconds(duration_secs.into())).await;
+            this.stop_profile_tasks().await;
+        });
+        *state = Some(ProfileState { task, profile_name, all_volumes: volume_name.is_none() });
+        Ok(())
     }
 
     /// Returns the directory node which can be used to provide connections for e.g. enumerating
@@ -549,8 +594,8 @@ impl VolumesDirectory {
     pub async fn terminate(self: &Arc<Self>) {
         // Abort the profiling timer task.
         let profiling_state = self.profiling_state.lock().await.take();
-        if let Some((_, timer_task)) = profiling_state {
-            timer_task.abort().await;
+        if let Some(state) = profiling_state {
+            state.task.abort().await;
         }
         self.lock().await.terminate().await
     }
@@ -2168,7 +2213,7 @@ mod tests {
             // test. If it does wait this long then it should trigger test timeouts.
             volumes_directory
                 .clone()
-                .record_or_replay_profile(RECORDING_NAME.to_owned(), 600)
+                .record_or_replay_profile(None, RECORDING_NAME.to_owned(), 600)
                 .await
                 .expect("Recording");
 
@@ -2265,7 +2310,7 @@ mod tests {
         // Run the recording with no time at all and ensure that it still shuts down properly.
         volumes_directory
             .clone()
-            .record_or_replay_profile("foo".to_owned(), 0)
+            .record_or_replay_profile(None, "foo".to_owned(), 0)
             .await
             .expect("Recording");
 
@@ -2300,14 +2345,14 @@ mod tests {
 
         volumes_directory
             .clone()
-            .record_or_replay_profile("foo".to_owned(), 600)
+            .record_or_replay_profile(None, "foo".to_owned(), 600)
             .await
             .expect("Recording");
 
         // Deletion fails during in-flight recording.
         assert_eq!(
             volumes_directory.delete_profile("foo", "foo").await.expect_err("File shouldn't exist"),
-            Status::UNAVAILABLE
+            Status::SHOULD_WAIT
         );
 
         volumes_directory.stop_profile_tasks().await;
@@ -2337,6 +2382,85 @@ mod tests {
         volumes_directory.terminate().await;
         std::mem::drop(volumes_directory);
         filesystem.close().await.expect("Filesystem close");
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_profile_start_single_volume() {
+        const TEST_VOLUME: &str = "test_1234";
+        const TEST_RECORDING: &str = "test_5678";
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
+
+        let fixture = TestFixture::new().await;
+        {
+            let volumes_directory = fixture.volumes_directory();
+            // Start recording for volume that doesn't exist.
+            assert_eq!(
+                volumes_directory
+                    .record_or_replay_profile(
+                        Some(TEST_VOLUME.to_owned()),
+                        TEST_RECORDING.to_owned(),
+                        1
+                    )
+                    .await
+                    .expect_err("Volumes doesn't exist yet"),
+                Status::NOT_FOUND
+            );
+
+            // Create the volume unmounted.
+            {
+                let volume = volumes_directory
+                    .create_and_mount_volume(TEST_VOLUME, Some(crypt.clone()), false, None)
+                    .await
+                    .unwrap();
+                volumes_directory
+                    .lock()
+                    .await
+                    .unmount(volume.volume().store().store_object_id())
+                    .await
+                    .expect("unmount failed");
+            }
+
+            // Start recording for volume that is not mounted.
+            assert_eq!(
+                volumes_directory
+                    .record_or_replay_profile(
+                        Some(TEST_VOLUME.to_owned()),
+                        TEST_RECORDING.to_owned(),
+                        1
+                    )
+                    .await
+                    .expect_err("Volumes doesn't exist yet"),
+                Status::UNAVAILABLE
+            );
+
+            // Remount the volume and try again.
+            let volume = volumes_directory
+                .mount_volume(TEST_VOLUME, Some(crypt.clone()), false)
+                .await
+                .expect("Remount volume");
+            volumes_directory
+                .record_or_replay_profile(
+                    Some(TEST_VOLUME.to_owned()),
+                    TEST_RECORDING.to_owned(),
+                    1,
+                )
+                .await
+                .expect("Starting recording");
+
+            // Stop the recording and check that it was created on the new volume.
+            volumes_directory.stop_profile_tasks().await;
+            {
+                let profile_dir = volume.volume().get_profile_directory().await.unwrap();
+                assert!(profile_dir.lookup(TEST_RECORDING).await.unwrap().is_some());
+            }
+
+            // Should be no recording for the other volume.
+            {
+                let profile_dir = fixture.volume().volume().get_profile_directory().await.unwrap();
+                assert!(profile_dir.lookup(TEST_RECORDING).await.unwrap().is_none());
+            }
+        }
+        fixture.close().await;
     }
 
     #[fuchsia::test(threads = 10)]

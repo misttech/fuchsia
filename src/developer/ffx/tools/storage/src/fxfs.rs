@@ -5,6 +5,7 @@ use argh::{ArgsInfo, FromArgs};
 use ffx_writer::SimpleWriter;
 use fho::{Error, Result};
 use fidl_fuchsia_fxfs::DebugProxy;
+use zx_status::Status;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
@@ -33,6 +34,26 @@ pub struct DeleteProfileSubCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
+    name = "record_replay_profile",
+    example = "ffx storage fxfs record_replay_profile --volume data startup 60 ",
+    description = "Starts recording a for a named unlocked volume to run for a limited number of \
+        time. If a profile exists on the volume with the given name, then it will begin replaying \
+        it. If no volume is given, then all unlocked volumes are activated for recording and \
+        replay. Fails during active profile record or replay."
+)]
+pub struct RecordReplayProfileSubCommand {
+    #[argh(positional)]
+    profile: String,
+    #[argh(positional)]
+    duration_secs: u32,
+    #[argh(option, short = 'v')]
+    /// the volume to affect instead of all unlocked volumes.
+    volume: Option<String>,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
     name = "stop_profile",
     example = "ffx storage fxfs stop_profile",
     description = "Blocks while stopping all profile recording and replay activity."
@@ -44,6 +65,7 @@ pub struct StopProfileSubCommand {}
 pub enum FxfsSubCommand {
     Compact(CompactSubCommand),
     DeleteProfile(DeleteProfileSubCommand),
+    RecordReplayProfile(RecordReplayProfileSubCommand),
     StopProfile(StopProfileSubCommand),
 }
 
@@ -73,6 +95,17 @@ pub async fn handle_cmd(
                 .await
                 .map_err(|e| Error::User(e.into()))?
                 .map_err(|e| Error::ExitWithCode(e))?;
+        }
+        FxfsSubCommand::RecordReplayProfile(args) => {
+            fxfs_proxy
+                .record_replay_profile(
+                    args.volume.as_ref().map(|s| s.as_str()),
+                    &args.profile,
+                    args.duration_secs,
+                )
+                .await
+                .map_err(|e| Error::User(e.into()))?
+                .map_err(|e| Error::User(Status::from_raw(e).into()))?;
         }
         FxfsSubCommand::StopProfile(_) => {
             fxfs_proxy

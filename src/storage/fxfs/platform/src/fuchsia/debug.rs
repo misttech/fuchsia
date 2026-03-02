@@ -513,6 +513,14 @@ pub async fn handle_debug_request(
         }
         DebugRequest::DeleteProfile { responder, volume, profile } => responder
             .send(volumes.delete_profile(&volume, &profile).await.map_err(Status::into_raw)),
+        DebugRequest::RecordReplayProfile { responder, volume, profile, duration_secs } => {
+            responder.send(
+                volumes
+                    .record_or_replay_profile(volume, profile, duration_secs)
+                    .await
+                    .map_err(Status::into_raw),
+            )
+        }
         DebugRequest::StopProfileTasks { responder } => {
             volumes.stop_profile_tasks().await;
             responder.send(Ok(()))

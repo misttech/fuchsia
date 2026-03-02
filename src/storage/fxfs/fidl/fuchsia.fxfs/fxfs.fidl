@@ -294,6 +294,15 @@ closed protocol Debug {
         profile fuchsia.io.Name;
     }) -> () error zx.Status;
 
+    /// Begins recording a profile for a named volume for up to the given duration in seconds. If a
+    /// profile already exists under the given name then it will begin replaying it as well. Fails
+    /// if the volume isn't mounted or there is active profile recording or replay on the volume.
+    strict RecordReplayProfile(struct {
+        volume fuchsia.io.Name:optional;
+        profile fuchsia.io.Name;
+        duration_secs uint32;
+    }) -> () error zx.Status;
+
     /// Stops all profile recording and replay activity. Ongoing recordings are completed and
     /// persisted.
     strict StopProfileTasks() -> () error zx.Status;

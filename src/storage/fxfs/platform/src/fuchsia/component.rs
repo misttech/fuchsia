@@ -348,11 +348,7 @@ impl Component {
 
         if let Some(profile_time) = options.startup_profiling_seconds {
             // Unwrap ok, shouldn't have anything else recording or replaying this early in startup.
-            volumes
-                .clone()
-                .record_or_replay_profile(".boot".to_owned(), profile_time)
-                .await
-                .unwrap();
+            volumes.record_or_replay_profile(None, ".boot".to_owned(), profile_time).await.unwrap();
         }
 
         *state = State::Running(RunningState {
