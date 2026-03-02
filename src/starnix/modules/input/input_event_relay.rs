@@ -27,7 +27,7 @@ use starnix_logging::{
     log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_end,
 };
 use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
-    parse_fidl_media_button_event, parse_fidl_touch_button_event,
+    new_touch_buttons_bitvec, parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
 use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
 use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
@@ -224,7 +224,7 @@ impl InputEventsRelay {
 
             let mut power_was_pressed = false;
             let mut function_was_pressed = false;
-            let mut palm_was_pressed = false;
+            let mut touch_buttons_were_pressed = new_touch_buttons_bitvec();
 
             loop {
                 futures::select! {
@@ -282,10 +282,10 @@ impl InputEventsRelay {
                     touch_buttons_res = touch_buttons_future => {
                         match touch_buttons_res {
                             Some(Ok(event)) => {
-                                palm_was_pressed = self.process_touch_button_event(
+                                touch_buttons_were_pressed = self.process_touch_button_event(
                                     &mut default_touch_device,
                                     event,
-                                    palm_was_pressed,
+                                    &touch_buttons_were_pressed,
                                 );
                             }
                             _ => {}
@@ -580,12 +580,12 @@ impl InputEventsRelay {
         &mut self,
         default_touch_device: &mut DeviceState,
         button_event: fuipolicy::TouchButtonsListenerRequest,
-        palm_was_pressed: bool,
-    ) -> bool {
+        touch_buttons_were_pressed: &bit_vec::BitVec,
+    ) -> bit_vec::BitVec {
         trace_duration!("input", "starnix_process_touch_button_event");
         match button_event {
             fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } => {
-                let batch = parse_fidl_touch_button_event(&event, palm_was_pressed);
+                let batch = parse_fidl_touch_button_event(&event, touch_buttons_were_pressed);
 
                 let (converted_events, ignored_events, generated_events) = match batch.events.len()
                 {
@@ -654,11 +654,11 @@ impl InputEventsRelay {
 
                 responder.send().expect("touch buttons responder failed to respond");
 
-                batch.palm_is_pressed
+                batch.touch_buttons
             }
             fuipolicy::TouchButtonsListenerRequest::_UnknownMethod { ordinal, .. } => {
                 log_warn!("Received an unknown method with ordinal {ordinal}");
-                palm_was_pressed
+                touch_buttons_were_pressed.clone()
             }
         }
     }
@@ -1616,13 +1616,13 @@ mod test {
         let device_id_10_file =
             create_test_touch_device(locked, &current_task, input_relay.clone(), DEVICE_ID);
 
-        let power_released_event: TouchButtonsEvent = TouchButtonsEvent {
+        let palm_released_event: TouchButtonsEvent = TouchButtonsEvent {
             pressed_buttons: Some(vec![]),
             device_info: Some(TouchDeviceInfo { id: Some(DEVICE_ID), ..Default::default() }),
             ..Default::default()
         };
 
-        let _ = touch_buttons_listener.on_event(power_released_event).await;
+        let _ = touch_buttons_listener.on_event(palm_released_event).await;
 
         let events = read_uapi_events(locked, &touch_file, &current_task);
         // Default device should not receive events because they matched device id 10.

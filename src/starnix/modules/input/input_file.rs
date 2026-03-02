@@ -17,8 +17,9 @@ use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, Us
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_MISC,
-    BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_POWER, KEY_SLEEP,
-    KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT, errno, error, uapi,
+    BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_DOWN, KEY_LEFT,
+    KEY_POWER, KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL,
+    SW_CNT, errno, error, uapi,
 };
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -188,6 +189,11 @@ fn touch_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     attrs.set(BTN_TOUCH);
     attrs.set(BTN_MISC); // Include BTN_MISC as a catchall key event.
     attrs.set(KEY_SLEEP);
+    attrs.set(KEY_UP);
+    attrs.set(KEY_LEFT);
+    attrs.set(KEY_RIGHT);
+    attrs.set(KEY_DOWN);
+
     attrs
 }
 
