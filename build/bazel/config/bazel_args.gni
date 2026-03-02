@@ -136,6 +136,11 @@ if (fuchsia_cxx_version == 20) {
     "--cxxopt=-std=c++20",
     "--cxxopt=-Wno-deprecated-this-capture",
   ]
+} else if (fuchsia_cxx_version == 23) {
+  _build_args += [
+    "--cxxopt=-std=c++23",
+    "--cxxopt=-Wno-deprecated-this-capture",
+  ]
 }
 
 bazel_args = {
