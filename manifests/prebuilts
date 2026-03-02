@@ -531,11 +531,11 @@
     <!-- Packages in /fuchsia/infra -->
     <package name="fuchsia/infra/artifacts/${platform}"
              path="prebuilt/tools/artifacts"
-             version="git_revision:df8b9626d80fc3bf490f3c2d519364527eb82b25"
+             version="git_revision:4d0832425f84f09285dcc699d0d3391b2a4ff7ed"
              platforms="linux-amd64,linux-arm64"/>
     <package name="fuchsia/infra/lkg/${platform}"
              path="prebuilt/tools/lkg"
-             version="git_revision:df8b9626d80fc3bf490f3c2d519364527eb82b25"
+             version="git_revision:4d0832425f84f09285dcc699d0d3391b2a4ff7ed"
              platforms="linux-amd64,linux-arm64"/>
 
     <!-- rsclient tools -->
