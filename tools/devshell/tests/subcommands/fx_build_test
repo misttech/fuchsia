@@ -10,6 +10,8 @@ BT_FILE_DEPS=(
     "scripts/fx"
     "scripts/fuchsia-vendored-python3.11"
     "scripts/hermetic-env"
+    "build/scripts/main_build.py"
+    "build/force_clean/force_clean_if_needed.py"
     "build/scripts/top_build_wrap.sh"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/build"
@@ -19,6 +21,8 @@ BT_FILE_DEPS=(
     "tools/devshell/lib/fx-optional-features.sh"
     "tools/devshell/lib/platform.sh"
     "tools/devshell/lib/generate-ssh-config.sh"
+    "tools/devshell/lib/bazel_utils.sh"
+    "tools/devshell/contrib/lib/count-ninja-actions.py"
 )
 
 declare fx
@@ -36,7 +40,6 @@ BT_MOCKED_TOOLS=(
   "tools/devshell/lib/bazel_utils.sh"
   "tools/devshell/rbe"
   "tools/devshell/lib/platform.sh"
-  "tools/devshell/contrib/lib/count-ninja-actions.py"
   "tools/integration/bootstrap.sh"
   "build/rbe/fuchsia-reproxy-wrap.sh"
   "build/profile/profile_wrap.sh"
@@ -79,6 +82,7 @@ setup_build_test() {
 
   # Misc mock binaries invoked by tools/devshell/build
   ninja="$(btf::make_mock_binary bin/ninja)"
+  gn_bin="$(btf::make_mock_binary bin/gn)"
   build_api_client="${BT_TEMP_DIR}/build/api/client"
 
   bazel="$(btf::make_mock_binary bin/bazel)"
@@ -92,9 +96,10 @@ EOF
   cat > "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh.mock_side_effects" <<EOF
     readonly PREBUILT_ALL_PATHS="${BT_TEMP_DIR}"
     readonly PREBUILT_JQ="${BT_TEMP_DIR}/prebuilt/third_party/jq/linux-x64/bin/jq"
-    readonly PREBUILT_PYTHON3_DIR="${BT_TEMP_DIR}/${MOCK_PYTHON3_DIR}"
-    readonly PREBUILT_PYTHON3="${BT_TEMP_DIR}/${MOCK_PYTHON3}"
+    readonly PREBUILT_PYTHON3="$(command -v python3)"
+    readonly PREBUILT_PYTHON3_DIR="$(dirname "${PREBUILT_PYTHON3}")"
     readonly PREBUILT_NINJA="${ninja}"
+    readonly PREBUILT_GN="${gn_bin}"
 EOF
 
   if [[ "$1" != "enable_landmines" ]]; then
@@ -120,6 +125,12 @@ EOF
   # Ensure RBE appears enabled to test that orchestration works.
   echo '{"local_only": false}' > "${TEST_BUILD_DIR}/rbe_settings.json"
   export FX_REMOTE_BUILD_METRICS=0
+
+  # fuchsia-vendored-python is used to run helper scripts like count-ninja-actions.py.
+  # Make it a pass-through to the real host python in the test environment.
+  cat > "${BT_TEMP_DIR}/scripts/fuchsia-vendored-python.mock_side_effects" <<EOF
+exec "$(command -v python3)" "\$@"
+EOF
 
   # args.json is parsed to look for enable_jobserver in Ninja build mode.
   # Ensure this is disabled by default.
@@ -302,9 +313,9 @@ TEST_fx-build-with-fint() {
     BT_EXPECT_FILE_EXISTS "${fint_bin}.mock_state"
     source "${fint_bin}.mock_state"
     local actual_args="${BT_MOCK_ARGS[*]}"
-    # The last item in BT_MOCK_ARGS will be -context=/dev/fd/<SOME_NUMBER>
-    # Sanitize dynamic paths (like /dev/fd/N) to allow for stable comparisons.
-    actual_args=$(echo "${actual_args}" | sed -e 's|/.*/fint|/dev/ANY/fint|' -e 's|-context=/dev/fd/[0-9]*|-context=/dev/fd/ANY|')
+    # The last item in BT_MOCK_ARGS will be -context=/path/to/tmp.textproto
+    # Sanitize dynamic paths (like /dev/fd/N or /tmp/tmp.textproto) to allow for stable comparisons.
+    actual_args=$(echo "${actual_args}" | sed -e 's|/.*/fint|/dev/ANY/fint|' -e 's|-context=[^ ]*|-context=/dev/fd/ANY|')
     local expected_args="/dev/ANY/fint -log-level=error build -static=path/to/build_config.proto -context=/dev/fd/ANY"
     BT_EXPECT_EQ "${actual_args}" "${expected_args}"
 }
@@ -327,7 +338,8 @@ TEST_fx-build-with-gn-label-and-j32() {
     export FX_BUILD_DRY_RUN=1
     BT_EXPECT "${fx}" build -j32 //src:foo ">" stdout.txt
     # Verify both the flag and the target reached the end of the stack.
-    BT_EXPECT grep -q -e "-j32" stdout.txt
+    # Note: main_build.py normalizes -j32 to -j 32
+    BT_EXPECT "grep -q -e '-j 32' stdout.txt"
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
 

@@ -163,6 +163,8 @@ host_script_test_data("fx_bash_tests") {
       files = [
         "//build/api/client",
         "//build/regenerator",
+        "//build/scripts/main_build.py",
+        "//build/force_clean/force_clean_if_needed.py",
         "//build/scripts/top_build_wrap.sh",
         "//build/profile/profile_wrap.sh",
         "//build/rbe/fuchsia-reproxy-wrap.sh",
@@ -182,6 +184,7 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/build-metrics",
         "//tools/devshell/contrib/ffx",
         "//tools/devshell/contrib/lint",
+        "//tools/devshell/contrib/lib/count-ninja-actions.py",
         "//tools/devshell/contrib/setup-go",
         "//tools/devshell/cp",
         "//tools/devshell/flash",

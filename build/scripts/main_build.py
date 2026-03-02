@@ -158,7 +158,9 @@ class BuildLock:
     """
 
     def __init__(self, build_dir: pathlib.Path):
+        # LINT.IfChange(build_lock)
         self.build_lock_file = build_dir.with_suffix(".build_lock")
+        # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_lock)
         self._has_shlock = check_shell_command("shlock")
 
     def __enter__(self):
@@ -365,7 +367,7 @@ class BuildInvocation(object):
         write_text(log_dir / "invocation_id", self.build_uuid + "\n")
         return log_dir
 
-    # LINT.ThenChange(/tools/devshell/lib/vars.sh:build_log_dir_structure)
+    # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_log_dir_structure)
 
     def get_build_env(self) -> dict[str, str]:
         """Curate a build environment for this invocation."""
