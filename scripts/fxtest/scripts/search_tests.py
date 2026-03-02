@@ -375,6 +375,21 @@ class BuildFileMatcher:
             f'(?:{"|".join(HOST_TEST_TEMPLATE_NAMES)})\\("([^"]+)"\\)'
         )
 
+        # Match plain test binaries.
+        #
+        # "rustc_test" and "test" match verbatim, but we also support generating test targets
+        # for rustc_binaries(target) as "${target}_test".
+        #
+        # MULTILINE is needed to ensure ^ operator works correctly.
+        self._test_binary_regex = re.compile(
+            r"^\s*(rustc_test|test|rustc_binary)\(\"([^\"]+)\"\)", re.MULTILINE
+        )
+
+        # Match targets referencing the host toolchain.
+        self._host_toolchain_regex = re.compile(
+            r"\":([^\"]+)\(\$host_toolchain\)\""
+        )
+
         self._developer_test_regex = re.compile(
             # Note: `?:` designates a "non-capture" group.
             f'(?:{"|".join(DEVELOPER_TEST_TEMPLATE_NAMES)})\\("([^"]+)"\\)'
@@ -432,12 +447,19 @@ class BuildFileMatcher:
         fuchsia_unittest_package("my_unittest") {
             ...
         }
+        test("my_host_test") {
+            ...
+        }
+        group("tests") {
+            deps = [ ":my_host_test($host_toolchain)" ]
+        }
 
         The output for the above file at src/BUILD.gn would be:
         {
             "my_component": ["//src:my_test_package"],
             "my_test_package": ["//src:my_test_package"],
-            "my_unittest": ["//src:my_unittest"]
+            "my_unittest": ["//src:my_unittest"],
+            "my_host_test": ["//src:my_host_test"]
         }
 
         Arguments:
@@ -462,6 +484,30 @@ class BuildFileMatcher:
                 name_to_target[target_name].append(
                     FoundTest(test_target_path, is_host=True)
                 )
+
+            # Collect all targets built with the host toolchain.
+            local_host_targets: set[str] = set()
+            for find in re.finditer(self._host_toolchain_regex, contents):
+                target_name = find.group(1)
+                local_host_targets.add(target_name)
+
+            # Collect all local targets that are plain test binaries.
+            # All of these that also appear in the list being built with the host toolchain
+            # are also host tests.
+            if local_host_targets:
+                for find in re.finditer(self._test_binary_regex, contents):
+                    template_name = find.group(1)
+                    target_name = find.group(2)
+                    if template_name == "rustc_binary":
+                        # Synthesize the target name for the generated unit test target.
+                        target_name += "_test"
+                    if target_name in local_host_targets:
+                        name_to_target[target_name].append(
+                            FoundTest(
+                                f"{build_rule_prefix}:{target_name}",
+                                is_host=True,
+                            )
+                        )
 
             # Collect "developer" tests, which go in a more general
             # label list and do not need to be built with the host
