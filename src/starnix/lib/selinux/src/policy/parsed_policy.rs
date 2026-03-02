@@ -20,8 +20,8 @@ use super::metadata::{Config, Counts, HandleUnknown, Magic, PolicyVersion, Signa
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::{Level, SecurityContext};
 use super::symbols::{
-    Category, Class, Classes, CommonSymbol, CommonSymbols, ConditionalBoolean, MlsLevel, Role,
-    Sensitivity, SymbolList, Type, TypeIndex, User,
+    Category, CategoryIndex, Class, Classes, CommonSymbol, CommonSymbols, ConditionalBoolean,
+    MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
 };
 use super::view::{HashedArrayView, U24};
 use super::{
@@ -77,7 +77,7 @@ pub struct ParsedPolicy {
     /// The set of sensitivity levels referenced by this policy.
     sensitivities: SymbolList<Sensitivity>,
     /// The set of categories referenced by this policy.
-    categories: SymbolList<Category>,
+    categories: CategoryIndex,
     /// The set of access vector rules referenced by this policy.
     access_vector_rules: HashedArrayView<AccessVectorRule>,
     conditional_lists: SimpleArray<ConditionalNodes>,
@@ -398,14 +398,14 @@ impl ParsedPolicy {
     }
 
     /// Returns the `Category` structure for the requested Id. Valid policies include definitions
-    /// for all the Ids they refer to internally; supply some other Id will trigger a panic.
-    pub(super) fn category(&self, id: CategoryId) -> &Category {
-        self.categories.data.iter().find(|y| y.id() == id).unwrap()
+    /// for all the Ids they refer to internally; supplying some other Id will trigger a panic.
+    pub(super) fn category(&self, id: CategoryId) -> Category {
+        self.categories.category(&self.data, id)
     }
 
     /// Returns the named category, if present in the policy.
-    pub(super) fn category_by_name(&self, name: &str) -> Option<&Category> {
-        self.categories.data.iter().find(|x| x.name_bytes() == name.as_bytes())
+    pub(super) fn category_by_name(&self, name: &str) -> Option<Category> {
+        self.categories.categories(&self.data).find(|x| x.name_bytes() == name.as_bytes())
     }
 
     pub(super) fn classes(&self) -> &Classes {
@@ -623,7 +623,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing sensitivites")?;
 
-    let (categories, tail) = SymbolList::<Category>::parse(tail)
+    let (categories, tail) = CategoryIndex::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing categories")?;
 
@@ -903,7 +903,7 @@ impl ParsedPolicy {
         let sensitivity_ids: HashSet<SensitivityId> =
             self.sensitivities.data.iter().map(|x| x.id()).collect();
         let category_ids: HashSet<CategoryId> =
-            self.categories.data.iter().map(|x| x.id()).collect();
+            self.categories.categories(&self.data).map(|x| x.id()).collect();
 
         // Validate that users use only defined sensitivities and categories, and that
         // each user's MLS levels are internally consistent (i.e., the high level

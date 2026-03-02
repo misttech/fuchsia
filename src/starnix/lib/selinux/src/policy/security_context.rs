@@ -592,9 +592,9 @@ mod tests {
 
     // Represents a `CategorySpan`.
     #[derive(Debug, Eq, PartialEq)]
-    struct CategoryItem<'a> {
-        low: &'a str,
-        high: &'a str,
+    struct CategoryItem {
+        low: String,
+        high: String,
     }
 
     fn user_name(policy: &TestPolicy, id: UserId) -> &str {
@@ -613,11 +613,11 @@ mod tests {
         std::str::from_utf8(policy.0.parsed_policy().sensitivity(id).name_bytes()).unwrap()
     }
 
-    fn category_name(policy: &TestPolicy, id: CategoryId) -> &str {
-        std::str::from_utf8(policy.0.parsed_policy().category(id).name_bytes()).unwrap()
+    fn category_name(policy: &TestPolicy, id: CategoryId) -> String {
+        std::str::from_utf8(policy.0.parsed_policy().category(id).name_bytes()).unwrap().into()
     }
 
-    fn category_span<'a>(policy: &'a TestPolicy, category: &CategorySpan) -> CategoryItem<'a> {
+    fn category_span(policy: &TestPolicy, category: &CategorySpan) -> CategoryItem {
         CategoryItem {
             low: category_name(policy, category.low),
             high: category_name(policy, category.high),
@@ -627,7 +627,7 @@ mod tests {
     fn category_spans<'a>(
         policy: &'a TestPolicy,
         categories: &Vec<CategorySpan>,
-    ) -> Vec<CategoryItem<'a>> {
+    ) -> Vec<CategoryItem> {
         categories.iter().map(|x| category_span(policy, x)).collect()
     }
 
@@ -783,7 +783,7 @@ mod tests {
         assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
         assert_eq!(
             category_spans(&policy, &security_context.low_level.categories),
-            [CategoryItem { low: "c0", high: "c4" }]
+            [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
         assert_eq!(security_context.high_level, None);
     }
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(sensitivity_name(&policy, high_level.sensitivity), "s1");
         assert_eq!(
             category_spans(&policy, &high_level.categories),
-            [CategoryItem { low: "c0", high: "c4" }]
+            [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
     }
 
@@ -853,14 +853,14 @@ mod tests {
         assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s0");
         assert_eq!(
             category_spans(&policy, &security_context.low_level.categories),
-            [CategoryItem { low: "c0", high: "c0" }]
+            [CategoryItem { low: "c0".to_string(), high: "c0".to_string() }]
         );
 
         let high_level = security_context.high_level.as_ref().unwrap();
         assert_eq!(sensitivity_name(&policy, high_level.sensitivity), "s1");
         assert_eq!(
             category_spans(&policy, &high_level.categories),
-            [CategoryItem { low: "c0", high: "c4" }]
+            [CategoryItem { low: "c0".to_string(), high: "c4".to_string() }]
         );
     }
 
@@ -876,7 +876,10 @@ mod tests {
         assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
         assert_eq!(
             category_spans(&policy, &security_context.low_level.categories),
-            [CategoryItem { low: "c0", high: "c0" }, CategoryItem { low: "c4", high: "c4" }]
+            [
+                CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
+                CategoryItem { low: "c4".to_string(), high: "c4".to_string() }
+            ]
         );
         assert_eq!(security_context.high_level, None);
     }
@@ -893,7 +896,10 @@ mod tests {
         assert_eq!(sensitivity_name(&policy, security_context.low_level.sensitivity), "s1");
         assert_eq!(
             category_spans(&policy, &security_context.low_level.categories),
-            [CategoryItem { low: "c0", high: "c0" }, CategoryItem { low: "c3", high: "c4" }]
+            [
+                CategoryItem { low: "c0".to_string(), high: "c0".to_string() },
+                CategoryItem { low: "c3".to_string(), high: "c4".to_string() }
+            ]
         );
         assert_eq!(security_context.high_level, None);
     }

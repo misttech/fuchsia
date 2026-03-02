@@ -7,11 +7,11 @@ use super::error::ValidateError;
 use super::extensible_bitmap::{
     ExtensibleBitmap, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator,
 };
-use super::parser::{PolicyCursor, PolicyOffset};
+use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::security_context::{CategoryIterator, Level, SecurityContext};
 use super::view::U24;
 use super::{
-    AccessVector, Array, CategoryId, ClassId, ClassPermissionId, Counted, Parse, PolicyData,
+    AccessVector, Array, CategoryId, ClassId, ClassPermissionId, Counted, Parse,
     PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, ValidateArray,
     array_type, array_type_validate_deref_both, array_type_validate_deref_data,
     array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
@@ -1756,15 +1756,6 @@ impl Validate for SensitivityStaticMetadata {
     }
 }
 
-impl Validate for [Category] {
-    type Error = anyhow::Error;
-
-    /// TODO: Validate consistency of sequence of [`Category`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 array_type!(Category, CategoryMetadata, Vec<u8>);
 
 array_type_validate_deref_both!(Category);
@@ -1814,6 +1805,90 @@ impl Validate for CategoryMetadata {
     /// TODO: Validate internal consistency of [`CategoryMetadata`].
     fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
         NonZeroU32::new(self.id.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct CategoryIndex {
+    /// A mapping from [`CategoryId`] (represented as position-in-the-array-plus-one)
+    /// to the corresponding [`Category`] (represented as an offset into the policy
+    /// bytes). If zero is the value at index `i` of this structure, that indicates that
+    /// the policy bytes have no category with ID `i + 1`.
+    //
+    // TODO: https://fxbug.dev/479180246 - we currently allow for "holes" (integer
+    // category IDs that do not correspond to any category) in this array, but do we
+    // need to? Will all the binary policies that we encounter be "packed" such that
+    // they use every integer between one and the largest integer that they use?
+    offsets_by_id_minus_one: Box<[U24]>,
+}
+
+impl CategoryIndex {
+    /// Looks up a [`Category`] by its [`CategoryId`].
+    pub fn category(&self, policy_bytes: &PolicyData, category_id: CategoryId) -> Category {
+        let offset =
+            PolicyOffset::from(self.offsets_by_id_minus_one[(category_id.0.get() - 1) as usize]);
+        let (category, _) = Category::parse(PolicyCursor::new_at(policy_bytes, offset))
+            .expect("These bytes already successfully parsed");
+        category
+    }
+
+    /// Looks up all [`Category`]s given in the policy. This is linear in time and
+    /// space and inappropriate to call in from a performance-sensitive context, but
+    /// may be called during policy parsing/validation, selinuxfs file operations, and
+    /// filesystem extended attribute value calculations.
+    pub fn categories<'a>(
+        &'a self,
+        policy_bytes: &'a PolicyData,
+    ) -> impl Iterator<Item = Category> + 'a {
+        self.offsets_by_id_minus_one.iter().filter_map(|&offset| match PolicyOffset::from(offset) {
+            0 => None,
+            offset => {
+                let (category, _) =
+                    Category::parse(PolicyCursor::new_at(policy_bytes, PolicyOffset::from(offset)))
+                        .expect("These bytes already successfully parsed");
+                Some(category)
+            }
+        })
+    }
+}
+
+impl Parse for CategoryIndex {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let (metadata, mut tail) = Metadata::parse(bytes)?;
+        let category_count = usize::try_from(metadata.count()).unwrap();
+        let mut offsets_by_id_minus_one = Vec::with_capacity(category_count);
+        for _ in 0..category_count {
+            let offset = U24::try_from(tail.offset()).unwrap();
+            let (category, next_tail) = Category::parse(tail)?;
+            let category_id_as_usize = category.id().0.get() as usize;
+
+            if offsets_by_id_minus_one.len() < category_id_as_usize {
+                offsets_by_id_minus_one.resize(category_id_as_usize, U24::try_from(0).unwrap());
+            }
+            offsets_by_id_minus_one[category_id_as_usize - 1] = offset;
+
+            tail = next_tail;
+        }
+        Ok((Self { offsets_by_id_minus_one: Box::<[U24]>::from(offsets_by_id_minus_one) }, tail))
+    }
+}
+
+impl Validate for CategoryIndex {
+    type Error = anyhow::Error;
+
+    /// TODO: Validate consistency of sequence of [`Category`].
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        for offset in &self.offsets_by_id_minus_one {
+            let (category, _) =
+                Category::parse(PolicyCursor::new_at(&context.data, PolicyOffset::from(*offset)))
+                    .expect("These bytes already successfully parsed");
+
+            category.validate(context).context("category defaults")?;
+        }
+
         Ok(())
     }
 }
