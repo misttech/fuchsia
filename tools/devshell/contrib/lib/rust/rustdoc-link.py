@@ -452,6 +452,10 @@ def set_arg_defaults(args: Namespace) -> None:
             HOST_PLATFORM,
             "bin/rustdoc",
         )
+    if args.save_actions_to is None:
+        args.save_actions_to = (
+            Path(args.build_dir) / "docs" / "rust" / "actions.json"
+        )
     if args.build_executable is None:
         args.build_executable = Path(args.fuchsia_dir, "tools/devshell/build")
     if args.extra_rustdoc_arg is None:
@@ -465,7 +469,7 @@ def make_output_directories(args: Namespace) -> None:
     if args.dry_run:
         # We plan to write an actions.json file. Ensure its containing
         # directory exists.
-        Path(args.build_dir, "docs", "rust").mkdir(parents=True, exist_ok=True)
+        args.save_actions_to.parent.mkdir(parents=True, exist_ok=True)
     else:
         # remove the destination to ensure that we always document into a fresh
         # directory
@@ -570,12 +574,11 @@ def main(args: Namespace) -> None:
     action = generate_action(meta, args)
 
     if args.dry_run:
-        save_actions_to = Path(args.build_dir, "docs", "rust", "actions.json")
         if not args.quiet:
             print(
-                f"fx rustdoc-link: dry run, saving actions to {save_actions_to}"
+                f"fx rustdoc-link: dry run, saving actions to {args.save_actions_to}"
             )
-        with save_actions_to.open("w") as save_actions_to:
+        with args.save_actions_to.open("w") as save_actions_to:
             json.dump(asdict(action), save_actions_to, indent=4)
     else:
         try:
