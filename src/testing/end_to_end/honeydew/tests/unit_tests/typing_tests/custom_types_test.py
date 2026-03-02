@@ -172,6 +172,15 @@ class CustomTypesTests(unittest.TestCase):
         got = str(ip_port)
         self.assertEqual(got, expected)
 
+    def test_ipport_ip_str(self) -> None:
+        """Test cases for IpPort.ip_str."""
+        ip_port = custom_types.IpPort(
+            ip=ipaddress.ip_address("127.0.0.1"), port=8081
+        )
+        self.assertEqual(ip_port.ip_str, "127.0.0.1")
+        ip_port = custom_types.IpPort(ip=ipaddress.ip_address("::1"), port=None)
+        self.assertEqual(ip_port.ip_str, "::1")
+
 
 if __name__ == "__main__":
     unittest.main()

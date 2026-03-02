@@ -124,6 +124,11 @@ class IpPort:
         except ValueError as e:
             raise e
 
+    @property
+    def ip_str(self) -> str:
+        """The IP address as a string."""
+        return str(self.ip)
+
 
 @dataclass(frozen=True)
 class TargetSshAddress(IpPort):
