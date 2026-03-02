@@ -4,6 +4,7 @@
 """Provides Host-(Fuchsia)Target interactions via Fuchsia-Controller."""
 
 import logging
+from typing import Tuple
 
 import fuchsia_controller_py as fuchsia_controller
 
@@ -167,3 +168,12 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
 
         self.create_context()
         self.check_connection()
+
+    def channel_create(
+        self,
+    ) -> Tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
+        """Opens a pair of connected channels, usef for FIDL endpoints.
+
+        Raises: FuchsiaControllerError: On failure to create the channels.
+        """
+        return fuchsia_controller.Channel.create()

@@ -4,6 +4,7 @@
 """ABC with methods for Host-(Fuchsia)Target interactions via Fuchsia-Controller."""
 
 import abc
+from typing import Tuple
 
 import fuchsia_controller_py as fuchsia_controller
 
@@ -49,4 +50,13 @@ class FuchsiaController(abc.ABC):
 
         Returns:
             FIDL channel to proxy.
+        """
+
+    @abc.abstractmethod
+    def channel_create(
+        self,
+    ) -> Tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
+        """Opens a pair of connected channels, usef for FIDL endpoints.
+
+        Raises: FuchsiaControllerError: On failure to create the channels.
         """

@@ -8,9 +8,9 @@ import logging
 import os
 import os.path
 import time
-from typing import Any
+from typing import Any, Tuple
 
-from fuchsia_controller_py import Context, IsolateDir, ZxStatus
+from fuchsia_controller_py import Channel, Context, IsolateDir, ZxStatus
 from mobly import base_test
 
 MOBLY_CONTROLLER_CONFIG_NAME = "FuchsiaDevice"
@@ -67,6 +67,9 @@ class FuchsiaDevice(object):
         self.ctx = Context(
             isolate_dir=isolate, target=self.target, config=ctx_config
         )
+
+    def channel_create(self) -> Tuple[Channel, Channel]:
+        return Channel.create()
 
     async def wait_offline(self, timeout: int = TIMEOUTS["OFFLINE"]) -> None:
         """Waits for the Fuchsia device to be offline.

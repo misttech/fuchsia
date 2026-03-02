@@ -13,7 +13,7 @@ import socket
 import textwrap
 import time
 from ipaddress import ip_address
-from typing import Any
+from typing import Any, Tuple
 
 import honeydew
 from antlion import context, utils
@@ -486,6 +486,14 @@ class FuchsiaDevice:
         if self.association_mechanism != "drivers":
             self.wlan_policy_controller._deconfigure_wlan_sync()
         self.association_mechanism = None
+
+    def channel_create(self) -> Tuple[Any, Any]:
+        """Returns a pair of connected channels.
+
+        NOTE: This is intended to be used with FDomain so that these channels
+        are usable on this fuchsia-device.
+        """
+        return self.honeydew_fd.fuchsia_controller.channel_create()
 
     def reboot(
         self,

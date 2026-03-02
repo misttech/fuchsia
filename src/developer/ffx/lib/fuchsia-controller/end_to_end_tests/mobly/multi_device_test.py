@@ -76,14 +76,14 @@ class BluetoothDevice(object):
 
     async def set_discoverable(self, enabled: bool) -> None:
         if enabled:
-            client, server = Channel.create()
+            client, server = self.device.channel_create()
             await self.access_proxy.make_discoverable(token=server.take())
             self.discoverable_token = client
         else:
             self.discoverable_token = None
 
     async def start_discovery(self) -> None:
-        client, server = Channel.create()
+        client, server = self.device.channel_create()
         await self.access_proxy.start_discovery(token=server.take())
         self.discovery_token = client
 
