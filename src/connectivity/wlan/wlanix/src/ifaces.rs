@@ -59,6 +59,8 @@ pub(crate) trait IfaceManager: Send + Sync {
         iface_id: u16,
     ) -> Result<fidl_common::ApfPacketFilterSupport, Error>;
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error>;
+    #[cfg(test)]
+    async fn reset_phy(&self, phy_id: u16) -> Result<(), Error>;
     async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error>;
     async fn set_tx_power_scenario(
         &self,
@@ -252,6 +254,18 @@ impl IfaceManager for DeviceMonitorIfaceManager {
             }
         } else {
             Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    async fn reset_phy(&self, phy_id: u16) -> Result<(), Error> {
+        let result = self.monitor_svc.reset(phy_id).await.map_err(Into::<Error>::into)?;
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => match zx::Status::ok(e) {
+                Ok(()) => Ok(()),
+                Err(e) => Err(e.into()),
+            },
         }
     }
 
@@ -1089,6 +1103,7 @@ pub mod test_utils {
         GetPowerState(u16),
         ResetTxPowerScenario(u16),
         SetTxPowerScenario { phy_id: u16, scenario: fidl_internal::TxPowerScenario },
+        ResetPhy(u16),
     }
 
     pub struct TestIfaceManager {
@@ -1101,6 +1116,7 @@ pub mod test_utils {
         mock_power_up_result: Result<(), Error>,
         mock_reset_tx_power_scenario_result: Result<(), Error>,
         mock_set_tx_power_scenario_result: Result<(), Error>,
+        mock_reset_phy_result: Result<(), Error>,
         mock_list_phys_result: Result<Vec<u16>, Error>,
         iface_id: Arc<Mutex<u16>>,
     }
@@ -1117,6 +1133,7 @@ pub mod test_utils {
                 mock_power_up_result: Ok(()),
                 mock_reset_tx_power_scenario_result: Ok(()),
                 mock_set_tx_power_scenario_result: Ok(()),
+                mock_reset_phy_result: Ok(()),
                 mock_list_phys_result: Ok(vec![1]),
                 iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
@@ -1333,6 +1350,14 @@ pub mod test_utils {
         ) -> Result<(), Error> {
             self.calls.lock().push(IfaceManagerCall::SetTxPowerScenario { phy_id, scenario });
             match &self.mock_set_tx_power_scenario_result {
+                Ok(()) => Ok(()),
+                Err(e) => bail!("{}", e),
+            }
+        }
+
+        async fn reset_phy(&self, phy_id: u16) -> Result<(), Error> {
+            self.calls.lock().push(IfaceManagerCall::ResetPhy(phy_id));
+            match &self.mock_reset_phy_result {
                 Ok(()) => Ok(()),
                 Err(e) => bail!("{}", e),
             }
@@ -2939,6 +2964,40 @@ mod tests {
         );
 
         // Run the future to completion.
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+    }
+
+    #[test]
+    fn test_reset_phy() {
+        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
+        let phy_id = 123;
+        let mut fut = manager.reset_phy(phy_id);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        let (req_phy_id, responder) = assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::Reset { phy_id, responder })) => (phy_id, responder));
+        assert_eq!(req_phy_id, phy_id);
+        responder.send(Ok(())).expect("Failed to respond to ResetPhy");
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_reset_phy_failure() {
+        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
+        let phy_id = 123;
+        let mut fut = manager.reset_phy(phy_id);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        let (req_phy_id, responder) = assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::Reset { phy_id, responder })) => (phy_id, responder));
+        assert_eq!(req_phy_id, phy_id);
+        responder
+            .send(Err(zx::Status::INTERNAL.into_raw()))
+            .expect("Failed to respond to ResetPhy");
+
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 }
