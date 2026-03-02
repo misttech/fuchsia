@@ -16,6 +16,8 @@
 basic_source_set("public") {
   public = [
     "zircon/analyzer.h",
+    "zircon/availability.h",
+    "zircon/availability_levels.inc",
     "zircon/compiler.h",
     "zircon/errors.h",
     "zircon/fidl.h",

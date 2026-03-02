@@ -12,6 +12,8 @@ cc_library(
     name = "public",
     hdrs = [
         "zircon/analyzer.h",
+        "zircon/availability.h",
+        "zircon/availability_levels.inc",
         "zircon/compiler.h",
         "zircon/errors.h",
         "zircon/fidl.h",
