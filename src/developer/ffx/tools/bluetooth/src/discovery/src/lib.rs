@@ -29,6 +29,11 @@ impl FfxMain for DiscoveryTool {
                 self.set_discovery(true).await?;
                 writer.line("Starting discovery")?;
             }
+            // ffx bluetooth discovery stop
+            DiscoverySubCommand::Stop(ref _cmd) => {
+                self.set_discovery(false).await?;
+                writer.line("Stopping discovery")?;
+            }
         }
         Ok(())
     }

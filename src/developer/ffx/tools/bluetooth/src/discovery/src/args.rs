@@ -22,6 +22,7 @@ pub struct DiscoveryCommand {
 #[argh(subcommand)]
 pub enum DiscoverySubCommand {
     Start(StartCommand),
+    Stop(StopCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -32,3 +33,12 @@ pub enum DiscoverySubCommand {
     example = "ffx bluetooth discovery start"
 )]
 pub struct StartCommand {}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "stop",
+    description = "Stop an ongoing general discovery procedure.",
+    example = "ffx bluetooth discovery stop"
+)]
+pub struct StopCommand {}
