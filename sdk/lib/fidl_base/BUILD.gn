@@ -65,9 +65,14 @@ sdk_source_set("fidl_base") {
   deps = [
     "//sdk/lib/fit",
     "//sdk/lib/utf-utils",
+    "//sdk/lib/zircon-assert",
   ]
 
   public_deps = [ "//src/zircon/lib/zircon" ]
+
+  if (!is_fuchsia) {
+    public_deps += [ "//zircon/system/public" ]
+  }
 
   public_configs = [ ":fidl_base.headers" ]
 

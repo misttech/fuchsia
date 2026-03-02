@@ -881,6 +881,8 @@ genrule(
         ":test_static_library_zx",
 
         # Other libraries.
+        "//sdk/lib/fidl",
+        "//sdk/lib/fidl_base",
         "//sdk/lib/stdcompat",
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",

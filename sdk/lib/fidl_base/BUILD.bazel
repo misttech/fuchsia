@@ -33,6 +33,7 @@ cc_library(
 # Bazel build consistent.
 # Bazel's `cc_library()` always creates at least a `.a` file, and the default
 # `alwayslink = False` avoids dependent binaries linking unreferenced symbols.
+# buildifier: leave-alone - Do not sort `fuchsia_*` and `non_fuchsia_*`.
 idk_cc_source_library(
     name = "fidl_base",
     srcs = [
@@ -64,10 +65,12 @@ idk_cc_source_library(
     implementation_deps = [
         "//sdk/lib/fit",
         "//sdk/lib/utf-utils",
+        "//sdk/lib/zircon-assert",
     ],
     stable = True,
     visibility = ["//visibility:public"],
     deps = ["//src/zircon/lib/zircon"],
+    non_fuchsia_deps = ["//zircon/system/public"],
 
     # TODO(https://fxbug.dev/421888626): Implement the equivalent of this from the GN file.
     # if (is_fuchsia) {

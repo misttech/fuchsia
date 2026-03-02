@@ -7,6 +7,8 @@
 # and C library GN toolchains, which have no equivalent in Bazel.
 # LINT.IfChange
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_noop_atom")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 alias(
     name = "zircon-assert",
@@ -17,12 +19,26 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+# The zircon library is not a real IDK atom since it is provided
+# directly as part of the IDK sysroot.
+idk_noop_atom(
+    name = "zircon-assert_idk",
+    api_area = "kernel",
+    category = "partner",
+    id = "sdk://zircon-assert",
+    idk_name = "zircon-assert",
+    stable = True,
+    visibility = ["//visibility:public"],
+)
+
 # On Fuchsia, the <zircon/assert.h> header is provided by the sysroot
 # and the __zx_panic() implementation is provided by the C library so
 # an empty filegroup is adequate.
-filegroup(
+cc_library(
     name = "zircon-assert-fuchsia",
     srcs = [],
+    hdrs = [],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [":__pkg__"],
 )
 
@@ -33,6 +49,7 @@ cc_library(
     srcs = ["zx_panic_libc.cc"],
     hdrs = ["zircon/assert.h"],
     includes = ["."],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = [":__pkg__"],
     # <zircon/assert.h> includes <zircon/compiler.h>
     deps = ["//zircon/system/public"],
