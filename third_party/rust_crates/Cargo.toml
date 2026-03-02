@@ -614,9 +614,6 @@ env_vars = [ "CARGO_PKG_NAME=futures-task" ]
 [gn.package.futures-util."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-util" ]
 rustflags = [ "--cfg=fn_like_proc_macro" ]
-# TODO(https://fxbug.dev/475245729): Re-enable docs when upstream rustdoc ICE
-# is fixed.
-disable_rustdoc = true
 
 # generator has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
