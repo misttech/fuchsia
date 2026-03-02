@@ -2,10 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
-
-load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+load("//build/bazel/rules/cc:cc_library.bzl", "fx_cc_library")
 
 # Header-only library for transaction header utilities.
 #
@@ -13,10 +11,11 @@ load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
 # depend on this library to initialize and validate transaction headers, as
 # opposed to `fidl_base` which might be built with sanitizers, or manually
 # initializing transaction headers which is brittle.
-cc_library(
+fx_cc_library(
     name = "fidl_txn_header",
     hdrs = ["include/lib/fidl/txn_header.h"],
     includes = ["include"],
+    public_configs = [":fidl_base.config"],  # For bazel2gn.
     deps = ["//src/zircon/lib/zircon"],
 )
 
@@ -71,11 +70,15 @@ idk_cc_source_library(
     visibility = ["//visibility:public"],
     deps = ["//src/zircon/lib/zircon"],
     non_fuchsia_deps = ["//zircon/system/public"],
-
-    # TODO(https://fxbug.dev/421888626): Implement the equivalent of this from the GN file.
-    # if (is_fuchsia) {
-    #   configs += [ "//build/config/fuchsia:no_cpp_standard_library" ]
-    # }
+    public_configs = [":fidl_base.config"],  # For bazel2gn.
+    # As written, this is for bazel2gn.
+    # TODO(https://fxbug.dev/421888626): Implement the equivalent of this for Bazel.
+    # Note that in GN this is a private config setting a linker flag, but
+    # Bazel's `linkopts` attribute is public.
+    configs = select(
+        {
+            "@platforms//os:fuchsia": ["//build/config/fuchsia:no_cpp_standard_library"],
+            "//conditions:default": [],
+        },
+    ),
 )
-
-# LINT.ThenChange(BUILD.gn)

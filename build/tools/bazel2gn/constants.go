@@ -52,6 +52,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_library":         "source_set",
 	"cc_binary":          "executable",
 	"cc_library_headers": "library_headers",
+	"fx_cc_library":      "source_set",
 
 	// C++ Zircon
 	"cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable` not specified.
@@ -104,12 +105,12 @@ var attrsToOmitByRules = map[string]map[string]bool{
 		// attribute is converted to `script` and `args` in GN, so only one `tool` is supported.
 		"tools": true,
 	},
-	"cc_library": {
-		// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
-		// Currently the only use case is to set `includes = ["../.."]`, which is covered by
-		// `"//build/config:default_include_dirs"` in GN.
-		"includes": true,
-	},
+	// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
+	// Currently the only use case is to set `includes = ["../.."]`, which is covered by
+	// `"//build/config:default_include_dirs"` in GN.
+	"cc_library":            {"includes": true},
+	"fx_cc_library":         {"includes": true},
+	"idk_cc_source_library": {"includes": true},
 }
 
 // Common Bazel attributes that use different names in GN.
@@ -234,8 +235,9 @@ var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
 var attrMapsByRules = map[string]map[string]string{
 	// C++
-	"cc_library": ccLibAttrMap,
-	"cc_binary":  ccCommonAttrMap,
+	"cc_library":    ccLibAttrMap,
+	"cc_binary":     ccCommonAttrMap,
+	"fx_cc_library": ccLibAttrMap,
 
 	// C++ Zircon
 	"cc_shared_library_zx": ccLibAttrMap,
@@ -331,6 +333,12 @@ var thirdPartyBazelRepos = map[string]string{
 // coptToConfig maps from Bazel copt values to configs to use in GN.
 var coptToConfig = map[string]string{
 	"-Wno-implicit-fallthrough": "//build/config:Wno-implicit-fallthrough",
+
+	// The following are GN `configs` rather than `copt` values. These must be
+	// allowed because they both appear as `configs` by the time this map is used.
+	// TODO(https://fxbug.dev/421888626): Properly specify the relevant flags in
+	// Bazel and convert those to GN configs.
+	"//build/config/fuchsia:no_cpp_standard_library": "//build/config/fuchsia:no_cpp_standard_library",
 }
 
 // attrGNAssignmentOps maps from GN attribute names to the assignment operators to use in GN.

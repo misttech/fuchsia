@@ -58,6 +58,7 @@ def _idk_cc_source_library_impl(
         build_as_static,  # buildifier: disable=unused-variable - For GN conversion only.
         friend,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
+        configs,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Implementation for the idk_cc_source_library() macro."""
 
@@ -453,6 +454,10 @@ GN equivalent: `api`""",
             default = [],
         ),
         "public_configs": attr.string_list(
+            doc = "Unused in Bazel, for GN conversion only.",
+            default = [],
+        ),
+        "configs": attr.string_list(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
