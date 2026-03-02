@@ -49,8 +49,6 @@ idk_cc_source_library(
         "include/lib/fidl/cpp/time.h",
         "include/lib/fidl/cpp/transaction_header.h",
         "include/lib/fidl/cpp/wire_format_metadata.h",
-        "include/lib/fidl/internal.h",
-        "include/lib/fidl/internal_callable_traits.h",
         "include/lib/fidl/txn_header.h",
         "include/lib/fidl/visitor.h",
         "include/lib/fidl/walker.h",
@@ -58,6 +56,10 @@ idk_cc_source_library(
     api_area = "FIDL",
     build_as_static = True,
     category = "partner",
+    hdrs_for_internal_use = [
+        "include/lib/fidl/internal.h",
+        "include/lib/fidl/internal_callable_traits.h",
+    ],
     idk_name = "fidl_base",
     implementation_deps = [
         "//sdk/lib/fit",

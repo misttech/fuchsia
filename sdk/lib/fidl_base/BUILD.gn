@@ -49,6 +49,11 @@ sdk_source_set("fidl_base") {
     "include/lib/fidl/walker.h",
   ]
 
+  sdk_headers_for_internal_use = [
+    "include/lib/fidl/internal.h",
+    "include/lib/fidl/internal_callable_traits.h",
+  ]
+
   sources = [
     "decoding_and_validating.cc",
     "formatting.cc",
