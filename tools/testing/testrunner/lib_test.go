@@ -43,6 +43,7 @@ const (
 type fakeTester struct {
 	runTest     func(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*runtests.TestDetails, error)
 	reconnect   func(context.Context, testsharder.Test) error
+	setupTest   func(context.Context, testsharder.Test) error
 	funcCalls   []string
 	outDirs     map[string]bool
 	lastTestRun testsharder.Test
@@ -54,6 +55,13 @@ func testResult(test testsharder.Test, result runtests.TestStatus) *runtests.Tes
 		GNLabel: test.Label,
 		Status:  result,
 	}
+}
+
+func (t *fakeTester) SetupTest(ctx context.Context, test testsharder.Test) error {
+	if t.setupTest != nil {
+		return t.setupTest(ctx, test)
+	}
+	return nil
 }
 
 func (t *fakeTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
@@ -401,6 +409,10 @@ func TestRunAndOutputTests(t *testing.T) {
 		stdout, stderr string
 		// A file to write to the test out dir.
 		outputfile string
+		// Whether package resolution failed.
+		pkgResolveFailed bool
+		// The duration that package resolution will take.
+		pkgResolutionDuration time.Duration
 	}
 
 	testCases := []struct {
@@ -466,6 +478,54 @@ func TestRunAndOutputTests(t *testing.T) {
 			},
 			expectedResults: []runtests.TestDetails{
 				timedOutTest("foo", 0, tooLong),
+			},
+		},
+		{
+			name: "passed test with separate package resolution timeout",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo", PackageResolutionTimeoutSecs: 60},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {pkgResolutionDuration: tooLong},
+			},
+			expectedResults: []runtests.TestDetails{
+				succeededTest("foo", 0, tooLong+defaultDuration),
+			},
+		},
+		{
+			name: "timed out test with separate package resolution timeout",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo", PackageResolutionTimeoutSecs: 60},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {duration: tooLong, pkgResolutionDuration: 60 * time.Second},
+			},
+			expectedResults: []runtests.TestDetails{
+				timedOutTest("foo", 0, tooLong+60*time.Second),
+			},
+		},
+		{
+			name: "package resolution failed",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo", PackageResolutionTimeoutSecs: 60},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {pkgResolutionDuration: 60 * time.Second, pkgResolveFailed: true},
+			},
+			expectedResults: []runtests.TestDetails{
+				failedTest("foo", 0, 60*time.Second),
 			},
 		},
 		{
@@ -1046,6 +1106,16 @@ func TestRunAndOutputTests(t *testing.T) {
 					behavior := tc.behavior[fmt.Sprintf("%s/%d", test.Name, runIndex)]
 					if behavior.failReconnect {
 						return fmt.Errorf("reconnect failed")
+					}
+					return nil
+				}, setupTest: func(ctx context.Context, test testsharder.Test) error {
+					runIndex := runCounts[test.Name]
+					behavior := tc.behavior[fmt.Sprintf("%s/%d", test.Name, runIndex)]
+					if behavior.pkgResolutionDuration > 0 {
+						fakeClock.Advance(behavior.pkgResolutionDuration)
+					}
+					if behavior.pkgResolveFailed {
+						return fmt.Errorf("package resolution failed")
 					}
 					return nil
 				}}, &[]runtests.DataSinkMap{}, nil

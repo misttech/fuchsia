@@ -333,6 +333,9 @@ func TestSubprocessTester(t *testing.T) {
 			outDir := filepath.Join(tmpDir, c.test.Path)
 			ctx := context.Background()
 			test := testsharder.Test{Test: c.test}
+			if err := tester.SetupTest(ctx, test); err != nil {
+				t.Errorf("tester.SetupTest got error: %s, want nil", err)
+			}
 			testResult, err := tester.Test(ctx, test, io.Discard, io.Discard, outDir)
 			testResult, err = tester.ProcessResult(ctx, test, outDir, testResult, err)
 			if err != nil {
@@ -466,6 +469,9 @@ func TestFFXTester(t *testing.T) {
 			}
 			ctx := context.Background()
 			outDir := t.TempDir()
+			if err := tester.SetupTest(ctx, test); err != nil {
+				t.Errorf("tester.SetupTest got err: %s, want nil", err)
+			}
 			testResult, err := tester.Test(ctx, test, io.Discard, io.Discard, outDir)
 			testResult, err = tester.ProcessResult(ctx, test, outDir, testResult, err)
 			if !ffx.ContainsCmd("resolve", strings.Split(test.PackageURL, "#")[0]) {
@@ -799,6 +805,9 @@ func TestSerialTester(t *testing.T) {
 			results := make(chan testResult)
 			var stdout bytes.Buffer
 			go func() {
+				if err := tester.SetupTest(ctx, tc.test); err != nil {
+					t.Errorf("tester.SetupTest got error: %s, want nil", err)
+				}
 				result, err := tester.Test(ctx, tc.test, &stdout, io.Discard, "unused-out-dir")
 				results <- testResult{result, err}
 			}()

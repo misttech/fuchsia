@@ -82,6 +82,7 @@ const (
 
 // Tester describes the interface for all different types of testers.
 type Tester interface {
+	SetupTest(context.Context, testsharder.Test) error
 	Test(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*runtests.TestDetails, error)
 	ProcessResult(context.Context, testsharder.Test, string, *runtests.TestDetails, error) (*runtests.TestDetails, error)
 	Close() error
@@ -182,6 +183,10 @@ func NewSubprocessTester(opts SubprocessTesterOptions) (Tester, error) {
 		s.sProps.cwd = cwd
 	}
 	return s, nil
+}
+
+func (t *SubprocessTester) SetupTest(_ context.Context, _ testsharder.Test) error {
+	return nil
 }
 
 func (t *SubprocessTester) setTestRun(test testsharder.Test, profileRelDir string) {
@@ -721,6 +726,25 @@ func NewFFXTester(ctx context.Context, opts FFXTesterOptions) (*FFXTester, error
 	}, nil
 }
 
+func (t *FFXTester) SetupTest(ctx context.Context, test testsharder.Test) error {
+	packageResolutionTimeout := defaultPackageResolutionTimeout
+	if test.PackageResolutionTimeoutSecs > 0 {
+		packageResolutionTimeout = time.Duration(test.PackageResolutionTimeoutSecs) * time.Second
+	}
+	packageResolutionCtx, cancel := context.WithTimeout(ctx, packageResolutionTimeout)
+	defer cancel()
+	if err := t.ffx.PackageResolve(packageResolutionCtx, strings.Split(test.PackageURL, "#")[0]); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// If we time out resolving the package, just log the error and continue to run the test.
+			// Any blobs that haven't been resolved yet should be resolved as part of the test run.
+			logger.Warningf(ctx, "failed to resolve package in %v: %s", packageResolutionTimeout, err)
+		} else {
+			return fmt.Errorf("failed to resolve package: %w", err)
+		}
+	}
+	return nil
+}
+
 func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
 	return BaseTestResultFromTest(test), t.testWithFile(ctx, test, stdout, stderr, outDir)
 }
@@ -799,22 +823,6 @@ func (t *FFXTester) Reconnect(ctx context.Context) error {
 
 // testWithFile runs `ffx test` with -test-file and returns the test result.
 func (t *FFXTester) testWithFile(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) error {
-	packageResolutionTimeout := defaultPackageResolutionTimeout
-	if test.PackageResolutionTimeoutSecs > 0 {
-		packageResolutionTimeout = time.Duration(test.PackageResolutionTimeoutSecs) * time.Second
-	}
-	packageResolutionCtx, cancel := context.WithTimeout(ctx, packageResolutionTimeout)
-	defer cancel()
-	if err := t.ffx.PackageResolve(packageResolutionCtx, strings.Split(test.PackageURL, "#")[0]); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			// If we time out resolving the package, just log the error and continue to run the test.
-			// Any blobs that haven't been resolved yet should be resolved as part of the test run.
-			logger.Warningf(ctx, "failed to resolve package in %v: %s", packageResolutionTimeout, err)
-		} else {
-			t.testRuns[test.PackageURL] = ffxTestRun{}
-			return fmt.Errorf("failed to resolve package: %w", err)
-		}
-	}
 	testDef := []build.TestListEntry{{
 		Name:   test.PackageURL,
 		Labels: []string{test.Label},
@@ -1354,6 +1362,10 @@ func NewFuchsiaSerialTester(ctx context.Context, serialSocketPath string) (Teste
 		logger.Debugf(ctx, "%s", err)
 	}
 	return &FuchsiaSerialTester{socket: socket}, nil
+}
+
+func (t *FuchsiaSerialTester) SetupTest(_ context.Context, _ testsharder.Test) error {
+	return nil
 }
 
 // Exposed for testability.

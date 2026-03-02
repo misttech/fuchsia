@@ -720,6 +720,17 @@ func runTestOnce(
 
 	startTime := clock.Now(ctx)
 
+	if err := t.SetupTest(ctx, test); err != nil {
+		result := BaseTestResultFromTest(test)
+		result.Status = runtests.TestFailure
+		result.FailureReason = fmt.Sprintf("failed to setup test: %s", err)
+		logger.Errorf(ctx, "Test %s failed: %s", test.Name, result.FailureReason)
+		result.StartTime = startTime
+		result.EndTime = clock.Now(ctx)
+		result.Affected = test.Affected
+		return result, nil
+	}
+
 	// Set the outer timeout to a slightly higher value in order to give the tester
 	// time to handle the timeout itself.  Other steps such as retrying tests over
 	// serial or fetching data sink references may also cause the Test() method to
