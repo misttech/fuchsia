@@ -68,7 +68,10 @@ def _merge_library_info_for_shared_library_impl(ctx):
         fail("`link_stub_info` must not already contain `stripped`.")
 
     return [
-        DefaultInfo(files = depset([prebuilt_library_info.debug])),
+        DefaultInfo(files = depset(transitive = [
+            ctx.attr.link_stub_info[DefaultInfo].files,
+            ctx.attr.stripped_binary[DefaultInfo].files,
+        ])),
         # LINT.IfChange(prebuilt_library_info)
         PrebuiltLibraryInfo(
             type = prebuilt_library_info.type,
