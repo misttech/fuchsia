@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
-
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
 
 wavl_tree_headers = [
@@ -142,6 +140,5 @@ idk_cc_source_library(
     idk_name = "fidl_cpp_wire",
     stable = True,
     visibility = ["//visibility:public"],
+    public_configs = [":include"],  # For bazel2gn.
 )
-
-# LINT.ThenChange(BUILD.gn)
