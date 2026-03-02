@@ -5,7 +5,7 @@
 use assert_matches::assert_matches;
 use fuchsia_async as fasync;
 use futures::executor::block_on;
-use futures::{future, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt, future};
 use std::result;
 use zx::{self as zx, Status};
 
@@ -37,8 +37,14 @@ fn next_request(stream: &mut RequestStream, exec: &mut fasync::TestExecutor) -> 
     }
 }
 
-pub(crate) fn recv_remote(remote: &Channel) -> result::Result<Vec<u8>, zx::Status> {
-    remote.read_packet()
+#[track_caller]
+pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
+    let fut = remote.next();
+    match fut.now_or_never() {
+        Some(Some(res)) => res,
+        Some(None) => Err(zx::Status::PEER_CLOSED),
+        None => Err(zx::Status::SHOULD_WAIT),
+    }
 }
 
 pub(crate) fn expect_remote_recv(expected: &[u8], remote: &Channel) {
@@ -222,7 +228,7 @@ fn invalid_signal_id_responds_error() {
 #[test]
 fn exhaust_request_ids() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let mut response_futures = Vec::new();
     // There are only 16 labels, so fill up the "outgoing requests pending" buffer
     for _ in 0..16 {
@@ -241,7 +247,7 @@ fn exhaust_request_ids() {
 
     // Finish some of them.
     for _ in 0..4 {
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -268,11 +274,11 @@ fn exhaust_request_ids() {
 #[test]
 fn command_timeout() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -305,11 +311,11 @@ fn command_timeout() {
 #[test]
 fn command_response_can_be_discarded() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let response_fut = peer.discover();
 
     // Command should be sent before we poll a response.
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -328,7 +334,7 @@ fn command_response_can_be_discarded() {
 
     // Make another discovery, and it should be sent.
     let mut another_fut = Box::pin(peer.discover());
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
 
     // Writing the response to the first discovery will get ignored.
     assert!(remote.write(response_first).is_ok());
@@ -432,11 +438,11 @@ fn discover_event_responder_reject_works() {
 #[test]
 fn discover_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -485,11 +491,11 @@ fn discover_command_works() {
 #[test]
 fn discover_command_rejected() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let mut response_fut = Box::pin(peer.discover());
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -609,12 +615,12 @@ fn get_capabilities_responder_reject_works() {
 #[test]
 fn get_capabilities_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -669,12 +675,12 @@ fn get_capabilities_command_works() {
 #[test]
 fn get_capabilities_reject_command() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -795,12 +801,12 @@ fn get_all_capabilities_responder_reject_works() {
 #[test]
 fn get_all_capabilities_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x0C = GetAllCapabilities
@@ -855,12 +861,12 @@ fn get_all_capabilities_command_works() {
 #[test]
 fn get_all_capabilities_reject_command() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x02 = GetAllCapabilities
@@ -892,12 +898,12 @@ fn get_all_capabilities_reject_command() {
 #[test]
 fn get_all_capabilites_general_reject() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_all_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0C, received[1]); // 0x0C = GetAllCapabilities
@@ -1019,12 +1025,12 @@ fn get_configuration_responder_reject_works() {
 #[test]
 fn get_configuration_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_configuration(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x04, received[1]); // 0x04 = GetConfiguration
@@ -1079,12 +1085,12 @@ fn get_configuration_command_works() {
 #[test]
 fn get_configuration_reject_command() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_configuration(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x04, received[1]); // 0x04 = GetConfiguration
@@ -1118,12 +1124,12 @@ macro_rules! seid_command_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, remote) = setup_peer();
+            let (peer, mut remote) = setup_peer();
             let seid = StreamEndpointId::try_from(1).unwrap();
             let mut response_fut = Box::pin(peer.$peer_function(&seid));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&remote).unwrap();
+            let received = recv_remote(&mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // $signal_value = $request_variant
@@ -1150,14 +1156,14 @@ macro_rules! seids_command_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, remote) = setup_peer();
+            let (peer, mut remote) = setup_peer();
             let seid1 = StreamEndpointId::try_from(1).unwrap();
             let seid2 = StreamEndpointId::try_from(16).unwrap();
             let seids = [seid1, seid2];
             let mut response_fut = Box::pin(peer.$peer_function(&seids));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&remote).unwrap();
+            let received = recv_remote(&mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // $signal_value = $request_variant
@@ -1185,12 +1191,12 @@ macro_rules! seid_command_reject_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, remote) = setup_peer();
+            let (peer, mut remote) = setup_peer();
             let seid = StreamEndpointId::try_from(1).unwrap();
             let mut response_fut = Box::pin(peer.$peer_function(&seid));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&remote).unwrap();
+            let received = recv_remote(&mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // 0x02 = GetAllCapabilities
@@ -1227,14 +1233,14 @@ macro_rules! seids_command_reject_test {
         #[test]
         fn $test_name() {
             let mut exec = fasync::TestExecutor::new();
-            let (peer, remote) = setup_peer();
+            let (peer, mut remote) = setup_peer();
             let seid1 = StreamEndpointId::try_from(1).unwrap();
             let seid2 = StreamEndpointId::try_from(16).unwrap();
             let seids = [seid1, seid2];
             let mut response_fut = Box::pin(peer.$peer_function(&seids));
             assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-            let received = recv_remote(&remote).unwrap();
+            let received = recv_remote(&mut remote).unwrap();
             // Last half of header must be Single (0b00) and Command (0b00)
             assert_eq!(0x00, received[0] & 0xF);
             assert_eq!($signal_value, received[1]); // 0x02 = GetAllCapabilities
@@ -1477,12 +1483,12 @@ seid_event_responder_reject_test!(abort_responder_reject, Abort, *CMD_ABORT_VALU
 #[test]
 fn abort_sent_no_response() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.abort(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0A, received[1]); // $signal_value = $request_variant
@@ -1600,7 +1606,7 @@ fn set_config_event_responder_reject_works() {
 #[test]
 fn set_config_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     // This should cover all the implemented capabilities to confirm they are
     // encoded correctly.
     let caps = vec![
@@ -1626,7 +1632,7 @@ fn set_config_command_works() {
         Box::pin(peer.set_configuration(&StreamEndpointId(1), &StreamEndpointId(2), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     #[rustfmt::skip]
     let set_capabilities_req = &[
         0x03,      // Set Configuration Signal
@@ -1669,7 +1675,7 @@ fn set_config_command_works() {
 #[test]
 fn set_config_error_response() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let caps = vec![
         ServiceCapability::MediaTransport,
         ServiceCapability::MediaCodec {
@@ -1682,7 +1688,7 @@ fn set_config_error_response() {
         Box::pin(peer.set_configuration(&StreamEndpointId(1), &StreamEndpointId(2), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     #[rustfmt::skip]
     let set_capabilities_req = &[
         0x03,      // Set Configuration Signal
@@ -2012,7 +2018,7 @@ fn reconfig_event_responder_reject_works() {
 #[test]
 fn reconfigure_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     // This should cover all the implemented capabilities to confirm they are
     // encoded correctly.
     let caps = vec![
@@ -2029,7 +2035,7 @@ fn reconfigure_command_works() {
     let mut response_fut = Box::pin(peer.reconfigure(&StreamEndpointId(1), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     #[rustfmt::skip]
     let reconfigure_req = &[
         0x05,      // Reconfigure Signal
@@ -2063,7 +2069,7 @@ fn reconfigure_command_works() {
 #[test]
 fn reconfigure_error_response() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let caps = vec![
         ServiceCapability::MediaTransport,
         ServiceCapability::MediaCodec {
@@ -2084,7 +2090,7 @@ fn reconfigure_error_response() {
     let mut response_fut = Box::pin(peer.reconfigure(&StreamEndpointId(1), &caps));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     #[rustfmt::skip]
     let reconfigure_req = &[
         0x05,      // Reconfigure Signal
@@ -2126,12 +2132,12 @@ fn reconfigure_error_response() {
 #[test]
 fn get_capabilities_command_with_all_service_capabilities_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2197,12 +2203,12 @@ fn get_capabilities_command_with_all_service_capabilities_works() {
 #[test]
 fn get_capabilities_command_with_invalid_service_capabilities_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2257,12 +2263,12 @@ fn get_capabilities_command_with_invalid_service_capabilities_works() {
 #[test]
 fn get_capabilities_command_with_only_invalid_service_capabilities_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.get_capabilities(&seid));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x02, received[1]); // 0x02 = GetCapabilities
@@ -2361,12 +2367,12 @@ fn delay_report_responder_reject_works() {
 #[test]
 fn delay_report_command_works() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.delay_report(&seid, 0xc0de));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0D, received[1]); // 0x0D = DelayReport
@@ -2394,12 +2400,12 @@ fn delay_report_command_works() {
 #[test]
 fn delay_report_reject_command() {
     let mut exec = fasync::TestExecutor::new();
-    let (peer, remote) = setup_peer();
+    let (peer, mut remote) = setup_peer();
     let seid = &StreamEndpointId::try_from(1).unwrap();
     let mut response_fut = Box::pin(peer.delay_report(&seid, 0xc0de));
     assert!(exec.run_until_stalled(&mut response_fut).is_pending());
 
-    let received = recv_remote(&remote).unwrap();
+    let received = recv_remote(&mut remote).unwrap();
     // Last half of header must be Single (0b00) and Command (0b00)
     assert_eq!(0x00, received[0] & 0xF);
     assert_eq!(0x0D, received[1]); // 0x0D = DelayReport

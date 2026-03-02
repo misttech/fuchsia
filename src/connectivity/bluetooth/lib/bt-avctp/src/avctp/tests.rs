@@ -4,8 +4,9 @@
 
 use fuchsia_async as fasync;
 use futures::executor::block_on;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use std::result;
+use std::task::Poll;
 use zx::{self as zx, Status};
 
 use super::*;
@@ -24,12 +25,18 @@ fn setup_stream_test() -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
     (exec, stream, peer, remote)
 }
 
-pub(crate) fn recv_remote(remote: &Channel) -> result::Result<Vec<u8>, zx::Status> {
-    remote.read_packet()
+#[track_caller]
+pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
+    let fut = remote.next();
+    match fut.now_or_never() {
+        Some(Some(res)) => res,
+        Some(None) => Err(zx::Status::PEER_CLOSED),
+        None => Err(zx::Status::SHOULD_WAIT),
+    }
 }
 
-pub(crate) fn expect_remote_recv(expected: &[u8], remote: &Channel) {
-    let r = recv_remote(&remote);
+pub(crate) fn expect_remote_recv(expected: &[u8], remote: &mut Channel) {
+    let r = recv_remote(remote);
     assert!(r.is_ok());
     let response = r.unwrap();
     if expected.len() != response.len() {
@@ -107,7 +114,7 @@ fn closed_peer_ends_request_stream() {
 
 #[test]
 fn send_command_receive_response() {
-    let (mut exec, _stream, peer, socket) = setup_stream_test();
+    let (mut exec, _stream, peer, mut socket) = setup_stream_test();
 
     // sending random payload.
     let mut command_stream =
@@ -122,20 +129,22 @@ fn send_command_receive_response() {
             0x0e, // AV PROFILE
             22, 33, 44, 55, // Random payload should match above
         ],
-        &socket,
+        &mut socket,
     );
 
     let mut response_fut = command_stream.next();
     let stream_ret: Poll<Option<Result<Packet>>> = exec.run_until_stalled(&mut response_fut);
     assert!(stream_ret.is_pending());
-    assert!(socket
-        .write(&[
-            0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
-            0x11, // AV PROFILE
-            0x0e, // AV PROFILE
-            66, 77, 88, 99 // Random Payload
-        ])
-        .is_ok()); // Response accept packet
+    assert!(
+        socket
+            .write(&[
+                0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
+                0x11, // AV PROFILE
+                0x0e, // AV PROFILE
+                66, 77, 88, 99 // Random Payload
+            ])
+            .is_ok()
+    ); // Response accept packet
 
     let stream_ret: Poll<Option<Result<Packet>>> = exec.run_until_stalled(&mut response_fut);
     assert!(stream_ret.is_ready());
@@ -152,7 +161,7 @@ fn send_command_receive_response() {
 
 #[test]
 fn receive_command_send_response() {
-    let (mut exec, mut stream, _peer, socket) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
     let notif_command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -188,14 +197,16 @@ fn receive_command_send_response() {
         ],
         command.body()
     );
-    assert!(command
-        .send_response(&[
-            0x08, // response: NotImplemented
-            0x48, // panel subunit_type 9 (<< 3), subunit_id 0
-            0x00, // op code: VendorDependent
-            0x00, 0x19, 0x58, // bit sig company id
-        ],)
-        .is_ok());
+    assert!(
+        command
+            .send_response(&[
+                0x08, // response: NotImplemented
+                0x48, // panel subunit_type 9 (<< 3), subunit_id 0
+                0x00, // op code: VendorDependent
+                0x00, 0x19, 0x58, // bit sig company id
+            ],)
+            .is_ok()
+    );
     expect_remote_recv(
         &[
             0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
@@ -206,7 +217,7 @@ fn receive_command_send_response() {
             0x00, // op code: VendorDependent
             0x00, 0x19, 0x58, // bit sig company id
         ],
-        &socket,
+        &mut socket,
     );
 }
 
@@ -239,7 +250,7 @@ fn receive_invalid_is_dropped() {
 
 #[test]
 fn invalid_profile_id_response() {
-    let (mut exec, mut stream, _peer, socket) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
     let notif_command_packet = &[
         // command for wrong profile id
         0x03, // TxLabel 0, Single 0, Response 1, Ipid 1,
@@ -258,6 +269,6 @@ fn invalid_profile_id_response() {
             0x03, // TxLabel 0, Single 0, Response 1, Ipid 1,
             0x11, 0x00, // random profile ID same as above
         ],
-        &socket,
+        &mut socket,
     ); // receive invalid profile response
 }

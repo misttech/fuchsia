@@ -232,18 +232,6 @@ impl Channel {
         self.socket.poll_datagram(cx, out)
     }
 
-    /// Read from the channel, allocating a Vec for the packet.
-    /// This will return zx::Status::SHOULD_WAIT if there is no data waiting to read.
-    pub fn read_packet(&self) -> Result<Vec<u8>, zx::Status> {
-        let bytes_waiting = self.socket.as_ref().outstanding_read_bytes()?;
-        if bytes_waiting == 0 {
-            return Err(zx::Status::SHOULD_WAIT);
-        }
-        let mut packet = vec![0; bytes_waiting];
-        let _ = self.read(&mut packet[..])?;
-        Ok(packet)
-    }
-
     /// Read from the channel. This will return zx::Status::SHOULD_WAIT if there is no data
     /// available.  If `buf` is not large enough, the rest of the packet will be thrown out.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, zx::Status> {

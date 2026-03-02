@@ -802,7 +802,7 @@ pub(crate) mod tests {
     /// Expects the provided `expected` AT data to be received by the `remote` channel.
     pub async fn expect_data_received_by_peer(remote: &mut Channel, expected: Vec<at::Response>) {
         for expected_at in expected {
-            let bytes = remote.read_packet().expect("packet expected");
+            let bytes = remote.next().await.unwrap().expect("packet expected");
             let actual_result =
                 at::Response::deserialize(&mut Cursor::new(bytes), DeserializeBytes::new());
             let actual = actual_result.values.get(0).expect("valid response");

@@ -1181,8 +1181,14 @@ mod tests {
         streams
     }
 
-    pub(crate) fn recv_remote(remote: &Channel) -> Result<Vec<u8>, zx::Status> {
-        remote.read_packet()
+    #[track_caller]
+    pub(crate) fn recv_remote(remote: &mut Channel) -> Result<Vec<u8>, zx::Status> {
+        let fut = remote.next();
+        match fut.now_or_never() {
+            Some(Some(res)) => res,
+            Some(None) => Err(zx::Status::PEER_CLOSED),
+            None => Err(zx::Status::SHOULD_WAIT),
+        }
     }
 
     /// Creates a Peer object, returning a channel connected ot the remote end, a
@@ -1211,11 +1217,11 @@ mod tests {
     }
 
     fn expect_get_capabilities_and_respond(
-        remote: &Channel,
+        remote: &mut Channel,
         expected_seid: u8,
         response_capabilities: &[u8],
     ) {
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1236,11 +1242,11 @@ mod tests {
     }
 
     fn expect_get_all_capabilities_and_respond(
-        remote: &Channel,
+        remote: &mut Channel,
         expected_seid: u8,
         response_capabilities: &[u8],
     ) {
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x0C, received[1]); // 0x0C = Get All Capabilities
@@ -1294,7 +1300,8 @@ mod tests {
     fn peer_collect_capabilities_success() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, cobalt_receiver, peer) = setup_test_peer(true, build_test_streams(), None);
+        let (mut remote, _, cobalt_receiver, peer) =
+            setup_test_peer(true, build_test_streams(), None);
 
         let p: ProfileDescriptor = ProfileDescriptor {
             profile_id: Some(ServiceClassProfileIdentifier::AdvancedAudioDistribution),
@@ -1310,7 +1317,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1338,7 +1345,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 4), Media Type Audio (0x00), Codec type (0x04), Codec specific 0xF09F9296
             0x07, 0x06, 0x00, 0x04, 0xF0, 0x9F, 0x92, 0x96
         ];
-        expect_get_capabilities_and_respond(&remote, 0x3E, capabilities_rsp);
+        expect_get_capabilities_and_respond(&mut remote, 0x3E, capabilities_rsp);
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1350,7 +1357,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 2), Media Type Audio (0x00), Codec type (0x00), Codec specific 0xC0DE
             0x07, 0x04, 0x00, 0x00, 0xC0, 0xDE
         ];
-        expect_get_capabilities_and_respond(&remote, 0x01, capabilities_rsp);
+        expect_get_capabilities_and_respond(&mut remote, 0x01, capabilities_rsp);
 
         match exec.run_until_stalled(&mut collect_future) {
             Poll::Pending => panic!("collect capabilities should be complete"),
@@ -1424,7 +1431,8 @@ mod tests {
     fn peer_collect_all_capabilities_success() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, cobalt_receiver, peer) = setup_test_peer(true, build_test_streams(), None);
+        let (mut remote, _, cobalt_receiver, peer) =
+            setup_test_peer(true, build_test_streams(), None);
         let p: ProfileDescriptor = ProfileDescriptor {
             profile_id: Some(ServiceClassProfileIdentifier::AdvancedAudioDistribution),
             major_version: Some(1),
@@ -1439,7 +1447,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1469,7 +1477,7 @@ mod tests {
             // Delay Reporting (LOSC = 0)
             0x08, 0x00
         ];
-        expect_get_all_capabilities_and_respond(&remote, 0x3E, capabilities_rsp);
+        expect_get_all_capabilities_and_respond(&mut remote, 0x3E, capabilities_rsp);
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1481,7 +1489,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 2), Media Type Audio (0x00), Codec type (0x00), Codec specific 0xC0DE
             0x07, 0x04, 0x00, 0x00, 0xC0, 0xDE
         ];
-        expect_get_all_capabilities_and_respond(&remote, 0x01, capabilities_rsp);
+        expect_get_all_capabilities_and_respond(&mut remote, 0x01, capabilities_rsp);
 
         match exec.run_until_stalled(&mut collect_future) {
             Poll::Pending => panic!("collect capabilities should be complete"),
@@ -1563,7 +1571,7 @@ mod tests {
     fn peer_collect_capabilities_discovery_fails() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, _, peer) = setup_test_peer(false, build_test_streams(), None);
+        let (mut remote, _, _, peer) = setup_test_peer(false, build_test_streams(), None);
 
         let collect_future = peer.collect_capabilities();
         let mut collect_future = pin!(collect_future);
@@ -1572,7 +1580,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1603,7 +1611,7 @@ mod tests {
     fn peer_collect_capabilities_get_capability_fails() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, _, _, peer) = setup_test_peer(true, build_test_streams(), None);
+        let (mut remote, _, _, peer) = setup_test_peer(true, build_test_streams(), None);
 
         let collect_future = peer.collect_capabilities();
         let mut collect_future = pin!(collect_future);
@@ -1612,7 +1620,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
         // Expect a discover command.
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x01, received[1]); // 0x01 = Discover
@@ -1634,7 +1642,7 @@ mod tests {
 
         // Expect a get capabilities request
         let expected_seid = 0x3E;
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1653,7 +1661,7 @@ mod tests {
 
         // Expect a get capabilities request (skipped the last one)
         let expected_seid = 0x01;
-        let received = recv_remote(&remote).unwrap();
+        let received = recv_remote(&mut remote).unwrap();
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(0x02, received[1]); // 0x02 = Get Capabilities
@@ -1676,8 +1684,8 @@ mod tests {
         }
     }
 
-    fn receive_simple_accept(remote: &Channel, signal_id: u8) {
-        let received = recv_remote(&remote).expect("expected a packet");
+    fn receive_simple_accept(remote: &mut Channel, signal_id: u8) {
+        let received = recv_remote(remote).expect("expected a packet");
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
         assert_eq!(signal_id, received[1]);
@@ -1695,7 +1703,7 @@ mod tests {
     fn peer_stream_start_success() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, mut profile_request_stream, _, peer) =
+        let (mut remote, mut profile_request_stream, _, peer) =
             setup_test_peer(false, build_test_streams(), None);
 
         let remote_seid = 2_u8.try_into().unwrap();
@@ -1714,11 +1722,11 @@ mod tests {
             x => panic!("Expected pending, but got {x:?}"),
         };
 
-        receive_simple_accept(&remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut remote, 0x03); // Set Configuration
 
         assert!(exec.run_until_stalled(&mut start_future).is_pending());
 
-        receive_simple_accept(&remote, 0x06); // Open
+        receive_simple_accept(&mut remote, 0x06); // Open
 
         match exec.run_until_stalled(&mut start_future) {
             Poll::Pending => {}
@@ -1746,7 +1754,7 @@ mod tests {
             Poll::Ready(Ok(_)) => panic!("Expected to be pending but finished!"),
         };
 
-        receive_simple_accept(&remote, 0x07); // Start
+        receive_simple_accept(&mut remote, 0x07); // Start
 
         // Should return the media stream (which should be connected)
         // Should be done without an error, but with no streams.
@@ -2052,7 +2060,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         let test_permits = Permits::new(1);
-        let (remote, mut profile_request_stream, _, peer) =
+        let (mut remote, mut profile_request_stream, _, peer) =
             setup_test_peer(false, build_test_streams(), Some(test_permits.clone()));
 
         let remote_seid = 2_u8.try_into().unwrap();
@@ -2069,9 +2077,9 @@ mod tests {
         let _ = exec
             .run_until_stalled(&mut start_future)
             .expect_pending("waiting for set config response");
-        receive_simple_accept(&remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut remote, 0x03); // Set Configuration
         exec.run_until_stalled(&mut start_future).expect_pending("waiting for open response");
-        receive_simple_accept(&remote, 0x06); // Open
+        receive_simple_accept(&mut remote, 0x06); // Open
         exec.run_until_stalled(&mut start_future).expect_pending("waiting for media transport");
         assert!(!peer.is_streaming_now());
 
@@ -2095,7 +2103,7 @@ mod tests {
         // Before peer responds to start, the permit gets taken.
         let seized_permits = test_permits.seize();
         assert_eq!(seized_permits.len(), 1);
-        receive_simple_accept(&remote, 0x07); // Start
+        receive_simple_accept(&mut remote, 0x07); // Start
 
         // Streaming should not locally begin because there is no available permit. The Start
         // response is handled gracefully.
@@ -2103,7 +2111,7 @@ mod tests {
             .expect_pending("waiting to send outgoing suspend");
         assert!(!peer.is_streaming_now());
         // We should issue an outgoing suspend request to synchronize state with the remote peer.
-        receive_simple_accept(&remote, 0x09); // Suspend
+        receive_simple_accept(&mut remote, 0x09); // Suspend
 
         // The start future should resolve without Error, and A2DP should not have started
         // streaming.
@@ -2199,7 +2207,7 @@ mod tests {
     fn peer_stream_start_fails_to_connect() {
         let mut exec = fasync::TestExecutor::new();
 
-        let (remote, mut profile_request_stream, _, peer) =
+        let (mut remote, mut profile_request_stream, _, peer) =
             setup_test_peer(false, build_test_streams(), None);
 
         let remote_seid = 2_u8.try_into().unwrap();
@@ -2218,11 +2226,11 @@ mod tests {
             x => panic!("was expecting pending but got {x:?}"),
         };
 
-        receive_simple_accept(&remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut remote, 0x03); // Set Configuration
 
         assert!(exec.run_until_stalled(&mut start_future).is_pending());
 
-        receive_simple_accept(&remote, 0x06); // Open
+        receive_simple_accept(&mut remote, 0x06); // Open
 
         match exec.run_until_stalled(&mut start_future) {
             Poll::Pending => {}

@@ -4,6 +4,7 @@
 
 use fuchsia_async as fasync;
 use futures::executor::block_on;
+use futures::{FutureExt, StreamExt};
 use std::result;
 use std::task::Poll;
 use zx::{self as zx, Status};
@@ -52,12 +53,18 @@ fn setup_stream_test() -> (fasync::TestExecutor, CommandStream, Peer, Channel) {
     (exec, stream, peer, remote)
 }
 
-pub(crate) fn recv_remote(remote: &Channel) -> result::Result<Vec<u8>, zx::Status> {
-    remote.read_packet()
+#[track_caller]
+pub(crate) fn recv_remote(remote: &mut Channel) -> result::Result<Vec<u8>, zx::Status> {
+    let fut = remote.next();
+    match fut.now_or_never() {
+        Some(Some(res)) => res,
+        Some(None) => Err(zx::Status::PEER_CLOSED),
+        None => Err(zx::Status::SHOULD_WAIT),
+    }
 }
 
-pub(crate) fn expect_remote_recv(expected: &[u8], remote: &Channel) {
-    let r = recv_remote(&remote);
+pub(crate) fn expect_remote_recv(expected: &[u8], remote: &mut Channel) {
+    let r = recv_remote(remote);
     assert!(r.is_ok());
     let response = r.unwrap();
     if expected.len() != response.len() {
@@ -85,7 +92,7 @@ fn closed_peer_ends_request_stream() {
 
 #[test]
 fn send_stop_avc_passthrough_command_timeout() {
-    let (mut exec, _stream, peer, channel) = setup_stream_test();
+    let (mut exec, _stream, peer, mut channel) = setup_stream_test();
     let mut cmd_fut = Box::pin(peer.send_avc_passthrough_command(&[69, 0]));
     let poll_ret: Poll<Result<CommandResponse>> = exec.run_until_stalled(&mut cmd_fut);
     assert!(poll_ret.is_pending());
@@ -101,7 +108,7 @@ fn send_stop_avc_passthrough_command_timeout() {
             0x45, // random keypress
             0x00, // passthrough payload
         ],
-        &channel,
+        &mut channel,
     );
 
     let _ = exec.wake_next_timer();
@@ -110,7 +117,7 @@ fn send_stop_avc_passthrough_command_timeout() {
 
 #[test]
 fn send_stop_avc_passthrough_command() {
-    let (mut exec, _stream, peer, channel) = setup_stream_test();
+    let (mut exec, _stream, peer, mut channel) = setup_stream_test();
     let mut cmd_fut = Box::pin(peer.send_avc_passthrough_command(&[69, 0]));
     let poll_ret: Poll<Result<CommandResponse>> = exec.run_until_stalled(&mut cmd_fut);
     assert!(poll_ret.is_pending());
@@ -126,7 +133,7 @@ fn send_stop_avc_passthrough_command() {
             0x45, // random keypress
             0x00, // passthrough payload
         ],
-        &channel,
+        &mut channel,
     );
 
     let write_buf = &[
@@ -151,7 +158,7 @@ fn send_stop_avc_passthrough_command() {
 
 #[test]
 fn receive_register_notification_command() {
-    let (mut exec, mut stream, _peer, channel) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
     let notif_command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -196,13 +203,13 @@ fn receive_register_notification_command() {
             0x00, // op code: VendorDependent
             0x00, 0x19, 0x58, // bit sig company id
         ],
-        &channel,
+        &mut channel,
     );
 }
 
 #[test]
 fn receive_unit_info() {
-    let (mut exec, mut stream, _peer, channel) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
     let command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -230,13 +237,13 @@ fn receive_unit_info() {
             0x48, // SubunitType::Panel
             0xff, 0xff, 0xff, // generic company ID.
         ],
-        &channel,
+        &mut channel,
     );
 }
 
 #[test]
 fn receive_subunit_info() {
-    let (mut exec, mut stream, _peer, channel) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut channel) = setup_stream_test();
     let command_packet = &[
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
@@ -265,6 +272,6 @@ fn receive_subunit_info() {
             0x48, // SubunitType::Panel
             0xff, 0xff, 0xff, // padding
         ],
-        &channel,
+        &mut channel,
     );
 }
