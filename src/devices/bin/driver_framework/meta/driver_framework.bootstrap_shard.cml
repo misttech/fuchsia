@@ -492,6 +492,13 @@
             to: "self/toolbox",
             target_availability: "unknown",
         },
+        {
+            config: "fuchsia.driver.usb.peripheral",
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#boot-drivers",
+            availability: "optional",
+            source_availability: "unknown",
+        },
     ],
     expose: [
         {
