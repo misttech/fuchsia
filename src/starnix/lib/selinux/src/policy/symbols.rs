@@ -664,19 +664,6 @@ pub(super) fn find_common_symbol_by_name_bytes<'a>(
     common_symbols.iter().find(|common_symbol| common_symbol.name_bytes() == name_bytes)
 }
 
-impl Validate for [Class] {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        // TODO: Validate internal consistency between consecutive [`Class`] instances.
-        for class in self {
-            // TODO: Validate `self.constraints` and `self.validate_transitions`.
-            class.defaults().validate(context).context("class defaults")?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(super) struct Class {
     constraints: ClassConstraints,
@@ -1053,6 +1040,96 @@ impl Validate for ClassMetadata {
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct ClassIndex {
+    /// A mapping from [`ClassId`] (represented as position-in-the-array-plus-one) to
+    /// the corresponding [`Class`] (represented as an offset into the policy bytes).
+    /// If zero is the value at index `i` of this structure, that indicates that the
+    /// binary policy has no class with class ID `i + 1`.
+    //
+    // TODO: https://fxbug.dev/479180246 - we currently allow for "holes" (integer
+    // class IDs that do not correspond to any class) in this array, but do we need
+    // to? Will all the binary policies that we encounter be "packed" such that they
+    // use every integer between one and the largest integer that they use?
+    offsets_by_id_minus_one: Box<[U24]>,
+}
+
+impl ClassIndex {
+    /// Looks up a [`Class`] by its [`ClassId`].
+    pub fn class(&self, policy_bytes: &PolicyData, class_id: ClassId) -> Option<Class> {
+        let offset =
+            PolicyOffset::from(*self.offsets_by_id_minus_one.get((class_id.0.get() - 1) as usize)?);
+        (offset != 0).then(|| {
+            let (class, _) = Class::parse(PolicyCursor::new_at(policy_bytes, offset))
+                .expect("These bytes already successfully parsed");
+            class
+        })
+    }
+
+    /// Looks up all [`Class`]es given in the policy. This is linear in time and space
+    /// and inappropriate to call in from a performance-sensitive context, but may be
+    /// called during policy parsing/validation and selinuxfs file operations.
+    pub fn classes(&self, policy_bytes: &PolicyData) -> Vec<Class> {
+        self.offsets_by_id_minus_one
+            .iter()
+            .filter_map(|&offset| match PolicyOffset::from(offset) {
+                0 => None,
+                offset => {
+                    let (class, _) = Class::parse(PolicyCursor::new_at(
+                        policy_bytes,
+                        PolicyOffset::from(offset),
+                    ))
+                    .expect("These bytes already successfully parsed");
+                    Some(class)
+                }
+            })
+            .collect()
+    }
+}
+
+impl Parse for ClassIndex {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let (metadata, mut tail) = Metadata::parse(bytes)?;
+        let class_count = usize::try_from(metadata.count()).unwrap();
+        let mut offsets_by_id_minus_one = Vec::with_capacity(class_count);
+        for _ in 0..class_count {
+            let offset = U24::try_from(tail.offset()).unwrap();
+            let (class, next_tail) = Class::parse(tail)?;
+            let class_id_as_usize = class.id().0.get() as usize;
+
+            if offsets_by_id_minus_one.len() < class_id_as_usize {
+                offsets_by_id_minus_one.resize(class_id_as_usize, U24::try_from(0).unwrap());
+            }
+            offsets_by_id_minus_one[class_id_as_usize - 1] = offset;
+
+            tail = next_tail;
+        }
+        let offsets_by_id_minus_one = Box::<[U24]>::from(offsets_by_id_minus_one);
+
+        Ok((Self { offsets_by_id_minus_one }, tail))
+    }
+}
+
+impl Validate for ClassIndex {
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        // TODO: Validate internal consistency between consecutive [`Class`] instances.
+        for offset in &self.offsets_by_id_minus_one {
+            let (class, _) =
+                Class::parse(PolicyCursor::new_at(&context.data, PolicyOffset::from(*offset)))
+                    .expect("These bytes already successfully parsed");
+
+            // TODO: Validate `self.constraints` and `self.validate_transitions`.
+            class.defaults().validate(context).context("class defaults")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1939,8 +2016,8 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class = find_class_by_name(parsed_policy.classes(), "class_mls_constraints")
-            .expect("look up class");
+        let classes = parsed_policy.classes();
+        let class = find_class_by_name(&classes, "class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 6);
         // Expected (`constraint_term_type`, `expr_operator_type`,
@@ -2002,8 +2079,8 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class = find_class_by_name(parsed_policy.classes(), "class_constraint_nested")
-            .expect("look up class");
+        let classes = parsed_policy.classes();
+        let class = find_class_by_name(&classes, "class_constraint_nested").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
         let constraint = &constraints[0];

@@ -76,7 +76,7 @@ impl ExceptionsConfig {
                     let policy_class = policy
                         .classes()
                         .iter()
-                        .find(|x| x.class_name == class_name.as_bytes())
+                        .find(|x| *(x.class_name) == *(class_name.as_bytes()))
                         .map(|x| x.class_id);
 
                     // Parse the kernel object class. This must correspond to a known kernel object
@@ -206,7 +206,7 @@ mod tests {
             self.policy
                 .classes()
                 .iter()
-                .find(|x| x.class_name == name.as_bytes())
+                .find(|x| *(x.class_name) == *(name.as_bytes()))
                 .map(|x| x.class_id)
                 .expect("Unable to resolve policy class Id")
                 .into()

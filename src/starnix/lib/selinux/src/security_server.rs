@@ -326,7 +326,7 @@ impl SecurityServer {
             .parsed
             .classes()
             .iter()
-            .find(|class| class.class_name == name.as_bytes())
+            .find(|class| *(class.class_name) == *(name.as_bytes()))
             .ok_or(())?
             .class_id)
     }

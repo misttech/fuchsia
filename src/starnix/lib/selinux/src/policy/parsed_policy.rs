@@ -20,8 +20,8 @@ use super::metadata::{Config, Counts, HandleUnknown, Magic, PolicyVersion, Signa
 use super::parser::{PolicyCursor, PolicyData};
 use super::security_context::{Level, SecurityContext};
 use super::symbols::{
-    Category, CategoryIndex, Class, Classes, CommonSymbol, CommonSymbols, ConditionalBoolean,
-    MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
+    Category, CategoryIndex, Class, ClassIndex, Classes, CommonSymbol, CommonSymbols,
+    ConditionalBoolean, MlsLevel, Role, Sensitivity, SymbolList, Type, TypeIndex, User,
 };
 use super::view::{HashedArrayView, U24};
 use super::{
@@ -65,7 +65,7 @@ pub struct ParsedPolicy {
     /// Common permissions that can be mixed in to classes.
     common_symbols: SymbolList<CommonSymbol>,
     /// The set of classes referenced by this policy.
-    classes: SymbolList<Class>,
+    classes: ClassIndex,
     /// The set of roles referenced by this policy.
     roles: SymbolList<Role>,
     /// The set of types referenced by this policy.
@@ -408,8 +408,12 @@ impl ParsedPolicy {
         self.categories.categories(&self.data).find(|x| x.name_bytes() == name.as_bytes())
     }
 
-    pub(super) fn classes(&self) -> &Classes {
-        &self.classes.data
+    pub(super) fn class(&self, class_id: ClassId) -> Option<Class> {
+        self.classes.class(&self.data, class_id)
+    }
+
+    pub(super) fn classes(&self) -> Classes {
+        self.classes.classes(&self.data)
     }
 
     pub(super) fn common_symbols(&self) -> &CommonSymbols {
@@ -600,9 +604,8 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing common symbols")?;
 
-    let (classes, tail) = SymbolList::<Class>::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing classes")?;
+    let (classes, tail) =
+        ClassIndex::parse(tail).map_err(anyhow::Error::from).context("parsing classes")?;
 
     let (roles, tail) = SymbolList::<Role>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
@@ -898,7 +901,8 @@ impl ParsedPolicy {
         // Collate the sets of user, role, type, sensitivity and category Ids.
         let user_ids: HashSet<UserId> = self.users.data.iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles.data.iter().map(|x| x.id()).collect();
-        let class_ids: HashSet<ClassId> = self.classes.data.iter().map(|x| x.id()).collect();
+        let class_ids: HashSet<ClassId> =
+            self.classes.classes(&self.data).iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.types.all_type_ids().collect();
         let sensitivity_ids: HashSet<SensitivityId> =
             self.sensitivities.data.iter().map(|x| x.id()).collect();
@@ -974,7 +978,7 @@ impl ParsedPolicy {
         let initial_context = SecurityContext::new_from_policy_context(
             self.initial_context(crate::InitialSid::Kernel),
         );
-        for class in self.classes() {
+        for class in self.classes.classes(&self.data) {
             for constraint in class.constraints() {
                 constraint
                     .constraint_expr()

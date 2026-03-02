@@ -1496,7 +1496,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_one_ioctl")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_ioctl")
             .expect("look up class_one_ioctl")
             .id();
 
@@ -1524,7 +1524,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_two_ioctls_same_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_ioctls_same_range")
             .expect("look up class_two_ioctls_same_range")
             .id();
 
@@ -1556,7 +1556,7 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let class_id =
-            find_class_by_name(parsed_policy.classes(), "class_four_ioctls_same_range_diff_rules")
+            find_class_by_name(&parsed_policy.classes(), "class_four_ioctls_same_range_diff_rules")
                 .expect("look up class_four_ioctls_same_range_diff_rules")
                 .id();
 
@@ -1589,7 +1589,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_two_ioctls_diff_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_ioctls_diff_range")
             .expect("look up class_two_ioctls_diff_range")
             .id();
 
@@ -1628,7 +1628,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_one_driver_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_driver_range")
             .expect("look up class_one_driver_range")
             .id();
 
@@ -1659,7 +1659,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_most_ioctls")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_most_ioctls")
             .expect("look up class_most_ioctls")
             .id();
 
@@ -1711,7 +1711,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_most_ioctls_with_hole")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_most_ioctls_with_hole")
             .expect("look up class_most_ioctls_with_hole")
             .id();
 
@@ -1788,7 +1788,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_all_ioctls")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_all_ioctls")
             .expect("look up class_all_ioctls")
             .id();
 
@@ -1814,7 +1814,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_one_nlmsg")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_nlmsg")
             .expect("look up class_one_nlmsg")
             .id();
 
@@ -1844,7 +1844,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_two_nlmsg_same_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_same_range")
             .expect("look up class_two_nlmsg_same_range")
             .id();
 
@@ -1875,7 +1875,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_two_nlmsg_diff_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_diff_range")
             .expect("look up class_two_nlmsg_diff_range")
             .id();
 
@@ -1914,7 +1914,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_one_nlmsg_range")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_one_nlmsg_range")
             .expect("look up class_one_nlmsg_range")
             .id();
 
@@ -1949,7 +1949,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_two_nlmsg_ranges")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_two_nlmsg_ranges")
             .expect("look up class_two_nlmsg_ranges")
             .id();
 
@@ -1996,7 +1996,7 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let class_id =
-            find_class_by_name(parsed_policy.classes(), "class_three_separate_nlmsg_ranges")
+            find_class_by_name(&parsed_policy.classes(), "class_three_separate_nlmsg_ranges")
                 .expect("look up class_three_separate_nlmsg_ranges")
                 .id();
 
@@ -2053,7 +2053,7 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let class_id =
-            find_class_by_name(parsed_policy.classes(), "class_three_contiguous_nlmsg_ranges")
+            find_class_by_name(&parsed_policy.classes(), "class_three_contiguous_nlmsg_ranges")
                 .expect("look up class_three_contiguous_nlmsg_ranges")
                 .id();
 
@@ -2095,7 +2095,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_auditallowxperm")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_auditallowxperm")
             .expect("look up class_auditallowxperm")
             .id();
 
@@ -2138,7 +2138,7 @@ mod tests {
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
 
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_dontauditxperm")
+        let class_id = find_class_by_name(&parsed_policy.classes(), "class_dontauditxperm")
             .expect("look up class_dontauditxperm")
             .id();
 
@@ -2178,7 +2178,7 @@ mod tests {
         parsed_policy.validate().expect("validate policy");
 
         let class_id =
-            find_class_by_name(parsed_policy.classes(), "class_auditallowxperm_not_coalesced")
+            find_class_by_name(&parsed_policy.classes(), "class_auditallowxperm_not_coalesced")
                 .expect("class_auditallowxperm_not_coalesced")
                 .id();
 

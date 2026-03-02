@@ -506,8 +506,8 @@ mod tests {
             .parse_security_context(b"user1:object_r:security_t:s0:c0-s0:c0".into())
             .expect("valid target security context");
 
-        let class = find_class_by_name(parsed_policy.classes(), "class_constraint_nested")
-            .expect("look up class");
+        let classes = parsed_policy.classes();
+        let class = find_class_by_name(&classes, "class_constraint_nested").expect("look up class");
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
         let constraint = &constraints[0].constraint_expr();
@@ -574,9 +574,9 @@ mod tests {
             .parse_security_context(b"user1:object_r:security_t:s0:c0-s0:c0".into())
             .expect("valid target security context");
 
+        let classes = parsed_policy.classes();
         let class_constraint_eq =
-            find_class_by_name(parsed_policy.classes(), "class_constraint_eq")
-                .expect("look up class");
+            find_class_by_name(&classes, "class_constraint_eq").expect("look up class");
         let class_constraint_eq_constraints = class_constraint_eq.constraints();
         assert_eq!(class_constraint_eq_constraints.len(), 1);
         // ( u1 == u2 )
@@ -587,8 +587,7 @@ mod tests {
         );
 
         let class_constraint_with_and =
-            find_class_by_name(parsed_policy.classes(), "class_constraint_with_and")
-                .expect("look up class");
+            find_class_by_name(&classes, "class_constraint_with_and").expect("look up class");
         let class_constraint_with_and_constraints = class_constraint_with_and.constraints();
         assert_eq!(class_constraint_with_and_constraints.len(), 1);
         // ( ( u1 == u2 ) and ( t1 == t2 ) )
@@ -600,8 +599,7 @@ mod tests {
         );
 
         let class_constraint_with_not =
-            find_class_by_name(parsed_policy.classes(), "class_constraint_with_not")
-                .expect("look up class");
+            find_class_by_name(&classes, "class_constraint_with_not").expect("look up class");
         let class_constraint_with_not_constraints = class_constraint_with_not.constraints();
         assert_eq!(class_constraint_with_not_constraints.len(), 1);
         // ( not ( ( u1 == u2 ) and ( t1 == t2 ) )
@@ -613,8 +611,7 @@ mod tests {
         );
 
         let class_constraint_with_names =
-            find_class_by_name(parsed_policy.classes(), "class_constraint_with_names")
-                .expect("look up class");
+            find_class_by_name(&classes, "class_constraint_with_names").expect("look up class");
         let class_constraint_with_names_constraints = class_constraint_with_names.constraints();
         assert_eq!(class_constraint_with_names_constraints.len(), 1);
         // ( u1 != { user0 user1 })
@@ -626,8 +623,7 @@ mod tests {
         );
 
         let class_constraint_nested =
-            find_class_by_name(parsed_policy.classes(), "class_constraint_nested")
-                .expect("look up class");
+            find_class_by_name(&classes, "class_constraint_nested").expect("look up class");
         let class_constraint_nested_constraints = class_constraint_nested.constraints();
         assert_eq!(class_constraint_nested_constraints.len(), 1);
         // ( ( ( u2 == { user0 user1} ) and ( r1 == r2 ) ) or ( ( u1 == u2 ) and ( not (t1 == t2 ) ) ) )
@@ -654,8 +650,8 @@ mod tests {
             .parse_security_context(b"user1:object_r:security_t:s0:c0-s0:c0".into())
             .expect("valid target security context");
 
-        let class = find_class_by_name(parsed_policy.classes(), "class_mls_constraints")
-            .expect("look up class");
+        let classes = parsed_policy.classes();
+        let class = find_class_by_name(&classes, "class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         // Constraints appear in reverse order in parsed policy.
         let expected = vec![

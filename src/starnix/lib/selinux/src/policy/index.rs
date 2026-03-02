@@ -5,9 +5,9 @@
 use super::arrays::{ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION, FsContext, FsUseType};
 use super::metadata::HandleUnknown;
 use super::security_context::{SecurityContext, SecurityLevel};
-use super::symbols::{Class, ClassDefault, ClassDefaultRange, Classes, CommonSymbols};
-use super::{AccessVector, ClassPermissionId, ParsedPolicy, RoleId, TypeId};
-use crate::{ClassPermission as _, KernelPermission, NullessByteStr, PolicyCap};
+use super::symbols::{Class, ClassDefault, ClassDefaultRange, CommonSymbols, find_class_by_name};
+use super::{AccessVector, ClassId, ClassPermissionId, ParsedPolicy, RoleId, TypeId};
+use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
 
@@ -26,12 +26,9 @@ pub struct FsUseLabelAndType {
 /// collection of classes where the "process" class resides.
 #[derive(Debug)]
 pub(super) struct PolicyIndex {
-    /// Map from object class Ids to their offset in the associate policy's
-    /// [`super::symbols::Classes`] collection. The map includes mappings from both the Ids used
-    /// internally for kernel object classes, and from the policy-defined Id for each policy-
-    /// defined class - if an object class is not found in this map then it is not defined by the
-    /// policy.
-    classes: HashMap<crate::ObjectClass, usize>,
+    /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
+    /// [`super::symbols::Classes`] collection.
+    classes: HashMap<KernelClass, ClassId>,
     /// Map from well-known permissions to their class-specific `AccessVector` bit index.
     permissions: HashMap<crate::KernelPermission, ClassPermissionId>,
     /// The parsed binary policy.
@@ -51,18 +48,15 @@ impl PolicyIndex {
         let policy_classes = parsed_policy.classes();
         let common_symbols = parsed_policy.common_symbols();
 
-        // Accumulate classes indexed by `crate::ObjectClass`. Capacity for twice as many entries as
-        // the policy defines allows each class to be indexed by policy-defined Id, and also by the
-        // kernel object class enum Id.
-        let mut classes = HashMap::with_capacity(policy_classes.len() * 2);
+        let mut classes = HashMap::with_capacity(crate::KernelClass::all_variants().count());
 
         // Insert elements for each kernel object class. If the policy defines that unknown
         // kernel classes should cause rejection then return an error describing the missing
         // element.
         for known_class in crate::KernelClass::all_variants() {
-            match get_class_index_by_name(policy_classes, known_class.name()) {
-                Some(class_index) => {
-                    classes.insert(known_class.into(), class_index);
+            match find_class_by_name(&policy_classes, known_class.name()) {
+                Some(class) => {
+                    classes.insert(known_class, class.id());
                 }
                 None => {
                     if parsed_policy.handle_unknown() == HandleUnknown::Reject {
@@ -70,12 +64,6 @@ impl PolicyIndex {
                     }
                 }
             }
-        }
-
-        // Insert an element for each class, by its policy-defined Id.
-        for index in 0..policy_classes.len() {
-            let class = &policy_classes[index];
-            classes.insert(class.id().into(), index);
         }
 
         // Allow unused space in the classes map to be released.
@@ -87,17 +75,16 @@ impl PolicyIndex {
         let mut permissions =
             HashMap::with_capacity(crate::KernelPermission::all_variants().count());
         for known_permission in crate::KernelPermission::all_variants() {
-            let object_class = known_permission.class();
-            if let Some(class_index) = classes.get(&object_class.into()) {
-                let class = &policy_classes[*class_index];
+            let known_class_name = known_permission.class().name();
+            if let Some(class) = find_class_by_name(&policy_classes, known_class_name) {
                 if let Some(permission_id) =
-                    get_permission_id_by_name(common_symbols, class, known_permission.name())
+                    get_permission_id_by_name(common_symbols, &class, known_permission.name())
                 {
                     permissions.insert(known_permission, permission_id);
                 } else if parsed_policy.handle_unknown() == HandleUnknown::Reject {
                     return Err(anyhow::anyhow!(
                         "missing permission {:?}:{:?}",
-                        object_class.name(),
+                        known_class_name,
                         known_permission.name(),
                     ));
                 }
@@ -128,9 +115,14 @@ impl PolicyIndex {
 
     /// Returns the policy entry for a class identified either by its well-known kernel object class
     /// enum value, or its policy-defined Id.
-    pub fn class<'a>(&'a self, object_class: crate::ObjectClass) -> Option<&'a Class> {
-        let index = self.classes.get(&object_class)?;
-        Some(&self.parsed_policy.classes()[*index])
+    pub fn class(&self, object_class: crate::ObjectClass) -> Option<Class> {
+        match object_class {
+            crate::ObjectClass::Kernel(kernel_class) => {
+                let &class_id = self.classes.get(&kernel_class)?;
+                self.parsed_policy.class(class_id)
+            }
+            crate::ObjectClass::ClassId(class_id) => self.parsed_policy.class(class_id),
+        }
     }
 
     /// Returns the policy entry for a well-known kernel object class permission.
@@ -161,7 +153,7 @@ impl PolicyIndex {
         let type_id = self.type_transition_new_type_with_name(
             source.type_(),
             target.type_(),
-            policy_class,
+            &policy_class,
             name,
         )?;
         Some(self.new_security_context_internal(
@@ -238,7 +230,7 @@ impl PolicyIndex {
             ClassDefault::Unspecified => source.user(),
         };
 
-        let role = match self.role_transition_new_role(source.role(), target.type_(), policy_class)
+        let role = match self.role_transition_new_role(source.role(), target.type_(), &policy_class)
         {
             Some(new_role) => new_role,
             None => match class_defaults.role() {
@@ -265,7 +257,7 @@ impl PolicyIndex {
         });
 
         let (low_level, high_level) =
-            match self.range_transition_new_range(source.type_(), target.type_(), policy_class) {
+            match self.range_transition_new_range(source.type_(), target.type_(), &policy_class) {
                 Some((low_level, high_level)) => (low_level, high_level),
                 None => match class_defaults.range() {
                     ClassDefaultRange::SourceLow => (source.low_level().clone(), None),
@@ -461,11 +453,6 @@ impl PolicyIndex {
 
         None
     }
-}
-
-fn get_class_index_by_name<'a>(classes: &'a Classes, name: &str) -> Option<usize> {
-    let name_bytes = name.as_bytes();
-    classes.iter().position(|class| class.name_bytes() == name_bytes)
 }
 
 /// Returns the bit index of the specified permission for the specified security `class`, looking

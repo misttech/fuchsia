@@ -250,9 +250,9 @@ pub fn parse_policy_by_value(binary_policy: Vec<u8>) -> Result<Unvalidated, anyh
 }
 
 /// Information on a Class. This struct is used for sharing Class information outside this crate.
-pub struct ClassInfo<'a> {
+pub struct ClassInfo {
     /// The name of the class.
-    pub class_name: &'a [u8],
+    pub class_name: Box<[u8]>,
     /// The class identifier.
     pub class_id: ClassId,
 }
@@ -286,12 +286,15 @@ impl Policy {
     }
 
     /// The set of class names and their respective class identifiers.
-    pub fn classes<'a>(&'a self) -> Vec<ClassInfo<'a>> {
+    pub fn classes(&self) -> Vec<ClassInfo> {
         self.0
             .parsed_policy()
             .classes()
-            .iter()
-            .map(|class| ClassInfo { class_name: class.name_bytes(), class_id: class.id() })
+            .into_iter()
+            .map(|class| ClassInfo {
+                class_name: Box::<[u8]>::from(class.name_bytes()),
+                class_id: class.id(),
+            })
             .collect()
     }
 
@@ -308,7 +311,8 @@ impl Policy {
         &self,
         class_name: &str,
     ) -> Result<Vec<(ClassPermissionId, Vec<u8>)>, ()> {
-        let class = find_class_by_name(self.0.parsed_policy().classes(), class_name).ok_or(())?;
+        let classes = self.0.parsed_policy().classes();
+        let class = find_class_by_name(&classes, class_name).ok_or(())?;
         let owned_permissions = class.permissions();
 
         let mut result: Vec<_> = owned_permissions
@@ -450,7 +454,7 @@ impl Policy {
             self.0.parsed_policy().compute_access_decision(
                 source_context,
                 target_context,
-                target_class,
+                &target_class,
             )
         } else {
             AccessDecision::allow(AccessVector::NONE)
@@ -473,7 +477,7 @@ impl Policy {
                 xperms_kind,
                 source_context,
                 target_context,
-                target_class,
+                &target_class,
                 xperms_prefix,
             )
         } else {
@@ -899,10 +903,8 @@ pub(super) mod tests {
         target_class: &str,
         permission: &str,
     ) -> bool {
-        let class = policy
-            .0
-            .parsed_policy()
-            .classes()
+        let classes = policy.0.parsed_policy().classes();
+        let class = classes
             .iter()
             .find(|class| class.name_bytes() == target_class.as_bytes())
             .expect("class not found");
@@ -1118,13 +1120,9 @@ pub(super) mod tests {
 
         let a_t = policy.type_id_by_name("a_t").expect("look up type id");
 
-        let class = policy
-            .0
-            .parsed_policy()
-            .classes()
-            .iter()
-            .find(|class| class.name_bytes() == b"class0")
-            .expect("class not found");
+        let classes = policy.0.parsed_policy().classes();
+        let class =
+            classes.iter().find(|class| class.name_bytes() == b"class0").expect("class not found");
         let raw_access_vector =
             policy.0.parsed_policy().compute_explicitly_allowed(a_t, a_t, class).allow.0;
 
@@ -1236,7 +1234,7 @@ pub(super) mod tests {
     fn compute_ioctl_access_decision_denied() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let class_id = find_class_by_name(unvalidated.0.classes(), "class_one_ioctl")
+        let class_id = find_class_by_name(&unvalidated.0.classes(), "class_one_ioctl")
             .expect("look up class_one_ioctl")
             .id();
         let policy = unvalidated.validate().expect("validate policy");
@@ -1296,7 +1294,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_earlier_redundant_prefixful_not_coalesced_into_prefixless",
         )
         .expect("look up class_earlier_redundant_prefixful_not_coalesced_into_prefixless")
@@ -1342,7 +1340,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_later_redundant_prefixful_not_coalesced_into_prefixless",
         )
         .expect("look up class_later_redundant_prefixful_not_coalesced_into_prefixless")
@@ -1388,7 +1386,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless",
         )
         .expect("look up class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless")
@@ -1435,7 +1433,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_prefixfuls_that_coalesce_to_prefixless",
         )
         .expect("look up class_prefixfuls_that_coalesce_to_prefixless")
@@ -1482,7 +1480,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless",
         )
         .expect("look up class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless")
@@ -1538,7 +1536,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless",
         )
         .expect("look up class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless")
@@ -1604,7 +1602,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id =
-            find_class_by_name(unvalidated.0.classes(), "class_ridiculous_permission_ordering")
+            find_class_by_name(&unvalidated.0.classes(), "class_ridiculous_permission_ordering")
                 .expect("look up class_ridiculous_permission_ordering")
                 .id();
         let policy = unvalidated.validate().expect("validate policy");
@@ -1838,7 +1836,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_ioctl_grant_does_not_cause_nlmsg_deny",
         )
         .expect("look up class_ioctl_grant_does_not_cause_nlmsg_deny")
@@ -1882,7 +1880,7 @@ pub(super) mod tests {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
-            unvalidated.0.classes(),
+            &unvalidated.0.classes(),
             "class_nlmsg_grant_does_not_cause_ioctl_deny",
         )
         .expect("look up class_nlmsg_grant_does_not_cause_ioctl_deny")
