@@ -11,7 +11,7 @@ use stream::StreamExt;
 use wake_lease::WakeLease;
 use {
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync, power_broker_client as pbclient,
+    fuchsia_async as fasync,
 };
 
 struct SuspendBlocker {
@@ -52,16 +52,20 @@ async fn wake_lease_blocks_system_suspend_until_release() -> Result<()> {
 
     // Take an assertive lease on ApplicationActivity to indicate boot completion.
     // System Activity Governor waits for this signal before handling suspend or resume.
-    let lease_helper = pbclient::LeaseHelper::new(
-        &topology,
-        "boot-complete-lease",
-        vec![pbclient::LeaseDependency {
-            requires_token: activity_token,
-            requires_level_by_preference: vec![pbclient::BINARY_POWER_LEVELS[1]],
-        }],
-    )
-    .await?;
-    let activity_lease = lease_helper.create_lease_and_wait_until_satisfied().await?;
+    let (lease_token, activity_lease) = fbroker::LeaseToken::create();
+    topology
+        .lease(fbroker::LeaseSchema {
+            lease_token: Some(lease_token),
+            lease_name: Some("boot-complete-lease".into()),
+            dependencies: Some(vec![fbroker::LeaseDependency {
+                requires_token: Some(activity_token),
+                requires_level: Some(fsystem::ApplicationActivityLevel::Active.into_primitive()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        })
+        .await?
+        .map_err(|e| anyhow::anyhow!("Lease error: {e:?}"))?;
     let _ = boot_control.set_boot_complete().await?;
 
     // Create and take a wake lease, ensuring the system doesn't suspend.
