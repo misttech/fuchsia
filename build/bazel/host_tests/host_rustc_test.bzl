@@ -6,13 +6,25 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(":host_test.bzl", "host_test")
 
-def legacy_host_rustc_test(name, binary_name = "", test_name = "", test_args = [], test_data = [], **kwargs):
+def legacy_host_rustc_test(
+        name,
+        binary_name = "",
+        test_name = "",
+        test_args = [],
+        test_data = [],
+        tags = [],
+        **kwargs):
     """Define a host test wrapping a Rust test that can be used with Fuchsia test runners.
 
     This is a convenience macro to call rustc_test() and host_test() together.
 
     Unlike rustc_test(), these tests will be usable with `fx test` and `botanist`, and can
     still be run locally using `fx bazel test --config=host <label>`.
+
+    The "manual" tag will be set on the rusc_test() target. In practice something like
+    `fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+    will correctly only run one test target, instead of two for each host_rustc_test()
+    definition.
 
     Args:
       name: The name of the host test.
@@ -21,6 +33,7 @@ def legacy_host_rustc_test(name, binary_name = "", test_name = "", test_args = [
          defaults to 'name'.
       test_args: Arguments to pass to the test binary. Do not use `args`.
       test_data: Optional. The data dependencies for the test target itself.
+      tags: Optional: List of test tags.
       **kwargs: Arguments to pass to `rustc_test`.
     """
 
@@ -29,8 +42,12 @@ def legacy_host_rustc_test(name, binary_name = "", test_name = "", test_args = [
 
     binary_name = binary_name if binary_name else name + "_bin"
 
+    if "manual" not in tags:
+        tags = tags + ["manual"]
+
     rustc_test(
         name = binary_name,
+        tags = tags,
         **kwargs
     )
 
@@ -43,11 +60,26 @@ def legacy_host_rustc_test(name, binary_name = "", test_name = "", test_args = [
         target_compatible_with = HOST_CONSTRAINTS,
     )
 
-def _host_rustc_test_impl(name, visibility, binary_name = "", test_name = "", test_args = [], test_data = [], **kwargs):
+def _host_rustc_test_impl(
+        name,
+        visibility,
+        binary_name = "",
+        test_name = "",
+        test_args = [],
+        test_data = [],
+        tags = [],
+        **kwargs):
     binary_name = binary_name if binary_name else name + "_bin"
+
+    # Ensure this test is tagged as manual, to not appear in wildcard
+    # expansing with `bazel test`, since it does the same than the
+    # host_test() target.
+    if "manual" not in tags:
+        tags = tags + ["manual"]
 
     rustc_test(
         name = binary_name,
+        tags = ["manual"],
         **kwargs
     )
 
@@ -75,6 +107,11 @@ This is a convenience macro to call rustc_test() and host_test() together.
 
 Unlike rustc_test(), these tests will be usable with `fx test` and `botanist`, and can
 still be run locally using `fx bazel test --config=host <label>`.
+
+The "manual" tag will be set on the rusc_test() target. In practice something like
+`fx bazel test --config=host //build/bazel/host_tests/rust_tests/...`
+will correctly only run one test target, instead of two for each host_rustc_test()
+definition.
 
 Accepts all rustc_test() attributes, plus `binary_name` and `test_xxx` ones.
 """,

@@ -3,15 +3,28 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load(":host_test.bzl", "host_test")
 
-def legacy_host_go_test(name, binary_name = "", test_name = "", test_args = [], test_data = [], **kwargs):
+def legacy_host_go_test(
+        name,
+        binary_name = "",
+        test_name = "",
+        test_args = [],
+        test_data = [],
+        tags = [],
+        **kwargs):
     """Define a host test wrapping a Go binary that can be used with Fuchsia test runners.
 
     This is a convenience macro to call go_test() and host_test() together.
 
     Unlike go_test(), these tests will be usable with `fx test` and `botanist`, and can
     still be run locally using `fx bazel test --config=host <label>`.
+
+    The "manual" tag will be set on the go_test() target. In practice something like
+    `fx bazel test --config=host //build/bazel/host_tests/go_tests/...`
+    will correctly only run one test target, instead of two for each host_go_test()
+    definition.
 
     Args:
       name: The name of the host test.
@@ -26,14 +39,12 @@ def legacy_host_go_test(name, binary_name = "", test_name = "", test_args = [], 
         fail("Use `test_args` to pass test arguments instead of `args`")
     binary_name = binary_name if binary_name else name + "_bin"
 
-    # TODO(https://fxbug.dev/349341932): Avoid running this test by default, because the real test
-    # target is the host_test below.
-    #
-    # NOTE: Here we want to use `go_test` because:
-    # 1. `go_binary` won't compile library tests, fails with error `not package main`.
-    # 2. We want to reuse test-related logic (e.g. test coverage) from `go_test`.
+    if "manual" not in tags:
+        tags = tags + ["manual"]
+
     go_test(
         name = binary_name,
+        tags = tags,
         **kwargs
     )
 
@@ -46,11 +57,22 @@ def legacy_host_go_test(name, binary_name = "", test_name = "", test_args = [], 
         target_compatible_with = HOST_CONSTRAINTS,
     )
 
-def _host_go_test_impl(name, visibility, binary_name = "", test_name = "", test_args = [], test_data = [], **kwargs):
+def _host_go_test_impl(
+        name,
+        visibility,
+        binary_name = "",
+        test_name = "",
+        test_args = [],
+        test_data = [],
+        **kwargs):
     binary_name = binary_name if binary_name else name + "_bin"
+
+    if "manual" not in tags:
+        tags = tags + ["manual"]
 
     go_test(
         name = binary_name,
+        tags = tags,
         **kwargs
     )
 
@@ -78,6 +100,11 @@ This is a convenience macro to call go_test() and host_test() together.
 
 Unlike go_test(), these tests will be usable with `fx test` and `botanist`, and can
 still be run locally using `fx bazel test --config=host <label>`.
+
+The "manual" tag will be set on the go_test() target. In practice something like
+`fx bazel test --config=host //build/bazel/host_tests/go_tests/...`
+will correctly only run one test target, instead of two for each host_go_test()
+definition.
 
 Accepts all go_test() attributes, plus `binary_name` and `test_xxx` ones.
 """,
