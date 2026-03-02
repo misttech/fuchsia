@@ -809,25 +809,33 @@ pub mod route {
                             return;
                         }
                     };
-                    unified_request_sink.send(
-                        UnifiedRequest::InterfacesRequest(
-                        interfaces::Request{
-                        args: interfaces::RequestArgs::Link(interfaces::LinkRequestArgs::Get(args)),
-                        sequence_number: req_header.sequence_number,
-                        client: client.clone(),
-                        completer,
-                    })).await.expect("interface event loop should never terminate");
+                    unified_request_sink
+                        .send(UnifiedRequest::InterfacesRequest(interfaces::Request {
+                            args: interfaces::RequestArgs::Link(interfaces::LinkRequestArgs::Get(
+                                args,
+                            )),
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
+                            completer,
+                        }))
+                        .await
+                        .expect("interface event loop should never terminate");
                     match waiter
                         .await
-                        .expect("interfaces event loop should have handled the request") {
-                            Ok(()) => if is_dump {
+                        .expect("interfaces event loop should have handled the request")
+                    {
+                        Ok(()) => {
+                            if is_dump {
                                 client.send_unicast(netlink_packet::new_done(req_header))
                             } else if expects_ack {
                                 client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
                             }
-                            Err(e) => client.send_unicast(
-                                netlink_packet::new_error(Err(e.into_errno()), req_header)),
                         }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
+                    }
                 }
                 SetLink(link_msg) => {
                     let args = match to_set_link_args(link_msg) {
@@ -839,23 +847,31 @@ pub mod route {
                         }
                     };
                     let (completer, waiter) = oneshot::channel();
-                    unified_request_sink.send(
-                        UnifiedRequest::InterfacesRequest(
-                        interfaces::Request{
-                        args: interfaces::RequestArgs::Link(interfaces::LinkRequestArgs::Set(args)),
-                        sequence_number: req_header.sequence_number,
-                        client: client.clone(),
-                        completer,
-                    })).await.expect("interface event loop should never terminate");
+                    unified_request_sink
+                        .send(UnifiedRequest::InterfacesRequest(interfaces::Request {
+                            args: interfaces::RequestArgs::Link(interfaces::LinkRequestArgs::Set(
+                                args,
+                            )),
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
+                            completer,
+                        }))
+                        .await
+                        .expect("interface event loop should never terminate");
                     match waiter
                         .await
-                        .expect("interfaces event loop should have handled the request") {
-                            Ok(()) => if expects_ack {
+                        .expect("interfaces event loop should have handled the request")
+                    {
+                        Ok(()) => {
+                            if expects_ack {
                                 client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
                             }
-                            Err(e) => client.send_unicast(
-                                netlink_packet::new_error(Err(e.into_errno()), req_header)),
                         }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
+                    }
                 }
                 GetAddress(ref message) if is_dump => {
                     let ip_version_filter = match message.header.family() {
@@ -865,30 +881,32 @@ pub mod route {
                         family => {
                             log_debug!(
                                 "invalid address family ({:?}) in address dump request from {}: {:?}",
-                                family, client, req,
+                                family,
+                                client,
+                                req,
                             );
-                            client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EINVAL), req_header));
+                            client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EINVAL),
+                                req_header,
+                            ));
                             return;
                         }
                     };
 
                     let (completer, waiter) = oneshot::channel();
-                    unified_request_sink.send(
-                        UnifiedRequest::InterfacesRequest(
-                            interfaces::Request {
-                                args: interfaces::RequestArgs::Address(
-                                    interfaces::AddressRequestArgs::Get(
-                                        interfaces::GetAddressArgs::Dump {
-                                            ip_version_filter,
-                                        },
-                                    ),
+                    unified_request_sink
+                        .send(UnifiedRequest::InterfacesRequest(interfaces::Request {
+                            args: interfaces::RequestArgs::Address(
+                                interfaces::AddressRequestArgs::Get(
+                                    interfaces::GetAddressArgs::Dump { ip_version_filter },
                                 ),
-                                sequence_number: req_header.sequence_number,
-                                client: client.clone(),
-                                completer,
-                            }
-                        )).await.expect("interface event loop should never terminate");
+                            ),
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
+                            completer,
+                        }))
+                        .await
+                        .expect("interface event loop should never terminate");
                     waiter
                         .await
                         .expect("interfaces event loop should have handled the request")
@@ -896,21 +914,20 @@ pub mod route {
                     client.send_unicast(netlink_packet::new_done(req_header))
                 }
                 NewAddress(ref message) => {
-                    let extracted_request = match extract_if_id_and_addr_from_addr_message(
-                        message,
-                        client,
-                        &req,
-                        true,
-                    ) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            return client.send_unicast(netlink_packet::new_error(Err(e), req_header));
-                        }
-                    };
+                    let extracted_request =
+                        match extract_if_id_and_addr_from_addr_message(message, client, &req, true)
+                        {
+                            Ok(o) => o,
+                            Err(e) => {
+                                return client
+                                    .send_unicast(netlink_packet::new_error(Err(e), req_header));
+                            }
+                        };
                     let result = if let Some(ExtractedAddressRequest {
                         address_and_interface_id,
                         addr_flags,
-                    }) = extracted_request {
+                    }) = extracted_request
+                    {
                         let (completer, waiter) = oneshot::channel();
                         let requested_subnet_route =
                             addr_flags & IFA_F_NOPREFIXROUTE != IFA_F_NOPREFIXROUTE;
@@ -923,8 +940,8 @@ pub mod route {
                             AddrSubnetEither::V6(_addr_subnet) => true,
                         };
                         let add_subnet_route = requested_subnet_route && can_add_subnet_route;
-                        unified_request_sink.send(UnifiedRequest::InterfacesRequest(
-                            interfaces::Request {
+                        unified_request_sink
+                            .send(UnifiedRequest::InterfacesRequest(interfaces::Request {
                                 args: interfaces::RequestArgs::Address(
                                     interfaces::AddressRequestArgs::New(
                                         interfaces::NewAddressArgs {
@@ -936,67 +953,73 @@ pub mod route {
                                 sequence_number: req_header.sequence_number,
                                 client: client.clone(),
                                 completer,
-                            })).await.expect("interface event loop should never terminate");
-                        waiter
+                            }))
                             .await
-                            .expect("interfaces event loop should have handled the request")
+                            .expect("interface event loop should never terminate");
+                        waiter.await.expect("interfaces event loop should have handled the request")
                     } else {
                         Ok(())
                     };
 
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into_errno()), req_header)),
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
                     }
                 }
                 DelAddress(ref message) => {
                     let extracted_request = match extract_if_id_and_addr_from_addr_message(
-                        message,
-                        client,
-                        &req,
-                        false,
+                        message, client, &req, false,
                     ) {
                         Ok(o) => o,
                         Err(e) => {
-                            return client.send_unicast(netlink_packet::new_error(Err(e), req_header));
+                            return client
+                                .send_unicast(netlink_packet::new_error(Err(e), req_header));
                         }
                     };
 
                     let result = if let Some(ExtractedAddressRequest {
                         address_and_interface_id,
                         addr_flags: _,
-                    }) = extracted_request {
+                    }) = extracted_request
+                    {
                         let (completer, waiter) = oneshot::channel();
-                        unified_request_sink.send(UnifiedRequest::InterfacesRequest(
-                            interfaces::Request {
+                        unified_request_sink
+                            .send(UnifiedRequest::InterfacesRequest(interfaces::Request {
                                 args: interfaces::RequestArgs::Address(
                                     interfaces::AddressRequestArgs::Del(
-                                        interfaces::DelAddressArgs {
-                                            address_and_interface_id,
-                                        },
+                                        interfaces::DelAddressArgs { address_and_interface_id },
                                     ),
                                 ),
                                 sequence_number: req_header.sequence_number,
                                 client: client.clone(),
                                 completer,
-                            })).await.expect("interface event loop should never terminate");
-                        waiter
+                            }))
                             .await
-                            .expect("interfaces event loop should have handled the request")
+                            .expect("interface event loop should never terminate");
+                        waiter.await.expect("interfaces event loop should have handled the request")
                     } else {
                         Ok(())
                     };
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into_errno()), req_header))
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
                     }
                 }
+                // Non-dump GetRoute is not currently necessary for our use.
                 GetRoute(ref message) if is_dump => {
                     match message.header.address_family {
                         AddressFamily::Unspec => {
@@ -1006,43 +1029,39 @@ pub mod route {
                                 unified_request_sink,
                                 client,
                                 req_header,
-                                routes::RouteRequestArgs::Get(
-                                    routes::GetRouteArgs::Dump,
-                                ),
-                            ).await
+                                routes::RouteRequestArgs::Get(routes::GetRouteArgs::Dump),
+                            )
+                            .await
                             .expect("route dump requests are infallible");
-                        process_routes_worker_request::<_, Ipv6>(
+                            process_routes_worker_request::<_, Ipv6>(
                                 unified_request_sink,
                                 client,
                                 req_header,
-                                routes::RouteRequestArgs::Get(
-                                    routes::GetRouteArgs::Dump,
-                                ),
-                            ).await
+                                routes::RouteRequestArgs::Get(routes::GetRouteArgs::Dump),
+                            )
+                            .await
                             .expect("route dump requests are infallible");
-                        },
+                        }
                         AddressFamily::Inet => {
                             process_routes_worker_request::<_, Ipv4>(
                                 unified_request_sink,
                                 client,
                                 req_header,
-                                routes::RouteRequestArgs::Get(
-                                    routes::GetRouteArgs::Dump,
-                                ),
-                            ).await
+                                routes::RouteRequestArgs::Get(routes::GetRouteArgs::Dump),
+                            )
+                            .await
                             .expect("route dump requests are infallible");
-                        },
+                        }
                         AddressFamily::Inet6 => {
                             process_routes_worker_request::<_, Ipv6>(
                                 unified_request_sink,
                                 client,
                                 req_header,
-                                routes::RouteRequestArgs::Get(
-                                    routes::GetRouteArgs::Dump,
-                                ),
-                            ).await
+                                routes::RouteRequestArgs::Get(routes::GetRouteArgs::Dump),
+                            )
+                            .await
                             .expect("route dump requests are infallible");
-                        },
+                        }
                         family => {
                             log_debug!(
                                 "invalid address family ({:?}) in route dump request from {}: {:?}",
@@ -1050,8 +1069,10 @@ pub mod route {
                                 client,
                                 req
                             );
-                            client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EINVAL), req_header));
+                            client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EINVAL),
+                                req_header,
+                            ));
                             return;
                         }
                     };
@@ -1060,40 +1081,52 @@ pub mod route {
                 }
                 GetRule(msg) => {
                     if !is_dump {
-                        client.send_unicast(
-                            netlink_packet::new_error(Err(Errno::ENOTSUP), req_header)
-                        );
+                        client.send_unicast(netlink_packet::new_error(
+                            Err(Errno::ENOTSUP),
+                            req_header,
+                        ));
                         return;
                     }
                     let ip_versions = match msg.header.family {
                         AddressFamily::Inet => Either::Left(std::iter::once(IpVersion::V4)),
                         AddressFamily::Inet6 => Either::Left(std::iter::once(IpVersion::V6)),
-                        AddressFamily::Unspec => Either::Right([IpVersion::V4, IpVersion::V6].into_iter()),
+                        AddressFamily::Unspec => {
+                            Either::Right([IpVersion::V4, IpVersion::V6].into_iter())
+                        }
                         family => {
-                            client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EAFNOSUPPORT), req_header)
+                            client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EAFNOSUPPORT),
+                                req_header,
+                            ));
+                            log_debug!(
+                                "received RTM_GETRULE req from {} with invalid address \
+                                family ({:?}): {:?}",
+                                client,
+                                family,
+                                msg
                             );
-                            log_debug!("received RTM_GETRULE req from {} with invalid address \
-                                family ({:?}): {:?}", client, family, msg);
                             return;
                         }
                     };
                     for ip_version in ip_versions.into_iter() {
                         let (completer, receiver) = oneshot::channel();
                         net_types::for_any_ip_version!(ip_version, I, {
-                            unified_request_sink.send(
-                                UnifiedRequest::rule_request::<I>(RuleRequest {
-                                    args: RuleRequestArgs::DumpRules,
-                                    _ip_version_marker: <I as Ip>::VERSION_MARKER,
-                                    sequence_number: req_header.sequence_number,
-                                    client: client.clone(),
-                                },
-                                completer,
-                            )).await.expect("event loop should never terminate");
+                            unified_request_sink
+                                .send(UnifiedRequest::rule_request::<I>(
+                                    RuleRequest {
+                                        args: RuleRequestArgs::DumpRules,
+                                        _ip_version_marker: <I as Ip>::VERSION_MARKER,
+                                        sequence_number: req_header.sequence_number,
+                                        client: client.clone(),
+                                    },
+                                    completer,
+                                ))
+                                .await
+                                .expect("event loop should never terminate");
                         });
 
                         match receiver.await.expect("completer should not be dropped") {
-                            Ok(()) => {},
+                            Ok(()) => {}
                             Err(e) => {
                                 client.send_unicast(netlink_packet::new_error(Err(e), req_header));
                                 return;
@@ -1105,39 +1138,49 @@ pub mod route {
                 NewRule(msg) => {
                     if is_replace {
                         log_warn!("unimplemented: RTM_NEWRULE requests with NLM_F_REPLACE set.");
-                        client.send_unicast(
-                            netlink_packet::new_error(Err(Errno::ENOTSUP), req_header)
-                        );
+                        client.send_unicast(netlink_packet::new_error(
+                            Err(Errno::ENOTSUP),
+                            req_header,
+                        ));
                         return;
                     }
                     let ip_version = match msg.header.family {
                         AddressFamily::Inet => IpVersion::V4,
                         AddressFamily::Inet6 => IpVersion::V6,
                         family => {
-                            log_debug!("received RTM_NEWRULE req from {} with invalid address \
-                                family ({:?}): {:?}", client, family, msg);
-                            client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EAFNOSUPPORT), req_header)
+                            log_debug!(
+                                "received RTM_NEWRULE req from {} with invalid address \
+                                family ({:?}): {:?}",
+                                client,
+                                family,
+                                msg
                             );
+                            client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EAFNOSUPPORT),
+                                req_header,
+                            ));
                             return;
                         }
                     };
                     let (completer, receiver) = oneshot::channel();
                     net_types::for_any_ip_version!(ip_version, I, {
                         let request = RuleRequest {
-                                args: RuleRequestArgs::New(msg),
-                                _ip_version_marker: <I as Ip>::VERSION_MARKER,
-                                sequence_number: req_header.sequence_number,
-                                client: client.clone(),
+                            args: RuleRequestArgs::New(msg),
+                            _ip_version_marker: <I as Ip>::VERSION_MARKER,
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
                         };
-                        unified_request_sink.send(
-                            UnifiedRequest::rule_request::<I>(request, completer)
-                            ).await.expect("event loop should never terminate");
+                        unified_request_sink
+                            .send(UnifiedRequest::rule_request::<I>(request, completer))
+                            .await
+                            .expect("event loop should never terminate");
                     });
                     match receiver.await.expect("completer should not be dropped") {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
                         Err(e) => {
                             client.send_unicast(netlink_packet::new_error(Err(e), req_header));
                         }
@@ -1148,30 +1191,39 @@ pub mod route {
                         AddressFamily::Inet => IpVersion::V4,
                         AddressFamily::Inet6 => IpVersion::V6,
                         family => {
-                            log_debug!("received RTM_DELRULE req from {} with invalid address \
-                                family ({:?}): {:?}", client, family, msg);
-                            client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EAFNOSUPPORT), req_header)
+                            log_debug!(
+                                "received RTM_DELRULE req from {} with invalid address \
+                                family ({:?}): {:?}",
+                                client,
+                                family,
+                                msg
                             );
+                            client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EAFNOSUPPORT),
+                                req_header,
+                            ));
                             return;
                         }
                     };
                     let (completer, receiver) = oneshot::channel();
                     net_types::for_any_ip_version!(ip_version, I, {
                         let request = RuleRequest {
-                                args: RuleRequestArgs::Del(msg),
-                                _ip_version_marker: <I as Ip>::VERSION_MARKER,
-                                sequence_number: req_header.sequence_number,
-                                client: client.clone(),
+                            args: RuleRequestArgs::Del(msg),
+                            _ip_version_marker: <I as Ip>::VERSION_MARKER,
+                            sequence_number: req_header.sequence_number,
+                            client: client.clone(),
                         };
-                        unified_request_sink.send(
-                            UnifiedRequest::rule_request::<I>(request, completer)
-                            ).await.expect("event loop should never terminate");
+                        unified_request_sink
+                            .send(UnifiedRequest::rule_request::<I>(request, completer))
+                            .await
+                            .expect("event loop should never terminate");
                     });
                     match receiver.await.expect("completer should not be dropped") {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
                         Err(e) => {
                             client.send_unicast(netlink_packet::new_error(Err(e), req_header));
                         }
@@ -1182,19 +1234,31 @@ pub mod route {
                     // dispatching a delete then add request to Netstack.
                     let is_replace = req_header.flags & NLM_F_REPLACE == NLM_F_REPLACE;
                     if is_replace {
-                        log_warn!("unsupported request type: NLM_F_REPLACE flag present in new \
-                            route request from {}: {:?}", client, req);
-                        client.send_unicast(
-                            netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
+                        log_warn!(
+                            "unsupported request type: NLM_F_REPLACE flag present in new \
+                            route request from {}: {:?}",
+                            client,
+                            req
+                        );
+                        client.send_unicast(netlink_packet::new_error(
+                            Err(Errno::ENOTSUP),
+                            req_header,
+                        ));
                         return;
                     }
 
                     if message.header.kind != RouteType::Unicast {
-                        log_warn!("unsupported request type: {:?} route present in new route \
+                        log_warn!(
+                            "unsupported request type: {:?} route present in new route \
                             request from {}: {:?}, only `RTN_UNICAST` is supported",
-                            message.header.kind, client, req);
-                        client.send_unicast(
-                            netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
+                            message.header.kind,
+                            client,
+                            req
+                        );
+                        client.send_unicast(netlink_packet::new_error(
+                            Err(Errno::ENOTSUP),
+                            req_header,
+                        ));
                         return;
                     }
 
@@ -1207,15 +1271,17 @@ pub mod route {
                                         client,
                                         req_header,
                                         req,
-                                    ).await
-                                },
+                                    )
+                                    .await
+                                }
                                 Err(e) => {
-                                    return client.send_unicast(
-                                        netlink_packet::new_error(Err(e), req_header)
-                                    );
+                                    return client.send_unicast(netlink_packet::new_error(
+                                        Err(e),
+                                        req_header,
+                                    ));
                                 }
                             }
-                        },
+                        }
                         AddressFamily::Inet6 => {
                             match to_new_route_args::<Ipv6>(message, client, &req) {
                                 Ok(req) => {
@@ -1224,89 +1290,124 @@ pub mod route {
                                         client,
                                         req_header,
                                         req,
-                                    ).await
-                                },
+                                    )
+                                    .await
+                                }
                                 Err(e) => {
-                                    return client.send_unicast(
-                                        netlink_packet::new_error(Err(e), req_header)
-                                    );
+                                    return client.send_unicast(netlink_packet::new_error(
+                                        Err(e),
+                                        req_header,
+                                    ));
                                 }
                             }
-                        },
+                        }
                         family => {
-                            log_debug!("invalid address family ({:?}) in new route \
-                                request from {}: {:?}", family, client, req);
-                            return client.send_unicast(
-                                netlink_packet::new_error(Err(Errno::EINVAL), req_header)
+                            log_debug!(
+                                "invalid address family ({:?}) in new route \
+                                request from {}: {:?}",
+                                family,
+                                client,
+                                req
                             );
+                            return client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EINVAL),
+                                req_header,
+                            ));
                         }
                     };
 
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into_errno()), req_header)),
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
                     }
                 }
                 DelRoute(ref message) => {
                     if message.header.kind != RouteType::Unicast {
-                        log_warn!("unsupported request type: {:?} route present in new route \
+                        log_warn!(
+                            "unsupported request type: {:?} route present in new route \
                             request from {}: {:?}, only `RTN_UNICAST` is supported",
-                            message.header.kind, client, req);
-                        client.send_unicast(
-                            netlink_packet::new_error(Err(Errno::ENOTSUP), req_header));
+                            message.header.kind,
+                            client,
+                            req
+                        );
+                        client.send_unicast(netlink_packet::new_error(
+                            Err(Errno::ENOTSUP),
+                            req_header,
+                        ));
                         return;
                     }
 
                     let result = match message.header.address_family {
-                        AddressFamily::Inet => match to_del_route_args::<Ipv4>(message, client, &req) {
-                            Ok(req) => {
-                                process_routes_worker_request::<_, Ipv4>(
-                                    unified_request_sink,
-                                    client,
-                                    req_header,
-                                    req,
-                                ).await
-                            },
-                            Err(e) => {
-                                return client.send_unicast(
-                                    netlink_packet::new_error(Err(e), req_header)
-                                );
+                        AddressFamily::Inet => {
+                            match to_del_route_args::<Ipv4>(message, client, &req) {
+                                Ok(req) => {
+                                    process_routes_worker_request::<_, Ipv4>(
+                                        unified_request_sink,
+                                        client,
+                                        req_header,
+                                        req,
+                                    )
+                                    .await
+                                }
+                                Err(e) => {
+                                    return client.send_unicast(netlink_packet::new_error(
+                                        Err(e),
+                                        req_header,
+                                    ));
+                                }
                             }
-                        },
-                        AddressFamily::Inet6 => match to_del_route_args::<Ipv6>(message, client, &req) {
-                            Ok(req) => {
-                                process_routes_worker_request::<_, Ipv6>(
-                                    unified_request_sink,
-                                    client,
-                                    req_header,
-                                    req,
-                                ).await
-                            },
-                            Err(e) => {
-                                return client.send_unicast(
-                                netlink_packet::new_error(Err(e), req_header)
-                                );
+                        }
+                        AddressFamily::Inet6 => {
+                            match to_del_route_args::<Ipv6>(message, client, &req) {
+                                Ok(req) => {
+                                    process_routes_worker_request::<_, Ipv6>(
+                                        unified_request_sink,
+                                        client,
+                                        req_header,
+                                        req,
+                                    )
+                                    .await
+                                }
+                                Err(e) => {
+                                    return client.send_unicast(netlink_packet::new_error(
+                                        Err(e),
+                                        req_header,
+                                    ));
+                                }
                             }
-                        },
+                        }
                         family => {
-                            log_debug!("invalid address family ({:?}) in new route \
-                                request from {}: {:?}", family, client, req);
-                             return client.send_unicast(
-                                 netlink_packet::new_error(Err(Errno::EINVAL), req_header)
-                             );
+                            log_debug!(
+                                "invalid address family ({:?}) in new route \
+                                request from {}: {:?}",
+                                family,
+                                client,
+                                req
+                            );
+                            return client.send_unicast(netlink_packet::new_error(
+                                Err(Errno::EINVAL),
+                                req_header,
+                            ));
                         }
                     };
 
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into_errno()), req_header)
-                        ),
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client.send_unicast(netlink_packet::new_error(
+                            Err(e.into_errno()),
+                            req_header,
+                        )),
                     }
                 }
                 GetNeighbour(ref message) => {
@@ -1318,58 +1419,64 @@ pub mod route {
                             client: client.clone(),
                             completer,
                         },
-                        Err(e) => return client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
+                        Err(e) => {
+                            return client.send_unicast(netlink_packet::new_error(
+                                Err(e.into()),
+                                req_header,
+                            ));
+                        }
                     };
-                    unified_request_sink.send(UnifiedRequest::NeighborsRequest(request))
-                    .await
-                    .expect("route event loop should never terminate");
-                    let result =  waiter
-                    .await
-                    .expect("routes event loop should have handled the request");
+                    unified_request_sink
+                        .send(UnifiedRequest::NeighborsRequest(request))
+                        .await
+                        .expect("route event loop should never terminate");
+                    let result =
+                        waiter.await.expect("routes event loop should have handled the request");
 
                     match result {
-                        Ok(()) => if is_dump {
-                            client.send_unicast(netlink_packet::new_done(req_header))
-                        } else if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
+                        Ok(()) => {
+                            if is_dump {
+                                client.send_unicast(netlink_packet::new_done(req_header))
+                            } else if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client
+                            .send_unicast(netlink_packet::new_error(Err(e.into()), req_header)),
                     }
                 }
                 NewNeighbour(ref message) => {
                     let (completer, waiter) = oneshot::channel();
-                    let request = match NewNeighborArgs::try_from_rtnl_neighbor(
-                        message,
-                        req_header.flags,
-                    ) {
-                        Ok(add_args) => neighbors::Request {
-                            args: NeighborRequestArgs::New(add_args),
-                            sequence_number: req_header.sequence_number,
-                            client: client.clone(),
-                            completer,
-                        },
-                        Err(e) => return client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
-                    };
-                    unified_request_sink.send(UnifiedRequest::NeighborsRequest(request))
-                    .await
-                    .expect("route event loop should never terminate");
-                    let result =  waiter
-                    .await
-                    .expect("routes event loop should have handled the request");
+                    let request =
+                        match NewNeighborArgs::try_from_rtnl_neighbor(message, req_header.flags) {
+                            Ok(add_args) => neighbors::Request {
+                                args: NeighborRequestArgs::New(add_args),
+                                sequence_number: req_header.sequence_number,
+                                client: client.clone(),
+                                completer,
+                            },
+                            Err(e) => {
+                                return client.send_unicast(netlink_packet::new_error(
+                                    Err(e.into()),
+                                    req_header,
+                                ));
+                            }
+                        };
+                    unified_request_sink
+                        .send(UnifiedRequest::NeighborsRequest(request))
+                        .await
+                        .expect("route event loop should never terminate");
+                    let result =
+                        waiter.await.expect("routes event loop should have handled the request");
 
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client
+                            .send_unicast(netlink_packet::new_error(Err(e.into()), req_header)),
                     }
                 }
                 DelNeighbour(ref message) => {
@@ -1381,27 +1488,38 @@ pub mod route {
                             client: client.clone(),
                             completer,
                         },
-                        Err(e) => return client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
+                        Err(e) => {
+                            return client.send_unicast(netlink_packet::new_error(
+                                Err(e.into()),
+                                req_header,
+                            ));
+                        }
                     };
-                    unified_request_sink.send(UnifiedRequest::NeighborsRequest(request))
-                    .await
-                    .expect("route event loop should never terminate");
-                    let result =  waiter
-                    .await
-                    .expect("routes event loop should have handled the request");
+                    unified_request_sink
+                        .send(UnifiedRequest::NeighborsRequest(request))
+                        .await
+                        .expect("route event loop should never terminate");
+                    let result =
+                        waiter.await.expect("routes event loop should have handled the request");
 
                     match result {
-                        Ok(()) => if expects_ack {
-                            client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
-                        },
-                        Err(e) => client.send_unicast(
-                            netlink_packet::new_error(Err(e.into()), req_header)
-                        ),
+                        Ok(()) => {
+                            if expects_ack {
+                                client.send_unicast(netlink_packet::new_error(Ok(()), req_header))
+                            }
+                        }
+                        Err(e) => client
+                            .send_unicast(netlink_packet::new_error(Err(e.into()), req_header)),
                     }
                 }
-                NewLink(_)
+                // Style note: avoid placing comments between the match arms
+                // below as it prevents rustfmt from formatting the entire
+                // `match` statement.
+                //
+                // TODO(https://issues.fuchsia.dev/278565021): Implement
+                // GetAddress.
+                GetAddress(_)
+                | NewLink(_)
                 | DelLink(_)
                 | NewLinkProp(_)
                 | DelLinkProp(_)
@@ -1420,17 +1538,11 @@ pub mod route {
                 | NewNsId(_)
                 | GetNsId(_)
                 | DelNsId(_)
-                // TODO(https://issues.fuchsia.dev/278565021): Implement GetAddress.
-                | GetAddress(_)
-                // Non-dump GetRoute is not currently necessary for our use.
                 | GetRoute(_)
                 | NewNeighbourDiscoveryUserOption(_)
                 | NewPrefix(_)
-                // TODO(https://issues.fuchsia.dev/283137907): Implement NewQueueDiscipline.
                 | NewQueueDiscipline(_)
-                // TODO(https://issues.fuchsia.dev/283137907): Implement GetQueueDiscipline.
                 | GetQueueDiscipline(_)
-                // TODO(https://issues.fuchsia.dev/283137907): Implement DelQueueDiscipline.
                 | DelQueueDiscipline(_) => {
                     let req_type = (&req).into();
                     let nl_flags_dbg =
