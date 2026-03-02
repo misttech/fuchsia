@@ -1010,46 +1010,52 @@ impl MockOtaDownloaderService {
 
     async fn run_ota_downloader_service(
         self: Arc<Self>,
-        mut stream: fpkg_internal::OtaDownloaderRequestStream,
+        stream: fpkg_internal::OtaDownloaderRequestStream,
     ) -> Result<(), Error> {
-        while let Some(event) = stream.try_next().await? {
-            match event {
-                fpkg_internal::OtaDownloaderRequest::FetchBlob {
-                    hash,
-                    base_url,
-                    overwrite_existing: _,
-                    responder,
-                } => {
-                    self.interactions
-                        .lock()
-                        .push(OtaDownloader(OtaDownloaderEvent::FetchBlob(hash.into())));
-                    assert_eq!(base_url, "https://fuchsia.com/blobs");
-                    let hash = fidl_fuchsia_pkg_ext::BlobId::from(hash).into();
-                    let blocker = self.blockers.lock().remove(&hash);
-                    if let Some(blocker) = blocker {
-                        let (resume_sender, resume_receiver) = oneshot::channel();
-                        // If the test dropped the receiver, it doesn't want to block.
-                        if blocker.send(resume_sender).is_ok()
-                            && let Ok(response) = resume_receiver.await
-                        {
-                            responder.send(response)?;
-                            continue;
+        stream
+            .map_err(Error::new)
+            .try_for_each_concurrent(None, |event| {
+                let this = Arc::clone(&self);
+                async move {
+                    match event {
+                        fpkg_internal::OtaDownloaderRequest::FetchBlob {
+                            hash,
+                            base_url,
+                            overwrite_existing: _,
+                            responder,
+                        } => {
+                            this.interactions
+                                .lock()
+                                .push(OtaDownloader(OtaDownloaderEvent::FetchBlob(hash.into())));
+                            assert_eq!(base_url, "https://fuchsia.com/blobs");
+                            let hash = fidl_fuchsia_pkg_ext::BlobId::from(hash).into();
+                            let blocker = this.blockers.lock().remove(&hash);
+                            if let Some(blocker) = blocker {
+                                let (resume_sender, resume_receiver) = oneshot::channel();
+                                // If the test dropped the receiver, it doesn't want to block.
+                                if blocker.send(resume_sender).is_ok()
+                                    && let Ok(response) = resume_receiver.await
+                                {
+                                    responder.send(response)?;
+                                    return Ok(());
+                                }
+                            }
+                            if let Some(response) = *this.fetch_blob_response.lock() {
+                                responder.send(response)?;
+                                return Ok(());
+                            }
+                            if let Some(content) = this.blobs.get(&hash) {
+                                let () = this.blobfs.write_blob(hash, content).await.unwrap();
+                                responder.send(Ok(()))?;
+                            } else {
+                                responder.send(Err(fpkg::ResolveError::BlobNotFound))?;
+                            }
                         }
                     }
-                    if let Some(response) = *self.fetch_blob_response.lock() {
-                        responder.send(response)?;
-                        continue;
-                    }
-                    if let Some(content) = self.blobs.get(&hash) {
-                        let () = self.blobfs.write_blob(hash, content).await.unwrap();
-                        responder.send(Ok(()))?;
-                    } else {
-                        responder.send(Err(fpkg::ResolveError::BlobNotFound))?;
-                    }
+                    Ok(())
                 }
-            }
-        }
-        Ok(())
+            })
+            .await
     }
 }
 

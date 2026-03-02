@@ -142,48 +142,37 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         )
     );
 
-    handle_blob1.await.unwrap().send(Ok(())).unwrap();
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Fetch(
-            UpdateInfoAndProgress::builder()
-                .info(info)
-                .progress(
-                    Progress::builder()
-                        .fraction_completed(100.0 / 3120.0)
-                        .bytes_downloaded(0)
-                        .build()
-                )
-                .build()
-        )
-    );
+    let mut remaining_blobs = vec![
+        async move { (100.0, handle_blob1.await) }.boxed(),
+        async move { (20.0, handle_blob2.await) }.boxed(),
+        async move { (3000.0, handle_blob3.await) }.boxed(),
+    ];
 
-    handle_blob2.await.unwrap().send(Ok(())).unwrap();
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Fetch(
-            UpdateInfoAndProgress::builder()
-                .info(info)
-                .progress(
-                    Progress::builder()
-                        .fraction_completed(120.0 / 3120.0)
-                        .bytes_downloaded(0)
-                        .build()
-                )
-                .build()
-        )
-    );
+    let mut total_downloaded = 0.0;
+    let total_size = 3120.0;
 
-    handle_blob3.await.unwrap().send(Ok(())).unwrap();
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Fetch(
-            UpdateInfoAndProgress::builder()
-                .info(info)
-                .progress(Progress::builder().fraction_completed(1.0).bytes_downloaded(0).build())
-                .build()
-        )
-    );
+    while !remaining_blobs.is_empty() {
+        let ((size, sender), _index, remaining) =
+            futures::future::select_all(remaining_blobs).await;
+        sender.unwrap().send(Ok(())).unwrap();
+        total_downloaded += size;
+
+        assert_eq!(
+            attempt.next().await.unwrap().unwrap(),
+            State::Fetch(
+                UpdateInfoAndProgress::builder()
+                    .info(info)
+                    .progress(
+                        Progress::builder()
+                            .fraction_completed(total_downloaded / total_size)
+                            .bytes_downloaded(0)
+                            .build()
+                    )
+                    .build()
+            )
+        );
+        remaining_blobs = remaining;
+    }
 
     // In this test, we are testing Fetch updates. Let's assert the Fetch
     // phase is over.
