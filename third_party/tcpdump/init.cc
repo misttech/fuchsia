@@ -103,11 +103,10 @@ __attribute__((constructor)) void init_packet_socket_provider() {
       composed_svc_dir.AddService(
           kPacketSocketProviderName,
           std::make_unique<vfs::Service>(
-              [exposed_client = std::move(exposed_client)](zx::channel request,
-                                                           async_dispatcher_t* dispatcher) mutable {
-                zx::result result = component::ConnectAt(
-                    exposed_client.borrow(),
-                    fidl::ServerEnd<fuchsia_posix_socket_packet::Provider>(std::move(request)));
+              [exposed_client = std::move(exposed_client)](
+                  fidl::ServerEnd<fuchsia_posix_socket_packet::Provider> server_end) mutable {
+                zx::result result =
+                    component::ConnectAt(exposed_client.borrow(), std::move(server_end));
                 ZX_ASSERT_MSG(result.is_ok(), "Failed to connect to packet socker provider: %s",
                               result.status_string());
               }));
@@ -141,10 +140,8 @@ __attribute__((constructor)) void init_packet_socket_provider() {
         composed_root_dir.AddService(
             svc_dir_path.filename().c_str(),
             std::make_unique<vfs::Service>(
-                [](zx::channel request, async_dispatcher_t* dispatcher) mutable {
-                  zx_status_t status = composed_svc_dir.Serve(
-                      kServeFlags, fidl::ServerEnd<fuchsia_io::Directory>(std::move(request)),
-                      dispatcher);
+                [](fidl::ServerEnd<fuchsia_io::Directory> request) mutable {
+                  zx_status_t status = composed_svc_dir.Serve(kServeFlags, std::move(request));
                   ZX_ASSERT_MSG(status == ZX_OK, "Serve failed: %s", zx_status_get_string(status));
                 }));
 
