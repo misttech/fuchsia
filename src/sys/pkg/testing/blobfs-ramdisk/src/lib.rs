@@ -386,11 +386,17 @@ impl BlobfsRamdisk {
     }
 
     /// Writes a blob with hash `merkle` and blob contents `bytes` to blobfs. `bytes` should be
-    /// uncompressed. Ignores AlreadyExists errors.
-    pub async fn write_blob(&self, merkle: Hash, bytes: &[u8]) -> Result<(), Error> {
+    /// uncompressed. Ignores AlreadyExists errors. Overwrites already existing blobs if `overwrite`
+    /// is true.
+    pub async fn write_blob_with_overwrite(
+        &self,
+        merkle: Hash,
+        bytes: &[u8],
+        overwrite: bool,
+    ) -> Result<(), Error> {
         let compressed_data = Type1Blob::generate(bytes, CompressionMode::Attempt);
         let blob_creator = self.blob_creator_proxy()?;
-        let writer_client_end = match blob_creator.create(&merkle.into(), false).await? {
+        let writer_client_end = match blob_creator.create(&merkle.into(), overwrite).await? {
             Ok(writer_client_end) => writer_client_end,
             Err(ffxfs::CreateBlobError::AlreadyExists) => {
                 return Ok(());
@@ -405,6 +411,12 @@ impl BlobfsRamdisk {
             .context("failed to create BlobWriter")?;
         blob_writer.write(&compressed_data).await?;
         Ok(())
+    }
+
+    /// Writes a blob with hash `merkle` and blob contents `bytes` to blobfs. `bytes` should be
+    /// uncompressed. Ignores AlreadyExists errors.
+    pub async fn write_blob(&self, merkle: Hash, bytes: &[u8]) -> Result<(), Error> {
+        self.write_blob_with_overwrite(merkle, bytes, false).await
     }
 
     /// Returns a connection to blobfs's exposed "svc" directory.

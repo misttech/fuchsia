@@ -20,11 +20,6 @@
     ],
     capabilities: [
         {
-            directory: "system-blob",
-            rights: [ "r*" ],
-            path: "/blob",
-        },
-        {
             directory: "system-blob-exec",
             rights: [
                 "execute",
@@ -94,13 +89,6 @@
             ],
             from: "parent",
             to: "#pkg-recovery",
-        },
-        {
-            directory: "system-blob",
-            from: "self",
-            as: "blob",
-            to: "#pkg-recovery",
-            dependency: "weak",
         },
         {
             directory: "system-blob-exec",
