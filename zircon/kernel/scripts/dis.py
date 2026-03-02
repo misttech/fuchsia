@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -42,13 +43,18 @@ def getenv(key: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Dump disassembly for a binary to a file in the build directory.",
-        epilog="""Each BINARY can be the name of the binary file without a directory,
-e.g. "libzircon.so" or "zircon.elf"; or the name of a GN target, e.g. "zircon";
-or a string of (lowercase) hex characters that's an ELF build ID.
+        description="Dump disassembly for binaries to a file in the build directory.",
+        epilog="""
+Each BINARY can identify multiple binaries in one of the following forms:
+  * ELF build ID, as a string of lowercase hex characters;
+  * Unix filename pattern of the basename of a binary;
+  * Unix filename pattern of the name of a GN target.
 
-The disassembly will be written to a file next to the binary file in
-the build directory, using its name with a ".lst" suffix.""",
+For example, among "libzircon.so" or "vmzircon", "*zircon*" will match both,
+"*zircon" will only match "vmzircon", and "zircon" will match neither.
+
+The disassembly will be written to files next to the binary file matches in
+the build directory, using the matche's name with a ".lst" suffix.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -126,8 +132,10 @@ the build directory, using its name with a ".lst" suffix.""",
         action="store_true",
     )
     parser.add_argument(
-        "binary",
-        help="Name of the binary, GN target, or ELF build ID.",
+        "binaries",
+        help="An ELF build ID or Unix file patterns for the name of a binary or GN target",
+        nargs="*",
+        metavar="BINARY",
     )
     args = parser.parse_args()
 
@@ -158,29 +166,43 @@ the build directory, using its name with a ".lst" suffix.""",
         objdump_args.append("--debug-inlined-funcs=limits-only")
 
     build_dir = Path(getenv("FUCHSIA_BUILD_DIR"))
-    (bin_path, bin_label) = find_binary(build_dir, args.binary)
 
-    full_bin_path = build_dir / bin_path
-    output_path = full_bin_path.with_suffix(".lst")
+    if len(args.binaries) == 0:
+        fail("No binary names given!")
+    all_matches = []
+    for binary in args.binaries:
+        matches = find_binaries(build_dir, binary)
+        all_matches += matches
+        if len(matches) == 0:
+            warn(f"'{binary}' did not match any binaries")
+    if len(all_matches) == 0:
+        fail("No matches")
 
-    print(f"Disassembling {bin_label}...")
-    try:
-        with output_path.open("w") as outfile:
-            subprocess.run(
-                [*objdump_args, bin_path],
-                cwd=build_dir,
-                stdout=outfile,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True,
+    for bin_path, bin_label in all_matches:
+        full_bin_path = build_dir / bin_path
+        output_path = full_bin_path.with_suffix(".lst")
+        output_rel_path = output_path.relative_to(Path.cwd())
+
+        print(f"Disassembling {bin_label}...")
+        try:
+            with output_path.open("w") as outfile:
+                subprocess.run(
+                    [*objdump_args, bin_path],
+                    cwd=build_dir,
+                    stdout=outfile,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True,
+                )
+        except FileNotFoundError:
+            warn(
+                f"Binary not found at '{full_bin_path}'; "
+                f"run `fx build -- {bin_path}` to ensure that it is built",
             )
-    except FileNotFoundError:
-        fail(f"Binary file not found at '{full_bin_path}'")
-    except subprocess.CalledProcessError as e:
-        fail(f"objdump failed for '{bin_path}': {e.stderr}")
+        except subprocess.CalledProcessError as e:
+            fail(f"objdump failed for '{bin_path}': {e.stderr}")
 
-    rel_output_path = output_path.relative_to(Path.cwd())
-    print(f"Wrote '{rel_output_path}' for '{bin_label}'")
+        print(f"Wrote '{output_rel_path}' for '{bin_label}'")
 
     if args.edit:
         # $EDITOR may contain other flags like `--wait` supplied in service of
@@ -188,8 +210,11 @@ the build directory, using its name with a ".lst" suffix.""",
         # followed by a file should always simply open the file for common
         # editors.
         editor = getenv("EDITOR").split()[0]
+        if len(matches) > 1:
+            warn("Multiple matches found; only opening the first in the editor")
+        output_path = (build_dir / all_matches[0][0]).with_suffix(".lst")
         subprocess.run(
-            f"{editor} {shlex.quote(str(rel_output_path))}",
+            f"{editor} {shlex.quote(str(output_path))}",
             stderr=subprocess.PIPE,
             check=True,
             shell=True,
@@ -197,17 +222,17 @@ the build directory, using its name with a ".lst" suffix.""",
         )
 
 
-def find_binary(
+def find_binaries(
     build_dir: Path,
     bin_spec: str,
-) -> tuple[str, str]:
+) -> list(tuple[str, str]):
     """
-    Finds the binary path and label in the build directory based on a binary spec.
+    Finds the binary (path, label) pairs in the build directory matching a binary spec.
     """
     binaries_json = build_dir / "binaries.json"
     if not binaries_json.exists():
         fail(
-            f"'{binaries_json}' not found. Please run `fx build` first.",
+            f"'{binaries_json}' not found. Please run `fx gen`",
         )
 
     with binaries_json.open("r") as f:
@@ -229,27 +254,22 @@ def find_binary(
                 return (binary["debug"], binary["label"])
         fail(f"No binary with build ID '{bin_spec}' found")
 
-    file_re = re.compile(f"(^|/){bin_spec}$")
-    label_re = re.compile(rf":{bin_spec}\(")
     matches = []
     for binary in binaries:
         if "debug" not in binary:
             continue
+        dist_name = Path(binary["dist"]).name
+        debug_name = Path(binary["debug"]).name
         if (
-            re.search(file_re, binary["dist"])
-            or re.search(file_re, binary["debug"])
-            or ("label" in binary and re.search(label_re, binary["label"]))
+            fnmatch.fnmatch(dist_name, bin_spec)
+            or fnmatch.fnmatch(debug_name, bin_spec)
+            or (
+                "label" in binary
+                and fnmatch.fnmatch(binary["label"], rf"*:{bin_spec}(*")
+            )
         ):
             matches.append((binary["debug"], binary["label"]))
-
-    if len(matches) == 0:
-        fail(f"'{bin_spec}' did not match any binaries")
-    if len(matches) > 1:
-        warn(
-            f"'{bin_spec}' matched more than one binary (going with the first): "
-            f"{json.dumps(matches, indent=2)}",
-        )
-    return matches[0]
+    return matches
 
 
 if __name__ == "__main__":
