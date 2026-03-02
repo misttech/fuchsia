@@ -7,6 +7,8 @@
     "fuchsia.system.profile-provider.dispatch": { "capacity": "500us", "deadline": "1ms", "period": "1ms" },
     "fuchsia.tee.media": { "capacity": "2ms", "deadline": "2500us", "period": "2500us" },
     "fuchsia.tee.default": { "priority": 16 },
+    // some sysmem clients have deadline_params, but some don't; avoid boosting to deadline profile
+    "fuchsia.sysmem": { "priority": 28 },
 
     // Fuchsia driver profiles.
     "fuchsia.devices.block.drivers.ftl.device": { "capacity": "400us", "deadline": "2ms", "period": "2ms" },

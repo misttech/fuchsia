@@ -17,6 +17,7 @@ App::App(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
       .create_bti = true,
       .expect_structured_config = true,
       .serve_outgoing = true,
+      .set_scheduler_profile = true,
   };
   auto create_result = sysmem_service::Sysmem::Create(dispatcher_, create_args);
   ZX_ASSERT_MSG(create_result.is_ok(), "sysmem_service::Sysmem::Create() failed: %s",

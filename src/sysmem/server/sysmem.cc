@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
+#include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <inttypes.h>
@@ -465,6 +466,29 @@ zx::result<std::unique_ptr<Sysmem>> Sysmem::Create(async_dispatcher_t* client_di
 }
 
 zx::result<> Sysmem::Initialize(const CreateArgs& create_args) {
+  // always true outside unit tests
+  if (create_args.set_scheduler_profile) {
+    auto role_manager_result = component::Connect<fuchsia_scheduler::RoleManager>();
+    if (!role_manager_result.is_ok()) {
+      LOG(ERROR, "failed to connect to fuchsia_scheduler::RoleManager");
+      return role_manager_result.take_error();
+    }
+    auto role_manager = fidl::SyncClient(std::move(*role_manager_result));
+    ZX_DEBUG_ASSERT(role_manager.is_valid());
+    zx::thread dup_self;
+    zx_status_t dup_status = zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_self);
+    ZX_ASSERT(dup_status == ZX_OK);
+    fuchsia_scheduler::RoleManagerSetRoleRequest set_role_request;
+    set_role_request.target() = fuchsia_scheduler::RoleTarget::WithThread(std::move(dup_self));
+    set_role_request.role().emplace().role() = "fuchsia.sysmem";
+    auto set_role_result = role_manager->SetRole(std::move(set_role_request));
+    if (!set_role_result.is_ok()) {
+      LOG(ERROR, "role_manager->SetRole() failed: %s",
+          set_role_result.error_value().FormatDescription().c_str());
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+  }
+
   // Put everything under a node called "sysmem" because there's currently there's not a simple way
   // to distinguish (using a selector) which driver inspect information is coming from.
   sysmem_root_ = inspector_.inspector().GetRoot().CreateChild("sysmem");

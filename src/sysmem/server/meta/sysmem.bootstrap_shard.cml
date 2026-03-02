@@ -32,6 +32,11 @@
             to: "#sysmem",
         },
         {
+            protocol: "fuchsia.scheduler.RoleManager",
+            from: "#role_manager",
+            to: "#sysmem",
+        },
+        {
             protocol: "fuchsia.tracing.provider.Registry",
             from: "parent",
             to: "#sysmem",

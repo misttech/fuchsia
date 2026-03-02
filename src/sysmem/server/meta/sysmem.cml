@@ -34,6 +34,7 @@
                 "fuchsia.kernel.IommuResource",
                 "fuchsia.kernel.MmioResource",
                 "fuchsia.metrics.MetricEventLoggerFactory",
+                "fuchsia.scheduler.RoleManager",
             ],
         },
         {

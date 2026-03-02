@@ -59,6 +59,7 @@ class Sysmem final : public MemoryAllocator::Owner,
     bool create_bti = false;
     bool expect_structured_config = false;
     bool serve_outgoing = false;
+    bool set_scheduler_profile = false;
   };
   static zx::result<std::unique_ptr<Sysmem>> Create(async_dispatcher_t* dispatcher,
                                                     const CreateArgs& create_args);

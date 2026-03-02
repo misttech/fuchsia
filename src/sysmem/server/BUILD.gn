@@ -134,6 +134,7 @@ source_set("sysmem_common_srcs") {
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
     "//sdk/lib/async:async-cpp",
