@@ -100,7 +100,6 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
       std::holds_alternative<ImageLayerEquivalence>(applied_equiv_.config);
 
   const WireLayerId wire_layer_id = layer_id.ToFidl();
-  auto sync = shared_coordinator.sync();
 
   size_t api_calls_sent = 0;
 
@@ -138,7 +137,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
   if (must_set_config) {
     CP_VERBOSE_LOG << "Layer::SendImageLayerDiffsToCoordinator()... setting config";
     ++api_calls_sent;
-    const fidl::OneWayStatus status = sync->SetLayerPrimaryConfig(
+    const fidl::OneWayStatus status = shared_coordinator->SetLayerPrimaryConfig(
         wire_layer_id, WireImageMetadata{.dimensions = draft_equiv.image_dimensions.ToWire(),
                                          .tiling_type = draft_equiv.image_tiling_type});
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetLayerPrimaryConfig method: "
@@ -148,7 +147,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
   if (must_set_position) {
     CP_VERBOSE_LOG << "Layer::SendImageLayerDiffsToCoordinator()... setting position";
     ++api_calls_sent;
-    const fidl::OneWayStatus status = sync->SetLayerPrimaryPosition(
+    const fidl::OneWayStatus status = shared_coordinator->SetLayerPrimaryPosition(
         wire_layer_id, draft_equiv.image_source_transformation.ToDisplayCoordinateTransformation(),
         draft_equiv.image_source.ToWireRectU(), draft_equiv.display_destination.ToWireRectU());
 
@@ -159,7 +158,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
   if (must_set_alpha) {
     CP_VERBOSE_LOG << "Layer::SendImageLayerDiffsToCoordinator()... setting alpha";
     ++api_calls_sent;
-    const fidl::OneWayStatus status = sync->SetLayerPrimaryAlpha(
+    const fidl::OneWayStatus status = shared_coordinator->SetLayerPrimaryAlpha(
         wire_layer_id, draft_equiv.blend_mode.ToDisplayAlphaMode(), draft_values_.alpha_value);
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetLayerPrimaryAlpha method: "
@@ -172,8 +171,8 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
   if (force_send_layer_image || must_set_image) {
     CP_VERBOSE_LOG << "Layer::SendImageLayerDiffsToCoordinator()... setting image";
     ++api_calls_sent;
-    const fidl::OneWayStatus status =
-        sync->SetLayerImage2(wire_layer_id, draft_image_.ToFidl(), draft_wait_event_.ToFidl());
+    const fidl::OneWayStatus status = shared_coordinator->SetLayerImage2(
+        wire_layer_id, draft_image_.ToFidl(), draft_wait_event_.ToFidl());
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetLayerImage2 method: "
                            << status.status_string();

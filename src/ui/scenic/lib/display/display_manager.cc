@@ -115,7 +115,7 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
         // TODO(https://fxbug.dev/402804098): `flatland::DisplayCompositor` now handles this, so
         // this is redundant, right?  Verify and delete.
         [[maybe_unused]] fidl::OneWayStatus set_display_mode_result =
-            coordinator_proxy_->raw().sync()->SetDisplayMode(display.id, display.modes[mode_index]);
+            coordinator_proxy_->raw()->SetDisplayMode(display.id, display.modes[mode_index]);
       }
 
       const WireDisplayMode& mode = display.modes[mode_index];
@@ -165,7 +165,7 @@ void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timest
                          << "  applied_config_stamp=" << applied_config_stamp.value
                          << "  cookie=" << cookie.value;
     [[maybe_unused]] fidl::OneWayStatus acknowledge_vsync_result =
-        coordinator_proxy_->raw().sync()->AcknowledgeVsync(cookie.value);
+        coordinator_proxy_->raw()->AcknowledgeVsync(cookie.value);
   } else {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): received vsync display_id="
                          << display_id.value << "  timestamp=" << timestamp.get()

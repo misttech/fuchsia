@@ -261,18 +261,18 @@ DisplayCompositor::~DisplayCompositor() {
     }
     for (const auto& [_, data] : display_engine_data_map_) {
       fidl::OneWayStatus result =
-          display_coordinator_.raw().sync()->DestroyLayer(data.empty_scene_layer.ToFidl());
+          display_coordinator_.raw()->DestroyLayer(data.empty_scene_layer.ToFidl());
       if (!result.ok()) {
         FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
       }
       for (const display::LayerId& layer : data.layers) {
-        result = display_coordinator_.raw().sync()->DestroyLayer(layer.ToFidl());
+        result = display_coordinator_.raw()->DestroyLayer(layer.ToFidl());
         if (!result.ok()) {
           FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
         }
       }
       for (const auto& event_data : data.frame_event_datas) {
-        result = display_coordinator_.raw().sync()->ReleaseEvent(event_data.wait_id.ToFidl());
+        result = display_coordinator_.raw()->ReleaseEvent(event_data.wait_id.ToFidl());
         if (!result.ok()) {
           FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent on wait event ("
                          << event_data.wait_id.value() << "): " << result.status_string();

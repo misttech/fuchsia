@@ -402,7 +402,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
         reinterpret_cast<WireLayerId*>(draft_display_layers_.data()), draft_display_layers_.size());
 
     const fidl::OneWayStatus status =
-        coordinator_.sync()->SetDisplayLayers(display_id_.ToFidl(), wire_layer_ids);
+        coordinator_->SetDisplayLayers(display_id_.ToFidl(), wire_layer_ids);
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayLayers method: "
                            << status.status_string();
@@ -411,7 +411,7 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
     IncrementApiCallsSent();
 
     const fidl::OneWayStatus status =
-        coordinator_.sync()->SetDisplayMode(display_id_.ToFidl(), draft_display_mode_.ToWire());
+        coordinator_->SetDisplayMode(display_id_.ToFidl(), draft_display_mode_.ToWire());
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetDisplayMode method: "
                            << status.status_string();

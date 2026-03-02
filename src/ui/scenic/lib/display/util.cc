@@ -43,7 +43,7 @@ bool ImportBufferCollection(
                                                                  image_buffer_usage);
   auto release_buffer_collection_on_failure = fit::defer([&] {
     fidl::OneWayStatus release_result =
-        display_coordinator.sync()->ReleaseBufferCollection(display_buffer_collection_id);
+        display_coordinator->ReleaseBufferCollection(display_buffer_collection_id);
     if (!release_result.ok()) {
       FX_LOGS(ERROR) << "ReleaseBufferCollection failed: " << release_result.status_string();
     }
@@ -82,7 +82,7 @@ EventId ImportEventForTest(
 
   auto before = zx::clock::get_monotonic();
   fidl::OneWayStatus import_result =
-      display_coordinator.sync()->ImportEvent(std::move(dup), event_id.ToFidl());
+      display_coordinator->ImportEvent(std::move(dup), event_id.ToFidl());
   if (!import_result.ok()) {
     auto after = zx::clock::get_monotonic();
     FX_LOGS(ERROR) << "Failed to import display controller event. Waited "
