@@ -59,7 +59,6 @@ pub(crate) trait IfaceManager: Send + Sync {
         iface_id: u16,
     ) -> Result<fidl_common::ApfPacketFilterSupport, Error>;
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error>;
-    #[cfg(test)]
     async fn reset_phy(&self, phy_id: u16) -> Result<(), Error>;
     async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error>;
     async fn set_tx_power_scenario(
@@ -257,7 +256,6 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         }
     }
 
-    #[cfg(test)]
     async fn reset_phy(&self, phy_id: u16) -> Result<(), Error> {
         let result = self.monitor_svc.reset(phy_id).await.map_err(Into::<Error>::into)?;
         match result {
@@ -1218,6 +1216,10 @@ pub mod test_utils {
 
         pub fn mock_no_phys_available(self) -> Self {
             Self { mock_list_phys_result: Ok(vec![]), ..self }
+        }
+
+        pub fn mock_reset_phy_failure(self) -> Self {
+            Self { mock_reset_phy_result: Err(format_err!("mocked ResetPhy failure")), ..self }
         }
     }
 

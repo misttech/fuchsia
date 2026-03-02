@@ -189,6 +189,7 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
     chip_id: u16,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    state: Arc<Mutex<WifiState>>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WifiChipRequest::CreateStaIface { payload, responder, .. } => {
@@ -196,15 +197,63 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
             match payload.iface {
                 Some(iface) => {
                     let reqs = iface.into_stream();
-                    let iface_id = iface_manager
+                    match iface_manager
                         .create_client_iface(chip_id)
                         .inspect_err(|_e| {
                             telemetry_sender.send(TelemetryEvent::IfaceCreationFailure)
                         })
-                        .await?;
-                    telemetry_sender.send(TelemetryEvent::ClientIfaceCreated { iface_id });
-                    responder.send(Ok(())).context("send CreateStaIface response")?;
-                    serve_wifi_sta_iface(iface_id, Arc::clone(&iface_manager), reqs).await;
+                        .await
+                    {
+                        Ok(iface_id) => {
+                            telemetry_sender.send(TelemetryEvent::ClientIfaceCreated { iface_id });
+                            responder.send(Ok(())).context("send CreateStaIface response")?;
+                            serve_wifi_sta_iface(iface_id, Arc::clone(&iface_manager), reqs).await;
+                        }
+                        Err(e) => {
+                            // It is possible that interface creation fails due to the driver
+                            // being in a bad state or in the middle of suspending.  In such cases,
+                            // the driver internally holds an interface reference that cannot be
+                            // used.  The stack ends up in a bad state as wlandevicemonitor and
+                            // wlanix will assume that interface creation failed.  The caller will
+                            // likely repeatedly attempt to create a STA iface.  In such cases,
+                            // trigger a reset and once the reset succeeds, send an
+                            // OnSubsystemRestart callback to notify the framework that it should
+                            // trigger Wi-Fi recovery.
+                            error!("Failed to create client iface: {}", e);
+                            info!("Resetting PHY {}", chip_id);
+                            if let Err(e) = iface_manager.reset_phy(chip_id).await {
+                                error!("Failed to reset PHY: {}", e);
+                                if let Err(e) = responder.send(Err(zx::sys::ZX_ERR_INTERNAL)) {
+                                    error!(
+                                        "Failed to send CreateStaIface response on PHY reset failure: {}",
+                                        e
+                                    );
+                                }
+
+                                // If interfaces cannot be created and the PHY cannot be reset, WLAN
+                                // cannot be controlled.  In this case, wlanix should exit.
+                                panic!("Unable to create interfaces or reset PHY.");
+                            }
+
+                            let mut state = state.lock();
+                            maybe_run_callback(
+                                "WifiEventCallbackProxy::OnSubsystemRestart",
+                                |callback_proxy| {
+                                    callback_proxy.on_subsystem_restart(
+                                        fidl_wlanix::WifiEventCallbackOnSubsystemRestartRequest {
+                                            status: Some(zx::sys::ZX_ERR_INTERNAL),
+                                            ..Default::default()
+                                        },
+                                    )
+                                },
+                                &mut state.callback,
+                            );
+
+                            responder
+                                .send(Err(zx::sys::ZX_ERR_INTERNAL))
+                                .context("send CreateStaIface response")?;
+                        }
+                    }
                 }
                 None => {
                     responder
@@ -366,6 +415,7 @@ async fn serve_wifi_chip<I: IfaceManager>(
     reqs: fidl_wlanix::WifiChipRequestStream,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    state: Arc<Mutex<WifiState>>,
 ) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
@@ -375,6 +425,7 @@ async fn serve_wifi_chip<I: IfaceManager>(
                     chip_id,
                     Arc::clone(&iface_manager),
                     telemetry_sender.clone(),
+                    Arc::clone(&state),
                 )
                 .await
                 {
@@ -575,8 +626,14 @@ async fn handle_wifi_request<I: IfaceManager>(
                     match u16::try_from(chip_id) {
                         Ok(chip_id) => {
                             responder.send(Ok(())).context("send GetChip response")?;
-                            serve_wifi_chip(chip_id, chip_stream, iface_manager, telemetry_sender)
-                                .await;
+                            serve_wifi_chip(
+                                chip_id,
+                                chip_stream,
+                                iface_manager,
+                                telemetry_sender,
+                                Arc::clone(&state),
+                            )
+                            .await;
                         }
                         Err(_e) => {
                             warn!("fidl_wlanix::WifiRequest::GetChip chip_id > u16::MAX");
@@ -2841,6 +2898,10 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Pending);
 
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
+        let (callback_proxy, mut callback_stream) =
+            create_proxy_and_stream::<fidl_wlanix::WifiEventCallbackMarker>();
+        wifi_state.lock().callback.replace(callback_proxy);
+
         let iface_manager = Arc::new(TestIfaceManager::new().mock_create_client_iface_failure());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
@@ -2854,13 +2915,108 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut get_chip_fut), Poll::Ready(Ok(Ok(()))));
 
         // Execute test
-        assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Ready(Err(_)));
+        assert_matches!(
+            exec.run_until_stalled(&mut create_sta_iface_fut),
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INTERNAL)))
+        );
+
+        // Verify that the PHY reset was requested.
+        let calls = iface_manager.calls.lock();
+        assert_matches!(
+            calls.last().expect("iface call history is empty"),
+            &ifaces::test_utils::IfaceManagerCall::ResetPhy { .. }
+        );
 
         // Verify telemetry event for iface creation failure is sent
         assert_matches!(
             telemetry_receiver.try_next(),
             Ok(Some(TelemetryEvent::IfaceCreationFailure))
         );
+
+        // Verify that OnSubsystemRestart callback was called.
+        let callback_event = assert_matches!(
+            exec.run_until_stalled(&mut callback_stream.next()),
+            Poll::Ready(Some(Ok(req))) => req
+        );
+        assert_matches!(
+            callback_event,
+            fidl_wlanix::WifiEventCallbackRequest::OnSubsystemRestart { payload, .. } => {
+                assert_eq!(payload.status, Some(zx::sys::ZX_ERR_INTERNAL));
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    #[should_panic]
+    fn test_wifi_chip_create_sta_iface_fails_and_reset_fails() {
+        // Set up
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        let (wlanix_proxy, wlanix_stream) = create_proxy_and_stream::<fidl_wlanix::WlanixMarker>();
+        let (wifi_proxy, wifi_server_end) = create_proxy::<fidl_wlanix::WifiMarker>();
+        let result = wlanix_proxy.get_wifi(fidl_wlanix::WlanixGetWifiRequest {
+            wifi: Some(wifi_server_end),
+            ..Default::default()
+        });
+        assert_matches!(result, Ok(()));
+
+        let (wifi_chip_proxy, wifi_chip_server_end) = create_proxy::<fidl_wlanix::WifiChipMarker>();
+        let get_chip_fut = wifi_proxy.get_chip(fidl_wlanix::WifiGetChipRequest {
+            chip_id: Some(CHIP_ID),
+            chip: Some(wifi_chip_server_end),
+            ..Default::default()
+        });
+        let mut get_chip_fut = pin!(get_chip_fut);
+        assert_matches!(exec.run_until_stalled(&mut get_chip_fut), Poll::Pending);
+
+        let (_wifi_sta_iface_proxy, wifi_sta_iface_server_end) =
+            create_proxy::<fidl_wlanix::WifiStaIfaceMarker>();
+        let create_sta_iface_fut =
+            wifi_chip_proxy.create_sta_iface(fidl_wlanix::WifiChipCreateStaIfaceRequest {
+                iface: Some(wifi_sta_iface_server_end),
+                ..Default::default()
+            });
+        let mut create_sta_iface_fut = pin!(create_sta_iface_fut);
+        assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Pending);
+
+        let wifi_state = Arc::new(Mutex::new(WifiState::default()));
+        let (callback_proxy, mut callback_stream) =
+            create_proxy_and_stream::<fidl_wlanix::WifiEventCallbackMarker>();
+        wifi_state.lock().callback.replace(callback_proxy);
+
+        let iface_manager = Arc::new(
+            TestIfaceManager::new().mock_create_client_iface_failure().mock_reset_phy_failure(),
+        );
+        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let test_fut = serve_wlanix(
+            wlanix_stream,
+            wifi_state,
+            Arc::clone(&iface_manager),
+            TelemetrySender::new(telemetry_sender),
+        );
+        let mut test_fut = Box::pin(test_fut);
+        assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut get_chip_fut), Poll::Ready(Ok(Ok(()))));
+
+        // Execute test
+        assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Ready(Ok(Err(_))));
+
+        // Verify that the PHY reset was requested.
+        let calls = iface_manager.calls.lock();
+        assert_matches!(
+            calls.last().expect("iface call history is empty"),
+            &ifaces::test_utils::IfaceManagerCall::ResetPhy { .. }
+        );
+
+        // Verify telemetry event for iface creation failure is sent
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::IfaceCreationFailure))
+        );
+
+        // Verify that OnSubsystemRestart callback was not called.
+        assert_matches!(exec.run_until_stalled(&mut callback_stream.next()), Poll::Pending);
     }
 
     #[fuchsia::test]
@@ -4695,7 +4851,13 @@ mod tests {
 
         // Handle the request.  It should complete immediately since the response was set on the
         // TestIfaceManager.
-        let fut = handle_wifi_chip_request(req, phy_id, iface_manager.clone(), telemetry_sender);
+        let fut = handle_wifi_chip_request(
+            req,
+            phy_id,
+            iface_manager.clone(),
+            telemetry_sender,
+            Arc::new(Mutex::new(WifiState::default())),
+        );
         let mut fut = pin!(fut);
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
@@ -4731,7 +4893,13 @@ mod tests {
 
         // Handle the request.  It should complete immediately since the response was set on the
         // TestIfaceManager.
-        let fut = handle_wifi_chip_request(req, phy_id, iface_manager.clone(), telemetry_sender);
+        let fut = handle_wifi_chip_request(
+            req,
+            phy_id,
+            iface_manager.clone(),
+            telemetry_sender,
+            Arc::new(Mutex::new(WifiState::default())),
+        );
         let mut fut = pin!(fut);
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
@@ -4765,8 +4933,13 @@ mod tests {
 
         // Handle the request.  It should complete immediately since the response was set on the
         // TestIfaceManager.
-        let fut =
-            handle_wifi_chip_request(req, test_phy_id, iface_manager.clone(), telemetry_sender);
+        let fut = handle_wifi_chip_request(
+            req,
+            test_phy_id,
+            iface_manager.clone(),
+            telemetry_sender,
+            Arc::new(Mutex::new(WifiState::default())),
+        );
         let mut fut = pin!(fut);
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
@@ -4805,8 +4978,13 @@ mod tests {
 
         // Handle the request.  It should complete immediately since the response was set on the
         // TestIfaceManager.
-        let fut =
-            handle_wifi_chip_request(req, test_phy_id, iface_manager.clone(), telemetry_sender);
+        let fut = handle_wifi_chip_request(
+            req,
+            test_phy_id,
+            iface_manager.clone(),
+            telemetry_sender,
+            Arc::new(Mutex::new(WifiState::default())),
+        );
         let mut fut = pin!(fut);
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
