@@ -1173,6 +1173,16 @@ VmCowPages::~VmCowPages() {
   // cleanup happening here in the destructor.
   canary_.Assert();
   DEBUG_ASSERT(page_list_.HasNoPageOrRef());
+
+  if constexpr (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED) {
+    const uint32_t tracked_slots = continuous_attribution_tracker_.FetchCurrent();
+    // This assertion is likely to fail when there is untracked removal of content: removal of
+    // pages, references, or parent content markers from the page_list_ that are not paired with
+    // updates to the continuous_attribution_tracker_.
+    DEBUG_ASSERT_MSG(tracked_slots == 0, "found nonzero tracked slots count %" PRIu32,
+                     tracked_slots);
+  }
+
   // A cow pages can only be destructed if it is either still in the Init state, suggesting
   // something when wrong with completing construction, or if it is fully in the Dead state, nothing
   // in between.

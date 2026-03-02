@@ -1670,8 +1670,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Tracks the populated bytes count and its high-water mark.
   //
-  // TODO(ethanws): Inform this object about changes to the number of slots populated in page_list_.
-  //
   // Mark it as __NO_UNIQUE_ADDRESS so that we don't pessimize the
   // case when AttributionTracker may be empty.
   __NO_UNIQUE_ADDRESS AttributionTracker continuous_attribution_tracker_ TA_GUARDED(lock());

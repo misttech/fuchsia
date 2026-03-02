@@ -41,9 +41,7 @@ class ContinuousAttributionTracker final {
   void Increment(uint32_t by) {
     DEBUG_ASSERT(by > 0);
     [[maybe_unused]] const bool did_overflow = add_overflow(current_slots_, by, &current_slots_);
-    // TODO(ethanws): Assert this did not overflow when all changes to the populated slots count are
-    // reported to the ContinuousAttributionTracker.
-    ktl::ignore = did_overflow;
+    DEBUG_ASSERT(!did_overflow);
     hwm_slots_ = ktl::max(hwm_slots_, current_slots_);
   }
 
@@ -51,11 +49,11 @@ class ContinuousAttributionTracker final {
   void Decrement(uint32_t by) {
     DEBUG_ASSERT(by > 0);
     [[maybe_unused]] const bool did_overflow = sub_overflow(current_slots_, by, &current_slots_);
-    // TODO(ethanws): Assert this did not overflow when all changes to the populated slots count are
-    // reported to the ContinuousAttributionTracker.
-    ktl::ignore = did_overflow;
-    // TODO(ethanws): Assert that the high-water mark slots are greater than the current slots when
-    // all changes to populated slots are reported to the ContinuousAttributionTracker.
+    // This overflows when there is untracked addition of content: addition of pages, references, or
+    // parent content markers to the page list of a VmCowPages that is not paired with updates to
+    // this continuous attribution tracker.
+    DEBUG_ASSERT(!did_overflow);
+    DEBUG_ASSERT(hwm_slots_ >= current_slots_);
   }
 
  private:
@@ -63,6 +61,8 @@ class ContinuousAttributionTracker final {
   uint32_t current_slots_ = 0;
 
   // The greatest number of current_slots_ since the high-water mark value was last reset.
+  //
+  // Always greater than or equal to |current_slots_|.
   uint32_t hwm_slots_ = 0;
 };
 
