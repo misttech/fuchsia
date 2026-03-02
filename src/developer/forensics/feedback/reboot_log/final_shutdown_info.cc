@@ -49,53 +49,6 @@ bool FinalGracefulShutdownInfo::IsOom() const {
   return final_reason_ == FinalGracefulShutdownReason::kOutOfMemory;
 }
 
-bool FinalZirconShutdownInfo::IsFatal() const {
-  switch (zircon_reason_) {
-    case ZirconRebootReason::kKernelPanic:
-    case ZirconRebootReason::kOOM:
-    case ZirconRebootReason::kHwWatchdog:
-    case ZirconRebootReason::kSwWatchdog:
-    case ZirconRebootReason::kBrownout:
-    case ZirconRebootReason::kUnknown:
-    case ZirconRebootReason::kRootJobTermination:
-    case ZirconRebootReason::kNotParseable:
-      return true;
-    case ZirconRebootReason::kCold:
-      return false;
-    case ZirconRebootReason::kNoCrash:
-    case ZirconRebootReason::kNotSet:
-      FX_LOGS(FATAL) << "FinalZirconShutdownInfo shouldn't be constructed with reason: "
-                     << ToRebootReasonString();
-      return false;
-  }
-}
-
-bool FinalGracefulShutdownInfo::IsFatal() const {
-  switch (final_reason_) {
-    case FinalGracefulShutdownReason::kGenericGraceful:
-    case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-    case FinalGracefulShutdownReason::kRetrySystemUpdate:
-    case FinalGracefulShutdownReason::kHighTemperature:
-    case FinalGracefulShutdownReason::kSysmgrFailure:
-    case FinalGracefulShutdownReason::kCriticalComponentFailure:
-    case FinalGracefulShutdownReason::kOutOfMemory:
-    case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-    case FinalGracefulShutdownReason::kAndroidRescueParty:
-    case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
-    case FinalGracefulShutdownReason::kUserRequestDeviceStuck:
-      return true;
-    case FinalGracefulShutdownReason::kUserRequest:
-    case FinalGracefulShutdownReason::kSystemUpdate:
-    case FinalGracefulShutdownReason::kSessionFailure:
-    case FinalGracefulShutdownReason::kFdr:
-    case FinalGracefulShutdownReason::kZbiSwap:
-    case FinalGracefulShutdownReason::kNetstackMigration:
-    case FinalGracefulShutdownReason::kDeveloperRequest:
-    case FinalGracefulShutdownReason::kAndroidNoReason:
-      return false;
-  }
-}
-
 bool FinalZirconShutdownInfo::IsCrash() const {
   switch (zircon_reason_) {
     case ZirconRebootReason::kKernelPanic:

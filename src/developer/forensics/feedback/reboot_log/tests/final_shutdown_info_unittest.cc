@@ -22,7 +22,6 @@ TEST(FinalZirconShutdownInfoTest, NotParseable) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kUnknown);
   EXPECT_EQ(
       final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
@@ -50,7 +49,6 @@ TEST(FinalZirconShutdownInfoTest, Spontaneous) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
   EXPECT_EQ(
@@ -69,7 +67,6 @@ TEST(FinalZirconShutdownInfoTest, BriefPowerLoss) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
   EXPECT_EQ(
@@ -89,7 +86,6 @@ TEST(FinalZirconShutdownInfoTest, HardReset) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
   EXPECT_EQ(
@@ -108,7 +104,6 @@ TEST(FinalZirconShutdownInfoTest, KernelPanic) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kKernelPanic);
   EXPECT_EQ(
@@ -127,7 +122,6 @@ TEST(FinalZirconShutdownInfoTest, OOM) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kSystemOutOfMemory);
   EXPECT_EQ(
@@ -146,7 +140,6 @@ TEST(FinalZirconShutdownInfoTest, HardwareWatchdogTimeout) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kHardwareWatchdogTimeout);
   EXPECT_EQ(
@@ -165,7 +158,6 @@ TEST(FinalZirconShutdownInfoTest, SoftwareWatchdogTimeout) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kSoftwareWatchdogTimeout);
   EXPECT_EQ(
@@ -184,7 +176,6 @@ TEST(FinalZirconShutdownInfoTest, Brownout) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kBrownout);
   EXPECT_EQ(
       final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
@@ -201,7 +192,6 @@ TEST(FinalZirconShutdownInfoTest, RootJobTermination) {
                                                 /*graceful_shutdown_action=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_TRUE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kRootJobTermination);
   EXPECT_EQ(
@@ -296,7 +286,6 @@ TEST_P(FinalGracefulShutdownInfoNoReportTest, CheckProperties) {
           /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 }
@@ -304,7 +293,6 @@ TEST_P(FinalGracefulShutdownInfoNoReportTest, CheckProperties) {
 struct GracefulTestParams {
   std::string test_name;
   std::vector<GracefulShutdownReason> reasons;
-  bool is_fatal;
   cobalt::LastRebootReason expected_cobalt_reason;
   std::optional<fuchsia::feedback::RebootReason> expected_fidl_reboot_reason;
   std::string expected_crash_signature;
@@ -318,7 +306,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                              {{
                                   "GenericGraceful",
                                   /*reasons=*/{},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kGenericGraceful,
                                   /*expected_fidl_reboot_reason=*/std::nullopt,
                                   "fuchsia-shutdown-undetermined-userspace-reason",
@@ -330,7 +317,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                                       GracefulShutdownReason::kAndroidCriticalProcessFailure,
                                       GracefulShutdownReason::kSessionFailure,
                                   },
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kUnexpectedReasonGraceful,
                                   /*expected_fidl_reboot_reason=*/std::nullopt,
                                   "fuchsia-shutdown-unexpected-userspace-reason",
@@ -339,7 +325,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "HighTemperature",
                                   {GracefulShutdownReason::kHighTemperature},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kHighTemperature,
                                   fuchsia::feedback::RebootReason::HIGH_TEMPERATURE,
                                   "fuchsia-shutdown-high-temperature",
@@ -348,7 +333,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "SessionFailure",
                                   {GracefulShutdownReason::kSessionFailure},
-                                  /*is_fatal=*/false,
                                   cobalt::LastRebootReason::kSessionFailure,
                                   fuchsia::feedback::RebootReason::SESSION_FAILURE,
                                   "fuchsia-session-failure",
@@ -357,7 +341,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "SysmgrFailure",
                                   {GracefulShutdownReason::kSysmgrFailure},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kSysmgrFailure,
                                   fuchsia::feedback::RebootReason::SYSMGR_FAILURE,
                                   "fuchsia-sysmgr-failure",
@@ -366,7 +349,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "CriticalComponentFailure",
                                   {GracefulShutdownReason::kCriticalComponentFailure},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kCriticalComponentFailure,
                                   fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE,
                                   "fuchsia-critical-component-failure",
@@ -375,7 +357,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "RetrySystemUpdate",
                                   {GracefulShutdownReason::kRetrySystemUpdate},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kRetrySystemUpdate,
                                   fuchsia::feedback::RebootReason::RETRY_SYSTEM_UPDATE,
                                   "fuchsia-retry-system-update",
@@ -384,7 +365,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "OOM",
                                   {GracefulShutdownReason::kOutOfMemory},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kSystemOutOfMemory,
                                   fuchsia::feedback::RebootReason::SYSTEM_OUT_OF_MEMORY,
                                   "fuchsia-oom",
@@ -393,7 +373,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "AndroidUnexpectedReason",
                                   {GracefulShutdownReason::kAndroidUnexpectedReason},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kAndroidUnexpectedReason,
                                   fuchsia::feedback::RebootReason::ANDROID_UNEXPECTED_REASON,
                                   "fuchsia-shutdown-android-unexpected-reason",
@@ -402,7 +381,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "AndroidRescueParty",
                                   {GracefulShutdownReason::kAndroidRescueParty},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kAndroidRescueParty,
                                   fuchsia::feedback::RebootReason::ANDROID_RESCUE_PARTY,
                                   "fuchsia-shutdown-android-rescue-party",
@@ -411,7 +389,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "AndroidCriticalProcessFailure",
                                   {GracefulShutdownReason::kAndroidCriticalProcessFailure},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kAndroidCriticalProcessFailure,
                                   fuchsia::feedback::RebootReason::ANDROID_CRITICAL_PROCESS_FAILURE,
                                   "fuchsia-shutdown-android-critical-process-failure",
@@ -420,7 +397,6 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoTest,
                               {
                                   "UserRequestDeviceStuck",
                                   {GracefulShutdownReason::kUserRequestDeviceStuck},
-                                  /*is_fatal=*/true,
                                   cobalt::LastRebootReason::kUserRequestDeviceStuck,
                                   fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK,
                                   "fuchsia-shutdown-user-request-device-stuck",
@@ -437,7 +413,6 @@ TEST_P(FinalGracefulShutdownInfoTest, CheckProperties) {
           /*action=*/std::nullopt, params.reasons, /*not_a_fdr=*/true);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->IsFatal(), params.is_fatal);
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 
@@ -457,7 +432,6 @@ TEST(FinalGracefulShutdownInfoTest, InferredFdr) {
           /*not_a_fdr=*/false);
 
   EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_FALSE(final_shutdown_info->IsFatal());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kFactoryDataReset);
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),

@@ -72,7 +72,7 @@ fuchsia::feedback::CrashReport CreateCrashReport(
   report.set_program_name(final_shutdown_info.ToCrashProgramName())
       .set_crash_signature(final_shutdown_info.ToCrashSignature(spontaneous_reboot_reason,
                                                                 reboot_log.CriticalProcess()))
-      .set_is_fatal(final_shutdown_info.IsFatal());
+      .set_is_fatal(true);
   if (reboot_log.Uptime().has_value()) {
     report.set_program_uptime(reboot_log.Uptime()->get());
   }

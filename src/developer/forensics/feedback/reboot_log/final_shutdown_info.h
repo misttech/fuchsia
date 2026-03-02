@@ -25,9 +25,6 @@ class FinalShutdownInfo {
   // Whether the reason is "out of memory."
   virtual bool IsOom() const = 0;
 
-  // Whether the reason is deemed fatal.
-  virtual bool IsFatal() const = 0;
-
   // Whether the reason justifies a crash report.
   virtual bool IsCrash() const = 0;
 
@@ -84,8 +81,6 @@ class FinalZirconShutdownInfo : public FinalShutdownInfo {
 
   bool IsOom() const override;
 
-  bool IsFatal() const override;
-
   bool IsCrash() const override;
 
   std::optional<bool> OptionallyGraceful() const override;
@@ -119,8 +114,6 @@ class FinalGracefulShutdownInfo : public FinalShutdownInfo {
                             const std::vector<GracefulShutdownReason>& reasons, bool not_a_fdr);
 
   bool IsOom() const override;
-
-  bool IsFatal() const override;
 
   bool IsCrash() const override;
 

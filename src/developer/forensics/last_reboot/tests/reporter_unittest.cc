@@ -75,7 +75,6 @@ struct GracefulShutdownWithCrashTestParam {
   zx::duration output_runtime;
   cobalt::LastRebootReason output_last_reboot_reason;
   std::string output_graceful_action;
-  bool output_is_fatal;
 };
 
 template <typename TestParam>
@@ -549,7 +548,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kSessionFailure,
             "REBOOT",
-            false,
         },
         {
             "OOM",
@@ -561,7 +559,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kSystemOutOfMemory,
             "REBOOT",
-            true,
         },
         {
             "SysmgrFailure",
@@ -573,7 +570,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kSysmgrFailure,
             "REBOOT",
-            true,
         },
         {
             "CriticalComponentFailure",
@@ -586,7 +582,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kCriticalComponentFailure,
             "REBOOT",
-            true,
         },
         {
             "RetrySystemUpdate",
@@ -598,7 +593,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kRetrySystemUpdate,
             "REBOOT",
-            true,
         },
         {
             "HighTemperature",
@@ -610,7 +604,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kHighTemperature,
             "REBOOT",
-            true,
         },
         {
             "NotSupported",
@@ -622,7 +615,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
             "REBOOT",
-            true,
         },
         {
             "NotParseable",
@@ -634,7 +626,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
             "REBOOT",
-            true,
         },
         {
             "None",
@@ -646,7 +637,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
             "REBOOT",
-            true,
         },
         {
             "InvalidSchema",
@@ -658,7 +648,6 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(64208920),
             cobalt::LastRebootReason::kGenericGraceful,
             "NOT PARSEABLE",
-            true,
         },
     })),
     [](const testing::TestParamInfo<GracefulShutdownWithCrashTestParam>& info) {
@@ -687,7 +676,7 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
               param.reboot_reason.c_str()),
           .uptime = param.output_uptime,
           .runtime = param.output_runtime,
-          .is_fatal = param.output_is_fatal,
+          .is_fatal = true,
       }));
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
 
@@ -724,7 +713,7 @@ TEST_P(GracefulWithCrashReporterTest, SucceedForLegacyFile) {
               param.reboot_reason.c_str()),
           .uptime = param.output_uptime,
           .runtime = param.output_runtime,
-          .is_fatal = param.output_is_fatal,
+          .is_fatal = true,
       }));
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
 
