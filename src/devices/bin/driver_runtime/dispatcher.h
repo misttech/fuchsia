@@ -204,6 +204,8 @@ class Dispatcher : public async_dispatcher_t,
     std::string_view scheduler_role() const { return scheduler_role_; }
     async::Loop* loop() { return &loop_; }
 
+    const static uint32_t kDefaultThreadLimit = 10;
+
    private:
     // This stores irqs to avoid destroying them immediately after unbinding.
     // Even though unbinding an irq will clear all irq packets on a port,
@@ -306,7 +308,7 @@ class Dispatcher : public async_dispatcher_t,
     // TODO(https://fxbug.dev/42085539): We are clamping number_threads_ to 10 to avoid spawning too
     // many threads. Technically this can result in a deadlock scenario in a very complex driver
     // host. We need better support for dynamically starting threads as necessary.
-    uint32_t thread_limit_ __TA_GUARDED(&lock_) = 10;
+    uint32_t thread_limit_ __TA_GUARDED(&lock_) = kDefaultThreadLimit;
     // A unique_ptr to each active thread's task entry time slot, used to tell when we've run
     // out of un-stalled threads and should spawn another.
     std::vector<std::pair<zx_koid_t, std::atomic_int64_t*>> thread_entry_time_slots_

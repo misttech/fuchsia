@@ -1753,7 +1753,7 @@ uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) 
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
     auto result = GetDispatcherCoordinator().GetThreadPool(scheduler_role);
     if (!result.has_value()) {
-      return 0;
+      return Dispatcher::ThreadPool::kDefaultThreadLimit;
     }
     thread_pool = *result;
   }
