@@ -24,7 +24,11 @@ async fn main() -> Result<(), Error> {
     )
     .context("Failed to connect to Volume")?;
 
-    let tree = match construct_fs(FsSourceType::BlockDevice(block_device)) {
+    let inspector = fuchsia_inspect::component::inspector();
+    let _inspect_server_task =
+        inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
+
+    let tree = match construct_fs(FsSourceType::BlockDevice(block_device), &inspector) {
         Ok(tree) => tree,
         Err(err) => return Err(format_err!("Failed to construct file system: {:?}", err)),
     };

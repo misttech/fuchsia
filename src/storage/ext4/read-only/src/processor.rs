@@ -5,13 +5,24 @@
 use crate::parser::Parser;
 use crate::readers::ReaderWriter;
 use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
+use fuchsia_sync::Mutex;
+use futures::future::FutureExt;
 use std::sync::Arc;
+
+#[derive(Default)]
+pub struct Ext4WriteMetrics {
+    num_write_requests: u64,
+    num_writes_past_eof_attempts: u64,
+    num_successful_overwrites: u64,
+    num_blocks_overwritten: u64,
+}
 
 /// A processor that wraps an ext4 parser and adds write functionality if not in read-only mode.
 pub struct Ext4Processor {
     fs: Parser,
     reader_writer: Arc<dyn ReaderWriter>,
     read_only: bool,
+    write_metrics: Arc<Mutex<Ext4WriteMetrics>>,
 }
 
 impl std::ops::Deref for Ext4Processor {
@@ -24,7 +35,33 @@ impl std::ops::Deref for Ext4Processor {
 
 impl Ext4Processor {
     pub fn new(reader_writer: Arc<dyn ReaderWriter>, read_only: bool) -> Self {
-        Self { fs: Parser::new(Box::new(reader_writer.clone())), reader_writer, read_only }
+        Self {
+            fs: Parser::new(Box::new(reader_writer.clone())),
+            reader_writer,
+            read_only,
+            write_metrics: Arc::new(Mutex::new(Ext4WriteMetrics::default())),
+        }
+    }
+
+    pub fn record_statistics(&self, stats_node: &fuchsia_inspect::Node) {
+        let metrics = self.write_metrics.clone();
+        stats_node.record_lazy_child("write_metrics", move || {
+            let metrics = metrics.clone();
+            async move {
+                let inspector = fuchsia_inspect::Inspector::default();
+                let root = inspector.root();
+                let metrics = metrics.lock();
+                root.record_uint("num_write_requests", metrics.num_write_requests);
+                root.record_uint(
+                    "num_writes_past_eof_attempts",
+                    metrics.num_writes_past_eof_attempts,
+                );
+                root.record_uint("num_successful_overwrites", metrics.num_successful_overwrites);
+                root.record_uint("num_blocks_overwritten", metrics.num_blocks_overwritten);
+                Ok(inspector)
+            }
+            .boxed()
+        });
     }
 
     pub fn read_only(&self) -> bool {
@@ -73,13 +110,17 @@ impl Ext4Processor {
         if self.read_only {
             return Err(ParsingError::Incompatible("Cannot write to read-only Ext4".to_string()));
         }
+        let mut write_metrics = self.write_metrics.lock();
+        write_metrics.num_write_requests += 1;
 
         let inode = self.inode(inode_num)?;
         // We don't support allocation and also writing past EOF.
         if offset + data.as_ref().len() as u64 > inode.size() {
+            write_metrics.num_writes_past_eof_attempts += 1;
             return Err(ParsingError::NotSupported("writing past EOF".to_string()));
         }
         if data.as_ref().len() == 0 {
+            write_metrics.num_successful_overwrites += 1;
             return Ok(());
         }
 
@@ -113,6 +154,7 @@ impl Ext4Processor {
                         physical_block_cursor,
                         &data.as_ref()[write_buf_cursor..write_buf_cursor + write_len as usize],
                     )?;
+                    write_metrics.num_blocks_overwritten += full_blocks;
 
                     physical_block_cursor += full_blocks;
                     current_offset += write_len;
@@ -127,6 +169,7 @@ impl Ext4Processor {
                             &data.as_ref()[write_buf_cursor..write_buf_cursor + write_len as usize],
                         );
                     self.write_blocks(physical_block_cursor, &block_data)?;
+                    write_metrics.num_blocks_overwritten += 1;
 
                     physical_block_cursor += 1;
                     current_offset += write_len;
@@ -137,6 +180,7 @@ impl Ext4Processor {
 
         // TODO(https://fxbug.dev/479943428): Update mtime, ctime, metadata checksum
 
+        write_metrics.num_successful_overwrites += 1;
         Ok(())
     }
 
@@ -230,6 +274,7 @@ mod tests {
             let _task =
                 executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
         });
+        let inspector = fuchsia_inspect::Inspector::default();
         let rw_processor = Arc::new(Ext4Processor::new(
             Arc::new(
                 BlockDeviceReader::from_client_end(block_client_end1)
@@ -237,6 +282,7 @@ mod tests {
             ),
             false,
         ));
+        rw_processor.record_statistics(inspector.root());
 
         let file_ino = rw_processor
             .entry_at_path(Path::new("file1"))
@@ -259,6 +305,14 @@ mod tests {
 
         let new_data = rw_processor.read_data(file_ino).expect("failed to read data");
         assert_eq!(new_data, expected);
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
+            write_metrics: {
+                num_write_requests: 1u64,
+                num_writes_past_eof_attempts: 0u64,
+                num_successful_overwrites: 1u64,
+                num_blocks_overwritten: 1u64,
+            }
+        });
 
         // Test writing to the allocated extent, extending past the original file size (still within
         // the allocated block).
@@ -273,5 +327,13 @@ mod tests {
         // Verify that the file size has not updated.
         let new_size = rw_processor.inode(file_ino).expect("failed to read inode").size();
         assert_eq!(new_size, original_size);
+        diagnostics_assertions::assert_data_tree!(inspector, root: {
+            write_metrics: {
+                num_write_requests: 2u64,
+                num_writes_past_eof_attempts: 1u64,
+                num_successful_overwrites: 1u64,
+                num_blocks_overwritten: 1u64,
+            }
+        });
     }
 }

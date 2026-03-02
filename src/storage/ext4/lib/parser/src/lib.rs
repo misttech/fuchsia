@@ -38,14 +38,18 @@ impl From<structs::ParsingError> for ConstructFsError {
 }
 
 // Default is to create read-only fs
-pub fn construct_fs(source: FsSourceType) -> Result<Arc<ExtDirectory>, ConstructFsError> {
+pub fn construct_fs(
+    source: FsSourceType,
+    inspector: &fuchsia_inspect::Inspector,
+) -> Result<Arc<ExtDirectory>, ConstructFsError> {
     // TODO(https://fxbug.dev/479943428): Enable creating writeable fs when this is fully supported.
-    construct_fs_internal(source, true)
+    construct_fs_internal(source, true, inspector)
 }
 
 fn construct_fs_internal(
     source: FsSourceType,
     read_only: bool,
+    inspector: &fuchsia_inspect::Inspector,
 ) -> Result<Arc<ExtDirectory>, ConstructFsError> {
     let reader: Arc<dyn ReaderWriter> = match source {
         FsSourceType::BlockDevice(block_device) => {
@@ -64,8 +68,10 @@ fn construct_fs_internal(
             Arc::new(VmoReader::new(Arc::new(vmo)))
         }
     };
-    let processor = Ext4Processor::new(reader, read_only);
-    build_fs_dir(Arc::new(processor), structs::ROOT_INODE_NUM, read_only)
+    let processor = Arc::new(Ext4Processor::new(reader, read_only));
+    let dir = build_fs_dir(processor.clone(), structs::ROOT_INODE_NUM, read_only)?;
+    processor.record_statistics(inspector.root());
+    Ok(dir)
 }
 
 fn build_fs_dir(
@@ -130,7 +136,10 @@ mod tests {
         vmo.write(b"too small", 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        assert!(construct_fs(buffer).is_err(), "Expected failed parsing of VMO.");
+        assert!(
+            construct_fs(buffer, &fuchsia_inspect::Inspector::default()).is_err(),
+            "Expected failed parsing of VMO."
+        );
     }
 
     #[fuchsia::test]
@@ -139,7 +148,10 @@ mod tests {
         vmo.write(b"not ext4", 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        assert!(construct_fs(buffer).is_err(), "Expected failed parsing of VMO.");
+        assert!(
+            construct_fs(buffer, &fuchsia_inspect::Inspector::default()).is_err(),
+            "Expected failed parsing of VMO."
+        );
     }
 
     #[fuchsia::test]
@@ -149,7 +161,8 @@ mod tests {
         vmo.write(data.as_slice(), 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        let tree = construct_fs(buffer).expect("construct_fs parses the vmo");
+        let tree = construct_fs(buffer, &fuchsia_inspect::Inspector::default())
+            .expect("construct_fs parses the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
 
         let expected = vec![
@@ -172,7 +185,8 @@ mod tests {
         vmo.write(data.as_slice(), 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        let tree = construct_fs(buffer).expect("construct_fs parses the VMO");
+        let tree = construct_fs(buffer, &fuchsia_inspect::Inspector::default())
+            .expect("construct_fs parses the VMO");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
 
         let expected_entries = vec![
@@ -262,6 +276,7 @@ mod tests {
         let tree = construct_fs_internal(
             FsSourceType::BlockDevice(block_client_end1),
             /* read_only= */ false,
+            &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
@@ -301,6 +316,7 @@ mod tests {
         let tree = construct_fs_internal(
             FsSourceType::BlockDevice(block_client_end2),
             /* read_only= */ true,
+            &fuchsia_inspect::Inspector::default(),
         )
         .expect("construct_fs parses the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
@@ -353,6 +369,7 @@ mod tests {
         let tree = construct_fs_internal(
             FsSourceType::BlockDevice(block_client_end1),
             /* read_only= */ false,
+            &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
@@ -399,6 +416,7 @@ mod tests {
         let tree = construct_fs_internal(
             FsSourceType::BlockDevice(block_client_end2),
             /* read_only= */ true,
+            &fuchsia_inspect::Inspector::default(),
         )
         .expect("construct_fs parses the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
@@ -449,6 +467,7 @@ mod tests {
         let tree = construct_fs_internal(
             FsSourceType::BlockDevice(block_client_end),
             /* read_only= */ false,
+            &fuchsia_inspect::Inspector::default(),
         )
         .expect("failed to parse the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE | fio::PERM_WRITABLE);
