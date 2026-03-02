@@ -158,7 +158,7 @@ group("public") {
     "//zircon/public/sysroot/*",
     "//zircon/public/sysroot_sdk/*",
   ]
-  public_deps = [ ":zx_zither.legacy_syscall_cdecl" ]
+  public_deps = [ ":zx.legacy_syscall_cdecl.checked-in" ]
   metadata = barrier_metadata
 }
 
