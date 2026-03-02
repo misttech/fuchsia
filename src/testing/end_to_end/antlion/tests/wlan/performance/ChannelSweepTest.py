@@ -193,8 +193,8 @@ class ChannelSweepTest(base_test.WifiBaseTest):
 
     def setup_test(self) -> None:
         super().setup_test()
-        # TODO(fxb/46417): Uncomment when wlanClearCountry is implemented up any
-        # country code changes.
+        # TODO(https://fxbug.dev/487691497): implement clear_country and uncomment
+        # to clear up country changes before tests.
         # for fd in self.fuchsia_devices:
         #     phy_ids_response = fd.wlan_lib.wlanPhyIdList()
         #     if phy_ids_response.get('error'):
