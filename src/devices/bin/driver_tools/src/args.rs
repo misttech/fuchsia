@@ -16,8 +16,48 @@ use super::subcommands::restart::args::RestartCommand;
 use super::subcommands::test_node::args::TestNodeCommand;
 use argh::{ArgsInfo, FromArgs};
 
+#[derive(Debug, PartialEq)]
+pub struct Boxed<T>(pub Box<T>);
+
+impl<T: argh::FromArgs> argh::FromArgs for Boxed<T> {
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
+        T::from_args(command_name, args).map(|t| Boxed(Box::new(t)))
+    }
+    fn redact_arg_values(
+        command_name: &[&str],
+        args: &[&str],
+    ) -> Result<Vec<String>, argh::EarlyExit> {
+        T::redact_arg_values(command_name, args)
+    }
+}
+
+impl<T: argh::SubCommand> argh::SubCommand for Boxed<T> {
+    const COMMAND: &'static argh::CommandInfo = T::COMMAND;
+}
+
+impl<T: argh::ArgsInfo> argh::ArgsInfo for Boxed<T> {
+    fn get_args_info() -> argh::CommandInfoWithArgs {
+        T::get_args_info()
+    }
+}
+
 #[cfg(not(target_os = "fuchsia"))]
 use static_checks_lib::args::StaticChecksCommand;
+
+pub type BoxedDisableCommand = Boxed<DisableCommand>;
+pub type BoxedDumpCommand = Boxed<DumpCommand>;
+pub type BoxedListCommand = Boxed<ListCommand>;
+pub type BoxedListCompositesCommand = Boxed<ListCompositesCommand>;
+pub type BoxedListDevicesCommand = Boxed<ListDevicesCommand>;
+pub type BoxedListHostsCommand = Boxed<ListHostsCommand>;
+pub type BoxedListCompositeNodeSpecsCommand = Boxed<ListCompositeNodeSpecsCommand>;
+pub type BoxedRegisterCommand = Boxed<RegisterCommand>;
+pub type BoxedRestartCommand = Boxed<RestartCommand>;
+pub type BoxedTestNodeCommand = Boxed<TestNodeCommand>;
+pub type BoxedNodeCommand = Boxed<NodeCommand>;
+pub type BoxedHostCommand = Boxed<HostCommand>;
+#[cfg(not(target_os = "fuchsia"))]
+pub type BoxedStaticChecksCommand = Boxed<StaticChecksCommand>;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(name = "driver", description = "Support driver development workflows")]
@@ -34,39 +74,37 @@ pub struct DriverCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum DriverSubCommand {
-    Disable(DisableCommand),
-    Dump(DumpCommand),
-    List(ListCommand),
-    ListComposites(ListCompositesCommand),
-    ListDevices(ListDevicesCommand),
-    ListHosts(ListHostsCommand),
-    ListCompositeNodeSpecs(ListCompositeNodeSpecsCommand),
-    Register(RegisterCommand),
-    Restart(RestartCommand),
-    TestNode(TestNodeCommand),
+    Disable(BoxedDisableCommand),
+    Dump(BoxedDumpCommand),
+    List(BoxedListCommand),
+    ListComposites(BoxedListCompositesCommand),
+    ListDevices(BoxedListDevicesCommand),
+    ListHosts(BoxedListHostsCommand),
+    ListCompositeNodeSpecs(BoxedListCompositeNodeSpecsCommand),
+    Register(BoxedRegisterCommand),
+    Restart(BoxedRestartCommand),
+    TestNode(BoxedTestNodeCommand),
     // New and improved driver commands.
-    Node(NodeCommand),
-    Host(HostCommand),
+    Node(BoxedNodeCommand),
+    Host(BoxedHostCommand),
 }
 
-// TODO(https://fxbug.dev/324167674): fix.
-#[allow(clippy::large_enum_variant)]
 #[cfg(not(target_os = "fuchsia"))]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum DriverSubCommand {
-    Disable(DisableCommand),
-    Dump(DumpCommand),
-    List(ListCommand),
-    ListComposites(ListCompositesCommand),
-    ListDevices(ListDevicesCommand),
-    ListHosts(ListHostsCommand),
-    ListCompositeNodeSpecs(ListCompositeNodeSpecsCommand),
-    Register(RegisterCommand),
-    Restart(RestartCommand),
-    StaticChecks(StaticChecksCommand),
-    TestNode(TestNodeCommand),
+    Disable(BoxedDisableCommand),
+    Dump(BoxedDumpCommand),
+    List(BoxedListCommand),
+    ListComposites(BoxedListCompositesCommand),
+    ListDevices(BoxedListDevicesCommand),
+    ListHosts(BoxedListHostsCommand),
+    ListCompositeNodeSpecs(BoxedListCompositeNodeSpecsCommand),
+    Register(BoxedRegisterCommand),
+    Restart(BoxedRestartCommand),
+    StaticChecks(BoxedStaticChecksCommand),
+    TestNode(BoxedTestNodeCommand),
     // New and improved driver commands.
-    Node(NodeCommand),
-    Host(HostCommand),
+    Node(BoxedNodeCommand),
+    Host(BoxedHostCommand),
 }
