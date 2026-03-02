@@ -47,6 +47,16 @@ impl TargetIpAddr {
     pub fn port(&self) -> u16 {
         self.0.port()
     }
+
+    pub fn resolved_str(&self) -> String {
+        if let IpAddr::V6(ip) = self.0.ip() {
+            let scope_id = self.scope_id();
+            if ip.is_link_local_addr() && scope_id > 0 {
+                return format!("{ip}%{scope_id}");
+            }
+        }
+        format!("{self}")
+    }
 }
 
 /// Construct a new TargetIpAddr from a string representation of the form
@@ -492,5 +502,28 @@ mod test {
         let addr: TargetAddr = v6addr.into();
         let s = addr.optional_port_str();
         assert_eq!(&s, "[2001:db8::1]:8080");
+    }
+
+    #[fuchsia::test]
+    fn test_resolved_str() {
+        // v4
+        let v4addr = std_socket_addr!("192.168.1.1:8080");
+        let addr = TargetIpAddr::from(v4addr);
+        assert_eq!(&addr.resolved_str(), "192.168.1.1");
+
+        // v6 without scope
+        let v6addr = std_socket_addr!("[2001:db8::1]:8080");
+        let addr = TargetIpAddr::from(v6addr);
+        assert_eq!(&addr.resolved_str(), "2001:db8::1");
+
+        // v6 link-local with scope
+        let v6addr = std_socket_addr!("[fe80::1%1]:8080");
+        let addr = TargetIpAddr::from(v6addr);
+        assert_eq!(&addr.resolved_str(), "fe80::1%1");
+
+        // v6 link-local without scope
+        let v6addr = std_socket_addr!("[fe80::1]:8080");
+        let addr = TargetIpAddr::from(v6addr);
+        assert_eq!(&addr.resolved_str(), "fe80::1");
     }
 }

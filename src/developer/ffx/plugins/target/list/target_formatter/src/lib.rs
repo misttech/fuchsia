@@ -408,9 +408,10 @@ pub enum JsonTargetAddress {
 impl From<TargetAddr> for JsonTargetAddress {
     fn from(addr: TargetAddr) -> Self {
         match &addr {
-            TargetAddr::Net(_) => {
-                JsonTargetAddress::Ip { ip: addr.to_string(), ssh_port: addr.port().unwrap() }
-            }
+            TargetAddr::Net(sock_addr) => JsonTargetAddress::Ip {
+                ip: addr::TargetIpAddr::from(*sock_addr).resolved_str(),
+                ssh_port: addr.port().unwrap(),
+            },
             TargetAddr::VSockCtx(cid) => JsonTargetAddress::VSock { cid: *cid },
             TargetAddr::UsbCtx(cid) => JsonTargetAddress::Usb { cid: *cid },
         }
@@ -1092,6 +1093,25 @@ mod test {
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
         let lines = formatter.lines();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_BOARD_MISSING_GOLDEN.to_string());
+    }
+
+    #[test]
+    fn test_json_target_address_from_ipv6_scope() {
+        // Using index 1, which typically maps to a symbolic name like "lo" or "eth0" on the host.
+        let addr = TargetAddr::new(std_ip!("fe80::1"), 1, 8080);
+        let formatted_str = format!("{}", addr);
+        let json_addr = JsonTargetAddress::from(addr);
+
+        // JsonTargetAddress should strictly use the numeric scope ID.
+        assert_eq!(
+            json_addr,
+            JsonTargetAddress::Ip { ip: "fe80::1%1".to_string(), ssh_port: 8080 }
+        );
+
+        // If the host system resolved the name (e.g. to `fe80::1%lo`), verify the JSON representation explicitly avoids it.
+        if formatted_str.contains('%') && !formatted_str.contains("%1") {
+            assert_ne!(json_addr, JsonTargetAddress::Ip { ip: formatted_str, ssh_port: 8080 });
+        }
     }
 
     #[test]
