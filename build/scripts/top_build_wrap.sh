@@ -166,6 +166,7 @@ for arg in "${build_tool_args[@]}"; do
       case "$arg" in
         env | *=*) continue ;;  # skip environment variable prefixes
         */bazel | bazel) state="GOT_BAZEL_LOOKING_FOR_SUBCOMMAND" ;;
+        */fint | fint) state="GOT_FINT_LOOKING_FOR_SUBCOMMAND" ;;
         *ninja*)
           is_build=1
           state="GOT_NINJA_LOOKING_FOR_ARGS"
@@ -177,6 +178,16 @@ for arg in "${build_tool_args[@]}"; do
       case "$arg" in
         -*) continue ;;
         build|test|run)
+          is_build=1
+          state="DONE"
+          ;;
+        *) state="DONE" ;;
+      esac
+      ;;
+    GOT_FINT_LOOKING_FOR_SUBCOMMAND)
+      case "$arg" in
+        -*) continue ;;
+        build)
           is_build=1
           state="DONE"
           ;;
