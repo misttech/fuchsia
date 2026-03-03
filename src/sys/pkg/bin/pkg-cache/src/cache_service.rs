@@ -907,7 +907,18 @@ async fn get_subpackage(
         fpkg::GetSubpackageError::Internal
     })?;
     let Some(hash) = subpackages.subpackages().get(&subpackage) else {
-        error!(superpackage:%, subpackage:%; "get_subpackage: not a subpackage of the superpackage");
+        let superpackage_path = match super_dir.path().await {
+            Ok(path) => Some(path.to_string()),
+            Err(e) => {
+                error!(superpackage:%; "failed to read package path: {:#}", anyhow!(e));
+                None
+            }
+        };
+        error!(
+            "get_subpackage: '{subpackage}' is not a subpackage of {superpackage_path:?} \
+             {superpackage}. Options are: '{}'",
+            itertools::join(subpackages.subpackages().keys(), ", ")
+        );
         return Err(fpkg::GetSubpackageError::DoesNotExist);
     };
     let root = open_packages.get_or_insert(*hash, None).await.map_err(|e| {
