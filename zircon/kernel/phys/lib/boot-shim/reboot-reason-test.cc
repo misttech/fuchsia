@@ -158,6 +158,27 @@ TEST(RebootReasonItemTest, Watchdog) {
   }));
 }
 
+TEST(RebootReasonItemTest, Brownout) {
+  constexpr std::string_view kCmdline = "androidboot.bootreason=reboot,uvlo";
+
+  std::array<std::byte, 512> image_buffer;
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
+  ASSERT_TRUE(image.clear().is_ok());
+
+  boot_shim::BootShim<boot_shim::RebootReasonItem> shim("test-shim", stdout);
+  shim.Get<boot_shim::RebootReasonItem>().Init(kCmdline, shim.shim_name());
+
+  ASSERT_TRUE(shim.AppendItems(image).is_ok());
+
+  ASSERT_TRUE(HasZbiItem(image, [](const zbi_header_t& header, zbitl::ByteView payload) {
+    EXPECT_GE(payload.size_bytes(), sizeof(zbi_hw_reboot_reason_t));
+    auto* reason = reinterpret_cast<const zbi_hw_reboot_reason_t*>(payload.data());
+    return header.type == ZBI_TYPE_HW_REBOOT_REASON &&
+           (payload.size_bytes() >= sizeof(zbi_hw_reboot_reason_t)) &&
+           *reason == ZBI_HW_REBOOT_REASON_BROWNOUT;
+  }));
+}
+
 TEST(RebootReasonItemTest, ParsingAtMultiplePositions) {
   constexpr std::array kCmdlines = {
       "androidboot.bootreason=watchdog",
