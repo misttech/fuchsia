@@ -11,6 +11,7 @@ use fidl_fuchsia_wlan_wlanix::{
     WifiLegacyHalResetTxPowerScenarioResponder, WifiLegacyHalSelectTxPowerScenarioRequest,
     WifiLegacyHalSelectTxPowerScenarioResponder, WifiLegacyHalStatus,
 };
+use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::{FutureExt, StreamExt, TryFutureExt};
@@ -24,7 +25,7 @@ use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
 use {
-    fidl_fuchsia_wlan_device_service as fidl_device_service,
+    fidl_fuchsia_power_system as fsystem, fidl_fuchsia_wlan_device_service as fidl_device_service,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
     fuchsia_async as fasync,
@@ -34,19 +35,22 @@ mod bss_scorer;
 mod default_drop;
 mod ifaces;
 mod nl80211;
+mod power_manager;
 mod security;
 
 use default_drop::{DefaultDrop, WithDefaultDrop};
 use ifaces::{ClientIface, ConnectResult, IfaceManager, ScanEnd};
 use nl80211::{Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211FrequencyAttr};
+use power_manager::{DevicePowerManager, PowerManager};
 
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
 // the same iface name, even when an iface is recreated.
 const IFACE_NAME: &str = "wlan";
 
-async fn handle_wifi_sta_iface_request<I: IfaceManager>(
+async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiStaIfaceRequest,
     iface_manager: Arc<I>,
+    _power_manager: Arc<P>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WifiStaIfaceRequest::GetName { responder } => {
@@ -163,15 +167,21 @@ async fn handle_wifi_sta_iface_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_wifi_sta_iface<I: IfaceManager>(
+async fn serve_wifi_sta_iface<I: IfaceManager, P: PowerManager>(
     iface_id: u16,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     reqs: fidl_wlanix::WifiStaIfaceRequestStream,
 ) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
             Ok(req) => {
-                if let Err(e) = handle_wifi_sta_iface_request(req, Arc::clone(&iface_manager)).await
+                if let Err(e) = handle_wifi_sta_iface_request(
+                    req,
+                    Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
+                )
+                .await
                 {
                     warn!("Failed to handle WifiStaIfaceRequest for iface {}: {}", iface_id, e);
                 }
@@ -184,16 +194,18 @@ async fn serve_wifi_sta_iface<I: IfaceManager>(
     .await;
 }
 
-async fn handle_wifi_chip_request<I: IfaceManager>(
+async fn handle_wifi_chip_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiChipRequest,
     chip_id: u16,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WifiChipRequest::CreateStaIface { payload, responder, .. } => {
             info!("fidl_wlanix::WifiChipRequest::CreateStaIface");
+            let wake_lease = power_manager.take_wake_lease("wlanix-create-iface").await;
             match payload.iface {
                 Some(iface) => {
                     let reqs = iface.into_stream();
@@ -207,7 +219,16 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
                         Ok(iface_id) => {
                             telemetry_sender.send(TelemetryEvent::ClientIfaceCreated { iface_id });
                             responder.send(Ok(())).context("send CreateStaIface response")?;
-                            serve_wifi_sta_iface(iface_id, Arc::clone(&iface_manager), reqs).await;
+                            // Drop the wake lease now that the interface is created, before the
+                            // long-running serve_wifi_sta_iface task takes over.
+                            drop(wake_lease);
+                            serve_wifi_sta_iface(
+                                iface_id,
+                                Arc::clone(&iface_manager),
+                                Arc::clone(&power_manager),
+                                reqs,
+                            )
+                            .await;
                         }
                         Err(e) => {
                             // It is possible that interface creation fails due to the driver
@@ -276,6 +297,7 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
         fidl_wlanix::WifiChipRequest::GetStaIface { payload, responder } => {
             // TODO(b/323586414): Unit test once we actually support this.
             debug!("fidl_wlanix::WifiChipRequest::GetStaIface");
+            let wake_lease = power_manager.take_wake_lease("wlanix-get-iface").await;
             match payload.iface {
                 Some(iface) => {
                     // TODO(b/298030634): Use the iface name to identify the correct iface here.
@@ -288,7 +310,16 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
                             .context("send GetStaIface response")?;
                     } else {
                         responder.send(Ok(())).context("send GetStaIface response")?;
-                        serve_wifi_sta_iface(ifaces[0], Arc::clone(&iface_manager), reqs).await;
+                        // Drop the wake lease before the long-running serve_wifi_sta_iface
+                        // task takes over.
+                        drop(wake_lease);
+                        serve_wifi_sta_iface(
+                            ifaces[0],
+                            Arc::clone(&iface_manager),
+                            Arc::clone(&power_manager),
+                            reqs,
+                        )
+                        .await;
                     }
                 }
                 None => {
@@ -300,6 +331,7 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
         }
         fidl_wlanix::WifiChipRequest::RemoveStaIface { payload: _, responder, .. } => {
             info!("fidl_wlanix::WifiChipRequest::RemoveStaIface");
+            let _wake_lease = power_manager.take_wake_lease("wlanix-remove-iface").await;
             // TODO(b/298030634): Use the iface name to identify the correct iface here.
             let ifaces = iface_manager.list_ifaces();
             if ifaces.is_empty() {
@@ -410,10 +442,11 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_wifi_chip<I: IfaceManager>(
+async fn serve_wifi_chip<I: IfaceManager, P: PowerManager>(
     chip_id: u16,
     reqs: fidl_wlanix::WifiChipRequestStream,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
 ) {
@@ -424,6 +457,7 @@ async fn serve_wifi_chip<I: IfaceManager>(
                     req,
                     chip_id,
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                     Arc::clone(&state),
                 )
@@ -490,10 +524,11 @@ struct WifiState {
     mlme_multicast_proxy: Option<fidl_wlanix::Nl80211MulticastProxy>,
 }
 
-async fn handle_wifi_request<I: IfaceManager>(
+async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiRequest,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
 ) -> Result<(), Error> {
     match req {
@@ -507,6 +542,7 @@ async fn handle_wifi_request<I: IfaceManager>(
         }
         fidl_wlanix::WifiRequest::Start { responder } => {
             info!("fidl_wlanix::WifiRequest::Start");
+            let _wake_lease = power_manager.take_wake_lease("wlanix-power-up").await;
             let mut result: Result<(), i32> = Ok(());
             let mut driver_started: bool = true;
             let phy_ids = iface_manager.list_phys().await?;
@@ -553,6 +589,7 @@ async fn handle_wifi_request<I: IfaceManager>(
 
         fidl_wlanix::WifiRequest::Stop { responder } => {
             info!("fidl_wlanix::WifiRequest::Stop");
+            let _wake_lease = power_manager.take_wake_lease("wlanix-power-down").await;
             let mut result: Result<(), i32> = Ok(());
             let mut driver_stopped: bool = true;
             let phy_ids = iface_manager.list_phys().await?;
@@ -630,6 +667,7 @@ async fn handle_wifi_request<I: IfaceManager>(
                                 chip_id,
                                 chip_stream,
                                 iface_manager,
+                                power_manager,
                                 telemetry_sender,
                                 Arc::clone(&state),
                             )
@@ -658,10 +696,11 @@ async fn handle_wifi_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_wifi<I: IfaceManager>(
+async fn serve_wifi<I: IfaceManager, P: PowerManager>(
     reqs: fidl_wlanix::WifiRequestStream,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
 ) {
     reqs.for_each_concurrent(None, |req| async {
@@ -671,6 +710,7 @@ async fn serve_wifi<I: IfaceManager>(
                     req,
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                 )
                 .await
@@ -926,13 +966,15 @@ async fn get_iface_and_log<I: IfaceManager>(
     }
 }
 
-async fn handle_supplicant_sta_network_request<I: IfaceManager>(
+#[allow(clippy::too_many_arguments)]
+async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     req: fidl_wlanix::SupplicantStaNetworkRequest,
     sta_network_state: Arc<Mutex<SupplicantStaNetworkState>>,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     iface_name: String,
 ) -> Result<(), Error> {
     match req {
@@ -1046,6 +1088,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::Select { responder } => {
+            let wake_lease = power_manager.take_wake_lease("wlanix-select-connect").await;
             let (iface, iface_id) = get_iface_and_log(
                 "fidl_wlanix::SupplicantStaNetworkRequest::Select",
                 iface_manager,
@@ -1150,6 +1193,9 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
                     })
                     .context("Failed to send nl80211 Connect")?;
             }
+            // Drop the wake lease now that the connection is established, before the long-running
+            // handle_client_connect_transactions task takes over.
+            drop(wake_lease);
             if let Some(ctx) = connection_ctx {
                 // Continue to process connection updates until the connection terminates.
                 // We can do this here because calls to this function are all executed
@@ -1172,12 +1218,14 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_supplicant_sta_network<I: IfaceManager>(
+#[allow(clippy::too_many_arguments)]
+async fn serve_supplicant_sta_network<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     reqs: fidl_wlanix::SupplicantStaNetworkRequestStream,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     iface_name: String,
 ) {
     let sta_network_state = Arc::new(Mutex::new(SupplicantStaNetworkState::default()));
@@ -1191,6 +1239,7 @@ async fn serve_supplicant_sta_network<I: IfaceManager>(
                     Arc::clone(&sta_iface_state),
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     iface_name.clone(),
                 )
                 .await
@@ -1206,12 +1255,13 @@ async fn serve_supplicant_sta_network<I: IfaceManager>(
     .await;
 }
 
-async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
+async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     req: fidl_wlanix::SupplicantStaIfaceRequest,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     iface_name: String,
 ) -> Result<(), Error> {
     match req {
@@ -1246,6 +1296,7 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
                     sta_iface_state,
                     state,
                     iface_manager,
+                    power_manager,
                     iface_name,
                 )
                 .await;
@@ -1397,11 +1448,12 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_supplicant_sta_iface<I: IfaceManager>(
+async fn serve_supplicant_sta_iface<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     reqs: fidl_wlanix::SupplicantStaIfaceRequestStream,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     iface_name: String,
 ) {
     let sta_iface_state = Arc::new(Mutex::new(SupplicantStaIfaceState { callback: None }));
@@ -1414,6 +1466,7 @@ async fn serve_supplicant_sta_iface<I: IfaceManager>(
                     Arc::clone(&sta_iface_state),
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     iface_name.clone(),
                 )
                 .await
@@ -1429,9 +1482,10 @@ async fn serve_supplicant_sta_iface<I: IfaceManager>(
     .await;
 }
 
-async fn handle_supplicant_request<I: IfaceManager>(
+async fn handle_supplicant_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::SupplicantRequest,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
 ) -> Result<(), Error> {
@@ -1456,6 +1510,7 @@ async fn handle_supplicant_request<I: IfaceManager>(
                         supplicant_sta_iface_stream,
                         state,
                         Arc::clone(&iface_manager),
+                        Arc::clone(&power_manager),
                         iface_name.clone(),
                     )
                     .await;
@@ -1484,9 +1539,10 @@ async fn handle_supplicant_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_supplicant<I: IfaceManager>(
+async fn serve_supplicant<I: IfaceManager, P: PowerManager>(
     reqs: fidl_wlanix::SupplicantRequestStream,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
 ) {
@@ -1496,6 +1552,7 @@ async fn serve_supplicant<I: IfaceManager>(
                 if let Err(e) = handle_supplicant_request(
                     req,
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                     Arc::clone(&state),
                 )
@@ -2260,10 +2317,11 @@ async fn serve_wifi_legacy_hal_requests<I: IfaceManager>(
     .await;
 }
 
-async fn handle_wlanix_request<I: IfaceManager>(
+async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WlanixRequest,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
 ) -> Result<(), Error> {
     match req {
@@ -2275,6 +2333,7 @@ async fn handle_wlanix_request<I: IfaceManager>(
                     wifi_stream,
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender,
                 )
                 .await;
@@ -2287,6 +2346,7 @@ async fn handle_wlanix_request<I: IfaceManager>(
                 serve_supplicant(
                     supplicant_stream,
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender,
                     Arc::clone(&state),
                 )
@@ -2320,10 +2380,11 @@ async fn handle_wlanix_request<I: IfaceManager>(
     Ok(())
 }
 
-async fn serve_wlanix<I: IfaceManager>(
+async fn serve_wlanix<I: IfaceManager, P: PowerManager>(
     reqs: fidl_wlanix::WlanixRequestStream,
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
 ) {
     reqs.for_each_concurrent(None, |req| async {
@@ -2333,6 +2394,7 @@ async fn serve_wlanix<I: IfaceManager>(
                     req,
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
+                    Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                 )
                 .await
@@ -2348,9 +2410,10 @@ async fn serve_wlanix<I: IfaceManager>(
     .await;
 }
 
-async fn serve_fidl<I: IfaceManager>(
+async fn serve_fidl<I: IfaceManager, P: PowerManager>(
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
+    power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
 ) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
@@ -2359,7 +2422,13 @@ async fn serve_fidl<I: IfaceManager>(
         inspect_runtime::PublishOptions::default(),
     );
     let _ = fs.dir("svc").add_fidl_service(move |reqs| {
-        serve_wlanix(reqs, Arc::clone(&state), Arc::clone(&iface_manager), telemetry_sender.clone())
+        serve_wlanix(
+            reqs,
+            Arc::clone(&state),
+            Arc::clone(&iface_manager),
+            Arc::clone(&power_manager),
+            telemetry_sender.clone(),
+        )
     });
     fs.take_and_serve_directory_handle()?;
     fs.for_each_concurrent(None, |t| t).await;
@@ -2490,6 +2559,15 @@ async fn main() {
         &format!("root/{CLIENT_STATS_NODE_NAME}"),
     );
 
+    let activity_governor = client::connect_to_protocol::<fsystem::ActivityGovernorMarker>()
+        .map_err(|e| {
+            warn!("Failed to connect to fuchsia.power.system.ActivityGovernor: {:?}", e);
+            e
+        })
+        .ok();
+
+    let power_manager = DevicePowerManager::new(activity_governor);
+
     let iface_manager =
         ifaces::DeviceMonitorIfaceManager::new(monitor_svc, telemetry_sender.clone())
             .expect("Failed to connect wlanix to wlandevicemonitor");
@@ -2499,7 +2577,12 @@ async fn main() {
     let res = futures::try_join!(
         serve_telemetry_fut,
         report_battery_updates(telemetry_sender.clone()).map(Ok),
-        serve_fidl(Arc::clone(&wifi_state), Arc::new(iface_manager), telemetry_sender),
+        serve_fidl(
+            Arc::clone(&wifi_state),
+            Arc::new(iface_manager),
+            Arc::new(power_manager),
+            telemetry_sender
+        ),
         serve_phy_events(phy_events_proxy, wifi_state)
     );
     match res {
@@ -2581,6 +2664,9 @@ mod tests {
     fn test_wifi_start() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
+        // One lease for create_sta_iface in setup.
+        assert_eq!(test_helper.power_manager.calls.lock().len(), 1);
+
         let start_fut = test_helper.wifi_proxy.start();
         let mut start_fut = pin!(start_fut);
         assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut), Poll::Pending);
@@ -2595,6 +2681,10 @@ mod tests {
             Poll::Ready(Ok(response)) => response
         );
         assert_eq!(response.is_started, Some(true));
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert_eq!(power_manager_calls.len(), 2);
+        assert_eq!(power_manager_calls[1], "wlanix-power-up");
         let calls = test_helper.iface_manager.calls.lock();
         assert!(!calls.is_empty());
         assert_matches!(
@@ -2748,6 +2838,9 @@ mod tests {
     fn test_wifi_stop() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
+        // One lease for create_sta_iface in setup.
+        assert_eq!(test_helper.power_manager.calls.lock().len(), 1);
+
         let start_fut = test_helper.wifi_proxy.start();
         let mut start_fut = pin!(start_fut);
         assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut), Poll::Pending);
@@ -2765,6 +2858,9 @@ mod tests {
             Poll::Ready(Ok(response)) => response
         );
         assert_eq!(response.is_started, Some(false));
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-power-down".to_string()));
 
         // On stop, we shut down all remaining ifaces and power down.
         let calls = test_helper.iface_manager.calls.lock();
@@ -2903,11 +2999,13 @@ mod tests {
         wifi_state.lock().callback.replace(callback_proxy);
 
         let iface_manager = Arc::new(TestIfaceManager::new().mock_create_client_iface_failure());
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
+            power_manager,
             TelemetrySender::new(telemetry_sender),
         );
         let mut test_fut = Box::pin(test_fut);
@@ -2988,11 +3086,13 @@ mod tests {
         let iface_manager = Arc::new(
             TestIfaceManager::new().mock_create_client_iface_failure().mock_reset_phy_failure(),
         );
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
+            power_manager,
             TelemetrySender::new(telemetry_sender),
         );
         let mut test_fut = Box::pin(test_fut);
@@ -3142,6 +3242,9 @@ mod tests {
     fn test_wifi_chip_remove_sta_iface() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
+        // One lease for create_sta_iface in setup.
+        assert_eq!(test_helper.power_manager.calls.lock().len(), 1);
+
         let remove_sta_iface_fut = test_helper.wifi_chip_proxy.remove_sta_iface(
             fidl_wlanix::WifiChipRemoveStaIfaceRequest {
                 iface_name: Some("some_iface_name".to_string()), // iface name doesn't matter
@@ -3158,6 +3261,10 @@ mod tests {
             test_helper.exec.run_until_stalled(&mut remove_sta_iface_fut),
             Poll::Ready(Ok(Ok(())))
         );
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert_eq!(power_manager_calls.len(), 2);
+        assert_eq!(power_manager_calls[1], "wlanix-remove-iface");
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
@@ -3210,6 +3317,7 @@ mod tests {
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
         let result = assert_matches!(test_helper.exec.run_until_stalled(&mut get_sta_iface_fut), Poll::Ready(Ok(result)) => result);
         assert!(result.is_ok());
+        assert!(test_helper.power_manager.is_lease_dropped("wlanix-get-sta-iface"));
 
         let get_name_fut = wifi_sta_iface_proxy.get_name();
         let mut get_name_fut = pin!(get_name_fut);
@@ -3308,6 +3416,7 @@ mod tests {
         wifi_sta_iface_proxy: fidl_wlanix::WifiStaIfaceProxy,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         iface_manager: Arc<TestIfaceManager>,
+        power_manager: Arc<power_manager::TestPowerManager>,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
@@ -3353,10 +3462,12 @@ mod tests {
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(iface_manager);
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
+            power_manager.clone(),
             TelemetrySender::new(telemetry_sender),
         );
         let mut test_fut = Box::pin(test_fut);
@@ -3364,6 +3475,7 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut get_chip_fut), Poll::Ready(Ok(Ok(()))));
         assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Ready(Ok(Ok(()))));
+        assert!(power_manager.is_lease_dropped("wlanix-create-sta-iface"));
 
         assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ClientIfaceCreated { iface_id })) => {
             assert_eq!(iface_id, FAKE_IFACE_RESPONSE.id);
@@ -3379,6 +3491,7 @@ mod tests {
             wifi_sta_iface_proxy,
             telemetry_receiver,
             iface_manager,
+            power_manager,
             exec,
         };
         (test_helper, test_fut)
@@ -3528,10 +3641,15 @@ mod tests {
         let mut network_select_fut = test_helper.supplicant_sta_network_proxy.select();
         assert_matches!(test_helper.exec.run_until_stalled(&mut network_select_fut), Poll::Pending);
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let power_manager_calls = test_helper.power_manager.calls.lock();
+        assert!(power_manager_calls.contains(&"wlanix-select-connect".to_string()));
+
         assert_matches!(
             test_helper.exec.run_until_stalled(&mut network_select_fut),
             Poll::Ready(Ok(Ok(())))
         );
+        assert!(test_helper.power_manager.is_lease_dropped("wlanix-select-connect"));
 
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         let (ssid, credential, bssid) = assert_matches!(
@@ -4190,6 +4308,7 @@ mod tests {
         supplicant_sta_iface_callback_stream: fidl_wlanix::SupplicantStaIfaceCallbackRequestStream,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         iface_manager: Arc<TestIfaceManager>,
+        power_manager: Arc<power_manager::TestPowerManager>,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
@@ -4247,11 +4366,13 @@ mod tests {
 
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
+            power_manager.clone(),
             TelemetrySender::new(telemetry_sender),
         );
         let mut test_fut = Box::pin(test_fut);
@@ -4266,6 +4387,7 @@ mod tests {
             supplicant_sta_iface_callback_stream,
             telemetry_receiver,
             iface_manager,
+            power_manager,
             exec,
         };
         (test_helper, test_fut)
@@ -4332,8 +4454,13 @@ mod tests {
         let state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let wlanix_fut =
-            serve_wlanix(stream, state, iface_manager, TelemetrySender::new(telemetry_sender));
+        let wlanix_fut = serve_wlanix(
+            stream,
+            state,
+            iface_manager,
+            Arc::new(power_manager::TestPowerManager::new()),
+            TelemetrySender::new(telemetry_sender),
+        );
         let mut wlanix_fut = pin!(wlanix_fut);
         let (nl_proxy, nl_server) = create_proxy::<fidl_wlanix::Nl80211Marker>();
         proxy
@@ -4840,6 +4967,7 @@ mod tests {
         let iface_manager = Arc::new(TestIfaceManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let phy_id = 123;
 
         // Create a proxy and server to instantiate a FIDL request and responder.
@@ -4855,6 +4983,7 @@ mod tests {
             req,
             phy_id,
             iface_manager.clone(),
+            power_manager,
             telemetry_sender,
             Arc::new(Mutex::new(WifiState::default())),
         );
@@ -4878,6 +5007,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let phy_id = 123;
 
         // Configure the reset Tx power scenario call to fail.
@@ -4897,6 +5027,7 @@ mod tests {
             req,
             phy_id,
             iface_manager.clone(),
+            power_manager,
             telemetry_sender,
             Arc::new(Mutex::new(WifiState::default())),
         );
@@ -4919,6 +5050,7 @@ mod tests {
     fn test_set_tx_power_scenario_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let iface_manager = Arc::new(TestIfaceManager::new());
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let test_phy_id = 123;
@@ -4937,6 +5069,7 @@ mod tests {
             req,
             test_phy_id,
             iface_manager.clone(),
+            power_manager,
             telemetry_sender,
             Arc::new(Mutex::new(WifiState::default())),
         );
@@ -4963,6 +5096,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let power_manager = Arc::new(power_manager::TestPowerManager::new());
         let test_phy_id = 123;
 
         // Configure the set Tx power scenario call to fail.
@@ -4982,6 +5116,7 @@ mod tests {
             req,
             test_phy_id,
             iface_manager.clone(),
+            power_manager,
             telemetry_sender,
             Arc::new(Mutex::new(WifiState::default())),
         );
