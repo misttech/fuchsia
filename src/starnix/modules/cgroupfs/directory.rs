@@ -15,11 +15,13 @@ use std::sync::{Arc, Weak};
 
 use starnix_core::task::{CgroupOps, CgroupRoot, CurrentTask};
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
+use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     DirectoryEntryType, FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
     FsStr, FsString,
 };
+use starnix_logging::bug_ref;
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
@@ -39,6 +41,8 @@ const PROCS_FILE: &str = "cgroup.procs";
 const FREEZE_FILE: &str = "cgroup.freeze";
 const EVENTS_FILE: &str = "cgroup.events";
 const KILL_FILE: &str = "cgroup.kill";
+const TYPE_FILE: &str = "cgroup.type";
+const SUBTREE_CONTROL_FILE: &str = "cgroup.subtree_control";
 
 #[derive(Debug)]
 pub struct CgroupDirectory {
@@ -88,6 +92,13 @@ impl CgroupDirectory {
                 FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
             ),
         );
+        interface_files.insert(
+            SUBTREE_CONTROL_FILE.into(),
+            fs.create_node_and_allocate_node_id(
+                BytesFile::new_node(b"".to_vec()),
+                FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+            ),
+        );
     }
 
     /// Creates a new non-root directory, along with its core interface files.
@@ -130,6 +141,26 @@ impl CgroupDirectory {
                 fs.create_node_and_allocate_node_id(
                     KillFile::new_node(cgroup.clone()),
                     FsNodeInfo::new(mode!(IFREG, 0o200), FsCred::root()),
+                ),
+            ),
+            (
+                TYPE_FILE.into(),
+                fs.create_node_and_allocate_node_id(
+                    StubBytesFile::new_node_with_data(
+                        bug_ref!("https://fxbug.dev/489195565"),
+                        b"domain".to_vec(),
+                    ),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                ),
+            ),
+            (
+                SUBTREE_CONTROL_FILE.into(),
+                fs.create_node_and_allocate_node_id(
+                    StubBytesFile::new_node_with_data(
+                        bug_ref!("https://fxbug.dev/489194399"),
+                        b"".to_vec(),
+                    ),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
                 ),
             ),
         ]);

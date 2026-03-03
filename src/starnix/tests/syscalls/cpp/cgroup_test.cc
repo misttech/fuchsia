@@ -19,6 +19,8 @@
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 constexpr char CONTROLLERS_FILE[] = "cgroup.controllers";
+constexpr char SUBTREE_CONTROL_FILE[] = "cgroup.subtree_control";
+constexpr char TYPE_FILE[] = "cgroup.type";
 constexpr char PROCS_FILE[] = "cgroup.procs";
 constexpr char FREEZE_FILE[] = "cgroup.freeze";
 constexpr char EVENTS_FILE[] = "cgroup.events";
@@ -72,19 +74,24 @@ class CgroupTest : public ::testing::Test {
 
   static void CheckInterfaceFilesExist(const std::string& path, bool is_root) {
     std::string controllers_path = path + "/" + CONTROLLERS_FILE;
+    std::string subtree_control_path = path + "/" + SUBTREE_CONTROL_FILE;
+    std::string type_path = path + "/" + TYPE_FILE;
     std::string procs_path = path + "/" + PROCS_FILE;
     std::string freeze_path = path + "/" + FREEZE_FILE;
     std::string events_path = path + "/" + EVENTS_FILE;
 
     struct stat buffer;
     ASSERT_THAT(stat(controllers_path.c_str(), &buffer), SyscallSucceeds());
+    ASSERT_THAT(stat(subtree_control_path.c_str(), &buffer), SyscallSucceeds());
     ASSERT_THAT(stat(procs_path.c_str(), &buffer), SyscallSucceeds());
     if (is_root) {
       ASSERT_THAT(stat(freeze_path.c_str(), &buffer), SyscallFailsWithErrno(ENOENT));
       ASSERT_THAT(stat(events_path.c_str(), &buffer), SyscallFailsWithErrno(ENOENT));
+      ASSERT_THAT(stat(type_path.c_str(), &buffer), SyscallFailsWithErrno(ENOENT));
     } else {
       ASSERT_THAT(stat(freeze_path.c_str(), &buffer), SyscallSucceeds());
       ASSERT_THAT(stat(events_path.c_str(), &buffer), SyscallSucceeds());
+      ASSERT_THAT(stat(type_path.c_str(), &buffer), SyscallSucceeds());
     }
   }
 
@@ -179,6 +186,7 @@ TEST_F(CgroupTest, ReadDir) {
   CheckDirectoryIncludes(root_path(), {
                                           {.name = PROCS_FILE, .type = DT_REG},
                                           {.name = CONTROLLERS_FILE, .type = DT_REG},
+                                          {.name = SUBTREE_CONTROL_FILE, .type = DT_REG},
                                       });
 
   std::string child1 = "child1";
@@ -186,6 +194,7 @@ TEST_F(CgroupTest, ReadDir) {
   CheckDirectoryIncludes(root_path(), {
                                           {.name = PROCS_FILE, .type = DT_REG},
                                           {.name = CONTROLLERS_FILE, .type = DT_REG},
+                                          {.name = SUBTREE_CONTROL_FILE, .type = DT_REG},
                                           {.name = child1, .type = DT_DIR},
                                       });
 
@@ -194,6 +203,7 @@ TEST_F(CgroupTest, ReadDir) {
   CheckDirectoryIncludes(root_path(), {
                                           {.name = PROCS_FILE, .type = DT_REG},
                                           {.name = CONTROLLERS_FILE, .type = DT_REG},
+                                          {.name = SUBTREE_CONTROL_FILE, .type = DT_REG},
                                           {.name = child1, .type = DT_DIR},
                                           {.name = child2, .type = DT_DIR},
                                       });
