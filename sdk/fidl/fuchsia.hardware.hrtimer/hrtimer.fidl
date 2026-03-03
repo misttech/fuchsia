@@ -101,6 +101,14 @@ type Properties = resource table {
     ///
     /// Optional.
     1: timers_properties vector<TimerProperties>:MAX_COUNT_TIMERS;
+
+    /// The driver's node token.
+    ///
+    /// If the driver provides this value, the caller can use it to request
+    /// additional information about the driver.
+    ///
+    /// Optional. The driver may not have a token to give.
+    2: driver_node_token zx.Handle:EVENT;
 };
 
 /// A driver providing high resolution timers support.
