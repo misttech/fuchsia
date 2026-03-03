@@ -453,9 +453,7 @@ def set_arg_defaults(args: Namespace) -> None:
             "bin/rustdoc",
         )
     if args.save_actions_to is None:
-        args.save_actions_to = (
-            Path(args.build_dir) / "docs" / "rust" / "actions.json"
-        )
+        args.save_actions_to = Path(args.output_base, "actions.json")
     if args.build_executable is None:
         args.build_executable = Path(args.fuchsia_dir, "tools/devshell/build")
     if args.extra_rustdoc_arg is None:
