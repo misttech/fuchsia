@@ -28,6 +28,7 @@ rustc_library("libasync") {
     "src/callback_state.rs",
     "src/dispatcher.rs",
     "src/dispatcher/after_deadline.rs",
+    "src/dispatcher/current_dispatcher.rs",
     "src/dispatcher/task.rs",
     "src/lib.rs",
   ]

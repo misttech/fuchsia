@@ -5,14 +5,12 @@
 use fidl_next::{Client, ClientEnd, Responder, ServerEnd};
 use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
 use fidl_next_fuchsia_examples_gizmo::{Device, DeviceServerHandler};
+use libasync_fidl::AsyncChannel;
 use zx::{Channel, Event, Signals};
 
-use fdf::CurrentDispatcher;
 use fdf_env::test::spawn_in_driver;
 
 use fuchsia_async::OnSignals;
-
-type AsyncChannel<D = CurrentDispatcher> = libasync_fidl::AsyncChannel<D>;
 
 struct DeviceServer;
 impl DeviceServerHandler<AsyncChannel> for DeviceServer {

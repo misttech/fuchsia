@@ -22,10 +22,5 @@ pub fn override_current_dispatcher<R>(
     dispatcher: dispatcher::DispatcherRef<'_>,
     f: impl FnOnce() -> R,
 ) -> R {
-    dispatcher::OVERRIDE_DISPATCHER.with(|global| {
-        let previous = global.replace(Some(dispatcher.0));
-        let res = f();
-        global.replace(previous);
-        res
-    })
+    libasync::override_current_dispatcher(dispatcher.as_async_dispatcher(), f)
 }

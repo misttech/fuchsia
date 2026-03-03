@@ -15,7 +15,7 @@ use fidl_next::protocol::fuchsia::channel::Buffer;
 use fidl_next::{CHUNK_SIZE, ClientEnd, Executor, HasExecutor, ServerEnd, Transport};
 use futures::task::AtomicWaker;
 use libasync::callback_state::CallbackSharedState;
-use libasync::{JoinHandle, OnDispatcher};
+use libasync::{CurrentDispatcher, JoinHandle, OnDispatcher};
 use libasync_sys::{async_begin_wait, async_dispatcher, async_wait};
 use zx::sys::{
     ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_CANCELED,
@@ -26,7 +26,7 @@ use zx::{Channel, Status};
 
 /// A fidl-compatible channel that uses a [`libasync`] dispatcher.
 #[derive(Debug, PartialEq)]
-pub struct AsyncChannel<D> {
+pub struct AsyncChannel<D = CurrentDispatcher> {
     dispatcher: D,
     channel: Arc<Channel>,
 }

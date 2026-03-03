@@ -27,6 +27,7 @@
 
 #include <zxtest/zxtest.h>
 
+#include "lib/async-default/include/lib/async/default.h"
 #include "lib/async/cpp/task.h"
 #include "lib/fdf/dispatcher.h"
 #include "lib/zx/time.h"
@@ -2688,6 +2689,7 @@ TEST_F(DispatcherTest, RunThenQuitAndRunAgain) {
 
 TEST_F(DispatcherTest, GetCurrentDispatcherNone) {
   ASSERT_NULL(fdf_dispatcher_get_current_dispatcher());
+  ASSERT_NULL(async_get_default_dispatcher());
 }
 
 TEST_F(DispatcherTest, GetCurrentDispatcher) {
@@ -2705,6 +2707,7 @@ TEST_F(DispatcherTest, GetCurrentDispatcher) {
       [&](fdf_dispatcher_t* dispatcher, fdf::ChannelRead* channel_read, zx_status_t status) {
         ASSERT_OK(status);
         ASSERT_EQ(dispatcher1, fdf_dispatcher_get_current_dispatcher());
+        ASSERT_EQ(fdf_dispatcher_get_async_dispatcher(dispatcher1), async_get_default_dispatcher());
         // This reply will be reentrant and queued on the async loop.
         ASSERT_EQ(ZX_OK, fdf_channel_write(local_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
       });
@@ -2716,6 +2719,7 @@ TEST_F(DispatcherTest, GetCurrentDispatcher) {
       [&](fdf_dispatcher_t* dispatcher, fdf::ChannelRead* channel_read, zx_status_t status) {
         ASSERT_OK(status);
         ASSERT_EQ(dispatcher2, fdf_dispatcher_get_current_dispatcher());
+        ASSERT_EQ(fdf_dispatcher_get_async_dispatcher(dispatcher2), async_get_default_dispatcher());
         got_reply.Signal();
       });
   ASSERT_OK(channel_read2->Begin(dispatcher2));
@@ -2723,6 +2727,7 @@ TEST_F(DispatcherTest, GetCurrentDispatcher) {
   // Write from driver 2 to driver1.
   ASSERT_OK(async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher2), [&] {
     ASSERT_EQ(dispatcher2, fdf_dispatcher_get_current_dispatcher());
+    ASSERT_EQ(fdf_dispatcher_get_async_dispatcher(dispatcher2), async_get_default_dispatcher());
     // Non-reentrant write.
     ASSERT_EQ(ZX_OK, fdf_channel_write(remote_ch_, 0, nullptr, nullptr, 0, nullptr, 0));
   }));

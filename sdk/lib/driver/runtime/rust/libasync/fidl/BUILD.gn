@@ -48,7 +48,6 @@ rustc_test("libasync_rust_fidl_integration_test") {
   deps = [
     ":fidl",
     ":fuchsia.examples.gizmo_rust_next",
-    "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/rust/zx",
     "//src/devices/bin/driver_runtime",
