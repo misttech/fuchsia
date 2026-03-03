@@ -111,7 +111,7 @@ group("record_filesystem_sizes") {
       if (bazel_product_bundle_target != "") {
         deps = [ "${bazel_product_bundle_target}_elf_sizes" ]
       }
-    } else {
+    } else if (custom_signing_script == "") {
       deps = [ "//build/images/sizes:elf_sizes.json" ]
     }
   }
