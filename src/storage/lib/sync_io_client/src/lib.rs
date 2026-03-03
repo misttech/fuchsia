@@ -13,10 +13,6 @@ use std::ops::{ControlFlow, Range};
 use syncio::{AllocateMode, zxio_fsverity_descriptor_t, zxio_node_attributes_t};
 use zerocopy::FromBytes;
 
-fn zxio_attr_from_fidl_attributes(in_attr: &fio::NodeAttributes2) -> zxio_node_attributes_t {
-    zxio_attr_from_fidl(&in_attr.mutable_attributes, &in_attr.immutable_attributes)
-}
-
 /// Converts FIDL attributes to `zxio_node_attributes_t`.
 ///
 /// NOTE: This does not work for _all_ attributes e.g. fsverity options and root hash.
@@ -100,10 +96,10 @@ fn zxio_attr_from_fidl(
 pub trait Factory {
     type Result;
 
-    fn create_node(self, io: RemoteIo) -> Self::Result;
-    fn create_directory(self, io: RemoteIo) -> Self::Result;
-    fn create_file(self, io: RemoteIo, info: &fio::FileInfo) -> Self::Result;
-    fn create_symlink(self, io: RemoteIo, target: Vec<u8>) -> Self::Result;
+    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result;
+    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result;
+    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result;
+    fn create_symlink(self, io: RemoteIo, info: fio::SymlinkInfo) -> Self::Result;
 }
 
 /// Waits for the fuchsia.io `OnRepresentation` event and then uses the factory to create an an
@@ -115,46 +111,29 @@ pub trait Factory {
 pub fn create_with_on_representation<F: Factory>(
     proxy: fio::NodeSynchronousProxy,
     factory: F,
-) -> Result<(F::Result, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status> {
+) -> Result<F::Result, zx::Status> {
     match proxy.wait_for_event(zx::MonotonicInstant::INFINITE) {
-        Ok(fio::NodeEvent::OnRepresentation { mut payload }) => {
-            let (result, attrs) = match &mut payload {
-                fio::Representation::Node(info) => {
-                    (factory.create_node(RemoteIo::new(proxy)), &mut info.attributes)
-                }
-                fio::Representation::Directory(info) => {
-                    (factory.create_directory(RemoteIo::new(proxy)), &mut info.attributes)
-                }
-                fio::Representation::File(info) => (
-                    factory.create_file(
-                        RemoteIo {
-                            proxy,
-                            stream: info
-                                .stream
-                                .take()
-                                .map(zx::Stream::from)
-                                .unwrap_or_else(|| zx::NullableHandle::invalid().into()),
-                        },
-                        info,
-                    ),
-                    &mut info.attributes,
-                ),
-                fio::Representation::Symlink(info) => {
-                    let Some(target) = info.target.take() else {
-                        return Err(zx::Status::IO);
-                    };
-                    (factory.create_symlink(RemoteIo::new(proxy), target), &mut info.attributes)
-                }
-                _ => return Err(zx::Status::NOT_SUPPORTED),
-            };
-            let (attrs, context) = attrs
-                .as_mut()
-                .map(|a| {
-                    (zxio_attr_from_fidl_attributes(a), a.mutable_attributes.selinux_context.take())
-                })
-                .unwrap_or_default();
-            Ok((result, attrs, context))
-        }
+        Ok(fio::NodeEvent::OnRepresentation { payload }) => match payload {
+            fio::Representation::Node(info) => Ok(factory.create_node(RemoteIo::new(proxy), info)),
+            fio::Representation::Directory(info) => {
+                Ok(factory.create_directory(RemoteIo::new(proxy), info))
+            }
+            fio::Representation::File(mut info) => {
+                let io = RemoteIo {
+                    proxy,
+                    stream: info
+                        .stream
+                        .take()
+                        .map(zx::Stream::from)
+                        .unwrap_or_else(|| zx::NullableHandle::invalid().into()),
+                };
+                Ok(factory.create_file(io, info))
+            }
+            fio::Representation::Symlink(info) => {
+                Ok(factory.create_symlink(RemoteIo::new(proxy), info))
+            }
+            _ => Err(zx::Status::NOT_SUPPORTED),
+        },
         Err(fidl::Error::ClientChannelClosed { status, .. }) => Err(status),
         _ => Err(zx::Status::IO),
     }
@@ -227,7 +206,7 @@ impl RemoteIo {
         create_attributes: Option<fio::MutableNodeAttributes>,
         query: fio::NodeAttributesQuery,
         factory: F,
-    ) -> Result<(F::Result, zxio_node_attributes_t, Option<fio::SelinuxContext>), zx::Status> {
+    ) -> Result<F::Result, zx::Status> {
         let (client_end, server_end) = zx::Channel::create();
         let dir_proxy = self.cast_proxy::<fio::DirectorySynchronousProxy>();
         dir_proxy

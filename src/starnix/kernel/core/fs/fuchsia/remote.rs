@@ -44,14 +44,13 @@ use starnix_uapi::{
     __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, mode, off_t, statfs,
 };
 use std::ops::ControlFlow;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, LazyLock};
 use sync_io_client::{RemoteIo, create_with_on_representation};
 use syncio::zxio::{
-    ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, ZXIO_NODE_PROTOCOL_SYMLINK,
-    ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET,
-    ZXIO_OBJECT_TYPE_RAW_SOCKET, ZXIO_OBJECT_TYPE_STREAM_SOCKET,
-    ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
+    ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_SYMLINK, ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET,
+    ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET, ZXIO_OBJECT_TYPE_RAW_SOCKET,
+    ZXIO_OBJECT_TYPE_STREAM_SOCKET, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
 };
 use syncio::{
     AllocateMode, XattrSetMode, Zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
@@ -278,41 +277,212 @@ impl FileSystemOps for RemoteFs {
     }
 }
 
-struct Factory {
+/// Factory is a helper that creates the appropriate node type when creating a node.  See
+/// LookupFactory below for a helper that is specialised for the lookup case.  All the functions
+/// will create nodes that are initially dirty which is intentional because not all attributes are
+/// fetched when creating nodes.
+struct Factory<'a> {
+    node_info: &'a mut FsNodeInfo,
     assume_special: bool,
-    start_dirty: bool,
 }
 
-impl sync_io_client::Factory for Factory {
-    type Result = Box<dyn FsNodeOps>;
+impl<'a> sync_io_client::Factory for Factory<'a> {
+    type Result = (Box<dyn FsNodeOps>, u64);
 
-    fn create_node(self, io: RemoteIo) -> Self::Result {
-        Box::new(RemoteNode::new(io, self.start_dirty))
+    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result {
+        let attrs = get_attributes(&info.attributes);
+        let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
+        update_info_from_fidl(
+            self.node_info,
+            &attrs.mutable_attributes,
+            &attrs.immutable_attributes,
+        );
+        (Box::new(RemoteNode::new(io, true)), id)
     }
 
-    fn create_directory(self, io: RemoteIo) -> Self::Result {
-        Box::new(RemoteNode::new(io, self.start_dirty))
+    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result {
+        let attrs = get_attributes(&info.attributes);
+        let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
+        update_info_from_fidl(
+            self.node_info,
+            &attrs.mutable_attributes,
+            &attrs.immutable_attributes,
+        );
+        (Box::new(RemoteNode::new(io, true)), id)
     }
 
-    fn create_file(self, io: RemoteIo, info: &fio::FileInfo) -> Self::Result {
-        if self.assume_special || is_special(info) {
-            Box::new(RemoteSpecialNode { node: BaseNode::new(io, self.start_dirty) })
+    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result {
+        let is_special_node = self.assume_special || is_special(&info);
+        let attrs = get_attributes(&info.attributes);
+        let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
+        let ops: Box<dyn FsNodeOps> = if is_special_node {
+            Box::new(RemoteSpecialNode { node: BaseNode::new(io, true) })
         } else {
-            Box::new(RemoteNode::new(io, self.start_dirty))
-        }
+            Box::new(RemoteNode::new(io, true))
+        };
+        update_info_from_fidl(
+            self.node_info,
+            &attrs.mutable_attributes,
+            &attrs.immutable_attributes,
+        );
+        (ops, id)
     }
 
-    fn create_symlink(self, io: RemoteIo, target: Vec<u8>) -> Self::Result {
-        Box::new(RemoteSymlink::new(BaseNode::new(io, self.start_dirty), target))
+    fn create_symlink(self, io: RemoteIo, info: fio::SymlinkInfo) -> Self::Result {
+        let attrs = get_attributes(&info.attributes);
+        let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
+        let target = info.target.unwrap_or_default();
+        update_info_from_fidl(
+            self.node_info,
+            &attrs.mutable_attributes,
+            &attrs.immutable_attributes,
+        );
+        (Box::new(RemoteSymlink::new(BaseNode::new(io, true), target)), id)
     }
+}
+
+/// LookupFactory is an optimised version of Factory which is used only for lookup.  All the
+/// functions will create nodes that are initially clean, which works because lookup always requests
+/// all attributes.
+struct LookupFactory<'a> {
+    fs: &'a FileSystemHandle,
+    current_task: &'a CurrentTask,
+}
+
+impl<'a> LookupFactory<'a> {
+    fn get_node(
+        &self,
+        io: RemoteIo,
+        attributes: &fio::NodeAttributes2,
+        create_ops: impl FnOnce(RemoteIo) -> Box<dyn FsNodeOps>,
+    ) -> Result<FsNodeHandle, Errno> {
+        let fs = self.fs;
+        let fs_ops = RemoteFs::from_fs(fs);
+        let fio::NodeAttributes2 { mutable_attributes: mutable, immutable_attributes: immutable } =
+            attributes;
+
+        let id = immutable.id.unwrap_or(fio::INO_UNKNOWN);
+        let node_id = if fs_ops.use_remote_ids {
+            if id == fio::INO_UNKNOWN {
+                return error!(ENOTSUP);
+            }
+            id
+        } else {
+            fs.allocate_ino()
+        };
+
+        let node = fs.get_or_create_node(node_id, || {
+            let uid = mutable.uid.unwrap_or(0);
+            let gid = mutable.gid.unwrap_or(0);
+            let owner = FsCred { uid, gid };
+            let rdev = DeviceType::from_bits(mutable.rdev.unwrap_or(0));
+            let fsverity_enabled = immutable.verity_enabled.unwrap_or(false);
+            let protocols = immutable.protocols.unwrap_or(fio::NodeProtocolKinds::empty());
+            // fsverity should not be enabled for non-file nodes.
+            if fsverity_enabled && !protocols.contains(fio::NodeProtocolKinds::FILE) {
+                return error!(EINVAL);
+            }
+
+            let ops = create_ops(io);
+            let child = FsNode::new_uncached(
+                node_id,
+                ops,
+                fs,
+                FsNodeInfo {
+                    rdev,
+                    ..FsNodeInfo::new(
+                        get_mode_from_fidl(mutable, immutable, fs_ops.root_rights),
+                        owner,
+                    )
+                },
+            );
+            if fsverity_enabled {
+                *child.fsverity.lock() = FsVerityState::FsVerity;
+            }
+            // This is valid to fail if we're using mount point labelling or the provided context
+            // string is invalid.
+            if let Some(fio::SelinuxContext::Data(data)) = mutable.selinux_context.as_ref() {
+                let _ = security::fs_node_notify_security_context(
+                    self.current_task,
+                    &child,
+                    FsStr::new(data),
+                );
+            }
+            Ok(child)
+        })?;
+
+        node.update_info(|info| update_info_from_fidl(info, mutable, immutable));
+
+        Ok(node)
+    }
+}
+
+impl<'a> sync_io_client::Factory for LookupFactory<'a> {
+    type Result = Result<FsNodeHandle, Errno>;
+
+    fn create_node(self, io: RemoteIo, info: fio::NodeInfo) -> Self::Result {
+        self.get_node(io, get_attributes(&info.attributes), |io| {
+            Box::new(RemoteNode::new(io, false))
+        })
+    }
+
+    fn create_directory(self, io: RemoteIo, info: fio::DirectoryInfo) -> Self::Result {
+        self.get_node(io, get_attributes(&info.attributes), |io| {
+            Box::new(RemoteNode::new(io, false))
+        })
+    }
+
+    fn create_file(self, io: RemoteIo, info: fio::FileInfo) -> Self::Result {
+        let is_special_node = is_special(&info);
+        self.get_node(io, get_attributes(&info.attributes), |io| {
+            if is_special_node {
+                Box::new(RemoteSpecialNode { node: BaseNode::new(io, false) })
+            } else {
+                Box::new(RemoteNode::new(io, false))
+            }
+        })
+    }
+
+    fn create_symlink(self, io: RemoteIo, mut info: fio::SymlinkInfo) -> Self::Result {
+        let mut target = info.target.take();
+        if target.is_none() {
+            return error!(EIO);
+        }
+        let node = self.get_node(io, get_attributes(&info.attributes), |io| {
+            Box::new(RemoteSymlink::new(BaseNode::new(io, false), target.take().unwrap()))
+        })?;
+        // Encrypted symlinks that use fscrypt can be read as encrypted links when no key is
+        // available.  When no key is available, directories will not cache their entries.  When,
+        // the key is subsequently provided, the next time the symlink is read, we will come through
+        // here, but since the node is cached, `get_or_create_node` will not create a new node
+        // which, if we were to do nothing, would mean we'd keep the encrypted value for the target.
+        // To address this, if no new node was created, we update the target of the existing node
+        // here.  Once the key has been provided, the entry will be cached with the directory and
+        // whilst the entry remains cached, `lookup` will not be called.
+        if let Some(target) = target
+            && let Some(symlink) = node.downcast_ops::<RemoteSymlink>()
+        {
+            *symlink.target.write() = target.into_boxed_slice();
+        }
+        Ok(node)
+    }
+}
+
+// A helper that makes it easy to deal with the rare case where no FIDL attributes are returned.
+fn get_attributes(attrs: &Option<fio::NodeAttributes2>) -> &fio::NodeAttributes2 {
+    static DEFAULT_NODE_ATTRIBUTES: LazyLock<fio::NodeAttributes2> =
+        LazyLock::new(|| fio::NodeAttributes2 {
+            mutable_attributes: Default::default(),
+            immutable_attributes: Default::default(),
+        });
+    attrs.as_ref().unwrap_or_else(|| &*DEFAULT_NODE_ATTRIBUTES)
 }
 
 impl RemoteFs {
     pub(super) fn new(
         root: zx::Channel,
         root_rights: fio::Flags,
-    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, zxio_node_attributes_t, Option<[u8; 16]>), Errno>
-    {
+    ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, FsNodeInfo, u64), Errno> {
         let (client_end, server_end) = zx::Channel::create();
         let root_proxy = fio::DirectorySynchronousProxy::new(root);
         root_proxy
@@ -347,20 +517,15 @@ impl RemoteFs {
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
 
-        // The OnRepresentation response will return an initial set of `attrs`, so create the node
-        // with `start_dirty=false`.
-        let (remote_node, attrs, _) = create_with_on_representation(
+        // The OnRepresentation response will return an initial set of `attrs`.
+        let mut node_info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
+        let (remote_node, node_id) = create_with_on_representation(
             client_end.into(),
-            Factory { assume_special: false, start_dirty: false },
+            Factory { node_info: &mut node_info, assume_special: false },
         )
         .map_err(map_sync_io_client_error)?;
 
-        Ok((
-            RemoteFs { use_remote_ids, root_proxy, root_rights },
-            remote_node,
-            attrs,
-            attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
-        ))
+        Ok((RemoteFs { use_remote_ids, root_proxy, root_rights }, remote_node, node_info, node_id))
     }
 
     pub fn new_fs<L>(
@@ -373,7 +538,7 @@ impl RemoteFs {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let (remotefs, root_node, attrs, wrapping_key_id) = RemoteFs::new(root, rights)?;
+        let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
             options.flags |= MountFlags::RDONLY;
@@ -387,16 +552,8 @@ impl RemoteFs {
             options,
         )?;
 
-        let mut info =
-            FsNodeInfo { wrapping_key_id, ..FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root()) };
-        update_info_from_attrs(&mut info, &attrs);
-
-        if use_remote_ids {
-            fs.create_root_with_info(attrs.id, root_node, info);
-        } else {
-            let root_ino = fs.allocate_ino();
-            fs.create_root_with_info(root_ino, root_node, info);
-        }
+        let node_id = if use_remote_ids { node_id } else { fs.allocate_ino() };
+        fs.create_root_with_info(node_id, root_node, info);
 
         Ok(fs)
     }
@@ -434,10 +591,11 @@ impl BaseNode {
                 if info.read().pending_time_access_update {
                     query |= fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE;
                 }
-                let attrs = self.io.attr_get_zxio(query).map_err(map_sync_io_client_error)?;
+                let (mutable, immutable) =
+                    self.io.attr_get(query).map_err(map_sync_io_client_error)?;
                 let mut info = info.write();
-                update_info_from_attrs(&mut info, &attrs);
                 info.pending_time_access_update = false;
+                update_info_from_fidl(&mut info, &mutable, &immutable);
                 Ok(RwLockWriteGuard::downgrade(info))
             },
             |info| Ok(info.read()),
@@ -489,7 +647,7 @@ where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     let remote_creds = current_task.current_creds().clone();
-    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle.into(), remote_creds)?;
+    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle, remote_creds)?;
     let mut rights = fio::Flags::empty();
     if flags.can_read() {
         rights |= fio::PERM_READABLE;
@@ -664,8 +822,55 @@ pub(super) fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_at
     if attrs.has.access_time {
         info.time_access = UtcInstant::from_nanos(attrs.access_time.try_into().unwrap_or(i64::MAX));
     }
+    // The following are only read once so they're not included in `NODE_INFO_ATTRIBUTES`.
+    if attrs.has.casefold {
+        info.casefold = attrs.casefold;
+    }
+    if attrs.has.wrapping_key_id {
+        info.wrapping_key_id = Some(attrs.wrapping_key_id);
+    }
 }
 
+/// Same as `update_info_from_attr` but uses FIDL.
+fn update_info_from_fidl(
+    info: &mut FsNodeInfo,
+    mutable: &fio::MutableNodeAttributes,
+    immutable: &fio::ImmutableNodeAttributes,
+) {
+    if let Some(content_size) = immutable.content_size {
+        info.size = content_size.try_into().unwrap_or(std::usize::MAX);
+    }
+    if let Some(storage_size) = immutable.storage_size {
+        info.blocks = usize::try_from(storage_size)
+            .unwrap_or(std::usize::MAX)
+            .div_ceil(DEFAULT_BYTES_PER_BLOCK);
+    }
+    info.blksize = DEFAULT_BYTES_PER_BLOCK;
+    if let Some(link_count) = immutable.link_count {
+        info.link_count = link_count.try_into().unwrap_or(std::usize::MAX);
+    }
+    if let Some(modification_time) = mutable.modification_time {
+        info.time_modify = UtcInstant::from_nanos(modification_time.try_into().unwrap_or(i64::MAX));
+    }
+    if let Some(change_time) = immutable.change_time {
+        info.time_status_change =
+            UtcInstant::from_nanos(change_time.try_into().unwrap_or(i64::MAX));
+    }
+    if !info.pending_time_access_update
+        && let Some(access_time) = mutable.access_time
+    {
+        info.time_access = UtcInstant::from_nanos(access_time.try_into().unwrap_or(i64::MAX));
+    }
+    // The following are only read once so they're not included in `NODE_INFO_ATTRIBUTES`.
+    if let Some(casefold) = mutable.casefold {
+        info.casefold = casefold;
+    }
+    if let Some(wrapping_key_id) = mutable.wrapping_key_id {
+        info.wrapping_key_id = Some(wrapping_key_id);
+    }
+}
+
+/// The attributes we need to request to compute the right mode.
 const MODE_ATTRIBUTES: fio::NodeAttributesQuery =
     fio::NodeAttributesQuery::PROTOCOLS.union(fio::NodeAttributesQuery::MODE);
 
@@ -682,6 +887,40 @@ fn get_mode(attrs: &zxio_node_attributes_t, rights: fio::Flags) -> FileMode {
         // this node supports, and the rights used to open it.
         let is_directory =
             attrs.protocols & ZXIO_NODE_PROTOCOL_DIRECTORY == ZXIO_NODE_PROTOCOL_DIRECTORY;
+        let mode = if is_directory { FileMode::IFDIR } else { FileMode::IFREG };
+        let mut permissions = FileMode::EMPTY;
+        if rights.contains(fio::PERM_READABLE) {
+            permissions |= FileMode::IRUSR;
+        }
+        if rights.contains(fio::PERM_WRITABLE) {
+            permissions |= FileMode::IWUSR;
+        }
+        if rights.contains(fio::PERM_EXECUTABLE) {
+            permissions |= FileMode::IXUSR;
+        }
+        // Make sure the same permissions are granted to user, group, and other.
+        permissions |= FileMode::from_bits((permissions.bits() >> 3) | (permissions.bits() >> 6));
+        mode | permissions
+    }
+}
+
+/// Same as `get_mode` but uses FIDL.
+fn get_mode_from_fidl(
+    mutable: &fio::MutableNodeAttributes,
+    immutable: &fio::ImmutableNodeAttributes,
+    rights: fio::Flags,
+) -> FileMode {
+    let protocols = immutable.protocols.unwrap_or(fio::NodeProtocolKinds::empty());
+    if protocols.contains(fio::NodeProtocolKinds::SYMLINK) {
+        // We don't set the mode for symbolic links , so we synthesize it instead.
+        FileMode::IFLNK | FileMode::ALLOW_ALL
+    } else if let Some(mode) = mutable.mode {
+        // If the filesystem supports POSIX mode bits, use that directly.
+        FileMode::from_bits(mode)
+    } else {
+        // The filesystem doesn't support the `mode` attribute, so synthesize it from the protocols
+        // this node supports, and the rights used to open it.
+        let is_directory = protocols.contains(fio::NodeProtocolKinds::DIRECTORY);
         let mode = if is_directory { FileMode::IFDIR } else { FileMode::IFREG };
         let mut permissions = FileMode::EMPTY;
         if rights.contains(fio::PERM_READABLE) {
@@ -833,7 +1072,8 @@ impl FsNodeOps for RemoteNode {
             return error!(EINVAL, name);
         }
 
-        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+        let mut node_info = FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) };
+        let (ops, node_id) = will_dirty(&[&self.node], || {
             self.node
                 .io
                 .open(
@@ -850,17 +1090,12 @@ impl FsNodeOps for RemoteNode {
                         ..Default::default()
                     }),
                     fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                    Factory { assume_special: !mode.is_reg(), start_dirty: true },
+                    Factory { node_info: &mut node_info, assume_special: !mode.is_reg() },
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
         })?;
 
-        let node_id = if fs_ops.use_remote_ids { attrs.id } else { fs.allocate_ino() };
-
-        let mut node_info = FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) };
-        if attrs.has.wrapping_key_id {
-            node_info.wrapping_key_id = Some(attrs.wrapping_key_id);
-        }
+        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
 
         let child = fs.create_node(node_id, ops, node_info);
         Ok(child)
@@ -881,8 +1116,8 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let mut node_id;
-        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+        let mut node_info = FsNodeInfo::new(mode, owner);
+        let (ops, node_id) = will_dirty(&[&self.node], || {
             self.node
                 .io
                 .open(
@@ -898,20 +1133,12 @@ impl FsNodeOps for RemoteNode {
                         ..Default::default()
                     }),
                     fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
-                    Factory { assume_special: false, start_dirty: true },
+                    Factory { node_info: &mut node_info, assume_special: false },
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
         })?;
-        node_id = attrs.id;
 
-        if !fs_ops.use_remote_ids {
-            node_id = fs.allocate_ino();
-        }
-
-        let mut node_info = FsNodeInfo::new(mode, owner);
-        if attrs.has.wrapping_key_id {
-            node_info.wrapping_key_id = Some(attrs.wrapping_key_id);
-        }
+        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
 
         let child = fs.create_node(node_id, ops, node_info);
         Ok(child)
@@ -942,84 +1169,11 @@ impl FsNodeOps for RemoteNode {
         if security::fs_is_xattr_labeled(node.fs()) {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
-        let (ops, attrs, context) = self
-            .node
+
+        self.node
             .io
-            .open(
-                name,
-                fs_ops.root_rights,
-                None,
-                query,
-                Factory {
-                    assume_special: false,
-                    // We can start not dirty because we call `update_info_from_attrs` below.
-                    start_dirty: false,
-                },
-            )
-            .map_err(|status| from_status_like_fdio!(status, name))?;
-        let node_id = if fs_ops.use_remote_ids {
-            if attrs.id == fio::INO_UNKNOWN {
-                return error!(ENOTSUP);
-            }
-            attrs.id
-        } else {
-            fs.allocate_ino()
-        };
-        let owner = FsCred { uid: attrs.uid, gid: attrs.gid };
-        let rdev = DeviceType::from_bits(attrs.rdev);
-        let fsverity_enabled = attrs.fsverity_enabled;
-        // fsverity should not be enabled for non-file nodes.
-        if fsverity_enabled && (attrs.protocols & ZXIO_NODE_PROTOCOL_FILE == 0) {
-            return error!(EINVAL);
-        }
-        let casefold = attrs.casefold;
-
-        let mut ops = Some(ops);
-        let node = fs.get_or_create_node(node_id, || {
-            let child = FsNode::new_uncached(
-                node_id,
-                ops.take().unwrap(),
-                &fs,
-                FsNodeInfo {
-                    rdev,
-                    casefold,
-                    wrapping_key_id: attrs.has.wrapping_key_id.then_some(attrs.wrapping_key_id),
-                    ..FsNodeInfo::new(get_mode(&attrs, fs_ops.root_rights), owner)
-                },
-            );
-            if fsverity_enabled {
-                *child.fsverity.lock() = FsVerityState::FsVerity;
-            }
-            // This is valid to fail if we're using mount point labelling or the provided context
-            // string is invalid.
-            if let Some(fio::SelinuxContext::Data(data)) = &context {
-                let _ = security::fs_node_notify_security_context(
-                    current_task,
-                    &child,
-                    FsStr::new(&data),
-                );
-            }
-            Ok(child)
-        })?;
-
-        node.update_info(|info| update_info_from_attrs(info, &attrs));
-
-        // Encrypted symlinks that use fscrypt can be read as encrypted links when no key is
-        // available.  When no key is available, directories will not cache their entries.  When,
-        // the key is subsequently provided, the next time the symlink is read, we will come through
-        // here, but since the node is cached, `get_or_create_node` will not create a new node
-        // which, if we were to do nothing, would mean we'd keep the encrypted value for the target.
-        // To address this, if no new node was created, we update the target of the existing node
-        // here.  Once the key has been provided, the entry will be cached with the directory and
-        // whilst the entry remains cached, `lookup` will not be called.
-        if let Some(ops) = ops
-            && let Some(new_symlink) = ops.as_any().downcast_ref::<RemoteSymlink>()
-            && let Some(symlink) = node.downcast_ops::<RemoteSymlink>()
-        {
-            *symlink.target.write() = std::mem::take(&mut new_symlink.target.write());
-        }
-
-        Ok(node)
+            .open(name, fs_ops.root_rights, None, query, LookupFactory { fs: &fs, current_task })
+            .map_err(|status| from_status_like_fdio!(status, name))?
     }
 
     fn truncate(
@@ -1173,7 +1327,6 @@ impl FsNodeOps for RemoteNode {
         let fs = node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
-        let mut node_id;
         if !mode.is_reg() {
             return error!(EINVAL);
         }
@@ -1183,8 +1336,9 @@ impl FsNodeOps for RemoteNode {
         // with O_TMPFILE, the temporary file created cannot be linked into the filesystem. Although
         // there exist fuchsia flags `fio::FLAG_TEMPORARY_AS_NOT_LINKABLE`, the starnix vfs already
         // handles this case and makes sure that the created file is not linkable. There is also no
-        // current way of passing the open flags to this function.
-        let (ops, attrs, _) = will_dirty(&[&self.node], || {
+        // way of passing the open flags to this function.
+        let mut node_info = FsNodeInfo::new(mode, owner);
+        let (ops, node_id) = will_dirty(&[&self.node], || {
             self.node
                 .io
                 .open(
@@ -1200,16 +1354,13 @@ impl FsNodeOps for RemoteNode {
                         ..Default::default()
                     }),
                     fio::NodeAttributesQuery::ID,
-                    Factory { assume_special: false, start_dirty: true },
+                    Factory { node_info: &mut node_info, assume_special: false },
                 )
                 .map_err(|status| from_status_like_fdio!(status))
         })?;
-        node_id = attrs.id;
 
-        if !fs_ops.use_remote_ids {
-            node_id = fs.allocate_ino();
-        }
-        Ok(fs.create_node(node_id, ops, FsNodeInfo::new(mode, owner)))
+        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
+        Ok(fs.create_node(node_id, ops, node_info))
     }
 
     fn link(
@@ -3782,26 +3933,7 @@ mod test {
             )
             .expect("failed to mount test remote FS");
 
-            // 1. Initial fetch. Should use cached info because the root node has start_dirty=false.
-            {
-                let _info = fs
-                    .root()
-                    .node
-                    .fetch_and_refresh_info(locked, current_task)
-                    .expect("fetch failed");
-            }
-            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 0);
-
-            // 2. Update attributes. This should dirty the node.
-            fs.root()
-                .node
-                .update_attributes(locked, current_task, |attrs| {
-                    attrs.time_modify += UtcDuration::from_seconds(1);
-                    Ok(())
-                })
-                .expect("update_attributes failed");
-
-            // 3. Fetch again. Should trigger a request.
+            // 1. Initial fetch.
             {
                 let _info = fs
                     .root()
@@ -3810,6 +3942,35 @@ mod test {
                     .expect("fetch failed");
             }
             assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
+
+            // 2. Second time should use cached information.
+            {
+                let _info = fs
+                    .root()
+                    .node
+                    .fetch_and_refresh_info(locked, current_task)
+                    .expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 1);
+
+            // 3. Update attributes. This should dirty the node.
+            fs.root()
+                .node
+                .update_attributes(locked, current_task, |attrs| {
+                    attrs.time_modify += UtcDuration::from_seconds(1);
+                    Ok(())
+                })
+                .expect("update_attributes failed");
+
+            // 4. Fetch again. Should trigger a request.
+            {
+                let _info = fs
+                    .root()
+                    .node
+                    .fetch_and_refresh_info(locked, current_task)
+                    .expect("fetch failed");
+            }
+            assert_eq!(get_attrs_count.load(Ordering::SeqCst), 2);
         })
         .await;
 
