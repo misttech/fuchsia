@@ -278,53 +278,58 @@ void UsbAdbDevice::Receive(ReceiveCompleter::Sync& completer) {
   }
 }
 
-void UsbAdbDevice::RxComplete(fendpoint::Completion completion) {
-  // This should always be true because when we registered VMOs, we only registered one per request.
-  ZX_ASSERT(completion.request()->data()->size() == 1);
+void UsbAdbDevice::RxComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    // This should always be true because when we registered VMOs, we only registered one per
+    // request.
+    ZX_ASSERT(completion.request()->data()->size() == 1);
 
-  switch (state_) {
-    case State::kAwaitingUsbConnection:
-      ZX_PANIC("Completion arrived before we sent any requests?");
-    case State::kStoppingUsb:
-      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
-      CheckUsbStopComplete();
-      return;
-    case State::kOnline:
-      pending_replies_.push(std::move(completion));
-      ReceiveQueued();
-      return;
+    switch (state_) {
+      case State::kAwaitingUsbConnection:
+        ZX_PANIC("Completion arrived before we sent any requests?");
+      case State::kStoppingUsb:
+        bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+        CheckUsbStopComplete();
+        break;
+      case State::kOnline:
+        pending_replies_.push(std::move(completion));
+        ReceiveQueued();
+        break;
+    }
   }
 }
 
-void UsbAdbDevice::TxComplete(fendpoint::Completion completion) {
-  switch (state_) {
-    case State::kAwaitingUsbConnection:
-      ZX_PANIC("Completion arrived before we sent any requests?");
-    case State::kStoppingUsb:
-      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
-      CheckUsbStopComplete();
-      return;
-    case State::kOnline:
-      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    switch (state_) {
+      case State::kAwaitingUsbConnection:
+        ZX_PANIC("Completion arrived before we sent any requests?");
+      case State::kStoppingUsb:
+        bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+        CheckUsbStopComplete();
+        break;
+      case State::kOnline:
+        bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
 
-      // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, as the underlying connection
-      // could be disconnected or USB_RESET is being processed. Calling adb_send_locked in such
-      // scenario will deadlock and crash the driver (see https://fxbug.dev/42174506).
-      if (*completion.status() != ZX_ERR_IO_NOT_PRESENT) {
-        SendQueued();
-      }
-      return;
+        // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, as the underlying connection
+        // could be disconnected or USB_RESET is being processed. Calling adb_send_locked in such
+        // scenario will deadlock and crash the driver (see https://fxbug.dev/42174506).
+        if (*completion.status() != ZX_ERR_IO_NOT_PRESENT) {
+          SendQueued();
+        }
+        break;
+    }
   }
 }
 
-void UsbAdbDevice::RxCompleteCallback(fendpoint::Completion completion) {
+void UsbAdbDevice::RxCompleteCallback(std::vector<fendpoint::Completion> completion) {
   async::PostTask(dispatcher(), [this, completion = std::move(completion)]() mutable {
     std::lock_guard<async::sequence_checker> _(checker_);
     RxComplete(std::move(completion));
   });
 }
 
-void UsbAdbDevice::TxCompleteCallback(fendpoint::Completion completion) {
+void UsbAdbDevice::TxCompleteCallback(std::vector<fendpoint::Completion> completion) {
   async::PostTask(dispatcher(), [this, completion = std::move(completion)]() mutable {
     std::lock_guard<async::sequence_checker> _(checker_);
     TxComplete(std::move(completion));

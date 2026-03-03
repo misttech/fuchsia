@@ -83,7 +83,7 @@ class UsbEndpointClientTest : public zxtest::Test {
   std::unique_ptr<FakeUsbServer> server_;
 
  private:
-  void Complete(fuchsia_hardware_usb_endpoint::Completion completion) {}
+  void Complete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion) {}
 
   async::Loop client_loop_{&kAsyncLoopConfigNeverAttachToThread};
   async::Loop server_loop_{&kAsyncLoopConfigNeverAttachToThread};

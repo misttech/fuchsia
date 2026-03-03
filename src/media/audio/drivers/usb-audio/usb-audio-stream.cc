@@ -925,6 +925,13 @@ void UsbAudioStream::Stop(StopCompleter::Sync& completer) {
   stop_completer_.emplace(completer.ToAsync());
 }
 
+void UsbAudioStream::RequestBatchComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completion) {
+  for (auto& req : completion) {
+    RequestComplete(std::move(req));
+  }
+}
+
 void UsbAudioStream::RequestComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
   enum class Action : uint8_t {
     NONE,

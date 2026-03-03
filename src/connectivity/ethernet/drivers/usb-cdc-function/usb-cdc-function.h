@@ -77,10 +77,10 @@ class UsbCdcFunction : public fdf::DriverBase,
 
   zx_status_t cdc_generate_mac_address();
   zx_status_t cdc_send_locked(ethernet_netbuf_t* netbuf) __TA_REQUIRES(tx_mutex_);
-  void cdc_intr_complete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void cdc_intr_complete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   void cdc_send_notifications();
-  void cdc_rx_complete(fuchsia_hardware_usb_endpoint::Completion completion);
-  void cdc_tx_complete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void cdc_rx_complete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
+  void cdc_tx_complete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
 
  private:
   compat::DeviceServer::BanjoConfig get_banjo_config() {

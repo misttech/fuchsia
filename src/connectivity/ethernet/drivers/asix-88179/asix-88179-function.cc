@@ -88,7 +88,7 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
   size_t descriptor_size_ = 0;
   uint8_t intr_addr_ = 0;
 
-  void IntrComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void IntrComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
 
   fdf::SynchronizedDispatcher dispatcher_;
 
@@ -316,9 +316,12 @@ zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceSetInterface(uint8_t int
   return ZX_OK;
 }
 
-void FakeUsbAx88179Function::IntrComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
-  usb::FidlRequest req{std::move(completion.request().value())};
-  intr_ep_.PutRequest(std::move(req));
+void FakeUsbAx88179Function::IntrComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completion) {
+  for (auto& c : completion) {
+    usb::FidlRequest req{std::move(c.request().value())};
+    intr_ep_.PutRequest(std::move(req));
+  }
 }
 
 }  // namespace fake_usb_ax88179_function

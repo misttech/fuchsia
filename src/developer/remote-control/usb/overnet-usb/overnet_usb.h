@@ -252,10 +252,14 @@ class OvernetUsb : public fdf::DriverBase,
   // Finishes shutting down by calling the shutdown callback.
   void ShutdownComplete() __TA_REQUIRES(lock_);
 
-  // Handle the completion of an outstanding USB read request.
+  // Handle the completion of a single outstanding USB read request.
   void ReadComplete(fuchsia_hardware_usb_endpoint::Completion completion);
-  // Handle the completion of an outstanding USB write request.
+  // Handle the completion of a batch of USB read requests.
+  void ReadBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
+  // Handle the completion of a single outstanding USB write request.
   void WriteComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  // Handle the completion of a batch of USB write requests.
+  void WriteBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
 
   // Endpoint address of our IN endpoint.
   uint8_t BulkInAddress() const { return descriptors_.in_ep.b_endpoint_address; }
@@ -313,9 +317,9 @@ class OvernetUsb : public fdf::DriverBase,
   State state_ __TA_GUARDED(lock_) = Unconfigured();
 
   usb::EndpointClient<OvernetUsb> bulk_out_ep_{usb::EndpointType::BULK, this,
-                                               std::mem_fn(&OvernetUsb::ReadComplete)};
+                                               std::mem_fn(&OvernetUsb::ReadBatchComplete)};
   usb::EndpointClient<OvernetUsb> bulk_in_ep_{usb::EndpointType::BULK, this,
-                                              std::mem_fn(&OvernetUsb::WriteComplete)};
+                                              std::mem_fn(&OvernetUsb::WriteBatchComplete)};
 
   struct {
     usb_interface_descriptor_t data_interface;

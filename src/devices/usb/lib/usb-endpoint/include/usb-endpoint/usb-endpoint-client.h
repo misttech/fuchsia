@@ -134,7 +134,7 @@ class EndpointClient : public internal::EndpointClientBase,
                        public fidl::AsyncEventHandler<fuchsia_hardware_usb_endpoint::Endpoint> {
  public:
   using OnCompletionFuncType =
-      std::__mem_fn<void (DeviceType::*)(fuchsia_hardware_usb_endpoint::Completion)>;
+      std::__mem_fn<void (DeviceType::*)(std::vector<fuchsia_hardware_usb_endpoint::Completion>)>;
 
   EndpointClient(usb::EndpointType ep_type, DeviceType* device, OnCompletionFuncType on_completion)
       : internal::EndpointClientBase(ep_type), device_(device), on_completion_(on_completion) {}
@@ -151,9 +151,7 @@ class EndpointClient : public internal::EndpointClientBase,
   // OnCompletion: handles completed requests by calling on_completion_ for each request completed.
   void OnCompletion(
       fidl::Event<fuchsia_hardware_usb_endpoint::Endpoint::OnCompletion>& event) override {
-    for (auto& completion : event.completion()) {
-      on_completion_(device_, std::move(completion));
-    }
+    on_completion_(device_, std::move(event.completion()));
   }
 
   void on_fidl_error(fidl::UnbindInfo error) override {

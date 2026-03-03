@@ -146,12 +146,12 @@ class UsbAdbDevice : public fdf::DriverBase,
 
   // USB request completion callback methods - these run on the driver
   // dispatcher.
-  void TxComplete(fendpoint::Completion completion) __TA_REQUIRES(checker_);
-  void RxComplete(fendpoint::Completion completion) __TA_REQUIRES(checker_);
+  void TxComplete(std::vector<fendpoint::Completion> completion) __TA_REQUIRES(checker_);
+  void RxComplete(std::vector<fendpoint::Completion> completion) __TA_REQUIRES(checker_);
 
   // USB request completion callback methods - these can run on any thread.
-  void TxCompleteCallback(fendpoint::Completion completion);
-  void RxCompleteCallback(fendpoint::Completion completion);
+  void TxCompleteCallback(std::vector<fendpoint::Completion> completion);
+  void RxCompleteCallback(std::vector<fendpoint::Completion> completion);
 
   uint8_t bulk_out_addr() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
   uint8_t bulk_in_addr() const { return descriptors_.bulk_in_ep.b_endpoint_address; }

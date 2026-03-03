@@ -78,32 +78,36 @@ void FidlTestFunction::QueueIn(std::vector<uint8_t> data) {
   }
 }
 
-void FidlTestFunction::OutComplete(fendpoint::Completion completion) {
-  if (!expect_out_) {
-    return;
-  }
+void FidlTestFunction::OutComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    if (!expect_out_) {
+      return;
+    }
 
-  if (*completion.status() != ZX_OK) {
-    expect_out_->Reply(zx::error(*completion.status()));
+    if (*completion.status() != ZX_OK) {
+      expect_out_->Reply(zx::error(*completion.status()));
+      expect_out_.reset();
+      continue;
+    }
+
+    auto req = usb::FidlRequest(std::move(completion.request().value()));
+    std::vector<uint8_t> data = std::move((*req->data())[0].buffer()->data().value());
+    data.resize(*completion.transfer_size());
+    expect_out_->Reply(zx::ok(std::move(data)));
     expect_out_.reset();
-    return;
   }
-
-  auto req = usb::FidlRequest(std::move(completion.request().value()));
-  std::vector<uint8_t> data = std::move((*req->data())[0].buffer()->data().value());
-  data.resize(*completion.transfer_size());
-  expect_out_->Reply(zx::ok(std::move(data)));
-  expect_out_.reset();
 }
 
-void FidlTestFunction::InComplete(fendpoint::Completion completion) {
-  if (!expect_in_) {
-    return;
-  }
+void FidlTestFunction::InComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    if (!expect_in_) {
+      return;
+    }
 
-  *completion.status() == ZX_OK ? expect_in_->Reply(zx::ok(*completion.transfer_size()))
-                                : expect_in_->Reply(zx::error(*completion.status()));
-  expect_in_.reset();
+    *completion.status() == ZX_OK ? expect_in_->Reply(zx::ok(*completion.transfer_size()))
+                                  : expect_in_->Reply(zx::error(*completion.status()));
+    expect_in_.reset();
+  }
 }
 
 }  // namespace virtualbus

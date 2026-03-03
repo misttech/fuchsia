@@ -25,8 +25,8 @@ class FidlDevice : public Device {
   void QueueOut(std::vector<uint8_t> data) override;
   void QueueIn(size_t size) override;
 
-  void OutComplete(fuchsia_hardware_usb_endpoint::Completion completion);
-  void InComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
   const virtual_bus_tester_fidl_config::Config config_;
   fdf::SynchronizedDispatcher dispatcher_;

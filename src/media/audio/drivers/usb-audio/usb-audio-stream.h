@@ -264,6 +264,7 @@ class UsbAudioStream final : public UsbAudioStreamBase,
   void DeactivateRingBufferChannelLocked(const Channel* channel) __TA_REQUIRES(lock_);
 
   void RequestComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void RequestBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   zx_status_t QueueRequestLocked() __TA_REQUIRES(req_lock_);
   // Returns the length of the request completed
   size_t CompleteRequestLocked(fuchsia_hardware_usb_endpoint::Completion completion)
@@ -353,7 +354,7 @@ class UsbAudioStream final : public UsbAudioStreamBase,
   inspect::StringArray supported_sample_formats_;
 
   ::usb::EndpointClient<UsbAudioStream> ep_{::usb::EndpointType::ISOCHRONOUS, this,
-                                            std::mem_fn(&UsbAudioStream::RequestComplete)};
+                                            std::mem_fn(&UsbAudioStream::RequestBatchComplete)};
 };
 
 }  // namespace usb

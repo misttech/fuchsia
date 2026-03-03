@@ -34,6 +34,13 @@ namespace fhidbus = fuchsia_hardware_hidbus;
 // This driver binds on any USB device that exposes HID reports. It passes the
 // reports to the HID driver by implementing the HidBus protocol.
 
+void UsbHidbus::HandleBatchInterrupt(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    HandleInterrupt(std::move(completion));
+  }
+}
+
 void UsbHidbus::HandleInterrupt(fendpoint::Completion completion) {
   ZX_ASSERT(completion.request().has_value());
   ZX_ASSERT(completion.status().has_value());
@@ -197,21 +204,23 @@ void UsbHidbus::GetReport(fhidbus::wire::HidbusGetReportRequest* request,
   completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(report.data(), report.size()));
 }
 
-void UsbHidbus::SetReportComplete(fendpoint::Completion completion) {
-  ep_out_->PutRequest(usb::FidlRequest(std::move(*completion.request())));
+void UsbHidbus::SetReportComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    ep_out_->PutRequest(usb::FidlRequest(std::move(*completion.request())));
 
-  if (!set_report_completer_.has_value()) {
-    // Shutting down. Probably has already replied.
-    return;
-  }
+    if (!set_report_completer_.has_value()) {
+      // Shutting down. Probably has already replied.
+      continue;
+    }
 
-  auto completer = std::move(*set_report_completer_);
-  set_report_completer_.reset();
-  if (*completion.status() == ZX_OK) {
-    completer.ReplySuccess();
-    return;
+    auto completer = std::move(*set_report_completer_);
+    set_report_completer_.reset();
+    if (*completion.status() == ZX_OK) {
+      completer.ReplySuccess();
+      continue;
+    }
+    completer.ReplyError(*completion.status());
   }
-  completer.ReplyError(*completion.status());
 }
 
 void UsbHidbus::SetReport(fhidbus::wire::HidbusSetReportRequest* request,

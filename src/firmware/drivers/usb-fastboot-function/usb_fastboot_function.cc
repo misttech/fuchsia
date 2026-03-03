@@ -54,6 +54,13 @@ void UsbFastbootFunction::QueueTx(usb::FidlRequest req) {
   }
 }
 
+void UsbFastbootFunction::TxBatchComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    TxComplete(std::move(completion));
+  }
+}
+
 void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
   std::lock_guard<std::mutex> _(send_lock_);
   usb::FidlRequest req{std::move(completion.request().value())};
@@ -138,6 +145,13 @@ void UsbFastbootFunction::QueueRx(usb::FidlRequest req) {
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
     ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+  }
+}
+
+void UsbFastbootFunction::RxBatchComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    RxComplete(std::move(completion));
   }
 }
 

@@ -74,7 +74,8 @@ class UsbHidbus : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardwa
   void StopHidbus();
 
   void HandleInterrupt(fuchsia_hardware_usb_endpoint::Completion completion);
-  void SetReportComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void HandleBatchInterrupt(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void SetReportComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
   async::Loop dispatcher_loop_{&kAsyncLoopConfigNeverAttachToThread};
 
@@ -100,7 +101,7 @@ class UsbHidbus : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardwa
 
   // Interrupt endpoint
   usb::EndpointClient<UsbHidbus> ep_in_{usb::EndpointType::INTERRUPT, this,
-                                        std::mem_fn(&UsbHidbus::HandleInterrupt)};
+                                        std::mem_fn(&UsbHidbus::HandleBatchInterrupt)};
   std::optional<usb::EndpointClient<UsbHidbus>> ep_out_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;

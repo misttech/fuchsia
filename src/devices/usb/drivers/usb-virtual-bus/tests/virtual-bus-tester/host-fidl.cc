@@ -76,44 +76,48 @@ void FidlDevice::QueueIn(size_t size) {
   }
 }
 
-void FidlDevice::OutComplete(fendpoint::Completion completion) {
-  bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
-  if (!out_completer_) {
-    return;
-  }
+void FidlDevice::OutComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
+    if (!out_completer_) {
+      continue;
+    }
 
-  *completion.status() == ZX_OK ? out_completer_->Reply(zx::ok(*completion.transfer_size()))
-                                : out_completer_->Reply(zx::error(*completion.status()));
-  out_completer_.reset();
+    *completion.status() == ZX_OK ? out_completer_->Reply(zx::ok(*completion.transfer_size()))
+                                  : out_completer_->Reply(zx::error(*completion.status()));
+    out_completer_.reset();
+  }
 }
 
-void FidlDevice::InComplete(fendpoint::Completion completion) {
-  auto req = usb::FidlRequest(std::move(completion.request().value()));
-  if (!in_completer_) {
+void FidlDevice::InComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    auto req = usb::FidlRequest(std::move(completion.request().value()));
+    if (!in_completer_) {
+      bulk_in_ep_.PutRequest(std::move(req));
+      continue;
+    }
+
+    if (*completion.status() != ZX_OK) {
+      bulk_in_ep_.PutRequest(std::move(req));
+      in_completer_->Reply(zx::error(*completion.status()));
+      in_completer_.reset();
+      continue;
+    }
+
+    auto addr = bulk_in_ep_.GetMappedAddr(req.request(), 0);
+    if (!addr.has_value()) {
+      zxlogf(ERROR, "Failed to get mapped");
+      in_completer_->Reply(zx::error(ZX_ERR_INTERNAL));
+      in_completer_.reset();
+      continue;
+    }
+
     bulk_in_ep_.PutRequest(std::move(req));
-    return;
-  }
-
-  if (*completion.status() != ZX_OK) {
-    bulk_in_ep_.PutRequest(std::move(req));
-    in_completer_->Reply(zx::error(*completion.status()));
+    in_completer_->Reply(zx::ok(
+        std::vector<uint8_t>(reinterpret_cast<uint8_t*>(*addr),
+                             reinterpret_cast<uint8_t*>(*addr) + *completion.transfer_size())));
     in_completer_.reset();
-    return;
   }
-
-  auto addr = bulk_in_ep_.GetMappedAddr(req.request(), 0);
-  if (!addr.has_value()) {
-    zxlogf(ERROR, "Failed to get mapped");
-    in_completer_->Reply(zx::error(ZX_ERR_INTERNAL));
-    in_completer_.reset();
-    return;
-  }
-
-  bulk_in_ep_.PutRequest(std::move(req));
-  in_completer_->Reply(zx::ok(
-      std::vector<uint8_t>(reinterpret_cast<uint8_t*>(*addr),
-                           reinterpret_cast<uint8_t*>(*addr) + *completion.transfer_size())));
-  in_completer_.reset();
 }
 
 zx::result<> FidlDevice::Start() {

@@ -552,6 +552,12 @@ OvernetUsb::State OvernetUsb::Running::ReceiveData(uint8_t* data, size_t len,
   return std::move(*this);
 }
 
+void OvernetUsb::ReadBatchComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& c : completions) {
+    ReadComplete(std::move(c));
+  }
+}
+
 void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
   fbl::AutoLock lock(&lock_);
 
@@ -623,6 +629,12 @@ void OvernetUsb::ReadComplete(fendpoint::Completion completion) {
     FDF_LOG(DEBUG, "ReadComplete while unconnected, returning request to pool");
     ZX_ASSERT(!bulk_out_ep_.RequestsFull());
     bulk_out_ep_.PutRequest(std::move(request));
+  }
+}
+
+void OvernetUsb::WriteBatchComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& c : completions) {
+    WriteComplete(std::move(c));
   }
 }
 

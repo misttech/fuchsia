@@ -82,7 +82,7 @@ class UsbFastbootFunction : public fdf::DriverBase,
   std::optional<SendCompleter::Async> send_completer_ __TA_GUARDED(send_lock_);
   // In-direction (TX to host).
   usb::EndpointClient<UsbFastbootFunction> bulk_in_ep_{
-      usb::EndpointType::BULK, this, std::mem_fn(&UsbFastbootFunction::TxComplete)};
+      usb::EndpointType::BULK, this, std::mem_fn(&UsbFastbootFunction::TxBatchComplete)};
 
   std::mutex receive_lock_;
   fzl::OwnedVmoMapper receive_vmo_ __TA_GUARDED(receive_lock_);
@@ -91,13 +91,15 @@ class UsbFastbootFunction : public fdf::DriverBase,
   std::optional<ReceiveCompleter::Async> receive_completer_ __TA_GUARDED(receive_lock_);
   // Out-direction (RX from host).
   usb::EndpointClient<UsbFastbootFunction> bulk_out_ep_{
-      usb::EndpointType::BULK, this, std::mem_fn(&UsbFastbootFunction::RxComplete)};
+      usb::EndpointType::BULK, this, std::mem_fn(&UsbFastbootFunction::RxBatchComplete)};
 
   fidl::ServerBindingGroup<fuchsia_hardware_fastboot::FastbootImpl> bindings_;
 
   // USB request completion callback methods.
   void RxComplete(fuchsia_hardware_usb_endpoint::Completion completion);
   void TxComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void RxBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void TxBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void CleanUpRx(zx_status_t status, usb::FidlRequest req) __TA_REQUIRES(receive_lock_);
   void CleanUpTx(zx_status_t status, usb::FidlRequest req) __TA_REQUIRES(send_lock_);
   void QueueTx(usb::FidlRequest req) __TA_REQUIRES(send_lock_);

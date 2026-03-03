@@ -22,8 +22,8 @@ class FidlTestFunction : public TestFunction {
   void QueueOut() override;
   void QueueIn(std::vector<uint8_t> data) override;
 
-  void OutComplete(fuchsia_hardware_usb_endpoint::Completion completion);
-  void InComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
   fdf::SynchronizedDispatcher dispatcher_;
 
