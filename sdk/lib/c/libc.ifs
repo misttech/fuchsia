@@ -1031,6 +1031,7 @@ Symbols:
   - { Name: readlinkat, Type: Func, Weak: true }
   - { Name: readv, Type: Func, Weak: true }
   - { Name: realloc, Type: Func, Weak: true }
+  - { Name: reallocarray, Type: Func, Weak: true }
   - { Name: realpath, Type: Func, Weak: true }
   - { Name: recv, Type: Func }
   - { Name: recvfrom, Type: Func, Weak: true }

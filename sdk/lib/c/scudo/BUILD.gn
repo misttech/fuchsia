@@ -11,6 +11,10 @@ group("scudo") {
     # scudo in libc so we can use the sanitizer allocator. Stubs are provided
     # that replace scudo's definitions.
     deps = [ ":scudo-allocator" ]
+  } else {
+    # TODO(https://fxbug.dev/489136393): Until sanitizer runtimes that export
+    # reallocarray roll in, build a local wrapper around realloc.
+    deps = [ ":reallocarray" ]
   }
 }
 
@@ -339,4 +343,10 @@ source_set("gwp_asan_test_printf") {
   include_dirs = [ "${gwp_asan}/.." ]
   deps = [ ":gwp_asan.testonly" ]
   sources = [ "gwp_asan_test_printf.cc" ]
+}
+
+# TODO(https://fxbug.dev/489136393): Until sanitizer runtimes that export
+# reallocarray roll in, build a local wrapper around realloc.
+libc_source_set("reallocarray") {
+  sources = [ "reallocarray.cc" ]
 }
