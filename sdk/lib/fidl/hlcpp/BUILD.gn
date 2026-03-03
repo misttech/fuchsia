@@ -79,95 +79,97 @@ hlcpp_visibility = [
   "//vendor/*",
 ]
 
-# The complete high-level C++ bindings library supporting both asynchronous
-# and synchronous APIs.
-sdk_source_set("hlcpp") {
-  category = "partner"
+if (is_fuchsia) {
+  # The complete high-level C++ bindings library supporting both asynchronous
+  # and synchronous APIs.
+  sdk_source_set("hlcpp") {
+    category = "partner"
 
-  sdk_name = "fidl_cpp"
+    sdk_name = "fidl_cpp"
 
-  sources = [
-    "include/lib/fidl/cpp/binding.h",
-    "include/lib/fidl/cpp/binding_set.h",
-    "include/lib/fidl/cpp/event_sender.h",
-    "include/lib/fidl/cpp/interface_ptr.h",
-    "include/lib/fidl/cpp/interface_ptr_set.h",
-    "include/lib/fidl/cpp/internal/header.h",
-    "include/lib/fidl/cpp/internal/implementation.h",
-    "include/lib/fidl/cpp/internal/message_handler.h",
-    "include/lib/fidl/cpp/internal/message_reader.h",
-    "include/lib/fidl/cpp/internal/pending_response.h",
-    "include/lib/fidl/cpp/internal/proxy.h",
-    "include/lib/fidl/cpp/internal/proxy_controller.h",
-    "include/lib/fidl/cpp/internal/stub.h",
-    "include/lib/fidl/cpp/internal/stub_controller.h",
-    "include/lib/fidl/cpp/internal/unknown_interactions_table.h",
-    "include/lib/fidl/cpp/internal/weak_stub_controller.h",
-    "include/lib/fidl/cpp/member_connector.h",
-    "include/lib/fidl/cpp/service_connector.h",
-    "include/lib/fidl/cpp/service_handler_base.h",
-    "include/lib/fidl/cpp/type_converter.h",
-    "include/lib/fidl/cpp/unknown_interactions_hlcpp.h",
-    "internal/message_handler.cc",
-    "internal/message_reader.cc",
-    "internal/pending_response.cc",
-    "internal/proxy.cc",
-    "internal/proxy_controller.cc",
-    "internal/stub.cc",
-    "internal/stub_controller.cc",
-    "internal/unknown_interactions_table.c",
-    "internal/weak_stub_controller.cc",
-    "unknown_interactions_hlcpp.cc",
-  ]
+    sources = [
+      "include/lib/fidl/cpp/binding.h",
+      "include/lib/fidl/cpp/binding_set.h",
+      "include/lib/fidl/cpp/event_sender.h",
+      "include/lib/fidl/cpp/interface_ptr.h",
+      "include/lib/fidl/cpp/interface_ptr_set.h",
+      "include/lib/fidl/cpp/internal/header.h",
+      "include/lib/fidl/cpp/internal/implementation.h",
+      "include/lib/fidl/cpp/internal/message_handler.h",
+      "include/lib/fidl/cpp/internal/message_reader.h",
+      "include/lib/fidl/cpp/internal/pending_response.h",
+      "include/lib/fidl/cpp/internal/proxy.h",
+      "include/lib/fidl/cpp/internal/proxy_controller.h",
+      "include/lib/fidl/cpp/internal/stub.h",
+      "include/lib/fidl/cpp/internal/stub_controller.h",
+      "include/lib/fidl/cpp/internal/unknown_interactions_table.h",
+      "include/lib/fidl/cpp/internal/weak_stub_controller.h",
+      "include/lib/fidl/cpp/member_connector.h",
+      "include/lib/fidl/cpp/service_connector.h",
+      "include/lib/fidl/cpp/service_handler_base.h",
+      "include/lib/fidl/cpp/type_converter.h",
+      "include/lib/fidl/cpp/unknown_interactions_hlcpp.h",
+      "internal/message_handler.cc",
+      "internal/message_reader.cc",
+      "internal/pending_response.cc",
+      "internal/proxy.cc",
+      "internal/proxy_controller.cc",
+      "internal/stub.cc",
+      "internal/stub_controller.cc",
+      "internal/unknown_interactions_table.c",
+      "internal/weak_stub_controller.cc",
+      "unknown_interactions_hlcpp.cc",
+    ]
 
-  stable = true
+    stable = true
 
-  public_deps = [
-    ":hlcpp_sync",
-    "//sdk/lib/async",
-    "//sdk/lib/async-default",
-    "//sdk/lib/fidl",
-    "//sdk/lib/fit",
-    "//sdk/lib/fit-promise",
-    "//zircon/system/ulib/zx",
-  ]
+    public_deps = [
+      ":hlcpp_sync",
+      "//sdk/lib/async",
+      "//sdk/lib/async-default",
+      "//sdk/lib/fidl",
+      "//sdk/lib/fit",
+      "//sdk/lib/fit-promise",
+      "//zircon/system/ulib/zx",
+    ]
 
-  public_configs = [ "//sdk/config" ]
+    public_configs = [ "//sdk/config" ]
 
-  visibility = hlcpp_visibility
-}
+    visibility = hlcpp_visibility
+  }
 
-# The synchronous high-level C++ bindings library.
-sdk_source_set("hlcpp_sync") {
-  category = "partner"
+  # The synchronous high-level C++ bindings library.
+  sdk_source_set("hlcpp_sync") {
+    category = "partner"
 
-  sdk_name = "fidl_cpp_sync"
-  stable = true
+    sdk_name = "fidl_cpp_sync"
+    stable = true
 
-  sources = [
-    "include/lib/fidl/cpp/internal/logging.h",
-    "include/lib/fidl/cpp/internal/message_sender.h",
-    "include/lib/fidl/cpp/internal/synchronous_proxy.h",
-    "include/lib/fidl/cpp/synchronous_interface_ptr.h",
-    "internal/logging.cc",
-    "internal/message_sender.cc",
-    "internal/synchronous_proxy.cc",
-  ]
+    sources = [
+      "include/lib/fidl/cpp/internal/logging.h",
+      "include/lib/fidl/cpp/internal/message_sender.h",
+      "include/lib/fidl/cpp/internal/synchronous_proxy.h",
+      "include/lib/fidl/cpp/synchronous_interface_ptr.h",
+      "internal/logging.cc",
+      "internal/message_sender.cc",
+      "internal/synchronous_proxy.cc",
+    ]
 
-  public_configs = [ "//sdk/config" ]
+    public_configs = [ "//sdk/config" ]
 
-  public_deps = [
-    ":hlcpp_base",
-    "//sdk/lib/fidl",
-    "//sdk/lib/fit",
-    "//zircon/system/ulib/zx",
-  ]
+    public_deps = [
+      ":hlcpp_base",
+      "//sdk/lib/fidl",
+      "//sdk/lib/fit",
+      "//zircon/system/ulib/zx",
+    ]
 
-  visibility = [
-    ":*",
-    "//build/sdk:*",
-    "//src/tests/fidl/dynsuite/client_suite/*",
-  ]
+    visibility = [
+      ":*",
+      "//build/sdk:*",
+      "//src/tests/fidl/dynsuite/client_suite/*",
+    ]
+  }
 }
 
 # The base library used to implement the natural domain-object types.
