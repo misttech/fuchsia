@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::file::{
-    BufferInfo, ConnectionInfo, ConnectionMap, MagmaBuffer, MagmaConnection, MagmaDevice,
-    MagmaSemaphore,
+    BufferInfo, ConnectionMap, MagmaBuffer, MagmaConnection, MagmaDevice, MagmaSemaphore,
 };
 use crate::image_file::{ImageFile, ImageInfo};
 use bstr::BString;
@@ -22,15 +21,12 @@ use magma::{
     virtio_magma_connection_execute_inline_commands_ctrl_t, virtio_magma_connection_flush_ctrl_t,
     virtio_magma_connection_flush_resp_t, virtio_magma_connection_read_notification_channel_ctrl_t,
     virtio_magma_connection_read_notification_channel_resp_t,
-    virtio_magma_connection_release_ctrl_t, virtio_magma_connection_release_resp_t,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_EXPORT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_BUFFER_GET_HANDLE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_FLUSH,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_READ_NOTIFICATION_CHANNEL,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE,
-    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION,
-    virtio_magma_device_create_connection_resp_t, virtio_magma_device_import_ctrl_t,
-    virtio_magma_device_query_resp_t, virtmagma_command_descriptor,
+    virtio_magma_device_import_ctrl_t, virtio_magma_device_query_resp_t,
+    virtmagma_command_descriptor,
 };
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
@@ -80,30 +76,22 @@ where
 ///                 written back to userspace.
 ///
 /// SAFETY: Makes an FFI call to populate the fields of `response`.
-pub fn create_connection(
-    device: magma_device_t,
-    response: &mut virtio_magma_device_create_connection_resp_t,
-    connections: &mut ConnectionMap,
-) {
+pub fn create_connection(device: magma_device_t) -> Result<MagmaConnection, magma_status_t> {
     let mut connection_out: magma_connection_t = 0;
-    response.result_return = {
+    let result = {
         #[allow(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
         unsafe {
-            magma_device_create_connection(device, &mut connection_out) as u64
+            magma_device_create_connection(device, &mut connection_out)
         }
     };
-
-    response.connection_out = connection_out;
-    response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION as u32;
-    if response.result_return as i32 == MAGMA_STATUS_OK {
-        connections.insert(
-            response.connection_out,
-            ConnectionInfo::new(Arc::new(MagmaConnection { handle: response.connection_out })),
-        );
+    if result != MAGMA_STATUS_OK {
+        return Err(result);
     }
+
+    return Ok(MagmaConnection { handle: connection_out });
 }
 
 /// Attempts to open a device at a path. Fails if the device is not a supported one.
@@ -711,27 +699,6 @@ pub fn read_notification_channel(
     current_task.write_memory(UserAddress::from(control.buffer), &buffer)?;
 
     Ok(())
-}
-
-/// Releases the provided `control.connection`.
-///
-/// # Parameters
-///   - `control`: The control message that contains the connection to remove.
-///   - `response`: The response message that will be updated to write back to user space.
-///   - `connections`: The starnix-magma connection map, which is used to determine whether or not
-///                    to call into magma to release the connection.
-///
-/// SAFETY: Makes an FFI call to populate the fields of `response`.
-pub fn release_connection(
-    control: virtio_magma_connection_release_ctrl_t,
-    response: &mut virtio_magma_connection_release_resp_t,
-    connections: &mut ConnectionMap,
-) {
-    let connection = control.connection as magma_connection_t;
-    if connections.contains_key(&connection) {
-        connections.remove(&connection);
-    }
-    response.hdr.type_ = virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE as u32;
 }
 
 pub fn import_semaphore2(

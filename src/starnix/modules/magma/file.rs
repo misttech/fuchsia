@@ -7,7 +7,6 @@
 use crate::ffi::{
     create_connection, device_import, execute_command, execute_inline_commands, export_buffer,
     flush, get_buffer_handle, import_semaphore2, query, read_notification_channel,
-    release_connection,
 };
 use crate::image_file::{ImageFile, ImageInfo};
 use crate::magma::{StarnixPollItem, read_control_and_response, read_magma_command_and_type};
@@ -110,10 +109,12 @@ use magma::{
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_IMPORT_SEMAPHORE2,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_MAP_BUFFER,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_PERFORM_BUFFER_OP,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_BUFFER,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_CONTEXT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE_SEMAPHORE,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_UNMAP_BUFFER,
+    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_QUERY,
     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE,
@@ -236,7 +237,7 @@ impl Drop for MagmaSemaphore {
 type BufferMap = HashMap<magma_buffer_id_t, BufferInfo>;
 
 /// A `ConnectionMap` stores the `ConnectionInfo`s associated with each magma connection.
-pub type ConnectionMap = HashMap<magma_connection_t, ConnectionInfo>;
+pub type ConnectionMap = HashMap<u64, ConnectionInfo>;
 
 pub struct ConnectionInfo {
     pub connection: Arc<MagmaConnection>,
@@ -363,16 +364,16 @@ impl MagmaFile {
     /// to userspace.
     fn add_buffer_info(
         &self,
+        connection_id: u64,
         connection: Arc<MagmaConnection>,
         buffer: magma_buffer_t,
         buffer_id: magma_buffer_id_t,
         buffer_info: BufferInfo,
     ) {
-        let connection_handle = connection.handle;
         let arc_buffer = Arc::new(MagmaBuffer { connection, handle: buffer });
         self.connections
             .lock()
-            .get_mut(&connection_handle)
+            .get_mut(&connection_id)
             .map(|connection_info| connection_info.buffer_map.insert(buffer_id, buffer_info));
         self.buffers.lock().insert(buffer_id, arc_buffer);
     }
@@ -381,10 +382,7 @@ impl MagmaFile {
         Ok(self.devices.lock().get(&device_id).ok_or_else(|| errno!(EINVAL))?.clone())
     }
 
-    fn get_connection(
-        &self,
-        connection: magma_connection_t,
-    ) -> Result<Arc<MagmaConnection>, Errno> {
+    fn get_connection(&self, connection: u64) -> Result<Arc<MagmaConnection>, Errno> {
         Ok(self
             .connections
             .lock()
@@ -525,7 +523,28 @@ impl FileOps for MagmaFile {
 
                 let device = self.get_device(control.device)?;
 
-                create_connection(device.handle, &mut response, &mut self.connections.lock());
+                if let Ok(connection) = create_connection(device.handle) {
+                    let mut connection_id = 0u64;
+                    let mut retry_count = 0u64;
+                    let mut connection_map = self.connections.lock();
+
+                    while connection_id == 0 || connection_map.contains_key(&connection_id) {
+                        zx::cprng_draw(connection_id.as_mut_bytes());
+                        retry_count += 1;
+                        if retry_count % 10 == 0 {
+                            log_warn!("Too many retries generating connection id: {}", retry_count);
+                        }
+                    }
+
+                    connection_map.insert(connection_id, ConnectionInfo::new(Arc::new(connection)));
+                    response.connection_out = connection_id;
+                    response.result_return = MAGMA_STATUS_OK as u64;
+                } else {
+                    response.result_return = MAGMA_STATUS_MEMORY_ERROR as u64;
+                }
+                response.hdr.type_ =
+                    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_CREATE_CONNECTION as u32;
+
                 current_task.write_object(UserRef::new(response_address), &response)
             }
             virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_RELEASE => {
@@ -534,7 +553,12 @@ impl FileOps for MagmaFile {
                     virtio_magma_connection_release_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
 
-                release_connection(control, &mut response, &mut self.connections.lock());
+                let connection_id = control.connection;
+                // Dropping the MagmaConnection will call magma_connection_release via FFI.
+                self.connections.lock().remove(&connection_id);
+
+                response.hdr.type_ =
+                    virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_RELEASE as u32;
 
                 current_task.write_object(UserRef::new(response_address), &response)
             }
@@ -634,7 +658,8 @@ impl FileOps for MagmaFile {
                     virtio_magma_connection_import_buffer_ctrl_t,
                     virtio_magma_connection_import_buffer_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
-                let connection = self.get_connection(control.connection)?;
+                let connection_id = control.connection;
+                let connection = self.get_connection(connection_id)?;
 
                 let buffer_fd = FdNumber::from_raw(control.buffer_handle as i32);
                 let (memory, buffer) =
@@ -658,7 +683,7 @@ impl FileOps for MagmaFile {
                 };
 
                 // Store the information for the newly imported buffer.
-                self.add_buffer_info(connection, buffer_out, id_out, buffer);
+                self.add_buffer_info(connection_id, connection, buffer_out, id_out, buffer);
                 // Import is expected to close the file that was imported.
                 let _ = current_task.files.close(buffer_fd);
 
@@ -760,7 +785,8 @@ impl FileOps for MagmaFile {
                     virtio_magma_connection_create_buffer_ctrl_t,
                     virtio_magma_connection_create_buffer_resp_t,
                 ) = read_control_and_response(current_task, &command)?;
-                let connection = self.get_connection(control.connection)?;
+                let connection_id = control.connection;
+                let connection = self.get_connection(connection_id)?;
 
                 let mut size_out = 0;
                 let mut buffer_out = 0;
@@ -780,7 +806,14 @@ impl FileOps for MagmaFile {
                 response.size_out = size_out;
                 response.buffer_out = id_out;
                 response.id_out = id_out;
-                self.add_buffer_info(connection, buffer_out, id_out, BufferInfo::Default);
+
+                self.add_buffer_info(
+                    connection_id,
+                    connection,
+                    buffer_out,
+                    id_out,
+                    BufferInfo::Default,
+                );
 
                 response.hdr.type_ =
                     virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_BUFFER as u32;
