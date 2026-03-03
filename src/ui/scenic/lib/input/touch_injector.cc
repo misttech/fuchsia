@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/input/touch_injector.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 namespace scenic_impl::input {
 
@@ -40,6 +41,7 @@ TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settin
 }
 
 void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
+  TRACE_DURATION("input", "TouchInjector::ForwardEvent");
   FX_DCHECK(stream_id != kInvalidStreamId);
   inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id);
 }

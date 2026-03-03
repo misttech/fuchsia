@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/input/pointerinjector_registry.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 #include "src/ui/scenic/lib/input/mouse_injector.h"
 #include "src/ui/scenic/lib/input/touch_injector.h"
@@ -137,6 +138,7 @@ void PointerinjectorRegistry::Register(
                              fuchsia::ui::pointerinjector::DispatchPolicy::EXCLUSIVE_TARGET
                          ? inject_touch_exclusive_
                          : inject_touch_hit_tested_](InternalTouchEvent event, StreamId stream_id) {
+                  TRACE_DURATION("input", "TouchInjector::inject_");
                   inject_func(std::move(event), stream_id);
                 },
                 std::move(on_channel_closed)));
@@ -162,6 +164,7 @@ void PointerinjectorRegistry::Register(
                              fuchsia::ui::pointerinjector::DispatchPolicy::EXCLUSIVE_TARGET
                          ? inject_mouse_exclusive_
                          : inject_mouse_hit_tested_](InternalMouseEvent event, StreamId stream_id) {
+                  TRACE_DURATION("input", "MouseInjector::inject_");
                   inject_func(std::move(event), stream_id);
                 },
                 /*cancel_stream=*/[this](StreamId stream_id) { cancel_mouse_stream_(stream_id); },

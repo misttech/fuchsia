@@ -161,14 +161,20 @@ Injector::Injector(inspect::Node inspect_node, InjectorSettings settings, Viewpo
 
 void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
                       InjectCallback callback) {
-  InjectEvents(std::move(events));
-  callback();
+  TRACE_DURATION("input", "Injector::Inject");
+  {
+    InjectEvents(std::move(events));
+  }
+  {
+    TRACE_DURATION("input", "Injector::Inject[callback]");
+    callback();
+  }
 }
 
 // TODO: b/465440651 - revisit if we need to add flow control here since no flow control on caller
 // side.
 void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
-  TRACE_DURATION("input", "Injector::Inject");
+  TRACE_DURATION("input", "Injector::InjectEvents");
   if (!is_descendant_and_connected_(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
                    << ") and Target (koid: " << settings_.target_koid
@@ -184,6 +190,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
   }
 
   for (auto& event : events) {
+    TRACE_DURATION("input", "Injector::InjectEvents[event]");
     if (!event.has_timestamp() || !event.has_data()) {
       FX_LOGS(ERROR) << "Inject() called with an incomplete event";
       CloseChannel(ZX_ERR_INVALID_ARGS);
@@ -193,6 +200,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
     inspector_.OnPointerInjectorEvent(event);
 
     if (event.data().is_viewport()) {
+      TRACE_DURATION("input", "Injector::InjectEvents[viewport]");
       const auto& new_viewport = event.data().viewport();
 
       {
@@ -208,6 +216,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
                        new_viewport.viewport_to_context_transform())};
       continue;
     } else if (event.data().is_pointer_sample()) {
+      TRACE_DURATION("input", "Injector::InjectEvents[pointer_sample]");
       const auto& pointer_sample = event.data().pointer_sample();
 
       const auto [result, stream_id] = ValidatePointerSample(pointer_sample);
@@ -234,6 +243,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
 
 std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
     const fuchsia::ui::pointerinjector::PointerSample& pointer_sample) {
+  TRACE_DURATION("input", "Injector::ValidatePointerSample");
   if (!HasRequiredFields(pointer_sample)) {
     FX_LOGS(ERROR)
         << "Injected fuchsia::ui::pointerinjector::PointerSample was missing required fields";
@@ -256,6 +266,7 @@ std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
 }
 
 StreamId Injector::ValidateEventStream(uint32_t pointer_id, EventPhase phase) {
+  TRACE_DURATION("input", "Injector::ValidateEventStream");
   const bool stream_is_ongoing = ongoing_streams_.contains(pointer_id);
   const bool double_add = stream_is_ongoing && phase == EventPhase::ADD;
   const bool invalid_start = !stream_is_ongoing && phase != EventPhase::ADD;
@@ -304,6 +315,7 @@ void Injector::CloseChannel(zx_status_t epitaph) {
 }
 
 zx_status_t Injector::IsValidViewport(const fuchsia::ui::pointerinjector::Viewport& viewport) {
+  TRACE_DURATION("input", "Injector::IsValidViewport");
   if (!viewport.has_extents() || !viewport.has_viewport_to_context_transform()) {
     FX_LOGS(ERROR) << "Provided fuchsia::ui::pointerinjector::Viewport had missing fields";
     return ZX_ERR_INVALID_ARGS;

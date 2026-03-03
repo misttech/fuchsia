@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/input/mouse_injector.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 namespace scenic_impl::input {
 
@@ -44,6 +45,7 @@ MouseInjector::MouseInjector(inspect::Node inspect_node, InjectorSettings settin
 }
 
 void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
+  TRACE_DURATION("input", "MouseInjector::ForwardEvent");
   {  // For CANCEL and REMOVE phase we need to cancel the stream. Otherwise inject normally.
     FX_DCHECK(event.has_data());
     const auto& data = event.data();
