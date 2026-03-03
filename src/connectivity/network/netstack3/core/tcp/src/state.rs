@@ -948,6 +948,11 @@ impl<I: Instant> KeepAliveTimer<I> {
         let interval = now.saturating_add(keep_alive.interval.into());
         *at = user_timeout_until.map(|i| i.min(interval)).unwrap_or(interval);
 
+        log::debug!(
+            "sending a keep alive probe, already_sent: {already_sent}, in the next {:?}",
+            at.saturating_duration_since(now)
+        );
+
         true
     }
 
@@ -1615,6 +1620,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                         return Some(rcv.make_ack(*snd_max - 1, now));
                     }
                 } else {
+                    log::debug!("resetting the keep alive timer");
                     *timer = None;
                 }
             }
@@ -1686,6 +1692,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
 
         if can_send == 0 {
             if available == 0 && offset == 0 && timer.is_none() && keep_alive.enabled {
+                log::debug!("starting keep alive idle timer: {:?}", keep_alive.idle.get());
                 *timer = Some(SendTimer::KeepAlive(KeepAliveTimer::idle(now, keep_alive)));
             }
             return None;
@@ -1929,6 +1936,10 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
         let seg_wnd = seg_wnd << *wnd_scale;
         match timer {
             Some(SendTimer::KeepAlive(_)) | None => {
+                log::debug!(
+                    "restart keep-alive idle timer for receiving an ACK: {:?}",
+                    keep_alive.idle.get()
+                );
                 *timer = keep_alive
                     .enabled
                     .then(|| SendTimer::KeepAlive(KeepAliveTimer::idle(now, keep_alive)));
