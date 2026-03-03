@@ -98,21 +98,9 @@ async fn progress_reporting_fetch_multiple_packages() {
 async fn progress_reporting_fetch_multiple_blobs_packageless() {
     let env = TestEnv::builder()
         .ota_manifest(make_manifest([
-            manifest::Blob {
-                uncompressed_size: 100,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: hash(1),
-            },
-            manifest::Blob {
-                uncompressed_size: 20,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: hash(2),
-            },
-            manifest::Blob {
-                uncompressed_size: 3000,
-                delivery_blob_type: 1,
-                fuchsia_merkle_root: hash(3),
-            },
+            manifest::Blob { uncompressed_size: 100, fuchsia_merkle_root: hash(1) },
+            manifest::Blob { uncompressed_size: 20, fuchsia_merkle_root: hash(2) },
+            manifest::Blob { uncompressed_size: 3000, fuchsia_merkle_root: hash(3) },
         ]))
         .build()
         .await;

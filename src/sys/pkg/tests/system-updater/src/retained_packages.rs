@@ -61,7 +61,6 @@ async fn succeeds_even_if_retained_blobs_fails_packageless() {
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,
-        delivery_blob_type: 1,
         fuchsia_merkle_root: content_blob_hash,
     }]);
     let env = TestEnv::builder()
@@ -452,7 +451,6 @@ async fn non_empty_blobs_packageless() {
 
     let manifest = make_manifest([manifest::Blob {
         uncompressed_size: content_blob.len() as u64,
-        delivery_blob_type: 1,
         fuchsia_merkle_root: content_blob_hash,
     }]);
     let env = TestEnv::builder()

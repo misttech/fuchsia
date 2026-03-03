@@ -11,7 +11,7 @@ use test_case::test_case;
 #[fasync::run_singlethreaded(test)]
 async fn validates_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
     let env = TestEnv::builder()
-        .ota_manifest(OtaManifestV1 { board: "x64".into(), ..make_manifest([]) })
+        .ota_manifest(OtaManifest { board: "x64".into(), ..make_manifest([]) })
         .build()
         .await;
 
@@ -34,7 +34,7 @@ async fn validates_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
 #[fasync::run_singlethreaded(test)]
 async fn rejects_mismatched_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
     let env = TestEnv::builder()
-        .ota_manifest(OtaManifestV1 { board: "arm".into(), ..make_manifest([]) })
+        .ota_manifest(OtaManifest { board: "arm".into(), ..make_manifest([]) })
         .build()
         .await;
 

@@ -198,8 +198,7 @@ impl ProductBundleBuilder {
         let update_package = if let Some(update_details) = update_details {
             if let Some(repository_details) = &repository_details {
                 if update_details.ota_manifest_key_path.is_some() {
-                    ota_manifest_signature_path =
-                        Some(out_dir.join("repository/ota_manifest.json.sig"))
+                    ota_manifest_signature_path = Some(out_dir.join("repository/ota_manifest.sig"))
                 }
 
                 write_ota_manifest(
@@ -214,7 +213,7 @@ impl ProductBundleBuilder {
                     &packages_a,
                     // Put the manifest under /repository, ffx repository server will serve all
                     // files in that directory.
-                    out_dir.join("repository/ota_manifest.json"),
+                    out_dir.join("repository/ota_manifest"),
                 )
                 .context("writing OTA manifest")?;
             }
@@ -783,7 +782,7 @@ mod test {
                 snapshot_private_key_path: Some(product_bundle_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(product_bundle_path.join("keys/timestamp.json")),
                 ota_manifest_signature_path: Some(
-                    product_bundle_path.join("repository/ota_manifest.json.sig"),
+                    product_bundle_path.join("repository/ota_manifest.sig"),
                 ),
             }],
             update_package_hash: Some(
