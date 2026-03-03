@@ -16,6 +16,10 @@ fx-config-read
 ## Arguments:
 ##   -b|--bucket    GCS bucket to upload to. Defaults to gs://fuchsia-build-stage
 
+# Reset parallel composite upload enabled to initial value on exit.
+parallel_upload_enabled=$(gcloud config get storage/parallel_composite_upload_enabled)
+trap 'gcloud config set storage/parallel_composite_upload_enabled "${parallel_upload_enabled}" > /dev/null 2>&1' EXIT
+
 main() {
   local bucket="fuchsia-build-stage"
   while [[ $# -gt 0 ]]; do
@@ -53,6 +57,8 @@ main() {
   fx-command-run create-pb-zip -o "${pb_zip_path}"
 
   fx-info "Uploading ${pb_zip_path} to gs://${bucket}..."
+  # Disable parallel composite upload to avoid deleting the segments.
+  gcloud config set storage/parallel_composite_upload_enabled False > /dev/null 2>&1
   gcloud storage cp -c "${pb_zip_path}" "gs://${bucket}"
 
   fx-info "Download URL: https://storage.mtls.cloud.google.com/${bucket}/${pb_zip_name}"
