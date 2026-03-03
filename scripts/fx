@@ -67,7 +67,7 @@ function help_list_commands {
     echo "Host binaries produced by the build with no metadata (more info at //tools/devshell/README.md):"
     for i in ${host_tools}; do
       echo -n "  "
-      basename $i
+      basename "$i"
     done
   fi
 
@@ -76,10 +76,12 @@ function help_list_commands {
 }
 
 function help_command {
-  local cmd="$@"
-  local cmd_path="$(commands ${cmd} | head -1)"
+  local cmd="$*"
+  local cmd_path
+  cmd_path="$(commands "${cmd}" | head -1)"
   if [[ -z "${cmd_path}" ]]; then
-    local cmd_path="$(find_host_tools ${cmd} | head -1)"
+    local cmd_path
+    cmd_path="$(find_host_tools "${cmd}" | head -1)"
     if [[ -z "${cmd_path}" ]]; then
       echo "Command ${cmd} not found. Try \`fx help\`"
     else
@@ -221,7 +223,7 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 # In cog workspace, .jiri_root in source tree would symlink to CartFS
 # workspace, where the out directory exist and tests executed.
-script_jiri_root="$(dirname $(readlink -f $(find_tree_root "${script_dir}")/.jiri_root))"
+script_jiri_root="$(dirname "$(readlink -f "$(find_tree_root "${script_dir}")/.jiri_root")")"
 
 # In cog workspace, we will check if we are running fx in either source tree or
 # CartFS workspace.
@@ -255,15 +257,19 @@ if should_use_git_polyfill "${fuchsia_dir}"; then
 fi
 
 declare -r vars_sh="${fuchsia_dir}/tools/devshell/lib/vars.sh"
+# shellcheck disable=SC1090
 source "${vars_sh}" || exit $?
 
 declare -r metrics_sh="${fuchsia_dir}/tools/devshell/lib/metrics.sh"
+# shellcheck disable=SC1090
 source "${metrics_sh}" || exit $?
 
 declare -r cmd_locator_sh="${fuchsia_dir}/tools/devshell/lib/fx-cmd-locator.sh"
+# shellcheck disable=SC1090
 source "${cmd_locator_sh}" || exit $?
 
 declare -r features_sh="${fuchsia_dir}/tools/devshell/lib/fx-optional-features.sh"
+# shellcheck disable=SC1090
 source "${features_sh}" || exit $?
 
 declare -r suggest_py="${fuchsia_dir}/tools/devshell/lib/fx-cmd-suggestions.py"
@@ -288,8 +294,8 @@ while [[ $# -ne 0 ]]; do
       regex='(out\/)|(^out$)'
       if [[ ! "$1" =~ $regex ]]
       then
-        error_message="Build directory (--dir BUILD_DIR) must be a subdirectory of $FUCHSIA_DIR/out.\nExamples: fx --dir out/<folder> ..., fx --dir ~/fuchsia/out/<folder> ..."
-        fx-error $error_message
+        error_message="Build directory (--dir BUILD_DIR) must be a subdirectory of $fuchsia_dir/out.\nExamples: fx --dir out/<folder> ..., fx --dir ~/fuchsia/out/<folder> ..."
+        fx-error "$error_message"
         exit 1
       fi
       # Remove trailing slash, as it can impede other checks elsewhere in the code.
@@ -313,7 +319,7 @@ while [[ $# -ne 0 ]]; do
         exit 1
       fi
       env_name="$(get_disable_feature_env_name "${feature}")"
-      export ${env_name}=1
+      export "${env_name}"=1
       ;;
     --enable)
       if [[ $# -lt 2 ]]; then
@@ -328,7 +334,7 @@ while [[ $# -ne 0 ]]; do
         exit 1
       fi
       env_name="$(get_disable_feature_env_name "${feature}")"
-      export ${env_name}=0
+      export "${env_name}"=0
       ;;
     -t|--target)
       if [[ $# -lt 2 ]]; then
@@ -421,18 +427,18 @@ if [[ -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" || -n "${ANTIGRAVITY_AGENT}" ]]; then
 fi
 
 command_name="$1"
-command_path=( $(find_executable ${command_name}) )
+read -r -a command_path <<< "$(find_executable "${command_name}")"
 
 if [[ $? -ne 0 || ! -x "${command_path[0]}" ]]; then
-  if [[ -n "${command_path}" ]]; then
-    _path_message=" in the expected location $(_relative "${command_path}")"
+  if [[ -n "${command_path[*]}" ]]; then
+    _path_message=" in the expected location $(_relative "${command_path[0]}")"
   fi
 
   _commands=$(commands)
   _host_tools=$(find_host_tools)
 
   # If the command is not found look for suggestions to help direct to the correct command.
-  _suggestion=$(echo "${_commands}\n${_host_tools}" | "${suggest_py}" ${command_name})
+  _suggestion=$(printf "%b\n%b" "${_commands}" "${_host_tools}" | "${suggest_py}" "${command_name}")
 
   # If no suggestions are found fall back to the old error message.
   if [ -z "$_suggestion" ]; then
@@ -454,7 +460,7 @@ metrics-init "${command_name}" "$*"
 for f in $(list_optional_features); do
   _disabled_env_name="$(get_disable_feature_env_name "${f}")"
   is_feature_enabled "$f"
-  export ${_disabled_env_name}=$?
+  export "${_disabled_env_name}"=$?
   track-feature-status "${f}" "${_disabled_env_name}" &
 done
 
@@ -467,7 +473,7 @@ fi
 
 export FX_ENTRY_CMD="$command_name"
 
-declare -r cmd_and_args="$@"
+declare -r cmd_and_args="$*"
 shift # Removes the command name.
 
 if [[ "${command_name}" != "vendor" || $# -lt 2 ]]; then
@@ -536,20 +542,22 @@ monitor_and_run() {
   # first read on Mac bash).
   exec 3<"${event_pipe}"
 
-  while read -u 3; do
+  while read -r -u 3; do
     if [[ "$(uname -s)" != "Darwin" ]]; then
       # Drain all subsequent events in a batch.
       # Otherwise when multiple files are changes at once we'd run multiple
       # times.
-      read -u 3 -d "" -t .01
+      read -r -u 3 -d "" -t .01
     fi
     # Allow at most one fx -i invocation per Fuchsia dir at a time.
     # Otherwise multiple concurrent fx -i invocations can trigger each other
     # and cause a storm.
     echo "---------------------------------- fx -i ${display_name} ---------------------------------------"
-    local start=$(date +%s)
+    local start
+    start=$(date +%s)
     "$@"
-    local end=$(date +%s)
+    local end
+    end=$(date +%s)
     echo "--- Done in $((end-start)) seconds"
   done
 }
